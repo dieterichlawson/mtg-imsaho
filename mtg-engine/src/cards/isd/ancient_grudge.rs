@@ -16,14 +16,9 @@ impl CardBehavior for AncientGrudge {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Destroy target artifact.\nFlashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)])),
-            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

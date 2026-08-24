@@ -17,13 +17,11 @@ impl CardBehavior for SilverchaseFox {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Fox".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "{1}{W}, Sacrifice this creature: Exile target enchantment.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

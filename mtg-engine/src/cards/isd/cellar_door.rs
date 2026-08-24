@@ -17,16 +17,8 @@ impl CardBehavior for CellarDoor {
                 ManaSymbol::Generic(2),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -23,13 +23,7 @@ impl CardBehavior for Nevermore {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "As this enchantment enters, choose a nonland card name.\nSpells with the chosen name can't be cast.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -37,6 +31,7 @@ impl CardBehavior for Nevermore {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

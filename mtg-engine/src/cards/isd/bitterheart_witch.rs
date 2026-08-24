@@ -49,15 +49,11 @@ impl CardBehavior for BitterheartWitch {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Shaman".into()],
             power: Some(1),
             toughness: Some(2),
             oracle_text: "Deathtouch\nWhen this creature dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.".into(),
             keywords: vec![Keyword::Deathtouch],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
@@ -65,6 +61,7 @@ impl CardBehavior for BitterheartWitch {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

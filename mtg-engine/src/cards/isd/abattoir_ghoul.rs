@@ -18,15 +18,11 @@ impl CardBehavior for AbattoirGhoul {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into()],
             power: Some(3),
             toughness: Some(2),
             oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".into(),
             keywords: vec![Keyword::FirstStrike],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
@@ -34,6 +30,7 @@ impl CardBehavior for AbattoirGhoul {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

@@ -19,13 +19,10 @@ impl CardBehavior for MayorOfAvabruck {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Advisor".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "Other Human creatures you control get +1/+1.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: 1,
@@ -36,7 +33,6 @@ impl CardBehavior for MayorOfAvabruck {
                     ])),
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -44,21 +40,18 @@ impl CardBehavior for MayorOfAvabruck {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Howlpack Alpha".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "Each other creature you control that's a Werewolf or a Wolf gets +1/+1.\nAt the beginning of your end step, create a 2/2 green Wolf creature token.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: 1,
@@ -72,7 +65,6 @@ impl CardBehavior for MayorOfAvabruck {
                     ])),
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -85,6 +77,7 @@ impl CardBehavior for MayorOfAvabruck {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

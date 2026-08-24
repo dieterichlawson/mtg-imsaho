@@ -16,14 +16,9 @@ impl CardBehavior for RollingTemblor {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Rolling Temblor deals 2 damage to each creature without flying.\nFlashback {4}{R}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(4), ManaSymbol::Colored(Color::Red), ManaSymbol::Colored(Color::Red)])),
-            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

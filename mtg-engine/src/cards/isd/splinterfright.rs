@@ -19,7 +19,6 @@ impl CardBehavior for Splinterfright {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Elemental".into()],
             // */* — the CDA (dynamic_pt) defines actual P/T. Some(0) is needed so
             // the engine recognizes this as a creature (power.is_some() is used as proxy).
@@ -27,9 +26,6 @@ impl CardBehavior for Splinterfright {
             toughness: Some(0),
             oracle_text: "Trample\nSplinterfright's power and toughness are each equal to the number of creature cards in your graveyard.\nAt the beginning of your upkeep, mill two cards. (Put the top two cards of your library into your graveyard.)".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -37,6 +33,7 @@ impl CardBehavior for Splinterfright {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

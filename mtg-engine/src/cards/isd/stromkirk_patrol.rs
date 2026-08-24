@@ -16,15 +16,10 @@ impl CardBehavior for StromkirkPatrol {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into(), "Soldier".into()],
             power: Some(4),
             toughness: Some(3),
             oracle_text: "Whenever this creature deals combat damage to a player, put a +1/+1 counter on it.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
@@ -32,6 +27,7 @@ impl CardBehavior for StromkirkPatrol {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

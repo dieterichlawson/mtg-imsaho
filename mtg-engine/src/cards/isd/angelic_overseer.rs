@@ -16,13 +16,11 @@ impl CardBehavior for AngelicOverseer {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Angel".into()],
             power: Some(5),
             toughness: Some(3),
             oracle_text: "Flying\nAs long as you control a Human, this creature has hexproof and indestructible.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ConditionalKeyword {
                     keyword: Keyword::Hexproof,
@@ -35,8 +33,7 @@ impl CardBehavior for AngelicOverseer {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

@@ -15,13 +15,8 @@ impl CardBehavior for PreyUpon {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Target creature you control fights target creature you don't control. (Each deals damage equal to its power to the other.)".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

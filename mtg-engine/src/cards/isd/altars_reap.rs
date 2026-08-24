@@ -18,16 +18,9 @@ impl CardBehavior for AltarsReap {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::SacrificeCreature),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

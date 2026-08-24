@@ -16,18 +16,13 @@ impl CardBehavior for SpectralFlight {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nEnchanted creature gets +2/+2 and has flying.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached },
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Flying, scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

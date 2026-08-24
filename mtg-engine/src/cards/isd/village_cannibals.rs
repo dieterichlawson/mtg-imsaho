@@ -17,13 +17,10 @@ impl CardBehavior for VillageCannibals {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Whenever another Human creature dies, put a +1/+1 counter on this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
@@ -31,6 +28,7 @@ impl CardBehavior for VillageCannibals {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

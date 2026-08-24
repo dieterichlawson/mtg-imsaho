@@ -16,13 +16,9 @@ impl CardBehavior for WreathOfGeists {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nEnchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

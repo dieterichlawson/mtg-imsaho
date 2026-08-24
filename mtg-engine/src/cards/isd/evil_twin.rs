@@ -20,15 +20,10 @@ impl CardBehavior for EvilTwin {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Shapeshifter".into()],
             power: Some(0),
             toughness: Some(0),
             oracle_text: "You may have this creature enter as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\"".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -36,6 +31,7 @@ impl CardBehavior for EvilTwin {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

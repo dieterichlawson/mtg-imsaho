@@ -18,15 +18,11 @@ impl CardBehavior for SnapcasterMage {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Wizard".into()],
             power: Some(2),
             toughness: Some(1),
             oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. (You may cast that card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![Keyword::Flash],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -35,6 +31,7 @@ impl CardBehavior for SnapcasterMage {
                     target_requirement: Some(TargetRequirement::GraveyardCardOwnedByCaster),
                 },
             ],
+            ..Default::default()
         }
     }
 

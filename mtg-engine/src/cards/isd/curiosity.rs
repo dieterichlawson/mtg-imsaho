@@ -17,15 +17,8 @@ impl CardBehavior for Curiosity {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nWhenever enchanted creature deals damage to an opponent, you may draw a card.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyDamageToPlayer,
@@ -33,6 +26,7 @@ impl CardBehavior for Curiosity {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

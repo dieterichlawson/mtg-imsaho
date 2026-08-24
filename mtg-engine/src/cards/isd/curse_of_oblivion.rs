@@ -19,15 +19,8 @@ impl CardBehavior for CurseOfOblivion {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into(), "Curse".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant player\nAt the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -35,6 +28,7 @@ impl CardBehavior for CurseOfOblivion {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

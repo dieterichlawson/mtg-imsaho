@@ -17,18 +17,13 @@ impl CardBehavior for Pacifism {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchanted creature can't attack or block.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::PreventAttack { scope: EffectScope::Attached },
                 ContinuousEffect::PreventBlock { scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

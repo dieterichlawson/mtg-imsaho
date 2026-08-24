@@ -13,13 +13,12 @@ impl CardBehavior for SpectralRider {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into(), "Knight".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)".into(),
             keywords: vec![Keyword::Intimidate],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

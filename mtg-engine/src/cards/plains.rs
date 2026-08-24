@@ -9,15 +9,11 @@ impl CardBehavior for Plains {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Plains".into(),
-            cost: None,
             card_types: vec![CardType::Land],
             supertypes: vec![Supertype::Basic],
             subtypes: vec!["Plains".into()],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {W}.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

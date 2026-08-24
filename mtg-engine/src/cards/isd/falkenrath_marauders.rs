@@ -17,15 +17,11 @@ impl CardBehavior for FalkenrathMarauders {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into(), "Warrior".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Flying\nHaste (This creature can attack and {T} as soon as it comes under your control.)\nWhenever this creature deals combat damage to a player, put two +1/+1 counters on it.".into(),
             keywords: vec![Keyword::Flying, Keyword::Haste],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
@@ -33,6 +29,7 @@ impl CardBehavior for FalkenrathMarauders {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

@@ -26,9 +26,6 @@ impl CardBehavior for OliviaVoldaren {
             toughness: Some(3),
             oracle_text: "Flying\n{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.\n{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::LeavesBattlefield,
@@ -36,6 +33,7 @@ impl CardBehavior for OliviaVoldaren {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

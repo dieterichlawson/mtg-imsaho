@@ -14,18 +14,12 @@ impl CardBehavior for CobbledWings {
             name: "Cobbled Wings".into(),
             cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2)])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature has flying.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Flying, scope: EffectScope::Attached },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

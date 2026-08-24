@@ -13,15 +13,9 @@ impl CardBehavior for KessigWolfRun {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Kessig Wolf Run".into(),
-            cost: None,
             card_types: vec![CardType::Land],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

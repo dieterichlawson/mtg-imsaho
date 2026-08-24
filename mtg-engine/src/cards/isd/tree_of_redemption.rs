@@ -17,16 +17,12 @@ impl CardBehavior for TreeOfRedemption {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Plant".into()],
             power: Some(0),
             toughness: Some(13),
             oracle_text: "Defender\n{T}: Exchange your life total with this creature's toughness.".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

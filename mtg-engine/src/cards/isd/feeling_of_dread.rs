@@ -16,14 +16,9 @@ impl CardBehavior for FeelingOfDread {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Tap up to two target creatures.\nFlashback {1}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Blue)])),
-            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -19,15 +19,10 @@ impl CardBehavior for CloisteredYouth {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "At the beginning of your upkeep, you may transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -35,23 +30,18 @@ impl CardBehavior for CloisteredYouth {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Unholy Fiend".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Horror".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "At the beginning of your end step, you lose 1 life.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
@@ -59,6 +49,7 @@ impl CardBehavior for CloisteredYouth {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

@@ -16,13 +16,8 @@ impl CardBehavior for GhoulcallersBell {
                 ManaSymbol::Generic(1),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Each player mills a card.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -14,19 +14,13 @@ impl CardBehavior for MaskOfAvacyn {
             name: "Mask of Avacyn".into(),
             cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2)])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)\nEquip {3}".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 2, scope: EffectScope::Attached },
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Hexproof, scope: EffectScope::Attached },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

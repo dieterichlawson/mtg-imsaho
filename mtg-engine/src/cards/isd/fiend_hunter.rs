@@ -20,13 +20,10 @@ impl CardBehavior for FiendHunter {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Cleric".into()],
             power: Some(1),
             toughness: Some(3),
             oracle_text: "When this creature enters, you may exile another target creature.\nWhen this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -43,6 +40,7 @@ impl CardBehavior for FiendHunter {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

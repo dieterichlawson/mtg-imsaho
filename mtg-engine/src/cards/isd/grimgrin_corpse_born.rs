@@ -27,14 +27,11 @@ impl CardBehavior for GrimgrinCorpseBorn {
             power: Some(5),
             toughness: Some(5),
             oracle_text: "Grimgrin enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::PreventUntap {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
@@ -44,6 +41,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
                     target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
+            ..Default::default()
         }
     }
 

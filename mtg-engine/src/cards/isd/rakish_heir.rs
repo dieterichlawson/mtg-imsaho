@@ -16,15 +16,10 @@ impl CardBehavior for RakishHeir {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCombatDamageToPlayer,
@@ -32,6 +27,7 @@ impl CardBehavior for RakishHeir {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

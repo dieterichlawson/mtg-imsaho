@@ -15,17 +15,12 @@ impl CardBehavior for HolyStrength {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchanted creature gets +1/+2.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 2, scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

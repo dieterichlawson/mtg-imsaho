@@ -13,13 +13,12 @@ impl CardBehavior for VoicelessSpirit {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(2),
             toughness: Some(1),
             oracle_text: "Flying, first strike".into(),
             keywords: vec![Keyword::Flying, Keyword::FirstStrike],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

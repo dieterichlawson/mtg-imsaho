@@ -21,15 +21,10 @@ impl CardBehavior for Ghoulraiser {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "When this creature enters, return a Zombie card at random from your graveyard to your hand.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -37,6 +32,7 @@ impl CardBehavior for Ghoulraiser {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

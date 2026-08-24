@@ -18,13 +18,8 @@ impl CardBehavior for BondsOfFaith {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 // +2/+2 as long as attached creature is a Human.
                 ContinuousEffect::ConditionalModifyPT {
@@ -44,8 +39,7 @@ impl CardBehavior for BondsOfFaith {
                     scope: EffectScope::Attached,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

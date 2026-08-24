@@ -16,17 +16,12 @@ impl CardBehavior for SkeletalGrimace {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nEnchanted creature gets +1/+1 and has \"{B}: Regenerate this creature.\"".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

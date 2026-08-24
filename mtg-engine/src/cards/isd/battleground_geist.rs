@@ -14,13 +14,11 @@ impl CardBehavior for BattlegroundGeist {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "Flying\nOther Spirit creatures you control get +1/+0.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: 1,
@@ -31,7 +29,7 @@ impl CardBehavior for BattlegroundGeist {
                     ])),
                 },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

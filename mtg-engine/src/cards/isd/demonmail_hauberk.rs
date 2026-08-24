@@ -17,17 +17,12 @@ impl CardBehavior for DemonmailHauberk {
                 ManaSymbol::Generic(4),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature gets +4/+2.\nEquip—Sacrifice a creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 4, toughness: 2, scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

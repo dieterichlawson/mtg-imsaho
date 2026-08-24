@@ -18,15 +18,7 @@ impl CardBehavior for BurningVengeance {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SpellCast,
@@ -38,6 +30,7 @@ impl CardBehavior for BurningVengeance {
                     target_requirement: Some(TargetRequirement::AnyTarget),
                 },
             ],
+            ..Default::default()
         }
     }
 

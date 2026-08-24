@@ -16,14 +16,9 @@ impl CardBehavior for RallyThePeasants {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Creatures you control get +2/+0 until end of turn.\nFlashback {2}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Red)])),
-            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

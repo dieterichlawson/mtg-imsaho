@@ -23,13 +23,8 @@ impl CardBehavior for SharpenedPitchfork {
             name: "Sharpened Pitchfork".into(),
             cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2)])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature has first strike.\nAs long as equipped creature is a Human, it gets +1/+1.\nEquip {1}".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 // Unconditional first strike to the equipped creature.
                 ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached },
@@ -42,8 +37,7 @@ impl CardBehavior for SharpenedPitchfork {
                     scope: EffectScope::Attached,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

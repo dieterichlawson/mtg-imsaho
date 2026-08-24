@@ -15,13 +15,8 @@ impl CardBehavior for LightningBolt {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Lightning Bolt deals 3 damage to any target.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

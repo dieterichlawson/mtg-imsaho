@@ -20,15 +20,8 @@ impl CardBehavior for GrimoireOfTheDead {
             ])),
             card_types: vec![CardType::Artifact],
             supertypes: vec![Supertype::Legendary],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.\n{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

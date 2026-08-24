@@ -13,13 +13,10 @@ impl CardBehavior for FortressCrab {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Crab".into()],
             power: Some(1),
             toughness: Some(6),
-            oracle_text: String::new(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

@@ -22,15 +22,11 @@ impl CardBehavior for MoldgrafMonstrosity {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Insect".into()],
             power: Some(8),
             toughness: Some(8),
             oracle_text: "Trample\nWhen this creature dies, exile it, then return two creature cards at random from your graveyard to the battlefield.".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
@@ -38,6 +34,7 @@ impl CardBehavior for MoldgrafMonstrosity {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

@@ -13,13 +13,10 @@ impl CardBehavior for CoralMerfolk {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Merfolk".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: String::new(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

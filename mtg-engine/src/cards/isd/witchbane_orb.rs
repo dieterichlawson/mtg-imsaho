@@ -17,15 +17,7 @@ impl CardBehavior for WitchbaneOrb {
                 ManaSymbol::Generic(4),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "When this artifact enters, destroy all Curses attached to you.\nYou have hexproof. (You can't be the target of spells or abilities your opponents control, including Aura spells.)".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -33,6 +25,7 @@ impl CardBehavior for WitchbaneOrb {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

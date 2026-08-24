@@ -15,17 +15,11 @@ impl CardBehavior for GloriousAnthem {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Creatures you control get +1/+1.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Global(CreatureFilter::ControlledByYou) },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

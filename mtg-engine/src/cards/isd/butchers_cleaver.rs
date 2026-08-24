@@ -23,13 +23,8 @@ impl CardBehavior for ButchersCleaver {
             name: "Butcher's Cleaver".into(),
             cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3)])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature gets +3/+0.\nAs long as equipped creature is a Human, it has lifelink.\nEquip {3}".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 // Unconditional +3/+0 to the equipped creature.
                 ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
@@ -42,8 +37,7 @@ impl CardBehavior for ButchersCleaver {
                     scope: EffectScope::Attached,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -18,20 +18,15 @@ impl CardBehavior for CurseOfTheNightlyHunt {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into(), "Curse".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant player\nCreatures enchanted player controls attack each combat if able.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             // Force attack on the cursed player's creatures.
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack {
                     scope: EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer),
                 },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

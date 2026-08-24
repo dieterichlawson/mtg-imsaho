@@ -15,13 +15,8 @@ impl CardBehavior for GiantGrowth {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Target creature gets +3/+3 until end of turn.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

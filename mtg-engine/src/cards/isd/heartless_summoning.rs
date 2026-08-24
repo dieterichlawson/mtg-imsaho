@@ -15,13 +15,7 @@ impl CardBehavior for HeartlessSummoning {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Creature spells you cast cost {2} less to cast.\nCreatures you control get -1/-1.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: -1,
@@ -33,8 +27,7 @@ impl CardBehavior for HeartlessSummoning {
                     filter: SpellFilter::CreatureSpells,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

@@ -16,14 +16,9 @@ impl CardBehavior for TravelPreparations {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Put a +1/+1 counter on each of up to two target creatures.\nFlashback {1}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)])),
-            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

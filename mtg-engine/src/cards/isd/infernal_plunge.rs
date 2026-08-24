@@ -17,16 +17,9 @@ impl CardBehavior for InfernalPlunge {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "As an additional cost to cast this spell, sacrifice a creature.\nAdd {R}{R}{R}.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::SacrificeCreature),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

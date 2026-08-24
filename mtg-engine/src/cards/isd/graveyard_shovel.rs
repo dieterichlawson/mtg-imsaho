@@ -16,13 +16,8 @@ impl CardBehavior for GraveyardShovel {
                 ManaSymbol::Generic(2),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{2}, {T}: Target player exiles a card from their graveyard. If it's a creature card, you gain 2 life.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -17,16 +17,13 @@ impl CardBehavior for SkaabGoliath {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into(), "Giant".into()],
             power: Some(6),
             toughness: Some(9),
             oracle_text: "As an additional cost to cast this spell, exile two creature cards from your graveyard.\nTrample".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(2)),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -18,15 +18,11 @@ impl CardBehavior for BloodgiftDemon {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Demon".into()],
             power: Some(5),
             toughness: Some(4),
             oracle_text: "Flying\nAt the beginning of your upkeep, target player draws a card and loses 1 life.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -37,6 +33,7 @@ impl CardBehavior for BloodgiftDemon {
                     target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
             ],
+            ..Default::default()
         }
     }
 

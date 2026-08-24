@@ -15,13 +15,10 @@ impl CardBehavior for Kindercatch {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(6),
             toughness: Some(6),
-            oracle_text: String::new(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

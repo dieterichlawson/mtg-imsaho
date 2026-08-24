@@ -14,13 +14,10 @@ impl CardBehavior for NightRevelers {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into()],
             power: Some(4),
             toughness: Some(4),
             oracle_text: "This creature has haste as long as an opponent controls a Human.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ConditionalKeyword {
                     keyword: Keyword::Haste,
@@ -28,8 +25,7 @@ impl CardBehavior for NightRevelers {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

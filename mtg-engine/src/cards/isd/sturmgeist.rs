@@ -18,15 +18,11 @@ impl CardBehavior for Sturmgeist {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(0),
             toughness: Some(0),
             oracle_text: "Flying\nSturmgeist's power and toughness are each equal to the number of cards in your hand.\nWhenever this creature deals combat damage to a player, draw a card.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
@@ -34,6 +30,7 @@ impl CardBehavior for Sturmgeist {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

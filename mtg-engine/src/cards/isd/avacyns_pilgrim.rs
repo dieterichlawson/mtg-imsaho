@@ -15,13 +15,11 @@ impl CardBehavior for AvacynsPilgrim {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Monk".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "{T}: Add {W}.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

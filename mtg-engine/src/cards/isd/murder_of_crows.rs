@@ -19,13 +19,11 @@ impl CardBehavior for MurderOfCrows {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Bird".into()],
             power: Some(4),
             toughness: Some(4),
             oracle_text: "Flying\nWhenever another creature dies, you may draw a card. If you do, discard a card.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
@@ -33,6 +31,7 @@ impl CardBehavior for MurderOfCrows {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

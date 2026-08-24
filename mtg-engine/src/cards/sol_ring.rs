@@ -14,13 +14,8 @@ impl CardBehavior for SolRing {
                 ManaSymbol::Generic(1),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {C}{C}.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

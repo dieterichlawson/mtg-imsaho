@@ -16,13 +16,10 @@ impl CardBehavior for MausoleumGuard {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Scout".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "When this creature dies, create two 1/1 white Spirit creature tokens with flying.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
@@ -30,6 +27,7 @@ impl CardBehavior for MausoleumGuard {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

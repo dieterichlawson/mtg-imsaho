@@ -20,13 +20,8 @@ impl CardBehavior for BlazingTorch {
                 ManaSymbol::Generic(1),
             ])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature can't be blocked by Vampires or Zombies.\nEquipped creature has \"{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target.\"\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::CanOnlyBeBlockedBy {
                     allowed_blockers: CreatureFilter::Not(Box::new(CreatureFilter::Or(vec![
@@ -36,7 +31,7 @@ impl CardBehavior for BlazingTorch {
                     scope: EffectScope::Attached,
                 },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

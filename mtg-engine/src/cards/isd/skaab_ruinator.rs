@@ -19,16 +19,13 @@ impl CardBehavior for SkaabRuinator {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into(), "Horror".into()],
             power: Some(5),
             toughness: Some(6),
             oracle_text: "As an additional cost to cast this spell, exile three creature cards from your graveyard.\nFlying\nYou may cast this card from your graveyard.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(3)),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

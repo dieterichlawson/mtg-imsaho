@@ -17,15 +17,10 @@ impl CardBehavior for RecklessWaif {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Rogue".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -33,23 +28,18 @@ impl CardBehavior for RecklessWaif {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Merciless Predator".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(2),
             oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Merciless Predator.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -57,6 +47,7 @@ impl CardBehavior for RecklessWaif {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

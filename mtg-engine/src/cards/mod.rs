@@ -33,7 +33,12 @@ use crate::state::GameState;
 use crate::types::{ManaCost, CardType, Supertype, Keyword, ContinuousEffect, ManaType, Zone};
 
 /// Static card data — the printed card.
-#[derive(Debug, Clone)]
+///
+/// Every field is `Default`, so a card states only what it actually has and
+/// ends with `..Default::default()`. Before that, 270 card files carried
+/// ~1,500 lines of `vec![]` and `None` between them, and a vanilla creature
+/// cost 25 lines of which 7 said "nothing here".
+#[derive(Debug, Clone, Default)]
 pub struct CardData {
     pub name: String,
     pub cost: Option<ManaCost>,
@@ -581,11 +586,6 @@ pub trait CardBehavior: Send + Sync {
     /// `self_id` is this watcher permanent, `attacker_id` is the attacking creature.
     fn on_any_creature_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _attacker_id: ObjectId, _attacker_controller: PlayerId, _registry: &CardRegistry) {}
 
-    /// Called when the equipped creature blocks or is blocked by another creature.
-    /// Used by equipment like Wooden Stake. `self_id` is the equipment,
-    /// `equipped_creature` is the creature wearing this equipment,
-    /// `other_creature` is the creature on the other side of the block.
-    fn on_equipment_block_trigger(&self, _state: &mut GameState, _self_id: ObjectId, _equipped_creature: ObjectId, _other_creature: ObjectId, _registry: &CardRegistry) {}
 
     /// Return a modified mana cost for this spell, or None to use the normal cost.
     /// Used for cost reduction (e.g., Blasphemous Act costs {1} less per creature).

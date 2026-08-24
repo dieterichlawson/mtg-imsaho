@@ -15,20 +15,17 @@ impl CardBehavior for EliteInquisitor {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies".into(),
             keywords: vec![Keyword::FirstStrike, Keyword::Vigilance],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ProtectionFromSubtype { subtype: "Vampire".into(), scope: EffectScope::OnSelf },
                 ContinuousEffect::ProtectionFromSubtype { subtype: "Werewolf".into(), scope: EffectScope::OnSelf },
                 ContinuousEffect::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

@@ -18,15 +18,11 @@ impl CardBehavior for BalefireDragon {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Dragon".into()],
             power: Some(6),
             toughness: Some(6),
             oracle_text: "Flying\nWhenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
@@ -34,6 +30,7 @@ impl CardBehavior for BalefireDragon {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

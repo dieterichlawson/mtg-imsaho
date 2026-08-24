@@ -17,13 +17,10 @@ impl CardBehavior for SelhoffOccultist {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Rogue".into()],
             power: Some(2),
             toughness: Some(3),
             oracle_text: "Whenever this creature or another creature dies, target player mills a card.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
@@ -38,6 +35,7 @@ impl CardBehavior for SelhoffOccultist {
                     target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
             ],
+            ..Default::default()
         }
     }
 

@@ -17,15 +17,11 @@ impl CardBehavior for CreepyDoll {
                 ManaSymbol::Generic(5),
             ])),
             card_types: vec![CardType::Artifact, CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Construct".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "Indestructible\nWhenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.".into(),
             keywords: vec![Keyword::Indestructible],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::DealsCombatDamageToCreature,
@@ -33,6 +29,7 @@ impl CardBehavior for CreepyDoll {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

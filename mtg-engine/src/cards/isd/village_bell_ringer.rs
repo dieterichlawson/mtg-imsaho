@@ -16,13 +16,11 @@ impl CardBehavior for VillageBellRinger {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Scout".into()],
             power: Some(1),
             toughness: Some(4),
             oracle_text: "Flash (You may cast this spell any time you could cast an instant.)\nWhen this creature enters, untap all creatures you control.".into(),
             keywords: vec![Keyword::Flash],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -30,6 +28,7 @@ impl CardBehavior for VillageBellRinger {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

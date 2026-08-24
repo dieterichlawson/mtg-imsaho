@@ -19,20 +19,13 @@ impl CardBehavior for CacklingCounterpart {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Create a token that's a copy of target creature you control.\nFlashback {5}{U}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),
                 ManaSymbol::Colored(Color::Blue),
                 ManaSymbol::Colored(Color::Blue),
             ])),
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

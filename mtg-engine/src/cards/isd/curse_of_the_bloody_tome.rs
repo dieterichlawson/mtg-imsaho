@@ -18,15 +18,8 @@ impl CardBehavior for CurseOfTheBloodyTome {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into(), "Curse".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant player\nAt the beginning of enchanted player's upkeep, that player mills two cards.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -34,6 +27,7 @@ impl CardBehavior for CurseOfTheBloodyTome {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

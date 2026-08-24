@@ -18,15 +18,11 @@ impl CardBehavior for ThrabenSentry {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Vigilance\nWhenever another creature you control dies, you may transform this creature.".into(),
             keywords: vec![Keyword::Vigilance],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
@@ -34,24 +30,20 @@ impl CardBehavior for ThrabenSentry {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Thraben Militia".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(5),
             toughness: Some(4),
             oracle_text: "Trample".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         })
     }
 

@@ -21,15 +21,10 @@ impl CardBehavior for UlvenwaldMystics {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Shaman".into(), "Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -37,23 +32,18 @@ impl CardBehavior for UlvenwaldMystics {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Ulvenwald Primordials".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
             oracle_text: "{G}: Regenerate Ulvenwald Primordials.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Ulvenwald Primordials.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -61,6 +51,7 @@ impl CardBehavior for UlvenwaldMystics {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

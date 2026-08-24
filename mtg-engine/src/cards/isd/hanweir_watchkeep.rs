@@ -18,15 +18,11 @@ impl CardBehavior for HanweirWatchkeep {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Warrior".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(5),
             oracle_text: "Defender\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -34,25 +30,21 @@ impl CardBehavior for HanweirWatchkeep {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Bane of Hanweir".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
             oracle_text: "This creature attacks each combat if able.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack { scope: EffectScope::OnSelf },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -60,6 +52,7 @@ impl CardBehavior for HanweirWatchkeep {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

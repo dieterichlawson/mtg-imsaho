@@ -17,15 +17,11 @@ impl CardBehavior for AngelOfFlightAlabaster {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Angel".into()],
             power: Some(4),
             toughness: Some(4),
             oracle_text: "Flying\nAt the beginning of your upkeep, return target Spirit card from your graveyard to your hand.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -35,6 +31,7 @@ impl CardBehavior for AngelOfFlightAlabaster {
                     target_requirement: Some(TargetRequirement::GraveyardCardOwnedByCaster),
                 },
             ],
+            ..Default::default()
         }
     }
 

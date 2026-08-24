@@ -15,13 +15,8 @@ impl CardBehavior for ParallelLives {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

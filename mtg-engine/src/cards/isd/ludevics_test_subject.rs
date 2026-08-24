@@ -24,34 +24,25 @@ impl CardBehavior for LudevicsTestSubject {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Lizard".into(), "Egg".into()],
             power: Some(0),
             toughness: Some(3),
             oracle_text: "Defender\n{1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Ludevic's Abomination".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Lizard".into(), "Horror".into()],
             power: Some(13),
             toughness: Some(13),
             oracle_text: "Trample".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         })
     }
 

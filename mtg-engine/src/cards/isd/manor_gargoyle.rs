@@ -18,13 +18,11 @@ impl CardBehavior for ManorGargoyle {
                 ManaSymbol::Generic(5),
             ])),
             card_types: vec![CardType::Artifact, CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Gargoyle".into()],
             power: Some(4),
             toughness: Some(4),
             oracle_text: "Defender\nThis creature has indestructible as long as it has defender.\n{1}: Until end of turn, this creature loses defender and gains flying.".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ConditionalKeyword {
                     keyword: Keyword::Indestructible,
@@ -32,8 +30,7 @@ impl CardBehavior for ManorGargoyle {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

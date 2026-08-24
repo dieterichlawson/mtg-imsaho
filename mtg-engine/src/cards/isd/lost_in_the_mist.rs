@@ -18,13 +18,8 @@ impl CardBehavior for LostInTheMist {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Counter target spell. Return target permanent to its owner's hand.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

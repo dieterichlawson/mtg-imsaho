@@ -19,15 +19,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -35,6 +27,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

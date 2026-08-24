@@ -17,16 +17,11 @@ impl CardBehavior for DarkthicketWolf {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Wolf".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

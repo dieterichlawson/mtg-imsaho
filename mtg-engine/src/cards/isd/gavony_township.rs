@@ -13,15 +13,9 @@ impl CardBehavior for GavonyTownship {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Gavony Township".into(),
-            cost: None,
             card_types: vec![CardType::Land],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {C}.\n{2}{G}{W}, {T}: Put a +1/+1 counter on each creature you control.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

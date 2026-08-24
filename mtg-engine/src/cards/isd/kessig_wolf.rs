@@ -16,16 +16,11 @@ impl CardBehavior for KessigWolf {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Wolf".into()],
             power: Some(3),
             toughness: Some(1),
             oracle_text: "{1}{R}: This creature gains first strike until end of turn.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

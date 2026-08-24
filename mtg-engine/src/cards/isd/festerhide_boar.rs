@@ -19,14 +19,12 @@ impl CardBehavior for FesterhideBoar {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Boar".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "Trample\nMorbid — This creature enters with two +1/+1 counters on it if a creature died this turn.".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

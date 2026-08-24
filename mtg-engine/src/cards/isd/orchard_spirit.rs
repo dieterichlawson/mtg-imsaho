@@ -14,13 +14,10 @@ impl CardBehavior for OrchardSpirit {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "This creature can't be blocked except by creatures with flying or reach.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::CanOnlyBeBlockedBy {
                     allowed_blockers: CreatureFilter::Or(vec![
@@ -30,7 +27,7 @@ impl CardBehavior for OrchardSpirit {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

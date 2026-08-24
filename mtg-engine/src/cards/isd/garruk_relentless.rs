@@ -56,14 +56,8 @@ impl CardBehavior for GarrukRelentless {
             card_types: vec![CardType::Planeswalker],
             supertypes: vec![Supertype::Legendary],
             subtypes: vec!["Garruk".into()],
-            power: None,
-            toughness: None,
             oracle_text: "When Garruk has two or fewer loyalty counters on him, transform him.\n0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.\n0: Create a 2/2 green Wolf creature token.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

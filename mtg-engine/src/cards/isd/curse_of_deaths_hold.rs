@@ -19,13 +19,8 @@ impl CardBehavior for CurseOfDeathsHold {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into(), "Curse".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant player\nCreatures enchanted player controls get -1/-1.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             // Debuff creatures controlled by the cursed player.
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
@@ -34,7 +29,7 @@ impl CardBehavior for CurseOfDeathsHold {
                     scope: EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer),
                 },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -17,15 +17,10 @@ impl CardBehavior for AshmouthHound {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Elemental".into(), "Dog".into()],
             power: Some(2),
             toughness: Some(1),
             oracle_text: "Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Blocks,
@@ -38,6 +33,7 @@ impl CardBehavior for AshmouthHound {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

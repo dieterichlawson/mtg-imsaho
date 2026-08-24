@@ -13,13 +13,12 @@ impl CardBehavior for MarkovPatrician {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into()],
             power: Some(3),
             toughness: Some(1),
             oracle_text: "Lifelink (Damage dealt by this creature also causes you to gain that much life.)".into(),
             keywords: vec![Keyword::Lifelink],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

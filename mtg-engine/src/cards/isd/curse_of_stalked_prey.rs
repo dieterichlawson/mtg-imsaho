@@ -19,15 +19,8 @@ impl CardBehavior for CurseOfStalkedPrey {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into(), "Curse".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant player\nWhenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCombatDamageToPlayer,
@@ -35,6 +28,7 @@ impl CardBehavior for CurseOfStalkedPrey {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

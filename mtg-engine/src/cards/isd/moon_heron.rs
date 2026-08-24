@@ -13,13 +13,12 @@ impl CardBehavior for MoonHeron {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into(), "Bird".into()],
             power: Some(3),
             toughness: Some(2),
             oracle_text: "Flying".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

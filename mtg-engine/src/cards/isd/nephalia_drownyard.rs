@@ -13,15 +13,9 @@ impl CardBehavior for NephaliaDrownyard {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Nephalia Drownyard".into(),
-            cost: None,
             card_types: vec![CardType::Land],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {C}.\n{1}{U}{B}, {T}: Target player mills three cards.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

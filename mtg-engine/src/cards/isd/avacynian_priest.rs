@@ -16,16 +16,11 @@ impl CardBehavior for AvacynianPriest {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Cleric".into()],
             power: Some(1),
             toughness: Some(2),
             oracle_text: "{1}, {T}: Tap target non-Human creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

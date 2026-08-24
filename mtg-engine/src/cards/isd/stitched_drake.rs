@@ -18,16 +18,13 @@ impl CardBehavior for StitchedDrake {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into(), "Drake".into()],
             power: Some(3),
             toughness: Some(4),
             oracle_text: "As an additional cost to cast this spell, exile a creature card from your graveyard.\nFlying".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(1)),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

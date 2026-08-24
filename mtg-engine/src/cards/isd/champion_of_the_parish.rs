@@ -15,15 +15,10 @@ impl CardBehavior for ChampionOfTheParish {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "Whenever another Human you control enters, put a +1/+1 counter on this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureEnters,
@@ -31,6 +26,7 @@ impl CardBehavior for ChampionOfTheParish {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

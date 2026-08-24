@@ -14,13 +14,11 @@ impl CardBehavior for GallowsWarden {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "Flying\nOther Spirit creatures you control get +0/+1.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: 0,
@@ -31,7 +29,7 @@ impl CardBehavior for GallowsWarden {
                     ])),
                 },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

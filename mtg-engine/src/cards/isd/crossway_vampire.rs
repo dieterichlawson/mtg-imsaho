@@ -18,13 +18,10 @@ impl CardBehavior for CrosswayVampire {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into()],
             power: Some(3),
             toughness: Some(2),
             oracle_text: "When this creature enters, target creature can't block this turn.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -33,6 +30,7 @@ impl CardBehavior for CrosswayVampire {
                     target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
+            ..Default::default()
         }
     }
 

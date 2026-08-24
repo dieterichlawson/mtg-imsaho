@@ -14,17 +14,15 @@ impl CardBehavior for GraveBramble {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Plant".into()],
             power: Some(3),
             toughness: Some(4),
             oracle_text: "Defender, protection from Zombies".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

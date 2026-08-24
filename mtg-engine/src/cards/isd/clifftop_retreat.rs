@@ -30,18 +30,11 @@ impl CardBehavior for ClifftopRetreat {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Clifftop Retreat".into(),
-            cost: None,
             card_types: vec![CardType::Land],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "This land enters tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             // "Enters tapped unless ..." is a replacement effect (CR 614.1d),
-            // declared via `enters_tapped` — not a triggered ability.
-            triggered_abilities: vec![],
+            // declared via `enters_tapped` — not a triggered ability.,
+            ..Default::default()
         }
     }
 

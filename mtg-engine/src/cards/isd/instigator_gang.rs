@@ -18,13 +18,10 @@ impl CardBehavior for InstigatorGang {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Werewolf".into()],
             power: Some(2),
             toughness: Some(3),
             oracle_text: "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             // "Attacking creatures you control get +1/+0" is a static ability,
             // not a trigger. Modelling it as an AnyCreatureAttacks trigger that
             // pushed an until-end-of-turn buff diverged three ways: the buff
@@ -41,7 +38,6 @@ impl CardBehavior for InstigatorGang {
                     ])),
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -49,21 +45,19 @@ impl CardBehavior for InstigatorGang {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Wildblood Pack".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
             oracle_text: "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Wildblood Pack.".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: 3,
@@ -74,7 +68,6 @@ impl CardBehavior for InstigatorGang {
                     ])),
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -82,6 +75,7 @@ impl CardBehavior for InstigatorGang {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

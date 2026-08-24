@@ -16,13 +16,10 @@ impl CardBehavior for SlayerOfTheWicked {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(3),
             toughness: Some(2),
             oracle_text: "When this creature enters, you may destroy target Vampire, Werewolf, or Zombie.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -30,6 +27,7 @@ impl CardBehavior for SlayerOfTheWicked {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

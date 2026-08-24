@@ -16,13 +16,8 @@ impl CardBehavior for UrgentExorcism {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Destroy target Spirit or enchantment.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

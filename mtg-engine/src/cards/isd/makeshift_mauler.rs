@@ -17,16 +17,12 @@ impl CardBehavior for MakeshiftMauler {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into(), "Horror".into()],
             power: Some(4),
             toughness: Some(5),
             oracle_text: "As an additional cost to cast this spell, exile a creature card from your graveyard.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(1)),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

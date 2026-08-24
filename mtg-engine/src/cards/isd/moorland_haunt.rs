@@ -14,15 +14,9 @@ impl CardBehavior for MoorlandHaunt {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Moorland Haunt".into(),
-            cost: None,
             card_types: vec![CardType::Land],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {C}.\n{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

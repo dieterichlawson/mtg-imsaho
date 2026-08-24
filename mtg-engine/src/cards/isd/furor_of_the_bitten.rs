@@ -15,18 +15,13 @@ impl CardBehavior for FurorOfTheBitten {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached },
                 ContinuousEffect::ForceAttack { scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -19,20 +19,13 @@ impl CardBehavior for DivineReckoning {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Each player chooses a creature they control. Destroy the rest.\nFlashback {5}{W}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
-            keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),
                 ManaSymbol::Colored(Color::White),
                 ManaSymbol::Colored(Color::White),
             ])),
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

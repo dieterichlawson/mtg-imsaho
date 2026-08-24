@@ -16,14 +16,12 @@ impl CardBehavior for SomberwaldSpider {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spider".into()],
             power: Some(2),
             toughness: Some(4),
             oracle_text: "Reach (This creature can block creatures with flying.)\nMorbid — This creature enters with two +1/+1 counters on it if a creature died this turn.".into(),
             keywords: vec![Keyword::Reach],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

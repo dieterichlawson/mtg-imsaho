@@ -20,16 +20,11 @@ impl CardBehavior for EssenceOfTheWild {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Avatar".into()],
             power: Some(6),
             toughness: Some(6),
             oracle_text: "Creatures you control enter as a copy of this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

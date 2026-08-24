@@ -18,13 +18,10 @@ impl CardBehavior for GalvanicJuggernaut {
                 ManaSymbol::Generic(4),
             ])),
             card_types: vec![CardType::Artifact, CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Juggernaut".into()],
             power: Some(5),
             toughness: Some(5),
             oracle_text: "This creature attacks each combat if able.\nThis creature doesn't untap during your untap step.\nWhenever another creature dies, untap this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack {
                     scope: EffectScope::OnSelf,
@@ -33,7 +30,6 @@ impl CardBehavior for GalvanicJuggernaut {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
@@ -41,6 +37,7 @@ impl CardBehavior for GalvanicJuggernaut {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

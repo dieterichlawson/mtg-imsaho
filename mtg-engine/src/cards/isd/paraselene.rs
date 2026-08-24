@@ -17,13 +17,8 @@ impl CardBehavior for Paraselene {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Destroy all enchantments. You gain 1 life for each enchantment destroyed this way.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

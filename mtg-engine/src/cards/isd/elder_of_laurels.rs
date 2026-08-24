@@ -17,13 +17,11 @@ impl CardBehavior for ElderOfLaurels {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Advisor".into()],
             power: Some(2),
             toughness: Some(3),
             oracle_text: "{3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

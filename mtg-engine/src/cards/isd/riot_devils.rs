@@ -13,13 +13,10 @@ impl CardBehavior for RiotDevils {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Devil".into()],
             power: Some(2),
             toughness: Some(3),
-            oracle_text: String::new(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

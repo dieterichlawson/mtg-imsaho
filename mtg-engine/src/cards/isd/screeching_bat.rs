@@ -28,15 +28,11 @@ impl CardBehavior for ScreechingBat {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Bat".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Flying\nAt the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -44,23 +40,18 @@ impl CardBehavior for ScreechingBat {
                     target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Stalking Vampire".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into()],
             power: Some(5),
             toughness: Some(5),
             oracle_text: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -68,6 +59,7 @@ impl CardBehavior for ScreechingBat {
                     target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

@@ -26,15 +26,10 @@ impl CardBehavior for CivilizedScholar {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Advisor".into()],
             power: Some(0),
             toughness: Some(1),
             oracle_text: "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             // Front face: Attacks trigger is only here for internal state tracking
             // (marking that the creature attacked this turn so Homicidal Brute's
             // end-step check can see it). Per Scryfall ruling [2011-09-22] attacks
@@ -48,23 +43,18 @@ impl CardBehavior for CivilizedScholar {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Homicidal Brute".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Mutant".into()],
             power: Some(5),
             toughness: Some(1),
             oracle_text: "At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 // Also track attacks on the back face so Homicidal Brute's own
                 // attacks count toward the "didn't attack" check.
@@ -79,6 +69,7 @@ impl CardBehavior for CivilizedScholar {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

@@ -18,16 +18,9 @@ impl CardBehavior for CorpseLunge {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "As an additional cost to cast this spell, exile a creature card from your graveyard.\nCorpse Lunge deals damage equal to the exiled card's power to target creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(1)),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

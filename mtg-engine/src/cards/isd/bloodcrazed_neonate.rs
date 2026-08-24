@@ -17,17 +17,13 @@ impl CardBehavior for BloodcrazedNeonate {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into()],
             power: Some(2),
             toughness: Some(1),
             oracle_text: "This creature attacks each combat if able.\nWhenever this creature deals combat damage to a player, put a +1/+1 counter on it.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack { scope: EffectScope::OnSelf },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
@@ -35,6 +31,7 @@ impl CardBehavior for BloodcrazedNeonate {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

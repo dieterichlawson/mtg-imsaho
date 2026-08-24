@@ -17,15 +17,10 @@ impl CardBehavior for RageThrower {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Shaman".into()],
             power: Some(4),
             toughness: Some(2),
             oracle_text: "Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
@@ -34,6 +29,7 @@ impl CardBehavior for RageThrower {
                     target_requirement: Some(TargetRequirement::PlayerOrPlaneswalker),
                 },
             ],
+            ..Default::default()
         }
     }
 

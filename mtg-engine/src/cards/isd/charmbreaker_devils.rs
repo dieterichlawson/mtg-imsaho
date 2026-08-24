@@ -22,15 +22,10 @@ impl CardBehavior for CharmbreakerDevils {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Devil".into()],
             power: Some(4),
             toughness: Some(4),
             oracle_text: "At the beginning of your upkeep, return an instant or sorcery card at random from your graveyard to your hand.\nWhenever you cast an instant or sorcery spell, this creature gets +4/+0 until end of turn.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -43,6 +38,7 @@ impl CardBehavior for CharmbreakerDevils {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

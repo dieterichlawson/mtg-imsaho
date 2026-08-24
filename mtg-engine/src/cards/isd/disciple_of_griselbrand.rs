@@ -18,13 +18,11 @@ impl CardBehavior for DiscipleOfGriselbrand {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Cleric".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

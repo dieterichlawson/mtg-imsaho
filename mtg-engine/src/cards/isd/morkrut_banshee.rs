@@ -20,13 +20,10 @@ impl CardBehavior for MorkrutBanshee {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Spirit".into()],
             power: Some(4),
             toughness: Some(4),
             oracle_text: "Morbid — When this creature enters, if a creature died this turn, target creature gets -4/-4 until end of turn.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -35,6 +32,7 @@ impl CardBehavior for MorkrutBanshee {
                     target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
+            ..Default::default()
         }
     }
 

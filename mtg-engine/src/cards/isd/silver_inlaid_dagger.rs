@@ -24,13 +24,8 @@ impl CardBehavior for SilverInlaidDagger {
             name: "Silver-Inlaid Dagger".into(),
             cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1)])),
             card_types: vec![CardType::Artifact],
-            supertypes: vec![],
             subtypes: vec!["Equipment".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Equipped creature gets +2/+0.\nAs long as equipped creature is a Human, it gets an additional +1/+0.\nEquip {2}".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 // Unconditional +2/+0 to the equipped creature.
                 ContinuousEffect::ModifyPT { power: 2, toughness: 0, scope: EffectScope::Attached },
@@ -44,8 +39,7 @@ impl CardBehavior for SilverInlaidDagger {
                     scope: EffectScope::Attached,
                 },
             ],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

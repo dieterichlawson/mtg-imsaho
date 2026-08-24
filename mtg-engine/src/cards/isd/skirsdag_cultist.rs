@@ -18,13 +18,11 @@ impl CardBehavior for SkirsdagCultist {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Shaman".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "{R}, {T}, Sacrifice a creature: This creature deals 2 damage to any target.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -20,15 +20,11 @@ impl CardBehavior for ReaperFromTheAbyss {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Demon".into()],
             power: Some(6),
             toughness: Some(6),
             oracle_text: "Flying\nMorbid — At the beginning of each end step, if a creature died this turn, destroy target non-Demon creature.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
@@ -38,6 +34,7 @@ impl CardBehavior for ReaperFromTheAbyss {
                     )),
                 },
             ],
+            ..Default::default()
         }
     }
 

@@ -18,17 +18,11 @@ impl CardBehavior for Claustrophobia {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
             subtypes: vec!["Aura".into()],
-            power: None,
-            toughness: None,
             oracle_text: "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature doesn't untap during its controller's untap step.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::PreventUntap { scope: EffectScope::Attached },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -36,6 +30,7 @@ impl CardBehavior for Claustrophobia {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

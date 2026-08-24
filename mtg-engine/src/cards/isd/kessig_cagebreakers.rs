@@ -18,15 +18,10 @@ impl CardBehavior for KessigCagebreakers {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Rogue".into()],
             power: Some(3),
             toughness: Some(4),
             oracle_text: "Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
@@ -34,6 +29,7 @@ impl CardBehavior for KessigCagebreakers {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

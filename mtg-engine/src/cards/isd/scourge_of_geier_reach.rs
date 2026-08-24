@@ -17,16 +17,11 @@ impl CardBehavior for ScourgeOfGeierReach {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Elemental".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "This creature gets +1/+1 for each creature your opponents control.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

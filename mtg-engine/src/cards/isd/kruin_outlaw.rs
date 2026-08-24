@@ -20,15 +20,11 @@ impl CardBehavior for KruinOutlaw {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Human".into(), "Rogue".into(), "Werewolf".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![Keyword::FirstStrike],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -36,21 +32,19 @@ impl CardBehavior for KruinOutlaw {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Terror of Kruin Pass".into(),
-            cost: None,
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
             oracle_text: "Double strike\nWerewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::DoubleStrike],
-            flashback_cost: None,
             continuous_effects: vec![
                 // "Werewolves you control have menace."
                 ContinuousEffect::GrantKeyword {
@@ -61,7 +55,6 @@ impl CardBehavior for KruinOutlaw {
                     ])),
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
@@ -69,6 +62,7 @@ impl CardBehavior for KruinOutlaw {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         })
     }
 

@@ -17,16 +17,9 @@ impl CardBehavior for StonySilence {
                 ManaSymbol::Colored(Color::White),
             ])),
             card_types: vec![CardType::Enchantment],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Activated abilities of artifacts can't be activated.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![ContinuousEffect::PreventArtifactAbilities],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 }

@@ -26,15 +26,10 @@ impl CardBehavior for UndeadAlchemist {
                 ManaSymbol::Colored(Color::Blue),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Zombie".into()],
             power: Some(4),
             toughness: Some(2),
             oracle_text: "If a Zombie you control would deal combat damage to a player, instead that player mills that many cards.\nWhenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
             triggered_abilities: vec![
                 crate::cards::TriggeredAbilityDef {
                     kind: crate::cards::TriggerKind::CreatureCardMilled,
@@ -42,6 +37,7 @@ impl CardBehavior for UndeadAlchemist {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

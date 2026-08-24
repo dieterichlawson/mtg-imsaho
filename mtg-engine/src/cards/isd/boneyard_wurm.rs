@@ -17,15 +17,11 @@ impl CardBehavior for BoneyardWurm {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Wurm".into()],
             power: Some(0),
             toughness: Some(0),
             oracle_text: "Boneyard Wurm's power and toughness are each equal to the number of creature cards in your graveyard.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -16,13 +16,8 @@ impl CardBehavior for LavaAxe {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Sorcery],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Lava Axe deals 5 damage to target player or planeswalker.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

@@ -16,16 +16,12 @@ impl CardBehavior for FeralRidgewolf {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Wolf".into()],
             power: Some(1),
             toughness: Some(2),
             oracle_text: "Trample\n{1}{R}: This creature gets +2/+0 until end of turn.".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

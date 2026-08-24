@@ -17,16 +17,8 @@ impl CardBehavior for TributeToHunger {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Target opponent sacrifices a creature of their choice. You gain life equal to that creature's toughness.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

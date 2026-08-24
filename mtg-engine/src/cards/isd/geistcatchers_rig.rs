@@ -17,13 +17,10 @@ impl CardBehavior for GeistcatchersRig {
                 ManaSymbol::Generic(6),
             ])),
             card_types: vec![CardType::Artifact, CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Construct".into()],
             power: Some(4),
             toughness: Some(5),
             oracle_text: "When this creature enters, you may have it deal 4 damage to target creature with flying.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
@@ -31,6 +28,7 @@ impl CardBehavior for GeistcatchersRig {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

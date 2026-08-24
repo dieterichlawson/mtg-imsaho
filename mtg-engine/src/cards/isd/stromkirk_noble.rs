@@ -16,20 +16,16 @@ impl CardBehavior for StromkirkNoble {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Creature],
-            supertypes: vec![],
             subtypes: vec!["Vampire".into(), "Noble".into()],
             power: Some(1),
             toughness: Some(1),
             oracle_text: "This creature can't be blocked by Humans.\nWhenever this creature deals combat damage to a player, put a +1/+1 counter on it.".into(),
-            keywords: vec![],
-            flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::CanOnlyBeBlockedBy {
                     allowed_blockers: CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into()))),
                     scope: EffectScope::OnSelf,
                 },
             ],
-            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
@@ -37,6 +33,7 @@ impl CardBehavior for StromkirkNoble {
                 target_requirement: None,
                 },
             ],
+            ..Default::default()
         }
     }
 

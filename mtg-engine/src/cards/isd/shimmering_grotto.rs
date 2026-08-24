@@ -20,15 +20,9 @@ impl CardBehavior for ShimmeringGrotto {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Shimmering Grotto".into(),
-            cost: None,
             card_types: vec![CardType::Land],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "{T}: Add {C}.\n{1}, {T}: Add one mana of any color.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

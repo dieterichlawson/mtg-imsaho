@@ -16,13 +16,8 @@ impl CardBehavior for VictimOfNight {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "Destroy target non-Vampire, non-Werewolf, non-Zombie creature.".into(),
-            keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

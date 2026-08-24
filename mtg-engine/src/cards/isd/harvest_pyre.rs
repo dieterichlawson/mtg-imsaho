@@ -18,16 +18,9 @@ impl CardBehavior for HarvestPyre {
                 ManaSymbol::Colored(Color::Red),
             ])),
             card_types: vec![CardType::Instant],
-            supertypes: vec![],
-            subtypes: vec![],
-            power: None,
-            toughness: None,
             oracle_text: "As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
             additional_cost: Some(crate::cards::AdditionalCost::ExileXFromGraveyard),
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 
