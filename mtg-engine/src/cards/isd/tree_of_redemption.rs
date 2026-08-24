@@ -49,9 +49,13 @@ impl CardBehavior for TreeOfRedemption {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        // The ability exchanges the life total with *this creature's* toughness,
+        // so it does nothing if the Tree is no longer on the battlefield when it
+        // resolves (destroyed or bounced in response). CR 608.2: an ability that
+        // can't perform its action does as much as it can, which here is nothing.
         let controller = match state.get_object(object_id) {
-            Some(o) => o.controller,
-            None => return,
+            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            _ => return,
         };
         let current_toughness = state.effective_toughness(object_id, registry).unwrap_or(13);
         let current_life = state.get_player(controller).life;
