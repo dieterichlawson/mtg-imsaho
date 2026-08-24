@@ -1,11 +1,15 @@
 ---
 id: unbreathing_horde-01
-status: new
+status: fixed
 card: Unbreathing Horde
 audit_run_id: 2026-04-19-unbreathing_horde-audit
 audit_model: sonnet
 audit_tokens: 16267
 audit_duration: 264
+fixed_sha: 0b001c0
+fixed_at: 2026-08-24T00:53:35Z
+test_file: mtg-engine/tests/token_is_not_a_card.rs
+fix_note: Oracle text saying "card" now excludes tokens (CR 109.1); added GameState::is_card.
 ---
 
 ## Audit Finding

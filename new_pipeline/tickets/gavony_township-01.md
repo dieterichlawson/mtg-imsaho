@@ -1,11 +1,15 @@
 ---
 id: gavony_township-01
-status: new
+status: fixed
 card: Gavony Township
 audit_run_id: 2026-04-19-gavony_township-audit
 audit_model: sonnet
 audit_tokens: 33965
 audit_duration: 2110
+fixed_sha: 74c31e5
+fixed_at: 2026-08-24T00:53:36Z
+test_file: mtg-engine/tests/tap_cost_legality.rs
+fix_note: CR 602.2h: a permanent paying an ability's {T} cost is excluded from the autotap mana pool for that same ability.
 ---
 
 ## Audit Finding

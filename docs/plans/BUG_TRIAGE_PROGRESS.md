@@ -434,12 +434,61 @@ assert what they mean.
   with an empty library discarded a card they never drew. The must_use flagged
   13 other call sites; all are plain "draw N" and now say so.
 
+### Cluster 7, continued — tap costs and "card" vs "token"
+
+- **One tap pays one cost (CR 302.6 / 602.2h)** — the `{T}` symbol has the
+  same three requirements on every permanent in the game (on the battlefield,
+  untapped, and for a creature past summoning sickness unless hasty), and card
+  code was re-deriving them. Two of the twenty-odd cards with a `{T}` ability
+  spelled out the summoning-sickness half and **both forgot haste**; the other
+  nineteen forgot summoning sickness entirely, so a mana creature tapped for
+  mana the turn it arrived. Skirsdag High Priest's copy also *shadowed* the
+  engine's correct check by returning an empty ability list before
+  `legal_actions` could apply it, making a hasty Priest unactivatable. Now
+  `GameState::can_pay_tap_cost`, applied centrally by the new
+  `engine::available_mana_abilities` — every caller of
+  `CardBehavior::mana_abilities` goes through it. Card code states only what is
+  particular to the ability. Second half: a permanent paying an ability's `{T}`
+  cost cannot also be tapped for mana toward that same ability, which the
+  autotap source pool only enforced for "sacrifice this" costs — so the five
+  ISD utility lands credited their own `{T}: Add {C}` toward their
+  `{cost}, {T}:` ability and were offered one land short. 2 tickets, 21 files
+  simplified.
+- **"card" in oracle text excludes tokens (CR 109.1)** — Unbreathing Horde's
+  "each Zombie card in your graveyard" and Splinterfright's "creature cards in
+  your graveyard" had no `is_token` check. The window is real: CR 704.5e
+  sweeps a token out of the graveyard as a *state-based action*, a discrete
+  pass rather than something that happens the instant the token arrives, so
+  anything reading the graveyard mid-resolution sees tokens on their way out.
+  Same guard for Gnaw to the Bone, Past in Flames and Runechanter's Pike.
+  Unbreathing Horde's battlefield half says "each other Zombie you control",
+  with no "card", so that one still counts tokens — the distinction is the
+  point. `GameState::is_card` gives the rule one spelling. 2 tickets.
+- **Tree of Redemption** — an activated ability stays on the stack when its
+  source leaves the battlefield; "exchange your life total with *this
+  creature's* toughness" then has nothing to exchange with. The handler
+  checked only that the object still existed, which it does in the graveyard.
+- **Mindshrieker** — moved the milled card by hand instead of through
+  `mill_one`, so no `CreatureCardMilled` event was emitted and Undead
+  Alchemist never saw it.
+
 ## Next up
 
-1. Clusters 3 → 5 → 6, then the one-off tail.
-2. `should_trigger` is now the hook for any future intervening-if card — check
-   for one whenever a ticket says "the condition is only evaluated at
-   resolution".
+1. The 14 remaining one-offs. Two are architectural rather than local:
+   - `instigator_gang-02` — "attacking creatures you control get +X/+0" is
+     modelled as an `AnyCreatureAttacks` trigger pushing
+     `ModifyPTWhileSourceInPlay` rather than a static continuous effect. Three
+     divergences follow: the buff persists past end of combat, it misses
+     creatures put onto the battlefield attacking, and it misses existing
+     attackers if the Gang enters after attackers are declared.
+   - `shimmering_grotto-01` — "{1}, {T}: Add one mana of any color" is a mana
+     ability under CR 605.1a but is exposed through `activated_abilities`, so
+     the autotap planner never sees it. `ManaAbilityDef` has no cost field and
+     cannot express a choice of color; both would need to change.
+2. `should_trigger` is the hook for any future intervening-if card — check for
+   one whenever a ticket says "the condition is only evaluated at resolution".
+3. `can_pay_tap_cost` is the hook for any future `{T}` cost. Card code that
+   re-derives a cost the engine already checks is the recurring shape of this
+   whole backlog.
 
-**Backlog count: 88 fixed / 28 open**, plus the root-cause refactor above,
-which removes the mechanism behind the whole characteristics bug family (was 2 / 114 at the start of this pass).
+**Backlog count: 102 fixed / 14 open** (was 2 / 114 at the start of this pass).

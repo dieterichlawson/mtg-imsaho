@@ -1,11 +1,15 @@
 ---
 id: skirsdag_high_priest-01
-status: new
+status: fixed
 card: Skirsdag High Priest
 audit_run_id: 2026-04-19-skirsdag_high_priest-audit
 audit_model: sonnet
 audit_tokens: 37575
 audit_duration: 1083
+fixed_sha: 74c31e5
+fixed_at: 2026-08-24T00:53:36Z
+test_file: mtg-engine/tests/tap_cost_legality.rs
+fix_note: {T}-cost legality centralized in GameState::can_pay_tap_cost + engine::available_mana_abilities; the card-level guard that shadowed it (and dropped the haste exception) is gone.
 ---
 
 ## Audit Finding

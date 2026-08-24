@@ -1,11 +1,15 @@
 ---
 id: mindshrieker-01
-status: new
+status: fixed
 card: Mindshrieker
 audit_run_id: 2026-04-19-mindshrieker-audit
 audit_model: sonnet
 audit_tokens: 18802
 audit_duration: 418
+fixed_sha: 8c9312f
+fixed_at: 2026-08-24T00:53:36Z
+test_file: mtg-engine/tests/token_is_not_a_card.rs
+fix_note: Milling routed through engine::mill_one so CreatureCardMilled is emitted.
 ---
 
 ## Audit Finding

@@ -1,11 +1,15 @@
 ---
 id: tree_of_redemption-01
-status: new
+status: fixed
 card: Tree of Redemption
 audit_run_id: 2026-04-19-tree_of_redemption-audit
 audit_model: sonnet
 audit_tokens: 14966
 audit_duration: 349
+fixed_sha: 3f92280
+fixed_at: 2026-08-24T00:53:36Z
+test_file: mtg-engine/tests/token_is_not_a_card.rs
+fix_note: resolve_activated_ability now requires the Tree to still be on the battlefield.
 ---
 
 ## Audit Finding
