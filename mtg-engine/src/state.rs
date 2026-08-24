@@ -1862,6 +1862,32 @@ impl GameState {
         self.get_object(id).is_some_and(|o| !o.is_token)
     }
 
+    /// Whether this permanent can pay a `{T}` cost right now.
+    ///
+    /// Three conditions, and they are the same for every permanent in the
+    /// game: it has to be on the battlefield, it has to be untapped, and — if
+    /// it is a creature — it has to have been under its controller's control
+    /// since their most recent turn began, unless it has haste (CR 302.6).
+    /// Non-creature permanents are never affected by summoning sickness even
+    /// though the flag is set on them.
+    ///
+    /// Card code must not re-derive this. Two of the twenty-odd cards with a
+    /// `{T}` ability used to spell the check out by hand; both forgot haste,
+    /// and the nineteen others forgot summoning sickness entirely. The engine
+    /// applies this gate when it enumerates abilities, so a card's
+    /// `activated_abilities` / `mana_abilities` states only the conditions
+    /// particular to that ability.
+    #[must_use]
+    pub fn can_pay_tap_cost(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        let Some(obj) = self.get_object(id) else { return false; };
+        if obj.zone != Zone::Battlefield || obj.tapped {
+            return false;
+        }
+        !(obj.summoning_sick
+            && self.is_creature(id, registry)
+            && !self.has_keyword(id, crate::types::Keyword::Haste, registry))
+    }
+
     /// Printed keywords of the object: the active face's, or the object's own
     /// for something with no registry face (a generic token, whose
     /// `obj.keywords` ARE its printed keywords).

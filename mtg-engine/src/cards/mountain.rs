@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{CardType, Supertype, Zone, ManaType};
+use crate::types::{CardType, Supertype, ManaType};
 
 pub struct Mountain;
 
@@ -21,18 +21,13 @@ impl CardBehavior for Mountain {
         }
     }
 
-    fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ManaAbilityDef {
-                ability_index: 0,
-                description: "Add {R}".into(),
-                produced: vec![(ManaType::Red, 1)],
-                requires_tap: true,
-                has_side_effects: false,
-            }]
-        } else {
-            vec![]
-        }
+    fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
+        vec![ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {R}".into(),
+            produced: vec![(ManaType::Red, 1)],
+            requires_tap: true,
+            has_side_effects: false,
+        }]
     }
 }

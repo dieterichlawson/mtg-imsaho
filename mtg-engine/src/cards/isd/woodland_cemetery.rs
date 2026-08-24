@@ -54,27 +54,22 @@ impl CardBehavior for WoodlandCemetery {
         !Self::controller_has_matching_land(state, self_id, registry)
     }
 
-    fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![
-                ManaAbilityDef {
-                    ability_index: 0,
-                    description: "Add {B}".into(),
-                    produced: vec![(ManaType::Black, 1)],
-                    requires_tap: true,
-                    has_side_effects: false,
-                },
-                ManaAbilityDef {
-                    ability_index: 1,
-                    description: "Add {G}".into(),
-                    produced: vec![(ManaType::Green, 1)],
-                    requires_tap: true,
-                    has_side_effects: false,
-                },
-            ]
-        } else {
-            vec![]
-        }
+    fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
+        vec![
+            ManaAbilityDef {
+                ability_index: 0,
+                description: "Add {B}".into(),
+                produced: vec![(ManaType::Black, 1)],
+                requires_tap: true,
+                has_side_effects: false,
+            },
+            ManaAbilityDef {
+                ability_index: 1,
+                description: "Add {G}".into(),
+                produced: vec![(ManaType::Green, 1)],
+                requires_tap: true,
+                has_side_effects: false,
+            },
+        ]
     }
 }

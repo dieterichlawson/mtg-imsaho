@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, Zone, ManaType};
+use crate::types::{ManaCost, ManaSymbol, CardType, ManaType};
 
 /// Sol Ring — {1} artifact. {T}: Add {C}{C}.
 pub struct SolRing;
@@ -24,18 +24,13 @@ impl CardBehavior for SolRing {
         }
     }
 
-    fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ManaAbilityDef {
-                ability_index: 0,
-                description: "Add {C}{C}".into(),
-                produced: vec![(ManaType::Colorless, 2)],
-                requires_tap: true,
-                has_side_effects: false,
-            }]
-        } else {
-            vec![]
-        }
+    fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
+        vec![ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {C}{C}".into(),
+            produced: vec![(ManaType::Colorless, 2)],
+            requires_tap: true,
+            has_side_effects: false,
+        }]
     }
 }

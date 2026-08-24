@@ -30,9 +30,13 @@ impl CardBehavior for SkirsdagHighPriest {
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        // Must be on battlefield, untapped, not summoning sick, morbid active,
-        // and have at least 2 other untapped creatures to tap.
-        if obj.zone != Zone::Battlefield || obj.tapped || obj.summoning_sick {
+        // The {T} part of the cost — untapped, and past summoning sickness
+        // unless hasty (CR 302.6) — is the engine's to check. Spelling it out
+        // here shadowed that check and dropped the haste exception, so a
+        // Priest holding Lightning Greaves couldn't be activated at all.
+        // What's particular to this ability: morbid, and two other untapped
+        // creatures to tap.
+        if obj.zone != Zone::Battlefield {
             return vec![];
         }
         if !state.creature_died_this_turn {

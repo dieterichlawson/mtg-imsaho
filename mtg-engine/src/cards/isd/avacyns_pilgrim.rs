@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, ManaType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ManaType};
 
 /// Avacyn's Pilgrim — {G} 1/1 Human Monk.
 /// {T}: Add {W}.
@@ -25,18 +25,13 @@ impl CardBehavior for AvacynsPilgrim {
         }
     }
 
-    fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped && !obj.summoning_sick {
-            vec![ManaAbilityDef {
-                ability_index: 0,
-                description: "Add {W}".into(),
-                produced: vec![(ManaType::White, 1)],
-                requires_tap: true,
-                has_side_effects: false,
-            }]
-        } else {
-            vec![]
-        }
+    fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
+        vec![ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {W}".into(),
+            produced: vec![(ManaType::White, 1)],
+            requires_tap: true,
+            has_side_effects: false,
+        }]
     }
 }

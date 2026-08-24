@@ -54,6 +54,32 @@ pub struct LegalActions {
     pub resolution_prompt: Option<crate::state::ResolutionChoiceKind>,
 }
 
+/// The mana abilities of `object_id` that could legally be activated right now.
+///
+/// Every caller that needs a permanent's mana abilities goes through here
+/// rather than calling `CardBehavior::mana_abilities` directly, so the
+/// cost-legality gate is applied in exactly one place: the permanent has to be
+/// on the battlefield, and a `{T}` ability additionally needs
+/// `can_pay_tap_cost` (untapped, and past summoning sickness unless hasty —
+/// CR 302.6). A card's own `mana_abilities` describes only what is particular
+/// to the ability, e.g. Deranged Assistant needing a card left to mill.
+pub fn available_mana_abilities(
+    state: &GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+) -> Vec<crate::cards::ManaAbilityDef> {
+    let Some(obj) = state.get_object(object_id) else { return Vec::new(); };
+    if obj.zone != Zone::Battlefield {
+        return Vec::new();
+    }
+    let Some(behavior) = registry.get(obj.card_id) else { return Vec::new(); };
+    let can_tap = state.can_pay_tap_cost(object_id, registry);
+    behavior.mana_abilities(state, object_id)
+        .into_iter()
+        .filter(|ma| !ma.requires_tap || can_tap)
+        .collect()
+}
+
 /// Gather all available mana sources for a player, classified by opportunity cost.
 pub(crate) fn gather_mana_sources(
     state: &GameState,
@@ -71,7 +97,7 @@ pub(crate) fn gather_mana_sources(
             continue;
         }
         if let Some(behavior) = registry.get(obj.card_id) {
-            let abilities = behavior.mana_abilities(state, obj.id);
+            let abilities = available_mana_abilities(state, obj.id, registry);
             if abilities.is_empty() { continue; }
 
             // Classify the source kind.
@@ -608,17 +634,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if prevent_artifact_abilities {
             if state.has_card_type(obj.id, CardType::Artifact, registry) { continue; }
         }
-        if let Some(behavior) = registry.get(obj.card_id) {
-            let mana_abs = behavior.mana_abilities(state, obj.id);
-            for ma in mana_abs {
-                let key = (obj.card_id, ma.ability_index);
-                if !seen_mana_abilities.contains(&key) {
-                    seen_mana_abilities.push(key);
-                    actions.push(Action::ActivateManaAbility {
-                        object_id: obj.id,
-                        ability_index: ma.ability_index,
-                    });
-                }
+        for ma in available_mana_abilities(state, obj.id, registry) {
+            let key = (obj.card_id, ma.ability_index);
+            if !seen_mana_abilities.contains(&key) {
+                seen_mana_abilities.push(key);
+                actions.push(Action::ActivateManaAbility {
+                    object_id: obj.id,
+                    ability_index: ma.ability_index,
+                });
             }
         }
     }
@@ -713,7 +736,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             let ability_has_sac_this = matches!(ab.sacrifice_cost, SacrificeCost::SacrificeThis);
             let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
             // Autotap sources to consider for this specific ability.
-            let ability_sources: Vec<_> = if ability_has_sac_this {
+            //
+            // The source pays for itself in two ways, and both have to be shut
+            // off. Sacrificing it is one. Tapping it is the other: a permanent
+            // that is part of the ability's own {T} cost cannot also be tapped
+            // for mana to pay that ability's mana cost — one tap pays one cost
+            // (CR 602.2h). The five ISD utility lands are all "{cost}, {T}:"
+            // over a "{T}: Add {C}" mana ability, so without this the planner
+            // credited Gavony Township's own {C} toward its {2}{G}{W} and
+            // offered the ability with one land too few.
+            let ability_sources: Vec<_> = if ability_has_sac_this || ab.requires_tap {
                 early_mana_sources.iter()
                     .filter(|s| s.object_id != obj_id)
                     .cloned()
@@ -3880,13 +3912,9 @@ fn has_castable_with_potential_mana(
     // Build potential mana pool: current pool + all activatable mana abilities.
     let mut potential = state.get_player(player).mana_pool.clone();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
-        if let Some(behavior) = registry.get(obj.card_id) {
-            for ma in behavior.mana_abilities(state, obj.id) {
-                if !ma.requires_tap || !obj.tapped {
-                    for &(mana_type, amount) in &ma.produced {
-                        potential.add(mana_type, amount);
-                    }
-                }
+        for ma in available_mana_abilities(state, obj.id, registry) {
+            for &(mana_type, amount) in &ma.produced {
+                potential.add(mana_type, amount);
             }
         }
     }

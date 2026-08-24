@@ -25,19 +25,14 @@ impl CardBehavior for KessigWolfRun {
         }
     }
 
-    fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ManaAbilityDef {
-                ability_index: 0,
-                description: "Add {C}".into(),
-                produced: vec![(ManaType::Colorless, 1)],
-                requires_tap: true,
-                has_side_effects: false,
-            }]
-        } else {
-            vec![]
-        }
+    fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
+        vec![ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {C}".into(),
+            produced: vec![(ManaType::Colorless, 1)],
+            requires_tap: true,
+            has_side_effects: false,
+        }]
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {

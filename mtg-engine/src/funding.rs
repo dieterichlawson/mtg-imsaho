@@ -275,10 +275,7 @@ pub fn build_options(
         if obj.tapped {
             continue;
         }
-        let Some(behavior) = registry.get(obj.card_id) else {
-            continue;
-        };
-        let abilities = behavior.mana_abilities(state, obj.id);
+        let abilities = crate::engine::available_mana_abilities(state, obj.id, registry);
         if abilities.is_empty() {
             continue;
         }
@@ -415,9 +412,7 @@ pub fn apply(
             // Pick the first mana ability for determinism (dual lands: any
             // color works since X is generic).
             let ability_index = {
-                let Some(obj) = state.get_object(src_id) else { continue; };
-                let Some(behavior) = registry.get(obj.card_id) else { continue; };
-                let abs = behavior.mana_abilities(state, src_id);
+                let abs = crate::engine::available_mana_abilities(state, src_id, registry);
                 let Some(first) = abs.first() else { continue; };
                 first.ability_index
             };
