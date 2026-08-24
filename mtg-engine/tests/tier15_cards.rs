@@ -5,7 +5,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::{CardRegistry, TriggerKind};
+use mtg_engine::cards::{AttackInfo, CardRegistry, TriggerKind};
 use mtg_engine::ids::CardId;
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
@@ -126,7 +126,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     }
 
     let behavior = reg.get(state.get_object(cage).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, cage, &[], &reg);
+    behavior.on_attacks(&mut state, cage, AttackInfo::new(cage, P1), &[], &reg);
 
     // Should have 3 Wolf tokens on the battlefield.
     assert_eq!(count_tokens_named(&state, "Wolf"), 3, "Should have created 3 Wolf tokens");
@@ -1733,7 +1733,7 @@ fn geist_creates_angel_on_attack() {
     state.combat.as_mut().unwrap().attackers.insert(geist, P1);
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &[], &reg);
+    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
     // Should have an Angel token.
     assert_eq!(count_tokens_named(&state, "Angel"), 1);
@@ -1755,7 +1755,7 @@ fn geist_angel_exiled_at_end_of_combat() {
 
     // Attack to create the angel.
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &[], &reg);
+    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
     let angel_id = find_token_named(&state, "Angel").unwrap();
 

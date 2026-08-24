@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -152,7 +152,7 @@ fn trepanation_blade_stops_on_land() {
 
     // Fire the attack trigger.
     let behavior = reg.get(state.get_object(blade).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, blade, &[], &reg);
+    behavior.on_attacks(&mut state, blade, AttackInfo::new(blade, P1), &[], &reg);
 
     // Should have milled exactly 2 cards (nonland + land), leaving 2 in library.
     let lib_size = state.get_player(P1).library_order.len();

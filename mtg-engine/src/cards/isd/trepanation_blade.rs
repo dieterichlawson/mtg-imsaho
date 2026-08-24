@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{AttackInfo, ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, CardType, Zone};
@@ -54,19 +54,20 @@ impl CardBehavior for TrepanationBlade {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        // self_id is the equipment's ID (from AttacksTrigger resolution).
-        let Some(equip) = state.get_object(self_id) else { return; };
-        let controller = equip.controller;
-        let creature_id = match equip.attached_to.or_else(|| equip.card_state.get("last_attached_to").copied()) {
-            Some(id) => id,
-            None => return,
-        };
-
-        // Find the defending player from combat state.
-        let defending_player = state.combat.as_ref()
-            .and_then(|c| c.attackers.get(&creature_id).copied())
-            .unwrap_or_else(|| state.opponent(controller));
+    fn on_attacks(&self, state: &mut GameState, _self_id: ObjectId, attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
+        // "Whenever equipped creature attacks, defending player reveals cards
+        // from the top of their library until they reveal a land card. That
+        // player puts those cards into their graveyard. Equipped creature gets
+        // +1/+0 until end of turn for each card put into that player's
+        // graveyard this way."
+        //
+        // Both halves are about the attack that happened, so they read the
+        // snapshot rather than the Blade's current `attached_to`. Killing the
+        // equipped creature in response used to cancel the mill as well as the
+        // buff, and re-equipping the Blade before the trigger resolved moved
+        // the buff onto a creature that never attacked.
+        let creature_id = attack.attacker;
+        let defending_player = attack.defending_player;
 
         // Reveal cards from defending player's library until a land is revealed.
         let mut cards_milled = 0;
@@ -101,7 +102,9 @@ impl CardBehavior for TrepanationBlade {
                 format!("Trepanation Blade: p{} milled {} card{}", defending_player.0, cards_milled,
                     if cards_milled == 1 { "" } else { "s" }));
 
-            // Equipped creature gets +1/+0 per card milled until end of turn.
+            // The buff needs a creature to land on: skipped if the attacker
+            // died, and it goes on the creature that attacked even if the
+            // Blade has since moved elsewhere.
             if state.get_object(creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {

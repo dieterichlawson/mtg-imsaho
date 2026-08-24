@@ -8,7 +8,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -29,7 +29,7 @@ fn geist_creates_angel_on_attack() {
         blocker_assignments: std::collections::HashMap::new(),
         ..Default::default()
     });
-    behavior.on_attacks(&mut state, geist, &[], &reg);
+    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
     // Should have created an Angel token on the battlefield, tapped and attacking.
     let angel = state.objects.values()
@@ -53,7 +53,7 @@ fn angel_exiled_at_end_of_combat() {
     });
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &[], &reg);
+    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
     let angel_id = state.objects.values()
         .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)
@@ -83,7 +83,7 @@ fn angel_exiled_even_if_geist_dies() {
     });
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &[], &reg);
+    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
     let angel_id = state.objects.values()
         .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)

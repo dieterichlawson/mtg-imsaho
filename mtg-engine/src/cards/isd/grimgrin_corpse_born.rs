@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
+use crate::cards::{AttackInfo, ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
@@ -114,7 +114,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.3d: target was chosen when the trigger went on the stack.
         // Per ruling: "If the defending player controls no creatures when Grimgrin attacks,
         // the last ability will be removed from the stack and have no effect."

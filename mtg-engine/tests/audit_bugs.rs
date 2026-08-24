@@ -5,7 +5,7 @@ mod common;
 use common::*;
 
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
@@ -1398,7 +1398,7 @@ fn bug_protection_doesnt_prevent_zombie_source_targeting() {
 
     // Fire the attack trigger
     let behavior = registry.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &registry);
+    behavior.on_attacks(&mut state, grimgrin, AttackInfo::new(grimgrin, P1), &[], &registry);
 
     // Check if Grave Bramble is in the target options
     let bramble_is_target = match &state.awaiting_action {

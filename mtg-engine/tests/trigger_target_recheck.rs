@@ -13,7 +13,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::PendingTrigger;
 use mtg_engine::types::*;
@@ -91,7 +91,7 @@ fn an_attack_in_an_earlier_turn_does_not_keep_the_brute_transformed() {
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
 
     // It attacked on the front face this turn...
-    behavior.on_attacks(&mut state, scholar, &[], &reg);
+    behavior.on_attacks(&mut state, scholar, AttackInfo::new(scholar, P1), &[], &reg);
     // ...then a later turn begins, and it transforms.
     state.turn_number += 1;
     mtg_engine::cards::helpers::apply_transform(&mut state, scholar, &reg);
@@ -114,7 +114,7 @@ fn an_attack_this_turn_keeps_the_brute_transformed() {
     let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
 
-    behavior.on_attacks(&mut state, scholar, &[], &reg);
+    behavior.on_attacks(&mut state, scholar, AttackInfo::new(scholar, P1), &[], &reg);
     mtg_engine::cards::helpers::apply_transform(&mut state, scholar, &reg);
     behavior.on_end_step(&mut state, scholar, &[], &reg);
 

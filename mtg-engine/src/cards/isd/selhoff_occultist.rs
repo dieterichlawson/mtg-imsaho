@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{TargetRequirement, CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Selhoff Occultist — {2}{U} 2/3 Human Rogue.
 /// Whenever this creature or another creature dies, target player mills a card.
@@ -52,10 +52,13 @@ impl CardBehavior for SelhoffOccultist {
     }
 
     /// When another creature dies, target player mills a card.
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, chosen_targets: &[Target], registry: &CardRegistry) {
-        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
-        }
+    ///
+    /// No battlefield check on the Occultist. A death trigger fires even when
+    /// its watcher died in the same event — a board wipe that kills both puts
+    /// the trigger on the stack, and by the time it resolves the Occultist is
+    /// in the graveyard. Requiring it to still be on the battlefield made the
+    /// trigger a no-op in exactly the case the trigger exists for.
+    fn on_any_creature_dies(&self, state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, chosen_targets: &[Target], registry: &CardRegistry) {
         mill_target(state, chosen_targets, registry);
     }
 }

@@ -99,6 +99,8 @@ fn test_geist_of_saint_traft_angel_token_created_after_death() {
         card_id: geist_card,
         controller: P0,
         description: "Geist of Saint Traft".into(),
+        attacker: geist,
+        defending_player: P1,
         chosen_targets: vec![],
     }));
 
@@ -134,6 +136,8 @@ fn test_kessig_cagebreakers_tokens_created_after_death() {
         card_id: cb_card,
         controller: P0,
         description: "Kessig Cagebreakers".into(),
+        attacker: cb,
+        defending_player: P1,
         chosen_targets: vec![],
     }));
 
@@ -359,6 +363,8 @@ fn test_trepanation_blade_trigger_resolves_after_equipment_destroyed() {
         card_id: blade_card,
         controller: P0,
         description: "Trepanation Blade".into(),
+        attacker: blade,
+        defending_player: P1,
         chosen_targets: vec![],
     }));
 

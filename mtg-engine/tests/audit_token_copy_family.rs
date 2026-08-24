@@ -29,7 +29,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::types::*;
 
 /// Bug 0F-002 (`audits/AUDIT_BUGS.md)`: `state.create_token_copy` never
@@ -312,7 +312,7 @@ fn bug_by_geist_angel_token_defender_matches_geist() {
 
     let geist_card_id = state.get_object(geist).unwrap().card_id;
     let behavior = registry.get(geist_card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &[], &registry);
+    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &registry);
 
     // Find the Angel token that was just created.
     let angel = state

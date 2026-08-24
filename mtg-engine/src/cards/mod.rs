@@ -55,6 +55,24 @@ pub struct CardData {
     pub additional_cost: Option<AdditionalCost>,
 }
 
+/// The attack a "whenever this attacks" trigger is about, snapshotted when
+/// attackers were declared (CR 508.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttackInfo {
+    /// The creature that attacked. For a creature's own trigger this is the
+    /// creature itself; for an Equipment's, the creature it was attached to.
+    pub attacker: ObjectId,
+    /// Who or what it was declared as attacking.
+    pub defending_player: PlayerId,
+}
+
+impl AttackInfo {
+    #[must_use]
+    pub fn new(attacker: ObjectId, defending_player: PlayerId) -> Self {
+        Self { attacker, defending_player }
+    }
+}
+
 /// A mana ability definition.
 #[derive(Debug, Clone)]
 pub struct ManaAbilityDef {
@@ -523,8 +541,15 @@ pub trait CardBehavior: Send + Sync {
     /// Starting loyalty for planeswalkers.
     fn starting_loyalty(&self) -> Option<u32> { None }
 
-    /// Called when this creature attacks (declared as an attacker).
-    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
+    /// Called when this creature attacks, or when a creature this Equipment
+    /// or Aura is attached to attacks.
+    ///
+    /// `attack` is what was true when attackers were declared, not what is
+    /// true now. The trigger goes on the stack then and resolves later, by
+    /// which time the attacker may have died and the Equipment may have been
+    /// moved to a different creature — so re-reading `attached_to` at
+    /// resolution answers a different question than the one the trigger asked.
+    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called when this creature blocks (declared as a blocker).
     fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}

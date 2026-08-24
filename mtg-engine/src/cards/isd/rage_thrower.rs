@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Rage Thrower — {5}{R} 4/2 Human Shaman.
 /// Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.
@@ -38,10 +38,17 @@ impl CardBehavior for RageThrower {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, chosen_targets: &[Target], registry: &CardRegistry) {
-        // Must still be on battlefield to deal damage.
-        if !state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            return;
-        }
+        // No battlefield check. A death trigger fires even when its watcher
+        // died in the same event, and the damage is dealt to a player, not to
+        // or from anything that has to still be there — CR 608.2h: a source
+        // that has left the battlefield still deals its damage, using last
+        // known information. Requiring the Thrower to survive made the trigger
+        // a no-op in the board-wipe case it exists for.
+        //
+        // (Contrast Lumberknot and Unruly Mob nearby, whose triggers put a
+        // counter on *themselves*: a permanent that has left the battlefield
+        // can't receive counters, CR 121.1, so those guards are right.)
+        //
         // CR 603.3d: target was chosen when the trigger went on the stack.
         let Some(target) = chosen_targets.first() else { return };
         let effect = PendingEffect::DealDamage {

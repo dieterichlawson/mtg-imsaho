@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::combat;
 use mtg_engine::triggers::PendingTrigger;
 use mtg_engine::types::*;
@@ -14,7 +14,7 @@ fn setup_geist_attacking(state: &mut mtg_engine::state::GameState, reg: &CardReg
         ..Default::default()
     });
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(state, geist, &[], reg);
+    behavior.on_attacks(state, geist, AttackInfo::new(geist, P1), &[], reg);
 
     let angel_id = state.objects.values()
         .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)

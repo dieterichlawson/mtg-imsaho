@@ -67,6 +67,8 @@ fn test_grimgrin_attack_trigger_fizzles_on_illegal_target() {
         card_id: grimgrin_card,
         controller: P0,
         description: "Grimgrin, Corpse-Born".into(),
+        attacker: grimgrin,
+        defending_player: P1,
         chosen_targets: vec![Target::Object(target_creature)],
     }));
 

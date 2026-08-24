@@ -32,7 +32,7 @@ mod common;
 use common::*;
 
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
@@ -212,7 +212,7 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
     // want for this test.
     let grimgrin_card_id = state.get_object(grimgrin).unwrap().card_id;
     let behavior = registry.get(grimgrin_card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &registry);
+    behavior.on_attacks(&mut state, grimgrin, AttackInfo::new(grimgrin, P1), &[], &registry);
 
     let lumberknot_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {

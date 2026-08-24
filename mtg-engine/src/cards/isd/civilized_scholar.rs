@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
+use crate::cards::{AttackInfo, ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
@@ -182,7 +182,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // Mark that we attacked this turn (so end-step doesn't transform back).
         let turn = state.turn_number;
         if let Some(obj) = state.get_object_mut(self_id) {

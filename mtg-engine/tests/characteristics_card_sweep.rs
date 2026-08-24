@@ -19,7 +19,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -134,7 +134,7 @@ fn hamlet_captain_does_not_buff_transformed_werewolves() {
 
     let before = state.effective_power(villager, &reg);
     let behavior = reg.get(state.get_object(captain).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, captain, &[], &reg);
+    behavior.on_attacks(&mut state, captain, AttackInfo::new(captain, P1), &[], &reg);
 
     assert_eq!(state.effective_power(villager, &reg), before,
         "a transformed non-Human werewolf must not get Hamlet Captain's +1/+1");

@@ -128,12 +128,20 @@ pub enum PendingTrigger {
         controller: PlayerId,
         description: String,
     },
-    /// A creature's "when this attacks" trigger.
+    /// A "whenever this attacks" trigger — the attacking creature's own, or
+    /// one from an Equipment or Aura attached to it.
     AttacksTrigger {
         object_id: ObjectId,
         card_id: CardId,
         controller: PlayerId,
         description: String,
+        /// The attacking creature. Equal to `object_id` for a creature's own
+        /// trigger; the creature it was attached to for an Equipment's.
+        /// Snapshotted at declaration (CR 508.1) — by resolution the creature
+        /// may be dead and the Equipment may be on something else.
+        attacker: ObjectId,
+        /// Who it was declared as attacking, likewise snapshotted.
+        defending_player: PlayerId,
         #[serde(default)]
         chosen_targets: Vec<Target>,
     },
@@ -997,7 +1005,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 }
             }
             GameEvent::AttackersDeclared { attackers } => {
-                for (attacker_id, _defending_player) in attackers {
+                for (attacker_id, defending_player) in attackers {
                     let (card_id, controller) = match state.get_object(*attacker_id) {
                         Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
                         _ => continue,
@@ -1010,6 +1018,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                 card_id,
                                 controller,
                                 description: desc,
+                                attacker: *attacker_id,
+                                defending_player: *defending_player,
                                 chosen_targets: Vec::new(),
                             };
                             if controller == active_player {
@@ -1033,6 +1043,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                     card_id: eq_card_id,
                                     controller: eq_controller,
                                     description: desc,
+                                    attacker: *attacker_id,
+                                    defending_player: *defending_player,
                                     chosen_targets: Vec::new(),
                                 };
                                 if eq_controller == active_player {
@@ -1481,9 +1493,10 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 behavior.on_leave_battlefield(state, object_id, registry);
             }
         }
-        PendingTrigger::AttacksTrigger { object_id, card_id, chosen_targets, .. } => {
+        PendingTrigger::AttacksTrigger { object_id, card_id, attacker, defending_player, chosen_targets, .. } => {
             if let Some(behavior) = registry.get(card_id) {
-                behavior.on_attacks(state, object_id, &chosen_targets, registry);
+                let attack = crate::cards::AttackInfo::new(attacker, defending_player);
+                behavior.on_attacks(state, object_id, attack, &chosen_targets, registry);
             }
         }
         PendingTrigger::BlocksTrigger { object_id, card_id, blocked_attacker, .. } => {
