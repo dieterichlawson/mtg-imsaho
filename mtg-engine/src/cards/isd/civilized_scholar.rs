@@ -187,8 +187,14 @@ impl CardBehavior for CivilizedScholar {
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // Mark that we attacked this turn (so end-step doesn't transform back).
+        let turn = state.turn_number;
         if let Some(obj) = state.get_object_mut(self_id) {
-            obj.card_state.insert("attacked_this_turn".into(), crate::ids::ObjectId(1));
+            // Stamped with the turn number, not a bare marker. The clearing
+            // path below only runs on the BACK face's end step, so a front-face
+            // attack in an earlier turn left a bare marker set forever — and
+            // the next time this transformed, its end-step trigger read that
+            // stale marker and refused to transform back.
+            obj.card_state.insert("attacked_on_turn".into(), crate::ids::ObjectId(u64::from(turn)));
         }
     }
 
@@ -200,21 +206,21 @@ impl CardBehavior for CivilizedScholar {
         if !is_transformed || state.active_player != controller {
             return;
         }
-        // Check if Homicidal Brute attacked this turn.
+        // "unless it attacked this turn" — compare the stamp against the
+        // current turn rather than testing whether a marker exists at all.
+        let this_turn = crate::ids::ObjectId(u64::from(state.turn_number));
         let attacked = state.get_object(self_id)
-            .is_some_and(|o| o.card_state.contains_key("attacked_this_turn"));
+            .and_then(|o| o.card_state.get("attacked_on_turn").copied())
+            == Some(this_turn);
         if !attacked {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.tapped = true; // "tap Homicidal Brute, then transform it"
-                obj.is_transformed = false;
-                obj.name = "Civilized Scholar".into();
             }
+            // Through the helper rather than flipping the flag by hand, so
+            // this cannot drift from what transforming means.
+            crate::cards::helpers::apply_transform(state, self_id, _registry);
             state.log(crate::state::LogLevel::Event,
                 "Homicidal Brute transforms back into Civilized Scholar (didn't attack)".into());
-        }
-        // Clear the attack flag for next turn.
-        if let Some(obj) = state.get_object_mut(self_id) {
-            obj.card_state.remove("attacked_this_turn");
         }
     }
 

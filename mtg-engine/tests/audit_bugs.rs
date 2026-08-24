@@ -1906,23 +1906,27 @@ fn bug_civilized_scholar_stale_attacked_flag() {
     state.active_player = P0;
 
     // Place Civilized Scholar, already transformed to Homicidal Brute
+    let turn = state.turn_number;
     let brute = named_creature(&mut state, &registry, "Civilized Scholar", P0);
     if let Some(obj) = state.get_object_mut(brute) {
         obj.is_transformed = true;
         obj.name = "Homicidal Brute".into();
-        // Set attacked_this_turn — stale from before transform
-        obj.card_state.insert("attacked_this_turn".into(), mtg_engine::ids::ObjectId(1));
+        // It attacked earlier THIS turn, as Civilized Scholar. The marker is
+        // stamped with the turn it happened on — a bare "has attacked" marker
+        // could never be told apart from one left over from a previous turn.
+        obj.card_state.insert("attacked_on_turn".into(),
+            mtg_engine::ids::ObjectId(u64::from(turn)));
     }
 
     // Fire end step trigger — Brute should tap and transform back because
-    // IT (Homicidal Brute) didn't attack this turn. The attacked_this_turn
-    // flag is from before the transform (when it was Scholar).
+    // IT (Homicidal Brute) didn't attack this turn. The attack marker is from
+    // before the transform (when it was Scholar).
     let behavior = registry.get(state.get_object(brute).unwrap().card_id).unwrap();
     behavior.on_end_step(&mut state, brute, &[], &registry);
 
     // Per MTG rules 711.5, transforming doesn't make a new object.
     // If the permanent attacked this turn (even as Scholar), the Brute "knows"
-    // about it. The attacked_this_turn flag is valid, not stale.
+    // about it. The marker is valid for this turn, not stale.
     // The Brute should stay transformed because the permanent attacked this turn.
     let is_still_transformed = state.get_object(brute).unwrap().is_transformed;
     assert!(is_still_transformed,

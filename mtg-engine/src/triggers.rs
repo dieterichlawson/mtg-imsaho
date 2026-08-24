@@ -1375,8 +1375,16 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 })
             })
             .unwrap_or(crate::cards::TargetRequirement::None);
+        // Both halves of legality, the way `resolve_spell` already does it:
+        // the generic zone/hexproof/filter check AND the card's own
+        // restriction. Checking only the generic half let a trigger resolve
+        // against a target that had stopped satisfying the card's wording —
+        // Grimgrin's "creature the defending player controls" survived the
+        // creature changing controller in response.
         let any_legal = targets.iter().any(|t| {
             crate::stack::is_target_legal(state, t, &target_req, controller, registry)
+                && registry.get(card_id)
+                    .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });
         if !any_legal {
             let name = trigger.display_name(registry);

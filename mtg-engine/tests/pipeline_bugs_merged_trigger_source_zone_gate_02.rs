@@ -27,8 +27,11 @@ fn test_angel_of_flight_alabaster_trigger_resolves_after_death() {
     let angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
     let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
 
-    let spirit = ready_creature(&mut state, P0, 2, 2);
-    state.move_object(spirit, Zone::Graveyard, &reg);
+    // An actual Spirit card: the Angel's ability targets "target Spirit card
+    // in your graveyard", and CR 608.2b re-checks that on resolution. A
+    // synthetic creature with no subtypes is not a legal target, so the
+    // trigger would rightly fizzle for a reason unrelated to this test.
+    let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
     state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
         object_id: angel,
