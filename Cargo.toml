@@ -10,7 +10,11 @@ all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 # Pedantic lints that require major refactoring — allow for now
 struct_excessive_bools = "allow"
-# Core engine functions (legal_actions, submit_action, etc.) are inherently
-# large match expressions — splitting them would add indirection without
-# simplification.
+# `legal_actions` and `submit_action` used to be 1,128 and 1,277 lines, and
+# this said splitting them "would add indirection without simplification".
+# They are 209 and 62 now, split by what each part is for, with no behaviour
+# change and no test edited — so that claim did not survive contact. The lint
+# stays allowed only for the handful of genuinely long match expressions that
+# remain (collect_triggers, check_state_based_actions); re-check whether it can
+# be denied outright once those are done.
 too_many_lines = "allow"
