@@ -48,10 +48,19 @@ impl CardBehavior for MoldgrafMonstrosity {
             None => return,
         };
 
-        // Exile Moldgraf Monstrosity.
-        state.move_object(object_id, Zone::Exile, registry);
-        state.log(crate::state::LogLevel::Event,
-            "Moldgraf Monstrosity: exiled on death".into());
+        // "Exile it" applies to the card in the graveyard, and only there.
+        // Two Monstrosities dying together each put a trigger on the stack;
+        // the first can return the second to the battlefield, and the second
+        // trigger must then leave it alone rather than exiling a live
+        // creature. Same if something else exiled the card first.
+        //
+        // The return happens either way — a trigger that can't do the first
+        // part still does as much as it can (CR 608.2).
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Graveyard) {
+            state.move_object(object_id, Zone::Exile, registry);
+            state.log(crate::state::LogLevel::Event,
+                "Moldgraf Monstrosity: exiled on death".into());
+        }
 
         // Find creature cards in the graveyard (excluding the Monstrosity itself, which is now exiled).
         let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)

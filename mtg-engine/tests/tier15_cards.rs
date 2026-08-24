@@ -1848,7 +1848,12 @@ fn moldgraf_monstrosity_returns_creatures_on_death() {
     state.get_object_mut(gy2).unwrap().name = "Creature 2".into();
     state.move_object(gy2, Zone::Graveyard, &reg);
 
-    // Trigger death.
+    // Die for real — the trigger resolves with the card already in the
+    // graveyard, which is the only place "exile it" can apply.
+    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+    assert_eq!(state.get_object(monstrosity).unwrap().zone, Zone::Graveyard,
+        "test precondition: the Monstrosity died");
+
     let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
     behavior.on_dies(&mut state, monstrosity, &[], &reg);
 
