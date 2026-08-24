@@ -54,9 +54,12 @@ impl CardBehavior for WitchbaneOrb {
             .map(|o| o.id)
             .collect();
 
-        for curse_id in &curses {
-            let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::try_destroy(state, *curse_id, registry);
+        // "Destroy all Curses attached to you" — one event (CR 700.2c).
+        let names: Vec<String> = curses.iter()
+            .map(|&id| state.get_object(id).map(|o| o.name.clone()).unwrap_or_default())
+            .collect();
+        crate::destruction::try_destroy_all(state, &curses, registry);
+        for name in names {
             state.log(crate::state::LogLevel::Event,
                 format!("Witchbane Orb destroyed {name}"));
         }

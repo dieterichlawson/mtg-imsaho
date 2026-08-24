@@ -143,8 +143,11 @@ impl DivineReckoning {
             .map(|o| o.id)
             .filter(|id| !kept.contains(id))
             .collect();
-        for id in doomed {
-            crate::destruction::try_destroy(state, id, registry);
-        }
+        // "Destroy the rest" is one event (CR 700.2c). Destroying them one at
+        // a time lets each death change the answer for the next — an Angelic
+        // Overseer and the last Human its controller has are both doomed here,
+        // and the Overseer must survive because that Human is still alive when
+        // destruction happens.
+        crate::destruction::try_destroy_all(state, &doomed, registry);
     }
 }

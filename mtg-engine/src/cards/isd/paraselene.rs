@@ -40,13 +40,14 @@ impl CardBehavior for Paraselene {
             .map(|o| o.id)
             .collect();
 
-        let mut destroyed_count = 0u32;
-        for eid in enchantments {
-            let result = crate::destruction::try_destroy(state, eid, registry);
-            if result == crate::destruction::DestroyResult::Died {
-                destroyed_count += 1;
-            }
-        }
+        // "Destroy all enchantments" — one event (CR 700.2c), so the
+        // indestructible check for each is made against the battlefield as it
+        // was before any of them died.
+        let destroyed_count = u32::try_from(
+            crate::destruction::try_destroy_all(state, &enchantments, registry)
+                .iter()
+                .filter(|(_, r)| *r == crate::destruction::DestroyResult::Died)
+                .count()).unwrap_or(u32::MAX);
 
         if destroyed_count > 0 {
             let old_life = state.get_player(controller).life;

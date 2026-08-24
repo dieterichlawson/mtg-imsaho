@@ -48,6 +48,65 @@ pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry)
     DestroyResult::Died
 }
 
+/// Destroy several permanents simultaneously (CR 700.2c, CR 701.7b).
+///
+/// "Destroy all creatures" is one event, not a sequence of them, and the
+/// difference is observable. Angelic Overseer is "indestructible as long as
+/// you control a Human"; when a Wrath catches the Overseer and its last Human
+/// together, the Human is still on the battlefield at the moment destruction
+/// happens, so the Overseer survives. A loop over `try_destroy` gets that
+/// wrong whenever it reaches the Human first — the Overseer's condition is
+/// gone by the time its own check runs, and the Overseer dies too.
+///
+/// So this decides for every permanent against the same game state, the one
+/// before any of them has died, and captures each death's last known
+/// information there as well (CR 608.2g) before moving anything. Results come
+/// back in the order given.
+pub fn try_destroy_all(
+    state: &mut GameState,
+    ids: &[ObjectId],
+    registry: &CardRegistry,
+) -> Vec<(ObjectId, DestroyResult)> {
+    // Phase 1 — decide. Nothing has moved yet, so every check sees the same
+    // battlefield.
+    let decisions: Vec<(ObjectId, DestroyResult)> = ids.iter()
+        .map(|&id| {
+            let result = if state.has_keyword(id, Keyword::Indestructible, registry) {
+                DestroyResult::Indestructible
+            } else if state.get_object(id).is_some_and(|o| o.regeneration_shields > 0) {
+                DestroyResult::Regenerated
+            } else {
+                DestroyResult::Died
+            };
+            (id, result)
+        })
+        .collect();
+
+    // Phase 2 — capture the death events, still against that same state, so a
+    // creature whose toughness depends on the others (Splinterfright counting
+    // creature cards in the graveyard) is remembered as it was.
+    let deaths: Vec<(ObjectId, Option<GameEvent>)> = decisions.iter()
+        .filter(|(_, r)| *r == DestroyResult::Died)
+        .map(|&(id, _)| (id, death_event(state, id, Some(registry))))
+        .collect();
+
+    // Phase 3 — apply.
+    for &(id, result) in &decisions {
+        if result == DestroyResult::Regenerated {
+            regenerate(state, id);
+        }
+    }
+    for (id, event) in deaths {
+        if let Some(event) = event {
+            state.events.push(event);
+            state.creature_died_this_turn = true;
+        }
+        state.move_object(id, Zone::Graveyard, registry);
+    }
+
+    decisions
+}
+
 /// Destroy a permanent, bypassing regeneration ("can't be regenerated").
 /// Still respects indestructible.
 pub fn try_destroy_no_regen(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
@@ -83,19 +142,29 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
         state.obj_name(id)));
 }
 
-/// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.
-fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>) {
+/// The `CreatureDied` event for a permanent about to be destroyed, built from
+/// last known information (CR 608.2g) — so it has to be called BEFORE the zone
+/// change, which clears the object's battlefield state. `None` for a
+/// non-creature, which announces no death.
+fn death_event(state: &GameState, id: ObjectId, registry: Option<&CardRegistry>) -> Option<GameEvent> {
     let is_creature = registry.is_some_and(|r| state.is_creature(id, r))
         || state.get_object(id).is_some_and(|o| o.power.is_some());
-    if is_creature {
-        // Capture last-known information before the zone change clears it.
-        let (cid, ctrl, damaged_by, is_token) = state.get_object(id)
-            .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new(), false), |o| (o.card_id, o.controller, o.damaged_by.clone(), o.is_token));
-        let last_known_toughness = registry
-            .and_then(|r| state.effective_toughness(id, r))
-            .or_else(|| state.get_object(id).and_then(|o| o.toughness))
-            .unwrap_or(0);
-        state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token });
+    if !is_creature {
+        return None;
+    }
+    let (cid, ctrl, damaged_by, is_token) = state.get_object(id)
+        .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new(), false), |o| (o.card_id, o.controller, o.damaged_by.clone(), o.is_token));
+    let last_known_toughness = registry
+        .and_then(|r| state.effective_toughness(id, r))
+        .or_else(|| state.get_object(id).and_then(|o| o.toughness))
+        .unwrap_or(0);
+    Some(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token })
+}
+
+/// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.
+fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>) {
+    if let Some(event) = death_event(state, id, registry) {
+        state.events.push(event);
         state.creature_died_this_turn = true;
     }
     // move_object handles the death/graveyard log message.
