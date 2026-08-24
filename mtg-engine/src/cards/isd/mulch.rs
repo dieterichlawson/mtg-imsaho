@@ -67,9 +67,11 @@ impl CardBehavior for Mulch {
                 format!("Mulch: {name} put into hand"));
         }
 
-        // Non-lands go to graveyard.
+        // Non-lands go to graveyard. Routed through `mill_one` so a creature
+        // card among them emits CreatureCardMilled — moving it directly meant
+        // Undead Alchemist never saw it.
         for &non_land_id in &non_lands {
-            state.move_object(non_land_id, Zone::Graveyard, registry);
+            crate::engine::mill_one(state, controller, non_land_id, registry);
         }
 
     }

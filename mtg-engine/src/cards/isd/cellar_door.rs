@@ -63,15 +63,13 @@ impl CardBehavior for CellarDoor {
             }
             let last_idx = player.library_order.len() - 1;
             let milled_id = player.library_order[last_idx];
-            state.get_player_mut(*player_id).library_order.remove(last_idx);
-            state.move_object(milled_id, Zone::Graveyard, registry);
 
-            // Check if it was a creature.
-            let is_creature = state.get_object(milled_id)
-                .is_some_and(|o| {
-                    state.face_data(o.id, registry)
-                        .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                });
+            // Cellar Door mills from the BOTTOM, which `mill_cards` cannot
+            // express — but it is still a mill, so it goes through `mill_one`
+            // and emits CreatureCardMilled. Doing the move by hand meant
+            // Undead Alchemist's trigger never fired for it.
+            let is_creature = state.is_creature(milled_id, registry);
+            crate::engine::mill_one(state, *player_id, milled_id, registry);
 
             if is_creature {
                 state.create_token_with_subtypes(

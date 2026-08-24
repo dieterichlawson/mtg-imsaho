@@ -1526,6 +1526,20 @@ fn valid_targets_for_mode(
 }
 
 /// Generate `CastSpell` actions with all valid target combinations.
+/// Every k-sized combination of `targets`, order-insensitive.
+fn target_combinations(targets: &[crate::actions::Target], k: usize) -> Vec<Vec<crate::actions::Target>> {
+    if k == 0 { return vec![vec![]]; }
+    if targets.len() < k { return vec![]; }
+    let mut result = Vec::new();
+    for i in 0..=targets.len() - k {
+        for mut combo in target_combinations(&targets[i + 1..], k - 1) {
+            combo.insert(0, targets[i].clone());
+            result.push(combo);
+        }
+    }
+    result
+}
+
 fn generate_cast_actions_with_targets(
     state: &GameState,
     caster: PlayerId,
@@ -1548,14 +1562,38 @@ fn generate_cast_actions_with_targets(
             actions
         }
         TargetRequirement::TwoTargets(ref req1, ref req2) => {
-            // Generate Cartesian product of valid targets for each requirement.
             let targets1 = valid_targets_for_req(state, caster, spell_id, req1, behavior, registry);
-            let targets2 = valid_targets_for_req(state, caster, spell_id, req2, behavior, registry);
             let mut actions = Vec::new();
+
+            // The second slot may itself be "up to N", in which case the pair
+            // is one first target plus 0..=N of the second — not exactly one
+            // each. Memory's Journey is `TwoTargets(PlayerOnly, UpToTargets(3,
+            // ...))` and produced no action at all under the exactly-one rule.
+            let (max2, inner2) = match req2.as_ref() {
+                TargetRequirement::UpToTargets(max, inner) => (*max, inner.as_ref()),
+                other => (1, other),
+            };
+
             for t1 in &targets1 {
-                for t2 in &targets2 {
-                    if t1 != t2 {
-                        let pair: Vec<crate::actions::Target> = vec![t1.clone(), t2.clone()];
+                // "from THEIR graveyard" — the second slot's candidates can
+                // depend on the first target, which is only known here.
+                let mut options = valid_targets_for_req(state, caster, spell_id, inner2, behavior, registry);
+                if matches!(inner2, TargetRequirement::GraveyardCardOwnedByTargetPlayer) {
+                    if let crate::actions::Target::Player(pid) = t1 {
+                        options.retain(|t| match t {
+                            crate::actions::Target::Object(id) =>
+                                state.get_object(*id).is_some_and(|o| o.owner == *pid),
+                            crate::actions::Target::Player(_) => false,
+                        });
+                    }
+                }
+                options.retain(|t| t != t1);
+
+                let lower = if max2 == 1 { 1 } else { 0 };
+                for k in lower..=max2.min(options.len()) {
+                    for mut combo in target_combinations(&options, k) {
+                        let mut pair = vec![t1.clone()];
+                        pair.append(&mut combo);
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
@@ -1573,18 +1611,6 @@ fn generate_cast_actions_with_targets(
             // Start from 0 to allow "up to N" to mean "0 or more" (e.g., Memory's Journey
             // can be cast targeting just a player with 0 cards).
             for k in 0..=(*max).min(options.len()) {
-                fn target_combinations(targets: &[crate::actions::Target], k: usize) -> Vec<Vec<crate::actions::Target>> {
-                    if k == 0 { return vec![vec![]]; }
-                    if targets.len() < k { return vec![]; }
-                    let mut result = Vec::new();
-                    for i in 0..=targets.len() - k {
-                        for mut combo in target_combinations(&targets[i + 1..], k - 1) {
-                            combo.insert(0, targets[i].clone());
-                            result.push(combo);
-                        }
-                    }
-                    result
-                }
                 for combo in target_combinations(&options, k) {
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
@@ -1749,6 +1775,25 @@ pub(crate) fn valid_targets_for_req(
             // All cards in exile owned by the caster.
             state.objects.values()
                 .filter(|o| o.zone == Zone::Exile && o.owner == caster)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::UpToTargets(_, inner) => {
+            // "Up to N target X" offers the same candidates as "target X"; the
+            // count is applied where the combinations are built. Falling
+            // through to the catch-all returned an empty list, which made
+            // Memory's Journey — whose second slot is `UpToTargets` nested in
+            // `TwoTargets` — produce an empty Cartesian product and therefore
+            // no cast action at all. The card was uncastable.
+            valid_targets_for_req(state, caster, spell_id, inner, behavior, registry)
+        }
+        TargetRequirement::GraveyardCardOwnedByTargetPlayer => {
+            // Which player is only known once the co-target is chosen, so the
+            // pairing in `generate_cast_actions_with_targets` narrows this.
+            // Unconstrained here, it is every graveyard card.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard)
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
@@ -3785,6 +3830,27 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
 }
 
 /// Mill N cards from a player's library (move top N cards to graveyard).
+/// Put one card from a library into its owner's graveyard, emitting
+/// `CreatureCardMilled` if it is a creature card.
+///
+/// Every library-to-graveyard move has to go through here. Cards that milled
+/// by hand — Mulch discarding the non-lands it revealed, Cellar Door milling
+/// from the BOTTOM, which `mill_cards` cannot express — moved the card
+/// directly and skipped the event, so Undead Alchemist's "whenever a creature
+/// card is put into an opponent's graveyard from their library" never fired
+/// for them.
+pub fn mill_one(state: &mut GameState, player: PlayerId, obj_id: ObjectId, registry: &CardRegistry) {
+    let is_creature = state.is_creature(obj_id, registry);
+    state.get_player_mut(player).library_order.retain(|&id| id != obj_id);
+    state.move_object(obj_id, Zone::Graveyard, registry);
+    if is_creature {
+        state.events.push(crate::events::GameEvent::CreatureCardMilled {
+            object: obj_id,
+            milled_player: player,
+        });
+    }
+}
+
 pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
     let mut milled = 0;
     for _ in 0..count {
@@ -3793,20 +3859,9 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registr
             if player_state.library_order.is_empty() {
                 break;
             }
-            player_state.library_order.remove(0)
+            player_state.library_order[0]
         };
-        // Check if it's a creature card before moving (for mill-watcher triggers).
-        let is_creature = state.get_object(obj_id)
-            .is_some_and(|o| {
-                state.is_creature(o.id, registry)
-            });
-        state.move_object(obj_id, Zone::Graveyard, registry);
-        if is_creature {
-            state.events.push(crate::events::GameEvent::CreatureCardMilled {
-                object: obj_id,
-                milled_player: player,
-            });
-        }
+        mill_one(state, player, obj_id, registry);
         milled += 1;
     }
     if milled > 0 {

@@ -306,6 +306,14 @@ pub enum TargetRequirement {
     GraveyardCardOwnedByCaster,
     /// Target a card in an opponent's graveyard (Memory's Journey mode 2).
     GraveyardCardOwnedByOpponent,
+    /// A card in the graveyard of the PLAYER targeted by the same spell.
+    ///
+    /// Only meaningful as the second half of `TwoTargets(PlayerOnly, ...)`:
+    /// Memory's Journey says "target player shuffles up to three target cards
+    /// from THEIR graveyard", so the card targets are constrained by the
+    /// player target. Plain `GraveyardCard` offered every graveyard, letting a
+    /// player announce targets from a third party's (CR 601.2c).
+    GraveyardCardOwnedByTargetPlayer,
     /// Target a card in exile (Runic Repetition).
     ExileCard,
     /// Choose one of several targeting modes (Ghoulcaller's Chant). Engine generates actions for each mode independently.

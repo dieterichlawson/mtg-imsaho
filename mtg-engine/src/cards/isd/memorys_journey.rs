@@ -36,7 +36,9 @@ impl CardBehavior for MemorysJourney {
         // Requires a mandatory player target plus up to 3 graveyard card targets.
         TargetRequirement::TwoTargets(
             Box::new(TargetRequirement::PlayerOnly),
-            Box::new(TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCard))),
+            // "from THEIR graveyard" — constrained to the targeted player's,
+            // not every graveyard in the game (CR 601.2c).
+            Box::new(TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByTargetPlayer))),
         )
     }
 
