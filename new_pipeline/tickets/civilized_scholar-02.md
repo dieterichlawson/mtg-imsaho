@@ -1,11 +1,15 @@
 ---
 id: civilized_scholar-02
-status: new
+status: fixed
 card: Civilized Scholar
 audit_run_id: 2026-04-19-civilized_scholar-audit
 audit_model: sonnet
 audit_tokens: 36063
 audit_duration: 622
+fixed_sha: 76d0ef84877d7dbd295f0f1fd8df00821e97f692
+fixed_at: 2026-08-24T00:38:42Z
+test_file: mtg-engine/tests/trigger_target_recheck.rs
+fix_note: transform-back goes through apply_transform; the attack marker is turn-stamped so it cannot go stale
 ---
 
 ## Audit Finding

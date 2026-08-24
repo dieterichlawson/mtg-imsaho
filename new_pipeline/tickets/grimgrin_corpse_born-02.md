@@ -1,11 +1,15 @@
 ---
 id: grimgrin_corpse_born-02
-status: new
+status: fixed
 card: Grimgrin, Corpse-Born
 audit_run_id: 2026-04-19-grimgrin_corpse_born-audit
 audit_model: sonnet
 audit_tokens: 34446
 audit_duration: 577
+fixed_sha: 76d0ef84877d7dbd295f0f1fd8df00821e97f692
+fixed_at: 2026-08-24T00:38:42Z
+test_file: mtg-engine/tests/trigger_independence.rs
+fix_note: already covered by the add_counters battlefield guard (CR 121.1)
 ---
 
 ## Audit Finding

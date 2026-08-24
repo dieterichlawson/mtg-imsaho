@@ -1,11 +1,15 @@
 ---
 id: grimgrin_corpse_born-01
-status: new
+status: fixed
 card: Grimgrin, Corpse-Born
 audit_run_id: 2026-04-19-grimgrin_corpse_born-audit
 audit_model: sonnet
 audit_tokens: 34446
 audit_duration: 577
+fixed_sha: 76d0ef84877d7dbd295f0f1fd8df00821e97f692
+fixed_at: 2026-08-24T00:38:42Z
+test_file: mtg-engine/tests/trigger_target_recheck.rs
+fix_note: CR 608.2b re-check now runs is_valid_target too, matching resolve_spell
 ---
 
 ## Audit Finding
