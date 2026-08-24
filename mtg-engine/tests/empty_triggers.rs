@@ -9,7 +9,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::PlayerId;
 use mtg_engine::state::StackEntry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::{Step, Zone};
 
 const P0: PlayerId = PlayerId(0);
@@ -78,7 +78,10 @@ fn aura_leaving_battlefield_creates_no_ltb_trigger() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let ltb_count = state.stack.iter().filter(|e|
-        matches!(e, StackEntry::Trigger(PendingTrigger::LeftBattlefield { .. }))
+        matches!(e, StackEntry::Trigger(PendingTrigger {
+            source: TriggerSource { .. },
+            event: TriggerEvent::LeftBattlefield,
+        }))
     ).count();
     assert_eq!(ltb_count, 0,
         "Dead Weight has no LTB text per oracle; LTB trigger should not be created");
@@ -97,7 +100,10 @@ fn fiend_hunter_ltb_trigger_still_fires() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let has_ltb = state.stack.iter().any(|e|
-        matches!(e, StackEntry::Trigger(PendingTrigger::LeftBattlefield { .. }))
+        matches!(e, StackEntry::Trigger(PendingTrigger {
+            source: TriggerSource { .. },
+            event: TriggerEvent::LeftBattlefield,
+        }))
     );
     assert!(has_ltb, "Fiend Hunter's LTB trigger must still fire");
 }
@@ -114,7 +120,10 @@ fn doomed_traveler_selfdies_trigger_still_fires() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let has_dies = state.stack.iter().any(|e|
-        matches!(e, StackEntry::Trigger(PendingTrigger::SelfDies { .. }))
+        matches!(e, StackEntry::Trigger(PendingTrigger {
+            source: TriggerSource { .. },
+            event: TriggerEvent::SelfDies,
+        }))
     );
     assert!(has_dies, "Doomed Traveler's dies trigger must still fire");
 }

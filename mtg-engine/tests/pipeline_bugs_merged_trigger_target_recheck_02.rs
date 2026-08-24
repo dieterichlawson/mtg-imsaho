@@ -4,7 +4,7 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -28,12 +28,9 @@ fn test_angel_of_flight_alabaster_fizzles_on_illegal_target() {
     state.get_object_mut(spirit).unwrap().subtypes.push("Spirit".into());
     state.move_object(spirit, Zone::Graveyard, &reg);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: angel,
-        card_id: angel_card,
-        controller: P0,
-        description: "Angel of Flight Alabaster".into(),
-        chosen_targets: vec![Target::Object(spirit)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
+        event: TriggerEvent::Upkeep,
     }));
 
     // In response: exile the Spirit (e.g., Purify the Grave)
@@ -62,14 +59,9 @@ fn test_grimgrin_attack_trigger_fizzles_on_illegal_target() {
 
     let target_creature = ready_creature(&mut state, P1, 3, 3);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::AttacksTrigger {
-        object_id: grimgrin,
-        card_id: grimgrin_card,
-        controller: P0,
-        description: "Grimgrin, Corpse-Born".into(),
-        attacker: grimgrin,
-        defending_player: P1,
-        chosen_targets: vec![Target::Object(target_creature)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(target_creature)], ..TriggerSource::new(grimgrin, grimgrin_card, P0, "Grimgrin, Corpse-Born") },
+        event: TriggerEvent::Attacks { attacker: grimgrin, defending_player: P1 },
     }));
 
     // In response: give the target hexproof
@@ -104,12 +96,9 @@ fn test_morkrut_banshee_fizzles_on_illegal_target() {
 
     let target_creature = ready_creature(&mut state, P1, 4, 4);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::EnteredBattlefield {
-        object_id: banshee,
-        card_id: banshee_card,
-        controller: P0,
-        description: "Morkrut Banshee".into(),
-        chosen_targets: vec![Target::Object(target_creature)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(target_creature)], ..TriggerSource::new(banshee, banshee_card, P0, "Morkrut Banshee") },
+        event: TriggerEvent::SelfEntered,
     }));
 
     // In response: give the target hexproof (making it an illegal target
@@ -139,12 +128,9 @@ fn test_snapcaster_trigger_fizzles_if_target_exiled() {
     let instant = spell_in_hand(&mut state, &reg, "Think Twice", P0);
     state.move_object(instant, Zone::Graveyard, &reg);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::EnteredBattlefield {
-        object_id: snapcaster,
-        card_id: snapcaster_card,
-        controller: P0,
-        description: "Snapcaster Mage".into(),
-        chosen_targets: vec![Target::Object(instant)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(instant)], ..TriggerSource::new(snapcaster, snapcaster_card, P0, "Snapcaster Mage") },
+        event: TriggerEvent::SelfEntered,
     }));
 
     // In response: exile the instant
@@ -177,12 +163,9 @@ fn reaper_target_bounced_before_resolve() {
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::EndStepTrigger {
-        object_id: reaper,
-        card_id: reaper_card,
-        controller: P0,
-        description: "Reaper from the Abyss".into(),
-        chosen_targets: vec![Target::Object(creature)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(creature)], ..TriggerSource::new(reaper, reaper_card, P0, "Reaper from the Abyss") },
+        event: TriggerEvent::EndStep,
     }));
 
     // In response: bounce the target to hand
@@ -212,12 +195,9 @@ fn reaper_target_becomes_demon_before_resolve() {
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::EndStepTrigger {
-        object_id: reaper,
-        card_id: reaper_card,
-        controller: P0,
-        description: "Reaper from the Abyss".into(),
-        chosen_targets: vec![Target::Object(creature)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(creature)], ..TriggerSource::new(reaper, reaper_card, P0, "Reaper from the Abyss") },
+        event: TriggerEvent::EndStep,
     }));
 
     // In response: target becomes a Demon (e.g., via Conspiracy)

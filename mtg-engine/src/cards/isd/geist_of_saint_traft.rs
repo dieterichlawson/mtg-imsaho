@@ -80,6 +80,7 @@ impl CardBehavior for GeistOfSaintTraft {
             // players priority to respond before it resolves.
             state.end_of_combat_exiles.push(crate::state::EndOfCombatExileEntry {
                 target_id: token_id,
+                source_id: self_id,
                 source_card_id,
                 controller,
                 description: "exile the Angel token".into(),

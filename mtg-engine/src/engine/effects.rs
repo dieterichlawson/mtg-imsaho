@@ -205,15 +205,13 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     if behavior.should_trigger(state, *source_id, &etb_kind, registry) {
                         let controller = state.get_object(*source_id)
                             .map_or(PlayerId(0), |o| o.controller);
-                        state.pending_triggers.push(
-                            crate::triggers::PendingTrigger::EnteredBattlefield {
-                                object_id: *source_id,
-                                card_id,
-                                controller,
-                                description: format!("{copy_name} (copy) enters the battlefield"),
-                                chosen_targets: Vec::new(),
-                            }
-                        );
+                        state.pending_triggers.push(crate::triggers::PendingTrigger::new(
+                            crate::triggers::TriggerSource::new(
+                                *source_id, card_id, controller,
+                                format!("{copy_name} (copy) enters the battlefield"),
+                            ),
+                            crate::triggers::TriggerEvent::SelfEntered,
+                        ));
                     }
                 }
             }
@@ -257,7 +255,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 None
             };
             if let Some(mut t) = trigger {
-                t.set_chosen_targets(vec![chosen_target.clone()]);
+                t.source.chosen_targets = vec![chosen_target.clone()];
                 state.stack.push(crate::state::StackEntry::Trigger(t));
             }
             // Continue processing the remaining pending triggers (may set up

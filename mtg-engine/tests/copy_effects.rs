@@ -15,6 +15,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, PendingEffect};
 use mtg_engine::types::*;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
@@ -96,7 +97,7 @@ fn a_copy_fires_the_copied_creatures_etb_ability() {
     copy_onto(&mut state, &reg, twin, hunter);
 
     let queued = state.pending_triggers.iter().any(|t| matches!(t,
-        mtg_engine::triggers::PendingTrigger::EnteredBattlefield { object_id, .. }
+        PendingTrigger { source: TriggerSource { id: object_id, .. }, event: TriggerEvent::SelfEntered }
         if *object_id == twin));
     assert!(queued,
         "copying a creature with an enters-the-battlefield ability must raise \
@@ -165,7 +166,10 @@ fn a_token_copy_fires_the_copied_creatures_etb_ability() {
 
     let mentor_triggered = state.stack.iter().any(|e| matches!(e,
         mtg_engine::state::StackEntry::Trigger(
-            mtg_engine::triggers::PendingTrigger::EnterWatch { watcher_id, .. })
+            PendingTrigger {
+                source: TriggerSource { id: watcher_id, .. },
+                event: TriggerEvent::CreatureEntered { .. },
+            })
         if *watcher_id == mentor));
     assert!(mentor_triggered,
         "a token copy entering the battlefield is a creature entering, and \

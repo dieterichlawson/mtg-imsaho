@@ -21,7 +21,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::GameState;
-use mtg_engine::triggers::{self, PendingTrigger};
+use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -42,7 +42,9 @@ fn enter_creature(state: &mut GameState, reg: &CardRegistry, name: &str, owner: 
 fn enter_watch_triggers(state: &GameState, watcher: ObjectId) -> usize {
     state.stack.iter()
         .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
-            PendingTrigger::EnterWatch { watcher_id, .. }) if *watcher_id == watcher))
+            PendingTrigger {
+                source: TriggerSource { id: watcher_id, .. },
+                event: TriggerEvent::CreatureEntered { .. } }) if *watcher_id == watcher))
         .count()
 }
 

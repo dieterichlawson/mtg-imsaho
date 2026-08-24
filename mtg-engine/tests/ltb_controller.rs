@@ -10,7 +10,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::PlayerId;
 use mtg_engine::state::StackEntry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent};
 use mtg_engine::types::{Step, Zone};
 
 const P0: PlayerId = PlayerId(0);
@@ -28,7 +28,7 @@ fn fiend_hunter_ltb_trigger_has_correct_controller() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let ltb = state.stack.iter().find_map(|e| match e {
-        StackEntry::Trigger(t @ PendingTrigger::LeftBattlefield { .. }) => Some(t),
+        StackEntry::Trigger(t @ PendingTrigger { event: TriggerEvent::LeftBattlefield, .. }) => Some(t),
         _ => None,
     }).expect("Fiend Hunter's LTB trigger should be on the stack");
 
@@ -49,7 +49,7 @@ fn fiend_hunter_controlled_by_p1_has_p1_controller() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let ltb = state.stack.iter().find_map(|e| match e {
-        StackEntry::Trigger(t @ PendingTrigger::LeftBattlefield { .. }) => Some(t),
+        StackEntry::Trigger(t @ PendingTrigger { event: TriggerEvent::LeftBattlefield, .. }) => Some(t),
         _ => None,
     }).expect("Fiend Hunter's LTB trigger should be on the stack");
 

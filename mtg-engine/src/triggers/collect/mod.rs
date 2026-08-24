@@ -27,21 +27,32 @@ impl Collector {
         Self { active_player, ap: Vec::new(), nap: Vec::new() }
     }
 
-    /// Add a trigger, filing it by whether its controller is the active player.
-    pub fn push(&mut self, controller: PlayerId, trigger: PendingTrigger) {
-        if controller == self.active_player {
+    /// Add a trigger, filing it by whether its controller is the active
+    /// player. The controller is read off the trigger's source, so the twenty
+    /// `if controller == active_player { ap.push } else { nap.push }` blocks
+    /// that used to follow every construction are gone.
+    pub fn push(&mut self, trigger: PendingTrigger) {
+        if trigger.source.controller == self.active_player {
             self.ap.push(trigger);
         } else {
             self.nap.push(trigger);
         }
     }
 
-    pub fn push_ap(&mut self, trigger: PendingTrigger) {
-        self.ap.push(trigger);
-    }
-
-    pub fn push_nap(&mut self, trigger: PendingTrigger) {
-        self.nap.push(trigger);
+    /// Build a trigger from its source parts and file it. `description` is the
+    /// source's `TriggeredAbilityDef` text, shown on the stack.
+    pub fn emit(
+        &mut self,
+        id: crate::ids::ObjectId,
+        card_id: crate::ids::CardId,
+        controller: PlayerId,
+        description: String,
+        event: crate::triggers::TriggerEvent,
+    ) {
+        self.push(PendingTrigger::new(
+            crate::triggers::TriggerSource::new(id, card_id, controller, description),
+            event,
+        ));
     }
 
     pub fn is_empty(&self) -> bool {

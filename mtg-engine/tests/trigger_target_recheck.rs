@@ -15,7 +15,7 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::state::StackEntry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -40,12 +40,9 @@ fn a_trigger_fizzles_when_its_target_stops_satisfying_the_cards_restriction() {
     let not_a_spirit = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
     assert!(!state.has_subtype(not_a_spirit, "Spirit", &reg), "test precondition");
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: angel,
-        card_id: angel_card,
-        controller: P0,
-        description: "Angel of Flight Alabaster".into(),
-        chosen_targets: vec![Target::Object(not_a_spirit)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(not_a_spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
+        event: TriggerEvent::Upkeep,
     }));
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
@@ -64,12 +61,9 @@ fn a_trigger_with_a_still_legal_target_resolves() {
     let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
     let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: angel,
-        card_id: angel_card,
-        controller: P0,
-        description: "Angel of Flight Alabaster".into(),
-        chosen_targets: vec![Target::Object(spirit)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
+        event: TriggerEvent::Upkeep,
     }));
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 

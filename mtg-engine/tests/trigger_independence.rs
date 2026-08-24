@@ -8,7 +8,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, StackEntry};
-use mtg_engine::triggers::{self, PendingTrigger};
+use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -18,7 +18,9 @@ fn registry() -> CardRegistry {
 fn damage_watch_triggers(state: &GameState, watcher: ObjectId) -> usize {
     state.stack.iter()
         .filter(|e| matches!(e, StackEntry::Trigger(
-            PendingTrigger::DamageToPlayerWatch { watcher_id, .. }) if *watcher_id == watcher))
+            PendingTrigger {
+                source: TriggerSource { id: watcher_id, .. },
+                event: TriggerEvent::AnyDamageToPlayer { .. } }) if *watcher_id == watcher))
         .count()
 }
 
@@ -112,7 +114,9 @@ fn a_non_creature_watcher_destroyed_simultaneously_still_triggers() {
     triggers::collect_triggers(&mut state, &reg);
 
     let triggered = state.stack.iter().any(|e| matches!(e, StackEntry::Trigger(
-        PendingTrigger::DeathWatch { watcher_id, .. }) if *watcher_id == grime));
+        PendingTrigger {
+            source: TriggerSource { id: watcher_id, .. },
+            event: TriggerEvent::CreatureDied { .. } }) if *watcher_id == grime));
     assert!(triggered,
         "Gutter Grime is an enchantment, so no CreatureDied event is emitted \
          for it — but it was on the battlefield when the creature died and its \

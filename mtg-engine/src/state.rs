@@ -63,6 +63,10 @@ impl StackEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndOfCombatExileEntry {
     pub target_id: ObjectId,
+    /// The permanent whose ability created the delayed trigger. It may be gone
+    /// by end of combat — the delayed ability fires anyway (CR 603.7d) — but
+    /// the trigger still names it as its source on the stack.
+    pub source_id: ObjectId,
     pub source_card_id: CardId,
     pub controller: PlayerId,
     pub description: String,

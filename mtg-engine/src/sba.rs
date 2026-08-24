@@ -227,14 +227,10 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                 }
                 state.log(LogLevel::Event,
                     format!("{}'s state-triggered ability triggers", state.obj_name(id)));
-                state.pending_triggers.push(
-                    crate::triggers::PendingTrigger::StateTriggered {
-                        object_id: id,
-                        card_id,
-                        controller,
-                        description,
-                    }
-                );
+                state.pending_triggers.push(crate::triggers::PendingTrigger::new(
+                    crate::triggers::TriggerSource::new(id, card_id, controller, description),
+                    crate::triggers::TriggerEvent::StateTriggered,
+                ));
                 // Return immediately so the state trigger goes on the stack
                 // before any further SBA processing (e.g. zero-loyalty death).
                 return true;

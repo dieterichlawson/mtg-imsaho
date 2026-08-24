@@ -4,7 +4,7 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource, DeadCreature};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -33,12 +33,9 @@ fn test_angel_of_flight_alabaster_trigger_resolves_after_death() {
     // trigger would rightly fizzle for a reason unrelated to this test.
     let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: angel,
-        card_id: angel_card,
-        controller: P0,
-        description: "Angel of Flight Alabaster".into(),
-        chosen_targets: vec![Target::Object(spirit)],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: vec![Target::Object(spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
+        event: TriggerEvent::Upkeep,
     }));
 
     state.move_object(angel, Zone::Graveyard, &reg);
@@ -65,12 +62,9 @@ fn test_charmbreaker_devils_trigger_resolves_after_death() {
     let instant = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
     state.get_object_mut(instant).unwrap().card_types = vec![CardType::Instant];
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: devils,
-        card_id: devils_card,
-        controller: P0,
-        description: "Charmbreaker Devils".into(),
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(devils, devils_card, P0, "Charmbreaker Devils"),
+        event: TriggerEvent::Upkeep,
     }));
 
     state.move_object(devils, Zone::Graveyard, &reg);
@@ -94,14 +88,9 @@ fn test_geist_of_saint_traft_angel_token_created_after_death() {
     let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
     let geist_card = reg.get_id_by_name("Geist of Saint Traft").unwrap();
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::AttacksTrigger {
-        object_id: geist,
-        card_id: geist_card,
-        controller: P0,
-        description: "Geist of Saint Traft".into(),
-        attacker: geist,
-        defending_player: P1,
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(geist, geist_card, P0, "Geist of Saint Traft"),
+        event: TriggerEvent::Attacks { attacker: geist, defending_player: P1 },
     }));
 
     state.move_object(geist, Zone::Graveyard, &reg);
@@ -131,14 +120,9 @@ fn test_kessig_cagebreakers_tokens_created_after_death() {
     let c2 = ready_creature(&mut state, P0, 3, 3);
     state.move_object(c2, Zone::Graveyard, &reg);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::AttacksTrigger {
-        object_id: cb,
-        card_id: cb_card,
-        controller: P0,
-        description: "Kessig Cagebreakers".into(),
-        attacker: cb,
-        defending_player: P1,
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(cb, cb_card, P0, "Kessig Cagebreakers"),
+        event: TriggerEvent::Attacks { attacker: cb, defending_player: P1 },
     }));
 
     state.move_object(cb, Zone::Graveyard, &reg);
@@ -168,12 +152,9 @@ fn test_splinterfright_mill_resolves_after_death() {
     }
     let lib_before = state.players[0].library_order.len();
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: splinter,
-        card_id: splinter_card,
-        controller: P0,
-        description: "Splinterfright".into(),
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(splinter, splinter_card, P0, "Splinterfright"),
+        event: TriggerEvent::Upkeep,
     }));
 
     state.move_object(splinter, Zone::Graveyard, &reg);
@@ -200,13 +181,9 @@ fn test_undead_alchemist_watch_resolves_after_death() {
 
     let milled = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::CreatureCardMilledWatch {
-        watcher_id: alchemist,
-        watcher_card_id: alchemist_card,
-        controller: P0,
-        milled_object: milled,
-        milled_player: P1,
-        description: "Undead Alchemist".into(),
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(alchemist, alchemist_card, P0, "Undead Alchemist"),
+        event: TriggerEvent::CreatureCardMilled { milled_object: milled, milled_player: P1 },
     }));
 
     state.move_object(alchemist, Zone::Graveyard, &reg);
@@ -240,17 +217,9 @@ fn test_gutter_grime_creates_token_when_ltb() {
     state.move_object(grime, Zone::Graveyard, &reg);
     state.move_object(creature, Zone::Graveyard, &reg);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::DeathWatch {
-        watcher_id: grime,
-        watcher_card_id: grime_card,
-        controller: P0,
-        dead_id: creature,
-        dead_controller: P0,
-        dead_damaged_by: vec![],
-        dead_toughness: 2,
-        dead_is_token: false,
-        description: "Gutter Grime".into(),
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(grime, grime_card, P0, "Gutter Grime"),
+        event: TriggerEvent::CreatureDied { dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false } },
     }));
 
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
@@ -278,17 +247,9 @@ fn test_murder_of_crows_trigger_resolves_after_simultaneous_death() {
     state.move_object(murder, Zone::Graveyard, &reg);
     state.move_object(creature, Zone::Graveyard, &reg);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::DeathWatch {
-        watcher_id: murder,
-        watcher_card_id: murder_card,
-        controller: P0,
-        dead_id: creature,
-        dead_controller: P0,
-        dead_damaged_by: vec![],
-        dead_toughness: 2,
-        dead_is_token: false,
-        description: "Murder of Crows".into(),
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(murder, murder_card, P0, "Murder of Crows"),
+        event: TriggerEvent::CreatureDied { dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false } },
     }));
 
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
@@ -312,13 +273,9 @@ fn test_mentor_of_the_meek_trigger_resolves_after_removal() {
     let mentor_card = reg.get_id_by_name("Mentor of the Meek").unwrap();
     let small_creature = ready_creature(&mut state, P0, 1, 1);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::EnterWatch {
-        watcher_id: mentor,
-        watcher_card_id: mentor_card,
-        controller: P0,
-        entered_id: small_creature,
-        entered_controller: P0,
-        description: "Mentor of the Meek".into(),
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(mentor, mentor_card, P0, "Mentor of the Meek"),
+        event: TriggerEvent::CreatureEntered { entered: small_creature, entered_controller: P0 },
     }));
 
     state.move_object(mentor, Zone::Graveyard, &reg);
@@ -358,14 +315,9 @@ fn test_trepanation_blade_trigger_resolves_after_equipment_destroyed() {
 
     let lib_before = state.players[1].library_order.len();
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::AttacksTrigger {
-        object_id: blade,
-        card_id: blade_card,
-        controller: P0,
-        description: "Trepanation Blade".into(),
-        attacker: blade,
-        defending_player: P1,
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(blade, blade_card, P0, "Trepanation Blade"),
+        event: TriggerEvent::Attacks { attacker: blade, defending_player: P1 },
     }));
 
     state.move_object(blade, Zone::Graveyard, &reg);

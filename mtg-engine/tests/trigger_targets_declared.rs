@@ -21,7 +21,7 @@ mod common;
 use common::*;
 use mtg_engine::cards::{CardRegistry, TriggerKind};
 use mtg_engine::state::GameState;
-use mtg_engine::triggers::{self, PendingTrigger};
+use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -69,7 +69,9 @@ fn elder_cathar_trigger_is_removed_with_no_legal_targets() {
 
     let on_stack = state.stack.iter()
         .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
-            PendingTrigger::SelfDies { dead_id, .. }) if *dead_id == cathar))
+            PendingTrigger {
+                source: TriggerSource { id: dead_id, .. },
+                event: TriggerEvent::SelfDies }) if *dead_id == cathar))
         .count();
     assert_eq!(on_stack, 0,
         "with no creature its controller controls, Elder Cathar's ability has \
@@ -133,6 +135,8 @@ fn curse_only_triggers_on_the_enchanted_players_upkeep() {
 fn count_upkeep_entries(state: &GameState, object: mtg_engine::ids::ObjectId) -> usize {
     state.stack.iter()
         .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
-            PendingTrigger::UpkeepTrigger { object_id, .. }) if *object_id == object))
+            PendingTrigger {
+                source: TriggerSource { id: object_id, .. },
+                event: TriggerEvent::Upkeep }) if *object_id == object))
         .count()
 }

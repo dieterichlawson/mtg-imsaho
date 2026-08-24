@@ -23,7 +23,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::GameState;
-use mtg_engine::triggers::{self, PendingTrigger};
+use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -106,7 +106,8 @@ fn check_land_puts_no_trigger_on_the_stack() {
             triggers::collect_triggers(&mut state, &reg);
             let entries = state.stack.iter()
                 .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
-                    PendingTrigger::EnteredBattlefield { object_id, .. }) if *object_id == id))
+                    PendingTrigger { source: TriggerSource { id: object_id, .. },
+                        event: TriggerEvent::SelfEntered }) if *object_id == id))
                 .count();
             assert_eq!(entries, 0,
                 "{land} (with a {basic}) must not put an ETB trigger on the \

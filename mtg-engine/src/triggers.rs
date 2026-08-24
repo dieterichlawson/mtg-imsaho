@@ -7,484 +7,234 @@ use crate::types::Zone;
 /// A triggered ability that has been collected but not yet resolved.
 /// These are placed on `pending_triggers` in APNAP order, then resolved
 /// LIFO (non-active player's triggers resolve first).
+///
+/// Every trigger is a *source* — the object whose ability this is — plus the
+/// *event* it triggered on. Before this it was one enum of twenty variants,
+/// each spelling the source out again under whichever name that variant's
+/// author picked (`watcher_id`, `object_id`, `dead_id`, `creature_id`), which
+/// is why `controller`, `source_object`, `behavior_card_id`, `chosen_targets`
+/// and `display_name` were all twenty-arm matches over the same four fields.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum PendingTrigger {
-    /// A creature's own "when this dies" trigger.
-    SelfDies {
-        dead_id: ObjectId,
-        dead_card_id: CardId,
-        controller: PlayerId,
-        description: String,
-        /// CR 603.3d: targets chosen as the trigger goes on the stack. Empty
-        /// for untargeted triggers.
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// A "whenever a creature dies" death-watch trigger on another permanent.
-    DeathWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        dead_id: ObjectId,
-        dead_controller: PlayerId,
-        /// Last-known information captured before zone change clears battlefield state.
-        dead_damaged_by: Vec<ObjectId>,
-        dead_toughness: i32,
-        dead_is_token: bool,
-        description: String,
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// A creature entering the battlefield trigger.
-    EnteredBattlefield {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// A "whenever a creature enters the battlefield" ETB-watch trigger on another permanent.
-    EnterWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        entered_id: ObjectId,
-        entered_controller: PlayerId,
-        description: String,
-    },
-    /// A creature dealt combat damage to a player.
-    CombatDamageToPlayer {
-        creature_id: ObjectId,
-        creature_card_id: CardId,
-        controller: PlayerId,
-        damaged_player: PlayerId,
-        amount: u32,
-        description: String,
-    },
-    /// A watcher observing another creature's combat damage to a player.
-    CombatDamageWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        source_id: ObjectId,
-        damaged_player: PlayerId,
-        amount: u32,
-        description: String,
-    },
-    /// A watcher observing any damage (combat or non-combat) to a player.
-    DamageToPlayerWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        source_id: ObjectId,
-        damaged_player: PlayerId,
-        amount: u32,
-        description: String,
-    },
-    /// A spell-cast watcher trigger.
-    SpellCastWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        caster: PlayerId,
-        spell_id: ObjectId,
-        description: String,
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// An end-of-combat trigger on a permanent.
-    EndCombatTrigger {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-    },
-    /// An upkeep trigger on a permanent.
-    UpkeepTrigger {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// An end-step trigger on a permanent.
-    EndStepTrigger {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// A permanent leaving the battlefield trigger. Per CR 603.10c, the
-    /// controller is the player who controlled the permanent immediately
-    /// before it left the battlefield.
-    LeftBattlefield {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-    },
-    /// A "whenever this attacks" trigger — the attacking creature's own, or
-    /// one from an Equipment or Aura attached to it.
-    AttacksTrigger {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-        /// The attacking creature. Equal to `object_id` for a creature's own
-        /// trigger; the creature it was attached to for an Equipment's.
-        /// Snapshotted at declaration (CR 508.1) — by resolution the creature
-        /// may be dead and the Equipment may be on something else.
-        attacker: ObjectId,
-        /// Who it was declared as attacking, likewise snapshotted.
-        defending_player: PlayerId,
-        #[serde(default)]
-        chosen_targets: Vec<Target>,
-    },
-    /// A creature's "when this blocks" trigger.
-    BlocksTrigger {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        blocked_attacker: ObjectId,
-        description: String,
-    },
-    /// A watcher observing any creature attacking.
-    AttackWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        attacker_id: ObjectId,
-        attacker_controller: PlayerId,
-        description: String,
-    },
-    /// A creature's "when this deals combat damage to a creature" trigger.
-    CombatDamageToCreature {
-        creature_id: ObjectId,
-        creature_card_id: CardId,
-        controller: PlayerId,
-        damaged_creature: ObjectId,
-        amount: u32,
-        description: String,
-    },
-    /// A creature's "when this becomes blocked" trigger (attacker that gets blocked).
-    BecomesBlockedTrigger {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        blocker_id: ObjectId,
-        description: String,
-    },
-    /// A state-triggered ability (CR 603.8). These are checked during SBA processing
-    /// and go on the stack like normal triggered abilities. The trigger won't fire again
-    /// while it's already on the stack.
-    StateTriggered {
-        object_id: ObjectId,
-        card_id: CardId,
-        controller: PlayerId,
-        description: String,
-    },
-    /// A watcher observing a creature card being milled from an opponent's library.
-    CreatureCardMilledWatch {
-        watcher_id: ObjectId,
-        watcher_card_id: CardId,
-        controller: PlayerId,
-        milled_object: ObjectId,
-        milled_player: PlayerId,
-        description: String,
-    },
-    /// A delayed triggered ability that exiles a specific token at end of combat
-    /// (CR 603.7). Created by an earlier effect (e.g. Geist of Saint Traft's
-    /// "exile that token at end of combat"). Fires even if the source permanent
-    /// has since left the battlefield (CR 603.7d).
-    DelayedTokenExile {
-        target_id: ObjectId,
-        source_card_id: CardId,
-        controller: PlayerId,
-        description: String,
-    },
+pub struct PendingTrigger {
+    pub source: TriggerSource,
+    pub event: TriggerEvent,
 }
 
-impl PendingTrigger {
-    /// The player who controls this trigger.
-    #[must_use]
-    pub fn controller(&self) -> PlayerId {
-        match self {
-            PendingTrigger::SelfDies { controller, .. }
-            | PendingTrigger::DeathWatch { controller, .. }
-            | PendingTrigger::EnteredBattlefield { controller, .. }
-            | PendingTrigger::EnterWatch { controller, .. }
-            | PendingTrigger::CombatDamageToPlayer { controller, .. }
-            | PendingTrigger::CombatDamageWatch { controller, .. }
-            | PendingTrigger::DamageToPlayerWatch { controller, .. }
-            | PendingTrigger::SpellCastWatch { controller, .. }
-            | PendingTrigger::EndCombatTrigger { controller, .. }
-            | PendingTrigger::UpkeepTrigger { controller, .. }
-            | PendingTrigger::EndStepTrigger { controller, .. }
-            | PendingTrigger::LeftBattlefield { controller, .. }
-            | PendingTrigger::AttacksTrigger { controller, .. }
-            | PendingTrigger::BlocksTrigger { controller, .. }
-            | PendingTrigger::AttackWatch { controller, .. }
-            | PendingTrigger::CombatDamageToCreature { controller, .. }
-            | PendingTrigger::BecomesBlockedTrigger { controller, .. }
-            | PendingTrigger::StateTriggered { controller, .. }
-            | PendingTrigger::CreatureCardMilledWatch { controller, .. }
-            | PendingTrigger::DelayedTokenExile { controller, .. } => *controller,
-        }
-    }
+/// The object whose triggered ability this is.
+///
+/// Captured when the trigger is created, which makes it last known information
+/// (CR 603.10a): the permanent may be gone by the time the trigger resolves,
+/// and the ability resolves anyway (CR 113.7a).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TriggerSource {
+    pub id: ObjectId,
+    pub card_id: CardId,
+    /// Who controls the ability. For a leave-the-battlefield trigger this is
+    /// who controlled the permanent immediately before it left (CR 603.10c).
+    pub controller: PlayerId,
+    /// The `TriggeredAbilityDef` description, for the stack view.
+    pub description: String,
+    /// CR 603.3d: targets chosen as the trigger goes on the stack. Empty for
+    /// untargeted triggers.
+    #[serde(default)]
+    pub chosen_targets: Vec<Target>,
+}
 
-    /// The source object that the trigger fires from. Used to look up the
-    /// trigger's target requirement and as the "source" for target validation.
-    /// Returns None for triggers without a meaningful source object.
+impl TriggerSource {
     #[must_use]
-    pub fn source_object(&self) -> Option<ObjectId> {
-        match self {
-            PendingTrigger::SelfDies { dead_id, .. } => Some(*dead_id),
-            PendingTrigger::DeathWatch { watcher_id, .. }
-            | PendingTrigger::EnterWatch { watcher_id, .. }
-            | PendingTrigger::CombatDamageWatch { watcher_id, .. }
-            | PendingTrigger::DamageToPlayerWatch { watcher_id, .. }
-            | PendingTrigger::SpellCastWatch { watcher_id, .. }
-            | PendingTrigger::AttackWatch { watcher_id, .. }
-            | PendingTrigger::CreatureCardMilledWatch { watcher_id, .. } => Some(*watcher_id),
-            PendingTrigger::EnteredBattlefield { object_id, .. }
-            | PendingTrigger::EndCombatTrigger { object_id, .. }
-            | PendingTrigger::UpkeepTrigger { object_id, .. }
-            | PendingTrigger::EndStepTrigger { object_id, .. }
-            | PendingTrigger::LeftBattlefield { object_id, .. }
-            | PendingTrigger::AttacksTrigger { object_id, .. }
-            | PendingTrigger::BlocksTrigger { object_id, .. }
-            | PendingTrigger::BecomesBlockedTrigger { object_id, .. }
-            | PendingTrigger::StateTriggered { object_id, .. } => Some(*object_id),
-            PendingTrigger::CombatDamageToPlayer { creature_id, .. }
-            | PendingTrigger::CombatDamageToCreature { creature_id, .. } => Some(*creature_id),
-            PendingTrigger::DelayedTokenExile { .. } => None,
-        }
+    pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
+        Self { id, card_id, controller, description: description.into(), chosen_targets: Vec::new() }
     }
+}
 
-    /// The card id of the behavior that owns this trigger. Used to look up
-    /// the `TriggeredAbilityDef`.
-    #[must_use]
-    pub fn behavior_card_id(&self) -> CardId {
-        match self {
-            PendingTrigger::SelfDies { dead_card_id, .. } => *dead_card_id,
-            PendingTrigger::DeathWatch { watcher_card_id, .. }
-            | PendingTrigger::EnterWatch { watcher_card_id, .. }
-            | PendingTrigger::CombatDamageWatch { watcher_card_id, .. }
-            | PendingTrigger::DamageToPlayerWatch { watcher_card_id, .. }
-            | PendingTrigger::SpellCastWatch { watcher_card_id, .. }
-            | PendingTrigger::AttackWatch { watcher_card_id, .. }
-            | PendingTrigger::CreatureCardMilledWatch { watcher_card_id, .. } => *watcher_card_id,
-            PendingTrigger::EnteredBattlefield { card_id, .. }
-            | PendingTrigger::EndCombatTrigger { card_id, .. }
-            | PendingTrigger::UpkeepTrigger { card_id, .. }
-            | PendingTrigger::EndStepTrigger { card_id, .. }
-            | PendingTrigger::LeftBattlefield { card_id, .. }
-            | PendingTrigger::AttacksTrigger { card_id, .. }
-            | PendingTrigger::BlocksTrigger { card_id, .. }
-            | PendingTrigger::BecomesBlockedTrigger { card_id, .. }
-            | PendingTrigger::StateTriggered { card_id, .. } => *card_id,
-            PendingTrigger::CombatDamageToPlayer { creature_card_id, .. }
-            | PendingTrigger::CombatDamageToCreature { creature_card_id, .. } => *creature_card_id,
-            PendingTrigger::DelayedTokenExile { source_card_id, .. } => *source_card_id,
-        }
-    }
+/// Last known information about a creature that died, captured before the zone
+/// change cleared its battlefield state (CR 603.10a).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeadCreature {
+    pub id: ObjectId,
+    pub controller: PlayerId,
+    pub damaged_by: Vec<ObjectId>,
+    pub toughness: i32,
+    pub is_token: bool,
+}
 
-    /// The trigger kind, used to look up the matching `TriggeredAbilityDef`.
-    /// Returns `None` for triggers without a corresponding `TriggerKind`
-    /// (currently just `StateTriggered`, which has its own dispatch).
+/// What the trigger triggered on.
+///
+/// One variant per `CardBehavior` hook the trigger dispatches to, carrying
+/// only what that hook needs beyond the source. "Self" and "watcher" variants
+/// stay distinct because they call different hooks and match different
+/// `TriggerKind`s — a card can have both, and Blood Artist's "whenever this or
+/// another creature dies" must fire its watcher ability when it dies itself.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum TriggerEvent {
+    /// This creature died.
+    SelfDies,
+    /// A creature died, watched by another permanent.
+    CreatureDied { dead: DeadCreature },
+    /// This permanent entered the battlefield.
+    SelfEntered,
+    /// A creature entered the battlefield, watched by another permanent.
+    CreatureEntered { entered: ObjectId, entered_controller: PlayerId },
+    /// This creature dealt combat damage to a player.
+    CombatDamageToPlayer { damaged_player: PlayerId, amount: u32 },
+    /// A creature dealt combat damage to a player, watched.
+    AnyCombatDamageToPlayer { dealer: ObjectId, damaged_player: PlayerId, amount: u32 },
+    /// Any damage, combat or not, was dealt to a player, watched.
+    AnyDamageToPlayer { dealer: ObjectId, damaged_player: PlayerId, amount: u32 },
+    /// This creature dealt combat damage to another creature.
+    CombatDamageToCreature { damaged_creature: ObjectId, amount: u32 },
+    /// A spell was cast, watched.
+    SpellCast { caster: PlayerId, spell_id: ObjectId },
+    /// A creature attacked, and this trigger belongs to it or to something
+    /// attached to it. `attacker` and `defending_player` are snapshotted at
+    /// declaration (CR 508.1) — by resolution the creature may be dead and an
+    /// Equipment may be on something else.
+    Attacks { attacker: ObjectId, defending_player: PlayerId },
+    /// A creature attacked, watched by any permanent (including the attacker
+    /// itself — Instigator Gang must see its own attack).
+    CreatureAttacked { attacker: ObjectId, attacker_controller: PlayerId },
+    /// This creature blocked an attacker.
+    Blocks { blocked_attacker: ObjectId },
+    /// This attacking creature became blocked.
+    BecomesBlocked { blocker_id: ObjectId },
+    /// A creature card was milled from an opponent's library, watched.
+    CreatureCardMilled { milled_object: ObjectId, milled_player: PlayerId },
+    /// This permanent left the battlefield.
+    LeftBattlefield,
+    /// An upkeep step began.
+    Upkeep,
+    /// An end step began.
+    EndStep,
+    /// The end of combat step began.
+    EndCombat,
+    /// A state-triggered ability (CR 603.8), raised during SBA processing. It
+    /// will not fire again while it is already on the stack.
+    StateTriggered,
+    /// A delayed triggered ability that exiles a specific token at end of
+    /// combat (CR 603.7) — Geist of Saint Traft's Angel. Fires even if the
+    /// source permanent has since left the battlefield (CR 603.7d).
+    DelayedTokenExile { target_id: ObjectId },
+}
+
+impl TriggerEvent {
+    /// The `TriggerKind` whose `TriggeredAbilityDef` describes this trigger.
+    ///
+    /// `None` for the two triggers the engine raises itself rather than
+    /// reading off a card: state-triggered abilities and delayed exile.
     #[must_use]
     pub fn kind(&self) -> Option<crate::cards::TriggerKind> {
-        use crate::cards::TriggerKind;
+        use crate::cards::TriggerKind as K;
         Some(match self {
-            PendingTrigger::SelfDies { .. } => TriggerKind::SelfDies,
-            PendingTrigger::DeathWatch { .. } => TriggerKind::AnyCreatureDies,
-            PendingTrigger::EnteredBattlefield { .. } => TriggerKind::EntersBattlefield,
-            PendingTrigger::EnterWatch { .. } => TriggerKind::AnyCreatureEnters,
-            PendingTrigger::CombatDamageToPlayer { .. } => TriggerKind::CombatDamageToPlayer,
-            PendingTrigger::CombatDamageWatch { .. } => TriggerKind::AnyCombatDamageToPlayer,
-            PendingTrigger::DamageToPlayerWatch { .. } => TriggerKind::AnyDamageToPlayer,
-            PendingTrigger::SpellCastWatch { .. } => TriggerKind::SpellCast,
-            PendingTrigger::EndCombatTrigger { .. } => TriggerKind::EndCombat,
-            PendingTrigger::UpkeepTrigger { .. } => TriggerKind::Upkeep,
-            PendingTrigger::EndStepTrigger { .. } => TriggerKind::EndStep,
-            PendingTrigger::LeftBattlefield { .. } => TriggerKind::LeavesBattlefield,
-            PendingTrigger::AttacksTrigger { .. } => TriggerKind::Attacks,
-            PendingTrigger::BlocksTrigger { .. } => TriggerKind::Blocks,
-            PendingTrigger::AttackWatch { .. } => TriggerKind::AnyCreatureAttacks,
-            PendingTrigger::CombatDamageToCreature { .. } => TriggerKind::DealsCombatDamageToCreature,
-            PendingTrigger::BecomesBlockedTrigger { .. } => TriggerKind::BecomesBlocked,
-            PendingTrigger::CreatureCardMilledWatch { .. } => TriggerKind::CreatureCardMilled,
-            PendingTrigger::StateTriggered { .. } | PendingTrigger::DelayedTokenExile { .. } => return None,
+            TriggerEvent::SelfDies => K::SelfDies,
+            TriggerEvent::CreatureDied { .. } => K::AnyCreatureDies,
+            TriggerEvent::SelfEntered => K::EntersBattlefield,
+            TriggerEvent::CreatureEntered { .. } => K::AnyCreatureEnters,
+            TriggerEvent::CombatDamageToPlayer { .. } => K::CombatDamageToPlayer,
+            TriggerEvent::AnyCombatDamageToPlayer { .. } => K::AnyCombatDamageToPlayer,
+            TriggerEvent::AnyDamageToPlayer { .. } => K::AnyDamageToPlayer,
+            TriggerEvent::CombatDamageToCreature { .. } => K::DealsCombatDamageToCreature,
+            TriggerEvent::SpellCast { .. } => K::SpellCast,
+            TriggerEvent::Attacks { .. } => K::Attacks,
+            TriggerEvent::CreatureAttacked { .. } => K::AnyCreatureAttacks,
+            TriggerEvent::Blocks { .. } => K::Blocks,
+            TriggerEvent::BecomesBlocked { .. } => K::BecomesBlocked,
+            TriggerEvent::CreatureCardMilled { .. } => K::CreatureCardMilled,
+            TriggerEvent::LeftBattlefield => K::LeavesBattlefield,
+            TriggerEvent::Upkeep => K::Upkeep,
+            TriggerEvent::EndStep => K::EndStep,
+            TriggerEvent::EndCombat => K::EndCombat,
+            TriggerEvent::StateTriggered | TriggerEvent::DelayedTokenExile { .. } => return None,
         })
     }
 
-    /// Mutate the trigger's `chosen_targets` field. Returns false if this
-    /// variant doesn't carry chosen targets.
-    pub fn set_chosen_targets(&mut self, targets: Vec<Target>) -> bool {
+    /// How the stack view names a trigger of this kind.
+    fn phrase(&self) -> &'static str {
         match self {
-            PendingTrigger::SelfDies { chosen_targets, .. }
-            | PendingTrigger::DeathWatch { chosen_targets, .. }
-            | PendingTrigger::EnteredBattlefield { chosen_targets, .. }
-            | PendingTrigger::SpellCastWatch { chosen_targets, .. }
-            | PendingTrigger::UpkeepTrigger { chosen_targets, .. }
-            | PendingTrigger::EndStepTrigger { chosen_targets, .. }
-            | PendingTrigger::AttacksTrigger { chosen_targets, .. } => {
-                *chosen_targets = targets;
-                true
-            }
-            _ => false,
+            TriggerEvent::SelfDies => "dies trigger",
+            TriggerEvent::CreatureDied { .. }
+            | TriggerEvent::CreatureEntered { .. }
+            | TriggerEvent::AnyCombatDamageToPlayer { .. }
+            | TriggerEvent::AnyDamageToPlayer { .. }
+            | TriggerEvent::SpellCast { .. } => "triggered ability",
+            TriggerEvent::SelfEntered => "ETB trigger",
+            TriggerEvent::CombatDamageToPlayer { .. }
+            | TriggerEvent::CombatDamageToCreature { .. } => "combat damage trigger",
+            TriggerEvent::Attacks { .. } | TriggerEvent::CreatureAttacked { .. } => "attack trigger",
+            TriggerEvent::Blocks { .. } | TriggerEvent::BecomesBlocked { .. } => "block trigger",
+            TriggerEvent::CreatureCardMilled { .. } => "mill-watcher trigger",
+            TriggerEvent::LeftBattlefield => "LTB trigger",
+            TriggerEvent::Upkeep => "upkeep trigger",
+            TriggerEvent::EndStep => "end step trigger",
+            TriggerEvent::EndCombat => "end of combat trigger",
+            TriggerEvent::StateTriggered => "state-triggered ability",
+            TriggerEvent::DelayedTokenExile { .. } => "delayed exile trigger",
         }
+    }
+}
+
+impl PendingTrigger {
+    #[must_use]
+    pub fn new(source: TriggerSource, event: TriggerEvent) -> Self {
+        Self { source, event }
+    }
+
+    /// The player who controls this trigger.
+    #[must_use]
+    pub fn controller(&self) -> PlayerId {
+        self.source.controller
+    }
+
+    /// The source object the trigger fires from — the "source" for target
+    /// validation and the object whose `TriggeredAbilityDef` is consulted.
+    #[must_use]
+    pub fn source_object(&self) -> ObjectId {
+        self.source.id
+    }
+
+    /// The card id of the behavior that owns this trigger.
+    #[must_use]
+    pub fn behavior_card_id(&self) -> CardId {
+        self.source.card_id
+    }
+
+    /// The trigger kind, used to look up the matching `TriggeredAbilityDef`.
+    #[must_use]
+    pub fn kind(&self) -> Option<crate::cards::TriggerKind> {
+        self.event.kind()
     }
 
     #[must_use]
     pub fn chosen_targets(&self) -> &[Target] {
-        match self {
-            PendingTrigger::SelfDies { chosen_targets, .. }
-            | PendingTrigger::DeathWatch { chosen_targets, .. }
-            | PendingTrigger::EnteredBattlefield { chosen_targets, .. }
-            | PendingTrigger::SpellCastWatch { chosen_targets, .. }
-            | PendingTrigger::UpkeepTrigger { chosen_targets, .. }
-            | PendingTrigger::EndStepTrigger { chosen_targets, .. }
-            | PendingTrigger::AttacksTrigger { chosen_targets, .. } => chosen_targets,
-            _ => &[],
-        }
+        &self.source.chosen_targets
     }
 
     /// Display name for the stack view, including what the trigger does.
-    /// Uses the object's current transform state to show the correct face name.
     #[must_use]
     pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
         self.display_name_with_state(registry, None)
     }
 
-    /// Display name with optional game state for transform-aware name lookup.
+    /// Display name with optional game state, so a transformed permanent shows
+    /// its back-face name. Every trigger kind gets this, not just upkeep —
+    /// the source object is now on the trigger regardless of event.
     #[must_use]
     pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
-        let face_name = |card_id: CardId, object_id: Option<ObjectId>| {
-            // Check if the object is transformed and use back-face name if so.
-            let is_transformed = object_id
-                .and_then(|oid| state.and_then(|s| s.get_object(oid)))
-                .is_some_and(|o| o.is_transformed);
-            if is_transformed {
-                if let Some(behavior) = registry.get(card_id) {
-                    if let Some(back) = behavior.back_face_data() {
-                        return back.name;
-                    }
-                }
-            }
-            registry.card_data(card_id).map_or_else(|| "Unknown".into(), |d| d.name)
-        };
-        let card_name = |card_id: CardId| {
-            face_name(card_id, None)
-        };
-        match self {
-            PendingTrigger::SelfDies { dead_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s dies trigger", card_name(*dead_card_id))
-                } else {
-                    format!("{}'s dies trigger ({})", card_name(*dead_card_id), description)
-                }
-            }
-            PendingTrigger::DeathWatch { watcher_card_id, description, .. }
-            | PendingTrigger::EnterWatch { watcher_card_id, description, .. }
-            | PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. }
-            | PendingTrigger::DamageToPlayerWatch { watcher_card_id, description, .. }
-            | PendingTrigger::SpellCastWatch { watcher_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s triggered ability", card_name(*watcher_card_id))
-                } else {
-                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
-                }
-            }
-            PendingTrigger::EnteredBattlefield { card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s ETB trigger", card_name(*card_id))
-                } else {
-                    format!("{}'s ETB trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::CombatDamageToPlayer { creature_card_id, description, .. }
-            | PendingTrigger::CombatDamageToCreature { creature_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s combat damage trigger", card_name(*creature_card_id))
-                } else {
-                    format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
-                }
-            }
-            PendingTrigger::EndCombatTrigger { card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s end of combat trigger", card_name(*card_id))
-                } else {
-                    format!("{}'s end of combat trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::UpkeepTrigger { object_id, card_id, description, .. } => {
-                let name = face_name(*card_id, Some(*object_id));
-                if description.is_empty() {
-                    format!("{name}'s upkeep trigger")
-                } else {
-                    format!("{name}'s upkeep trigger ({description})")
-                }
-            }
-            PendingTrigger::EndStepTrigger { card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s end step trigger", card_name(*card_id))
-                } else {
-                    format!("{}'s end step trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::LeftBattlefield { card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s LTB trigger", card_name(*card_id))
-                } else {
-                    format!("{}'s LTB trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::AttacksTrigger { card_id, description, .. }
-            | PendingTrigger::AttackWatch { watcher_card_id: card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s attack trigger", card_name(*card_id))
-                } else {
-                    format!("{}'s attack trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::BlocksTrigger { card_id, description, .. }
-            | PendingTrigger::BecomesBlockedTrigger { card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s block trigger", card_name(*card_id))
-                } else {
-                    format!("{}'s block trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::StateTriggered { card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s state-triggered ability", card_name(*card_id))
-                } else {
-                    format!("{}'s state-triggered ability ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::CreatureCardMilledWatch { watcher_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s mill-watcher trigger", card_name(*watcher_card_id))
-                } else {
-                    format!("{}'s mill-watcher trigger ({})", card_name(*watcher_card_id), description)
-                }
-            }
-            PendingTrigger::DelayedTokenExile { source_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s delayed exile trigger", card_name(*source_card_id))
-                } else {
-                    format!("{}'s delayed exile trigger ({})", card_name(*source_card_id), description)
-                }
-            }
+        let is_transformed = state
+            .and_then(|s| s.get_object(self.source.id))
+            .is_some_and(|o| o.is_transformed);
+        let name = registry
+            .get(self.source.card_id)
+            .and_then(|b| if is_transformed { b.back_face_data().map(|d| d.name) } else { None })
+            .or_else(|| registry.card_data(self.source.card_id).map(|d| d.name))
+            .unwrap_or_else(|| "Unknown".into());
+        let phrase = self.event.phrase();
+        if self.source.description.is_empty() {
+            format!("{name}'s {phrase}")
+        } else {
+            format!("{name}'s {phrase} ({})", self.source.description)
         }
     }
 }
-
 /// Look up the description for a trigger from the card's `TriggeredAbilityDef`.
 /// For transformed DFCs, also check the back face's triggered abilities.
 fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
@@ -565,7 +315,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
     // into the appropriate APNAP bucket.
     let pending: Vec<PendingTrigger> = state.pending_triggers.drain(..).collect();
     for t in pending {
-        c.push(t.controller(), t);
+        c.push(t);
     }
 
     let had_triggers = !c.is_empty();
@@ -606,13 +356,8 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
         };
 
         // Look up the target requirement for this trigger.
-        let card_id = trigger.behavior_card_id();
-        let target_req = trigger.kind().and_then(|kind| {
-            registry.get(card_id)
-                .and_then(|b| b.card_data().triggered_abilities.into_iter()
-                    .find(|t| t.kind == kind)
-                    .and_then(|t| t.target_requirement))
-        });
+        let card_id = trigger.source.card_id;
+        let target_req = target_requirement(registry, card_id, trigger.event.kind());
 
         let Some(req) = target_req else {
             // Untargeted: push directly onto the stack.
@@ -621,8 +366,8 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
         };
 
         // Compute valid targets via the same helper as spell casting.
-        let source_id = trigger.source_object().unwrap_or(crate::ids::ObjectId(0));
-        let controller = trigger.controller();
+        let source_id = trigger.source.id;
+        let controller = trigger.source.controller;
         let Some(behavior) = registry.get(card_id) else {
             // Card behavior not found — skip the trigger (shouldn't happen).
             continue;
@@ -642,7 +387,7 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                 // Auto-pick the single legal target.
                 let target = valid_targets[0].clone();
                 let mut t = trigger;
-                t.set_chosen_targets(vec![target]);
+                t.source.chosen_targets = vec![target];
                 state.stack.push(StackEntry::Trigger(t));
             }
             _ => {
@@ -676,6 +421,33 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
     }
 }
 
+/// The `TargetRequirement` a card's `TriggeredAbilityDef` of this kind
+/// declares, if any. Used both when the trigger goes on the stack (CR 603.3d)
+/// and when its targets are re-checked on resolution (CR 608.2b).
+fn target_requirement(
+    registry: &CardRegistry,
+    card_id: CardId,
+    kind: Option<crate::cards::TriggerKind>,
+) -> Option<crate::cards::TargetRequirement> {
+    let kind = kind?;
+    registry.get(card_id)?
+        .card_data()
+        .triggered_abilities
+        .into_iter()
+        .find(|t| t.kind == kind)
+        .and_then(|t| t.target_requirement)
+}
+
+/// CR 603.7d: the delayed ability exiles the token it was created for, if that
+/// token is still on the battlefield.
+fn exile_delayed_token(state: &mut GameState, target_id: ObjectId, registry: &CardRegistry) {
+    if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+        state.move_object(target_id, Zone::Exile, registry);
+        state.log(crate::state::LogLevel::Event,
+            "Token exiled by delayed end-of-combat trigger".into());
+    }
+}
+
 /// Resolve the top trigger from the stack.
 /// Returns true if a trigger was resolved, false if the top of stack is not a trigger.
 ///
@@ -695,20 +467,10 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
 
     // CR 608.2b: re-check target legality before resolving. If the trigger
     // has targets and ALL are now illegal, the ability is countered by game rules.
-    let targets = trigger.chosen_targets();
-    if !targets.is_empty() {
-        let card_id = trigger.behavior_card_id();
-        let controller = trigger.controller();
-        let target_req = registry.get(card_id)
-            .and_then(|behavior| {
-                let data = behavior.card_data();
-                let kind = trigger.kind();
-                kind.and_then(|k| {
-                    data.triggered_abilities.iter()
-                        .find(|ta| ta.kind == k)
-                        .and_then(|ta| ta.target_requirement.clone())
-                })
-            })
+    if !trigger.source.chosen_targets.is_empty() {
+        let card_id = trigger.source.card_id;
+        let controller = trigger.source.controller;
+        let target_req = target_requirement(registry, card_id, trigger.event.kind())
             .unwrap_or(crate::cards::TargetRequirement::None);
         // Both halves of legality, the way `resolve_spell` already does it:
         // the generic zone/hexproof/filter check AND the card's own
@@ -716,7 +478,7 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         // against a target that had stopped satisfying the card's wording —
         // Grimgrin's "creature the defending player controls" survived the
         // creature changing controller in response.
-        let any_legal = targets.iter().any(|t| {
+        let any_legal = trigger.source.chosen_targets.iter().any(|t| {
             crate::stack::is_target_legal(state, t, &target_req, controller, registry)
                 && registry.get(card_id)
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
@@ -728,145 +490,86 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         }
     }
 
-    match trigger {
-        PendingTrigger::EnteredBattlefield { object_id, card_id, chosen_targets, .. } => {
-            // Per MTG rules, ETB triggers resolve even if the source has left
-            // the battlefield. The trigger was already on the stack when the
-            // creature entered. Individual handlers can check zone if needed.
-            if let Some(behavior) = registry.get(card_id) {
-                behavior.on_enter_battlefield(state, object_id, &chosen_targets, registry);
-            }
+    // CR 113.7a: a triggered ability on the stack exists independently of its
+    // source, so removing the source after the trigger is on the stack does
+    // not counter it. Half these arms used to gate on the source still being
+    // on the battlefield and half did not — the two halves of the same pair
+    // (a creature's own combat-damage trigger and a watcher's) disagreed —
+    // which silently cancelled Reaper from the Abyss's end-step destruction
+    // and cost Rakish Heir its counter when the Heir traded in combat. There
+    // is one rule and it is stated here: the source's zone is not consulted.
+    // A handler that genuinely needs its permanent present checks for itself.
+    let PendingTrigger { source, event } = trigger;
+    let targets = source.chosen_targets;
+    let Some(behavior) = registry.get(source.card_id) else {
+        // The delayed exile trigger is raised by the engine and needs no
+        // behavior; everything else is a card ability and cannot resolve
+        // without one.
+        if let TriggerEvent::DelayedTokenExile { target_id } = event {
+            exile_delayed_token(state, target_id, registry);
         }
-        PendingTrigger::SelfDies { dead_id, dead_card_id, chosen_targets, .. } => {
-            if let Some(behavior) = registry.get(dead_card_id) {
-                behavior.on_dies(state, dead_id, &chosen_targets, registry);
-            }
+        return true;
+    };
+    let self_id = source.id;
+    match event {
+        TriggerEvent::SelfEntered => {
+            behavior.on_enter_battlefield(state, self_id, &targets, registry);
         }
-        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, dead_is_token, chosen_targets, .. } => {
-            // Per MTG rules, death triggers fire even if the watcher died
-            // simultaneously (e.g., Falkenrath Noble + board wipe). The trigger
-            // was created when the watcher was last known to be on the battlefield.
-            if let Some(behavior) = registry.get(watcher_card_id) {
-                behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, dead_is_token, &chosen_targets, registry);
-            }
+        TriggerEvent::SelfDies => {
+            behavior.on_dies(state, self_id, &targets, registry);
         }
-        PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {
-            if let Some(behavior) = registry.get(watcher_card_id) {
-                behavior.on_any_creature_enters(state, watcher_id, entered_id, entered_controller, registry);
-            }
+        TriggerEvent::CreatureDied { dead } => {
+            behavior.on_any_creature_dies(state, self_id, dead.id, dead.controller,
+                &dead.damaged_by, dead.toughness, dead.is_token, &targets, registry);
         }
-        PendingTrigger::CombatDamageToPlayer { creature_id, creature_card_id, damaged_player, amount, .. } => {
-            if let Some(behavior) = registry.get(creature_card_id) {
-                behavior.on_combat_damage_to_player(state, creature_id, damaged_player, amount, registry);
-            }
+        TriggerEvent::CreatureEntered { entered, entered_controller } => {
+            behavior.on_any_creature_enters(state, self_id, entered, entered_controller, registry);
         }
-        PendingTrigger::CombatDamageToCreature { creature_id, creature_card_id, damaged_creature, amount, .. } => {
-            if state.get_object(creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(creature_card_id) {
-                    behavior.on_deals_combat_damage_to_creature(state, creature_id, damaged_creature, amount, registry);
-                }
-            }
+        TriggerEvent::CombatDamageToPlayer { damaged_player, amount } => {
+            behavior.on_combat_damage_to_player(state, self_id, damaged_player, amount, registry);
         }
-        PendingTrigger::CombatDamageWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {
-            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_combat_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
-                }
-            }
+        TriggerEvent::CombatDamageToCreature { damaged_creature, amount } => {
+            behavior.on_deals_combat_damage_to_creature(state, self_id, damaged_creature, amount, registry);
         }
-        PendingTrigger::DamageToPlayerWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {
-            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
-                }
-            }
+        TriggerEvent::AnyCombatDamageToPlayer { dealer, damaged_player, amount } => {
+            behavior.on_any_combat_damage_to_player(state, self_id, dealer, damaged_player, amount, registry);
         }
-        PendingTrigger::EndCombatTrigger { object_id, card_id, .. } => {
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_end_combat(state, object_id, registry);
-                }
-            }
+        TriggerEvent::AnyDamageToPlayer { dealer, damaged_player, amount } => {
+            behavior.on_any_damage_to_player(state, self_id, dealer, damaged_player, amount, registry);
         }
-        PendingTrigger::UpkeepTrigger { object_id, card_id, chosen_targets, .. } => {
-            if let Some(behavior) = registry.get(card_id) {
-                behavior.on_upkeep(state, object_id, &chosen_targets, registry);
-            }
+        TriggerEvent::EndCombat => behavior.on_end_combat(state, self_id, registry),
+        TriggerEvent::Upkeep => behavior.on_upkeep(state, self_id, &targets, registry),
+        TriggerEvent::EndStep => behavior.on_end_step(state, self_id, &targets, registry),
+        TriggerEvent::SpellCast { caster, spell_id } => {
+            behavior.on_spell_cast(state, self_id, caster, spell_id, &targets, registry);
         }
-        PendingTrigger::EndStepTrigger { object_id, card_id, chosen_targets, .. } => {
-            // CR 112.7a: a triggered ability on the stack exists independently
-            // of its source, so destroying the source in response does not
-            // counter it. This arm used to require the source still be on the
-            // battlefield — unlike the Upkeep and ETB arms beside it — which
-            // let an opponent silently cancel Reaper from the Abyss's end-step
-            // destruction by killing the Reaper.
-            if let Some(behavior) = registry.get(card_id) {
-                behavior.on_end_step(state, object_id, &chosen_targets, registry);
-            }
+        TriggerEvent::LeftBattlefield => behavior.on_leave_battlefield(state, self_id, registry),
+        TriggerEvent::Attacks { attacker, defending_player } => {
+            let attack = crate::cards::AttackInfo::new(attacker, defending_player);
+            behavior.on_attacks(state, self_id, attack, &targets, registry);
         }
-        PendingTrigger::SpellCastWatch { watcher_id, watcher_card_id, caster, spell_id, chosen_targets, .. } => {
-            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_spell_cast(state, watcher_id, caster, spell_id, &chosen_targets, registry);
-                }
-            }
+        TriggerEvent::CreatureAttacked { attacker, attacker_controller } => {
+            behavior.on_any_creature_attacks(state, self_id, attacker, attacker_controller, registry);
         }
-        PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {
-            if let Some(behavior) = registry.get(card_id) {
-                behavior.on_leave_battlefield(state, object_id, registry);
-            }
+        TriggerEvent::Blocks { blocked_attacker } => {
+            behavior.on_blocks(state, self_id, blocked_attacker, registry);
         }
-        PendingTrigger::AttacksTrigger { object_id, card_id, attacker, defending_player, chosen_targets, .. } => {
-            if let Some(behavior) = registry.get(card_id) {
-                let attack = crate::cards::AttackInfo::new(attacker, defending_player);
-                behavior.on_attacks(state, object_id, attack, &chosen_targets, registry);
-            }
+        TriggerEvent::BecomesBlocked { blocker_id } => {
+            behavior.on_becomes_blocked(state, self_id, blocker_id, registry);
         }
-        PendingTrigger::BlocksTrigger { object_id, card_id, blocked_attacker, .. } => {
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_blocks(state, object_id, blocked_attacker, registry);
-                }
-            }
+        TriggerEvent::CreatureCardMilled { milled_object, milled_player } => {
+            behavior.on_creature_card_milled(state, self_id, milled_object, milled_player, registry);
         }
-        PendingTrigger::AttackWatch { watcher_id, watcher_card_id, attacker_id, attacker_controller, .. } => {
-            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_creature_attacks(state, watcher_id, attacker_id, attacker_controller, registry);
-                }
-            }
-        }
-        PendingTrigger::BecomesBlockedTrigger { object_id, card_id, blocker_id, .. } => {
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_becomes_blocked(state, object_id, blocker_id, registry);
-                }
-            }
-        }
-        PendingTrigger::StateTriggered { object_id, card_id, .. } => {
-            // Clear the "on stack" flag so the trigger can fire again if the
-            // condition is still true after resolution.
-            if let Some(obj) = state.get_object_mut(object_id) {
+        TriggerEvent::StateTriggered => {
+            // Clear the "on stack" flag so the ability can fire again if the
+            // condition is still true after resolution (CR 603.8).
+            if let Some(obj) = state.get_object_mut(self_id) {
                 obj.state_trigger_on_stack = false;
             }
-            // Only resolve if the object is still on the battlefield.
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_state_trigger(state, object_id, registry);
-                }
-            }
+            behavior.on_state_trigger(state, self_id, registry);
         }
-        PendingTrigger::CreatureCardMilledWatch { watcher_id, watcher_card_id, milled_object, milled_player, .. } => {
-            if let Some(behavior) = registry.get(watcher_card_id) {
-                behavior.on_creature_card_milled(state, watcher_id, milled_object, milled_player, registry);
-            }
-        }
-        PendingTrigger::DelayedTokenExile { target_id, .. } => {
-            if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                state.move_object(target_id, Zone::Exile, registry);
-                state.log(crate::state::LogLevel::Event,
-                    "Token exiled by delayed end-of-combat trigger".into());
-            }
+        TriggerEvent::DelayedTokenExile { target_id } => {
+            exile_delayed_token(state, target_id, registry);
         }
     }
 

@@ -12,7 +12,7 @@ mod common;
 use common::*;
 
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 /// Bug 31-001 (`audits/AUDIT_BUGS.md)`: `PendingTrigger::display_name`
@@ -56,12 +56,9 @@ fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
     mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
     let pariah_card_id = state.get_object(pariah).unwrap().card_id;
 
-    let trigger = PendingTrigger::UpkeepTrigger {
-        object_id: pariah,
-        card_id: pariah_card_id,
-        controller: P0,
-        description: "transform back if 2+ spells cast".into(),
-        chosen_targets: Vec::new(),
+    let trigger = PendingTrigger {
+        source: TriggerSource::new(pariah, pariah_card_id, P0, "transform back if 2+ spells cast"),
+        event: TriggerEvent::Upkeep,
     };
     let label = trigger.display_name_with_state(&registry, Some(&state));
 

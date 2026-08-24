@@ -37,6 +37,7 @@ use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 
 /// Bug BT (`audits/AUDIT_BUGS.md)`: Abattoir Ghoul's
 /// `on_any_creature_dies` handler early-returns when its `self_id` is
@@ -573,7 +574,10 @@ fn bug_m_snapcaster_target_chosen_at_stack_time() {
 
     let trigger_on_stack = state.stack.iter().find_map(|e| {
         if let mtg_engine::state::StackEntry::Trigger(
-            mtg_engine::triggers::PendingTrigger::EnteredBattlefield { card_id, chosen_targets, .. }
+            PendingTrigger {
+                source: TriggerSource { card_id, chosen_targets, .. },
+                event: TriggerEvent::SelfEntered,
+            }
         ) = e {
             if *card_id == snap_card_id {
                 return Some(chosen_targets.clone());

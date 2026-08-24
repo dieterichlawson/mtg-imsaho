@@ -3,7 +3,7 @@ use common::*;
 
 use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::combat;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn setup_geist_attacking(state: &mut mtg_engine::state::GameState, reg: &CardRegistry) -> (mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId) {
@@ -78,11 +78,17 @@ fn geist_no_spurious_end_combat_trigger_when_did_not_attack() {
     // so there is no Angel token to exile and no reason for a triggered ability.
     let has_end_combat_trigger = state.stack.iter()
         .filter_map(|e| e.as_trigger())
-        .any(|t| matches!(t, PendingTrigger::EndCombatTrigger { .. }))
+        .any(|t| matches!(t, PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndCombat }))
         || state.pending_trigger_pushes_ap.iter()
-            .any(|t| matches!(t, PendingTrigger::EndCombatTrigger { .. }))
+            .any(|t| matches!(t, PendingTrigger {
+                source: TriggerSource { .. },
+                event: TriggerEvent::EndCombat,
+            }))
         || state.pending_trigger_pushes_nap.iter()
-            .any(|t| matches!(t, PendingTrigger::EndCombatTrigger { .. }));
+            .any(|t| matches!(t, PendingTrigger {
+                source: TriggerSource { .. },
+                event: TriggerEvent::EndCombat,
+            }));
 
     assert_eq!(
         has_end_combat_trigger,

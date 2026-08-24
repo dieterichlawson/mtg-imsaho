@@ -3,7 +3,7 @@ use common::*;
 
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
-use mtg_engine::triggers::PendingTrigger;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 // CR 113.7a: A triggered ability on the stack exists independently of its source.
@@ -27,12 +27,9 @@ fn endless_ranks_resolves_after_enchantment_removed() {
 
     assert_eq!(count_tokens_named(&state, "Zombie"), 4);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger::UpkeepTrigger {
-        object_id: ranks,
-        card_id: ranks_card,
-        controller: P0,
-        description: "Endless Ranks of the Dead".into(),
-        chosen_targets: vec![],
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(ranks, ranks_card, P0, "Endless Ranks of the Dead"),
+        event: TriggerEvent::Upkeep,
     }));
 
     state.move_object(ranks, Zone::Graveyard, &reg);

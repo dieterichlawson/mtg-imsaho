@@ -21,7 +21,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::{GameState, StackEntry};
-use mtg_engine::triggers::{self, PendingTrigger};
+use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -38,7 +38,9 @@ fn upkeep_stack_entries(state: &mut GameState, reg: &CardRegistry, object: Objec
     triggers::collect_triggers(state, reg);
     state.stack.iter()
         .filter(|e| matches!(e, StackEntry::Trigger(
-            PendingTrigger::UpkeepTrigger { object_id, .. }) if *object_id == object))
+            PendingTrigger {
+                source: TriggerSource { id: object_id, .. },
+                event: TriggerEvent::Upkeep }) if *object_id == object))
         .count()
 }
 
@@ -198,7 +200,9 @@ fn etb_stack_entries(state: &mut GameState, reg: &CardRegistry, object: ObjectId
     triggers::collect_triggers(state, reg);
     state.stack.iter()
         .filter(|e| matches!(e, StackEntry::Trigger(
-            PendingTrigger::EnteredBattlefield { object_id, .. }) if *object_id == object))
+            PendingTrigger {
+                source: TriggerSource { id: object_id, .. },
+                event: TriggerEvent::SelfEntered }) if *object_id == object))
         .count()
 }
 

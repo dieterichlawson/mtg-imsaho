@@ -17,7 +17,7 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, StackEntry};
-use mtg_engine::triggers::{self, PendingTrigger};
+use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -33,7 +33,9 @@ const UPKEEP_CURSES: &[&str] = &[
 fn upkeep_entries(state: &GameState, curse: ObjectId) -> usize {
     state.stack.iter()
         .filter(|e| matches!(e, StackEntry::Trigger(
-            PendingTrigger::UpkeepTrigger { object_id, .. }) if *object_id == curse))
+            PendingTrigger {
+                source: TriggerSource { id: object_id, .. },
+                event: TriggerEvent::Upkeep }) if *object_id == curse))
         .count()
 }
 
