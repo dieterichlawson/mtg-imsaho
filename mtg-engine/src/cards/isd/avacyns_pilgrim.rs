@@ -31,6 +31,7 @@ impl CardBehavior for AvacynsPilgrim {
             description: "Add {W}".into(),
             produced: vec![(ManaType::White, 1)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         }]
     }

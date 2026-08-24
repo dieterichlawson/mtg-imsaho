@@ -43,6 +43,7 @@ impl CardBehavior for DerangedAssistant {
             description: "Mill a card, add {C}".into(),
             produced: vec![(ManaType::Colorless, 1)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: true,
         }]
     }

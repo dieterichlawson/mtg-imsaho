@@ -133,6 +133,38 @@ fn ability_total_mana(ability: &ManaAbilityDef) -> u32 {
     ability.produced.iter().map(|&(_, amount)| amount).sum()
 }
 
+/// What activating this ability costs, in generic mana.
+///
+/// A filter ("{1}, {T}: Add one mana of any color") is net zero: it turns one
+/// generic into one colored. The planner treats the cost as extra generic
+/// demand, which is exactly right — the filter fixes color, it does not ramp.
+fn ability_cost(ability: &ManaAbilityDef) -> u32 {
+    ability.cost.mana_value()
+}
+
+/// Order a finished tap plan so every free ability is activated before any
+/// cost-bearing one.
+///
+/// A filter's cost is paid from the pool at activation time, and the mana that
+/// pays it comes from other sources in this same plan. Since a filter never
+/// funds another filter — it produces exactly what it consumes — one stable
+/// partition is enough.
+fn free_abilities_first(plan: &mut [(ObjectId, usize)], sources: &[ManaSource]) {
+    let costs_mana = |&(object_id, ability_index): &(ObjectId, usize)| -> bool {
+        sources.iter()
+            .find(|s| s.object_id == object_id)
+            .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))
+            .is_some_and(|a| ability_cost(a) > 0)
+    };
+    // Stable partition: free first, cost-bearing after, order preserved within
+    // each group.
+    let free: Vec<_> = plan.iter().filter(|e| !costs_mana(e)).copied().collect();
+    let paid: Vec<_> = plan.iter().filter(|e| costs_mana(e)).copied().collect();
+    for (slot, entry) in plan.iter_mut().zip(free.into_iter().chain(paid)) {
+        *slot = entry;
+    }
+}
+
 /// Compute the optimal set of mana sources to tap in order to pay a cost.
 ///
 /// Returns `Some(tap_plan)` with (`object_id`, `ability_index`) pairs, or `None` if
@@ -252,6 +284,8 @@ pub fn compute_autotap(
             remaining.colorless -= used_for_colorless;
             // Any extra mana (colorless or otherwise) from this tap goes to excess.
             excess_mana += total_produced - used_for_colorless;
+            // A cost-bearing ability has to be paid for out of the same plan.
+            remaining.generic += ability_cost(ability);
 
             tap_plan.push((source.object_id, ability_idx));
             available.remove(avail_pos);
@@ -284,6 +318,7 @@ pub fn compute_autotap(
             let total_produced = ability_total_mana(ability);
             // 1 mana used for the colored pip, rest is excess.
             excess_mana += total_produced - 1;
+            remaining.generic += ability_cost(ability);
 
             tap_plan.push((source.object_id, ability_idx));
             available.remove(avail_pos);
@@ -299,11 +334,15 @@ pub fn compute_autotap(
         remaining.generic -= used;
     }
 
-    // Then tap more sources as needed, sorted by priority.
+    // Then tap more sources as needed, sorted by priority. A source whose only
+    // abilities cost mana is no help here: a filter produces exactly what it
+    // consumes, so it can never reduce a generic requirement.
     while remaining.generic > 0 {
         // Sort available sources by priority.
         let best = available.iter()
             .enumerate()
+            .filter(|&(_, &src_idx)| sources[src_idx].abilities.iter()
+                .any(|a| ability_total_mana(a) > ability_cost(a)))
             .min_by_key(|&(_, &src_idx)| source_sort_key(&sources[src_idx], &hand_demand));
 
         if let Some((avail_pos, &src_idx)) = best {
@@ -311,6 +350,7 @@ pub fn compute_autotap(
             // Pick the ability to activate. For sources with multiple abilities (dual lands),
             // pick the one whose color has lowest hand demand.
             let ability_idx = source.abilities.iter()
+                .filter(|a| ability_total_mana(a) > ability_cost(a))
                 .min_by_key(|ability| {
                     // Score: sum of hand demand for colors produced.
                     ability.produced.iter().map(|&(mt, _)| {
@@ -340,6 +380,7 @@ pub fn compute_autotap(
         }
     }
 
+    free_abilities_first(&mut tap_plan, sources);
     Some(tap_plan)
 }
 
@@ -517,6 +558,7 @@ mod tests {
             description: format!("Add {mana_type:?}"),
             produced: vec![(mana_type, 1)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         }
     }
@@ -528,6 +570,7 @@ mod tests {
                 description: format!("Add {mt1:?}"),
                 produced: vec![(mt1, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
             ManaAbilityDef {
@@ -535,6 +578,7 @@ mod tests {
                 description: format!("Add {mt2:?}"),
                 produced: vec![(mt2, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
         ]
@@ -619,6 +663,7 @@ mod tests {
             description: "Add {C}{C}".into(),
             produced: vec![(ManaType::Colorless, 2)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         };
         let deranged = ManaAbilityDef {
@@ -626,6 +671,7 @@ mod tests {
             description: "Add {C}".into(),
             produced: vec![(ManaType::Colorless, 1)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: true,
         };
         let sources = vec![
@@ -645,6 +691,7 @@ mod tests {
             description: "Add {C}{C}".into(),
             produced: vec![(ManaType::Colorless, 2)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         };
         let sources = vec![
@@ -680,6 +727,7 @@ mod tests {
             description: "Add {C}{C}".into(),
             produced: vec![(ManaType::Colorless, 2)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         };
         let sources = vec![

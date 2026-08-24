@@ -80,6 +80,26 @@ pub fn available_mana_abilities(
         .collect()
 }
 
+/// `available_mana_abilities`, further narrowed to the ones whose mana cost the
+/// player can pay from the pool right now.
+///
+/// This is the standalone "activate a mana ability" action, where nothing else
+/// is going to produce mana first. The auto-tap planner uses the unfiltered
+/// list instead, because there the funding comes from earlier entries in the
+/// same plan.
+pub(crate) fn activatable_mana_abilities(
+    state: &GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+) -> Vec<crate::cards::ManaAbilityDef> {
+    let Some(controller) = state.get_object(object_id).map(|o| o.controller) else { return Vec::new() };
+    let pool = &state.get_player(controller).mana_pool;
+    available_mana_abilities(state, object_id, registry)
+        .into_iter()
+        .filter(|ma| mana::can_pay(pool, &ma.cost))
+        .collect()
+}
+
 /// Whether `player` could pay `cost` right now — from floating mana, or by
 /// tapping what they control.
 ///
@@ -229,7 +249,7 @@ pub(crate) fn finalize_spell_cast(
 
 /// Activate a single mana source (tap + add mana + side effects).
 /// Shared by both `ActivateManaAbility` and `CastSpell` `tap_plan` execution.
-pub(crate) fn activate_mana_source(
+pub fn activate_mana_source(
     state: &mut GameState,
     source_id: ObjectId,
     ability_index: usize,
@@ -242,6 +262,13 @@ pub(crate) fn activate_mana_source(
     if let Some(behavior) = registry.get(card_id) {
         let abilities = behavior.mana_abilities(state, source_id);
         if let Some(ability) = abilities.iter().find(|a| a.ability_index == ability_index) {
+            // A filter's mana cost is paid before it produces (CR 605.1a — it
+            // is still a mana ability, it just isn't free). The tap plan puts
+            // cost-bearing abilities last so the mana is already floating.
+            if !ability.cost.symbols.is_empty()
+                && mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &ability.cost).is_err() {
+                return;
+            }
             if ability.requires_tap {
                 state.get_object_mut(source_id).expect("object must exist for tapping").tapped = true;
                 state.events.push(GameEvent::Tapped { object: source_id });
@@ -690,7 +717,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if prevent_artifact_abilities {
             if state.has_card_type(obj.id, CardType::Artifact, registry) { continue; }
         }
-        for ma in available_mana_abilities(state, obj.id, registry) {
+        for ma in activatable_mana_abilities(state, obj.id, registry) {
             let key = (obj.card_id, ma.ability_index);
             if !seen_mana_abilities.contains(&key) {
                 seen_mana_abilities.push(key);

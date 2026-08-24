@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{Zone, CardType, ManaType};
+use crate::types::{ManaCost, Zone, CardType, ManaType};
 
 /// Sulfur Falls — Land.
 /// This land enters tapped unless you control an Island or a Mountain.
@@ -61,6 +61,7 @@ impl CardBehavior for SulfurFalls {
                 description: "Add {U}".into(),
                 produced: vec![(ManaType::Blue, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
             ManaAbilityDef {
@@ -68,6 +69,7 @@ impl CardBehavior for SulfurFalls {
                 description: "Add {R}".into(),
                 produced: vec![(ManaType::Red, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
         ]

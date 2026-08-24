@@ -1,11 +1,15 @@
 ---
 id: olivia_voldaren-02
-status: new
+status: fixed
 card: Olivia Voldaren
 audit_run_id: 2026-04-19-olivia_voldaren-audit
 audit_model: sonnet
 audit_tokens: 22278
 audit_duration: 724
+fixed_sha: 797ec3f
+fixed_at: 2026-08-24T01:44:20Z
+test_file: mtg-engine/tests/control_durations.rs
+fix_note: GameState::control_effects + expire_control_effects as an SBA (CR 611.2b); Olivia no longer tracks what she stole.
 ---
 
 ## Audit Finding

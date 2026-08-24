@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{Zone, CardType, ManaType};
+use crate::types::{ManaCost, Zone, CardType, ManaType};
 
 /// Isolated Chapel — Land.
 /// Isolated Chapel enters the battlefield tapped unless you control a Plains or a Swamp.
@@ -61,6 +61,7 @@ impl CardBehavior for IsolatedChapel {
                 description: "Add {W}".into(),
                 produced: vec![(ManaType::White, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
             ManaAbilityDef {
@@ -68,6 +69,7 @@ impl CardBehavior for IsolatedChapel {
                 description: "Add {B}".into(),
                 produced: vec![(ManaType::Black, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
         ]

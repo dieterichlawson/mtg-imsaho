@@ -1,16 +1,19 @@
-use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost};
+use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol};
+use crate::types::{CardType, ManaType, ManaCost, ManaSymbol};
 
 /// Shimmering Grotto — Land.
 /// {T}: Add {C}.
 /// {1}, {T}: Add one mana of any color.
 ///
-/// Simplified: the {1},{T} ability adds {G} (arbitrary choice since the engine
-/// doesn't have a "choose a color" mechanism for mana abilities; the AI player
-/// will treat this as color-fixing regardless).
+/// "One mana of any color" is one mana ability per color rather than a choice
+/// prompt — five ManaAbilityDef entries, each costing {1}. That keeps it in
+/// `mana_abilities`, where it belongs: a filter is a mana ability under
+/// CR 605.1a, and only mana abilities are visible to the auto-tap planner.
+/// Exposing it through `activated_abilities` instead meant the planner never
+/// knew the Grotto could make colored mana, so a hand that needed the Grotto
+/// for its one green source generated no CastSpell action at all.
 pub struct ShimmeringGrotto;
 
 impl CardBehavior for ShimmeringGrotto {
@@ -30,96 +33,32 @@ impl CardBehavior for ShimmeringGrotto {
     }
 
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        vec![
+        let mut abilities = vec![
             ManaAbilityDef {
                 ability_index: 0,
                 description: "Add {C}".into(),
                 produced: vec![(ManaType::Colorless, 1)],
                 requires_tap: true,
+                cost: ManaCost::free(),
                 has_side_effects: false,
             },
-        ]
-    }
-
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        // The {1},{T} filter ability: pay 1 mana, tap, get any color.
-        // We present 5 options (one per color) so the AI can pick.
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![
-                ActivatedAbilityDef {
-                    ability_index: 1,
-                    description: "{1}, {T}: Add {W}".into(),
-                    cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                    requires_tap: true,
-                    sacrifice_cost: SacrificeCost::None,
-                    target_requirement: None,
-                    once_per_turn: false,
-                    sorcery_speed_only: false,
-                    counter_cost: None,
-                },
-                ActivatedAbilityDef {
-                    ability_index: 2,
-                    description: "{1}, {T}: Add {U}".into(),
-                    cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                    requires_tap: true,
-                    sacrifice_cost: SacrificeCost::None,
-                    target_requirement: None,
-                    once_per_turn: false,
-                    sorcery_speed_only: false,
-                    counter_cost: None,
-                },
-                ActivatedAbilityDef {
-                    ability_index: 3,
-                    description: "{1}, {T}: Add {B}".into(),
-                    cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                    requires_tap: true,
-                    sacrifice_cost: SacrificeCost::None,
-                    target_requirement: None,
-                    once_per_turn: false,
-                    sorcery_speed_only: false,
-                    counter_cost: None,
-                },
-                ActivatedAbilityDef {
-                    ability_index: 4,
-                    description: "{1}, {T}: Add {R}".into(),
-                    cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                    requires_tap: true,
-                    sacrifice_cost: SacrificeCost::None,
-                    target_requirement: None,
-                    once_per_turn: false,
-                    sorcery_speed_only: false,
-                    counter_cost: None,
-                },
-                ActivatedAbilityDef {
-                    ability_index: 5,
-                    description: "{1}, {T}: Add {G}".into(),
-                    cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                    requires_tap: true,
-                    sacrifice_cost: SacrificeCost::None,
-                    target_requirement: None,
-                    once_per_turn: false,
-                    sorcery_speed_only: false,
-                    counter_cost: None,
-                },
-            ]
-        } else {
-            vec![]
+        ];
+        // "{1}, {T}: Add one mana of any color" — one entry per color, indexed
+        // 1..=5 so the indices match the descriptions a player sees.
+        for (i, mana_type) in [ManaType::White, ManaType::Blue, ManaType::Black,
+                               ManaType::Red, ManaType::Green].into_iter().enumerate() {
+            abilities.push(ManaAbilityDef {
+                ability_index: i + 1,
+                description: format!("{{1}}, {{T}}: Add {{{}}}", match mana_type {
+                    ManaType::White => "W", ManaType::Blue => "U", ManaType::Black => "B",
+                    ManaType::Red => "R", _ => "G",
+                }),
+                produced: vec![(mana_type, 1)],
+                requires_tap: true,
+                cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
+                has_side_effects: false,
+            });
         }
-    }
-
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
-        let (mana_type, symbol) = match ability_index {
-            1 => (ManaType::White, "W"),
-            2 => (ManaType::Blue, "U"),
-            3 => (ManaType::Black, "B"),
-            4 => (ManaType::Red, "R"),
-            5 => (ManaType::Green, "G"),
-            _ => return,
-        };
-        state.get_player_mut(controller).mana_pool.add(mana_type, 1);
-        state.log(crate::state::LogLevel::Event,
-            format!("Shimmering Grotto adds {{{symbol}}}"));
+        abilities
     }
 }

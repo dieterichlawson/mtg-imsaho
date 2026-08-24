@@ -80,6 +80,16 @@ pub struct ManaAbilityDef {
     pub description: String,
     pub produced: Vec<(ManaType, u32)>,
     pub requires_tap: bool,
+    /// Mana that must be paid to activate this ability. Free for a land that
+    /// just taps; {1} for a filter like Shimmering Grotto's "{1}, {T}: Add one
+    /// mana of any color".
+    ///
+    /// A filter is still a mana ability (CR 605.1a) and belongs here rather
+    /// than in `activated_abilities`, where the auto-tap planner never sees
+    /// it. The planner accounts for the cost as extra generic demand and puts
+    /// cost-bearing abilities last in the tap plan, so the mana that pays for
+    /// them is already in the pool.
+    pub cost: ManaCost,
     /// True if activating this ability has side effects beyond producing mana
     /// (e.g. Deranged Assistant mills a card).
     pub has_side_effects: bool,

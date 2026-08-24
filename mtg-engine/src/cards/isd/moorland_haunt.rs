@@ -32,6 +32,7 @@ impl CardBehavior for MoorlandHaunt {
             description: "Add {C}".into(),
             produced: vec![(ManaType::Colorless, 1)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         }]
     }

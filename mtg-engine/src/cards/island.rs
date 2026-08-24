@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{CardType, Supertype, ManaType};
+use crate::types::{ManaCost, CardType, Supertype, ManaType};
 
 pub struct Island;
 
@@ -27,6 +27,7 @@ impl CardBehavior for Island {
             description: "Add {U}".into(),
             produced: vec![(ManaType::Blue, 1)],
             requires_tap: true,
+            cost: ManaCost::free(),
             has_side_effects: false,
         }]
     }
