@@ -1057,6 +1057,13 @@ impl GameState {
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_controller, registry),
+            CreatureFilter::Attacking => {
+                self.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature_id))
+            }
+            CreatureFilter::Blocking => {
+                self.combat.as_ref().is_some_and(|c|
+                    c.blocker_assignments.values().any(|bs| bs.contains(&creature_id)))
+            }
             CreatureFilter::ControlledByAttachedPlayer => {
                 // This filter requires knowing the source object's attached_to_player.
                 // It's resolved in effect_applies_to which has source_id.

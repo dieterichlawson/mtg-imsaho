@@ -6,8 +6,6 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::events::GameEvent;
-use mtg_engine::triggers;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -472,10 +470,7 @@ fn instigator_gang_buffs_itself_when_attacking() {
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 2);
 
     // Declare Instigator Gang as attacker — it should buff itself +1/+0.
-    state.events.push(GameEvent::AttackersDeclared {
-        attackers: vec![(gang, P1)],
-    });
-    triggers::process_triggers(&mut state, &reg);
+    submit_declare_attackers(&mut state, &[(gang, P1)], &reg);
 
     // Should be 2 base + 1 from own buff = 3.
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 3,
@@ -490,10 +485,7 @@ fn instigator_gang_buffs_other_attackers_you_control() {
     let ally = ready_creature(&mut state, P0, 3, 3);
 
     // Declare both as attackers.
-    state.events.push(GameEvent::AttackersDeclared {
-        attackers: vec![(gang, P1), (ally, P1)],
-    });
-    triggers::process_triggers(&mut state, &reg);
+    submit_declare_attackers(&mut state, &[(gang, P1), (ally, P1)], &reg);
 
     // Gang: 2 + 1 = 3 (buffs itself too).
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 3,
@@ -511,10 +503,7 @@ fn instigator_gang_does_not_buff_opponent_attackers() {
     let enemy = ready_creature(&mut state, P1, 2, 2);
 
     // Opponent's creature attacks.
-    state.events.push(GameEvent::AttackersDeclared {
-        attackers: vec![(enemy, P0)],
-    });
-    triggers::process_triggers(&mut state, &reg);
+    submit_declare_attackers(&mut state, &[(enemy, P0)], &reg);
 
     // Enemy should NOT be buffed (different controller).
     assert_eq!(state.effective_power(enemy, &reg).unwrap(), 2,
@@ -532,10 +521,7 @@ fn wildblood_pack_buffs_itself_plus_3() {
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 5);
 
     // Declare Wildblood Pack as attacker — should buff itself +3/+0.
-    state.events.push(GameEvent::AttackersDeclared {
-        attackers: vec![(gang, P1)],
-    });
-    triggers::process_triggers(&mut state, &reg);
+    submit_declare_attackers(&mut state, &[(gang, P1)], &reg);
 
     // Should be 5 base + 3 from own buff = 8.
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 8,

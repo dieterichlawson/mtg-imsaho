@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef, helpers};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, CreatureFilter, EffectScope, Keyword, Zone};
 use crate::actions::Target;
 
 /// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures you control get +1/+0
@@ -25,18 +25,27 @@ impl CardBehavior for InstigatorGang {
             oracle_text: "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
-            continuous_effects: vec![],
+            // "Attacking creatures you control get +1/+0" is a static ability,
+            // not a trigger. Modelling it as an AnyCreatureAttacks trigger that
+            // pushed an until-end-of-turn buff diverged three ways: the buff
+            // outlived the combat, creatures put onto the battlefield attacking
+            // never got it (no attack was declared for them), and creatures
+            // already attacking when the Gang arrived never got it either.
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT {
+                    power: 1,
+                    toughness: 0,
+                    scope: EffectScope::Global(CreatureFilter::And(vec![
+                        CreatureFilter::ControlledByYou,
+                        CreatureFilter::Attacking,
+                    ])),
+                },
+            ],
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
-                target_requirement: None,
-                },
-                // Watch ALL creatures attacking (not just self).
-                TriggeredAbilityDef {
-                    kind: TriggerKind::AnyCreatureAttacks,
-                    description: "attacking creatures you control get +1/+0".into(),
                 target_requirement: None,
                 },
             ],
@@ -55,14 +64,18 @@ impl CardBehavior for InstigatorGang {
             oracle_text: "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Wildblood Pack.".into(),
             keywords: vec![Keyword::Trample],
             flashback_cost: None,
-            continuous_effects: vec![],
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT {
+                    power: 3,
+                    toughness: 0,
+                    scope: EffectScope::Global(CreatureFilter::And(vec![
+                        CreatureFilter::ControlledByYou,
+                        CreatureFilter::Attacking,
+                    ])),
+                },
+            ],
             additional_cost: None,
             triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::AnyCreatureAttacks,
-                    description: "attacking creatures you control get +3/+0".into(),
-                target_requirement: None,
-                },
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform back if 2+ spells cast".into(),
@@ -86,30 +99,6 @@ impl CardBehavior for InstigatorGang {
         } else {
             None
         }
-    }
-
-    fn on_any_creature_attacks(&self, state: &mut GameState, self_id: ObjectId, attacker_id: ObjectId, attacker_controller: PlayerId, _registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
-            _ => return,
-        };
-        // Only buff creatures you control.
-        if attacker_controller != controller {
-            return;
-        }
-        let bonus = if is_transformed { 3 } else { 1 };
-        state.until_end_of_turn.push(
-            crate::state::TemporaryEffect::ModifyPTWhileSourceInPlay {
-                target: attacker_id,
-                source: self_id,
-                power_mod: bonus,
-                toughness_mod: 0,
-            }
-        );
-        let face = if is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
-        let name = state.get_object(attacker_id).map(|o| o.name.clone()).unwrap_or_default();
-        state.log(crate::state::LogLevel::Event,
-            format!("{face}: {name} gets +{bonus}/+0"));
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {

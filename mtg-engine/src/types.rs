@@ -375,6 +375,13 @@ pub enum CreatureFilter {
     Not(Box<CreatureFilter>),
     /// Creatures controlled by the player this curse/aura is attached to.
     ControlledByAttachedPlayer,
+    /// Creatures currently attacking (CR 506.3a — attacking from the moment
+    /// they are declared until they leave combat or combat ends).
+    ///
+    /// Only meaningful inside a combat phase; outside one, nothing matches.
+    Attacking,
+    /// Creatures currently blocking.
+    Blocking,
 }
 
 /// Where a continuous effect applies.
