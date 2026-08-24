@@ -537,46 +537,93 @@ assert what they mean.
   printed {X} was reaching the engine's X-funding prompt. The new methods also
   collapse eight hand-rolled X filters in the engine.
 
-## Next up
+### Cluster 7, finished — the five that each needed a new mechanism
 
-Five one-offs remain, and each needs a mechanism the engine does not have yet:
+Every remaining ticket turned out to need something the engine did not have,
+rather than a local fix. All five are general mechanisms now, each with the
+card that motivated it reduced to a single call.
 
-- `instigator_gang-02` — "attacking creatures you control get +X/+0" is modelled
-  as an `AnyCreatureAttacks` trigger pushing `ModifyPTWhileSourceInPlay` rather
-  than a static continuous effect. Three divergences follow: the buff persists
-  past end of combat, it misses creatures put onto the battlefield attacking,
-  and it misses existing attackers if the Gang enters after attackers are
-  declared. Needs a continuous effect scoped to "attacking creatures you
-  control", re-evaluated rather than applied once.
-- `shimmering_grotto-01` — "{1}, {T}: Add one mana of any color" is a mana
-  ability under CR 605.1a but is exposed through `activated_abilities`, so the
-  autotap planner never sees it. `ManaAbilityDef` has neither a cost field nor
-  a way to express a choice of color; both would need to change.
-- `bitterheart_witch-01` — the Curse has to be legally able to enchant the
-  chosen player, so a player with protection from the Curse's color is not a
-  legal choice. There is no `player_has_protection_from_color` anywhere; player
-  protection as a concept is missing.
-- `olivia_voldaren-02` — "gains control for as long as you control Olivia"
-  ends the moment the condition becomes false (CR 611.2b), including when an
-  opponent takes Olivia with Act of Treason. Nothing notices a controller
-  change that is not a zone change; there is no controller-change event.
-- `grimoire_of_the_dead-02` — "remove three study counters" is a cost, but the
-  sacrifice that accompanies it clears all counters in one step, so the removal
-  never happens as a discrete action. `ActivatedAbilityDef` has no
-  counter-removal cost field.
+- **`CreatureFilter::Attacking`** (`instigator_gang-02`) — "attacking creatures
+  you control get +X/+0" was an `AnyCreatureAttacks` trigger pushing an
+  until-end-of-turn P/T modifier. A one-shot buff applied at declaration
+  diverges from a static ability three ways, all reachable: it outlived the
+  combat, it missed creatures put onto the battlefield attacking, and it missed
+  attackers already declared when the Gang arrived. As a static
+  `ModifyPT` over `And([ControlledByYou, Attacking])` all three fall out, and
+  so does "stops when the Gang leaves".
+- **`ActivatedAbilityDef::counter_cost`** (`grimoire_of_the_dead-02`) — "remove
+  three study counters ... and sacrifice it" is two cost actions in a fixed
+  order (CR 601.2h), and the second clears every counter at once. The removal
+  never happened as a discrete action, and the card hand-rolled the "do I have
+  three?" check. Plus `GameState::remove_counters`, deliberately *not*
+  restricted to the battlefield — unlike `add_counters` — because it runs while
+  the permanent is on its way out.
+- **Player protection from a color** (`bitterheart_witch-01`) — hexproof stops
+  a player being targeted; protection additionally stops them being enchanted
+  by an Aura of that color (CR 702.16b), so a player can be a legal target and
+  still not be somewhere the Curse can go. `player_has_protection_from` /
+  `player_can_be_enchanted_by`, with `grants_player_protection_from` beside the
+  existing `grants_player_hexproof`, and a CR 303.4h re-check at attach time.
+  No Innistrad card grants it, so the test registers one alongside the real set
+  rather than asserting against a hypothetical.
+- **`GameState::control_effects`** (`olivia_voldaren-02`) — CR 611.2b: a "for as
+  long as" duration ends the moment its condition stops being true. Olivia kept
+  her own list of what she had stolen (player ids packed into `ObjectId`s) and
+  unwound it from `on_leave_battlefield`, so the effect ended in exactly one
+  way; an Act of Treason on Olivia left the stolen Vampires where they were.
+  `expire_control_effects` runs first in the SBA loop, so a permanent that has
+  changed hands is back with its owner before anything else asks who controls
+  what.
+- **`ManaAbilityDef::cost`** (`shimmering_grotto-01`) — "{1}, {T}: Add one mana
+  of any color" is a mana ability (CR 605.1a) but lived in
+  `activated_abilities`, which the auto-tap planner never reads: three Plains
+  and a Grotto produced no CastSpell action for a {2}{G} spell. A filter is net
+  zero, so the planner counts its cost as extra generic demand, never uses one
+  to pay a generic requirement, and orders cost-bearing abilities last so the
+  mana that pays for them is already floating.
 
-Hooks worth reaching for before writing a new special case:
+## Where this landed
 
-- `should_trigger` for any intervening-if condition (CR 603.4).
-- `can_pay_tap_cost` for any `{T}` cost; `can_pay_with_sources` for any "you
-  may pay".
-- `try_destroy_all` whenever an effect destroys more than one thing.
-- `search_library` for anything that searches, so the "may" and the shuffle
-  stay right.
-- `AttackInfo` rather than re-reading `attached_to` or combat state at
-  resolution.
+**116 fixed / 0 open** (was 2 / 114 at the start of this pass).
 
-Card code that re-derives something the engine already checks is the recurring
-shape of this whole backlog.
+Two root causes accounted for most of the backlog, and both are now structural
+rather than a matter of remembering:
 
-**Backlog count: 111 fixed / 5 open** (was 2 / 114 at the start of this pass).
+1. **Characteristics had no single authoritative reader**, so every call site
+   improvised. The layer in `state.rs` is the answer, and
+   `characteristics_invariant.rs` is the guard.
+2. **Card rules lived in engine match arms**, because `PendingEffect` was a
+   closed enum. `CardBehavior` hooks replaced them, and
+   `engine_knows_no_cards.rs` fails the build if a card name reappears in the
+   engine — including a staleness check, which has already caught one primitive
+   becoming dead code.
+
+The third, visible right through the tail of this list: **card code
+re-deriving something the engine already checks.** Twelve identical werewolf
+transform conditions, twenty-one hand-rolled `{T}`-cost checks, thirteen
+copies of "move to graveyard, then push Discarded", eight X-symbol filters.
+Every duplicate was a place where one copy could drift, and in each family at
+least one had. Reach for the shared hook first:
+
+- `should_trigger` — any intervening-if condition (CR 603.4).
+- `can_pay_tap_cost` — any `{T}` cost. `can_pay_with_sources` — any "you may
+  pay", including tapping for it (CR 608.2g).
+- `try_destroy_all` — any effect that destroys more than one thing (CR 700.2c).
+- `search_library` — anything that searches, so the "may" and the shuffle stay
+  right.
+- `discard_card` — any discard.
+- `AttackInfo` — attack triggers, instead of re-reading `attached_to` or combat
+  state at resolution.
+- `gain_control_while_source_controlled` — any "for as long as" control effect.
+- `ManaAbilityDef` (with its `cost`) rather than `activated_abilities`, for
+  anything that makes mana.
+
+### Verification
+
+`ANTHROPIC_API_KEY=dummy cargo test --workspace` — 1396 tests across 137
+suites, zero failures, zero compiler warnings. The env var matters: six
+`llm_conversation` tests otherwise fail at `mtg-player/src/llm.rs:487` looking
+for a key.
+
+Every fix in this pass was verified red-before / green-after by reverting the
+production change and re-running its regression test.

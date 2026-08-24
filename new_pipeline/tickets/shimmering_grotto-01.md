@@ -1,11 +1,15 @@
 ---
 id: shimmering_grotto-01
-status: new
+status: fixed
 card: Shimmering Grotto
 audit_run_id: 2026-04-19-shimmering_grotto-audit
 audit_model: sonnet
 audit_tokens: 19750
 audit_duration: 417
+fixed_sha: 4d8b55a
+fixed_at: 2026-08-24T01:52:28Z
+test_file: mtg-engine/tests/mana_filters.rs
+fix_note: ManaAbilityDef::cost; the filter moved from activated_abilities to mana_abilities so the autotap planner sees it, with cost accounted as generic demand and cost-bearing abilities ordered last.
 ---
 
 ## Audit Finding
