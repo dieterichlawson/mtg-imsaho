@@ -50,15 +50,14 @@ impl CardBehavior for Mindshrieker {
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
-            // Mill one card from target player, tracking what was milled.
-            let milled_card_id = {
-                let player_state = state.get_player_mut(*player_id);
-                if player_state.library_order.is_empty() {
-                    return;
-                }
-                player_state.library_order.remove(0)
+            // Mill one card from target player, remembering which so the
+            // mana value can be read afterwards. Routed through `mill_one` so
+            // a creature card among them emits CreatureCardMilled — moving it
+            // directly meant Undead Alchemist never saw it.
+            let Some(&milled_card_id) = state.get_player(*player_id).library_order.first() else {
+                return;
             };
-            state.move_object(milled_card_id, Zone::Graveyard, registry);
+            crate::engine::mill_one(state, *player_id, milled_card_id, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("p{} milled 1 card", player_id.0));
 
