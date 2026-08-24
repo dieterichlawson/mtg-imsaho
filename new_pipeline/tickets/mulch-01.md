@@ -1,11 +1,15 @@
 ---
 id: mulch-01
-status: new
+status: fixed
 card: Mulch
 audit_run_id: 2026-04-19-mulch-audit
 audit_model: sonnet
 audit_tokens: 14567
 audit_duration: 325
+fixed_sha: e3de0667d9633d33b98ff438075a18b875157cc3
+fixed_at: 2026-08-24T00:30:46Z
+test_file: mtg-engine/tests/multi_target_and_mill.rs
+fix_note: bespoke library-to-graveyard moves now go through mill_one, which emits CreatureCardMilled
 ---
 
 ## Audit Finding

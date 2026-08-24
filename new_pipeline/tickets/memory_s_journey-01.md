@@ -1,11 +1,15 @@
 ---
 id: memory_s_journey-01
-status: new
+status: fixed
 card: Memory's Journey
 audit_run_id: 2026-04-19-memory_s_journey-audit
 audit_model: sonnet
 audit_tokens: 36532
 audit_duration: 612
+fixed_sha: e3de0667d9633d33b98ff438075a18b875157cc3
+fixed_at: 2026-08-24T00:30:46Z
+test_file: mtg-engine/tests/multi_target_and_mill.rs
+fix_note: UpToTargets nested in TwoTargets now enumerates; the card was uncastable
 ---
 
 ## Audit Finding
