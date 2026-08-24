@@ -38,7 +38,12 @@ fn reckless_waif_transforms_when_no_spells_cast() {
 }
 
 #[test]
-fn reckless_waif_stays_human_on_first_turn() {
+fn reckless_waif_transforms_on_the_games_first_upkeep() {
+    // "At the beginning of each upkeep, if no spells were cast last turn,
+    // transform this creature." There is no first-turn exception in the
+    // oracle text: with no previous turn, no spells were cast in it. (Twelve
+    // werewolves each carried a private copy of the condition, and every copy
+    // had invented `&& !state.is_first_turn`.)
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     state.is_first_turn = true;
@@ -47,7 +52,8 @@ fn reckless_waif_stays_human_on_first_turn() {
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(waif).unwrap();
-    assert!(!obj.is_transformed, "Should not transform on first turn");
+    assert!(obj.is_transformed,
+        "no spells were cast last turn — there was no last turn — so the Waif transforms");
 }
 
 #[test]
@@ -311,17 +317,20 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
 }
 
 #[test]
-fn mayor_of_avabruck_does_not_transform_on_first_turn() {
+fn mayor_of_avabruck_does_not_transform_when_a_spell_was_cast() {
+    // The condition is about spells, not about which turn it is: a single
+    // spell cast last turn keeps the front face up, on turn one or any other.
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     state.is_first_turn = true;
+    state.num_spells_cast_last_turn.insert(P0, 1);
     let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(mayor).unwrap();
     assert!(!obj.is_transformed,
-        "Mayor of Avabruck should not transform on first turn");
+        "a spell was cast last turn, so Mayor of Avabruck stays human");
 }
 
 #[test]

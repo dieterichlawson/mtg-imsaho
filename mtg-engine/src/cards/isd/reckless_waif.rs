@@ -8,17 +8,6 @@ use crate::actions::Target;
 /// Reckless Waif {R} 1/1 Human Rogue Werewolf // Merciless Predator 3/2 Werewolf
 pub struct RecklessWaif;
 
-impl RecklessWaif {
-    fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
-        let is_transformed = state.get_object(object_id).is_some_and(|o| o.is_transformed);
-        let total_spells_last_turn: u32 = state.num_spells_cast_last_turn.values().sum();
-        if is_transformed {
-            state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
-        } else {
-            total_spells_last_turn == 0 && !state.is_first_turn
-        }
-    }
-}
 
 impl CardBehavior for RecklessWaif {
     fn card_data(&self) -> CardData {
@@ -76,7 +65,7 @@ impl CardBehavior for RecklessWaif {
     }
 
     fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        Self::werewolf_should_transform(state, object_id)
+        helpers::werewolf_should_transform(state, object_id)
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {

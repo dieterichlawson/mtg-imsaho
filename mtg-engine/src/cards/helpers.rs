@@ -334,6 +334,26 @@ pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) 
 ///
 /// Only `Upkeep` is gated; a werewolf face with an unconditional trigger of
 /// another kind (Howlpack Alpha's end-step Wolf token) still fires normally.
+/// The Innistrad werewolf transform condition, both directions.
+///
+/// Front face: "At the beginning of each upkeep, if no spells were cast last
+/// turn, transform this creature."
+/// Back face: "...if a player cast two or more spells last turn, transform
+/// this creature."
+///
+/// Twelve cards carried a byte-identical private copy of this, and every copy
+/// carried the same invention: `&& !state.is_first_turn`. There is no such
+/// clause in the oracle text. "No spells were cast last turn" is satisfied
+/// when there was no last turn — zero spells were cast in it.
+#[must_use]
+pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
+    if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
+        state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
+    } else {
+        state.num_spells_cast_last_turn.values().sum::<u32>() == 0
+    }
+}
+
 pub fn werewolf_should_trigger(
     behavior: &dyn CardBehavior,
     state: &GameState,
