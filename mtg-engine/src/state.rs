@@ -1706,6 +1706,23 @@ impl GameState {
         }
     }
 
+    /// Remove up to `count` counters of a type from a permanent.
+    ///
+    /// Removal, unlike `add_counters`, is not restricted to the battlefield:
+    /// counters can be removed as a cost from a permanent that is being
+    /// sacrificed in the same cost, and the removal has to happen before the
+    /// zone change clears them all (CR 601.2h).
+    pub fn remove_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        if let Some(obj) = self.objects.get_mut(&id) {
+            if let Some(current) = obj.counters.get_mut(&counter_type) {
+                *current = current.saturating_sub(count);
+                if *current == 0 {
+                    obj.counters.remove(&counter_type);
+                }
+            }
+        }
+    }
+
     /// Get the number of counters of a type on a permanent.
     #[must_use]
     pub fn get_counter_count(&self, id: ObjectId, counter_type: crate::types::CounterType) -> u32 {

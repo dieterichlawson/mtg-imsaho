@@ -37,6 +37,7 @@ impl CardBehavior for BrainWeevil {
             target_requirement: Some(TargetRequirement::PlayerOnly),
             once_per_turn: false,
             sorcery_speed_only: true,
+            counter_cost: None,
         }]
     }
 

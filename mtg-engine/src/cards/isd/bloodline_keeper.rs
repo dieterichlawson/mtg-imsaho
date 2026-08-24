@@ -97,6 +97,7 @@ impl CardBehavior for BloodlineKeeper {
             target_requirement: None,
             once_per_turn: false,
             sorcery_speed_only: false,
+            counter_cost: None,
         });
 
         // Front face only: {B}: Transform (requires 5+ Vampires).
@@ -112,6 +113,7 @@ impl CardBehavior for BloodlineKeeper {
                     target_requirement: None,
                     once_per_turn: false,
                     sorcery_speed_only: false,
+                    counter_cost: None,
                 });
             }
         }

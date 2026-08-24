@@ -42,6 +42,7 @@ impl CardBehavior for MaskOfAvacyn {
                 target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
                 once_per_turn: false,
                 sorcery_speed_only: true,
+                counter_cost: None,
             }]
         } else {
             vec![]

@@ -51,6 +51,7 @@ impl CardBehavior for StensiaBloodhall {
                 target_requirement: Some(TargetRequirement::PlayerOrPlaneswalker),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         } else {
             vec![]

@@ -125,6 +125,16 @@ pub struct ActivatedAbilityDef {
     pub once_per_turn: bool,
     /// Can only be activated at sorcery speed.
     pub sorcery_speed_only: bool,
+    /// Counters that must be removed from the source as part of the cost
+    /// ("Remove three study counters from Grimoire of the Dead and sacrifice
+    /// it: ...").
+    ///
+    /// The engine checks the source has enough before offering the ability and
+    /// removes exactly that many when it is activated — which matters when the
+    /// cost also sacrifices the permanent, because moving it to the graveyard
+    /// clears every counter at once. Removing three of four counters and
+    /// losing the fourth to the zone change are different events.
+    pub counter_cost: Option<(crate::types::CounterType, u32)>,
 }
 
 /// A loyalty ability on a planeswalker.

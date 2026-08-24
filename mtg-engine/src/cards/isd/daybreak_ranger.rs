@@ -95,6 +95,7 @@ impl CardBehavior for DaybreakRanger {
                 target_requirement: Some(TargetRequirement::Creature),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         } else {
             // Daybreak Ranger: {T}: deal 2 to creature with flying
@@ -107,6 +108,7 @@ impl CardBehavior for DaybreakRanger {
                 target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasKeyword(Keyword::Flying))),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         }
     }

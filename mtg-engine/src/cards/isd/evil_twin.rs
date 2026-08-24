@@ -103,6 +103,7 @@ impl CardBehavior for EvilTwin {
             target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::SameNameAsSource)),
             once_per_turn: false,
             sorcery_speed_only: false,
+            counter_cost: None,
         }]
     }
 

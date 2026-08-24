@@ -1,11 +1,15 @@
 ---
 id: instigator_gang-02
-status: new
+status: fixed
 card: Instigator Gang
 audit_run_id: 2026-04-19-instigator_gang-audit
 audit_model: sonnet
 audit_tokens: 32082
 audit_duration: 573
+fixed_sha: 3e83233
+fixed_at: 2026-08-24T01:31:30Z
+test_file: mtg-engine/tests/attacking_creatures_anthem.rs
+fix_note: Modelled as a static ContinuousEffect::ModifyPT over CreatureFilter::Attacking rather than an attack trigger pushing an until-end-of-turn buff.
 ---
 
 ## Audit Finding

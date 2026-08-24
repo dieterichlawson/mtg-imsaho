@@ -849,6 +849,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     continue;
                 }
             }
+            // Check the counter cost (CR 601.2h — the cost has to be payable).
+            if let Some((counter_type, amount)) = ab.counter_cost {
+                if state.get_counter_count(obj_id, counter_type) < amount { continue; }
+            }
             // Check once-per-turn.
             if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
             // Check sorcery speed.
@@ -2614,6 +2618,15 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 // Pay tap cost.
                 if ab.requires_tap {
                     new_state.get_object_mut(*object_id).expect("object must exist for tapping").tapped = true;
+                }
+
+                // Pay the counter cost. Before the sacrifice below, which moves
+                // the permanent to the graveyard and clears every counter it
+                // has at once — "remove three" has to remove three, leaving any
+                // surplus on the permanent to be lost to the zone change rather
+                // than swallowed by it.
+                if let Some((counter_type, amount)) = ab.counter_cost {
+                    new_state.remove_counters(*object_id, counter_type, amount);
                 }
 
                 // Pay sacrifice cost. The player chose which creature to sacrifice

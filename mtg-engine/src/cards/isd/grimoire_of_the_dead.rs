@@ -45,7 +45,6 @@ impl CardBehavior for GrimoireOfTheDead {
             _ => return vec![],
         };
         let controller = obj.controller;
-        let study_counters = state.get_counter_count(object_id, CounterType::Study);
         let has_cards_in_hand = !state.objects_in_zone(Zone::Hand, controller).is_empty();
 
         let mut abilities = vec![];
@@ -61,22 +60,24 @@ impl CardBehavior for GrimoireOfTheDead {
                 target_requirement: None,
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             });
         }
 
         // Ability 1: {T}, Remove 3 study counters, sacrifice: Return all creatures from graveyards.
-        if study_counters >= 3 {
-            abilities.push(ActivatedAbilityDef {
-                ability_index: 1,
-                description: "{T}, Remove 3 study counters, sacrifice: Return all graveyard creatures".into(),
-                cost: ManaCost::free(),
-                requires_tap: true,
-                sacrifice_cost: SacrificeCost::SacrificeThis,
-                target_requirement: None,
-                once_per_turn: false,
-                sorcery_speed_only: false,
-            });
-        }
+        // The engine checks the counters are there and removes exactly three
+        // before the sacrifice, which would otherwise clear all of them at once.
+        abilities.push(ActivatedAbilityDef {
+            ability_index: 1,
+            description: "{T}, Remove 3 study counters, sacrifice: Return all graveyard creatures".into(),
+            cost: ManaCost::free(),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::SacrificeThis,
+            target_requirement: None,
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: Some((CounterType::Study, 3)),
+        });
 
         abilities
     }
@@ -127,9 +128,8 @@ impl CardBehavior for GrimoireOfTheDead {
             }
             1 => {
                 // {T}, Remove 3 study counters, sacrifice: Return all graveyard creatures.
-                // Note: The engine already handled tapping and sacrificing as part of the cost.
-                // The study counters were already checked in activated_abilities().
-                // (Since the Grimoire is now in the graveyard, counter removal is moot.)
+                // Tap, counter removal and sacrifice are all cost, all paid by
+                // the engine before this runs.
 
                 // Collect all creature cards from all graveyards.
                 // "Creature cards" includes each card with the type creature, even if

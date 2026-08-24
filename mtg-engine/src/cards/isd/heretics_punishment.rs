@@ -45,6 +45,7 @@ impl CardBehavior for HereticsPunishment {
                 target_requirement: Some(TargetRequirement::AnyTarget),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         } else {
             vec![]

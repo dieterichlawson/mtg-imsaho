@@ -83,6 +83,7 @@ impl CardBehavior for BackFromTheBrink {
                 target_requirement: None,
                 once_per_turn: false,
                 sorcery_speed_only: true,
+                counter_cost: None,
             }
         }).collect()
     }

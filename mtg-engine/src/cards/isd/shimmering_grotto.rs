@@ -56,6 +56,7 @@ impl CardBehavior for ShimmeringGrotto {
                     target_requirement: None,
                     once_per_turn: false,
                     sorcery_speed_only: false,
+                    counter_cost: None,
                 },
                 ActivatedAbilityDef {
                     ability_index: 2,
@@ -66,6 +67,7 @@ impl CardBehavior for ShimmeringGrotto {
                     target_requirement: None,
                     once_per_turn: false,
                     sorcery_speed_only: false,
+                    counter_cost: None,
                 },
                 ActivatedAbilityDef {
                     ability_index: 3,
@@ -76,6 +78,7 @@ impl CardBehavior for ShimmeringGrotto {
                     target_requirement: None,
                     once_per_turn: false,
                     sorcery_speed_only: false,
+                    counter_cost: None,
                 },
                 ActivatedAbilityDef {
                     ability_index: 4,
@@ -86,6 +89,7 @@ impl CardBehavior for ShimmeringGrotto {
                     target_requirement: None,
                     once_per_turn: false,
                     sorcery_speed_only: false,
+                    counter_cost: None,
                 },
                 ActivatedAbilityDef {
                     ability_index: 5,
@@ -96,6 +100,7 @@ impl CardBehavior for ShimmeringGrotto {
                     target_requirement: None,
                     once_per_turn: false,
                     sorcery_speed_only: false,
+                    counter_cost: None,
                 },
             ]
         } else {

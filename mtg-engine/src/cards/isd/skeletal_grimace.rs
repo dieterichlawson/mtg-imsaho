@@ -53,6 +53,7 @@ impl CardBehavior for SkeletalGrimace {
                 target_requirement: None,
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         } else {
             vec![]

@@ -67,6 +67,7 @@ impl CardBehavior for MikaeusTheLunarch {
             target_requirement: None,
             once_per_turn: false,
             sorcery_speed_only: false,
+            counter_cost: None,
         });
 
         // Ability 1: {T}, Remove a +1/+1 counter: Put a +1/+1 counter on each other creature.
@@ -81,6 +82,7 @@ impl CardBehavior for MikaeusTheLunarch {
                 target_requirement: None,
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             });
         }
 

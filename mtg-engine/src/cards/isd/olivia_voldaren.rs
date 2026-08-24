@@ -59,6 +59,7 @@ impl CardBehavior for OliviaVoldaren {
                 target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Another)),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             },
             // Ability 1: {3}{B}{B}: Gain control of target Vampire.
             ActivatedAbilityDef {
@@ -74,6 +75,7 @@ impl CardBehavior for OliviaVoldaren {
                 target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasSubtype("Vampire".into()))),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             },
         ]
     }

@@ -39,6 +39,7 @@ impl CardBehavior for SilverchaseFox {
             )),
             once_per_turn: false,
             sorcery_speed_only: false,
+            counter_cost: None,
         }]
     }
 

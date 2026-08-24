@@ -44,6 +44,7 @@ impl CardBehavior for DarkthicketWolf {
                 target_requirement: None,
                 once_per_turn: true,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         } else {
             vec![]

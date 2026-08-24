@@ -73,6 +73,7 @@ impl CardBehavior for BlazingTorch {
                 target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
                 once_per_turn: false,
                 sorcery_speed_only: true,
+                counter_cost: None,
             }]
         } else {
             // Called with a creature's ID (the equipment is attached to it).
@@ -86,6 +87,7 @@ impl CardBehavior for BlazingTorch {
                 target_requirement: Some(TargetRequirement::AnyTarget),
                 once_per_turn: false,
                 sorcery_speed_only: false,
+                counter_cost: None,
             }]
         }
     }
