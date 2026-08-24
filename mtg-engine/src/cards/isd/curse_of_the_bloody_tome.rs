@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Curse of the Bloody Tome — {2}{U} Enchantment — Aura Curse.
 /// Enchant player.
@@ -50,11 +50,9 @@ impl CardBehavior for CurseOfTheBloodyTome {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let cursed_player = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
-            _ => return,
-        };
-        let Some(cursed_player) = cursed_player else { return; };
+        // CR 113.7a: destroying the Curse in response does not counter its
+        // trigger, and `attached_player` still knows whom it cursed.
+        let Some(cursed_player) = state.attached_player(self_id) else { return };
         if state.active_player != cursed_player {
             return;
         }

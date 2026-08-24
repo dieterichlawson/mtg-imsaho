@@ -90,9 +90,11 @@ impl CardBehavior for CharmbreakerDevils {
     }
 
     fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
+        // CR 113.7a: the trigger resolves even if the Devils are destroyed in
+        // response, the same way their upkeep trigger already did.
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Only trigger on your own spells.
         if caster != controller {

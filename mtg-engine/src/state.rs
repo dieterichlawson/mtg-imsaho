@@ -403,6 +403,7 @@ impl GameState {
             targets: Vec::new(),
             attached_to: None,
             attached_to_player: None,
+            last_attached_to_player: None,
             zone_change_count: 0,
             copy_grantor: None,
             is_token: false,
@@ -523,6 +524,7 @@ impl GameState {
             targets: Vec::new(),
             attached_to: None,
             attached_to_player: None,
+            last_attached_to_player: None,
             zone_change_count: 0,
             copy_grantor: None,
             is_token: true,
@@ -712,7 +714,10 @@ impl GameState {
                 // The player-attachment counterpart, for Curses. Without this
                 // a Curse kept `attached_to_player` in the graveyard, so any
                 // effect returning it to the battlefield would re-attach it to
-                // that player with no targeting and no consent.
+                // that player with no targeting and no consent. The value is
+                // kept alongside as last known information — a Curse's upkeep
+                // trigger already on the stack still knows whom it cursed.
+                obj.last_attached_to_player = obj.attached_to_player;
                 obj.attached_to_player = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
@@ -773,6 +778,7 @@ impl GameState {
             // Set summoning sickness and clear stale state when entering the battlefield.
             if to == Zone::Battlefield && from != Zone::Battlefield {
                 obj.card_state.clear();
+                obj.last_attached_to_player = None;
                 obj.summoning_sick = true;
             }
         }
@@ -1916,6 +1922,20 @@ impl GameState {
         self.card_types_of(id, registry).contains(&card_type)
     }
 
+    /// The player a Curse is attached to, falling back to the player it was
+    /// attached to immediately before it left the battlefield.
+    ///
+    /// CR 113.7a and 608.2: a Curse's triggered ability on the stack resolves
+    /// even if the Curse is destroyed in response, and it still knows whom it
+    /// cursed. Every Curse used to answer this itself as
+    /// `get_object(id).filter(|o| o.zone == Battlefield).attached_to_player`,
+    /// which is exactly the ability the rule says does not go away.
+    #[must_use]
+    pub fn attached_player(&self, id: ObjectId) -> Option<PlayerId> {
+        let obj = self.get_object(id)?;
+        obj.attached_to_player.or(obj.last_attached_to_player)
+    }
+
     /// Whether the object is a creature. Checks card types first; also
     /// accepts object-level P/T as a creature sentinel (tokens, `*/*`
     /// creatures, and anonymous test objects all set it, while equipment,
@@ -2079,6 +2099,12 @@ pub struct GameObject {
     pub attached_to: Option<ObjectId>,
     // Curse aura: attached to a player (instead of an object).
     pub attached_to_player: Option<PlayerId>,
+    /// Who this was attached to immediately before it left the battlefield —
+    /// last known information (CR 608.2) for a Curse whose triggered ability
+    /// is still on the stack after the Curse is destroyed. The object-valued
+    /// counterpart is `card_state["last_attached_to"]`.
+    #[serde(default)]
+    pub last_attached_to_player: Option<PlayerId>,
 
     // Tracks zone changes for staleness detection (XMage pattern).
     pub zone_change_count: u32,

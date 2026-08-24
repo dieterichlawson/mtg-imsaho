@@ -42,11 +42,9 @@ impl CardBehavior for CurseOfStalkedPrey {
 
     fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
         // Only trigger when the enchanted player is dealt damage.
-        let cursed_player = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
-            _ => return,
-        };
-        if cursed_player != Some(damaged_player) {
+        // CR 113.7a: destroying the Curse in response does not counter its
+        // trigger, and `attached_player` still knows whom it cursed.
+        if state.attached_player(self_id) != Some(damaged_player) {
             return;
         }
         // Put a +1/+1 counter on the creature that dealt damage.

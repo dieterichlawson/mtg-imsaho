@@ -33,9 +33,11 @@ impl CardBehavior for RakishHeir {
 
     fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {
         // Whenever a Vampire YOU control deals combat damage to a player.
+        // CR 113.7a: the Heir trading with a blocker in the same combat damage
+        // step does not counter this — the Vampire still gets its counter.
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Check if the source creature is a Vampire we control.
         let source = match state.get_object(source_id) {

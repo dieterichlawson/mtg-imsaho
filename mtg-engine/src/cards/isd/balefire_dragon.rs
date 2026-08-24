@@ -35,7 +35,9 @@ impl CardBehavior for BalefireDragon {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, registry: &CardRegistry) {
-        if !state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+        // CR 113.7a: killing the Dragon with the trigger on the stack does not
+        // save the defending player's board.
+        if state.get_object(self_id).is_none() {
             return;
         }
 

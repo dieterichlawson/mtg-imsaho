@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 use crate::actions::Target;
 
 /// Burning Vengeance — {2}{R} enchantment.
@@ -46,9 +46,11 @@ impl CardBehavior for BurningVengeance {
     }
 
     fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        // CR 113.7a: the trigger is independent of Burning Vengeance once on
+        // the stack, so destroying it in response still deals the 2 damage.
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Only trigger on our own spells.
         if caster != controller {

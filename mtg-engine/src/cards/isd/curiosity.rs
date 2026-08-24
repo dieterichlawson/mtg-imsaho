@@ -53,9 +53,9 @@ impl CardBehavior for Curiosity {
     }
 
     fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        let Some(controller) = state.get_object(self_id)
-            .filter(|o| o.zone == Zone::Battlefield)
-            .map(|o| o.controller) else { return };
+        // CR 113.7a: the draw happens even if Curiosity is destroyed in
+        // response to its own trigger.
+        let Some(controller) = state.get_object(self_id).map(|o| o.controller) else { return };
         // "You may draw a card" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

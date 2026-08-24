@@ -51,11 +51,10 @@ impl CardBehavior for CurseOfThePiercedHeart {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let (controller, cursed_player) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.attached_to_player),
-            _ => return,
-        };
-        let Some(cursed_player) = cursed_player else { return; };
+        // CR 113.7a: destroying the Curse in response does not counter its
+        // trigger, and `attached_player` still knows whom it cursed.
+        let Some(controller) = state.get_object(self_id).map(|o| o.controller) else { return };
+        let Some(cursed_player) = state.attached_player(self_id) else { return };
         // Only trigger on the enchanted player's upkeep.
         if state.active_player != cursed_player {
             return;
