@@ -80,6 +80,69 @@ pub fn available_mana_abilities(
         .collect()
 }
 
+/// Whether `player` could pay `cost` right now — from floating mana, or by
+/// tapping what they control.
+///
+/// CR 608.2g: a resolving effect that gives a player the option to pay a cost
+/// lets that player activate mana abilities before deciding. The engine has no
+/// priority window mid-resolution, so it does what it already does for spell
+/// and ability costs: work out a tap plan and run it when the player says yes.
+/// Without this, "you may pay {1}" was offered only to a player who happened
+/// to have {1} already floating — nearly nobody — and everyone else was
+/// treated as having declined.
+pub fn can_pay_with_sources(
+    state: &GameState,
+    player: PlayerId,
+    cost: &ManaCost,
+    registry: &CardRegistry,
+) -> bool {
+    let pool = &state.get_player(player).mana_pool;
+    if mana::can_pay(pool, cost) {
+        return true;
+    }
+    let sources = gather_mana_sources(state, player, registry, prevents_artifact_abilities(state, registry));
+    mana::compute_autotap(cost, pool, &sources, &[]).is_some()
+}
+
+/// Pay `cost`, tapping sources if the pool alone can't cover it. Returns false
+/// and leaves the game state untouched when it cannot be paid — the tap plan
+/// is worked out in full before anything is tapped.
+pub fn pay_cost_with_sources(
+    state: &mut GameState,
+    player: PlayerId,
+    cost: &ManaCost,
+    registry: &CardRegistry,
+) -> bool {
+    if !mana::can_pay(&state.get_player(player).mana_pool, cost) {
+        let sources = gather_mana_sources(state, player, registry, prevents_artifact_abilities(state, registry));
+        let plan = {
+            let pool = &state.get_player(player).mana_pool;
+            mana::compute_autotap(cost, pool, &sources, &[])
+        };
+        let Some(plan) = plan else { return false };
+        for (source_id, ability_index) in plan {
+            activate_mana_source(state, source_id, ability_index, registry);
+        }
+    }
+    mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
+}
+
+/// Stony Silence and friends: no artifact ability may be activated, mana
+/// abilities included.
+pub(crate) fn prevents_artifact_abilities(state: &GameState, registry: &CardRegistry) -> bool {
+    state.objects.values().any(|o| {
+        if o.zone != Zone::Battlefield { return false; }
+        if let Some(ref effects) = o.instance_continuous_effects {
+            if effects.iter().any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)) {
+                return true;
+            }
+        }
+        registry.get(o.card_id)
+            .is_some_and(|b| b.card_data().continuous_effects.iter()
+                .any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)))
+    })
+}
+
 /// Gather all available mana sources for a player, classified by opportunity cost.
 pub(crate) fn gather_mana_sources(
     state: &GameState,
@@ -474,16 +537,21 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     resolution_prompt: None,
                 }
             }
-            AwaitingAction::ResolutionChoice { choice, source, .. } => {
+            AwaitingAction::ResolutionChoice { choice, source, player, .. } => {
                 use crate::state::ResolutionChoiceKind;
                 use crate::actions::ResolvedChoice;
                 let source_name = card_name(state, registry, *source);
                 let actions = match choice {
-                    ResolutionChoiceKind::PayOrNot { .. } => {
-                        vec![
-                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
-                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
-                        ]
+                    ResolutionChoiceKind::PayOrNot { cost, .. } => {
+                        // Declining is always available; paying is offered only
+                        // when the player can actually produce the mana, here
+                        // or by tapping (CR 608.2g).
+                        let mut acts = Vec::new();
+                        if can_pay_with_sources(state, *player, cost, registry) {
+                            acts.push(Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) });
+                        }
+                        acts.push(Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) });
+                        acts
                     }
                     ResolutionChoiceKind::ChooseTarget { options, optional, .. } => {
                         let mut acts: Vec<Action> = options.iter()
@@ -610,21 +678,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     // PassPriority is always available when you have priority.
     actions.push(Action::PassPriority);
 
-    // Check for PreventArtifactAbilities effect (e.g. Stony Silence):
-    // no abilities of artifacts can be activated, including mana abilities.
-    let prevent_artifact_abilities = state.objects.values().any(|o| {
-        if o.zone != Zone::Battlefield { return false; }
-        // Check instance effects.
-        if let Some(ref effects) = o.instance_continuous_effects {
-            if effects.iter().any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)) {
-                return true;
-            }
-        }
-        // Check card data effects.
-        registry.get(o.card_id)
-            .is_some_and(|b| b.card_data().continuous_effects.iter()
-                .any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)))
-    });
+    // Stony Silence: no abilities of artifacts can be activated, mana
+    // abilities included.
+    let prevent_artifact_abilities = prevents_artifact_abilities(state, registry);
 
     // Mana abilities: can activate anytime you have priority.
     // Deduplicate by card_id — if you have 5 untapped Forests, only show one "Tap Forest".
@@ -2924,14 +2980,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let awaiting = new_state.awaiting_action.take();
             if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, .. }) = awaiting {
                 match (&kind, resolved) {
-                    (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, .. },
+                    (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
                      ResolvedChoice::PayDecision(pay)) => {
-                        if *pay {
-                            // Deduct {1} from the player's mana pool.
-                            let controller = new_state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
-                            let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-                            let _ = mana::auto_pay(&mut new_state.get_player_mut(controller).mana_pool, &cost);
-                            new_state.log(LogLevel::Event, "Paid {1} to prevent counter".into());
+                        // CR 608.2g: paying may involve tapping for the mana.
+                        // If it can't actually be paid the cost is unpaid, and
+                        // the "unless" clause takes effect as if declined —
+                        // this used to ignore the payment's result, so saying
+                        // "pay" with an empty pool saved the spell for free.
+                        let controller = new_state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
+                        let paid = *pay
+                            && pay_cost_with_sources(&mut new_state, controller, cost, registry);
+                        if paid {
+                            new_state.log(LogLevel::Event, "Paid the cost to prevent the counter".into());
                         } else {
                             let name = new_state.obj_name(*spell_id);
                             new_state.stack.retain(|e| e.as_spell() != Some(*spell_id));

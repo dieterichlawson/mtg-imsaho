@@ -2245,6 +2245,11 @@ pub enum ResolutionChoiceKind {
         description: String,
         spell_id: ObjectId,
         source_spell_id: ObjectId,
+        /// What the player is being asked to pay. The engine offers the "pay"
+        /// answer only when they can produce this much (CR 608.2g), and pays
+        /// exactly this when they take it — it used to be hardcoded to {1} at
+        /// the one place that deducted it.
+        cost: crate::types::ManaCost,
     },
     /// Choose one target from a list (damage, destroy, return, counters).
     ChooseTarget {

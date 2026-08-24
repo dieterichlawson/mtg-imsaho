@@ -613,7 +613,7 @@ fn frightful_delusion_choice_when_opponent_has_mana() {
 
 /// Frightful Delusion auto-counters when opponent has no mana.
 #[test]
-fn frightful_delusion_auto_counters_without_mana() {
+fn frightful_delusion_offers_the_choice_even_with_an_empty_pool() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -634,11 +634,21 @@ fn frightful_delusion_auto_counters_without_mana() {
 
     state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
 
-    // Should auto-counter (no choice needed).
-    assert!(state.awaiting_action.is_none(),
-        "Should auto-counter when opponent has no mana");
+    // CR 608.2g: the choice belongs to the spell's controller even with an
+    // empty pool — they may tap for the mana. With no mana sources at all the
+    // only answer available is "don't pay".
+    let actions = engine::legal_actions(&state, &reg).actions;
+    assert!(matches!(&state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player, choice: mtg_engine::state::ResolutionChoiceKind::PayOrNot { .. }, .. }) if *player == P0),
+        "the spell's controller must be asked; got {:?}", state.awaiting_action);
+    assert!(actions.len() == 1 && matches!(&actions[0], Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::PayDecision(false) }),
+        "with no mana and nothing to tap, declining is the only legal answer; got {actions:?}");
+
+    state = engine::submit_action(&state, &actions[0], &reg);
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
-        "Bears should be auto-countered");
+        "Bears is countered once the payment is declined");
 }
 
 /// Unburial Rites presents a choice when multiple creatures in graveyard.

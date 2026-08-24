@@ -90,6 +90,12 @@ fn frightful_delusion_counters_and_discards() {
 
     state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
 
+    // CR 608.2g: P0 is asked whether to pay {1}. Their only Mountain is in
+    // hand, so declining is the only legal answer.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::PayDecision(false),
+    }, &reg);
+
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
         "Spell should be countered");
     // P0's hand card should have been discarded.
