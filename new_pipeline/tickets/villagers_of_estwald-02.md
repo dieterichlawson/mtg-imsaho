@@ -1,11 +1,15 @@
 ---
 id: villagers_of_estwald-02
-status: new
+status: fixed
 card: Villagers of Estwald
 audit_run_id: 2026-04-19-villagers_of_estwald-audit
 audit_model: sonnet
 audit_tokens: 29158
 audit_duration: 548
+fixed_sha: 61ac935
+fixed_at: 2026-08-24T01:25:42Z
+test_file: mtg-engine/tests/trigger_snapshots.rs
+fix_note: One shared helpers::werewolf_should_transform, with the invented is_first_turn clause removed; twelve private copies deleted.
 ---
 
 ## Audit Finding

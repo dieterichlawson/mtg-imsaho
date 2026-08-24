@@ -510,20 +510,60 @@ assert what they mean.
   two simultaneous death triggers exiled a creature the first had already
   returned to the battlefield.
 
+### Cluster 7, continued — triggers reading the board at the wrong time
+
+- **A trigger is about what was true when it went on the stack.** `AttacksTrigger`
+  now carries the attacking creature and the defending player, snapshotted at
+  declaration (CR 508.1), and `on_attacks` receives them as `AttackInfo`.
+  Trepanation Blade read the Blade's *current* `attached_to` instead: killing
+  the equipped creature in response made the handler return before doing
+  anything, so the mandatory mill was skipped along with the buff; and
+  re-equipping before resolution moved the buff onto a creature that never
+  attacked.
+- **Death triggers fire after their watcher died.** Selhoff Occultist and Rage
+  Thrower required themselves to still be on the battlefield, which made them
+  no-ops in exactly the board-wipe case they exist for. Neither effect touches
+  the source — one mills a player, the other deals damage, which a source that
+  has left the battlefield still does from last known information (CR 608.2h).
+  The audit also flagged Lumberknot, Unruly Mob and Village Cannibals; those
+  guards are *correct*, because their triggers put a counter on themselves and
+  a permanent off the battlefield cannot receive counters (CR 121.1). The
+  distinction is written down beside the code now.
+- **Twelve identical werewolves.** Each carried a byte-identical private copy
+  of the transform condition, and every copy had the same invented
+  `&& !state.is_first_turn` — nowhere in the oracle text. One helper now.
+- **`ManaCost::without_x` / `has_x`** — Back from the Brink's "pay its mana
+  cost" is not casting, so X is 0 and there is no announcement (CR 107.3e); the
+  printed {X} was reaching the engine's X-funding prompt. The new methods also
+  collapse eight hand-rolled X filters in the engine.
+
 ## Next up
 
-The 9 remaining one-offs. Two are architectural rather than local:
+Five one-offs remain, and each needs a mechanism the engine does not have yet:
 
 - `instigator_gang-02` — "attacking creatures you control get +X/+0" is modelled
   as an `AnyCreatureAttacks` trigger pushing `ModifyPTWhileSourceInPlay` rather
   than a static continuous effect. Three divergences follow: the buff persists
   past end of combat, it misses creatures put onto the battlefield attacking,
   and it misses existing attackers if the Gang enters after attackers are
-  declared.
+  declared. Needs a continuous effect scoped to "attacking creatures you
+  control", re-evaluated rather than applied once.
 - `shimmering_grotto-01` — "{1}, {T}: Add one mana of any color" is a mana
   ability under CR 605.1a but is exposed through `activated_abilities`, so the
-  autotap planner never sees it. `ManaAbilityDef` has no cost field and cannot
-  express a choice of color; both would need to change.
+  autotap planner never sees it. `ManaAbilityDef` has neither a cost field nor
+  a way to express a choice of color; both would need to change.
+- `bitterheart_witch-01` — the Curse has to be legally able to enchant the
+  chosen player, so a player with protection from the Curse's color is not a
+  legal choice. There is no `player_has_protection_from_color` anywhere; player
+  protection as a concept is missing.
+- `olivia_voldaren-02` — "gains control for as long as you control Olivia"
+  ends the moment the condition becomes false (CR 611.2b), including when an
+  opponent takes Olivia with Act of Treason. Nothing notices a controller
+  change that is not a zone change; there is no controller-change event.
+- `grimoire_of_the_dead-02` — "remove three study counters" is a cost, but the
+  sacrifice that accompanies it clears all counters in one step, so the removal
+  never happens as a discrete action. `ActivatedAbilityDef` has no
+  counter-removal cost field.
 
 Hooks worth reaching for before writing a new special case:
 
@@ -533,8 +573,10 @@ Hooks worth reaching for before writing a new special case:
 - `try_destroy_all` whenever an effect destroys more than one thing.
 - `search_library` for anything that searches, so the "may" and the shuffle
   stay right.
+- `AttackInfo` rather than re-reading `attached_to` or combat state at
+  resolution.
 
 Card code that re-derives something the engine already checks is the recurring
 shape of this whole backlog.
 
-**Backlog count: 107 fixed / 9 open** (was 2 / 114 at the start of this pass).
+**Backlog count: 111 fixed / 5 open** (was 2 / 114 at the start of this pass).

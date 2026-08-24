@@ -1,11 +1,15 @@
 ---
 id: selhoff_occultist-02
-status: new
+status: fixed
 card: Selhoff Occultist
 audit_run_id: 2026-04-19-selhoff_occultist-audit
 audit_model: sonnet
 audit_tokens: 21123
 audit_duration: 374
+fixed_sha: f81a55c
+fixed_at: 2026-08-24T01:25:42Z
+test_file: mtg-engine/tests/trigger_snapshots.rs
+fix_note: Battlefield guard removed; the mill happens even when the Occultist died in the same event. Same fix for Rage Thrower. The counter-on-self cards listed as affected are correct as they stand (CR 121.1).
 ---
 
 ## Audit Finding

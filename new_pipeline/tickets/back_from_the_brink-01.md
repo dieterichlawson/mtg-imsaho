@@ -1,11 +1,15 @@
 ---
 id: back_from_the_brink-01
-status: new
+status: fixed
 card: Back from the Brink
 audit_run_id: 2026-04-19-back_from_the_brink-audit
 audit_model: sonnet
 audit_tokens: 35564
 audit_duration: 870
+fixed_sha: 1c5fd42
+fixed_at: 2026-08-24T01:25:42Z
+test_file: mtg-engine/tests/trigger_snapshots.rs
+fix_note: The ability cost drops {X} (CR 107.3e). Adds ManaCost::without_x/has_x.
 ---
 
 ## Audit Finding

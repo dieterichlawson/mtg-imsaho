@@ -1,11 +1,15 @@
 ---
 id: trepanation_blade-01
-status: new
+status: fixed
 card: Trepanation Blade
 audit_run_id: 2026-04-19-trepanation_blade-audit
 audit_model: sonnet
 audit_tokens: 20596
 audit_duration: 350
+fixed_sha: f81a55c
+fixed_at: 2026-08-24T01:25:42Z
+test_file: mtg-engine/tests/trigger_snapshots.rs
+fix_note: AttacksTrigger carries the attacker and defending player as AttackInfo; the mill is unconditional and the buff goes to the creature that attacked.
 ---
 
 ## Audit Finding
