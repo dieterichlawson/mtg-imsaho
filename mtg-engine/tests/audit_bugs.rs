@@ -1700,7 +1700,7 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place two Undead Alchemists for P0
-    let alch1 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+    let _alch1 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
     let _alch2 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
 
     // Put some cards in P1's library
@@ -1721,12 +1721,22 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
         obj.subtypes = vec!["Zombie".into()];
     }
 
-    // Simulate combat damage replacement — the engine iterates replacers
-    // and the first Alchemist replaces the damage. The second should not
-    // double-replace.
-    let alch_card_id = registry.get_id_by_name("Undead Alchemist").unwrap();
-    let behavior1 = registry.get(alch_card_id).unwrap();
-    let replaced = behavior1.replace_combat_damage_to_player(&mut state, alch1, zombie, P1, 2, &registry);
+    // Run the damage through the replacement layer with both Alchemists on
+    // the battlefield. CR 614.5: once one of them has replaced the event, the
+    // event is gone and the second has nothing left to replace. (This used to
+    // call one Alchemist's hook by hand, which could not exercise the rule it
+    // was named for.)
+    let replaced = mtg_engine::replacement::apply(
+        &mut state,
+        mtg_engine::replacement::ReplaceableEvent::DealsDamage {
+            source: zombie,
+            target: mtg_engine::events::DamageTarget::Player(P1),
+            amount: 2,
+            combat: true,
+        },
+        &registry,
+    )
+    .is_none();
     assert!(replaced, "First Alchemist should replace the damage");
 
     let milled = lib_before - state.get_player(P1).library_order.len();

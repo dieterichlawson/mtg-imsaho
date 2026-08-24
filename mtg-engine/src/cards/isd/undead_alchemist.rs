@@ -68,36 +68,34 @@ impl CardBehavior for UndeadAlchemist {
             format!("Undead Alchemist: exiled milled {name}, created Zombie token"));
     }
 
-    fn replace_combat_damage_to_player(
+    fn replace_event(
         &self,
         state: &mut GameState,
         self_id: ObjectId,
-        source_id: ObjectId,
-        damaged_player: PlayerId,
-        amount: u32,
+        event: &crate::replacement::ReplaceableEvent,
         registry: &CardRegistry,
-    ) -> bool {
+    ) -> Option<crate::replacement::Replacement> {
+        use crate::replacement::{ReplaceableEvent, Replacement};
+        // "If a Zombie you control would deal combat damage to a player,
+        // instead that player mills that many cards."
+        let ReplaceableEvent::DealsDamage { source, target, amount, combat: true } = event
+            else { return None };
+        let crate::events::DamageTarget::Player(damaged_player) = target else { return None };
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return false,
+            _ => return None,
         };
-        // Only replace damage from Zombies we control.
-        let source = match state.get_object(source_id) {
-            Some(o) if o.controller == controller => o,
-            _ => return false,
-        };
-        let _ = source;
-        if !state.has_subtype(source_id, "Zombie", registry) {
-            return false;
+        if state.get_object(*source).map(|o| o.controller) != Some(controller)
+            || !state.has_subtype(*source, "Zombie", registry)
+        {
+            return None;
         }
 
-        // Mill that many cards instead of dealing damage. mill_cards emits
-        // CreatureCardMilled events, which the trigger system picks up to
-        // fire our on_creature_card_milled (exile + create Zombie token).
-        crate::engine::mill_cards(state, damaged_player, amount as usize, registry);
-
+        // mill_cards emits CreatureCardMilled, which the trigger system picks
+        // up to fire our on_creature_card_milled (exile + Zombie token).
+        crate::engine::mill_cards(state, *damaged_player, *amount as usize, registry);
         state.log(crate::state::LogLevel::Event,
             format!("Undead Alchemist: Zombie combat damage replaced with mill ({amount})"));
-        true // Damage fully replaced
+        Some(Replacement::Replaced)
     }
 }

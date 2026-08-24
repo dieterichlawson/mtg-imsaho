@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
 
@@ -27,31 +27,31 @@ impl CardBehavior for DearlyDeparted {
         }
     }
 
-    fn entering_modifier_zones(&self) -> Vec<Zone> {
+    /// This one works from the graveyard, not the battlefield.
+    fn replacement_zones(&self) -> Vec<Zone> {
         vec![Zone::Graveyard]
     }
 
-    fn modify_creature_entering_counters(
+    fn replace_event(
         &self,
-        state: &GameState,
+        state: &mut GameState,
         self_id: ObjectId,
-        entering_id: ObjectId,
-        entering_controller: PlayerId,
+        event: &crate::replacement::ReplaceableEvent,
         registry: &CardRegistry,
-    ) -> Vec<(CounterType, u32)> {
-        // Must be in our graveyard.
+    ) -> Option<crate::replacement::Replacement> {
+        use crate::replacement::{ReplaceableEvent, Replacement};
+        let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
+        // Must be in our graveyard, and only our own Humans get the counter.
         let owner = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Graveyard => o.owner,
-            _ => return vec![],
+            _ => return None,
         };
-        if entering_controller != owner {
-            return vec![];
+        if e.controller != owner || !state.has_subtype(e.object, "Human", registry) {
+            return None;
         }
-        // Only affects Human creatures.
-        let is_human = state.has_subtype(entering_id, "Human", registry);
-        if !is_human {
-            return vec![];
-        }
-        vec![(CounterType::PlusOnePlusOne, 1)]
+        let mut e = e.clone();
+        e.counters.push((CounterType::PlusOnePlusOne, 1));
+        Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
     }
+
 }

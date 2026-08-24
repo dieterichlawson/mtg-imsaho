@@ -38,13 +38,16 @@ impl CardBehavior for ClifftopRetreat {
         }
     }
 
-    /// CR 614.1d: "ClifftopRetreat enters tapped unless you control a Mountain or a Plains."
-    /// A replacement effect — no stack entry, no window in which the land is
-    /// briefly untapped and could be tapped for mana in response, and the
-    /// condition is read at the moment of entry rather than at resolution
-    /// (so an opponent cannot bounce the Mountain in response to change it).
-    fn enters_tapped(&self, state: &GameState, self_id: ObjectId, _from_zone: Option<Zone>, registry: &CardRegistry) -> bool {
-        !Self::controller_has_matching_land(state, self_id, registry)
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        crate::cards::helpers::enters_tapped_unless(self_id, event, || {
+            Self::controller_has_matching_land(state, self_id, registry)
+        })
     }
 
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {

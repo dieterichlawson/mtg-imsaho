@@ -46,34 +46,14 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
             state.events.push(GameEvent::CardDrawn { player, object: id });
             drawn += 1;
         } else {
-            // Check for ReplaceEmptyDraw replacement effect (e.g. Laboratory Maniac):
-            // if the player controls a permanent with this effect, they win instead.
-            let has_replace_empty_draw = state.objects.values().any(|o| {
-                o.zone == Zone::Battlefield
-                    && o.controller == player
-                    && registry.get(o.card_id)
-                        .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw))
-            });
-            if has_replace_empty_draw {
-                // Player wins the game instead of drawing from empty library.
-                // Clear the has_drawn_from_empty flag so SBA doesn't kill them.
-                state.get_player_mut(player).has_drawn_from_empty = false;
-                let opponent = state.opponent(player);
-                state.players[opponent.0 as usize].lost = true;
-                state.events.push(GameEvent::PlayerLost {
-                    player: opponent,
-                    reason: crate::events::LossReason::LifeReachedZero, // closest reason
-                });
-                state.result = Some(crate::state::GameResult::Winner(player));
-                let source_name = state.objects.values()
-                    .find(|o| o.zone == Zone::Battlefield && o.controller == player
-                        && registry.get(o.card_id)
-                            .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw)))
-                    .map(|o| o.name.clone())
-                    .unwrap_or_default();
-                state.log(LogLevel::Milestone,
-                    format!("p{} wins the game with {}!", player.0, source_name));
-            }
+            // CR 614: drawing from an empty library can be replaced
+            // (Laboratory Maniac wins instead). The effect does whatever it
+            // does; either way the draw does not happen.
+            crate::replacement::apply(
+                state,
+                crate::replacement::ReplaceableEvent::DrawsFromEmptyLibrary { player },
+                registry,
+            );
             // Otherwise SBA will catch the empty library draw.
             break;
         }

@@ -368,6 +368,44 @@ pub enum TargetRequirement {
 pub trait CardBehavior: Send + Sync {
     fn card_data(&self) -> CardData;
 
+    /// Replace or modify an event before it happens (CR 614).
+    ///
+    /// Return `None` to leave the event alone, `Replacement::Modified` with
+    /// the event as it should instead happen, or `Replacement::Replaced` when
+    /// the event does not happen at all and this effect has already done
+    /// whatever it does instead.
+    ///
+    /// This is the only replacement mechanism. It replaced seven — an engine
+    /// enum plus six bespoke hooks — each consulted from exactly one call
+    /// site, so nothing could apply a replacement the engine's author had not
+    /// thought to ask for at that spot.
+    fn replace_event(
+        &self,
+        _state: &mut GameState,
+        _self_id: ObjectId,
+        _event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        None
+    }
+
+    /// Whether this permanent asks its controller for a copy choice as it
+    /// enters (Evil Twin).
+    ///
+    /// Not a replacement effect, despite living next to them before: it
+    /// guards the printed 0/0 from state-based actions while the choice is
+    /// pending, rather than changing how anything enters.
+    fn enters_with_pending_copy_choice(&self) -> bool { false }
+
+    /// Zones this card's replacement effects apply from.
+    ///
+    /// The battlefield, for nearly everything. Dearly Departed adds counters
+    /// to entering Humans from the graveyard, which is why this is a list and
+    /// not a bool.
+    fn replacement_zones(&self) -> Vec<Zone> {
+        vec![Zone::Battlefield]
+    }
+
     /// What targets does this spell require when cast?
     fn target_requirement(&self) -> TargetRequirement {
         TargetRequirement::None
@@ -379,43 +417,11 @@ pub trait CardBehavior: Send + Sync {
         true
     }
 
-    /// Replacement effects (CR 614) this permanent provides while on the battlefield.
-    /// The engine checks these instead of hardcoding card names.
-    fn replacement_effects(&self) -> Vec<crate::types::ReplacementEffect> { vec![] }
 
-    /// CR 614.1c: Compute counters this creature enters the battlefield with.
-    /// Called BEFORE the zone change completes, so graveyard counts still
-    /// include this creature if it's entering from the graveyard.
-    /// `from_zone` is the zone the creature is coming from (`None` for tokens).
-    fn entering_with_counters(&self, _state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> Vec<(crate::types::CounterType, u32)> { vec![] }
 
-    /// CR 614.1d: whether this permanent enters the battlefield tapped.
-    ///
-    /// A replacement effect, not a triggered ability — it modifies the
-    /// entering event itself, so it uses no stack and opens no priority
-    /// window, and its condition is evaluated at the moment of entry. The
-    /// Innistrad check lands ("enters tapped unless you control a Mountain or
-    /// a Plains") read their condition here.
-    ///
-    /// `state` is the game as it stands with the permanent already placed but
-    /// before `EnteredBattlefield` is emitted, so a self-referential condition
-    /// must exclude `self_id`. `from_zone` is where it came from, for cards
-    /// that care.
-    fn enters_tapped(&self, _state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> bool { false }
 
-    /// CR 614.1c: Compute additional counters another creature should enter
-    /// with, contributed by this card from its current zone.
-    /// Used by Dearly Departed (in graveyard, adds +1/+1 to entering Humans).
-    fn modify_creature_entering_counters(&self, _state: &GameState, _self_id: ObjectId, _entering_id: ObjectId, _entering_controller: PlayerId, _registry: &CardRegistry) -> Vec<(crate::types::CounterType, u32)> { vec![] }
 
-    /// Zones from which this card contributes entering counters to other creatures.
-    /// Default: empty. Dearly Departed returns `[Zone::Graveyard]`.
-    fn entering_modifier_zones(&self) -> Vec<Zone> { vec![] }
 
-    /// CR 614: Replace combat damage a Zombie (or other qualifying creature)
-    /// would deal to a player. Returns `true` if the damage was fully replaced
-    /// (caller should skip normal damage). Used by Undead Alchemist.
-    fn replace_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) -> bool { false }
 
     /// Called when a creature card is milled from an opponent's library to their graveyard.
     /// Used by Undead Alchemist's second ability (exile the card, create a Zombie token).
@@ -442,9 +448,6 @@ pub trait CardBehavior: Send + Sync {
     /// Default false — applies to vanilla creatures, basic lands, etc. that have no ETB effects.
     fn has_etb_handler(&self) -> bool { false }
 
-    /// True for creatures that enter as a copy of another creature (CR 614.1d).
-    /// SBA should not kill these for 0 toughness before their copy effect resolves.
-    fn enters_as_copy(&self) -> bool { false }
 
     /// Called when this creature dies (moves from battlefield to graveyard).
     fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}

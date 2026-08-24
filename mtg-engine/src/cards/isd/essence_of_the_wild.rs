@@ -1,5 +1,7 @@
-use crate::cards::{CardBehavior, CardData};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, ReplacementEffect};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::cards::{CardRegistry, CardBehavior, CardData};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Essence of the Wild {3}{G}{G}{G} 6/6 Avatar.
 /// Creatures you control enter as a copy of Essence of the Wild.
@@ -28,7 +30,26 @@ impl CardBehavior for EssenceOfTheWild {
         }
     }
 
-    fn replacement_effects(&self) -> Vec<ReplacementEffect> {
-        vec![ReplacementEffect::EnterAsCopy]
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        use crate::replacement::{ReplaceableEvent, Replacement};
+        let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
+        // Not itself, only creatures, only ours, and only once.
+        let (controller, card_id) = match state.get_object(self_id) {
+            Some(o) => (o.controller, o.card_id),
+            None => return None,
+        };
+        let is_creature = state.get_object(e.object).is_some_and(|o| o.power.is_some());
+        if e.object == self_id || !is_creature || e.controller != controller || e.copy_of.is_some() {
+            return None;
+        }
+        let mut e = e.clone();
+        e.copy_of = Some(card_id);
+        Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
     }
 }

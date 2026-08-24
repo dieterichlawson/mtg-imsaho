@@ -37,12 +37,8 @@ impl CardBehavior for EvilTwin {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    /// Marks this permanent as one that "enters as a copy" via a player
-    /// choice (CR 614.1d). `move_object` reads this at entry to arm the
-    /// transient SBA copy-guard (`entering_copy_source`) before any SBA runs;
-    /// the guard is cleared when the copy choice concludes below / in the
-    /// CopyCreature handler.
-    fn enters_as_copy(&self) -> bool { true }
+
+    fn enters_with_pending_copy_choice(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);

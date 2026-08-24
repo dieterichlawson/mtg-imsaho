@@ -60,8 +60,7 @@ fn zombie_token_in_graveyard_not_counted() {
     // The Horde is still in hand — `entering_with_counters` is a replacement
     // effect, consulted before the zone change.
     let horde = spell_in_hand(&mut state, &reg, "Unbreathing Horde", P0);
-    let counters = reg.get(state.get_object(horde).unwrap().card_id).unwrap()
-        .entering_with_counters(&state, horde, Some(Zone::Hand), &reg);
+    let counters = plan_entering(&mut state, &reg, horde, Some(Zone::Hand)).counters;
 
     assert!(counters.is_empty(),
         "a Zombie TOKEN in the graveyard is not a Zombie card (CR 109.1); got {counters:?}");
@@ -78,8 +77,7 @@ fn zombie_card_in_graveyard_still_counted() {
         "test precondition: Walking Corpse is a Zombie card");
 
     let horde = spell_in_hand(&mut state, &reg, "Unbreathing Horde", P0);
-    let counters = reg.get(state.get_object(horde).unwrap().card_id).unwrap()
-        .entering_with_counters(&state, horde, Some(Zone::Hand), &reg);
+    let counters = plan_entering(&mut state, &reg, horde, Some(Zone::Hand)).counters;
 
     assert_eq!(counters, vec![(CounterType::PlusOnePlusOne, 1)],
         "the !is_token guard must not exclude a real Zombie card");
@@ -97,8 +95,7 @@ fn zombie_token_on_the_battlefield_is_still_counted() {
         vec![], vec!["Zombie".into()], &reg);
 
     let horde = spell_in_hand(&mut state, &reg, "Unbreathing Horde", P0);
-    let counters = reg.get(state.get_object(horde).unwrap().card_id).unwrap()
-        .entering_with_counters(&state, horde, Some(Zone::Hand), &reg);
+    let counters = plan_entering(&mut state, &reg, horde, Some(Zone::Hand)).counters;
 
     assert_eq!(counters, vec![(CounterType::PlusOnePlusOne, 1)],
         "\"each other Zombie you control\" says Zombie, not Zombie card — tokens count");

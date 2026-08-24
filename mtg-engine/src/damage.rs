@@ -152,21 +152,20 @@ fn deal_damage_to_player(
     if kind == DamageKind::Combat {
         amount *= combat_damage_multiplier(state, source, registry);
 
-        // CR 614: replacement effects for combat damage to a player
-        // (e.g. Undead Alchemist: Zombie combat damage → mill instead).
-        let source_controller = state.get_object(source).map(|o| o.controller);
-        if let Some(controller) = source_controller {
-            let replacers: Vec<(ObjectId, crate::ids::CardId)> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.controller == controller)
-                .map(|o| (o.id, o.card_id))
-                .collect();
-            for (obj_id, card_id) in replacers {
-                if let Some(behavior) = registry.get(card_id) {
-                    if behavior.replace_combat_damage_to_player(state, obj_id, source, player, amount, registry) {
-                        return; // Damage fully replaced.
-                    }
-                }
-            }
+        // CR 614: damage to a player can be replaced (Undead Alchemist turns
+        // a Zombie's combat damage into a mill).
+        let replaced = crate::replacement::apply(
+            state,
+            crate::replacement::ReplaceableEvent::DealsDamage {
+                source,
+                target: crate::events::DamageTarget::Player(player),
+                amount,
+                combat: true,
+            },
+            registry,
+        );
+        if replaced.is_none() {
+            return;
         }
     }
 

@@ -1,5 +1,7 @@
-use crate::cards::{CardBehavior, CardData};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, ReplacementEffect};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::cards::{CardRegistry, CardBehavior, CardData};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Parallel Lives — {3}{G} Enchantment.
 /// If an effect would create one or more tokens under your control,
@@ -20,7 +22,21 @@ impl CardBehavior for ParallelLives {
         }
     }
 
-    fn replacement_effects(&self) -> Vec<ReplacementEffect> {
-        vec![ReplacementEffect::DoubleTokens]
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        use crate::replacement::{ReplaceableEvent, Replacement};
+        let ReplaceableEvent::CreatesTokens { controller, count } = event else { return None };
+        if state.get_object(self_id).map(|o| o.controller) != Some(*controller) {
+            return None;
+        }
+        Some(Replacement::Modified(ReplaceableEvent::CreatesTokens {
+            controller: *controller,
+            count: count * 2,
+        }))
     }
 }

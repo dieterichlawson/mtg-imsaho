@@ -346,6 +346,51 @@ pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) 
 /// clause in the oracle text. "No spells were cast last turn" is satisfied
 /// when there was no last turn — zero spells were cast in it.
 #[must_use]
+// ═══════════════════════════════════════════════════════════════════
+// Replacement effects (CR 614)
+//
+// Two shapes cover nearly every replacement a permanent has about its own
+// arrival, so they are written once here rather than at each card.
+// ═══════════════════════════════════════════════════════════════════
+
+/// "This permanent enters the battlefield tapped unless <condition>"
+/// (CR 614.1d) — the five Innistrad check lands.
+pub fn enters_tapped_unless(
+    self_id: ObjectId,
+    event: &crate::replacement::ReplaceableEvent,
+    untapped_if: impl FnOnce() -> bool,
+) -> Option<crate::replacement::Replacement> {
+    use crate::replacement::{ReplaceableEvent, Replacement};
+    let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
+    if e.object != self_id || e.tapped || untapped_if() {
+        return None;
+    }
+    let mut e = e.clone();
+    e.tapped = true;
+    Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
+}
+
+/// "This permanent enters the battlefield with N counters on it"
+/// (CR 614.1c). `counters` is only consulted for this permanent's own arrival.
+pub fn enters_with_counters(
+    self_id: ObjectId,
+    event: &crate::replacement::ReplaceableEvent,
+    counters: impl FnOnce() -> Vec<(crate::types::CounterType, u32)>,
+) -> Option<crate::replacement::Replacement> {
+    use crate::replacement::{ReplaceableEvent, Replacement};
+    let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
+    if e.object != self_id {
+        return None;
+    }
+    let extra = counters();
+    if extra.is_empty() {
+        return None;
+    }
+    let mut e = e.clone();
+    e.counters.extend(extra);
+    Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
+}
+
 pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
     if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
         state.num_spells_cast_last_turn.values().any(|&count| count >= 2)

@@ -416,7 +416,7 @@ fn undead_alchemist_mills_instead_of_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let alchemist = named_creature(&mut state, &reg, "Undead Alchemist", P0);
+    let _alchemist = named_creature(&mut state, &reg, "Undead Alchemist", P0);
 
     // Create a Zombie that dealt damage.
     let zombie = state.create_token_with_subtypes(
@@ -438,8 +438,17 @@ fn undead_alchemist_mills_instead_of_damage() {
     let initial_life = state.get_player(P1).life;
 
     // The replacement effect intercepts damage before it's applied.
-    let behavior = reg.get(state.get_object(alchemist).unwrap().card_id).unwrap();
-    let replaced = behavior.replace_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &reg);
+    let replaced = mtg_engine::replacement::apply(
+        &mut state,
+        mtg_engine::replacement::ReplaceableEvent::DealsDamage {
+            source: zombie,
+            target: mtg_engine::events::DamageTarget::Player(P1),
+            amount: 2,
+            combat: true,
+        },
+        &reg,
+    )
+    .is_none();
     assert!(replaced, "Undead Alchemist should replace Zombie combat damage");
 
     // Process triggers so the CreatureCardMilled events fire the exile+token ability.

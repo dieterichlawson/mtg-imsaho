@@ -42,7 +42,7 @@ pub enum GameEvent {
     CreatureCardMilled { object: ObjectId, milled_player: PlayerId },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum DamageTarget {
     Player(PlayerId),
     Object(ObjectId),

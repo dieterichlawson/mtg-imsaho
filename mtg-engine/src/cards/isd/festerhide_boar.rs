@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, CounterType};
 
 /// Festerhide Boar — 3/3 for {3}{G}. Trample.
 /// Morbid — This creature enters with two +1/+1 counters on it if a creature died this turn.
@@ -28,11 +28,19 @@ impl CardBehavior for FesterhideBoar {
         }
     }
 
-    fn entering_with_counters(&self, state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> Vec<(CounterType, u32)> {
-        if state.creature_died_this_turn {
-            vec![(CounterType::PlusOnePlusOne, 2)]
-        } else {
-            vec![]
-        }
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        crate::cards::helpers::enters_with_counters(self_id, event, || {
+            if state.creature_died_this_turn {
+                vec![(CounterType::PlusOnePlusOne, 2)]
+            } else {
+                vec![]
+            }
+        })
     }
 }

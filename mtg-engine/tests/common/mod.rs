@@ -359,3 +359,30 @@ pub fn named_equipment(
     obj.is_equipment = true;
     id
 }
+
+/// How a permanent would enter the battlefield, after every applicable
+/// replacement effect (CR 614).
+///
+/// Tests used to call the card's `entering_with_counters` / `enters_tapped`
+/// hooks directly; those are one `replace_event` now, so this asks the same
+/// question through the engine's own entry point.
+pub fn plan_entering(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    id: ObjectId,
+    from: Option<Zone>,
+) -> mtg_engine::replacement::EnteringPermanent {
+    let controller = state.get_object(id).map_or(P0, |o| o.controller);
+    mtg_engine::replacement::for_entering(
+        state,
+        mtg_engine::replacement::EnteringPermanent {
+            object: id,
+            from,
+            controller,
+            tapped: false,
+            counters: Vec::new(),
+            copy_of: None,
+        },
+        registry,
+    )
+}

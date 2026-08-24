@@ -41,7 +41,14 @@ impl CardBehavior for UnbreathingHorde {
         }
     }
 
-    fn entering_with_counters(&self, state: &GameState, self_id: ObjectId, _from_zone: Option<Zone>, registry: &CardRegistry) -> Vec<(CounterType, u32)> {
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        crate::cards::helpers::enters_with_counters(self_id, event, || {
         let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Count other Zombies on the battlefield.
@@ -77,5 +84,6 @@ impl CardBehavior for UnbreathingHorde {
         } else {
             vec![]
         }
+        })
     }
 }

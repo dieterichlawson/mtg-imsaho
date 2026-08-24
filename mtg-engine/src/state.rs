@@ -452,20 +452,20 @@ impl GameState {
         subtypes: Vec<String>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
-        // Check for token-doubling replacement effects (e.g. Parallel Lives).
-        let doubler_count = self.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == owner)
-            .filter(|o| {
-                registry.get(o.card_id)
-                    .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::DoubleTokens))
-            })
-            .count();
-        // Each doubler doubles, so 1 = 2x, 2 = 4x, etc.
-        // We create (2^N - 1) extra tokens.
-        let extra_copies = if doubler_count > 0 {
-            (1u32 << doubler_count) - 1
-        } else {
-            0
+        // CR 614: a replacement effect may change how many tokens are created
+        // (Parallel Lives). Two doublers compound, which falls out of running
+        // the event through each in turn.
+        let after = crate::replacement::apply(
+            self,
+            crate::replacement::ReplaceableEvent::CreatesTokens { controller: owner, count: 1 },
+            registry,
+        );
+        let extra_copies = match after {
+            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count, .. }) =>
+                count.saturating_sub(1),
+            // Replaced entirely, or replaced with a different kind of event:
+            // no tokens are created.
+            _ => return Vec::new(),
         };
 
         let total = 1 + extra_copies as usize;
@@ -538,17 +538,10 @@ impl GameState {
             state_trigger_on_stack: false,
         };
         self.objects.insert(id, obj);
-        // Apply entering-battlefield replacement effects (CR 614.1d) for tokens too.
-        self.apply_entering_copy_replacement(id, registry);
-
-        // CR 614.1c: Apply "enters with" counters for tokens.
-        let token_counters = self.compute_entering_counters(id, None, registry);
-        for (counter_type, count) in &token_counters {
-            self.add_counters(id, *counter_type, *count);
-        }
-
-        // CR 614.1d: tokens can enter tapped too.
-        self.apply_enters_tapped_replacement(id, None, registry);
+        // A token enters the battlefield like anything else, so the same
+        // replacement effects apply (CR 614.1c/d).
+        let entering = self.plan_entering(id, None, registry);
+        self.apply_entering(&entering, registry);
 
         let controller = self.get_object(id).map_or(owner, |o| o.controller);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
@@ -666,12 +659,15 @@ impl GameState {
             self.resolving_spell = None;
         }
 
-        // CR 614.1c: Compute "enters with" counters BEFORE the zone change,
-        // so graveyard counts still include this creature if entering from GY.
-        let entering_counters = if to == Zone::Battlefield && from.is_some_and(|z| z != Zone::Battlefield) {
-            self.compute_entering_counters(id, from, registry)
+        // CR 616.1: replacement effects are applied against the game state as
+        // it was BEFORE the event, so the whole entering event is worked out
+        // here rather than after the zone change. Unbreathing Horde entering
+        // from the graveyard counts itself precisely because it is still in
+        // the graveyard at this moment.
+        let entering = if to == Zone::Battlefield && from.is_some_and(|z| z != Zone::Battlefield) {
+            Some(self.plan_entering(id, from, registry))
         } else {
-            vec![]
+            None
         };
 
         // CR 400.7 / 712.8a: a permanent leaving the battlefield becomes a new
@@ -788,7 +784,7 @@ impl GameState {
         // card property.
         if to == Zone::Battlefield && from != Some(Zone::Battlefield)
             && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
-                .is_some_and(super::cards::CardBehavior::enters_as_copy)
+                .is_some_and(super::cards::CardBehavior::enters_with_pending_copy_choice)
         {
             if let Some(obj) = self.objects.get_mut(&id) {
                 obj.entering_copy_source = true;
@@ -813,19 +809,12 @@ impl GameState {
                 });
             }
             if to == Zone::Battlefield && from_zone != Zone::Battlefield {
-                // Apply entering-battlefield replacement effects (CR 614.1d).
-                self.apply_entering_copy_replacement(id, registry);
-
-                // CR 614.1c: Apply pre-computed "enters with" counters.
-                for (counter_type, count) in &entering_counters {
-                    self.add_counters(id, *counter_type, *count);
+                // Worked out before the move; applied now, before
+                // EnteredBattlefield is emitted, so nothing observes a window
+                // in which the permanent is untapped or missing its counters.
+                if let Some(entering) = entering {
+                    self.apply_entering(&entering, registry);
                 }
-
-                // CR 614.1d: "enters tapped" is a replacement effect, applied
-                // before the event is emitted — so no stack entry, no priority
-                // window in which the permanent is briefly untapped, and the
-                // condition is read at the moment of entry rather than later.
-                self.apply_enters_tapped_replacement(id, from, registry);
 
                 let controller = self.get_object(id).map_or(PlayerId(0), |o| o.controller);
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
@@ -836,19 +825,54 @@ impl GameState {
         }
     }
 
-    /// Apply entering-battlefield copy replacement effects (CR 614.1d).
-    /// If any permanent with `ReplacementEffect::EnterAsCopy` is on the battlefield
-    /// under the same controller as `entering_id`, the entering creature's characteristics
-    /// are replaced with those of the copy source. The entering creature keeps its own
-    /// identity (`ObjectId`, owner, controller) but gains the source's copiable values.
-    /// CR 614.1d: ask the card whether it enters tapped, and tap it if so.
-    /// Runs while the permanent is already on the battlefield but before
-    /// `EnteredBattlefield` is emitted, which is the moment the replacement
-    /// applies.
-    fn apply_enters_tapped_replacement(&mut self, id: ObjectId, from: Option<Zone>, registry: &crate::cards::CardRegistry) {
-        let card_id = self.get_object(id).map_or(CardId(0), |o| o.card_id);
-        let Some(behavior) = registry.get(card_id) else { return };
-        if behavior.enters_tapped(self, id, from, registry) {
+
+
+
+    /// Work out how a permanent will enter the battlefield, after every
+    /// applicable replacement effect (CR 614).
+    ///
+    /// Separate from applying it because CR 616.1 evaluates replacements
+    /// against the game state *before* the event — for something changing
+    /// zones, that means before the move. Unbreathing Horde entering from the
+    /// graveyard counts itself for exactly this reason.
+    fn plan_entering(
+        &mut self,
+        id: ObjectId,
+        from: Option<Zone>,
+        registry: &crate::cards::CardRegistry,
+    ) -> crate::replacement::EnteringPermanent {
+        let controller = self.get_object(id).map_or(PlayerId(0), |o| o.controller);
+        crate::replacement::for_entering(
+            self,
+            crate::replacement::EnteringPermanent {
+                object: id,
+                from,
+                controller,
+                tapped: false,
+                counters: Vec::new(),
+                copy_of: None,
+            },
+            registry,
+        )
+    }
+
+    /// Apply a planned entering event: become a copy, gain counters, arrive
+    /// tapped. Runs once the object is on the battlefield but before
+    /// `EnteredBattlefield` is emitted, so nothing observes a window in which
+    /// the permanent is untapped or missing its counters.
+    fn apply_entering(
+        &mut self,
+        entering: &crate::replacement::EnteringPermanent,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        let id = entering.object;
+        if let Some(card_id) = entering.copy_of {
+            self.become_copy_of(id, card_id, registry);
+        }
+        for (counter_type, count) in &entering.counters {
+            self.add_counters(id, *counter_type, *count);
+        }
+        if entering.tapped {
             if let Some(obj) = self.get_object_mut(id) {
                 obj.tapped = true;
             }
@@ -857,35 +881,18 @@ impl GameState {
         }
     }
 
-    fn apply_entering_copy_replacement(&mut self, entering_id: ObjectId, registry: &crate::cards::CardRegistry) {
-        // Get the entering creature's controller and check it's a creature.
-        let (controller, is_creature) = match self.get_object(entering_id) {
-            Some(o) => (o.controller, o.power.is_some()),
-            None => return,
-        };
-        if !is_creature {
-            return;
-        }
-
-        // Find a copy source on the battlefield under the same controller.
-        // The entering creature itself cannot be its own copy source.
-        // Check for ReplacementEffect::EnterAsCopy via the card registry.
-        // Find the source permanent and get its card data for copiable values.
-        let source_info: Option<(crate::ids::CardId, String)> = self.objects.values()
-            .find(|o| {
-                o.zone == Zone::Battlefield
-                    && o.controller == controller
-                    && o.id != entering_id
-                    && registry.get(o.card_id)
-                        .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::EnterAsCopy))
-            })
-            .map(|source| (source.card_id, source.name.clone()));
-
+    /// Give `entering_id` the copiable values of `card_id` (CR 706.2).
+    fn become_copy_of(
+        &mut self,
+        entering_id: ObjectId,
+        card_id: crate::ids::CardId,
+        registry: &crate::cards::CardRegistry,
+    ) {
         // Get copiable values from card data (the authoritative source for characteristics).
-        let source_data = source_info.and_then(|(card_id, name)| {
+        let source_data = Some(card_id).and_then(|card_id| {
             registry.card_data(card_id).map(|d| {
                 (
-                    name,
+                    d.name.clone(),
                     d.power.unwrap_or(0),
                     d.toughness.unwrap_or(0),
                     // Derive colors from mana cost.
@@ -922,46 +929,6 @@ impl GameState {
             self.log(LogLevel::Event,
                 format!("{old_name} enters as a copy of {name} ({power}/{toughness})"));
         }
-    }
-
-    /// CR 614.1c: Compute all "enters with" counters for a creature about to
-    /// enter the battlefield. Called BEFORE the zone change so graveyard counts
-    /// are accurate (e.g. Unbreathing Horde counts itself when entering from GY).
-    fn compute_entering_counters(
-        &self,
-        entering_id: ObjectId,
-        from_zone: Option<Zone>,
-        registry: &crate::cards::CardRegistry,
-    ) -> Vec<(crate::types::CounterType, u32)> {
-        let card_id = match self.get_object(entering_id) {
-            Some(o) => o.card_id,
-            None => return vec![],
-        };
-
-        let mut counters = Vec::new();
-
-        // 1. Self "enters with" counters (Festerhide Boar, Unbreathing Horde, etc.)
-        if let Some(behavior) = registry.get(card_id) {
-            let self_counters = behavior.entering_with_counters(self, entering_id, from_zone, registry);
-            counters.extend(self_counters);
-        }
-
-        // 2. External modifiers (Dearly Departed in graveyard, etc.)
-        let entering_controller = self.get_object(entering_id).map_or(PlayerId(0), |o| o.controller);
-        for obj in self.objects.values() {
-            if obj.id == entering_id { continue; }
-            if let Some(behavior) = registry.get(obj.card_id) {
-                let zones = behavior.entering_modifier_zones();
-                if zones.contains(&obj.zone) {
-                    let extra = behavior.modify_creature_entering_counters(
-                        self, obj.id, entering_id, entering_controller, registry,
-                    );
-                    counters.extend(extra);
-                }
-            }
-        }
-
-        counters
     }
 
     /// Get an object by ID.
