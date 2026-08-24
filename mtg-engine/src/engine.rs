@@ -790,7 +790,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature
             );
             let ability_has_sac_this = matches!(ab.sacrifice_cost, SacrificeCost::SacrificeThis);
-            let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            let has_x_cost = ab.cost.has_x();
             // Autotap sources to consider for this specific ability.
             //
             // The source pays for itself in two ways, and both have to be shut
@@ -813,18 +813,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 // No auto-tap for "sacrifice a creature" abilities — require mana
                 // already in the pool (see comment above).
                 let cost_to_check = if has_x_cost {
-                    ManaCost::new(
-                        ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                    )
+                    ab.cost.without_x()
                 } else {
                     ab.cost.clone()
                 };
                 if !mana::can_pay(mana_pool, &cost_to_check) { continue; }
                 Vec::new()
             } else if has_x_cost {
-                let non_x_cost = ManaCost::new(
-                    ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                );
+                let non_x_cost = ab.cost.without_x();
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()
                 } else {
@@ -1090,15 +1086,13 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             // Compute autotap plan for the normal cost (if not X-cost).
             let has_x = data.cost.as_ref()
-                .is_some_and(|c| c.symbols.iter().any(|s| matches!(s, ManaSymbol::X)));
+                .is_some_and(|c| c.has_x());
             let (can_pay_normal, normal_tap_plan) = if has_x {
                 // X-cost spells: only autotap for the non-X portion. After the
                 // agent chooses X, a second autotap pass covers the X generic.
                 if let Some(cost) = &data.cost {
                     let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                    let non_x_cost = ManaCost::new(
-                        effective_cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                    );
+                    let non_x_cost = effective_cost.without_x();
                     if non_x_cost.symbols.is_empty() {
                         // No non-X cost (e.g., Mikaeus {X}{W} with W already floating).
                         if mana::can_pay(&player_state.mana_pool, &non_x_cost) {
@@ -1359,12 +1353,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // are funded via a ChooseXFunding prompt after the spell is
             // cast, exactly like non-flashback X casts — so here we only
             // need to verify the non-X portion is payable.
-            let fb_has_x = fb_cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            let fb_has_x = fb_cost.has_x();
             let fb_non_x_cost;
             let fb_cost_for_autotap: &ManaCost = if fb_has_x {
-                fb_non_x_cost = ManaCost::new(
-                    fb_cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                );
+                fb_non_x_cost = fb_cost.without_x();
                 &fb_non_x_cost
             } else {
                 fb_cost
@@ -2228,12 +2220,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             // NOTE: If you change this flow, also update the "X-cost spells"
             // bullet in GAME_RULES in mtg-player/src/llm.rs so the agent's
             // system prompt stays accurate.
-            let has_x = cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            let has_x = cost.has_x();
 
             if has_x {
-                let non_x_cost = ManaCost::new(
-                    cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                );
+                let non_x_cost = cost.without_x();
                 // Probe max_x without touching state: simulate tap_plan's
                 // mana output + existing pool + any remaining untapped
                 // sources after the tap_plan runs.
@@ -2344,9 +2334,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     // For X-cost spells, the non_x_mana_cost is the stripped
                     // cost. For non-X spells, use the full cost.
                     let non_x_mana_cost = if has_x {
-                        ManaCost::new(
-                            cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                        )
+                        cost.without_x()
                     } else {
                         cost.clone()
                     };
@@ -2388,9 +2376,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             if has_x {
                 // max_x == 0 case: pay only the non-X portion.
-                let non_x_cost = ManaCost::new(
-                    cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                );
+                let non_x_cost = cost.without_x();
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                     .expect("legal_actions should have verified mana availability");
             } else {
@@ -2614,11 +2600,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 // we pay only the non-X portion here; the X generic is paid
                 // later via the ChooseXFunding flow (CR 602.1: the cost is
                 // announced & paid before the ability resolves).
-                let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+                let has_x_cost = ab.cost.has_x();
                 if has_x_cost {
-                    let non_x_cost = ManaCost::new(
-                        ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
-                    );
+                    let non_x_cost = ab.cost.without_x();
                     mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                         .expect("legal_actions should have verified mana availability");
                 } else {

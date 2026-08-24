@@ -57,10 +57,15 @@ impl CardBehavior for BackFromTheBrink {
             .collect();
 
         creatures.into_iter().map(|creature| {
-            // Look up the creature's mana cost from the registry.
+            // Look up the creature's mana cost from the registry. X is 0 in a
+            // mana cost paid other than by casting the spell, and there is no
+            // announcement (CR 107.3e) — without this the engine saw {X} in
+            // the ability's cost and put the player through the X-funding
+            // prompt, letting them dump mana into a value that can only be 0.
             let mana_cost = state.face_data(creature.id, registry)
                 .and_then(|d| d.cost.clone())
-                .unwrap_or_else(|| ManaCost::new(vec![]));
+                .unwrap_or_else(ManaCost::free)
+                .without_x();
 
             // Use the creature's ObjectId as the ability_index so we can
             // identify which creature to exile in on_activate_ability.

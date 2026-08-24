@@ -65,6 +65,29 @@ impl ManaCost {
         Self { symbols: vec![] }
     }
 
+    /// This cost with X taken as zero.
+    ///
+    /// Two uses. When a cost containing {X} is being paid other than by
+    /// casting the spell, X is 0 and there is no announcement (CR 107.3e) —
+    /// Back from the Brink's "pay its mana cost" is the case here. And when
+    /// the engine checks affordability *before* asking the player for a value
+    /// of X, this is the part it can test.
+    #[must_use]
+    pub fn without_x(&self) -> Self {
+        Self {
+            symbols: self.symbols.iter()
+                .filter(|s| !matches!(s, ManaSymbol::X))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// Whether this cost contains {X}.
+    #[must_use]
+    pub fn has_x(&self) -> bool {
+        self.symbols.iter().any(|s| matches!(s, ManaSymbol::X))
+    }
+
     /// Converted mana cost (now called "mana value").
     #[must_use]
     pub fn mana_value(&self) -> u32 {
