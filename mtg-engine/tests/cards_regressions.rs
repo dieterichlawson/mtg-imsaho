@@ -1,6 +1,13 @@
-//! Tests for card fixes identified in the audit.
-//! These tests document CORRECT behavior per Oracle text.
-//! They should FAIL against buggy implementations and PASS after fixes.
+//! Regressions found by auditing individual card implementations.
+//!
+//! Cards covered (6), so this is greppable by name as well as by rule:
+//!
+//! - Bramblecrush
+//! - Fiend Hunter
+//! - Frightful Delusion
+//! - Morkrut Banshee
+//! - Murder of Crows
+//! - Ranger's Guile
 
 mod common;
 

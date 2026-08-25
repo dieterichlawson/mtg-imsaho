@@ -2,6 +2,28 @@
 //! forced attack, combat damage prevention, protection, token anthems,
 //! opponent debuffs, conditional auras, unblockable, can't-block,
 //! untap prevention.
+//!
+//! Cards covered (19), so this is greppable by name as well as by rule:
+//!
+//! - Bonds of Faith
+//! - Brimstone Volley
+//! - Claustrophobia
+//! - Elder Cathar
+//! - Feeling of Dread
+//! - Fiend Hunter
+//! - Forbidden Alchemy
+//! - Frightful Delusion
+//! - Ghostly Possession
+//! - Grave Bramble
+//! - Intangible Virtue
+//! - Invisible Stalker
+//! - Nightbird's Clutches
+//! - One-Eyed Scarecrow
+//! - Pitchburn Devils
+//! - Skeletal Grimace
+//! - Somberwald Spider
+//! - Unburial Rites
+//! - Vampire Interloper
 
 mod common;
 

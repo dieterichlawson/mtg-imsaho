@@ -1,6 +1,4 @@
-//! Tests for death trigger bugs:
-//! 1. Spurious death-watch triggers from permanents without `AnyCreatureDies` triggers
-//! 2. Duplicate death log entries
+//! Regressions in when a death trigger fires and what it can see.
 
 mod common;
 use common::*;

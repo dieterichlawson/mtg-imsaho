@@ -1,6 +1,34 @@
-//! Tests for Tier 15 medium-complexity Innistrad cards.
-//! Tests for Tier 15 hard/complex Innistrad cards.
-
+//! Creatures with several interacting abilities — transform, a trigger and an
+//! activated ability at once. The largest of the per-card files.
+//!
+//! Cards covered (26), so this is greppable by name as well as by rule:
+//!
+//! - Back from the Brink
+//! - Bitterheart Witch
+//! - Bloodline Keeper
+//! - Cellar Door
+//! - Civilized Scholar
+//! - Cloistered Youth
+//! - Creeping Renaissance
+//! - Creepy Doll
+//! - Curse of Stalked Prey
+//! - Dearly Departed
+//! - Evil Twin
+//! - Galvanic Juggernaut
+//! - Gutter Grime
+//! - Heretic's Punishment
+//! - Kessig Cagebreakers
+//! - Ludevic's Test Subject
+//! - Manor Gargoyle
+//! - Mentor of the Meek
+//! - Mirror-Mad Phantasm
+//! - Moldgraf Monstrosity
+//! - Screeching Bat
+//! - Skaab Ruinator
+//! - Thraben Sentry
+//! - Tree of Redemption
+//! - Unbreathing Horde
+//! - Undead Alchemist
 
 mod common;
 

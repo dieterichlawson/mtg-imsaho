@@ -1,4 +1,13 @@
-//! Tests for Innistrad Tier 10 cards: complex creatures and utility lands.
+//! Creatures and lands whose behaviour is an activated ability (CR 602).
+//!
+//! Cards covered (6), so this is greppable by name as well as by rule:
+//!
+//! - Elder of Laurels
+//! - Gavony Township
+//! - Mindshrieker
+//! - Nephalia Drownyard
+//! - Skirsdag High Priest
+//! - Stensia Bloodhall
 
 mod common;
 

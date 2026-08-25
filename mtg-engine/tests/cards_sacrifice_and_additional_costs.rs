@@ -1,4 +1,20 @@
-//! Tests for Innistrad Tier 8 cards.
+//! Spells whose cost is more than mana (CR 601.2b) — sacrifice a creature, exile
+//! from a graveyard, discard — and the cards that make a player do the same.
+//!
+//! Cards covered (12), so this is greppable by name as well as by rule:
+//!
+//! - Altar's Reap
+//! - Brain Weevil
+//! - Corpse Lunge
+//! - Disciple of Griselbrand
+//! - Divine Reckoning
+//! - Harvest Pyre
+//! - Infernal Plunge
+//! - Selfless Cathar
+//! - Silverchase Fox
+//! - Skirsdag Cultist
+//! - Stitcher's Apprentice
+//! - Tribute to Hunger
 
 mod common;
 

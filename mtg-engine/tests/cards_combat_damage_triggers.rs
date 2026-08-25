@@ -1,4 +1,18 @@
-//! Tests for Innistrad Tier 6 cards.
+//! Creatures that trigger on dealing combat damage — the "whenever this deals
+//! combat damage to a player" family, and the watchers over it.
+//!
+//! Cards covered (10), so this is greppable by name as well as by rule:
+//!
+//! - Abattoir Ghoul
+//! - Balefire Dragon
+//! - Bloodcrazed Neonate
+//! - Champion of the Parish
+//! - Curiosity
+//! - Falkenrath Marauders
+//! - Rakish Heir
+//! - Stromkirk Noble
+//! - Stromkirk Patrol
+//! - Sturmgeist
 
 mod common;
 

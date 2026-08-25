@@ -1,5 +1,24 @@
 //! Tests for simple Innistrad cards: dual lands, utility lands, mana dorks,
 //! artifacts, sorceries/instants, and enchantments.
+//!
+//! Cards covered (16), so this is greppable by name as well as by rule:
+//!
+//! - Avacyn's Pilgrim
+//! - Deranged Assistant
+//! - Full Moon's Rise
+//! - Ghost Quarter
+//! - Ghoulcaller's Bell
+//! - Graveyard Shovel
+//! - Into the Maw of Hell
+//! - Make a Wish
+//! - Maw of the Mire
+//! - Moonmist
+//! - Moorland Haunt
+//! - Paraselene
+//! - Runic Repetition
+//! - Shimmering Grotto
+//! - Stony Silence
+//! - Witchbane Orb
 
 mod common;
 

@@ -1,5 +1,21 @@
-//! Tests for Innistrad Tier 3 cards: token-generating spells, creatures with
-//! dies/ETB/death-watch triggers, anthem enchantments, and token mechanics.
+//! Cards whose behaviour is a death trigger, a token, or an anthem over them.
+//!
+//! Cards covered (14), so this is greppable by name as well as by rule:
+//!
+//! - Doomed Traveler
+//! - Elder Cathar
+//! - Falkenrath Noble
+//! - Fiend Hunter
+//! - Intangible Virtue
+//! - Lumberknot
+//! - Mausoleum Guard
+//! - Midnight Haunting
+//! - Pitchburn Devils
+//! - Rage Thrower
+//! - Slayer of the Wicked
+//! - Unruly Mob
+//! - Village Bell-Ringer
+//! - Village Cannibals
 
 mod common;
 

@@ -1,4 +1,19 @@
-//! Tests for Innistrad Tier 14 advanced cards.
+//! Cards that change the rules of the game rather than affecting objects:
+//! alternative and reduced costs, a replacement for losing the game, granted
+//! flashback, doubled token creation, a banned card name.
+//!
+//! Cards covered (10), so this is greppable by name as well as by rule:
+//!
+//! - Devil's Play
+//! - Heartless Summoning
+//! - Kessig Wolf
+//! - Kessig Wolf Run
+//! - Laboratory Maniac
+//! - Nevermore
+//! - Parallel Lives
+//! - Past in Flames
+//! - Rooftop Storm
+//! - Snapcaster Mage
 
 mod common;
 

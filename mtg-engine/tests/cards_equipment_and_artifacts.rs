@@ -1,4 +1,14 @@
-//! Tests for Innistrad Tier 9 cards: equipment and artifacts.
+//! Equipment and other artifacts: equip costs, what they grant, and what happens
+//! when the creature they are attached to leaves.
+//!
+//! Cards covered (6), so this is greppable by name as well as by rule:
+//!
+//! - Blazing Torch
+//! - Demonmail Hauberk
+//! - Inquisitor's Flail
+//! - Runechanter's Pike
+//! - Traveler's Amulet
+//! - Trepanation Blade
 
 mod common;
 

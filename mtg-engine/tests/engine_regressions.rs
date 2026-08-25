@@ -1,8 +1,5 @@
-//! Tests for known bugs identified in the code review.
-//!
-//! Each test is written to FAIL against the current code, documenting
-//! the expected behavior per MTG rules. Once a bug is fixed, the test
-//! should pass.
+//! Regressions found by code review of the engine, kept as a check that they
+//! stay fixed. A test here is about the engine, not about one card.
 
 mod common;
 

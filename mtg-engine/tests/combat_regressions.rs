@@ -1,11 +1,4 @@
-//! Regression tests for combat point fixes:
-//! - Creatures removed from combat between the first-strike and regular
-//!   damage steps (e.g. by regenerating) must not deal or receive regular
-//!   combat damage (CR 701.15c) — previously `deal_combat_damage` iterated
-//!   a stale snapshot of the combat state taken before the SBA pass.
-//! - Abilities granted by an attached permanent are only offered to a
-//!   player who controls the attachment (CR 601.2g/701.13 — the granted
-//!   abilities in this set all sacrifice the attachment as a cost).
+//! Regressions in the combat pipeline: declaring, blocking, and damage.
 
 mod common;
 

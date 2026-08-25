@@ -1,5 +1,36 @@
 //! Tests for Innistrad Tier 0-1 cards: vanilla creatures, keyword creatures,
 //! combat instants, and aura enchantments.
+//!
+//! Cards covered (28), so this is greppable by name as well as by rule:
+//!
+//! - Abbey Griffin
+//! - Ambush Viper
+//! - Bonds of Faith
+//! - Claustrophobia
+//! - Dead Weight
+//! - Diregraf Ghoul
+//! - Fortress Crab
+//! - Furor of the Bitten
+//! - Ghostly Possession
+//! - Gruesome Deformity
+//! - Hysterical Blindness
+//! - Invisible Stalker
+//! - Kindercatch
+//! - Markov Patrician
+//! - Rally the Peasants
+//! - Ranger's Guile
+//! - Riot Devils
+//! - Rotting Fensnake
+//! - Sensory Deprivation
+//! - Skeletal Grimace
+//! - Somberwald Spider
+//! - Spectral Flight
+//! - Spectral Rider
+//! - Spidery Grasp
+//! - Thraben Purebloods
+//! - Typhoid Rats
+//! - Vampiric Fury
+//! - Voiceless Spirit
 
 mod common;
 

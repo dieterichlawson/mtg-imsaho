@@ -1,5 +1,20 @@
 //! Tests for Innistrad Tier 2 cards: targeted removal, bounce, fight,
 //! permanent destruction, and counter variants.
+//!
+//! Cards covered (12), so this is greppable by name as well as by rule:
+//!
+//! - Bramblecrush
+//! - Dissipate
+//! - Frightful Delusion
+//! - Geistflame
+//! - Lost in the Mist
+//! - Naturalize
+//! - Prey Upon
+//! - Rebuke
+//! - Silent Departure
+//! - Smite the Monstrous
+//! - Urgent Exorcism
+//! - Victim of Night
 
 mod common;
 

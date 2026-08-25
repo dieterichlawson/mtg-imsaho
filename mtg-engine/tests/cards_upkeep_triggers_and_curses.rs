@@ -1,4 +1,15 @@
-//! Tests for Innistrad Tier 7 cards (upkeep/end-step triggers + curses).
+//! Cards that trigger at the beginning of an upkeep, including the Curses whose
+//! upkeep is the enchanted player's rather than their controller's (CR 603.2).
+//!
+//! Cards covered (7), so this is greppable by name as well as by rule:
+//!
+//! - Angel of Flight Alabaster
+//! - Bloodgift Demon
+//! - Boneyard Wurm
+//! - Charmbreaker Devils
+//! - Curse of Death's Hold
+//! - Curse of Oblivion
+//! - Splinterfright
 
 mod common;
 

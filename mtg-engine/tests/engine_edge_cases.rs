@@ -1,12 +1,5 @@
-//! Tests for edge cases and coverage gaps identified in the code review.
-//!
-//! These tests cover scenarios that were previously untested:
-//! - Indestructible interactions with zero toughness and sacrifice
-//! - Simultaneous creature death in combat
-//! - Aura falling off when enchanted creature leaves the battlefield
-//! - Zone change creates new object identity
-//! - "Dies" triggers fire with correct information
-//! - Cleanup step clears effects and SBAs loop
+//! Corner cases the engine has to get right: empty zones, zero counts, an
+//! effect whose subject has already gone.
 
 mod common;
 use common::*;

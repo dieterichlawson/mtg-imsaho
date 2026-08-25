@@ -1,6 +1,15 @@
 //! Tests for Innistrad Tier 9 Equipment cards:
 //! Cobbled Wings, Mask of Avacyn, Silver-Inlaid Dagger, Sharpened Pitchfork,
 //! Butcher's Cleaver, Wooden Stake.
+//!
+//! Cards covered (6), so this is greppable by name as well as by rule:
+//!
+//! - Butcher's Cleaver
+//! - Cobbled Wings
+//! - Mask of Avacyn
+//! - Sharpened Pitchfork
+//! - Silver-Inlaid Dagger
+//! - Wooden Stake
 
 mod common;
 

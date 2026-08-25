@@ -1,7 +1,17 @@
-//! Failing tests for documented card shortcuts.
+//! Cards whose implementation takes a documented shortcut. Each test states
+//! what the card really does and what the engine does instead.
 //!
-//! Each test demonstrates a case where a card does not behave as specified
-//! by its oracle text. These are expected to FAIL until the card is fixed.
+//! Cards covered (9), so this is greppable by name as well as by rule:
+//!
+//! - Caravan Vigil
+//! - Charmbreaker Devils
+//! - Civilized Scholar
+//! - Festerhide Boar
+//! - Memory's Journey
+//! - Rolling Temblor
+//! - Slayer of the Wicked
+//! - Trepanation Blade
+//! - Vampiric Fury
 
 mod common;
 

@@ -1,4 +1,19 @@
-//! Tests for Innistrad Tier 11 Graveyard Interaction cards.
+//! Cards that read, return from, or exile a graveyard.
+//!
+//! Cards covered (12), so this is greppable by name as well as by rule:
+//!
+//! - Caravan Vigil
+//! - Ghoulcaller's Chant
+//! - Ghoulraiser
+//! - Grasp of Phantoms
+//! - Makeshift Mauler
+//! - Memory's Journey
+//! - Mulch
+//! - Night Terrors
+//! - Purify the Grave
+//! - Skaab Goliath
+//! - Stitched Drake
+//! - Woodland Sleuth
 
 mod common;
 

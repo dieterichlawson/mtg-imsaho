@@ -1,4 +1,21 @@
-//! Tests for Innistrad Tier 12 miscellaneous cards.
+//! Instants, sorceries and enchantments whose behaviour is particular to the
+//! card rather than to a rule the engine implements generally.
+//!
+//! Cards covered (13), so this is greppable by name as well as by rule:
+//!
+//! - Angelic Overseer
+//! - Army of the Damned
+//! - Ashmouth Hound
+//! - Blasphemous Act
+//! - Burning Vengeance
+//! - Cackling Counterpart
+//! - Elite Inquisitor
+//! - Hamlet Captain
+//! - Night Revelers
+//! - Scourge of Geier Reach
+//! - Sever the Bloodline
+//! - Spare from Evil
+//! - Traitorous Blood
 
 mod common;
 

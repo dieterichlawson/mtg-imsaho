@@ -1,4 +1,15 @@
-//! Tests for Innistrad Tier 5 cards.
+//! Creatures with evasion keywords, and creatures whose power and toughness
+//! are a function of the graveyard (CR 208.2).
+//!
+//! Cards covered (7), so this is greppable by name as well as by rule:
+//!
+//! - Battleground Geist
+//! - Festerhide Boar
+//! - Gallows Warden
+//! - Geist-Honored Monk
+//! - Orchard Spirit
+//! - Spider Spawning
+//! - Wreath of Geists
 
 mod common;
 

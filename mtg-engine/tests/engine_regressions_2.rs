@@ -1,11 +1,4 @@
-//! Tests for remaining engine bugs #5-10.
-//!
-//! #5: APNAP trigger ordering — architectural, not fixable without stack-based triggers
-//! #6: Cleanup step SBA loop — SBAs should be checked after effects expire
-//! #7: Mana emptying at step boundaries — already correct (tested in `turn_structure.rs`)
-//! #8: Sorcery-speed empty stack check — already correct (tested in spells.rs)
-//! #9: Zone change object identity — works correctly due to zone-based aura tracking
-//! #10: Redundant `resolve_top_of_stack` call — wasteful but not incorrect
+//! A second batch of engine regressions from code review.
 
 mod common;
 
