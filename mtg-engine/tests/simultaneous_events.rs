@@ -10,11 +10,12 @@
 //! loop — which collects triggers — before the remaining players have chosen.
 
 mod common;
-
 use common::*;
-use mtg_engine::actions::{Action, ResolvedChoice};
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::types::*;
+
 // ---------------------------------------------------------------------------
 // CR 700.2c — simultaneous destruction.
 // ---------------------------------------------------------------------------
@@ -222,4 +223,105 @@ fn a_single_player_discard_still_applies_immediately() {
 
     assert_eq!(state.get_object(a).unwrap().zone, Zone::Graveyard,
         "one player, one choice — nothing to wait for");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Falkenrath Noble only triggers once when dying simultaneously with others.
+/// Oracle + ruling: "If Falkenrath Noble and another creature die at the same time,
+/// Falkenrath Noble's triggered ability will trigger for each of them."
+/// The engine processes deaths sequentially; by the time other creatures' deaths are
+/// processed, Noble is already in the graveyard and the zone check fails.
+#[test]
+fn bug_simultaneous_death_triggers_only_fire_once() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let p0_life_before = state.get_player(P0).life;
+
+    // Place Falkenrath Noble and two other creatures for P0
+    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let creature1 = ready_creature(&mut state, P0, 1, 1);
+    let creature2 = ready_creature(&mut state, P0, 1, 1);
+
+    // Kill all three simultaneously (board wipe — mark lethal damage)
+    for id in [noble, creature1, creature2] {
+        if let Some(obj) = state.get_object_mut(id) {
+            obj.damage_marked = 99;
+        }
+    }
+
+    // Run SBAs — all three die at once
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    // Process death triggers — each trigger presents a "target player" choice,
+    // so we must resolve them one at a time.
+    let mut drain_count = 0;
+    for _ in 0..10 {
+        mtg_engine::triggers::process_triggers(&mut state, &registry);
+        if state.awaiting_action.is_none() {
+            break;
+        }
+        // Resolve: choose P1 as the drain target
+        state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                    Some(Target::Player(P1))
+                ),
+            },
+            &registry,
+        );
+        drain_count += 1;
+    }
+
+    // Noble should have triggered 3 times (once for itself via SelfDies,
+    // once for each of the two other creatures via AnyCreatureDies).
+    // Each trigger drains 1 life from opponent and gains 1 for controller.
+    // Expected: P0 gains 3 life (20 -> 23), P1 loses 3 life (20 -> 17)
+    let p0_life = state.get_player(P0).life;
+
+    assert_eq!(drain_count, 3,
+        "Noble should trigger 3 times (self + 2 others), got {drain_count} triggers");
+    assert_eq!(p0_life, p0_life_before + 3,
+        "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
+        p0_life, p0_life_before + 3);
+}
+
+/// Bug: Liliana's +1 "Each player discards a card" should have all
+/// players choose simultaneously, then discard at the same time.
+/// The implementation discards sequentially — P0 discards, then P1.
+/// This reveals information (P1 sees what P0 discarded before choosing).
+#[test]
+fn bug_liliana_sequential_discard() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give both players 2 cards each
+    spell_in_hand(&mut state, &registry, "Grizzly Bears", P0);
+    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
+    spell_in_hand(&mut state, &registry, "Giant Growth", P1);
+    spell_in_hand(&mut state, &registry, "Doom Blade", P1);
+
+    // Place Liliana and activate +1
+    let liliana = named_creature(&mut state, &registry, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+
+    let behavior = registry.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &registry);
+
+    // After the +1, both players should be choosing simultaneously.
+    // If P0's choice is already resolved (card already discarded) before
+    // P1 gets to choose, it's sequential, not simultaneous.
+    let p0_hand = state.objects_in_zone(Zone::Hand, P0).len();
+    let p1_hand = state.objects_in_zone(Zone::Hand, P1).len();
+    let has_choice = state.awaiting_action.is_some();
+
+    // If it's truly simultaneous, both should still have 2 cards and there
+    // should be a pending choice for BOTH players.
+    // BUG: P0 already discarded (hand=1) before P1 gets to choose
+    assert!(p0_hand == 2 || has_choice,
+        "Liliana +1 should be simultaneous. P0 hand: {p0_hand}, P1 hand: {p1_hand}, choice pending: {has_choice}");
 }

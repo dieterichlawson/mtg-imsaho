@@ -17,10 +17,12 @@
 //! directions.
 
 mod common;
-
 use common::*;
-use mtg_engine::cards::AttackInfo;
+use mtg_engine::actions::Action;
+use mtg_engine::cards::{AttackInfo, CardRegistry};
+use mtg_engine::engine;
 use mtg_engine::types::*;
+
 /// Garruk Relentless' -3 ("Creatures you control get +X/+X and gain trample")
 /// filtered on `o.card_types.contains(&Creature)`, which is false for every
 /// non-token creature — so the buff hit nothing. (Ticket garruk_relentless-01.)
@@ -184,4 +186,52 @@ fn tokens_keep_their_own_characteristics_on_zone_change() {
 
     assert_eq!(state.get_object(token).unwrap().subtypes, vec!["Spirit".to_string()],
         "a token's object-level subtypes are its printed ones and must survive");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Hinterland Harbor's checkland logic only checks obj.subtypes (runtime),
+/// which is empty for regular non-token lands. Forest/Island subtypes are stored
+/// in `CardData` via the registry, not on the object.
+#[test]
+fn bug_hinterland_harbor_misses_real_basic_lands() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a real Forest for P0 (not a token — subtypes in registry, not obj)
+    let forest = {
+        let card_id = registry.get_id_by_name("Forest").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+        id
+    };
+
+    // Verify Forest has "Forest" subtype in registry
+    let forest_card_id = state.get_object(forest).unwrap().card_id;
+    let forest_data = registry.card_data(forest_card_id).unwrap();
+    assert!(forest_data.subtypes.iter().any(|s| s == "Forest"),
+        "Forest should have Forest subtype in registry");
+
+    // Verify Forest does NOT have subtypes on the object (that's the issue)
+    assert!(state.get_object(forest).unwrap().subtypes.is_empty(),
+        "Regular cards have empty obj.subtypes — subtypes are in registry");
+
+    // Now play Hinterland Harbor — it should enter untapped because we control a Forest
+    state.get_player_mut(P0).land_plays_remaining = 1;
+    let harbor = spell_in_hand(&mut state, &registry, "Hinterland Harbor", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::PlayLand { object_id: harbor },
+        &registry,
+    );
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
+
+    // BUG: Harbor enters tapped because the checkland logic only checks
+    // obj.subtypes (empty for real lands), not registry subtypes
+    assert!(!state.get_object(harbor).unwrap().tapped,
+        "Hinterland Harbor should enter untapped — we control a Forest");
 }

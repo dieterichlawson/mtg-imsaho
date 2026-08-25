@@ -8,12 +8,13 @@
 //! These tests verify the mechanism, not just the outcome.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
 use mtg_engine::types::*;
+
 // ════════════════════════════════════════════════════════════════════
 // Mechanism test: SpellResolved event should NOT be emitted for fizzle
 // ════════════════════════════════════════════════════════════════════
@@ -309,4 +310,50 @@ fn player_target_never_fizzles() {
     });
     assert!(has_resolved, "Spell targeting a player should resolve normally");
     assert_eq!(state.get_player(P1).life, 17, "Bolt should deal 3 damage");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Prey Upon has two targets. If one becomes illegal, the spell
+/// should fizzle entirely per the ruling. But the engine only fizzles
+/// if ALL targets are illegal (CR 608.2b general rule), while Prey Upon
+/// specifically requires both to be legal for the fight to happen.
+#[test]
+fn bug_prey_upon_doesnt_fizzle_with_one_illegal_target() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let my_creature = ready_creature(&mut state, P0, 3, 3);
+    let their_creature = ready_creature(&mut state, P1, 2, 2);
+
+    // Cast Prey Upon
+    let prey = castable_spell(&mut state, &registry, "Prey Upon", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: prey,
+            targets: vec![Target::Object(my_creature), Target::Object(their_creature)],
+            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+        },
+        &registry,
+    );
+
+    // Remove one target before resolution
+    state.move_object(their_creature, Zone::Graveyard, &registry);
+
+    // Resolve — should fizzle because fight requires both creatures
+    let my_damage_before = state.get_object(my_creature).unwrap().damage_marked;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    let my_damage_after = state.get_object(my_creature).unwrap().damage_marked;
+
+    // Per MTG rules: with two target instances, if one target is illegal,
+    // the spell still resolves but the fight doesn't happen (fight requires
+    // both creatures). The spell should NOT fizzle — it resolves and does nothing.
+    let prey_zone = state.get_object(prey).unwrap().zone;
+    assert_eq!(prey_zone, Zone::Graveyard, "Prey Upon should be in graveyard after resolution");
+    // My creature should take no damage (fight didn't happen).
+    assert_eq!(my_damage_after, my_damage_before,
+        "No fight should occur when one target is illegal — my creature should be undamaged");
 }

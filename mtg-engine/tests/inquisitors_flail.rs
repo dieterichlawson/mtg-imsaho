@@ -7,10 +7,9 @@
 //! Equip {2}
 
 mod common;
-
 use common::*;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
 
 /// Equipped creature deals double combat damage to a player.
 #[test]
@@ -134,4 +133,38 @@ fn two_flails_quadruple_damage() {
 
     assert_eq!(life_before - life_after, 12,
         "Two Flails should quadruple damage: 3 * 4 = 12");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Inquisitor's Flail doubles combat damage, but fight damage
+/// (from Prey Upon etc.) is not combat damage. The Flail's doubling
+/// should NOT apply to fight damage.
+#[test]
+fn bug_inquisitors_flail_doubles_fight_damage() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a creature with Inquisitor's Flail equipped
+    let creature = ready_creature(&mut state, P0, 3, 3);
+    let flail = named_creature(&mut state, &registry, "Inquisitor's Flail", P0);
+    if let Some(obj) = state.get_object_mut(flail) {
+        obj.is_equipment = true;
+        obj.attached_to = Some(creature);
+    }
+
+    // Place an opponent's creature to fight
+    let opponent = ready_creature(&mut state, P1, 5, 5);
+
+    // Use the fight function directly
+    mtg_engine::combat::fight(&mut state, creature, opponent, &registry);
+
+    // Fight damage should be 3 (NOT doubled to 6)
+    let damage_on_opponent = state.get_object(opponent).unwrap().damage_marked;
+
+    // BUG: Flail doubles fight damage even though fight is not combat damage
+    assert_eq!(damage_on_opponent, 3,
+        "Fight damage should be 3 (not doubled by Flail). Got: {damage_on_opponent}");
 }

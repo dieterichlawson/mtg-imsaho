@@ -7,11 +7,14 @@
 //! `mtg_engine::damage::deal_damage`.
 
 mod common;
-
 use common::*;
+use mtg_engine::actions::Target;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::damage::{deal_damage, DamageKind};
+use mtg_engine::engine;
 use mtg_engine::events::DamageTarget;
 use mtg_engine::types::*;
+
 /// Fight damage is noncombat damage and must respect Unbreathing Horde's
 /// "prevent that damage, remove a +1/+1 counter" replacement (CR 614.1a).
 #[test]
@@ -71,4 +74,80 @@ fn noncombat_damage_to_player_triggers_lifelink() {
     assert_eq!(state.get_player(P1).life, p1_life - 2);
     assert_eq!(state.get_player(P0).life, p0_life + 2,
         "lifelink must apply to noncombat damage dealt to a player");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: `PendingEffect::DealDamage` marks `damage_marked` on planeswalkers
+/// instead of removing loyalty counters.
+/// Planeswalkers take damage as loyalty counter removal, not as `damage_marked`.
+#[test]
+fn bug_planeswalker_damage_uses_damage_marked_not_loyalty() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Garruk Relentless (starting loyalty 3) for P1
+    let garruk = {
+        let card_id = registry.get_id_by_name("Garruk Relentless").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Battlefield, None, None);
+        let obj = state.get_object_mut(id).unwrap();
+        obj.name = "Garruk Relentless".into();
+        obj.summoning_sick = false;
+        // Set loyalty counters
+        state.add_counters(id, CounterType::Loyalty, 3);
+        id
+    };
+
+    // Verify starting loyalty
+    let loyalty_before = state.get_counter_count(garruk, CounterType::Loyalty);
+    assert_eq!(loyalty_before, 3, "Garruk should start with 3 loyalty");
+
+    // Deal 2 damage to the planeswalker via DealDamage pending effect
+    // (simulating Curse of the Pierced Heart or similar)
+    engine::apply_pending_effect(
+        &mut state,
+        &Target::Object(garruk),
+        &mtg_engine::state::PendingEffect::DealDamage { source_id: garruk, amount: 2, source_name: "Test".into() },
+        &registry,
+    );
+
+    // Loyalty should decrease by 2 (3 -> 1)
+    let loyalty_after = state.get_counter_count(garruk, CounterType::Loyalty);
+
+    // BUG: Loyalty is still 3 because DealDamage adds to damage_marked
+    // instead of removing loyalty counters
+    assert_eq!(loyalty_after, 1,
+        "Planeswalker should lose loyalty from damage. Loyalty: {loyalty_after} (expected 1)");
+}
+
+/// Bug: Prey Upon uses `CombatDamageDealt` instead of `NonCombatDamageDealt`.
+/// Fight damage is NOT combat damage per MTG rules.
+#[test]
+fn bug_prey_upon_uses_combat_damage_for_fight() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let my_creature = ready_creature(&mut state, P0, 3, 3);
+    let their_creature = ready_creature(&mut state, P1, 2, 2);
+
+    // Cast Prey Upon
+    let prey = castable_spell(&mut state, &registry, "Prey Upon", P0);
+    state = cast_and_resolve(&state, &registry, prey,
+        vec![Target::Object(my_creature), Target::Object(their_creature)]);
+
+    // Check events — fight damage should be NonCombatDamageDealt
+    let has_combat_damage = state.events.iter().any(|e| {
+        matches!(e, mtg_engine::events::GameEvent::CombatDamageDealt { .. })
+    });
+    let has_non_combat_damage = state.events.iter().any(|e| {
+        matches!(e, mtg_engine::events::GameEvent::NonCombatDamageDealt { .. })
+    });
+
+    // BUG: Fight emits CombatDamageDealt instead of NonCombatDamageDealt
+    assert!(!has_combat_damage,
+        "Fight damage should NOT emit CombatDamageDealt");
+    assert!(has_non_combat_damage,
+        "Fight damage should emit NonCombatDamageDealt");
 }

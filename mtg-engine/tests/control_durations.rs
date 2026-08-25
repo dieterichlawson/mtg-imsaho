@@ -11,11 +11,11 @@
 //! state-based action, which is the closest the engine has to "the moment".
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
+
 /// Olivia plus a Vampire the opponent controls, already stolen.
 fn olivia_with_a_stolen_vampire() -> (mtg_engine::state::GameState, mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId, CardRegistry) {
     let reg = registry();
@@ -111,4 +111,45 @@ fn a_stolen_creature_that_died_is_simply_forgotten() {
 
     assert_eq!(state.get_object(vampire).unwrap().zone, Zone::Graveyard);
     assert!(state.control_effects.is_empty());
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Traitorous Blood gives control "until end of turn" but the engine
+/// never reverts the control change during cleanup.
+/// Oracle: "Gain control of target creature until end of turn."
+#[test]
+fn bug_control_change_not_reverted_at_eot() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a creature for P1
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    assert_eq!(state.get_object(creature).unwrap().controller, P1);
+
+    // Cast Traitorous Blood on it
+    let spell = castable_spell(&mut state, &registry, "Traitorous Blood", P0);
+    state = cast_and_resolve(&state, &registry, spell, vec![Target::Object(creature)]);
+
+    // Creature should now be controlled by P0
+    assert_eq!(state.get_object(creature).unwrap().controller, P0,
+        "Traitorous Blood should give control to P0");
+
+    // Simulate the cleanup step inline (matching engine.rs cleanup)
+    for effect in &state.until_end_of_turn {
+        if let mtg_engine::state::TemporaryEffect::ChangeControl { target, original_controller } = effect {
+            if let Some(obj) = state.objects.get_mut(target) {
+                if obj.zone == Zone::Battlefield {
+                    obj.controller = *original_controller;
+                }
+            }
+        }
+    }
+    state.until_end_of_turn.clear();
+
+    // After cleanup, control should revert to P1.
+    assert_eq!(state.get_object(creature).unwrap().controller, P1,
+        "Control should revert to P1 at end of turn");
 }

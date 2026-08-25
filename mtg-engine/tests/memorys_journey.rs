@@ -5,10 +5,11 @@
 //! Flashback {G}
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::Target;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
+
 /// Shuffles a card from your own graveyard into your library.
 #[test]
 fn shuffles_own_graveyard_card_into_library() {
@@ -97,4 +98,32 @@ fn has_flashback() {
     let data = reg.card_data(id).unwrap();
     assert!(data.flashback_cost.is_some(), "Should have flashback cost");
     assert_eq!(data.flashback_cost.as_ref().unwrap().mana_value(), 1, "Flashback cost should be 1 (Green)");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Memory's Journey targets up to 3 cards in a graveyard AND
+/// has a mandatory player target (to determine whose graveyard).
+/// The card may be missing the player targeting requirement.
+#[test]
+fn bug_memorys_journey_missing_player_target() {
+    let registry = CardRegistry::with_all_cards();
+    let _state = game_at_step(Step::PrecombatMain, P0);
+
+    // Check the target requirement
+    let behavior = registry.get(
+        registry.get_id_by_name("Memory's Journey").unwrap()
+    ).unwrap();
+    let req = behavior.target_requirement();
+
+    // Oracle: "Target player shuffles up to three target cards from their graveyard into their library."
+    // This needs BOTH a player target AND card targets.
+    // BUG: May be missing the player target requirement
+    let req_str = format!("{req:?}");
+    let has_player_target = req_str.contains("Player");
+
+    assert!(has_player_target,
+        "Memory's Journey should target a player. Target requirement: {req:?}");
 }

@@ -20,7 +20,6 @@
 //! These tests pin all of those properties.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
@@ -28,6 +27,7 @@ use mtg_engine::engine;
 use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
+
 fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
     let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
@@ -364,4 +364,43 @@ fn disciple_appears_when_mana_is_already_in_the_pool() {
         Action::ActivateAbility { object_id, .. } if *object_id == disciple));
     assert!(any_disciple,
         "disciple's ability should appear once the mana is in the pool");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Demonmail Hauberk's equip cost is "Sacrifice a creature."
+/// The engine only checks that ANY creature exists (including the
+/// creature being equipped), not that a DIFFERENT creature can be sacrificed.
+#[test]
+fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Demonmail Hauberk (equipment)
+    let hauberk = named_creature(&mut state, &registry, "Demonmail Hauberk", P0);
+    if let Some(obj) = state.get_object_mut(hauberk) {
+        obj.is_equipment = true;
+    }
+
+    // Place exactly ONE creature — the one we'd want to equip
+    let _creature = ready_creature(&mut state, P0, 3, 3);
+
+    // With only 1 creature, equipping Demonmail Hauberk means sacrificing
+    // that creature to equip... nothing. This should not be available.
+    // (Per the ruling, you CAN sacrifice the equipped creature to equip
+    // another, but with only 1 creature there's no valid target to equip TO.)
+    let legal = engine::legal_actions(&state, &registry);
+    let can_equip = legal.actions.iter().any(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == hauberk)
+    });
+
+    // Actually, per the ruling: "You can sacrifice the creature Demonmail Hauberk
+    // is equipping in order to equip it to another creature." So with 1 creature,
+    // the equip ability should NOT be available (no target to equip to after sacrifice).
+    // The engine checks if ANY creature exists, which is true, so it shows the ability.
+    // BUG: Equip available with only 1 creature
+    assert!(!can_equip,
+        "Demonmail Hauberk equip should not be available with only 1 creature (no equip target after sacrifice)");
 }

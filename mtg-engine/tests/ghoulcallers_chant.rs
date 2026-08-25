@@ -6,11 +6,12 @@
 //! • Return two target Zombie creature cards from your graveyard to your hand.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
+
 /// Mode 1: Return a single creature card from your graveyard.
 #[test]
 fn mode1_returns_one_creature_from_graveyard() {
@@ -212,4 +213,53 @@ fn mixed_graveyard_correct_modes() {
     });
     assert!(!has_two_target,
         "Mode 2 should not be available with only 1 Zombie in graveyard");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Ghoulcaller's Chant is modal with two modes. The engine's
+/// `build_cast_target_spec` may not handle modal spells containing
+/// `TwoTargets` correctly, causing incorrect action generation.
+#[test]
+fn bug_ghoulcallers_chant_modal_targeting() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put a creature and two Zombies in P0's graveyard
+    let _bear = {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        id
+    };
+    let _zombie1 = {
+        let card_id = registry.get_id_by_name("Walking Corpse").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
+        id
+    };
+    let _zombie2 = {
+        let card_id = registry.get_id_by_name("Diregraf Ghoul").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Diregraf Ghoul".into();
+        id
+    };
+
+    // Cast Ghoulcaller's Chant
+    let chant = castable_spell(&mut state, &registry, "Ghoulcaller's Chant", P0);
+
+    // Get legal actions — should have actions for BOTH modes
+    let legal = engine::legal_actions(&state, &registry);
+    let chant_actions: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == chant)
+    }).collect();
+
+    // Should have at least mode 1 (return any creature: bear, zombie1, zombie2 = 3 actions)
+    // plus mode 2 (return two Zombies: zombie1+zombie2 = 1 action)
+    // BUG: Modal targeting spec may not generate actions for both modes
+    assert!(chant_actions.len() >= 4,
+        "Should have actions for both modes (3 creature + 1 two-zombie). Got: {}",
+        chant_actions.len());
 }

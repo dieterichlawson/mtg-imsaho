@@ -17,7 +17,6 @@
 //! activated abilities (Elder of Laurels) to confirm the fix is general.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
@@ -25,6 +24,7 @@ use mtg_engine::engine;
 use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
+
 /// Place an unattached equipment of the given name on the battlefield.
 fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
     let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
@@ -540,4 +540,55 @@ fn sharpened_pitchfork_equip_unique_after_attach() {
 #[test]
 fn wooden_stake_equip_unique_after_attach() {
     assert_equip_ability_unique_after_attach(&registry(), "Wooden Stake", 4);
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Mask of Avacyn generates a duplicate equip action via the
+/// attached-aura loop, enabling broken re-equip behavior.
+#[test]
+fn bug_mask_of_avacyn_duplicate_equip_action() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Mask of Avacyn and two creatures
+    let mask = named_creature(&mut state, &registry, "Mask of Avacyn", P0);
+    if let Some(obj) = state.get_object_mut(mask) {
+        obj.is_equipment = true;
+    }
+    let c1 = ready_creature(&mut state, P0, 2, 2);
+    let _c2 = ready_creature(&mut state, P0, 3, 3);
+
+    // Equip to c1
+    if let Some(obj) = state.get_object_mut(mask) {
+        obj.attached_to = Some(c1);
+    }
+
+    // Add mana for equip cost
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+
+    // Get legal actions
+    let legal = engine::legal_actions(&state, &registry);
+    let equip_targets: Vec<_> = legal.actions.iter().filter_map(|a| match a {
+        Action::ActivateAbility { object_id, targets, .. } if *object_id == mask => Some(targets.clone()),
+        _ => None,
+    }).collect();
+
+    // The bug this guards is the attached-permanent loop offering the SAME
+    // equip twice, so the check is for duplicates — not for a target count.
+    // Both creatures are legal targets: CR 702.6a does not exclude the
+    // creature the equipment is already attached to, and re-equipping to the
+    // current host is a real play whenever the equip cost is what you want.
+    let mut seen: Vec<&Vec<Target>> = Vec::new();
+    for t in &equip_targets {
+        assert!(!seen.contains(&t),
+            "each equip target should be offered exactly once; {t:?} appears \
+             twice in {equip_targets:?}");
+        seen.push(t);
+    }
+    assert_eq!(equip_targets.len(), 2,
+        "both creatures the player controls are legal equip targets, including \
+         the one already wearing the Mask (CR 702.6a); got {equip_targets:?}");
 }

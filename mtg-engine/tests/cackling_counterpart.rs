@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-
+use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::PlayerId;
 use mtg_engine::types::*;
@@ -58,4 +58,32 @@ fn cackling_counterpart_copy_of_zombie_token_preserves_color() {
         "token copy of 2/2 black Zombie should be black, got colors={:?}",
         copy_obj.colors,
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Cackling Counterpart creates a token copy but doesn't copy
+/// the original creature's colors. Token is created with empty colors.
+#[test]
+fn bug_cackling_counterpart_colors_not_copied() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a green creature
+    let creature = named_creature(&mut state, &registry, "Grizzly Bears", P0);
+
+    // Cast Cackling Counterpart targeting it
+    let cc = castable_spell(&mut state, &registry, "Cackling Counterpart", P0);
+    state = cast_and_resolve(&state, &registry, cc, vec![Target::Object(creature)]);
+
+    // Find the token copy
+    let token_id = find_token_named(&state, "Grizzly Bears")
+        .expect("Token copy should exist");
+    let token_colors = &state.get_object(token_id).unwrap().colors;
+
+    // BUG: Token has no colors (empty vec) instead of copying the original's green
+    assert!(!token_colors.is_empty(),
+        "Token copy should have colors copied from original. Got: {token_colors:?}");
 }

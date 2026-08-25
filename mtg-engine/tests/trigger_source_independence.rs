@@ -10,8 +10,9 @@
 
 mod common;
 use common::*;
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{DeadCreature, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
@@ -555,4 +556,90 @@ fn test_trepanation_blade_trigger_resolves_after_equipment_destroyed() {
         lib_before, lib_after,
         "CR 113.7a: Trepanation Blade trigger should mill even after equipment is destroyed"
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: ETB triggers are suppressed when source leaves battlefield before resolution.
+/// The trigger resolution in triggers.rs:893-899 checks zone == Battlefield.
+/// Per MTG rules, ETB triggers resolve independently — removing the source
+/// doesn't prevent the trigger from resolving.
+///
+/// This test goes through the trigger dispatch system (not calling handler directly)
+/// to demonstrate the bug is in the trigger resolution path.
+#[test]
+fn bug_etb_trigger_suppressed_when_source_leaves() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give P0 some library cards to mill
+    for _ in 0..10 {
+        let card = state.create_object(
+            registry.get_id_by_name("Grizzly Bears").unwrap(),
+            P0, Zone::Library, Some(2), Some(2),
+        );
+        state.get_player_mut(P0).library_order.push(card);
+    }
+    let lib_before = state.get_player(P0).library_order.len();
+
+    // Cast Armored Skaab — this will put it on the stack
+    let skaab = castable_spell(&mut state, &registry, "Armored Skaab", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: skaab, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &registry,
+    );
+    // Resolve — moves to battlefield, queues ETB trigger
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // Skaab is now on battlefield with ETB trigger pending
+    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Battlefield);
+
+    // Kill Skaab before the ETB trigger resolves (move to graveyard)
+    state.move_object(skaab, Zone::Graveyard, &registry);
+    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Graveyard);
+
+    // Process pending triggers — the ETB mill should still happen
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    let lib_after = state.get_player(P0).library_order.len();
+
+    // BUG: Mill doesn't happen because trigger resolution checks zone == Battlefield
+    assert_eq!(lib_before - lib_after, 4,
+        "ETB trigger should still mill 4 even after Skaab left the battlefield");
+}
+
+/// Bug: Sturmgeist's combat damage trigger ("draw a card") is skipped
+/// if Sturmgeist leaves the battlefield before resolution (same as BUG3).
+#[test]
+fn bug_sturmgeist_draw_skipped_when_leaves() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sturmgeist = named_creature(&mut state, &registry, "Sturmgeist", P0);
+
+    // Give P0 a library card to draw from (draw_cards pulls from the library)
+    {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(lib_card);
+    }
+    let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
+
+    // Simulate combat damage to player trigger, then move Sturmgeist to GY
+    state.move_object(sturmgeist, Zone::Graveyard, &registry);
+
+    // Call the trigger handler directly
+    let behavior = registry.get(state.get_object(sturmgeist).unwrap().card_id).unwrap();
+    behavior.on_combat_damage_to_player(&mut state, sturmgeist, P1, 3, &registry);
+
+    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
+
+    // Per MTG rules, the trigger should still draw a card even if Sturmgeist
+    // is no longer on the battlefield (the trigger already went on the stack)
+    // BUG: Draw is skipped because handler checks zone == Battlefield
+    assert_eq!(hand_after, hand_before + 1,
+        "Should draw 1 card even after Sturmgeist left. Hand: {hand_before} -> {hand_after}");
 }

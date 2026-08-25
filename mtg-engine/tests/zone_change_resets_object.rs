@@ -9,9 +9,10 @@
 //! produced a wrong result the moment the card came back.
 
 mod common;
-
 use common::*;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
+
 /// A copy stops being a copy. Evil Twin in the graveyard is an Evil Twin —
 /// not the creature it copied — so reanimating it runs its OWN enters
 /// handler and it can offer the copy choice again.
@@ -99,4 +100,40 @@ fn a_token_copy_of_a_werewolf_cannot_transform() {
         "test precondition: the real card transforms under these conditions");
     assert!(!state.get_object(token).unwrap().is_transformed,
         "a token copy has only the copied face and cannot transform");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: `card_state` (like hatchling counters) persists through zone changes.
+/// When Ludevic's Test Subject dies and is reanimated, it should start fresh
+/// but keeps its old counter state.
+#[test]
+fn bug_card_state_not_reset_on_zone_change() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Ludevic's Test Subject
+    let subject = named_creature(&mut state, &registry, "Ludevic's Test Subject", P0);
+
+    // Add some hatchling counters via card_state
+    if let Some(obj) = state.get_object_mut(subject) {
+        obj.card_state.insert("hatchling_counters".into(),
+            mtg_engine::ids::ObjectId(3));
+    }
+
+    // Move to graveyard (dies)
+    state.move_object(subject, Zone::Graveyard, &registry);
+
+    // Move back to battlefield (reanimated)
+    state.move_object(subject, Zone::Battlefield, &registry);
+
+    // card_state should be empty — new battlefield instance
+    let has_counters = state.get_object(subject).unwrap()
+        .card_state.contains_key("hatchling_counters");
+
+    // BUG: card_state persists through zone changes
+    assert!(!has_counters,
+        "card_state should be reset when permanent re-enters the battlefield");
 }

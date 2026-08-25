@@ -3,12 +3,13 @@
 //! Lantern Spirit, Avacynian Priest.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
+
 // ══════════════════════════════════════════════════════════════════
 // Manor Skeleton — {1}{B} 1/1 Skeleton, Haste, {1}{B}: Regenerate
 // ══════════════════════════════════════════════════════════════════
@@ -345,4 +346,55 @@ fn avacynian_priest_requires_tap() {
     let has_activate = legal.actions.iter().any(|a| matches!(a, Action::ActivateAbility { .. }));
     assert!(!has_activate,
         "Tapped Avacynian Priest should not be able to activate again");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: `abilities_activated_this_turn` is never cleared between turns.
+/// This causes once-per-turn abilities (Darkthicket Wolf's {2}{G}: +2/+2)
+/// to be permanently locked after first use.
+#[test]
+fn bug_once_per_turn_never_clears() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Darkthicket Wolf
+    let wolf = named_creature(&mut state, &registry, "Darkthicket Wolf", P0);
+
+    // Add mana for {2}{G} activation cost
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    // Check ability is available
+    let legal = engine::legal_actions(&state, &registry);
+    let has_ability = legal.actions.iter().any(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
+    assert!(has_ability, "Wolf should have pump ability available");
+
+    // Activate it
+    let activate_action = legal.actions.iter().find(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf)).unwrap().clone();
+    state = engine::submit_action(&state, &activate_action, &registry);
+
+    // Simulate turn change — clear turn-based state
+    // The engine now clears abilities_activated_this_turn at turn transition.
+    state.until_end_of_turn.clear();
+    for obj in state.objects.values_mut() {
+        obj.abilities_activated_this_turn.clear();
+    }
+
+    // Add mana for next turn's activation ({2}{G})
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    // Check if ability is available on the "next turn"
+    let legal2 = engine::legal_actions(&state, &registry);
+    let has_ability2 = legal2.actions.iter().any(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
+
+    // BUG: Ability is NOT available because abilities_activated_this_turn persists
+    assert!(has_ability2,
+        "Once-per-turn ability should be available again on a new turn");
 }

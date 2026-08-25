@@ -8,15 +8,14 @@
 //! creature on the battlefield" is a choice, not a target.
 
 mod common;
-
 use common::*;
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, PendingEffect};
-use mtg_engine::types::*;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
-
+use mtg_engine::types::*;
 
 fn copy_onto(state: &mut GameState, reg: &CardRegistry, copier: ObjectId, victim: ObjectId) {
     mtg_engine::engine::apply_pending_effect(
@@ -171,4 +170,86 @@ fn a_token_copy_fires_the_copied_creatures_etb_ability() {
     assert!(mentor_triggered,
         "a token copy entering the battlefield is a creature entering, and \
          watchers must see it");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Evil Twin marked itself as a copy before the copy choice. The destroy ability
+/// comes from the "except it has..." clause, which only applies when a copy is made.
+/// Per ruling: "You can choose not to copy anything. In that case, Evil Twin enters
+/// as a 0/0 creature." A 0/0 that didn't copy anything should NOT have the destroy
+/// ability. The code comment claiming this is intentional is wrong per oracle text.
+#[test]
+fn bug_evil_twin_marker_set_before_choice() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a target creature and Evil Twin
+    let _target = ready_creature(&mut state, P1, 3, 3);
+    let twin = castable_spell(&mut state, &registry, "Evil Twin", P0);
+    state = cast_and_resolve(&state, &registry, twin, vec![]);
+
+    // Fire ETB triggers (this is where on_enter_battlefield runs)
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Check if the copy-grantor marker is set before the copy choice is made
+    let has_marker = state.get_object(twin).is_some_and(|o|
+        o.copy_grantor.is_some()
+    );
+
+    let has_choice = state.awaiting_action.is_some();
+
+    // The marker should only be set AFTER the player chooses to copy.
+    // If the player declines, the 0/0 Twin dies without the destroy ability.
+    // BUG: Marker is set before the choice is presented.
+    assert!(!(has_marker && has_choice),
+        "copy_grantor must not be set while the copy choice is still pending, \
+         or the granted ability would appear before the copy exists. \
+         Marker: {has_marker}, Choice: {has_choice}");
+}
+
+/// Bug: After Evil Twin copies a creature, the destroy ability
+/// ("{U}{B}, {T}: Destroy target creature with the same name")
+/// may not be accessible because the engine looks up abilities
+/// from the registry using `card_id`, which changed to the copied
+/// creature's `card_id`.
+#[test]
+fn bug_evil_twin_ability_inaccessible_after_copy() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a creature to copy
+    let target = named_creature(&mut state, &registry, "Grizzly Bears", P1);
+
+    // Place Evil Twin and trigger its ETB
+    let twin = named_creature(&mut state, &registry, "Evil Twin", P0);
+
+    // Manually trigger the ETB and resolve the copy
+    let behavior = registry.get(state.get_object(twin).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, twin, &[], &registry);
+
+    // Resolve the copy choice (choose Grizzly Bears)
+    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. }) = &state.awaiting_action {
+        let action = Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(target))),
+        };
+        state = engine::submit_action(&state, &action, &registry);
+    }
+
+    // Twin should now be a copy of Grizzly Bears with the destroy ability
+    // Add mana for {U}{B}
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+
+    // Check if the destroy ability is available
+    let legal = engine::legal_actions(&state, &registry);
+    let has_destroy = legal.actions.iter().any(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == twin)
+    });
+
+    // BUG: Destroy ability not available because card_id points to copied creature
+    assert!(has_destroy,
+        "Evil Twin should have the destroy ability after copying");
 }

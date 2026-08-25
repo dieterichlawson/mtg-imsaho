@@ -1,11 +1,11 @@
 mod common;
 use common::*;
-
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
 use mtg_engine::state::{GameState, StackEntry};
 use mtg_engine::types::*;
+
 // CR 603.2: "At the beginning of your upkeep/end step" constrains the
 // trigger to the controller's step. The engine currently creates triggers
 // for ALL permanents regardless of whose step it is.
@@ -188,4 +188,29 @@ fn endless_ranks_no_phantom_trigger_opponent_upkeep() {
         has_trigger_for_card(&state, ranks_card), false,
         "Endless Ranks of the Dead should not trigger during opponent's upkeep (CR 603.2)"
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// FALSE POSITIVE: Trigger system correctly pre-filters upkeep triggers
+/// by controller. No spurious triggers go on the stack during opponent's upkeep.
+#[test]
+fn bug_spurious_upkeep_trigger_for_opponent() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::Upkeep, P1); // P1's upkeep
+    state.active_player = P1;
+
+    // Place Charmbreaker Devils for P0 (NOT the active player)
+    let _devils = named_creature(&mut state, &registry, "Charmbreaker Devils", P0);
+
+    // Process triggers during P1's upkeep
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // No trigger should fire or go on the stack during opponent's upkeep
+    // BUG: A spurious UpkeepTrigger is created and put on the stack
+    assert!(state.stack.is_empty(),
+        "No trigger should be on the stack during opponent's upkeep, but stack has {} entries",
+        state.stack.len());
 }

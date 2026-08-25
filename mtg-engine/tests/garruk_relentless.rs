@@ -1,8 +1,9 @@
 mod common;
 use common::*;
-
 use mtg_engine::actions::Target;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
+
 // CR 702.16e: protection prevents all damage from sources with the matching quality.
 // Garruk's ability 0 deals 3 damage inline (damage_marked += 3), skipping has_protection_from.
 #[test]
@@ -55,4 +56,33 @@ fn garruk_fight_creature_lifelink_gains_life() {
         state.players[1].life, 22,
         "CR 702.15b: opponent gains 2 life from lifelink creature dealing 2 damage to Garruk"
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Garruk Relentless doesn't set `is_legendary` in `on_resolve`,
+/// so the legend rule may not apply to it.
+#[test]
+fn bug_garruk_relentless_not_legendary_on_battlefield() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cast Garruk
+    let garruk = castable_spell(&mut state, &registry, "Garruk Relentless", P0);
+    state = cast_and_resolve(&state, &registry, garruk, vec![]);
+
+    // Check if Garruk has the Legendary supertype recognized
+    let card_id = state.get_object(garruk).unwrap().card_id;
+    let data = registry.card_data(card_id).unwrap();
+    let is_legendary_in_data = data.supertypes.contains(&Supertype::Legendary);
+
+    // Also check the object-level flag
+    let obj_legendary = state.get_object(garruk).is_some_and(|o| o.is_legendary);
+
+    // BUG: is_legendary not set on the object
+    assert!(is_legendary_in_data, "Garruk should be Legendary in card data");
+    assert!(obj_legendary,
+        "Garruk should have is_legendary set on the object for legend rule enforcement");
 }

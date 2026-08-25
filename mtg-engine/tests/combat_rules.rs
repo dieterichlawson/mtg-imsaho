@@ -16,8 +16,9 @@
 
 mod common;
 use common::*;
-
+use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::types::*;
 use std::collections::HashMap;
 
@@ -170,4 +171,63 @@ fn bug_bp_forced_attack_respects_cant_attack() {
          means the force doesn't apply. Bug BP: the forced-attack \
          enumerator skips Defender but not can_attack / PreventAttack."
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// FALSE POSITIVE: Bloodcrazed Neonate with Pacifism is correctly NOT forced to attack.
+/// Oracle: "This creature attacks each combat if able."
+/// "If able" means the creature must actually be able to attack.
+/// Pacifism prevents attacking, so the force-attack should be skipped.
+#[test]
+fn bug_force_attack_ignores_cant_attack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Bloodcrazed Neonate (has ForceAttack via continuous effect)
+    let neonate = named_creature(&mut state, &registry, "Bloodcrazed Neonate", P0);
+
+    // Cast Pacifism on the Neonate (gives PreventAttack + PreventBlock)
+    let pacifism = castable_spell(&mut state, &registry, "Pacifism", P0);
+    state = cast_and_resolve(&state, &registry, pacifism, vec![Target::Object(neonate)]);
+
+    // Move to DeclareAttackers step
+    state.step = Step::DeclareAttackers;
+
+    // Get legal actions — neonate should NOT be in must_attack
+    let legal = engine::legal_actions(&state, &registry);
+
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) = legal.combat_prompt.as_ref() {
+        // Correctly: Neonate is excluded from eligible (Pacifism prevents it)
+        assert!(!eligible.contains(&neonate));
+        assert!(!must_attack.contains(&neonate));
+    }
+}
+
+/// Bug: Galvanic Juggernaut has "attacks each combat if able" but the
+/// force-attack logic may not check all "if able" conditions.
+/// (This may be a false positive like Bloodcrazed Neonate.)
+#[test]
+fn bug_galvanic_juggernaut_force_attack_when_unable() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    // Place Galvanic Juggernaut (has ForceAttack + it enters tapped + PreventUntap)
+    let jug = named_creature(&mut state, &registry, "Galvanic Juggernaut", P0);
+
+    // Tap it (it enters tapped and doesn't untap)
+    if let Some(obj) = state.get_object_mut(jug) {
+        obj.tapped = true;
+    }
+
+    // A tapped creature cannot attack, so force-attack should NOT apply
+    let legal = engine::legal_actions(&state, &registry);
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) = legal.combat_prompt.as_ref() {
+        assert!(!eligible.contains(&jug),
+            "Tapped Juggernaut should not be eligible to attack");
+        assert!(!must_attack.contains(&jug),
+            "Tapped Juggernaut should not be forced to attack");
+    }
 }

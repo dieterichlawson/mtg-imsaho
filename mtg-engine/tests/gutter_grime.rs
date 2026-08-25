@@ -11,12 +11,11 @@
 //! - Only creatures you control trigger it
 
 mod common;
-
 use common::*;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
 
 /// When a nontoken creature dies, Gutter Grime should create an Ooze token
 /// whose P/T dynamically equals the slime counter count.
@@ -194,4 +193,89 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
     let eff_toughness = state.effective_toughness(ooze_id, &reg).unwrap();
     assert_eq!(eff_power, 0, "Ooze should be 0/0 when Gutter Grime leaves battlefield");
     assert_eq!(eff_toughness, 0, "Ooze should be 0/0 when Gutter Grime leaves battlefield");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug 99-001 (`audits/AUDIT_BUGS.md)`: Gutter Grime's `on_any_creature_dies`
+/// checks `state.get_object(dead_id).is_token` to enforce the
+/// "nontoken" oracle requirement. By the time this handler runs, SBA
+/// 704.5d has already removed the dead token from `state.objects`, so
+/// `state.get_object(dead_id)` returns None, `was_token` defaults to
+/// false, and the handler proceeds to add a slime counter and create
+/// an Ooze for *every* creature death — token or not.
+///
+/// Oracle (Gutter Grime): "Whenever a **nontoken** creature you
+/// control dies, put a slime counter on this enchantment, then create
+/// a green Ooze creature token..."
+///
+/// Failure mode: `gutter_grime.rs:43-81`. The dispatcher correctly
+/// queues the trigger, the controller filter passes, then
+/// `state.get_object(dead_id).map(|o| o.is_token).unwrap_or(false)`
+/// returns `false` for an already-cleaned-up token. The fix needs the
+/// dispatcher to thread `is_token` (or the dead `card_id`) into
+/// `on_any_creature_dies` so the handler can check it from captured
+/// state.
+///
+/// We simulate the post-cleanup state by passing a `dead_id` that's not
+/// in `state.objects` and observing whether Gutter Grime's slime
+/// counter was incremented.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 99-001 is fixed.
+#[test]
+fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grime = named_creature(&mut state, &registry, "Gutter Grime", P0);
+    let slime_before = state
+        .get_object(grime)
+        .unwrap()
+        .counters
+        .get(&CounterType::Slime)
+        .copied()
+        .unwrap_or(0);
+
+    // The dead creature was a token that's already been cleaned up by
+    // SBA 704.5d. Use an ObjectId that's not in state.objects.
+    let dead_token_id = mtg_engine::ids::ObjectId(99999);
+    assert!(
+        state.get_object(dead_token_id).is_none(),
+        "Test setup: dead_token_id should not be in state.objects"
+    );
+
+    let grime_card_id = state.get_object(grime).unwrap().card_id;
+    let behavior = registry.get(grime_card_id).unwrap();
+    behavior.on_any_creature_dies(
+        &mut state,
+        grime,
+        dead_token_id,
+        P0, // dead_controller (matches Gutter Grime's owner)
+        &[],
+        2, // dead_toughness
+        true, // dead_is_token — this is the whole point of the bug
+        &[],
+        &registry,
+    );
+
+    let slime_after = state
+        .get_object(grime)
+        .unwrap()
+        .counters
+        .get(&CounterType::Slime)
+        .copied()
+        .unwrap_or(0);
+
+    assert_eq!(
+        slime_after, slime_before,
+        "Gutter Grime should NOT add a slime counter when a TOKEN \
+         creature dies (oracle says 'nontoken'). Bug 99-001: the \
+         is_token check reads state.get_object(dead_id), but tokens \
+         are already cleaned up by SBA 704.5d at trigger-resolution \
+         time, so the handler treats them as nontoken. Slime counters \
+         {slime_before} -> {slime_after}",
+    );
 }

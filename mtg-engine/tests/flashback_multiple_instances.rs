@@ -12,13 +12,13 @@
 //! substituted a free cost instead, which made such a card castable for {0}.
 
 mod common;
-
 use common::*;
-use mtg_engine::actions::Action;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, TemporaryEffect};
 use mtg_engine::types::*;
+
 /// Every distinct flashback cost offered for `card` this turn.
 fn flashback_costs(state: &GameState, reg: &CardRegistry, card: ObjectId) -> Vec<ManaCost> {
     let mut costs: Vec<ManaCost> = mtg_engine::engine::legal_actions(state, reg).actions.iter()
@@ -132,4 +132,41 @@ fn snapcaster_can_target_a_card_that_already_has_flashback() {
     let behavior = reg.get(snapcaster).unwrap();
     assert!(behavior.is_valid_target(&state, P0, &mtg_engine::actions::Target::Object(card), &reg),
         "a card that already has flashback is still a legal target");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Snapcaster Mage grants flashback to an instant or sorcery in
+/// the graveyard, but incorrectly excludes cards that already have
+/// innate flashback. The oracle says "target instant or sorcery card"
+/// with no restriction on existing flashback.
+#[test]
+fn bug_snapcaster_excludes_innate_flashback_cards() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put Think Twice (has innate flashback) in P0's graveyard
+    let think_twice = {
+        let card_id = registry.get_id_by_name("Think Twice").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+        state.get_object_mut(id).unwrap().name = "Think Twice".into();
+        id
+    };
+
+    // Cast Snapcaster Mage — should be able to target Think Twice
+    let _snap = castable_spell(&mut state, &registry, "Snapcaster Mage", P0);
+
+    // Check if Think Twice is a valid target
+    let behavior = registry.get(
+        registry.get_id_by_name("Snapcaster Mage").unwrap()
+    ).unwrap();
+    let is_valid = behavior.is_valid_target(
+        &state, P0, &Target::Object(think_twice), &registry
+    );
+
+    // BUG: Think Twice excluded because it has innate flashback
+    assert!(is_valid,
+        "Snapcaster Mage should be able to target cards with innate flashback");
 }

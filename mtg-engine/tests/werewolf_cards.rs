@@ -1,9 +1,9 @@
 //! Tests for Innistrad werewolf double-faced cards.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
@@ -660,4 +660,33 @@ fn human_side_stays_if_any_spell_cast() {
 
     assert!(!state.get_object(waif).unwrap().is_transformed,
         "Human should stay on front face when any spell was cast last turn");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: `num_spells_cast_this_turn` is never incremented when spells are cast.
+/// This breaks werewolf transform conditions which check `num_spells_cast_last_turn`.
+/// If no spells are ever counted, the "no spells cast last turn" condition
+/// is always true and werewolves would transform every upkeep.
+#[test]
+fn bug_num_spells_cast_this_turn_never_incremented() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Record spells cast before
+    let cast_before: u32 = state.num_spells_cast_this_turn.values().sum();
+
+    // Cast a spell
+    let bolt = castable_spell(&mut state, &registry, "Lightning Bolt", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+    state = cast_and_resolve(&state, &registry, bolt, vec![Target::Object(target)]);
+
+    // num_spells_cast_this_turn should have been incremented
+    let cast_after: u32 = state.num_spells_cast_this_turn.values().sum();
+
+    // BUG: Count is still 0 because submit_action never updates num_spells_cast_this_turn
+    assert!(cast_after > cast_before,
+        "num_spells_cast_this_turn should increment when a spell is cast. Before: {cast_before}, After: {cast_after}");
 }

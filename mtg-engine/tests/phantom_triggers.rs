@@ -3,12 +3,13 @@
 //! 2. ETB-watch triggers should only fire from zones declared by `trigger_zones()`.
 //!    E.g., Champion of the Parish in the graveyard should NOT trigger.
 
+mod common;
+use common::*;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
-mod common;
-use common::*;
 // ---------------------------------------------------------------------------
 // Bug 1: Self-ETB phantom triggers
 // ---------------------------------------------------------------------------
@@ -160,4 +161,49 @@ fn dearly_departed_on_battlefield_does_not_trigger() {
         !had_triggers,
         "Dearly Departed on battlefield should NOT create a watch trigger"
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: When Stitcher's Apprentice creates a token and the controller
+/// must sacrifice a creature, the `trigger_event_index` gets desynced,
+/// causing ETB watchers (like Champion of the Parish) to miss the
+/// token's `CreatureDied` event from the sacrifice.
+/// This is a complex engine timing issue — testing by checking if
+/// Champion gets a +1/+1 counter from a Human token entering AND
+/// triggers properly when the sacrificed creature dies.
+#[test]
+fn bug_stitchers_apprentice_trigger_desync() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Stitcher's Apprentice
+    let apprentice = named_creature(&mut state, &registry, "Stitcher's Apprentice", P0);
+
+    // Place Falkenrath Noble (triggers on any creature death)
+    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+
+    // Place a creature to sacrifice
+    let _victim = ready_creature(&mut state, P0, 1, 1);
+
+    let p1_life_before = state.get_player(P1).life;
+
+    // Activate Stitcher's Apprentice ability (creates Homunculus token, then sacrifice)
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let behavior = registry.get(state.get_object(apprentice).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, apprentice, 0, &[], &registry);
+
+    // Process triggers from the sacrifice (Noble presents target choice)
+    process_triggers_auto_target_opponent(&mut state, &registry);
+
+    // Falkenrath Noble should have triggered from the sacrifice death
+    let p1_life_after = state.get_player(P1).life;
+
+    // BUG: trigger_event_index desync may cause Noble to miss the death
+    assert!(p1_life_after < p1_life_before,
+        "Falkenrath Noble should trigger from sacrifice. P1 life: {p1_life_before} -> {p1_life_after}");
 }

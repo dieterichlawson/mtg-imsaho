@@ -4,11 +4,12 @@
 //! After resolution (or countering), the spell is exiled instead of returning to graveyard.
 
 mod common;
-
 use common::*;
 use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
+
 // ── System tests: flashback mechanics ──────────────────────────────
 
 /// Flashback is offered when a card with `flashback_cost` is in the graveyard
@@ -482,4 +483,125 @@ fn bump_in_the_night_flashback_exiles() {
         "Bump in the Night should cause opponent to lose 3 life");
     assert_eq!(state.get_object(bump).unwrap().zone, Zone::Exile,
         "Bump in the Night cast via flashback should be exiled");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Nevermore bans a card by name, but the ban isn't checked
+/// when casting that card via flashback from the graveyard.
+#[test]
+fn bug_nevermore_not_enforced_for_flashback() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Nevermore naming "Think Twice"
+    let nevermore = named_creature(&mut state, &registry, "Nevermore", P0);
+    if let Some(obj) = state.get_object_mut(nevermore) {
+        obj.instance_continuous_effects = Some(vec![
+            ContinuousEffect::PreventCastingNamed { name: "Think Twice".into() },
+        ]);
+    }
+
+    // Put Think Twice in P1's graveyard with flashback
+    let think_twice = {
+        let card_id = registry.get_id_by_name("Think Twice").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Graveyard, None, None);
+        state.get_object_mut(id).unwrap().name = "Think Twice".into();
+        id
+    };
+
+    // Add mana for flashback cost
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Colorless, 2);
+    state.priority_player = Some(P1);
+
+    // Check legal actions for P1 — flashback Think Twice should NOT be available
+    let legal = engine::legal_actions(&state, &registry);
+    let can_flashback = legal.actions.iter().any(|a| {
+        match a {
+            Action::CastSpell { object_id, .. } => *object_id == think_twice,
+            _ => false,
+        }
+    });
+
+    // BUG: Nevermore ban doesn't apply to flashback casts
+    assert!(!can_flashback,
+        "Think Twice should not be castable via flashback while Nevermore names it");
+}
+
+/// Bug: Past in Flames gives flashback equal to a card's mana cost,
+/// but cards with no mana cost get `ManaCost::free()`, making them
+/// castable for free from the graveyard.
+#[test]
+fn bug_past_in_flames_free_flashback_for_no_cost_cards() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cast Past in Flames
+    let pif = castable_spell(&mut state, &registry, "Past in Flames", P0);
+    state = cast_and_resolve(&state, &registry, pif, vec![]);
+
+    // Check the until_end_of_turn flashback entries
+    // Any card with cost=None should NOT get flashback (or should get cost=None flashback
+    // which is uncastable), not ManaCost::free()
+    let free_flashbacks: Vec<_> = state.until_end_of_turn.iter()
+        .filter_map(|e| if let mtg_engine::state::TemporaryEffect::GrantFlashback { cost, .. } = e {
+            Some(cost)
+        } else { None })
+        .filter(|cost| cost.symbols.is_empty())
+        .collect();
+
+    // BUG: Cards with no mana cost get ManaCost::free() flashback
+    assert!(free_flashbacks.is_empty(),
+        "Cards with no mana cost should not get free flashback. Found {} free flashback entries",
+        free_flashbacks.len());
+}
+
+/// Bug BS (`audits/AUDIT_BUGS.md)`: `cast_with_flashback` persists on
+/// the object when Runic Repetition returns an exiled flashback
+/// card to hand. The next time that card is cast normally,
+/// `move_spell_after_resolve` sees the stale flag and sends the
+/// card to exile instead of graveyard.
+///
+/// Oracle (Runic Repetition): "Return target exiled card with
+/// flashback you own to your hand."
+///
+/// Failure mode: `state.rs::move_object` clears battlefield-related
+/// fields but does not reset `cast_with_flashback`. The cast handler
+/// only SETS the flag when `is_flashback = true`; it never clears it
+/// on a normal cast.
+///
+/// We put a Devil's Play in exile with `cast_with_flashback = true`,
+/// move it back to hand via the engine's `move_object` (simulating
+/// Runic Repetition), and assert the flag is now false.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug BS is fixed.
+#[test]
+fn bug_bs_runic_repetition_resets_cast_with_flashback() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let devils_card_id = registry.get_id_by_name("Devil's Play").unwrap();
+    let devils = state.create_object(devils_card_id, P0, Zone::Exile, None, None);
+    {
+        let obj = state.get_object_mut(devils).unwrap();
+        obj.name = "Devil's Play".into();
+        obj.cast_with_flashback = true;
+    }
+
+    state.move_object(devils, Zone::Hand, &registry);
+
+    let still_flashback = state
+        .get_object(devils)
+        .is_some_and(|o| o.cast_with_flashback);
+    assert!(
+        !still_flashback,
+        "After Runic Repetition returns a flashback-cast card from \
+         exile to hand, obj.cast_with_flashback should be reset. \
+         Bug BS: move_object doesn't clear the flag, so the next \
+         normal cast sends the card back to exile on resolution."
+    );
 }

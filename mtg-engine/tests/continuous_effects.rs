@@ -10,8 +10,10 @@
 
 mod common;
 use common::*;
-
+use mtg_engine::actions::Target;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
+
 // ---------------------------------------------------------------------------
 // The conditional effects that already existed still work through the wrapper
 // ---------------------------------------------------------------------------
@@ -179,4 +181,50 @@ fn continuous_effects_are_read_in_one_place() {
     assert!(offenders.is_empty(),
         "scope resolution belongs to GameState::walk_effects, not to each caller:\n{}",
         offenders.join("\n"));
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Bonds of Faith snapshots the Human check at ETB.
+/// Oracle: "gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."
+/// If the creature later stops being a Human (e.g., transforms), the effect
+/// should switch, but it doesn't because `instance_continuous_effects` is set once.
+#[test]
+fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cloistered Youth is a Human 1/1 whose back face, Unholy Fiend, is a
+    // Horror — transforming is the way a creature in this set actually stops
+    // being a Human. (Overwriting `obj.subtypes` would not model anything the
+    // engine does: outside transform, subtypes are only ever added to, so
+    // `has_subtype` unions the object's runtime grants with its active face.)
+    let human = named_creature(&mut state, &registry, "Cloistered Youth", P0);
+
+    // Cast Bonds of Faith on it
+    let bonds = castable_spell(&mut state, &registry, "Bonds of Faith", P0);
+    state = cast_and_resolve(&state, &registry, bonds, vec![Target::Object(human)]);
+
+    // Fire ETB triggers so Bonds sets instance_continuous_effects
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Verify the Human gets +2/+2 (base 1/1 -> 3/3)
+    let p = state.effective_power(human, &registry).unwrap_or(0);
+    assert_eq!(p, 3, "Human with Bonds should have power 3 (1 base + 2 buff)");
+
+    // Transform into Unholy Fiend: no longer a Human.
+    mtg_engine::cards::helpers::apply_transform(&mut state, human, &registry);
+    assert!(!state.has_subtype(human, "Human", &registry),
+        "test precondition: Unholy Fiend is a Horror, not a Human");
+
+    // The "as long as" condition is no longer true, so the effect must switch
+    // from +2/+2 to can't-attack-or-block. Unholy Fiend's printed power is 3,
+    // so 3 means the buff is gone and 5 would mean Bonds snapshotted the Human
+    // check at ETB and never re-read it.
+    let p_after = state.effective_power(human, &registry).unwrap_or(0);
+    assert_eq!(p_after, 3,
+        "a non-Human should lose the +2/+2 from Bonds — power {p_after} \
+         (3 = Unholy Fiend's printed power, 5 = buff wrongly still applied)");
 }

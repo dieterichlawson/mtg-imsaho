@@ -28,7 +28,6 @@
 
 mod common;
 use common::*;
-
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
@@ -616,4 +615,317 @@ fn bug_bf_travelers_amulet_shuffles_library_after_search() {
          call is made. With 20 cards, the probability of a random \
          shuffle matching the original order is ~4e-19."
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Falkenrath Noble auto-targets the opponent for life drain.
+/// Oracle: "target player loses 1 life and you gain 1 life"
+/// "Target player" means the controller chooses which player to target,
+/// including potentially themselves. The code does state.opponent(controller)
+/// without presenting a choice.
+#[test]
+fn bug_falkenrath_noble_auto_targets_opponent() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Falkenrath Noble for P0
+    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+
+    // Place a creature for P1 and kill it to trigger Noble
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    // Process the death trigger
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // The Noble's trigger should present a choice of which player to target.
+    // If it auto-targeted the opponent, P1's life will already be 19 and
+    // there won't be an AwaitingAction for player choice.
+    //
+    // BUG: Noble auto-selects opponent — no choice is presented
+    let p1_life = state.get_player(P1).life;
+    let awaiting = state.awaiting_action.is_some();
+
+    // Either there should be an awaiting action (choice pending)
+    // OR if it already resolved, it should have targeted correctly.
+    // The bug is that it resolves WITHOUT presenting a choice.
+    assert!(awaiting || p1_life == 20,
+        "Noble should either present target choice (awaiting_action) or not have auto-drained yet. P1 life: {p1_life}, awaiting: {awaiting}");
+}
+
+/// Bug: Ghost Quarter auto-searches instead of presenting "may" choice.
+/// Oracle: "Its controller may search their library for a basic land card"
+/// The "may" means the land's controller can decline to search.
+/// The code auto-finds the first basic land without presenting a choice.
+#[test]
+fn bug_ghost_quarter_may_search_is_mandatory() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Ghost Quarter for P0
+    let gq = named_creature(&mut state, &registry, "Ghost Quarter", P0);
+
+    // Place a target land for P1
+    let target_land = {
+        let card_id = registry.get_id_by_name("Forest").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        id
+    };
+
+    // Put a Plains in P1's library
+    let _plains_id = {
+        let card_id = registry.get_id_by_name("Plains").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_player_mut(P1).library_order.push(id);
+        id
+    };
+
+    let bf_count_before = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.name == "Plains")
+        .count();
+
+    // Activate Ghost Quarter
+    let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
+    state.move_object(gq, Zone::Graveyard, &registry);
+    behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
+
+    let bf_count_after = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.name == "Plains")
+        .count();
+
+    // BUG: The Plains was auto-placed on the battlefield without P1 getting
+    // a choice to decline the search. In a real game, P1 might want to
+    // decline (e.g., to avoid a shuffle, or in specific strategic scenarios).
+    // After the ability resolves, there should be an AwaitingAction for P1's
+    // "may search" choice, OR the search should not have happened yet.
+    let awaiting = state.awaiting_action.is_some();
+
+    // The bug is that the search happened automatically
+    assert!(awaiting || bf_count_after == bf_count_before,
+        "Ghost Quarter should present 'may search' choice, not auto-search. Plains placed: {}",
+        bf_count_after - bf_count_before);
+}
+
+/// Bug: Thraben Sentry auto-transforms when a creature you control dies,
+/// without presenting the "you may" choice from the oracle text.
+#[test]
+fn bug_thraben_sentry_auto_transforms_without_choice() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Thraben Sentry
+    let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+    assert!(!state.get_object(sentry).unwrap().is_transformed);
+
+    // Place and kill another creature
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    // Process triggers
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // The "you may transform" should present a choice, not auto-transform
+    let is_transformed = state.get_object(sentry).unwrap().is_transformed;
+    let has_choice = state.awaiting_action.is_some();
+
+    // BUG: Auto-transforms without presenting "you may" choice
+    assert!(!is_transformed || has_choice,
+        "Sentry should either present 'you may' choice or not auto-transform. Transformed: {is_transformed}, Choice pending: {has_choice}");
+}
+
+/// When casting Harvest Pyre, the engine must let the player choose
+/// WHICH cards to exile — not just a count. The original auto-pick
+/// behavior was replaced by a structured `ChooseExileFromGraveyard`
+/// prompt that lists every eligible graveyard card and lets the player
+/// pick any subset (0 ≤ k ≤ `graveyard_size`).
+///
+/// Previous incarnation of this test asserted the engine enumerated
+/// `C(gy,k)` expanded `CastSpell` actions. That was a transitional
+/// fix; the final fix is the structured prompt, which avoids the
+/// combinatorial explosion entirely (important for the LLM player:
+/// 2^N actions flood the action list for an N-card graveyard).
+#[test]
+fn bug_harvest_pyre_auto_selects_exile() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put several different cards in P0's graveyard
+    let mut gy_ids = Vec::new();
+    for name in ["Grizzly Bears", "Lightning Bolt", "Giant Growth"] {
+        let card_id = registry.get_id_by_name(name).unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+        state.get_object_mut(id).unwrap().name = name.into();
+        gy_ids.push(id);
+    }
+
+    let target = ready_creature(&mut state, P1, 5, 5);
+
+    add_mana_for(&mut state, &registry, "Harvest Pyre", P0);
+    let pyre = spell_in_hand(&mut state, &registry, "Harvest Pyre", P0);
+
+    // Engine should emit exactly ONE CastSpell action per target —
+    // no subset enumeration.
+    let legal = engine::legal_actions(&state, &registry);
+    let pyre_actions: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == pyre)
+    }).collect();
+    assert_eq!(pyre_actions.len(), 1,
+        "Harvest Pyre should emit exactly one CastSpell; exile choice goes through \
+         ChooseExileFromGraveyard prompt. Got {} entries.", pyre_actions.len());
+
+    // Submitting the cast should set up a ChooseExileFromGraveyard
+    // prompt offering all three graveyard cards, with min=0 max=3.
+    let cast = Action::CastSpell {
+        object_id: pyre,
+        targets: vec![Target::Object(target)],
+        sacrifice: None, exile_count: None, exile_ids: vec![],
+        alternative_cost: None, tap_plan: vec![],
+    };
+    let post = engine::submit_action(&state, &cast, &registry);
+
+    match post.awaiting_action.as_ref() {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseExileFromGraveyard { options, min, max, .. },
+            ..
+        }) => {
+            assert_eq!(*min, 0, "Harvest Pyre allows X=0");
+            assert_eq!(*max, 3, "Harvest Pyre max X = graveyard size (3)");
+            for id in &gy_ids {
+                assert!(options.contains(id),
+                    "all P0 graveyard cards should appear as options, missing {id:?}");
+            }
+        }
+        other => panic!(
+            "Casting Harvest Pyre should set up ChooseExileFromGraveyard, got {other:?}"
+        ),
+    }
+
+    // Harvest Pyre should still be in hand while the prompt is pending.
+    assert_eq!(post.get_object(pyre).map(|o| o.zone), Some(Zone::Hand));
+    assert!(post.stack.is_empty());
+}
+
+/// Bug: Mentor of the Meek says "you may pay {1}" to draw a card when
+/// a creature with power 2 or less enters. The code auto-pays without
+/// presenting a choice.
+#[test]
+fn bug_mentor_of_the_meek_auto_pays() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Mentor of the Meek
+    let mentor = named_creature(&mut state, &registry, "Mentor of the Meek", P0);
+
+    // Add {1} mana so the pay choice is available
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Give P0 some library cards to draw from
+    for _ in 0..3 {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(id);
+    }
+
+    let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
+
+    // Place a small creature and directly call the trigger handler
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let behavior = registry.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &registry);
+
+    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
+    let has_choice = state.awaiting_action.is_some();
+
+    // "you may pay {1}" should present a choice, not auto-draw
+    // BUG: Auto-draws without presenting the pay choice
+    assert!(has_choice || hand_after == hand_before,
+        "Mentor should present 'you may pay' choice. Drew {} cards without asking.",
+        hand_after.saturating_sub(hand_before));
+}
+
+/// Bug: Skirsdag High Priest's ability costs "tap two untapped creatures
+/// you control" but the engine auto-selects which creatures to tap.
+#[test]
+fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Skirsdag High Priest and 3 other creatures
+    let priest = named_creature(&mut state, &registry, "Skirsdag High Priest", P0);
+    let _c1 = ready_creature(&mut state, P0, 1, 1);
+    let _c2 = ready_creature(&mut state, P0, 2, 2);
+    let _c3 = ready_creature(&mut state, P0, 3, 3);
+
+    // Morbid must be active
+    state.creature_died_this_turn = true;
+
+    // Get legal actions
+    let legal = engine::legal_actions(&state, &registry);
+    let priest_abilities: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest)
+    }).collect();
+
+    // With 3 untapped creatures (besides the priest who taps itself),
+    // there should be C(3,2) = 3 different tap combinations.
+    // If there's only 1, the engine auto-selected.
+    // BUG: Only 1 action (auto-selected tap targets)
+    assert!(priest_abilities.len() >= 3,
+        "Should have 3+ tap combinations for 3 creatures, got {}",
+        priest_abilities.len());
+}
+
+/// Bug: Brain Weevil says "Target player discards two cards" but only
+/// forces 1 discard when the player has 3+ cards (missing `on_discard_choice` chain).
+#[test]
+fn bug_brain_weevil_incomplete_discard() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give P1 three cards in hand
+    for name in ["Grizzly Bears", "Lightning Bolt", "Giant Growth"] {
+        spell_in_hand(&mut state, &registry, name, P1);
+    }
+    let hand_before = state.objects_in_zone(Zone::Hand, P1).len();
+    assert_eq!(hand_before, 3);
+
+    // Place Brain Weevil and activate its sacrifice ability targeting P1
+    let weevil = named_creature(&mut state, &registry, "Brain Weevil", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let behavior = registry.get(state.get_object(weevil).unwrap().card_id).unwrap();
+    mtg_engine::destruction::sacrifice(&mut state, weevil, &registry);
+    behavior.on_activate_ability(&mut state, weevil, 0, &[Target::Player(P1)], &registry);
+
+    // Resolve any pending choices (first discard)
+    while state.awaiting_action.is_some() {
+        if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand { cards, .. }, ..
+        }) = &state.awaiting_action {
+            if let Some(&first) = cards.first() {
+                let action = Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenCard(first),
+                };
+                state = engine::submit_action(&state, &action, &registry);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    let hand_after = state.objects_in_zone(Zone::Hand, P1).len();
+    // BUG: Only 1 card discarded instead of 2
+    assert_eq!(hand_after, 1,
+        "Brain Weevil should force 2 discards. Hand: {hand_before} -> {hand_after} (expected 3 -> 1)");
 }

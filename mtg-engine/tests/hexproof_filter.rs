@@ -30,7 +30,6 @@
 
 mod common;
 use common::*;
-
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::engine;
@@ -549,4 +548,52 @@ fn bug_aw_prey_upon_rejects_two_of_your_own_creatures() {
          valid_targets_for_req's CreatureWithFilter arm drops the inner \
          YouControl/YouDontControl filter, so any creature pair is offered."
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: When Bitterheart Witch dies and the player searches for a Curse,
+/// the target player choice list doesn't filter out players with hexproof
+/// (from Witchbane Orb). You shouldn't be able to attach a Curse to a
+/// hexproof player.
+#[test]
+fn bug_bitterheart_witch_hexproof_not_filtered() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Witchbane Orb for P1 (grants hexproof to P1)
+    let _orb = named_creature(&mut state, &registry, "Witchbane Orb", P1);
+
+    // Place a Curse in P0's library
+    let curse_id = registry.get_id_by_name("Curse of the Pierced Heart").unwrap();
+    let curse = state.create_object(curse_id, P0, Zone::Library, None, None);
+    state.get_object_mut(curse).unwrap().name = "Curse of the Pierced Heart".into();
+    state.get_player_mut(P0).library_order.push(curse);
+
+    // Place and kill Bitterheart Witch
+    let witch = named_creature(&mut state, &registry, "Bitterheart Witch", P0);
+    mtg_engine::destruction::sacrifice(&mut state, witch, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // If there's a yes/no choice, accept it
+    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::YesNo { .. }, ..
+    }) = &state.awaiting_action {
+        let action = Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
+        };
+        state = engine::submit_action(&state, &action, &registry);
+    }
+
+    // Check if the player choice includes P1 (who has hexproof)
+    let p1_targetable = state.awaiting_action.as_ref().is_some_and(|aa| {
+        format!("{aa:?}").contains(&"Player(PlayerId(1))".to_string())
+    });
+
+    // BUG: P1 with hexproof (from Witchbane Orb) is still a valid target
+    assert!(!p1_targetable,
+        "Player with hexproof should not be targetable for Curse attachment");
 }

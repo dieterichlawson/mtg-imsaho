@@ -16,7 +16,6 @@
 
 mod common;
 use common::*;
-
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
@@ -173,4 +172,72 @@ fn bug_be_garruk_transforms_before_zero_loyalty_death() {
          graveyards him. Bug BE: SBA processes zero-loyalty before \
          running state triggers, so Garruk dies first. zone = {zone:?}",
     );
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Delver of Secrets suppresses the "you may reveal" choice when the top
+/// card is NOT an instant or sorcery. Per ruling: "You may reveal the card even
+/// if it's not an instant or sorcery." The player should always get the choice.
+#[test]
+fn bug_delver_reveal_suppressed_for_non_instant_sorcery() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.active_player = P0;
+
+    // Place Delver of Secrets (front face)
+    let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
+
+    // Put a creature (not instant/sorcery) on top of library
+    let _creature_card = {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        state.get_player_mut(P0).library_order.insert(0, id);
+        id
+    };
+
+    // Fire upkeep trigger
+    let behavior = registry.get(state.get_object(delver).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, delver, &[], &registry);
+
+    // Per the ruling, the player should STILL get a "you may reveal" choice
+    // even though the top card is a creature (revealing it won't transform Delver,
+    // but the player might want to reveal for information or other game reasons).
+    // BUG: No choice is presented because the code only offers the choice when
+    // the top card is an instant or sorcery.
+    assert!(state.awaiting_action.is_some(),
+        "Delver should present 'you may reveal' choice even for non-instant/sorcery top card");
+}
+
+/// Bug: After Thraben Sentry transforms to Thraben Militia (back face),
+/// it retains Vigilance from the front face because obj.keywords isn't
+/// updated during transform.
+#[test]
+fn bug_thraben_sentry_vigilance_retained_after_transform() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+
+    // Set keywords on object to match front face (Vigilance)
+    if let Some(obj) = state.get_object_mut(sentry) {
+        obj.keywords = vec![Keyword::Vigilance];
+    }
+
+    // Transform to back face
+    if let Some(obj) = state.get_object_mut(sentry) {
+        obj.is_transformed = true;
+        obj.name = "Thraben Militia".into();
+        // BUG: keywords not updated — Vigilance persists
+    }
+
+    // Back face (Thraben Militia) should NOT have Vigilance
+    let has_vigilance = state.has_keyword(sentry, Keyword::Vigilance, &registry);
+
+    // BUG: has_keyword returns true because obj.keywords still contains Vigilance
+    assert!(!has_vigilance,
+        "Thraben Militia (back face) should NOT have Vigilance");
 }

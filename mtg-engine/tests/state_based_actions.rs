@@ -1,13 +1,15 @@
 //! Tests for state-based actions (rule 704).
 
 mod common;
-
 use common::*;
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameResult;
 use mtg_engine::types::*;
+
 /// Rule 104.4a: If both players reach 0 life simultaneously, it's a draw.
 #[test]
 fn simultaneous_life_loss_is_draw() {
@@ -173,4 +175,124 @@ fn no_sbas_when_stable() {
     ready_creature(&mut state, P0, 3, 3);
 
     assert!(!check_state_based_actions(&mut state, &reg));
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: Grimoire of the Dead returns ALL creature cards from all
+/// graveyards, but doesn't apply the legend rule to legendary creatures
+/// that are already on the battlefield.
+#[test]
+fn bug_grimoire_legend_rule_not_applied() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a legendary creature on P0's battlefield
+    let existing = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+
+    // Put another copy of the same legendary in P1's graveyard
+    let _graveyard_copy = {
+        let card_id = registry.get_id_by_name("Grimgrin, Corpse-Born").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Graveyard, Some(5), Some(5));
+        state.get_object_mut(id).unwrap().name = "Grimgrin, Corpse-Born".into();
+        id
+    };
+
+    // Simulate Grimoire's ability 1 (return all creatures as Zombies)
+    let grimoire = named_creature(&mut state, &registry, "Grimoire of the Dead", P0);
+    let behavior = registry.get(state.get_object(grimoire).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, grimoire, 1, &[], &registry);
+
+    // After returning, we should have two legendary Grimgrins controlled by P0.
+    let grimgrins: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
+        .map(|o| (o.id, o.is_legendary))
+        .collect();
+    assert_eq!(grimgrins.len(), 2,
+        "Test setup: should have 2 Grimgrins on battlefield before SBA. Got: {grimgrins:?}");
+    assert!(grimgrins.iter().all(|(_, leg)| *leg),
+        "Both Grimgrins must have is_legendary=true for SBA to detect them. Got: {grimgrins:?}");
+
+    // SBA should present a legend-rule choice.
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    assert!(state.awaiting_action.is_some(),
+        "Legend rule SBA should present a choice for which Grimgrin to keep");
+
+    // Resolve the choice: keep the existing one.
+    let new_state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(existing))),
+        },
+        &registry,
+    );
+
+    // Count Grimgrins on battlefield
+    let grimgrin_count = new_state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
+        .count();
+
+    assert_eq!(grimgrin_count, 1,
+        "Legend rule should leave only 1 Grimgrin. Found: {grimgrin_count}");
+}
+
+/// Bug: When a board wipe destroys both a Human and Angelic Overseer
+/// simultaneously, the SBA processes them sequentially. The Human
+/// might die first, causing Overseer to lose indestructible before
+/// its own destruction is checked.
+#[test]
+fn bug_angelic_overseer_sba_ordering() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Angelic Overseer (indestructible while you control a Human)
+    let overseer = named_creature(&mut state, &registry, "Angelic Overseer", P0);
+
+    // Place a Human
+    let human = named_creature(&mut state, &registry, "Champion of the Parish", P0);
+
+    // Deal lethal damage to both simultaneously (board wipe)
+    if let Some(obj) = state.get_object_mut(overseer) {
+        obj.damage_marked = 99;
+    }
+    if let Some(obj) = state.get_object_mut(human) {
+        obj.damage_marked = 99;
+    }
+
+    // Clear events so we can track death order.
+    state.events.clear();
+
+    // Run SBAs with registry.
+    // Per MTG rules 704.3: SBAs are checked simultaneously.
+    // Pass 1: Human has lethal damage → dies. Overseer has lethal damage but is
+    //         indestructible (Human still alive at snapshot) → survives.
+    // Pass 2: Overseer still has lethal damage, no longer indestructible → dies.
+    // End result: both die, but in SEPARATE SBA passes (not simultaneously).
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    let overseer_zone = state.get_object(overseer).unwrap().zone;
+    let human_zone = state.get_object(human).unwrap().zone;
+
+    // Both should be dead.
+    assert_eq!(human_zone, Zone::Graveyard, "Human should die from lethal damage");
+    assert_eq!(overseer_zone, Zone::Graveyard,
+        "Overseer dies on second SBA pass (no longer indestructible after Human dies)");
+
+    // Verify they died in SEPARATE SBA passes (not simultaneously).
+    // With the snapshot fix, the Human's CreatureDied event comes first,
+    // then triggers could process, then the Overseer dies on the next pass.
+    // We verify by checking that both CreatureDied events exist.
+    let death_events: Vec<_> = state.events.iter()
+        .filter_map(|e| {
+            if let mtg_engine::events::GameEvent::CreatureDied { object, .. } = e {
+                Some(*object)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(death_events.contains(&human), "Human should have a CreatureDied event");
+    assert!(death_events.contains(&overseer), "Overseer should have a CreatureDied event");
 }
