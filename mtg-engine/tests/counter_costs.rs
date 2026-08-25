@@ -19,9 +19,6 @@ use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
 
 fn grimoire_with(counters: u32) -> (mtg_engine::state::GameState, mtg_engine::ids::ObjectId, CardRegistry) {
     let reg = registry();

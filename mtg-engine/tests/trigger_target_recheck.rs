@@ -13,15 +13,10 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::{AttackInfo, CardRegistry};
+use mtg_engine::cards::AttackInfo;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Angel of Flight Alabaster targets "a Spirit card in your graveyard". A
 /// card that stops being a legal target between announcement and resolution
 /// makes the ability fizzle.

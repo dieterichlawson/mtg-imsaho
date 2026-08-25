@@ -7,14 +7,8 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ── System tests: flashback mechanics ──────────────────────────────
 
 /// Flashback is offered when a card with `flashback_cost` is in the graveyard

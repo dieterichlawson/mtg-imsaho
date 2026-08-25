@@ -11,14 +11,10 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Action;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::state::AwaitingAction;
 use mtg_engine::types::*;
 
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
 
 /// A tapped creature can't be declared as a blocker (CR 509.1a). The
 /// validating gate must drop it, leaving the attacker unblocked.

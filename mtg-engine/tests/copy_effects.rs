@@ -17,9 +17,6 @@ use mtg_engine::state::{GameState, PendingEffect};
 use mtg_engine::types::*;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
 
 fn copy_onto(state: &mut GameState, reg: &CardRegistry, copier: ObjectId, victim: ObjectId) {
     mtg_engine::engine::apply_pending_effect(

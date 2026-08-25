@@ -10,15 +10,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::DamageTarget;
 use mtg_engine::replacement::{ReplaceableEvent, apply};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ---------------------------------------------------------------------------
 // CR 614.1d — "enters tapped"
 // ---------------------------------------------------------------------------

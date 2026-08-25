@@ -10,11 +10,6 @@ use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::AwaitingAction;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Rule 509.1h: A blocked creature remains blocked even if all blockers
 /// are removed. Without trample, it deals no damage to the player.
 /// Rule 510.1c: A blocked creature with no remaining blockers assigns

@@ -7,7 +7,6 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
 /// The blanket prevention Moonmist puts up: everything except Wolves and
@@ -21,11 +20,6 @@ fn moonmist_prevention() -> mtg_engine::state::TemporaryEffect {
         ]),
     }
 }
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// After Moonmist resolves, the flag is set.
 #[test]
 fn sets_prevention_flag() {

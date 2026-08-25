@@ -18,11 +18,6 @@ use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Process triggers, resolving any "target player" choices by targeting
 /// the opponent. Needed because Rage Thrower now correctly presents a
 /// choice instead of auto-targeting.

@@ -4,16 +4,10 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::ids::CardId;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ── Spirit lords ───────────────────────────────────────────────────
 
 /// Battleground Geist gives other Spirits +1/+0 but not itself.

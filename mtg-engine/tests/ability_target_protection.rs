@@ -17,11 +17,6 @@ use mtg_engine::engine;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::TemporaryEffect;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Collect every target offered for an activated ability of `source`.
 fn ability_targets(state: &mtg_engine::state::GameState, reg: &CardRegistry, source: ObjectId) -> Vec<Target> {
     engine::legal_actions(state, reg).actions.iter()

@@ -5,17 +5,11 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Token creation
 // ══════════════════════════════════════════════════════════════════

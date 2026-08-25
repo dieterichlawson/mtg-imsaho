@@ -8,13 +8,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Ability 0: Deal 1 damage, make target a Vampire, +1/+1 counter on Olivia.
 #[test]
 fn olivia_ability_0_deals_damage_and_makes_vampire() {

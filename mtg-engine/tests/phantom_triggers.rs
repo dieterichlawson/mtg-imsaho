@@ -3,18 +3,12 @@
 //! 2. ETB-watch triggers should only fire from zones declared by `trigger_zones()`.
 //!    E.g., Champion of the Parish in the graveyard should NOT trigger.
 
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
 mod common;
 use common::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ---------------------------------------------------------------------------
 // Bug 1: Self-ETB phantom triggers
 // ---------------------------------------------------------------------------

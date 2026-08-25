@@ -20,11 +20,6 @@ use mtg_engine::events::GameEvent;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Put a card into a player's library and return its id.
 fn card_in_library(state: &mut GameState, reg: &CardRegistry, name: &str, owner: mtg_engine::ids::PlayerId) -> ObjectId {
     let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown {name}"));

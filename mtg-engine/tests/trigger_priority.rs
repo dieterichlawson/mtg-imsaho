@@ -2,7 +2,6 @@
 //! players get priority between each resolution (CR 117.5, CR 603.3).
 
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::StackEntry;
@@ -11,11 +10,6 @@ use mtg_engine::types::*;
 
 mod common;
 use common::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// After SBAs kill a creature, `collect_triggers` places the death trigger
 /// on the stack but does NOT resolve it. The trigger waits for the
 /// priority cycle to resolve it.

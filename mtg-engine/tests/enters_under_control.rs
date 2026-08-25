@@ -21,11 +21,6 @@ use mtg_engine::events::GameEvent;
 use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// The controller carried by the `EnteredBattlefield` event for `object`.
 fn entered_controller(state: &GameState, object: ObjectId) -> Option<PlayerId> {
     state.events.iter().rev().find_map(|e| match e {

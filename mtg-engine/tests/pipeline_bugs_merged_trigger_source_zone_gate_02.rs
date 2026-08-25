@@ -2,14 +2,10 @@ mod common;
 use common::*;
 
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource, DeadCreature};
 use mtg_engine::types::*;
 
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
 
 // CR 113.7a: A triggered ability on the stack is independent of its source.
 // Removing the source after the trigger is on the stack does not counter it.

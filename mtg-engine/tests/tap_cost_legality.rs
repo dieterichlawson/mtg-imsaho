@@ -20,11 +20,6 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Put a named permanent onto the battlefield *this turn*, so it still has
 /// summoning sickness. `named_creature` deliberately clears the flag.
 fn sick_named(

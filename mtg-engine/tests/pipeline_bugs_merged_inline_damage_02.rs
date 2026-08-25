@@ -6,11 +6,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::{CardId, ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 fn make_planeswalker(state: &mut GameState, owner: PlayerId, name: &str, loyalty: u32) -> ObjectId {
     let id = state.create_object(CardId(9998), owner, Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();

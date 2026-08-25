@@ -25,11 +25,6 @@ use mtg_engine::ids::ObjectId;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Each check land, with a basic that satisfies its condition and one that
 /// doesn't.
 const CHECK_LANDS: &[(&str, &str, &str)] = &[

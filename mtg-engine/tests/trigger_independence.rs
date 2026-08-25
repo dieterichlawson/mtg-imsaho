@@ -5,16 +5,10 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, StackEntry};
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 fn damage_watch_triggers(state: &GameState, watcher: ObjectId) -> usize {
     state.stack.iter()
         .filter(|e| matches!(e, StackEntry::Trigger(

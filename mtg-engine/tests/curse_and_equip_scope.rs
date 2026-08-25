@@ -14,16 +14,10 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, StackEntry};
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 const UPKEEP_CURSES: &[&str] = &[
     "Curse of Oblivion",
     "Curse of the Bloody Tome",

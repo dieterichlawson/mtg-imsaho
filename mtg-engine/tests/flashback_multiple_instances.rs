@@ -19,11 +19,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, TemporaryEffect};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Every distinct flashback cost offered for `card` this turn.
 fn flashback_costs(state: &GameState, reg: &CardRegistry, card: ObjectId) -> Vec<ManaCost> {
     let mut costs: Vec<ManaCost> = mtg_engine::engine::legal_actions(state, reg).actions.iter()

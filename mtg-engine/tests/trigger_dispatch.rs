@@ -9,15 +9,9 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 fn trigger_count(state: &mtg_engine::state::GameState) -> usize {
     state.stack.iter().filter(|e| matches!(e, StackEntry::Trigger(_))).count()
 }

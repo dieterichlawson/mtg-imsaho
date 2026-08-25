@@ -9,14 +9,8 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Mode 1: Return a single creature card from your graveyard.
 #[test]
 fn mode1_returns_one_creature_from_graveyard() {

@@ -23,11 +23,6 @@ use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::{GameState, StackEntry};
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Dispatch a beginning-of-upkeep event and count the stack entries `object`
 /// put there. `collect_triggers` runs the whole dispatch path — including
 /// `process_pending_trigger_pushes`, which drains the APNAP queues onto the

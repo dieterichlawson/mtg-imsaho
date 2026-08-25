@@ -9,15 +9,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::damage::{deal_damage, DamageKind};
 use mtg_engine::events::DamageTarget;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Fight damage is noncombat damage and must respect Unbreathing Horde's
 /// "prevent that damage, remove a +1/+1 counter" replacement (CR 614.1a).
 #[test]

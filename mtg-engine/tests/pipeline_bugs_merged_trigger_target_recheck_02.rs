@@ -2,15 +2,9 @@ mod common;
 use common::*;
 
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // CR 608.2b: When a triggered ability with targets resolves, the game re-checks
 // each target for legality. If all targets are illegal, the ability is countered.
 // Angel of Flight Alabaster upkeep trigger targets a Spirit in the graveyard.

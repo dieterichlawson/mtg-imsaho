@@ -15,11 +15,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::state::StackEntry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Push a trigger for `source` directly onto the stack, the way the collector
 /// would have, then remove the source and resolve.
 fn resolve_after_source_dies(

@@ -9,13 +9,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Combat damage is prevented and a counter is removed.
 #[test]
 fn prevents_combat_damage_removes_counter() {

@@ -9,12 +9,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
 
 /// Equipped creature deals double combat damage to a player.
 #[test]

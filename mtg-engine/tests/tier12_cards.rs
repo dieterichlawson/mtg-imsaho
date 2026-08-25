@@ -3,15 +3,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ── Scourge of Geier Reach ──────────────────────────────────────
 
 /// Scourge gets +1/+1 for each creature opponents control.

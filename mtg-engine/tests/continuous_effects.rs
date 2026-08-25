@@ -11,13 +11,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ---------------------------------------------------------------------------
 // The conditional effects that already existed still work through the wrapper
 // ---------------------------------------------------------------------------

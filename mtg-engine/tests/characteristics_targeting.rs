@@ -12,14 +12,8 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Ghost Quarter's "Destroy target land" uses `PermanentWithFilter(HasCardType([Land]))`.
 /// A non-token land (empty object-level `card_types`) must be a valid target.
 #[test]

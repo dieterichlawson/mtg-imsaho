@@ -8,13 +8,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Action;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Can activate with {R}{G} and X=0 (minimum).
 #[test]
 fn can_activate_with_rg_only() {

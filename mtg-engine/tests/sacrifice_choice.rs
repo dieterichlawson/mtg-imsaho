@@ -28,11 +28,6 @@ use mtg_engine::engine;
 use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
     let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);

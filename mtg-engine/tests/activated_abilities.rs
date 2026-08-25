@@ -6,15 +6,9 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Manor Skeleton — {1}{B} 1/1 Skeleton, Haste, {1}{B}: Regenerate
 // ══════════════════════════════════════════════════════════════════

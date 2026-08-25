@@ -11,13 +11,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// A copy stops being a copy. Evil Twin in the graveyard is an Evil Twin —
 /// not the creature it copied — so reanimating it runs its OWN enters
 /// handler and it can offer the copy choice again.

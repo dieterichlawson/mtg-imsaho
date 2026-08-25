@@ -8,13 +8,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Action;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Cannot cast Infernal Plunge without a creature to sacrifice.
 #[test]
 fn cannot_cast_without_creature() {

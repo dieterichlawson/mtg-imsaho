@@ -13,14 +13,8 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ---------------------------------------------------------------------------
 // Moldgraf Monstrosity: "When this creature dies, exile it, then return two
 // creature cards at random from your graveyard to the battlefield."

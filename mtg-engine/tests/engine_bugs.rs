@@ -10,15 +10,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ════════════════════════════════════════════════════════════════════
 // Bug #6: Cleanup Step SBA Loop (CR 514.3a)
 //

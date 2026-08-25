@@ -4,11 +4,6 @@ use common::*;
 use mtg_engine::cards::helpers::apply_transform;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // Shared setup: place a named DFC on the battlefield, transform it, then
 // move it to the target zone. Returns (state, object_id, registry) so each
 // test can assert on the post-zone-change characteristics.

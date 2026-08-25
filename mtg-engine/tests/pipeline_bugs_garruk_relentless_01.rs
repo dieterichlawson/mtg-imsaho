@@ -2,13 +2,7 @@ mod common;
 use common::*;
 
 use mtg_engine::actions::Target;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // CR 702.16e: protection prevents all damage from sources with the matching quality.
 // Garruk's ability 0 deals 3 damage inline (damage_marked += 3), skipping has_protection_from.
 #[test]

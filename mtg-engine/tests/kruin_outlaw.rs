@@ -8,13 +8,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Terror of Kruin Pass grants "can't be blocked except by two or more creatures"
 /// to all Werewolves you control, including itself.
 #[test]

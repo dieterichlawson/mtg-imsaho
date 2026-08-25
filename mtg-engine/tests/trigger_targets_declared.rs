@@ -19,15 +19,10 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::{CardRegistry, TriggerKind};
+use mtg_engine::cards::TriggerKind;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Every card whose triggered ability targets must say so, or the engine
 /// cannot choose the target at the right time.
 #[test]

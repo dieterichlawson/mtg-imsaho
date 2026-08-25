@@ -19,13 +19,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::{AttackInfo, CardRegistry};
+use mtg_engine::cards::AttackInfo;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Garruk Relentless' -3 ("Creatures you control get +X/+X and gain trample")
 /// filtered on `o.card_types.contains(&Creature)`, which is false for every
 /// non-token creature — so the buff hit nothing. (Ticket garruk_relentless-01.)

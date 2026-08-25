@@ -14,11 +14,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::state::AwaitingAction;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Answer the current ChooseTarget resolution choice with a specific object.
 fn answer_choice_with(
     state: &mtg_engine::state::GameState,

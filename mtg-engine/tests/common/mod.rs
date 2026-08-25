@@ -14,6 +14,15 @@ use mtg_engine::types::*;
 pub const P0: PlayerId = PlayerId(0);
 pub const P1: PlayerId = PlayerId(1);
 
+/// The full card registry.
+///
+/// This was defined identically in 89 test files. A test that needs a
+/// registry with an extra card registered (see `player_protection.rs`) still
+/// builds its own — that is a different thing, not a copy of this one.
+pub fn registry() -> CardRegistry {
+    CardRegistry::with_all_cards()
+}
+
 /// Set up a game state at a specific step with the given player as active and having priority.
 pub fn game_at_step(step: Step, active: PlayerId) -> GameState {
     let mut state = GameState::new(2);

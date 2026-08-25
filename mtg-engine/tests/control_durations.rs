@@ -16,11 +16,6 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Olivia plus a Vampire the opponent controls, already stolen.
 fn olivia_with_a_stolen_vampire() -> (mtg_engine::state::GameState, mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId, CardRegistry) {
     let reg = registry();

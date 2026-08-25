@@ -7,13 +7,8 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::{AttackInfo, CardRegistry};
+use mtg_engine::cards::AttackInfo;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // 1. Charmbreaker Devils -- +4/+0 should only trigger on instants/sorceries
 // ────────────────────────────────────────────────────────────────────────────

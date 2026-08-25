@@ -15,11 +15,6 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // ---------------------------------------------------------------------------
 // Trepanation Blade: "Whenever equipped creature attacks, defending player
 // reveals cards from the top of their library until they reveal a land card.

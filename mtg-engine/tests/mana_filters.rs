@@ -19,11 +19,6 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 fn castable(state: &mtg_engine::state::GameState, reg: &CardRegistry, spell: mtg_engine::ids::ObjectId) -> bool {
     mtg_engine::engine::legal_actions(state, reg).actions.iter().any(|a|
         matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))

@@ -6,11 +6,6 @@ use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
 use mtg_engine::state::{GameState, StackEntry};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 // CR 603.2: "At the beginning of your upkeep/end step" constrains the
 // trigger to the controller's step. The engine currently creates triggers
 // for ALL permanents regardless of whose step it is.

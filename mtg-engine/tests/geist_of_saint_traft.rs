@@ -8,13 +8,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::{AttackInfo, CardRegistry};
+use mtg_engine::cards::AttackInfo;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 #[test]
 fn geist_creates_angel_on_attack() {
     let reg = registry();

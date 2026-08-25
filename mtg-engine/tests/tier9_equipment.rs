@@ -10,11 +10,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Helper: place a named equipment on the battlefield, already set as equipment.
 fn equipment_on_battlefield(
     state: &mut mtg_engine::state::GameState,

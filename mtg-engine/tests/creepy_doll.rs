@@ -8,15 +8,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::{DamageTarget, GameEvent};
 use mtg_engine::state::StackEntry;
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Creepy Doll should have `DealsCombatDamageToCreature` trigger, not Blocks/BecomesBlocked.
 #[test]
 fn has_correct_trigger_kind() {

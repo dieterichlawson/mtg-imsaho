@@ -23,11 +23,6 @@ use mtg_engine::ids::ObjectId;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 /// Put a creature onto the battlefield through `move_object`, so the entering
 /// event is emitted the way it is in a real game.
 fn enter_creature(state: &mut GameState, reg: &CardRegistry, name: &str, owner: mtg_engine::ids::PlayerId) -> ObjectId {

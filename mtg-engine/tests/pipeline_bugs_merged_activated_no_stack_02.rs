@@ -7,9 +7,6 @@ use mtg_engine::ids::{CardId, ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
 
 fn setup_skirsdag(state: &mut GameState, reg: &CardRegistry) -> (ObjectId, ObjectId, ObjectId) {
     let priest = named_creature(state, reg, "Skirsdag High Priest", P0);

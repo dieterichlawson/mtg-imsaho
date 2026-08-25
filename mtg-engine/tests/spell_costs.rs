@@ -12,11 +12,6 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{CastMethod, cost_to_cast};
 use mtg_engine::types::*;
-
-fn registry() -> CardRegistry {
-    CardRegistry::with_all_cards()
-}
-
 fn mana_value(state: &mtg_engine::state::GameState, reg: &CardRegistry,
               name: &str, player: mtg_engine::ids::PlayerId, method: CastMethod) -> u32 {
     let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
