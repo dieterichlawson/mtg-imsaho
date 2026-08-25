@@ -186,12 +186,7 @@ fn hanweir_watchkeep_loses_defender_gains_force_attack() {
         "Bane of Hanweir should not have Defender");
 
     // ForceAttack is a continuous effect on the back face
-    assert!(state.has_continuous_effect(watchkeep, &|e| {
-        match e {
-            ContinuousEffect::ForceAttack { scope } => Some(scope),
-            _ => None,
-        }
-    }, &reg), "Bane of Hanweir should have ForceAttack");
+    assert!(state.has_effect(watchkeep, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg), "Bane of Hanweir should have ForceAttack");
 }
 
 // ── Tormented Pariah ──────────────────────────────────────────────

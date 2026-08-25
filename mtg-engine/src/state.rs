@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Serialize, Deserialize};
 
 use crate::ids::{ObjectId, PlayerId, CardId};
-use crate::types::{Zone, Step, ManaPool};
+use crate::types::{Zone, Step, ManaPool, ContinuousEffect};
 
 /// An entry on the stack — a spell, triggered ability, or activated ability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1058,7 +1058,7 @@ impl GameState {
 
     /// Check if a continuous effect applies to a given creature.
     #[must_use]
-    pub fn effect_applies_to(
+    fn effect_applies_to(
         &self,
         creature_id: ObjectId,
         scope: &crate::types::EffectScope,
@@ -1093,106 +1093,141 @@ impl GameState {
         }
     }
 
-    /// Collect all (`power_mod`, `toughness_mod`) from continuous effects that apply to a creature.
+    /// Total (`power_mod`, `toughness_mod`) applying to a creature.
+    ///
+    /// The static half is the one walk; the dynamic half is auras whose bonus
+    /// is computed from the board (Wreath of Geists' "+X/+X where X is the
+    /// number of creature cards in your graveyard"), which no enum variant can
+    /// express, so the aura's behavior is asked directly.
     fn continuous_pt_mods(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> (i32, i32) {
-        use crate::types::ContinuousEffect;
-        let mut power = 0;
-        let mut toughness = 0;
+        let (mut power, mut toughness) = (0, 0);
+        self.walk_effects(
+            creature_id,
+            &|e| matches!(e, ContinuousEffect::ModifyPT { .. }),
+            registry,
+            &mut |e, _| {
+                if let ContinuousEffect::ModifyPT { power: p, toughness: t, .. } = e {
+                    power += p;
+                    toughness += t;
+                }
+                true
+            },
+        );
         for source in self.objects.values() {
-            if source.zone != Zone::Battlefield {
+            if source.zone != Zone::Battlefield || source.attached_to != Some(creature_id) {
                 continue;
             }
-            // Check instance-level effects first (e.g., Bonds of Faith).
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            power += p;
-                            toughness += t;
-                        }
-                    }
-                }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                // Card-level static effects (use back face if transformed).
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    match effect {
-                        ContinuousEffect::ModifyPT { power: p, toughness: t, scope } => {
-                            if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                                power += p;
-                                toughness += t;
-                            }
-                        }
-                        ContinuousEffect::ConditionalModifyPT { power: p, toughness: t, condition, scope } => {
-                            if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry)
-                                && self.check_condition(condition, source.id, source.controller, registry) {
-                                power += p;
-                                toughness += t;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                // Dynamic P/T from auras (e.g., Wreath of Geists: +X/+X where X = creatures in graveyard).
-                if source.attached_to == Some(creature_id) {
-                    if let Some((p, t)) = behavior.dynamic_pt(self, source.id, registry) {
-                        power += p;
-                        toughness += t;
-                    }
+            if let Some(behavior) = registry.get(source.card_id) {
+                if let Some((p, t)) = behavior.dynamic_pt(self, source.id, registry) {
+                    power += p;
+                    toughness += t;
                 }
             }
         }
         (power, toughness)
     }
 
-    /// Check if a creature has a specific continuous effect applying to it.
-    pub fn has_continuous_effect(
+    /// Visit every continuous effect that applies to `id` and satisfies
+    /// `want`, from every source on the battlefield.
+    ///
+    /// The one walk. `has_effect`, `count_effect` and the P/T accumulation are
+    /// all this function; before, each was its own loop over `self.objects`,
+    /// as were the two that handled conditional effects, and the caller had to
+    /// dig the `EffectScope` out of the variant itself and hand it back — the
+    /// same six-line closure written eleven times.
+    ///
+    /// `want` is tested against the *unwrapped* effect and before the
+    /// condition, so `When { SelfHasKeyword(..), .. }` is only evaluated by a
+    /// query that actually wants what it wraps. That matters: evaluating
+    /// conditions eagerly would send `has_keyword` back through itself.
+    ///
+    /// `visit` receives the effect and the permanent providing it — several
+    /// effects are relative to their source's controller — and returns false
+    /// to stop the walk.
+    pub(crate) fn walk_effects(
         &self,
-        creature_id: ObjectId,
-        predicate: &dyn Fn(&crate::types::ContinuousEffect) -> Option<&crate::types::EffectScope>,
+        id: ObjectId,
+        want: &dyn Fn(&crate::types::ContinuousEffect) -> bool,
         registry: &crate::cards::CardRegistry,
-    ) -> bool {
+        visit: &mut dyn FnMut(&crate::types::ContinuousEffect, &GameObject) -> bool,
+    ) {
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield {
                 continue;
             }
             for effect in self.continuous_effects_of(source.id, registry) {
-                if let Some(scope) = predicate(&effect) {
-                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                        return true;
+                let (inner, condition) = effect.unwrap_condition();
+                if !want(inner) {
+                    continue;
+                }
+                let Some(scope) = inner.scope() else { continue };
+                if !self.effect_applies_to(id, scope, source.id, source.controller, registry) {
+                    continue;
+                }
+                if let Some(c) = condition {
+                    if !self.check_condition(c, source.id, source.controller, registry) {
+                        continue;
                     }
+                }
+                if !visit(inner, source) {
+                    return;
                 }
             }
         }
-        false
     }
 
-    /// Count how many sources apply a matching continuous effect to a creature.
-    /// Similar to `has_continuous_effect` but returns the count instead of a boolean.
-    pub fn count_continuous_effect(
+    /// Whether any continuous effect matching `want` applies to `id`.
+    ///
+    /// ```ignore
+    /// state.has_effect(id, &|e| matches!(e, ContinuousEffect::PreventAttack { .. }), registry)
+    /// ```
+    #[must_use]
+    pub fn has_effect(
         &self,
-        creature_id: ObjectId,
-        predicate: &dyn Fn(&crate::types::ContinuousEffect) -> Option<&crate::types::EffectScope>,
+        id: ObjectId,
+        want: &dyn Fn(&crate::types::ContinuousEffect) -> bool,
+        registry: &crate::cards::CardRegistry,
+    ) -> bool {
+        let mut found = false;
+        self.walk_effects(id, want, registry, &mut |_, _| { found = true; false });
+        found
+    }
+
+    /// How many sources apply a matching continuous effect to `id`.
+    #[must_use]
+    pub fn count_effect(
+        &self,
+        id: ObjectId,
+        want: &dyn Fn(&crate::types::ContinuousEffect) -> bool,
         registry: &crate::cards::CardRegistry,
     ) -> u32 {
         let mut count = 0;
+        self.walk_effects(id, want, registry, &mut |_, _| { count += 1; true });
+        count
+    }
+
+    /// Continuous effects that modify the rules of the game rather than a
+    /// permanent — the ones with no `EffectScope`. Conditions are evaluated,
+    /// so a `When`-wrapped rule modification only shows up while it holds.
+    #[must_use]
+    pub fn global_effects(&self, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
+        let mut out = Vec::new();
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield {
                 continue;
             }
             for effect in self.continuous_effects_of(source.id, registry) {
-                if let Some(scope) = predicate(&effect) {
-                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                        count += 1;
-                    }
+                let (inner, condition) = effect.unwrap_condition();
+                if inner.scope().is_some() {
+                    continue;
                 }
+                if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
+                    continue;
+                }
+                out.push(inner.clone());
             }
         }
-        count
+        out
     }
 
     /// Get the effective power of a creature, including continuous effects,
@@ -1333,39 +1368,37 @@ impl GameState {
     /// Check if a creature is prevented from attacking (e.g., by Pacifism).
     #[must_use]
     pub fn can_attack(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        if self.has_continuous_effect(creature_id, &|e| {
-            use crate::types::ContinuousEffect;
-            match e {
-                ContinuousEffect::PreventAttack { scope } => Some(scope),
-                _ => None,
-            }
-        }, registry) {
-            return false;
-        }
-        // Check conditional prevent-attack (e.g., Bonds of Faith on non-Human).
-        if self.has_conditional_prevent(creature_id, true, registry) {
-            return false;
-        }
-        true
+        // Conditional "can't attack" (Bonds of Faith on a non-Human) comes
+        // through the same query — one walk, not two.
+        !self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::PreventAttack { .. }), registry)
     }
 
     /// Check if a creature is prevented from blocking.
     #[must_use]
     pub fn can_block(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        if self.has_continuous_effect(creature_id, &|e| {
-            use crate::types::ContinuousEffect;
-            match e {
-                ContinuousEffect::PreventBlock { scope } => Some(scope),
-                _ => None,
-            }
-        }, registry) {
-            return false;
-        }
-        // Check conditional prevent-block (e.g., Bonds of Faith on non-Human).
-        if self.has_conditional_prevent(creature_id, false, registry) {
-            return false;
-        }
-        true
+        !self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::PreventBlock { .. }), registry)
+    }
+
+    /// CR 508.1d: whether an effect requires this creature to attack if able
+    /// (Curse of the Nightly Hunt, Furor of the Bitten).
+    #[must_use]
+    pub fn must_attack(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), registry)
+    }
+
+    /// CR 509.1b: whether an effect makes this creature unblockable outright
+    /// (Invisible Stalker). A creature that can only be blocked by certain
+    /// creatures is a different rule — see `can_block_attacker`.
+    #[must_use]
+    pub fn cant_be_blocked(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::CantBeBlocked { .. }), registry)
+    }
+
+    /// CR 502.2: whether this permanent untaps during its controller's untap
+    /// step. False while something holds it down (Claustrophobia).
+    #[must_use]
+    pub fn untaps_normally(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        !self.has_effect(id, &|e| matches!(e, ContinuousEffect::PreventUntap { .. }), registry)
     }
 
     /// Check if a creature on the battlefield has a given keyword ability.
@@ -1417,20 +1450,13 @@ impl GameState {
         }
 
         // 2. Keywords from continuous effects (auras with GrantKeyword, anthem keyword grants).
-        let has_grant = self.has_continuous_effect(creature_id, &|e| {
-            use crate::types::ContinuousEffect;
-            match e {
-                ContinuousEffect::GrantKeyword { keyword: kw, scope } if *kw == keyword => Some(scope),
-                _ => None,
-            }
-        }, registry);
-        if has_grant {
-            return true;
-        }
-
-        // 2b. Conditional keywords (e.g., haste if opponent controls a Human).
-        let has_conditional = self.has_conditional_keyword(creature_id, keyword, registry);
-        if has_conditional {
+        // Conditional grants ("has lifelink as long as it's a Human") come
+        // through here too — `has_effect` unwraps the condition. This used to
+        // be a second, near-identical walk in `has_conditional_keyword`.
+        if self.has_effect(creature_id,
+            &|e| matches!(e, ContinuousEffect::GrantKeyword { keyword: kw, .. } if *kw == keyword),
+            registry)
+        {
             return true;
         }
 
@@ -1469,37 +1495,35 @@ impl GameState {
         let source_subtypes: Vec<String> = self.subtypes_of(source_id, registry);
 
         // Check ProtectionFromSubtype effects on the target.
-        let has_subtype_protection = self.has_continuous_effect(target_id, &|e| {
-            match e {
-                ContinuousEffect::ProtectionFromSubtype { subtype, scope } => {
-                    if source_subtypes.iter().any(|s| s == subtype) {
-                        Some(scope)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }, registry);
+        let has_subtype_protection = self.has_effect(target_id,
+            &|e| matches!(e, ContinuousEffect::ProtectionFromSubtype { subtype, .. }
+                if source_subtypes.iter().any(|s| s == subtype)),
+            registry);
         if has_subtype_protection {
             return true;
         }
 
         // Check filter-based static ProtectionFrom effects (e.g., protection
-        // from a color or card type granted by a permanent).
-        for src_obj in self.objects.values() {
-            if src_obj.zone != Zone::Battlefield {
-                continue;
-            }
-            for effect in self.continuous_effects_of(src_obj.id, registry) {
-                if let ContinuousEffect::ProtectionFrom { filter, scope } = effect {
-                    if self.effect_applies_to(target_id, &scope, src_obj.id, src_obj.controller, registry)
-                        && self.matches_filter(source_id, &filter, src_obj.controller, registry)
-                    {
-                        return true;
+        // from a color or card type granted by a permanent). The filter is
+        // read against the granting permanent's controller, so this needs the
+        // source the walk found it on.
+        let mut protected = false;
+        self.walk_effects(
+            target_id,
+            &|e| matches!(e, ContinuousEffect::ProtectionFrom { .. }),
+            registry,
+            &mut |e, src_obj| {
+                if let ContinuousEffect::ProtectionFrom { filter, .. } = e {
+                    if self.matches_filter(source_id, filter, src_obj.controller, registry) {
+                        protected = true;
+                        return false;
                     }
                 }
-            }
+                true
+            },
+        );
+        if protected {
+            return true;
         }
 
         let target_controller = self.get_object(target_id)
@@ -1525,60 +1549,6 @@ impl GameState {
             }
         }
 
-        false
-    }
-
-    /// Check if a creature is prevented from attacking or blocking by a conditional effect.
-    fn has_conditional_prevent(&self, creature_id: ObjectId, is_attack: bool, registry: &crate::cards::CardRegistry) -> bool {
-        use crate::types::ContinuousEffect;
-        for source in self.objects.values() {
-            if source.zone != Zone::Battlefield {
-                continue;
-            }
-            let effects = self.continuous_effects_of(source.id, registry);
-            for effect in &effects {
-                let (condition, scope) = if is_attack {
-                    match effect {
-                        ContinuousEffect::ConditionalPreventAttack { condition, scope } => (condition, scope),
-                        _ => continue,
-                    }
-                } else {
-                    match effect {
-                        ContinuousEffect::ConditionalPreventBlock { condition, scope } => (condition, scope),
-                        _ => continue,
-                    }
-                };
-                if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry)
-                    && self.check_condition(condition, source.id, source.controller, registry) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// Check if a creature has a conditional keyword that is currently active.
-    fn has_conditional_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
-        use crate::types::ContinuousEffect;
-        for source in self.objects.values() {
-            if source.zone != Zone::Battlefield {
-                continue;
-            }
-            let effects = self.continuous_effects_of(source.id, registry);
-            for effect in &effects {
-                if let ContinuousEffect::ConditionalKeyword { keyword: kw, condition, scope } = effect {
-                    if *kw != keyword {
-                        continue;
-                    }
-                    if !self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                        continue;
-                    }
-                    if self.check_condition(condition, source.id, source.controller, registry) {
-                        return true;
-                    }
-                }
-            }
-        }
         false
     }
 

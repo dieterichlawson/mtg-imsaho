@@ -22,16 +22,14 @@ impl CardBehavior for AngelicOverseer {
             oracle_text: "Flying\nAs long as you control a Human, this creature has hexproof and indestructible.".into(),
             keywords: vec![Keyword::Flying],
             continuous_effects: vec![
-                ContinuousEffect::ConditionalKeyword {
-                    keyword: Keyword::Hexproof,
-                    condition: EffectCondition::YouControlSubtype("Human".into()),
-                    scope: EffectScope::OnSelf,
-                },
-                ContinuousEffect::ConditionalKeyword {
-                    keyword: Keyword::Indestructible,
-                    condition: EffectCondition::YouControlSubtype("Human".into()),
-                    scope: EffectScope::OnSelf,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::YouControlSubtype("Human".into()),
+                    ContinuousEffect::GrantKeyword { keyword: Keyword::Hexproof, scope: EffectScope::OnSelf },
+                ),
+                ContinuousEffect::when(
+                    EffectCondition::YouControlSubtype("Human".into()),
+                    ContinuousEffect::GrantKeyword { keyword: Keyword::Indestructible, scope: EffectScope::OnSelf },
+                ),
             ],
             ..Default::default()
         }

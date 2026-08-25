@@ -165,15 +165,13 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     .map(|c| effective_spell_cost(state, registry, obj.card_id, c, player))
             })
             .collect(),
-        casting_banned: state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield)
-            .flat_map(|o| {
-                o.instance_continuous_effects.as_deref().unwrap_or(&[]).iter()
-                    .filter_map(|e| match e {
-                        ContinuousEffect::PreventCastingNamed { name } => Some(name.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
+        // Nevermore stores its chosen name as an instance effect, but reading
+        // only instance effects meant a card that declared the ban on its face
+        // would have been ignored.
+        casting_banned: state.global_effects(registry).into_iter()
+            .filter_map(|e| match e {
+                ContinuousEffect::PreventCastingNamed { name } => Some(name),
+                _ => None,
             })
             .collect(),
     };
@@ -701,14 +699,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             // Check which creatures are prevented from untapping (e.g., by Claustrophobia).
             let locked_ids: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, active)
                 .iter()
-                .filter(|o| {
-                    state.has_continuous_effect(o.id, &|e| {
-                        match e {
-                            crate::types::ContinuousEffect::PreventUntap { scope } => Some(scope),
-                            _ => None,
-                        }
-                    }, registry)
-                })
+                .filter(|o| !state.untaps_normally(o.id, registry))
                 .map(|o| o.id)
                 .collect();
 

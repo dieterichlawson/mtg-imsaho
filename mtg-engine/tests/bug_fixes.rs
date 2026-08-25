@@ -521,12 +521,7 @@ fn furor_of_the_bitten_gives_plus_two_and_forces_attack() {
         "Furor of the Bitten should give +2 toughness (1 + 2 = 3)");
 
     // The creature should be forced to attack.
-    assert!(state.has_continuous_effect(creature, &|e| {
-        match e {
-            ContinuousEffect::ForceAttack { scope } => Some(scope),
-            _ => None,
-        }
-    }, &reg), "Furor of the Bitten should force creature to attack");
+    assert!(state.has_effect(creature, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg), "Furor of the Bitten should force creature to attack");
 }
 
 /// Bug #14: Bonds of Faith should give +2/+2 to Humans.

@@ -19,11 +19,10 @@ impl CardBehavior for NightRevelers {
             toughness: Some(4),
             oracle_text: "This creature has haste as long as an opponent controls a Human.".into(),
             continuous_effects: vec![
-                ContinuousEffect::ConditionalKeyword {
-                    keyword: Keyword::Haste,
-                    condition: EffectCondition::OpponentControlsSubtype("Human".into()),
-                    scope: EffectScope::OnSelf,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::OpponentControlsSubtype("Human".into()),
+                    ContinuousEffect::GrantKeyword { keyword: Keyword::Haste, scope: EffectScope::OnSelf },
+                ),
             ],
             ..Default::default()
         }

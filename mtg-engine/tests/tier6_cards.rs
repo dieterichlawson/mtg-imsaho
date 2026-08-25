@@ -263,12 +263,7 @@ fn bloodcrazed_neonate_forced_to_attack() {
     let neonate = named_creature(&mut state, &reg, "Bloodcrazed Neonate", P0);
 
     // Check that the neonate has ForceAttack via continuous effects.
-    let has_force_attack = state.has_continuous_effect(neonate, &|e| {
-        match e {
-            ContinuousEffect::ForceAttack { scope } => Some(scope),
-            _ => None,
-        }
-    }, &reg);
+    let has_force_attack = state.has_effect(neonate, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg);
     assert!(has_force_attack, "Bloodcrazed Neonate should have ForceAttack");
 }
 

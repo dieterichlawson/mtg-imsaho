@@ -22,22 +22,20 @@ impl CardBehavior for BondsOfFaith {
             oracle_text: "Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.".into(),
             continuous_effects: vec![
                 // +2/+2 as long as attached creature is a Human.
-                ContinuousEffect::ConditionalModifyPT {
-                    power: 2,
-                    toughness: 2,
-                    condition: EffectCondition::AttachedHasSubtype("Human".into()),
-                    scope: EffectScope::Attached,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::AttachedHasSubtype("Human".into()),
+                    ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached },
+                ),
                 // Can't attack as long as attached creature is NOT a Human.
-                ContinuousEffect::ConditionalPreventAttack {
-                    condition: EffectCondition::AttachedLacksSubtype("Human".into()),
-                    scope: EffectScope::Attached,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::AttachedLacksSubtype("Human".into()),
+                    ContinuousEffect::PreventAttack { scope: EffectScope::Attached },
+                ),
                 // Can't block as long as attached creature is NOT a Human.
-                ContinuousEffect::ConditionalPreventBlock {
-                    condition: EffectCondition::AttachedLacksSubtype("Human".into()),
-                    scope: EffectScope::Attached,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::AttachedLacksSubtype("Human".into()),
+                    ContinuousEffect::PreventBlock { scope: EffectScope::Attached },
+                ),
             ],
             ..Default::default()
         }

@@ -13,7 +13,7 @@ use crate::cards::CardRegistry;
 use crate::events::{DamageTarget, GameEvent};
 use crate::ids::ObjectId;
 use crate::state::{GameState, LogLevel};
-use crate::types::{Keyword, Zone};
+use crate::types::{Keyword, Zone, ContinuousEffect};
 
 /// Whether damage is combat damage. Combat-only modifiers (Ghostly
 /// Possession, Moonmist, Inquisitor's Flail, Undead Alchemist's
@@ -214,12 +214,7 @@ fn apply_lifelink(state: &mut GameState, source: ObjectId, amount: u32, registry
 
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
 fn has_combat_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
-    state.has_continuous_effect(creature_id, &|e| {
-        match e {
-            crate::types::ContinuousEffect::PreventCombatDamage { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry)
+    state.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::PreventCombatDamage { .. }), registry)
 }
 
 /// Whether a blanket "prevent all combat damage by creatures other than X"
@@ -237,12 +232,8 @@ fn is_combat_damage_prevented_by_exception(state: &GameState, source: ObjectId, 
 /// Compute the combat damage multiplier from `DoubleCombatDamage` effects
 /// (e.g., Inquisitor's Flail). Each source doubles independently.
 fn combat_damage_multiplier(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> u32 {
-    let count = state.count_continuous_effect(creature_id, &|e| {
-        match e {
-            crate::types::ContinuousEffect::DoubleCombatDamage { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry);
+    let count = state.count_effect(creature_id,
+        &|e| matches!(e, ContinuousEffect::DoubleCombatDamage { .. }), registry);
     1u32 << count // 2^count
 }
 
@@ -250,12 +241,7 @@ fn combat_damage_multiplier(state: &GameState, creature_id: ObjectId, registry: 
 /// CR 614.1a). Returns true if the damage was prevented (always, when the
 /// effect is present — even with no counters left).
 fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, registry: &CardRegistry) -> bool {
-    let has_effect = state.has_continuous_effect(target, &|e| {
-        match e {
-            crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry);
+    let has_effect = state.has_effect(target, &|e| matches!(e, ContinuousEffect::PreventDamageRemoveCounter { .. }), registry);
     if !has_effect {
         return false;
     }

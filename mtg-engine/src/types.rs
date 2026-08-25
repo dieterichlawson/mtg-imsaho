@@ -426,14 +426,15 @@ pub enum ContinuousEffect {
     ProtectionFromSubtype { subtype: String, scope: EffectScope },
     /// Protection from creatures matching a filter.
     ProtectionFrom { filter: CreatureFilter, scope: EffectScope },
-    /// Conditional keyword: granted only when a condition is met.
-    ConditionalKeyword { keyword: Keyword, condition: EffectCondition, scope: EffectScope },
-    /// Conditional P/T modification: granted only when a condition is met.
-    ConditionalModifyPT { power: i32, toughness: i32, condition: EffectCondition, scope: EffectScope },
-    /// Conditional prevent-attack: only when condition is met.
-    ConditionalPreventAttack { condition: EffectCondition, scope: EffectScope },
-    /// Conditional prevent-block: only when condition is met.
-    ConditionalPreventBlock { condition: EffectCondition, scope: EffectScope },
+    /// CR 611.2b: another effect, applying only while `condition` holds.
+    ///
+    /// This used to be four parallel variants — `ConditionalKeyword`,
+    /// `ConditionalModifyPT`, `ConditionalPreventAttack`,
+    /// `ConditionalPreventBlock` — each with its own walk over the
+    /// battlefield. Wrapping instead of duplicating means "as long as" can
+    /// qualify any of the effects below, not the four somebody happened to
+    /// need, and there is one place that evaluates the condition.
+    When { condition: EffectCondition, effect: Box<ContinuousEffect> },
     /// Reduce cost of spells matching a filter.
     ReduceCost { reduction: u32, filter: SpellFilter },
     /// Provide an alternative cost for spells matching a filter.
@@ -452,6 +453,57 @@ pub enum ContinuousEffect {
     PreventArtifactAbilities,
     /// Spells with the named card can't be cast (Nevermore).
     PreventCastingNamed { name: String },
+}
+
+impl ContinuousEffect {
+    /// `effect`, applying only while `condition` holds (CR 611.2b).
+    #[must_use]
+    pub fn when(condition: EffectCondition, effect: ContinuousEffect) -> Self {
+        ContinuousEffect::When { condition, effect: Box::new(effect) }
+    }
+
+    /// Which objects this effect applies to, or `None` for one that modifies
+    /// the rules of the game rather than a permanent — `PreventArtifactAbilities`,
+    /// `PreventCastingNamed` — or that adjusts a cost rather than an object.
+    ///
+    /// Every scoped variant answers here, so a caller asks *what* it is
+    /// looking for and never has to remember to pull the scope out itself.
+    #[must_use]
+    pub fn scope(&self) -> Option<&EffectScope> {
+        match self {
+            ContinuousEffect::ModifyPT { scope, .. }
+            | ContinuousEffect::GrantKeyword { scope, .. }
+            | ContinuousEffect::PreventAttack { scope }
+            | ContinuousEffect::PreventBlock { scope }
+            | ContinuousEffect::CantBeBlocked { scope }
+            | ContinuousEffect::CanOnlyBeBlockedBy { scope, .. }
+            | ContinuousEffect::PreventCombatDamage { scope }
+            | ContinuousEffect::PreventUntap { scope }
+            | ContinuousEffect::ForceAttack { scope }
+            | ContinuousEffect::ProtectionFromSubtype { scope, .. }
+            | ContinuousEffect::ProtectionFrom { scope, .. }
+            | ContinuousEffect::MinimumBlockers { scope, .. }
+            | ContinuousEffect::PreventDamageRemoveCounter { scope }
+            | ContinuousEffect::DoubleCombatDamage { scope } => Some(scope),
+            // A conditional effect's scope is the scope of what it wraps.
+            ContinuousEffect::When { effect, .. } => effect.scope(),
+            ContinuousEffect::ReduceCost { .. }
+            | ContinuousEffect::AlternativeCost { .. }
+            | ContinuousEffect::PreventArtifactAbilities
+            | ContinuousEffect::PreventCastingNamed { .. } => None,
+        }
+    }
+
+    /// The effect itself and the condition guarding it, if any. Unwraps
+    /// `When` so a caller can match on what the effect *is* without knowing
+    /// whether it happens to be conditional.
+    #[must_use]
+    pub fn unwrap_condition(&self) -> (&ContinuousEffect, Option<&EffectCondition>) {
+        match self {
+            ContinuousEffect::When { condition, effect } => (effect, Some(condition)),
+            other => (other, None),
+        }
+    }
 }
 
 /// Condition for conditional effects.

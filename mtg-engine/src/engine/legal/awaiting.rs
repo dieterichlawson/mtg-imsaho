@@ -25,16 +25,7 @@ pub(crate) fn legal_actions_while_awaiting(
             // Find creatures that must attack (e.g., enchanted by Furor of the Bitten).
             let must_attack: Vec<ObjectId> = eligible
                 .iter()
-                .filter(|&&id| {
-                    state.has_continuous_effect(
-                        id,
-                        &|e| match e {
-                            crate::types::ContinuousEffect::ForceAttack { scope } => Some(scope),
-                            _ => None,
-                        },
-                        registry,
-                    )
-                })
+                .filter(|&&id| state.must_attack(id, registry))
                 .copied()
                 .collect();
             LegalActions {

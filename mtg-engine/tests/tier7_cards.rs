@@ -313,21 +313,13 @@ fn curse_of_nightly_hunt_forces_attack() {
     // P1's creature should be forced to attack.
     let creature = ready_creature(&mut state, P1, 2, 2);
 
-    let has_force = state.has_continuous_effect(creature, &|e| {
-        match e {
-            ContinuousEffect::ForceAttack { scope } => Some(scope),
-            _ => None,
-        }
-    }, &reg);
+    let has_force = state.has_effect(creature,
+        &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg);
     assert!(has_force, "P1's creature should be forced to attack by curse");
 
     // P0's creature should NOT be forced.
     let own_creature = ready_creature(&mut state, P0, 2, 2);
-    let own_forced = state.has_continuous_effect(own_creature, &|e| {
-        match e {
-            ContinuousEffect::ForceAttack { scope } => Some(scope),
-            _ => None,
-        }
-    }, &reg);
+    let own_forced = state.has_effect(own_creature,
+        &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg);
     assert!(!own_forced, "P0's creature should NOT be forced to attack");
 }

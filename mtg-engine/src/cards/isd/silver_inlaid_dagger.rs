@@ -11,7 +11,7 @@ use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope
 ///
 /// Implementation notes:
 /// The Human bonus is a *continuous* conditional effect, not a snapshot taken
-/// at equip time. We use `ContinuousEffect::ConditionalModifyPT` (the same pattern
+/// at equip time. We use `ContinuousEffect::when` with `ModifyPT` (the same pattern
 /// Bonds of Faith uses) so that if the equipped creature transforms (e.g. a
 /// Human Werewolf flips into its non-Human back face via Moonmist or via a
 /// no-spells-last-turn upkeep trigger), the +1/+0 drops in real time. Likewise
@@ -32,12 +32,10 @@ impl CardBehavior for SilverInlaidDagger {
                 // Additional +1/+0 only while the equipped creature is a Human.
                 // Re-evaluated every time effective P/T is computed, so transform
                 // triggers and type-changing effects update the bonus correctly.
-                ContinuousEffect::ConditionalModifyPT {
-                    power: 1,
-                    toughness: 0,
-                    condition: EffectCondition::AttachedHasSubtype("Human".into()),
-                    scope: EffectScope::Attached,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::AttachedHasSubtype("Human".into()),
+                    ContinuousEffect::ModifyPT { power: 1, toughness: 0, scope: EffectScope::Attached },
+                ),
             ],
             ..Default::default()
         }

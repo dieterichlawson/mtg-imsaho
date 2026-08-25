@@ -3,7 +3,7 @@ use crate::cards::CardRegistry;
 use crate::events::{GameEvent, DamageTarget};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{CombatState, GameState};
-use crate::types::{Keyword, Zone};
+use crate::types::{Keyword, Zone, ContinuousEffect};
 
 /// Set up attackers. Validates and taps them.
 /// Creatures with vigilance don't tap when attacking.
@@ -92,19 +92,17 @@ pub fn declare_blockers_with_registry(
             min_req = min_req.max(2);
         }
         // MinimumBlockers continuous effects (e.g., Terror of Kruin Pass).
-        for source in state.objects.values() {
-            if source.zone != crate::types::Zone::Battlefield {
-                continue;
-            }
-            let effects = state.continuous_effects_of(source.id, registry);
-            for effect in &effects {
-                if let crate::types::ContinuousEffect::MinimumBlockers { count, scope } = effect {
-                    if state.effect_applies_to(att_id, scope, source.id, source.controller, registry) {
-                        min_req = min_req.max(*count);
-                    }
+        state.walk_effects(
+            att_id,
+            &|e| matches!(e, ContinuousEffect::MinimumBlockers { .. }),
+            registry,
+            &mut |e, _| {
+                if let ContinuousEffect::MinimumBlockers { count, .. } = e {
+                    min_req = min_req.max(*count);
                 }
-            }
-        }
+                true
+            },
+        );
         if min_req > 1 {
             min_blockers.insert(att_id, min_req);
         }
@@ -416,16 +414,10 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
         .map(|o| o.id)
         .collect::<Vec<_>>()
         .into_iter()
+        // `can_block` is the "can't block" query (Vampire Interloper, and
+        // Bonds of Faith's conditional form); this used to ask it and then ask
+        // the same question again inline.
         .filter(|&id| state.can_block(id, registry))
-        // "Can't block" (e.g., Vampire Interloper) — check continuous effects.
-        .filter(|&id| {
-            !state.has_continuous_effect(id, &|e| {
-                match e {
-                    crate::types::ContinuousEffect::PreventBlock { scope } => Some(scope),
-                    _ => None,
-                }
-            }, registry)
-        })
         // "Can't block this turn" (e.g., Nightbird's Clutches).
         .filter(|&id| !state.until_end_of_turn.iter().any(|e| matches!(e,
             crate::state::TemporaryEffect::CantBlock { target } if *target == id
@@ -470,48 +462,29 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
     // Menace: must be blocked by two or more creatures (handled at validation, not per-blocker).
 
     // Block restriction (e.g., Orchard Spirit: only flying/reach can block).
-    for source in state.objects.values() {
-        if source.zone != crate::types::Zone::Battlefield {
-            continue;
-        }
-        // Check instance-level effects first (e.g., equipment with CanOnlyBeBlockedBy).
-        if let Some(ref instance_effects) = source.instance_continuous_effects {
-            for effect in instance_effects {
-                if let crate::types::ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, scope } = effect {
-                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry)
-                        && !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry)
-                    {
-                        return false;
-                    }
+    // The filter is read against the effect source's controller, which is why
+    // this needs the source and not just the effect.
+    let mut restricted = false;
+    state.walk_effects(
+        attacker_id,
+        &|e| matches!(e, ContinuousEffect::CanOnlyBeBlockedBy { .. }),
+        registry,
+        &mut |e, source| {
+            if let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = e {
+                if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
+                    restricted = true;
+                    return false;
                 }
             }
-        } else if let Some(behavior) = registry.get(source.card_id) {
-            // Use back face effects when transformed (for DFCs like werewolves).
-            let effects = if source.is_transformed {
-                behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-            } else {
-                behavior.card_data().continuous_effects
-            };
-            for effect in &effects {
-                if let crate::types::ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, scope } = effect {
-                    // This attacker has a block restriction. Check if the blocker passes the filter.
-                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry)
-                        && !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry)
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
+            true
+        },
+    );
+    if restricted {
+        return false;
     }
 
     // "Can't be blocked" (e.g., Invisible Stalker) — check continuous effects.
-    if state.has_continuous_effect(attacker_id, &|e| {
-        match e {
-            crate::types::ContinuousEffect::CantBeBlocked { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry) {
+    if state.cant_be_blocked(attacker_id, registry) {
         return false;
     }
 

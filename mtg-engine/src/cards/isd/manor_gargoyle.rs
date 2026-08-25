@@ -24,11 +24,10 @@ impl CardBehavior for ManorGargoyle {
             oracle_text: "Defender\nThis creature has indestructible as long as it has defender.\n{1}: Until end of turn, this creature loses defender and gains flying.".into(),
             keywords: vec![Keyword::Defender],
             continuous_effects: vec![
-                ContinuousEffect::ConditionalKeyword {
-                    keyword: Keyword::Indestructible,
-                    condition: EffectCondition::SelfHasKeyword(Keyword::Defender),
-                    scope: EffectScope::OnSelf,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::SelfHasKeyword(Keyword::Defender),
+                    ContinuousEffect::GrantKeyword { keyword: Keyword::Indestructible, scope: EffectScope::OnSelf },
+                ),
             ],
             ..Default::default()
         }

@@ -53,13 +53,7 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
                     continue;
                 }
                 // Check for forced attack effects (e.g., Furor of the Bitten).
-                let must_attack = state.has_continuous_effect(creature.id, &|e| {
-                    match e {
-                        crate::types::ContinuousEffect::ForceAttack { scope } => Some(scope),
-                        _ => None,
-                    }
-                }, registry);
-                if must_attack {
+                if state.must_attack(creature.id, registry) {
                     forced.push(creature.id);
                 }
             }

@@ -11,7 +11,7 @@ use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, Keyword, Ef
 ///
 /// Implementation notes:
 /// The Human-conditional +1/+1 is a *continuous* conditional effect, not a
-/// snapshot taken at equip time. We use `ContinuousEffect::ConditionalModifyPT`
+/// snapshot taken at equip time. We use `ContinuousEffect::when` with `ModifyPT`
 /// (the same pattern Bonds of Faith and Silver-Inlaid Dagger use) so that if
 /// the equipped creature transforms (e.g. a Human Werewolf flips into its
 /// non-Human back face via Moonmist), the +1/+1 drops in real time.
@@ -30,12 +30,10 @@ impl CardBehavior for SharpenedPitchfork {
                 ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached },
                 // Additional +1/+1 only while the equipped creature is a Human.
                 // Re-evaluated continuously so transform triggers update the bonus.
-                ContinuousEffect::ConditionalModifyPT {
-                    power: 1,
-                    toughness: 1,
-                    condition: EffectCondition::AttachedHasSubtype("Human".into()),
-                    scope: EffectScope::Attached,
-                },
+                ContinuousEffect::when(
+                    EffectCondition::AttachedHasSubtype("Human".into()),
+                    ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Attached },
+                ),
             ],
             ..Default::default()
         }
