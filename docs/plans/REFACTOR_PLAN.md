@@ -417,6 +417,44 @@ invisible unless tested for.
 boards and cast methods, the cost the engine charges equals the cost
 `cost_to_cast` reports.
 
+### What was done
+
+`engine::costs` with `cost_to_cast(state, registry, card, player, method)`,
+as planned, but `CostToPay`'s four fields collapsed to two: `mana` and
+`additional`. There are no cost increases in this pool, and keeping
+`increases`/`reductions` as separate vectors nobody sums would be ceremony —
+`cost_to_cast` applies CR 601.2f's order internally and returns the total.
+The comment in `reduce` names where an increase would go.
+
+`CastMethod` is `Normal | Alternative(ManaCost)`; a flashback cost is just an
+alternative cost, so the planned third variant was unnecessary.
+
+The predicted bug was there: cost reductions did not apply to flashback
+costs, and the in-pool case is Skaab Ruinator (which is cast from the
+graveyard for its printed cost, through the flashback path) under Heartless
+Summoning. `modified_cost` also short-circuited reductions.
+
+Two more, unpredicted:
+
+  - The graveyard path checked one of the three `AdditionalCost` kinds and
+    reported no sacrifice options or label at all.
+  - The cast handler and the exile-choice handler each auto-picked which
+    creature cards to exile, and disagreed: the cast handler ranked by
+    `obj.power`, which is `None` for every non-token card, so all candidates
+    scored 0 and it picked by object id. Corpse Lunge's damage is the exiled
+    creature's power.
+
+Both cost effects also read `card_data().continuous_effects` directly — the
+same class of bug phase 4 removed from the rest of the engine — so they
+ignored back faces and runtime grants. They go through
+`state.effects_controlled_by` now.
+
+The planned property test was not written. `spell_costs_are_determined_in_one_place`
+does the same job structurally and cheaply: no call site outside
+`engine::costs` may read `additional_cost` and act on it. A property test
+over generated boards would restate what the six behaviour tests already
+pin, since there is now only one function that can answer the question.
+
 ---
 
 ## Phase 6 — test reorganisation
