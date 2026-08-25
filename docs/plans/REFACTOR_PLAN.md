@@ -319,6 +319,54 @@ Damage-related ones (`PreventCombatDamage`, `DoubleCombatDamage`,
 **Risk.** Low. Part one can't change behavior; part two is a query-shape
 change with the same underlying data.
 
+### What was done
+
+Part one turned out to be the cause of part two, so they were one change.
+
+The four `Conditional*` variants did not become `Option<EffectCondition>` on
+their twins — that would have made every one of the ~40 unconditional
+construction sites write `condition: None`, and would still have left only
+four effects able to be conditional. Instead:
+
+```rust
+ContinuousEffect::When { condition, effect: Box<ContinuousEffect> }
+```
+
+Wrapping means "as long as" qualifies *any* effect, and only the seven cards
+that were already conditional changed. Net: 22 variants become 19.
+
+The reason part two existed is that a baked-in condition needs its own
+reader. There were seven walks over the battlefield looking for continuous
+effects — `has_continuous_effect`, `count_continuous_effect`,
+`has_conditional_prevent`, `has_conditional_keyword`, the loop inside
+`continuous_pt_mods`, and two more in `combat.rs` and `mana_sources.rs`. Two
+of them had drifted: `combat.rs` missed back faces, `mana_sources.rs` missed
+instance effects.
+
+`GameState::walk_effects` is now the only one, with `has_effect`,
+`count_effect`, `global_effects` and four payload-reading sites on top of it.
+`effect_applies_to` went from public with seven callers to private with one.
+The planned `attack_restrictions` / `attack_requirements` vectors were not
+built: with one walk, `must_attack`, `cant_be_blocked` and `untaps_normally`
+alongside the existing `can_attack` / `can_block` cover every caller, and a
+`Vec<Restriction>` nobody enumerates would be ceremony.
+
+One thing worth recording: `want` is tested against the unwrapped effect
+*before* the condition, and that is load-bearing. Evaluating conditions
+eagerly (say, inside `continuous_effects_of`) sends
+`EffectCondition::SelfHasKeyword` back through `has_keyword` into itself.
+The old code avoided this by accident, by filtering on the keyword first.
+
+Two behaviour fixes fell out: a permanent that entered as a copy lost its
+dynamic P/T (a token copy of Wreath of Geists), and `casting_banned` read
+only instance effects.
+
+`PreventCombatDamage`, `PreventDamageRemoveCounter` and `DoubleCombatDamage`
+are still `ContinuousEffect` variants — phase 2 unified the *mechanism* that
+applies replacements but left these three declared here, which is the right
+place for "this permanent has this property"; `damage.rs` reads them through
+the one walk.
+
 ---
 
 ## Phase 5 — cost modification
