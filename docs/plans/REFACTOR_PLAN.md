@@ -487,6 +487,39 @@ Diff review is `git diff -M --stat` showing renames, not rewrites.
 **Risk.** Very low.
 **Do it last** because phases 0–5 will add tests and delete others.
 
+### What was done
+
+Step 1 as planned: `registry()` moved to `common/`, 89 copies deleted.
+
+Step 2 diverged on the biggest question. The plan said to re-file everything
+by rule, including the ~290 `tier*_cards.rs` tests. Half of that was right and
+half was not, and the dividing line is what the test is *about*:
+
+  - The bug-audit grab-bags (`audit_bugs.rs`, `audit_bugs2.rs`,
+    `audit_misc_final.rs` — 75 tests, no headers, no helpers) were about
+    *rules*: the engine mis-handling hexproof, auto-answering a "may", losing
+    a trigger. Those were distributed into the 45 existing rule files.
+  - The `tier*_cards.rs` batches are acceptance tests: "does this card do
+    what its oracle text says". Scattering 290 of those across 40 rule files
+    would make every rule file a grab-bag of card tests — worse than what was
+    there. They stay grouped, renamed for what their cards have in common,
+    with a generated index of card names in each module doc.
+
+The constraint that settles it is that every integration test file is its own
+binary. A file per card is ~250 more binaries and a slower build for everyone,
+against a navigational gain that `grep` already provides for a card name.
+
+The seventeen themed `audit_*_family.rs` and `pipeline_bugs_*` files were pure
+renames; four collided with a file already named for the rule and were merged
+into it, which is where they belonged. One of those collisions was with
+`trigger_source_independence.rs`, created in phase 3 — the audit pipeline had
+found the same rule from the other end.
+
+Step 3: `docs/TESTING.md`.
+
+Rule held: 2,898 assertions before and after, 1,425 tests passing either way.
+132 files down to 125.
+
 ---
 
 ## Explicitly out of scope
