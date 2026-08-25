@@ -503,62 +503,45 @@ fn vampire_interloper_cant_block() {
 // ══════════════════════════════════════════════════════════════════
 
 /// Creature enchanted by Claustrophobia doesn't untap during untap step.
+/// Claustrophobia: "enchanted creature doesn't untap during its controller's
+/// untap step." Run a real untap step and check the enchanted creature against a
+/// plain one on the same battlefield.
 #[test]
 fn claustrophobia_prevents_untap() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut state = game_at_step(Step::PrecombatMain, PlayerId(1));
 
-    // P1 has a creature with Claustrophobia attached.
-    let creature = ready_creature(&mut state, P1, 3, 3);
-    state.get_object_mut(creature).unwrap().tapped = true;
+    let enchanted = state.create_object(CardId(99), PlayerId(1), Zone::Battlefield, Some(3), Some(3));
+    let normal = state.create_object(CardId(98), PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    for id in [enchanted, normal] {
+        let obj = state.get_object_mut(id).unwrap();
+        obj.summoning_sick = false;
+        obj.tapped = true;
+    }
 
     let cl_id = reg.get_id_by_name("Claustrophobia").unwrap();
     let cl = state.create_object(cl_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(cl).unwrap().name = "Claustrophobia".into();
-    state.get_object_mut(cl).unwrap().attached_to = Some(creature);
-    state.get_object_mut(cl).unwrap().summoning_sick = false;
+    {
+        let obj = state.get_object_mut(cl).unwrap();
+        obj.name = "Claustrophobia".into();
+        obj.attached_to = Some(enchanted);
+        obj.summoning_sick = false;
+    }
 
-    // Advance to P1's untap step.
-    state.active_player = PlayerId(1);
-    state.step = Step::Cleanup; // will advance to P0's untap, then eventually P1's
-    // Directly simulate P1's untap step.
-    state.step = Step::Untap;
-    state.active_player = PlayerId(1);
-    engine::advance_step(&mut state, &reg); // This performs untap actions for P1's untap
-    // Actually advance_step moves to the NEXT step. Let me call perform_turn_based_actions
-    // by setting up the untap step properly.
-
-    // Simpler: just run the untap logic directly. Set up as P1's turn at untap.
-    let mut state2 = game_at_step(Step::PrecombatMain, PlayerId(1));
-    let creature2 = state2.create_object(CardId(99), PlayerId(1), Zone::Battlefield, Some(3), Some(3));
-    state2.get_object_mut(creature2).unwrap().summoning_sick = false;
-    state2.get_object_mut(creature2).unwrap().tapped = true;
-
-    let cl2 = state2.create_object(cl_id, P0, Zone::Battlefield, None, None);
-    state2.get_object_mut(cl2).unwrap().name = "Claustrophobia".into();
-    state2.get_object_mut(cl2).unwrap().attached_to = Some(creature2);
-    state2.get_object_mut(cl2).unwrap().summoning_sick = false;
-
-    // Also add a normal tapped creature (should untap normally).
-    let normal = state2.create_object(CardId(98), PlayerId(1), Zone::Battlefield, Some(2), Some(2));
-    state2.get_object_mut(normal).unwrap().summoning_sick = false;
-    state2.get_object_mut(normal).unwrap().tapped = true;
-
-    // Simulate the untap step by going through a full turn cycle.
-    state2.step = Step::Cleanup;
-    state2.active_player = PlayerId(0);
-    // Advance until we hit P1's Draw step (which means untap just happened).
+    // Walk a full turn cycle round to P1's draw step, so P1's untap step has run.
+    state.step = Step::Cleanup;
+    state.active_player = P0;
     loop {
-        engine::advance_step(&mut state2, &reg);
-        if state2.active_player == PlayerId(1) && state2.step == Step::Draw {
+        engine::advance_step(&mut state, &reg);
+        if state.active_player == PlayerId(1) && state.step == Step::Draw {
             break;
         }
     }
 
-    assert!(state2.get_object(creature2).unwrap().tapped,
-        "Creature with Claustrophobia should remain tapped after untap step");
-    assert!(!state2.get_object(normal).unwrap().tapped,
-        "Normal creature should untap normally");
+    assert!(state.get_object(enchanted).unwrap().tapped,
+        "the enchanted creature does not untap");
+    assert!(!state.get_object(normal).unwrap().tapped,
+        "test precondition: the untap step did run — an unenchanted creature untapped");
 }
 
 // ══════════════════════════════════════════════════════════════════

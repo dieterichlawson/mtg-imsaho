@@ -642,56 +642,27 @@ fn eot_cant_block_prevents_blocking() {
 /// Bug: Mirror-Mad Phantasm's ability uses `draw_top_card` for the reveal loop,
 /// which sets `has_drawn_from_empty=true` if library runs out. This causes the
 /// player to lose via SBA even though they didn't actually draw from empty.
+/// CR 701.15a: revealing is not drawing. `reveal_top_card` must not set
+/// `has_drawn_from_empty`, or a reveal loop that runs the library out — the
+/// shape Mirror-Mad Phantasm and Trepanation Blade both use — would lose its
+/// controller the game to SBA (CR 704.5b).
 #[test]
-fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
+fn revealing_past_the_end_of_a_library_is_not_drawing_from_it() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // The bug: Mirror-Mad Phantasm uses draw_top_card() for the reveal loop.
-    // When the library is exhausted without finding the card, draw_top_card()
-    // sets has_drawn_from_empty=true, which triggers SBA loss.
-    // Revealing is NOT drawing — this flag should not be set.
-    //
-    // To reproduce: we need the reveal loop to exhaust the library.
-    // The card shuffles itself in, so normally it finds itself. But with a
-    // token copy, the token ceases to exist in library.
-    // We simulate by renaming the Phantasm after it's shuffled in.
-
-    let _phantasm = named_creature(&mut state, &registry, "Mirror-Mad Phantasm", P0);
-
-    // Give P0 a library
+    let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
     for _ in 0..3 {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        let id = state.create_object(bears, P0, Zone::Library, Some(2), Some(2));
         state.get_player_mut(P0).library_order.push(id);
     }
 
-    // The ability moves Phantasm to library and shuffles. We'll call it,
-    // then rename the Phantasm so the reveal loop can't find it.
-    // But on_activate_ability does everything in one call.
-    // Instead, simulate the reveal loop directly using draw_top_card:
-    // Put 3 cards in library, drain them all via draw_top_card.
-
-    // Clear the library and add only non-Phantasm cards
-    state.get_player_mut(P0).library_order.clear();
-    for _ in 0..3 {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
-        state.get_player_mut(P0).library_order.push(id);
+    let mut revealed = 0;
+    while state.get_player_mut(P0).reveal_top_card().is_some() {
+        revealed += 1;
+        assert!(revealed <= 3, "reveal_top_card kept handing out cards past the end");
     }
-
-    // Simulate the reveal loop using reveal_top_card (not draw_top_card).
-    // Mirror-Mad Phantasm should use reveal_top_card to avoid setting the
-    // has_drawn_from_empty flag when the library is exhausted.
-    loop {
-        let top = state.get_player_mut(P0).reveal_top_card();
-        if top.is_none() {
-            break;
-        }
-    }
-
-    // reveal_top_card should NOT set has_drawn_from_empty.
-    let drew_empty = state.get_player(P0).has_drawn_from_empty;
-    assert!(!drew_empty,
-        "Revealing cards via reveal_top_card should NOT set has_drawn_from_empty");
+    assert_eq!(revealed, 3, "every card in the library is revealed exactly once");
+    assert!(!state.get_player(P0).has_drawn_from_empty,
+        "running the library out by revealing must not flag a draw from an empty library");
 }

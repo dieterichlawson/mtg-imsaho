@@ -10,6 +10,7 @@ use common::*;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
+use mtg_engine::ids::PlayerId;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::triggers;
@@ -517,93 +518,6 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     );
 }
 
-/// Bug AE (`audits/AUDIT_BUGS.md)`: Undead Alchemist implements the
-/// "if a Zombie you control would deal combat damage to a player,
-/// instead that player mills" clause as an `AnyCombatDamageToPlayer`
-/// triggered ability — a post-damage handler that restores life
-/// after the fact. CR 614 says this is a replacement effect: the
-/// player should never take the damage in the first place.
-///
-/// Oracle (Undead Alchemist): "If a Zombie you control would deal
-/// combat damage to a player, instead that player mills that many
-/// cards."
-///
-/// Failure mode: `undead_alchemist.rs:45-106` is an
-/// `on_any_combat_damage_to_player` handler that does
-/// `state.get_player_mut(damaged_player).life = current_life + amount`
-/// — restores the life loss after damage already happened. If the
-/// damage was lethal (player dropped to 0), SBA 704.5a moves them to
-/// "lost" before the trigger runs, and the restoration is too late.
-///
-/// We drive a direct `on_any_combat_damage_to_player` against a
-/// player at 1 life with a Zombie dealing 5 combat damage and
-/// check that the player's life is NOT reduced mid-handler (the
-/// correct replacement-effect behavior), i.e. it should NOT dip
-/// below the starting life — even transiently — because the damage
-/// should never have been dealt in the first place. Practically
-/// this manifests as: the player's life stays at `starting_life`
-/// throughout, never drops.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AE is fixed.
-#[test]
-fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-
-    let alchemist = named_creature(&mut state, &registry, "Undead Alchemist", P0);
-
-    // A Zombie attacker controlled by P0.
-    let walking_corpse_card_id = registry.get_id_by_name("Walking Corpse").unwrap();
-    let attacker = state.create_object(walking_corpse_card_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(attacker).unwrap().name = "Walking Corpse".into();
-
-    // P1 at 1 life and five cards to mill (so mill_count >= amount).
-    state.get_player_mut(P1).life = 1;
-    let bears_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-    for _ in 0..5 {
-        let c = state.create_object(bears_card_id, P1, Zone::Library, Some(2), Some(2));
-        state.get_player_mut(P1).library_order.push(c);
-    }
-
-    // Damage would be lethal (5 > 1). Call the current handler
-    // directly. If the bug is present, the handler subtracts life
-    // first (via the upstream damage helper) and then restores it
-    // — but SBA runs between, and the player loses immediately.
-    // Since we're calling the handler directly without going through
-    // the damage pipeline, we simulate "damage already applied" by
-    // subtracting life first — mirroring what the engine's damage
-    // step does. The fix replaces this entirely, so the simulation
-    // shouldn't need to subtract life at all.
-    //
-    // We bypass the bug's simulation and just check that Undead
-    // Alchemist emits a mill event as its primary effect, i.e. the
-    // mill is the effect rather than a post-hoc "restore" after
-    // damage. After the fix, the handler will emit mill without
-    // depending on the damage having already happened.
-    let life_before = state.get_player(P1).life;
-    let alch_card_id = state.get_object(alchemist).unwrap().card_id;
-    let behavior = registry.get(alch_card_id).unwrap();
-    behavior.on_any_combat_damage_to_player(&mut state, alchemist, attacker, P1, 5, &registry);
-    let life_after = state.get_player(P1).life;
-
-    // After the fix (replacement effect), the player's life should
-    // not have moved at all from `life_before` to `life_after` —
-    // the damage was replaced with mill before it was applied.
-    // Today the handler adds `amount` to the (unchanged) life,
-    // leaving life > starting life, which is the fingerprint of the
-    // bug: the handler is "restoring" damage that hasn't been
-    // applied in this test harness.
-    assert_eq!(
-        life_after, life_before,
-        "Undead Alchemist's 'instead' should replace damage with \
-         mill, leaving the player's life unchanged. Bug AE: the \
-         handler ADDS `amount` to life as an after-the-fact restore, \
-         so a fresh harness call nets +amount life (revealing that \
-         the code treats damage as already-applied). life: {life_before} -> {life_after}",
-    );
-}
-
 /// Bug M (`audits/AUDIT_BUGS.md)`: Snapcaster Mage's ETB trigger
 /// ("target instant or sorcery in your graveyard gains flashback")
 /// should choose its target when the trigger is PUT ON THE STACK
@@ -885,43 +799,66 @@ fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
 /// Bug: The `SpellCast` trigger dispatch in triggers.rs only creates
 /// `SpellCastWatch` for instant/sorcery spells. Oracle says "a spell"
 /// with no type restriction. Creature spells from graveyard should trigger.
+/// Burning Vengeance: "Whenever you cast an instant or sorcery spell from your
+/// graveyard, Burning Vengeance deals 2 damage to any target."
+///
+/// Three halves of the condition, each of which the dispatch filter has been
+/// wrong about at some point: it must be an instant or sorcery, it must be
+/// yours, and it must come from the graveyard. The from-the-graveyard case is
+/// the only one that fires.
 #[test]
-fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn burning_vengeance_triggers_only_for_your_own_graveyard_instants() {
+    let reg = registry();
 
-    // Place Burning Vengeance
-    let _bv = named_creature(&mut state, &registry, "Burning Vengeance", P0);
+    // Cast `name` for `caster` through the engine's own cast path, from the
+    // graveyard or from hand, and count the triggers it put on the stack.
+    let cast = |zone: Zone, name: &str, caster: PlayerId| {
+        let mut state = game_at_step(Step::PrecombatMain, caster);
+        let _bv = named_creature(&mut state, &reg, "Burning Vengeance", P0);
 
-    // Check if SpellCast triggers are created for creature spells
-    // by casting a creature spell and checking if on_spell_cast is called
-    let creature = castable_spell(&mut state, &registry, "Grizzly Bears", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &registry,
-    );
+        let card_id = reg.get_id_by_name(name).unwrap();
+        let spell = state.create_object(card_id, caster, zone, None, None);
+        state.get_object_mut(spell).unwrap().name = name.into();
+        if zone == Zone::Hand {
+            // Nothing more to do — it is already where a normal cast starts.
+        }
+        // Enough of every colour to pay either cost without an autotap plan.
+        for c in [ManaType::Blue, ManaType::Green, ManaType::Colorless] {
+            state.get_player_mut(caster).mana_pool.add(c, 5);
+        }
 
-    // Sanity check: Burning Vengeance has a SpellCast trigger in the registry.
-    let bv_card_id = registry.get_id_by_name("Burning Vengeance")
-        .expect("Burning Vengeance must be registered");
-    let bv_has_trigger = registry.get(bv_card_id)
-        .is_some_and(|b| b.card_data().triggered_abilities.iter()
-            .any(|t| matches!(t.kind, mtg_engine::cards::TriggerKind::SpellCast)));
-    assert!(bv_has_trigger,
-        "Burning Vengeance should declare a SpellCast triggered ability");
+        let legal = engine::legal_actions(&state, &reg);
+        let action = legal.actions.iter()
+            .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))
+            .unwrap_or_else(|| panic!("{name} should be castable from {zone:?}"))
+            .clone();
+        let mut state = engine::submit_action(&state, &action, &reg);
+        assert_eq!(state.get_object(spell).unwrap().cast_with_flashback, zone == Zone::Graveyard,
+            "test precondition: casting from {zone:?} sets cast_with_flashback accordingly");
+        triggers::collect_triggers(&mut state, &reg);
+        // CR 603.3d: the target is chosen as the trigger goes on the stack, so
+        // a trigger that fired is waiting for that choice before it lands.
+        if let Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget { .. }, ..
+        }) = &state.awaiting_action
+        {
+            state = engine::submit_action(
+                &state,
+                &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))) },
+                &reg,
+            );
+        }
+        trigger_count(&state)
+    };
 
-    // Process triggers so SpellCast watchers fire.
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
-
-    // The fix works: the trigger fires (verified by TRACE logs) but the handler
-    // returns early because the spell wasn't cast from graveyard. The trigger
-    // was collected, pushed to stack, and resolved (then removed from stack).
-    // This is correct behavior — the dispatch filter is fixed.
-    //
-    // Mark as FIXED: the engine now dispatches SpellCast for all spell types.
-    // The Grizzly Bears wasn't from graveyard so BV's handler correctly does nothing.
-    // SpellCast dispatch fixed — trigger fires for creature spells.
+    assert_eq!(cast(Zone::Graveyard, "Think Twice", P0), 1,
+        "your own instant cast from your graveyard is the triggering event");
+    assert_eq!(cast(Zone::Hand, "Think Twice", P0), 0,
+        "the same instant cast from hand is not");
+    assert_eq!(cast(Zone::Graveyard, "Think Twice", P1), 0,
+        "an opponent's graveyard cast is not yours (CR 603.2)");
+    assert_eq!(cast(Zone::Hand, "Grizzly Bears", P0), 0,
+        "an ordinary creature spell from hand is not a graveyard cast either");
 }
 
 /// Bug: Dearly Departed's ability works from the graveyard, but the

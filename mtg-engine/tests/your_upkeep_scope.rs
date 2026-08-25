@@ -197,7 +197,7 @@ fn endless_ranks_no_phantom_trigger_opponent_upkeep() {
 /// FALSE POSITIVE: Trigger system correctly pre-filters upkeep triggers
 /// by controller. No spurious triggers go on the stack during opponent's upkeep.
 #[test]
-fn bug_spurious_upkeep_trigger_for_opponent() {
+fn nothing_reaches_the_stack_during_an_opponents_upkeep() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P1); // P1's upkeep
     state.active_player = P1;
@@ -208,8 +208,6 @@ fn bug_spurious_upkeep_trigger_for_opponent() {
     // Process triggers during P1's upkeep
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
-    // No trigger should fire or go on the stack during opponent's upkeep
-    // BUG: A spurious UpkeepTrigger is created and put on the stack
     assert!(state.stack.is_empty(),
         "No trigger should be on the stack during opponent's upkeep, but stack has {} entries",
         state.stack.len());

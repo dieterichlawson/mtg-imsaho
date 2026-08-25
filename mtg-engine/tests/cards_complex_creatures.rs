@@ -2473,52 +2473,57 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
         "Non-chosen creature should remain on battlefield");
 }
 
+/// Garruk, the Veil-Cursed's -1: "Search your library for a creature card, reveal
+/// it, put it into your hand, then shuffle." The shuffle is the part that is easy
+/// to leave out, so assert it: over repeated runs the remaining library must come
+/// back in more than one order. A single run cannot tell a shuffle from a no-op.
 #[test]
 fn garruk_back_face_tutor_shuffles_library() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 4);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
-
-    let sac_target = ready_creature(&mut state, P0, 1, 1);
-    state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
-
-    // Put several cards in the library so we can detect shuffling.
-    let mut lib_ids = Vec::new();
-    for name in &["Grizzly Bears", "Doom Blade", "Giant Growth", "Divination", "Lightning Bolt"] {
-        let id = spell_in_hand(&mut state, &reg, name, P0);
-        state.move_object(id, Zone::Library, &reg);
-        state.get_player_mut(P0).library_order.push(id);
-        if *name == "Grizzly Bears" {
-            if let Some(obj) = state.get_object_mut(id) {
-                obj.card_types = vec![CardType::Creature];
-            }
+    let run = || {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+        state.add_counters(garruk, CounterType::Loyalty, 4);
+        if let Some(obj) = state.get_object_mut(garruk) {
+            obj.card_types = vec![CardType::Planeswalker];
+            obj.is_transformed = true;
+            obj.name = "Garruk, the Veil-Cursed".into();
         }
-        lib_ids.push(id);
-    }
 
-    let order_before: Vec<_> = state.get_player(P0).library_order.clone();
+        let sac_target = ready_creature(&mut state, P0, 1, 1);
+        state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
 
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
+        let mut lib_ids = Vec::new();
+        for name in &["Grizzly Bears", "Doom Blade", "Giant Growth", "Divination", "Lightning Bolt"] {
+            let id = spell_in_hand(&mut state, &reg, name, P0);
+            state.move_object(id, Zone::Library, &reg);
+            state.get_player_mut(P0).library_order.push(id);
+            if *name == "Grizzly Bears" {
+                state.get_object_mut(id).unwrap().card_types = vec![CardType::Creature];
+            }
+            lib_ids.push(id);
+        }
+        let before = state.get_player(P0).library_order.clone();
 
-    let order_after: Vec<_> = state.get_player(P0).library_order.clone();
+        let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+        behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
 
-    // The searched creature should be removed from library (now in hand).
-    assert!(!order_after.contains(&lib_ids[0]),
-        "Tutored creature should no longer be in library");
-    // Library should have been shuffled — with 4 remaining cards, the probability
-    // of maintaining the exact same order is 1/24 = ~4%. We accept this tiny flake risk
-    // as evidence of shuffling, since the alternative (not shuffling) always preserves order.
-    // If this test flakes, it's still proving the shuffle codepath runs.
-    assert_eq!(order_after.len(), order_before.len() - 1,
-        "Library should have one fewer card after tutoring");
+        let after = state.get_player(P0).library_order.clone();
+        assert!(!after.contains(&lib_ids[0]),
+            "the tutored creature is in hand, not still in the library");
+        assert_eq!(after.len(), before.len() - 1,
+            "exactly one card left the library");
+        assert_eq!(state.get_object(lib_ids[0]).unwrap().zone, Zone::Hand,
+            "the tutored creature ends up in hand");
+        after
+    };
+
+    let first = run();
+    // Four cards remain, so an unshuffled library repeats the same order every
+    // time. Twenty runs that all agree would be a 1-in-24^19 coincidence.
+    let shuffled = (0..20).any(|_| run() != first);
+    assert!(shuffled, "the library came back in the same order 20 times — it was never shuffled");
 }
 
 #[test]
@@ -2636,33 +2641,58 @@ fn essence_does_not_override_opponent_creatures() {
 
 // ── Mirror-Mad Phantasm ──────────────────────────────────────────
 
+/// Mirror-Mad Phantasm: "{1}{U}: its owner shuffles it into their library, then
+/// reveals cards until a card named Mirror-Mad Phantasm is revealed, puts that
+/// card onto the battlefield and all other cards revealed this way into their
+/// graveyard."
+///
+/// The shuffle makes the mill count random, so assert what is true of every
+/// shuffle: the Phantasm comes back to the battlefield, everything revealed
+/// above it is in the graveyard, everything below it is still in the library,
+/// and no card ends up anywhere else.
 #[test]
 fn mirror_mad_phantasm_mills_to_find_itself() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let phantasm = named_creature(&mut state, &reg, "Mirror-Mad Phantasm", P0);
+    // Several runs, because a single shuffle could put the Phantasm on top and
+    // mill nothing at all.
+    let mut saw_a_mill = false;
+    for _ in 0..20 {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let phantasm = named_creature(&mut state, &reg, "Mirror-Mad Phantasm", P0);
 
-    // Set up library with some cards (phantasm will be shuffled in at random position).
-    let card1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(card1, Zone::Library, &reg);
-    let card2 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(card2, Zone::Library, &reg);
-    state.players[0].library_order = vec![card1, card2];
+        let library: Vec<_> = ["Grizzly Bears", "Lightning Bolt", "Doom Blade", "Divination"]
+            .iter()
+            .map(|n| {
+                let c = spell_in_hand(&mut state, &reg, n, P0);
+                state.move_object(c, Zone::Library, &reg);
+                c
+            })
+            .collect();
+        state.players[0].library_order = library.clone();
 
-    let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, phantasm, 0, &[], &reg);
+        let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
+        behavior.resolve_activated_ability(&mut state, phantasm, 0, &[], &reg);
 
-    // Phantasm should always end up on the battlefield (it's a real card named Mirror-Mad Phantasm).
-    assert_eq!(state.get_object(phantasm).unwrap().zone, Zone::Battlefield,
-        "Mirror-Mad Phantasm should be on the battlefield after the reveal loop finds it");
-    // All cards that were above it in the shuffled library should be in the graveyard.
-    // We can't assert exact positions due to shuffle, but card1 and card2 should be
-    // in graveyard or library (if they were below the phantasm after shuffle).
-    let card1_zone = state.get_object(card1).unwrap().zone;
-    let card2_zone = state.get_object(card2).unwrap().zone;
-    assert!(card1_zone == Zone::Graveyard || card1_zone == Zone::Library);
-    assert!(card2_zone == Zone::Graveyard || card2_zone == Zone::Library);
+        assert_eq!(state.get_object(phantasm).unwrap().zone, Zone::Battlefield,
+            "the Phantasm is always found — it was shuffled into the library it is milling");
+
+        let still_in_library = &state.players[0].library_order;
+        for card in &library {
+            let zone = state.get_object(*card).unwrap().zone;
+            if still_in_library.contains(card) {
+                assert_eq!(zone, Zone::Library,
+                    "a card left below the Phantasm stays in the library");
+            } else {
+                assert_eq!(zone, Zone::Graveyard,
+                    "a card revealed above the Phantasm goes to the graveyard, not {zone:?}");
+                saw_a_mill = true;
+            }
+        }
+        assert!(!still_in_library.contains(&phantasm),
+            "the Phantasm left the library for the battlefield");
+    }
+    assert!(saw_a_mill, "20 shuffles never once put a card above the Phantasm");
 }
 
 // ── Grimoire of the Dead ──────────────────────────────────────────
