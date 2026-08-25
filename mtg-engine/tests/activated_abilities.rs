@@ -15,17 +15,6 @@ use mtg_engine::types::*;
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn manor_skeleton_has_correct_stats() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Manor Skeleton").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(1));
-    assert!(data.keywords.contains(&Keyword::Haste));
-    assert!(data.subtypes.contains(&"Skeleton".to_string()));
-}
-
-#[test]
 fn manor_skeleton_regenerate_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -75,16 +64,6 @@ fn manor_skeleton_regeneration_saves_from_lethal() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn kessig_wolf_has_correct_stats() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Kessig Wolf").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(3));
-    assert_eq!(data.toughness, Some(1));
-    assert!(data.subtypes.contains(&"Wolf".to_string()));
-}
-
-#[test]
 fn kessig_wolf_gains_first_strike() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -111,17 +90,6 @@ fn kessig_wolf_gains_first_strike() {
 // ══════════════════════════════════════════════════════════════════
 // Feral Ridgewolf — {2}{R} 1/2 Wolf, Trample, {1}{R}: +2/+0 EOT
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn feral_ridgewolf_has_correct_stats() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Feral Ridgewolf").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(2));
-    assert!(data.keywords.contains(&Keyword::Trample));
-    assert!(data.subtypes.contains(&"Wolf".to_string()));
-}
 
 #[test]
 fn feral_ridgewolf_gets_plus_2_plus_0() {
@@ -172,16 +140,6 @@ fn feral_ridgewolf_can_activate_multiple_times() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn darkthicket_wolf_has_correct_stats() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Darkthicket Wolf").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(2));
-    assert_eq!(data.toughness, Some(2));
-    assert!(data.subtypes.contains(&"Wolf".to_string()));
-}
-
-#[test]
 fn darkthicket_wolf_gets_plus_2_plus_2() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -229,17 +187,6 @@ fn darkthicket_wolf_once_per_turn() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn lantern_spirit_has_correct_stats() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Lantern Spirit").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(2));
-    assert_eq!(data.toughness, Some(1));
-    assert!(data.keywords.contains(&Keyword::Flying));
-    assert!(data.subtypes.contains(&"Spirit".to_string()));
-}
-
-#[test]
 fn lantern_spirit_returns_to_hand() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -263,17 +210,6 @@ fn lantern_spirit_returns_to_hand() {
 // ══════════════════════════════════════════════════════════════════
 // Avacynian Priest — {1}{W} 1/2 Human Cleric, {1},{T}: Tap non-Human
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn avacynian_priest_has_correct_stats() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Avacynian Priest").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(2));
-    assert!(data.subtypes.contains(&"Human".to_string()));
-    assert!(data.subtypes.contains(&"Cleric".to_string()));
-}
 
 #[test]
 fn avacynian_priest_taps_non_human_creature() {

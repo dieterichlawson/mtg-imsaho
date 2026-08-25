@@ -55,19 +55,6 @@ fn equip(
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn cobbled_wings_has_correct_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Cobbled Wings").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.name, "Cobbled Wings");
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-    assert!(data.power.is_none());
-    assert!(data.toughness.is_none());
-}
-
-#[test]
 fn cobbled_wings_enters_as_equipment() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -124,17 +111,6 @@ fn cobbled_wings_equip_only_your_creatures() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn mask_of_avacyn_has_correct_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Mask of Avacyn").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.name, "Mask of Avacyn");
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
-
-#[test]
 fn mask_of_avacyn_grants_pt_and_hexproof() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -155,17 +131,6 @@ fn mask_of_avacyn_grants_pt_and_hexproof() {
 // ══════════════════════════════════════════════════════════════════
 // Silver-Inlaid Dagger — {1} Equipment. +2/+0, or +3/+0 if Human. Equip {2}.
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn silver_inlaid_dagger_has_correct_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Silver-Inlaid Dagger").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.name, "Silver-Inlaid Dagger");
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 1);
-}
 
 #[test]
 fn silver_inlaid_dagger_non_human_gets_plus_2() {
@@ -203,17 +168,6 @@ fn silver_inlaid_dagger_human_gets_plus_3() {
 // ══════════════════════════════════════════════════════════════════
 // Sharpened Pitchfork — {2} Equipment. First strike; +1/+1 if Human. Equip {1}.
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn sharpened_pitchfork_has_correct_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Sharpened Pitchfork").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.name, "Sharpened Pitchfork");
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
 
 #[test]
 fn sharpened_pitchfork_non_human_gets_first_strike_only() {
@@ -254,17 +208,6 @@ fn sharpened_pitchfork_human_gets_first_strike_and_bonus() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn butchers_cleaver_has_correct_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Butcher's Cleaver").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.name, "Butcher's Cleaver");
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 3);
-}
-
-#[test]
 fn butchers_cleaver_non_human_gets_power_no_lifelink() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -301,17 +244,6 @@ fn butchers_cleaver_human_gets_power_and_lifelink() {
 // ══════════════════════════════════════════════════════════════════
 // Wooden Stake — {2} Equipment. +1/+0; destroy Vampires on block. Equip {1}.
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn wooden_stake_has_correct_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Wooden Stake").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.name, "Wooden Stake");
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
 
 #[test]
 fn wooden_stake_grants_power() {

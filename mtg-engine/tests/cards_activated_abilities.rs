@@ -19,18 +19,6 @@ use mtg_engine::types::*;
 // Elder of Laurels
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn elder_of_laurels_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Elder of Laurels").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(2));
-    assert_eq!(data.toughness, Some(3));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 3);
-    assert!(data.subtypes.contains(&"Human".to_string()));
-    assert!(data.subtypes.contains(&"Advisor".to_string()));
-}
-
 /// Elder of Laurels gives +X/+X where X = number of creatures you control.
 #[test]
 fn elder_of_laurels_pumps_by_creature_count() {
@@ -64,17 +52,6 @@ fn elder_of_laurels_pumps_by_creature_count() {
 // ══════════════════════════════════════════════════════════════════
 // Mindshrieker
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn mindshrieker_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Mindshrieker").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(1));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-    assert!(data.keywords.contains(&Keyword::Flying));
-}
 
 /// Mindshrieker mills a card and gets +X/+X where X is the milled card's mana value.
 #[test]
@@ -143,18 +120,6 @@ fn mindshrieker_mills_land_no_pump() {
 // Skirsdag High Priest
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn skirsdag_high_priest_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Skirsdag High Priest").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(2));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-    assert!(data.subtypes.contains(&"Human".to_string()));
-    assert!(data.subtypes.contains(&"Cleric".to_string()));
-}
-
 /// Skirsdag High Priest creates a 5/5 Demon with flying when morbid is active.
 #[test]
 fn skirsdag_high_priest_creates_demon_with_morbid() {
@@ -222,15 +187,6 @@ fn skirsdag_high_priest_needs_two_creatures() {
 // Gavony Township
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn gavony_township_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Gavony Township").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-    assert_eq!(data.cost, None);
-}
-
 /// Gavony Township puts a +1/+1 counter on each creature you control.
 #[test]
 fn gavony_township_counters_all_creatures() {
@@ -269,15 +225,6 @@ fn gavony_township_counters_all_creatures() {
 // ══════════════════════════════════════════════════════════════════
 // Nephalia Drownyard
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn nephalia_drownyard_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Nephalia Drownyard").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-    assert_eq!(data.cost, None);
-}
 
 /// Nephalia Drownyard mills 3 cards from target player.
 #[test]
@@ -325,15 +272,6 @@ fn nephalia_drownyard_mills_three() {
 // ══════════════════════════════════════════════════════════════════
 // Stensia Bloodhall
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn stensia_bloodhall_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Stensia Bloodhall").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-    assert_eq!(data.cost, None);
-}
 
 /// Stensia Bloodhall deals 2 damage to target player.
 #[test]

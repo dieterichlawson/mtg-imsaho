@@ -90,16 +90,6 @@ fn legal_actions_dont_mix_graveyards() {
         "Opponent's card should remain in their graveyard");
 }
 
-/// Has flashback for {G}.
-#[test]
-fn has_flashback() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Memory's Journey").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.flashback_cost.is_some(), "Should have flashback cost");
-    assert_eq!(data.flashback_cost.as_ref().unwrap().mana_value(), 1, "Flashback cost should be 1 (Green)");
-}
-
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------

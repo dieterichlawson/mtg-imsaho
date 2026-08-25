@@ -362,15 +362,6 @@ fn divine_reckoning_with_one_creature_keeps_it() {
 }
 #[test]
 
-fn divine_reckoning_has_flashback() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Divine Reckoning").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-    assert!(data.flashback_cost.is_some(), "Divine Reckoning should have flashback");
-    assert_eq!(data.flashback_cost.unwrap().mana_value(), 7, "Flashback should cost 5WW = 7 MV");
-}
-#[test]
-
 fn skirsdag_cultist_deals_2_damage_to_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);

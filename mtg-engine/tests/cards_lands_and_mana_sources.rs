@@ -144,15 +144,6 @@ fn dual_lands_have_two_mana_abilities() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn ghost_quarter_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Ghost Quarter").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-    assert!(data.oracle_text.contains("Destroy target land"));
-}
-
-#[test]
 fn ghost_quarter_taps_for_colorless() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -171,14 +162,6 @@ fn ghost_quarter_taps_for_colorless() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn shimmering_grotto_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Shimmering Grotto").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-}
-
-#[test]
 fn shimmering_grotto_taps_for_colorless() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -195,15 +178,6 @@ fn shimmering_grotto_taps_for_colorless() {
 // ══════════════════════════════════════════════════════════════════
 // Moorland Haunt
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn moorland_haunt_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Moorland Haunt").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-    assert!(data.oracle_text.contains("Spirit"));
-}
 
 #[test]
 fn moorland_haunt_creates_spirit_token() {
@@ -247,18 +221,6 @@ fn moorland_haunt_creates_spirit_token() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn avacyns_pilgrim_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Avacyn's Pilgrim").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(1));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 1);
-    assert!(data.subtypes.contains(&"Human".to_string()));
-    assert!(data.subtypes.contains(&"Monk".to_string()));
-}
-
-#[test]
 fn avacyns_pilgrim_taps_for_white() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -293,18 +255,6 @@ fn avacyns_pilgrim_cant_tap_with_summoning_sickness() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn deranged_assistant_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Deranged Assistant").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert_eq!(data.power, Some(1));
-    assert_eq!(data.toughness, Some(1));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-    assert!(data.subtypes.contains(&"Human".to_string()));
-    assert!(data.subtypes.contains(&"Wizard".to_string()));
-}
-
-#[test]
 fn deranged_assistant_taps_for_colorless() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -328,15 +278,6 @@ fn deranged_assistant_taps_for_colorless() {
 // ══════════════════════════════════════════════════════════════════
 // Ghoulcaller's Bell
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn ghoulcallers_bell_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Ghoulcaller's Bell").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 1);
-}
 
 #[test]
 fn ghoulcallers_bell_mills_both_players() {
@@ -372,15 +313,6 @@ fn ghoulcallers_bell_mills_both_players() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn graveyard_shovel_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Graveyard Shovel").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
-
-#[test]
 fn graveyard_shovel_exiles_and_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -408,15 +340,6 @@ fn graveyard_shovel_exiles_and_gains_life() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn paraselene_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Paraselene").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Sorcery));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 3);
-}
-
-#[test]
 fn paraselene_destroys_enchantments_and_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -442,27 +365,9 @@ fn paraselene_destroys_enchantments_and_gains_life() {
 // Into the Maw of Hell
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn into_the_maw_of_hell_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Into the Maw of Hell").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Sorcery));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 6);
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Maw of the Mire
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn maw_of_the_mire_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Maw of the Mire").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Sorcery));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 5);
-}
 
 #[test]
 fn maw_of_the_mire_destroys_land_and_gains_life() {
@@ -484,15 +389,6 @@ fn maw_of_the_mire_destroys_land_and_gains_life() {
 // ══════════════════════════════════════════════════════════════════
 // Make a Wish
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn make_a_wish_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Make a Wish").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Sorcery));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 4);
-}
 
 #[test]
 fn make_a_wish_returns_cards_from_graveyard() {
@@ -522,27 +418,9 @@ fn make_a_wish_returns_cards_from_graveyard() {
 // Moonmist
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn moonmist_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Moonmist").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Instant));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Runic Repetition
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn runic_repetition_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Runic Repetition").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Sorcery));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 3);
-}
 
 #[test]
 fn runic_repetition_returns_flashback_card_from_exile() {
@@ -564,28 +442,9 @@ fn runic_repetition_returns_flashback_card_from_exile() {
 // Full Moon's Rise
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn full_moons_rise_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Full Moon's Rise").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Enchantment));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-    assert!(!data.continuous_effects.is_empty());
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Stony Silence
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn stony_silence_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Stony Silence").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Enchantment));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
 
 #[test]
 fn stony_silence_blocks_artifact_mana_abilities() {
@@ -644,12 +503,3 @@ fn stony_silence_does_not_block_non_artifact_mana() {
 // ══════════════════════════════════════════════════════════════════
 // Witchbane Orb
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn witchbane_orb_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Witchbane Orb").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 4);
-}

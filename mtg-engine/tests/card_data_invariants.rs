@@ -1,0 +1,306 @@
+//! Cross-cutting invariants over every card in the registry.
+//!
+//! These replace the per-card `*_card_data` / `*_has_correct_stats` tests that
+//! used to sit at the top of each card file. Those read a `CardData` literal
+//! and asserted its fields straight back — `power: Some(1)` in the card,
+//! `assert_eq!(data.power, Some(1))` in the test. A restatement cannot fail
+//! unless somebody edits the card, and then it fails without telling anyone
+//! anything they did not already know from the diff. The card file is the
+//! source of truth for what a card says; there is no second, independent
+//! source here to check it against.
+//!
+//! What *is* worth asserting is consistency — the relationships between the
+//! fields that a typo or a half-finished card breaks, checked across all of
+//! them at once so a new card is covered the moment it is registered.
+
+mod common;
+use common::*;
+use mtg_engine::cards::{CardData, CardRegistry};
+use mtg_engine::types::{CardType, Keyword, Supertype};
+use std::collections::HashSet;
+
+/// Every card in the registry, by name.
+fn all_cards(reg: &CardRegistry) -> Vec<CardData> {
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    names
+        .iter()
+        .map(|n| {
+            let id = reg
+                .get_id_by_name(n)
+                .unwrap_or_else(|| panic!("{n} is in all_names but has no id"));
+            reg.card_data(id).unwrap_or_else(|| panic!("{n} has no card data"))
+        })
+        .collect()
+}
+
+/// Guard against a vacuous invariant: an assertion that no card in the set
+/// exercises passes for the wrong reason. Each test below states how many
+/// cards it actually looked at.
+fn assert_covers(n: usize, floor: usize, what: &str) {
+    assert!(n >= floor, "only {n} card(s) {what} — this invariant has stopped covering anything");
+}
+
+/// Report every offender at once — one failing card should not hide the rest.
+fn assert_none(offenders: &[String], what: &str) {
+    assert!(
+        offenders.is_empty(),
+        "{} card(s) {what}:\n  {}",
+        offenders.len(),
+        offenders.join("\n  ")
+    );
+}
+
+#[test]
+fn every_card_round_trips_through_its_name() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else {
+            offenders.push(format!("{name}: not findable by its own name"));
+            continue;
+        };
+        match reg.card_data(id) {
+            None => offenders.push(format!("{name}: no card data")),
+            Some(d) if d.name != name => {
+                offenders.push(format!("{name}: registered under a different name ({})", d.name));
+            }
+            Some(_) => {}
+        }
+    }
+    assert_none(&offenders, "do not round-trip through the registry");
+}
+
+#[test]
+fn card_names_are_unique() {
+    let reg = registry();
+    let mut seen = HashSet::new();
+    let dupes: Vec<String> = reg
+        .all_names()
+        .iter()
+        .filter(|n| !seen.insert((*n).to_string()))
+        .map(|n| (*n).to_string())
+        .collect();
+    assert_none(&dupes, "are registered twice");
+}
+
+#[test]
+fn a_card_has_power_and_toughness_exactly_when_it_is_a_creature() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut creatures = 0;
+    for d in all_cards(&reg) {
+        let creature = d.card_types.contains(&CardType::Creature);
+        let has_pt = d.power.is_some() && d.toughness.is_some();
+        if creature && !has_pt {
+            offenders.push(format!("{}: creature with power {:?} / toughness {:?}", d.name, d.power, d.toughness));
+        }
+        if !creature && (d.power.is_some() || d.toughness.is_some()) {
+            offenders.push(format!("{}: not a creature but has P/T {:?}/{:?}", d.name, d.power, d.toughness));
+        }
+        if creature {
+            creatures += 1;
+        }
+    }
+    assert_covers(creatures, 100, "are creatures");
+    assert_none(&offenders, "disagree about being a creature");
+}
+
+#[test]
+fn lands_have_no_mana_cost_and_everything_else_has_one() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut lands = 0;
+    for d in all_cards(&reg) {
+        let land = d.card_types.contains(&CardType::Land);
+        match (land, d.cost.is_some()) {
+            (true, true) => offenders.push(format!("{}: a land with a mana cost", d.name)),
+            (false, false) => offenders.push(format!("{}: a nonland with no mana cost", d.name)),
+            _ => {}
+        }
+        if land {
+            lands += 1;
+        }
+    }
+    assert_covers(lands, 10, "are lands");
+    assert_none(&offenders, "have the wrong kind of mana cost");
+}
+
+#[test]
+fn subtypes_imply_their_card_type() {
+    let reg = registry();
+    // (subtype, the card type it can only appear on)
+    const REQUIRED: &[(&str, CardType)] = &[
+        ("Equipment", CardType::Artifact),
+        ("Aura", CardType::Enchantment),
+        ("Curse", CardType::Enchantment),
+    ];
+    let mut offenders = Vec::new();
+    let mut matched = 0;
+    for d in all_cards(&reg) {
+        for (sub, ty) in REQUIRED {
+            if d.subtypes.iter().any(|s| s == sub) {
+                matched += 1;
+                if !d.card_types.contains(ty) {
+                    offenders.push(format!("{}: {sub} but not {ty:?} ({:?})", d.name, d.card_types));
+                }
+            }
+        }
+        // A Curse is a kind of Aura (CR 205.3h) and must say so, or the
+        // attachment code that looks for Auras will not see it.
+        if d.subtypes.iter().any(|s| s == "Curse") && !d.subtypes.iter().any(|s| s == "Aura") {
+            offenders.push(format!("{}: a Curse that is not also an Aura", d.name));
+        }
+    }
+    assert_covers(matched, 20, "carry one of these subtypes");
+    assert_none(&offenders, "carry a subtype their card type cannot have");
+}
+
+#[test]
+fn basic_and_legendary_land_on_the_right_card_types() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut legendary = 0;
+    for d in all_cards(&reg) {
+        if d.supertypes.contains(&Supertype::Basic) && !d.card_types.contains(&CardType::Land) {
+            offenders.push(format!("{}: Basic but not a land", d.name));
+        }
+        // CR 205.4a: only permanents (and, in other formats, instants and
+        // sorceries we do not have) are legendary.
+        if d.supertypes.contains(&Supertype::Legendary) {
+            legendary += 1;
+            if !d.card_types.iter().any(CardType::is_permanent) {
+                offenders.push(format!("{}: Legendary but not a permanent", d.name));
+            }
+        }
+    }
+    assert_covers(legendary, 5, "are legendary");
+    assert_none(&offenders, "carry a supertype their card type cannot have");
+}
+
+#[test]
+fn flashback_is_only_on_instants_and_sorceries_and_says_so() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut with_flashback = 0;
+    for d in all_cards(&reg) {
+        let Some(cost) = &d.flashback_cost else { continue };
+        with_flashback += 1;
+        if !d.card_types.iter().any(|t| matches!(t, CardType::Instant | CardType::Sorcery)) {
+            offenders.push(format!("{}: flashback on a {:?}", d.name, d.card_types));
+        }
+        if !d.oracle_text.to_lowercase().contains("flashback") {
+            offenders.push(format!("{}: has a flashback cost but its text never mentions it", d.name));
+        }
+        // CR 702.33a: flashback is an alternative cost, so there has to be one
+        // to pay. A free flashback is the "no mana cost" bug in disguise.
+        if cost.mana_value() == 0 && cost.symbols.is_empty() {
+            offenders.push(format!("{}: flashback for nothing", d.name));
+        }
+    }
+    assert_covers(with_flashback, 10, "have flashback");
+    assert_none(&offenders, "declare flashback inconsistently");
+}
+
+/// The word a keyword is printed as, for checking it against the oracle text.
+fn keyword_word(k: Keyword) -> &'static str {
+    match k {
+        Keyword::Flying => "flying",
+        Keyword::FirstStrike => "first strike",
+        Keyword::DoubleStrike => "double strike",
+        Keyword::Trample => "trample",
+        Keyword::Deathtouch => "deathtouch",
+        Keyword::Lifelink => "lifelink",
+        Keyword::Vigilance => "vigilance",
+        Keyword::Flash => "flash",
+        Keyword::Reach => "reach",
+        Keyword::Haste => "haste",
+        Keyword::Defender => "defender",
+        Keyword::Hexproof => "hexproof",
+        Keyword::Intimidate => "intimidate",
+        Keyword::Menace => "menace",
+        Keyword::Indestructible => "indestructible",
+    }
+}
+
+#[test]
+fn every_declared_keyword_is_printed_on_the_card() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut declared = 0;
+    for d in all_cards(&reg) {
+        let text = d.oracle_text.to_lowercase();
+        for k in &d.keywords {
+            declared += 1;
+            if !text.contains(keyword_word(*k)) {
+                offenders.push(format!("{}: declares {k:?}, which its text never prints", d.name));
+            }
+        }
+    }
+    assert_covers(declared, 50, "declare a keyword");
+    assert_none(&offenders, "declare a keyword their oracle text does not print");
+}
+
+#[test]
+fn no_card_declares_the_same_thing_twice() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    for d in all_cards(&reg) {
+        let mut seen = HashSet::new();
+        for k in &d.keywords {
+            if !seen.insert(*k) {
+                offenders.push(format!("{}: keyword {k:?} twice", d.name));
+            }
+        }
+        let mut seen = HashSet::new();
+        for s in &d.subtypes {
+            if !seen.insert(s.clone()) {
+                offenders.push(format!("{}: subtype {s} twice", d.name));
+            }
+        }
+        let mut seen = HashSet::new();
+        for t in &d.card_types {
+            if !seen.insert(*t) {
+                offenders.push(format!("{}: card type {t:?} twice", d.name));
+            }
+        }
+    }
+    assert_none(&offenders, "declare something twice");
+}
+
+#[test]
+fn every_card_has_a_name_a_type_and_rules_text() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    for d in all_cards(&reg) {
+        if d.name.trim().is_empty() {
+            offenders.push("<unnamed card>".to_string());
+        }
+        if d.card_types.is_empty() {
+            offenders.push(format!("{}: no card type", d.name));
+        }
+        // A vanilla creature is the only thing allowed to say nothing.
+        let vanilla = d.card_types == vec![CardType::Creature] && d.keywords.is_empty();
+        if d.oracle_text.trim().is_empty() && !vanilla {
+            offenders.push(format!("{}: no oracle text", d.name));
+        }
+    }
+    assert_none(&offenders, "are missing something every card has");
+}
+
+#[test]
+fn every_triggered_ability_describes_itself() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut triggers = 0;
+    for d in all_cards(&reg) {
+        for a in &d.triggered_abilities {
+            triggers += 1;
+            if a.description.trim().is_empty() {
+                offenders.push(format!("{}: a {:?} trigger with no description", d.name, a.kind));
+            }
+        }
+    }
+    assert_covers(triggers, 80, "declare a triggered ability");
+    assert_none(&offenders, "have an undescribed triggered ability");
+}

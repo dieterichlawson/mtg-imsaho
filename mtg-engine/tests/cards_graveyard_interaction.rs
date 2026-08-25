@@ -273,14 +273,6 @@ fn purify_the_grave_exiles_card_from_graveyard() {
     assert_eq!(new_state.get_object(gy_card).unwrap().zone, Zone::Exile);
 }
 
-#[test]
-fn purify_the_grave_has_flashback() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Purify the Grave").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-    assert!(data.flashback_cost.is_some());
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Grasp of Phantoms
 // ═══════════════════════════════════════════════════════════════════
@@ -299,14 +291,6 @@ fn grasp_of_phantoms_puts_creature_on_top_of_library() {
     assert_eq!(new_state.get_object(target_creature).unwrap().zone, Zone::Library);
     // It should be on top of the library.
     assert_eq!(new_state.get_player(P1).library_order[0], target_creature);
-}
-
-#[test]
-fn grasp_of_phantoms_has_flashback() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Grasp of Phantoms").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-    assert!(data.flashback_cost.is_some());
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -369,16 +353,6 @@ fn memorys_journey_shuffles_cards_into_library() {
     // Both cards should be in library now.
     assert_eq!(new_state.get_object(gy1).unwrap().zone, Zone::Library);
     assert_eq!(new_state.get_object(gy2).unwrap().zone, Zone::Library);
-}
-
-#[test]
-fn memorys_journey_has_flashback() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Memory's Journey").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-    assert!(data.flashback_cost.is_some());
-    // Flashback cost is {G}.
-    assert_eq!(data.flashback_cost.unwrap().symbols.len(), 1);
 }
 
 // ═══════════════════════════════════════════════════════════════════

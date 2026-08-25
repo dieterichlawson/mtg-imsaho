@@ -25,16 +25,6 @@ use mtg_engine::types::*;
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn travelers_amulet_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Traveler's Amulet").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(!data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 1);
-}
-
-#[test]
 fn travelers_amulet_finds_basic_land() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -87,16 +77,6 @@ fn travelers_amulet_finds_basic_land() {
 // ══════════════════════════════════════════════════════════════════
 // Demonmail Hauberk
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn demonmail_hauberk_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Demonmail Hauberk").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 4);
-}
 
 #[test]
 fn demonmail_hauberk_equip_sacrifices_creature() {
@@ -154,16 +134,6 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
 // ══════════════════════════════════════════════════════════════════
 // Runechanter's Pike
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn runechanters_pike_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Runechanter's Pike").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
 
 #[test]
 fn runechanters_pike_grants_first_strike_and_power_bonus() {
@@ -236,16 +206,6 @@ fn runechanters_pike_equip_ability() {
 // ══════════════════════════════════════════════════════════════════
 
 #[test]
-fn inquisitors_flail_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Inquisitor's Flail").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
-}
-
-#[test]
 fn inquisitors_flail_doubles_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
@@ -310,16 +270,6 @@ fn inquisitors_flail_equip_ability() {
 // ══════════════════════════════════════════════════════════════════
 // Trepanation Blade
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn trepanation_blade_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Trepanation Blade").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 3);
-}
 
 #[test]
 fn trepanation_blade_attack_trigger_mills_and_pumps() {
@@ -404,16 +354,6 @@ fn trepanation_blade_stops_at_first_land() {
 // ══════════════════════════════════════════════════════════════════
 // Blazing Torch
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn blazing_torch_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Blazing Torch").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Artifact));
-    assert!(data.subtypes.contains(&"Equipment".to_string()));
-    assert_eq!(data.cost.as_ref().unwrap().mana_value(), 1);
-}
 
 #[test]
 fn blazing_torch_grants_damage_ability() {

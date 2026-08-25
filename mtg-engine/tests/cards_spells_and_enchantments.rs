@@ -513,16 +513,6 @@ fn cackling_counterpart_creates_token_copy() {
     assert_eq!(token.toughness, Some(3));
 }
 
-/// Cackling Counterpart has flashback.
-#[test]
-fn cackling_counterpart_has_flashback() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Cackling Counterpart").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-    assert!(data.flashback_cost.is_some(), "Cackling Counterpart should have flashback");
-    assert_eq!(data.flashback_cost.unwrap().mana_value(), 7, "Flashback cost should be {{5}}{{U}}{{U}} = 7");
-}
-
 // ── Sever the Bloodline ────────────────────────────────────────
 
 /// Sever the Bloodline exiles target creature and all others with the same name.
@@ -552,16 +542,6 @@ fn sever_the_bloodline_exiles_all_with_same_name() {
 
     // Bear should be unaffected.
     assert_eq!(state.get_object(bear).unwrap().zone, Zone::Battlefield, "Differently-named creature should be unaffected");
-}
-
-/// Sever the Bloodline has flashback.
-#[test]
-fn sever_the_bloodline_has_flashback() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Sever the Bloodline").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-    assert!(data.flashback_cost.is_some(), "Sever the Bloodline should have flashback");
-    assert_eq!(data.flashback_cost.unwrap().mana_value(), 7, "Flashback cost should be {{5}}{{B}}{{B}} = 7");
 }
 
 // ── Angelic Overseer ───────────────────────────────────────────
