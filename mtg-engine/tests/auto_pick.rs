@@ -28,10 +28,53 @@
 
 mod common;
 use common::*;
+
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
+use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::types::*;
+
+/// The options of the pending `ChooseTarget` prompt, or a panic naming what was
+/// pending instead. Every "the player chooses" test below needs the same two
+/// halves — that a prompt appeared, and that it offered every legal option —
+/// and asserting only the first half is what let these tests pass while the
+/// ability silently did nothing.
+fn pending_object_choices(
+    state: &mtg_engine::state::GameState,
+    who: &str,
+) -> (mtg_engine::ids::PlayerId, Vec<mtg_engine::ids::ObjectId>) {
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            player, choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => (
+            *player,
+            options.iter().filter_map(|t| match t {
+                Target::Object(id) => Some(*id),
+                Target::Player(_) => None,
+            }).collect(),
+        ),
+        Some(AwaitingAction::ResolutionChoice {
+            player, choice: ResolutionChoiceKind::ChooseFromLibrary { options, .. }, ..
+        }) => (*player, options.clone()),
+        other => panic!("{who} should be waiting on a player choice, got {other:?}"),
+    }
+}
+
+/// Answer whichever object-picking prompt is pending with `chosen`.
+fn choose_object(
+    state: &mtg_engine::state::GameState,
+    registry: &CardRegistry,
+    chosen: mtg_engine::ids::ObjectId,
+) -> mtg_engine::state::GameState {
+    let choice = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseFromLibrary { .. }, ..
+        }) => mtg_engine::actions::ResolvedChoice::ChosenCard(chosen),
+        _ => mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(chosen))),
+    };
+    engine::submit_action(state, &Action::ResolveChoice { choice }, registry)
+}
 
 /// Bug D (`audits/AUDIT_BUGS.md)`: Moorland Haunt's `{W}{U}, {T}, Exile
 /// a creature from your graveyard` cost auto-picks the first matching
@@ -56,46 +99,43 @@ use mtg_engine::types::*;
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug D is fixed.
+/// Moorland Haunt: "{1}{W}{U}, {T}, Exile a creature card from your graveyard:
+/// Create a 1/1 white Spirit creature token with flying." Which card is exiled
+/// is the player's call whenever more than one is eligible.
 #[test]
-fn bug_d_moorland_haunt_does_not_auto_pick_creature_to_exile() {
+fn moorland_haunt_offers_every_graveyard_creature_to_exile() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Two distinct creature cards in P0's graveyard.
-    let bears_a = {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Grizzly Bears (a)".into();
-        id
-    };
-    let bears_b = {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Grizzly Bears (b)".into();
-        id
-    };
+    let bears: Vec<_> = ["a", "b"]
+        .iter()
+        .map(|suffix| {
+            let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+            let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+            state.get_object_mut(id).unwrap().name = format!("Grizzly Bears ({suffix})");
+            id
+        })
+        .collect();
 
-    // Moorland Haunt on P0's side.
     let haunt = named_creature(&mut state, &registry, "Moorland Haunt", P0);
-
-    // Fire Moorland Haunt's activation directly.
-    let haunt_card_id = state.get_object(haunt).unwrap().card_id;
-    let behavior = registry.get(haunt_card_id).unwrap();
+    let behavior = registry.get(state.get_object(haunt).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, haunt, 1, &[], &registry);
 
-    // After firing, neither creature should have been moved to exile
-    // yet — the fix should pause for a player choice.
-    let a_zone = state.get_object(bears_a).map(|o| o.zone);
-    let b_zone = state.get_object(bears_b).map(|o| o.zone);
-    let either_exiled = a_zone == Some(Zone::Exile) || b_zone == Some(Zone::Exile);
+    let (chooser, options) = pending_object_choices(&state, "Moorland Haunt");
+    assert_eq!(chooser, P0, "the Haunt's controller chooses which card to exile");
+    for id in &bears {
+        assert!(options.contains(id),
+            "both graveyard creatures should be offered, got {options:?}");
+        assert_eq!(state.get_object(*id).unwrap().zone, Zone::Graveyard,
+            "nothing is exiled before the choice is made");
+    }
 
-    assert!(
-        !either_exiled,
-        "Moorland Haunt's activation cost should NOT auto-pick a \
-         graveyard creature to exile when multiple are eligible — the \
-         player chooses. Bug D: the handler picks the first matching \
-         creature with `iter().filter(...).next()`. zones: a={a_zone:?}, b={b_zone:?}",
-    );
+    // And the choice is honoured: the card the player names is the one exiled.
+    let state = choose_object(&state, &registry, bears[1]);
+    assert_eq!(state.get_object(bears[1]).unwrap().zone, Zone::Exile,
+        "the chosen card is the one exiled");
+    assert_eq!(state.get_object(bears[0]).unwrap().zone, Zone::Graveyard,
+        "the other one stays put");
 }
 
 /// Bug P (`audits/AUDIT_BUGS.md)`: Caravan Vigil's "search your library
@@ -120,44 +160,45 @@ fn bug_d_moorland_haunt_does_not_auto_pick_creature_to_exile() {
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug P is fixed.
+/// Caravan Vigil: "Search your library for a basic land card, reveal it, put it
+/// into your hand, then shuffle." Which basic to fetch is the player's decision
+/// — it decides which colour the deck can cast next turn.
 #[test]
-fn bug_p_caravan_vigil_does_not_auto_pick_basic_land() {
+fn caravan_vigil_offers_every_basic_land_in_the_library() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Forest then Swamp in P0's library, in that order.
-    let forest_card_id = registry.get_id_by_name("Forest").unwrap();
-    let forest = state.create_object(forest_card_id, P0, Zone::Library, None, None);
-    state.get_object_mut(forest).unwrap().name = "Forest".into();
-    state.get_player_mut(P0).library_order.push(forest);
+    let basics: Vec<_> = ["Forest", "Swamp"]
+        .iter()
+        .map(|name| {
+            let card_id = registry.get_id_by_name(name).unwrap();
+            let id = state.create_object(card_id, P0, Zone::Library, None, None);
+            state.get_object_mut(id).unwrap().name = (*name).into();
+            state.get_player_mut(P0).library_order.push(id);
+            id
+        })
+        .collect();
 
-    let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();
-    let swamp = state.create_object(swamp_card_id, P0, Zone::Library, None, None);
-    state.get_object_mut(swamp).unwrap().name = "Swamp".into();
-    state.get_player_mut(P0).library_order.push(swamp);
-
-    // Resolve Caravan Vigil directly. (No creatures died — morbid path
-    // is irrelevant; we just want to test the auto-pick.)
     let vigil_card_id = registry.get_id_by_name("Caravan Vigil").unwrap();
     let vigil = state.create_object(vigil_card_id, P0, Zone::Stack, None, None);
     state.get_object_mut(vigil).unwrap().name = "Caravan Vigil".into();
-    let behavior = registry.get(vigil_card_id).unwrap();
-    behavior.on_resolve(&mut state, vigil, &[], &registry);
+    registry.get(vigil_card_id).unwrap().on_resolve(&mut state, vigil, &[], &registry);
 
-    // Neither basic should have ended up in hand without a player
-    // choice. The fix should set an awaiting_action of "choose a basic
-    // land type to tutor".
-    let forest_zone = state.get_object(forest).map(|o| o.zone);
-    let swamp_zone = state.get_object(swamp).map(|o| o.zone);
-    let either_in_hand = forest_zone == Some(Zone::Hand) || swamp_zone == Some(Zone::Hand);
+    let (chooser, options) = pending_object_choices(&state, "Caravan Vigil");
+    assert_eq!(chooser, P0, "the caster chooses which basic to fetch");
+    for id in &basics {
+        assert!(options.contains(id),
+            "both basics should be offered, not just the first in library order; got {options:?}");
+        assert_eq!(state.get_object(*id).unwrap().zone, Zone::Library,
+            "nothing is fetched before the choice is made");
+    }
 
-    assert!(
-        !either_in_hand,
-        "Caravan Vigil should not auto-tutor a basic land — the player \
-         chooses which basic to fetch (this matters for splash decks). \
-         Bug P: the implementation walks library_order and picks the \
-         first matching basic. zones: forest={forest_zone:?}, swamp={swamp_zone:?}",
-    );
+    // The second one in library order — the one a first-match search would miss.
+    let state = choose_object(&state, &registry, basics[1]);
+    assert_eq!(state.get_object(basics[1]).unwrap().zone, Zone::Hand,
+        "the chosen Swamp goes to hand");
+    assert_eq!(state.get_object(basics[0]).unwrap().zone, Zone::Library,
+        "the Forest stays in the library");
 }
 
 /// Bug W (`audits/AUDIT_BUGS.md)`: The legend-rule SBA in `sba.rs:248-269`
@@ -182,8 +223,11 @@ fn bug_p_caravan_vigil_does_not_auto_pick_basic_land() {
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug W is fixed.
+/// CR 704.5j: with two legendary permanents of the same name, "that player
+/// chooses one of them, and the rest are put into their owners' graveyards".
+/// SBA used to keep `ids[0]` and bin the other without asking.
 #[test]
-fn bug_w_legend_rule_pauses_for_player_choice() {
+fn legend_rule_lets_the_player_choose_which_one_to_keep() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -192,23 +236,26 @@ fn bug_w_legend_rule_pauses_for_player_choice() {
     assert!(
         state.get_object(olivia_a).unwrap().is_legendary
             && state.get_object(olivia_b).unwrap().is_legendary,
-        "Test setup: both Olivias should be flagged is_legendary"
+        "test precondition: both Olivias are legendary"
     );
 
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
-    let a_zone = state.get_object(olivia_a).map(|o| o.zone);
-    let b_zone = state.get_object(olivia_b).map(|o| o.zone);
-    let both_on_battlefield = a_zone == Some(Zone::Battlefield) && b_zone == Some(Zone::Battlefield);
+    let (chooser, options) = pending_object_choices(&state, "the legend rule");
+    assert_eq!(chooser, P0, "the controller of the duplicates chooses");
+    assert_eq!(options.len(), 2, "both copies are offered, got {options:?}");
+    assert!(options.contains(&olivia_a) && options.contains(&olivia_b));
+    for id in [olivia_a, olivia_b] {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield,
+            "neither is binned before the choice is made");
+    }
 
-    assert!(
-        both_on_battlefield,
-        "The legend rule should pause for a player choice (CR 704.5j: \
-         'that player chooses one of them'). Both Olivia Voldarens \
-         should still be on the battlefield until the player picks one \
-         to keep. Bug W: SBA auto-picks ids[0] and silently moves the \
-         other to graveyard. zones: a={a_zone:?}, b={b_zone:?}",
-    );
+    // Keep the second one — the one a `ids[0]` auto-pick would have discarded.
+    let state = choose_object(&state, &registry, olivia_b);
+    assert_eq!(state.get_object(olivia_b).unwrap().zone, Zone::Battlefield,
+        "the chosen Olivia stays");
+    assert_eq!(state.get_object(olivia_a).unwrap().zone, Zone::Graveyard,
+        "the other goes to its owner's graveyard");
 }
 
 /// Bug 76-003 (`audits/AUDIT_BUGS.md)`: Traveler's Amulet's
@@ -228,42 +275,41 @@ fn bug_w_legend_rule_pauses_for_player_choice() {
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 76-003 is fixed.
+/// Traveler's Amulet: "{1}, Sacrifice this artifact: Search your library for a
+/// basic land card, reveal it, put it into your hand, then shuffle." Same search
+/// shape as Caravan Vigil, same player decision.
 #[test]
-fn bug_76_003_travelers_amulet_does_not_auto_pick_basic_land() {
+fn travelers_amulet_offers_every_basic_land_in_the_library() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Forest then Swamp in P0's library (in that order).
-    let forest_card_id = registry.get_id_by_name("Forest").unwrap();
-    let forest = state.create_object(forest_card_id, P0, Zone::Library, None, None);
-    state.get_object_mut(forest).unwrap().name = "Forest".into();
-    state.get_player_mut(P0).library_order.push(forest);
+    let basics: Vec<_> = ["Forest", "Swamp"]
+        .iter()
+        .map(|name| {
+            let card_id = registry.get_id_by_name(name).unwrap();
+            let id = state.create_object(card_id, P0, Zone::Library, None, None);
+            state.get_object_mut(id).unwrap().name = (*name).into();
+            state.get_player_mut(P0).library_order.push(id);
+            id
+        })
+        .collect();
 
-    let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();
-    let swamp = state.create_object(swamp_card_id, P0, Zone::Library, None, None);
-    state.get_object_mut(swamp).unwrap().name = "Swamp".into();
-    state.get_player_mut(P0).library_order.push(swamp);
-
-    // Traveler's Amulet on P0's battlefield.
     let amulet = named_creature(&mut state, &registry, "Traveler's Amulet", P0);
-    let amulet_card_id = state.get_object(amulet).unwrap().card_id;
-
-    // Fire the activation handler directly — the artifact is normally
-    // already sacrificed by the engine before on_activate_ability.
-    let behavior = registry.get(amulet_card_id).unwrap();
+    let behavior = registry.get(state.get_object(amulet).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
 
-    let forest_zone = state.get_object(forest).map(|o| o.zone);
-    let swamp_zone = state.get_object(swamp).map(|o| o.zone);
-    let either_in_hand = forest_zone == Some(Zone::Hand) || swamp_zone == Some(Zone::Hand);
+    let (chooser, options) = pending_object_choices(&state, "Traveler's Amulet");
+    assert_eq!(chooser, P0, "the Amulet's controller chooses");
+    for id in &basics {
+        assert!(options.contains(id),
+            "both basics should be offered, got {options:?}");
+        assert_eq!(state.get_object(*id).unwrap().zone, Zone::Library,
+            "nothing is fetched before the choice is made");
+    }
 
-    assert!(
-        !either_in_hand,
-        "Traveler's Amulet should not auto-tutor a basic land — the \
-         player chooses (Bug P sibling). Bug 76-003: the implementation \
-         walks library_order and picks the first matching basic. zones: \
-         forest={forest_zone:?}, swamp={swamp_zone:?}",
-    );
+    let state = choose_object(&state, &registry, basics[1]);
+    assert_eq!(state.get_object(basics[1]).unwrap().zone, Zone::Hand);
+    assert_eq!(state.get_object(basics[0]).unwrap().zone, Zone::Library);
 }
 
 /// Bug E (`audits/AUDIT_BUGS.md)`: Nevermore auto-picks a name by
@@ -287,44 +333,63 @@ fn bug_76_003_travelers_amulet_does_not_auto_pick_basic_land() {
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug E is fixed.
+/// Nevermore: "As Nevermore enters, choose a nonland card name. Spells with the
+/// chosen name can't be cast." The choice is the controller's, made from the
+/// card pool — not by peeking at the opponent's hand, which is both an
+/// auto-pick and an information leak.
 #[test]
-fn bug_e_nevermore_does_not_read_opponent_hand() {
+fn nevermore_asks_for_a_name_instead_of_reading_the_opponents_hand() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Put a very specific card in P1's hand.
-    let bolt_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-    let leaked = state.create_object(bolt_card_id, P1, Zone::Hand, Some(2), Some(2));
+    // One specific card in P1's hand — the one a peeking implementation grabs.
+    let leaked_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+    let leaked = state.create_object(leaked_card_id, P1, Zone::Hand, Some(2), Some(2));
     state.get_object_mut(leaked).unwrap().name = "Grizzly Bears".into();
 
-    // Nevermore enters the battlefield for P0 and fires its ETB.
     let nevermore_card_id = registry.get_id_by_name("Nevermore").unwrap();
     let nevermore = state.create_object(nevermore_card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(nevermore).unwrap().name = "Nevermore".into();
-    let behavior = registry.get(nevermore_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, nevermore, &[], &registry);
+    registry.get(nevermore_card_id).unwrap()
+        .on_enter_battlefield(&mut state, nevermore, &[], &registry);
 
-    // If the bug fires, Nevermore's instance continuous effects
-    // include a `PreventCastingNamed { name: "Grizzly Bears" }` entry
-    // — the name was leaked from P1's hand. The fix should either
-    // leave it unset (pending a choice) or not equal the hand card.
-    let leaked_name_chosen = state
-        .get_object(nevermore)
-        .and_then(|o| o.instance_continuous_effects.clone())
-        .is_some_and(|effects| {
-            effects.iter().any(|e| matches!(
-                e,
-                ContinuousEffect::PreventCastingNamed { name } if name == "Grizzly Bears"
-            ))
-        });
+    let names = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            player, choice: ResolutionChoiceKind::ChooseCardName { options, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "Nevermore's controller names the card");
+            options.clone()
+        }
+        other => panic!("Nevermore should ask for a card name, got {other:?}"),
+    };
 
-    assert!(
-        !leaked_name_chosen,
-        "Nevermore must not auto-pick a name by reading the opponent's \
-         hand. Bug E: the handler iterates state.objects for \
-         Zone::Hand + opponent and picks the first nonland — both an \
-         information leak and an auto-pick."
+    // The list is the card pool, not the opponent's hand: it offers far more
+    // than the one card P1 is holding, and every land is filtered out.
+    assert!(names.len() > 50,
+        "the name list should be the nonland card pool, not a peek at one hand; got {} names", names.len());
+    assert!(!names.iter().any(|n| n == "Forest" || n == "Swamp" || n == "Ghost Quarter"),
+        "\"nonland card name\" excludes lands");
+    assert!(names.contains(&"Lightning Bolt".to_string()),
+        "a card nobody is holding is still a legal name to choose");
+
+    assert!(state.get_object(nevermore).unwrap().instance_continuous_effects
+            .as_ref().is_none_or(Vec::is_empty),
+        "no name is locked in until the controller chooses one");
+
+    // Choosing a name — any name — is what installs the ban.
+    let index = names.iter().position(|n| n == "Lightning Bolt").unwrap();
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(index, "Lightning Bolt".into()),
+        },
+        &registry,
     );
+    let banned = state.get_object(nevermore).unwrap().instance_continuous_effects.clone()
+        .unwrap_or_default();
+    assert!(banned.iter().any(|e| matches!(e,
+        ContinuousEffect::PreventCastingNamed { name } if name == "Lightning Bolt")),
+        "the chosen name is the one banned, got {banned:?}");
 }
 
 /// Bug F (`audits/AUDIT_BUGS.md)`: `AdditionalCost::ExileCreaturesFromGraveyard`
@@ -626,118 +691,96 @@ fn bug_bf_travelers_amulet_shuffles_library_after_search() {
 /// "Target player" means the controller chooses which player to target,
 /// including potentially themselves. The code does state.opponent(controller)
 /// without presenting a choice.
+/// Falkenrath Noble: "Whenever another creature dies, target player loses 1 life
+/// and you gain 1 life." "Target player" is a choice the controller makes, and
+/// both players are legal — the code used to hardcode `state.opponent`.
 #[test]
-fn bug_falkenrath_noble_auto_targets_opponent() {
+fn falkenrath_noble_offers_both_players_as_the_drain_target() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Falkenrath Noble for P0
     let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
-
-    // Place a creature for P1 and kill it to trigger Noble
     let victim = ready_creature(&mut state, P1, 1, 1);
     mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
-
-    // Process the death trigger
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
-    // The Noble's trigger should present a choice of which player to target.
-    // If it auto-targeted the opponent, P1's life will already be 19 and
-    // there won't be an AwaitingAction for player choice.
-    //
-    // BUG: Noble auto-selects opponent — no choice is presented
-    let p1_life = state.get_player(P1).life;
-    let awaiting = state.awaiting_action.is_some();
-
-    // Either there should be an awaiting action (choice pending)
-    // OR if it already resolved, it should have targeted correctly.
-    // The bug is that it resolves WITHOUT presenting a choice.
-    assert!(awaiting || p1_life == 20,
-        "Noble should either present target choice (awaiting_action) or not have auto-drained yet. P1 life: {p1_life}, awaiting: {awaiting}");
-}
-
-/// Bug: Ghost Quarter auto-searches instead of presenting "may" choice.
-/// Oracle: "Its controller may search their library for a basic land card"
-/// The "may" means the land's controller can decline to search.
-/// The code auto-finds the first basic land without presenting a choice.
-#[test]
-fn bug_ghost_quarter_may_search_is_mandatory() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Place Ghost Quarter for P0
-    let gq = named_creature(&mut state, &registry, "Ghost Quarter", P0);
-
-    // Place a target land for P1
-    let target_land = {
-        let card_id = registry.get_id_by_name("Forest").unwrap();
-        let id = state.create_object(card_id, P1, Zone::Battlefield, None, None);
-        state.get_object_mut(id).unwrap().name = "Forest".into();
-        id
+    let options = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            player, choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "the Noble's controller chooses the target");
+            options.clone()
+        }
+        other => panic!("the Noble should ask its controller to choose a target, got {other:?}"),
     };
+    assert!(options.contains(&Target::Player(P0)) && options.contains(&Target::Player(P1)),
+        "both players are legal targets for \"target player\", got {options:?}");
+    assert_eq!(state.get_player(P1).life, 20,
+        "nothing is drained until the target is chosen");
 
-    // Put a Plains in P1's library
-    let _plains_id = {
-        let card_id = registry.get_id_by_name("Plains").unwrap();
-        let id = state.create_object(card_id, P1, Zone::Library, None, None);
-        state.get_object_mut(id).unwrap().name = "Plains".into();
-        state.get_player_mut(P1).library_order.push(id);
-        id
-    };
-
-    let bf_count_before = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.name == "Plains")
-        .count();
-
-    // Activate Ghost Quarter
-    let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
-    state.move_object(gq, Zone::Graveyard, &registry);
-    behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
-
-    let bf_count_after = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.name == "Plains")
-        .count();
-
-    // BUG: The Plains was auto-placed on the battlefield without P1 getting
-    // a choice to decline the search. In a real game, P1 might want to
-    // decline (e.g., to avoid a shuffle, or in specific strategic scenarios).
-    // After the ability resolves, there should be an AwaitingAction for P1's
-    // "may search" choice, OR the search should not have happened yet.
-    let awaiting = state.awaiting_action.is_some();
-
-    // The bug is that the search happened automatically
-    assert!(awaiting || bf_count_after == bf_count_before,
-        "Ghost Quarter should present 'may search' choice, not auto-search. Plains placed: {}",
-        bf_count_after - bf_count_before);
+    // And choosing yourself actually drains you — the choice is not cosmetic.
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Player(P0))),
+        },
+        &registry,
+    );
+    assert_eq!(state.get_player(P0).life, 20,
+        "P0 loses 1 to its own Noble and gains 1 back");
+    assert_eq!(state.get_player(P1).life, 20, "P1 was not the target");
 }
 
 /// Bug: Thraben Sentry auto-transforms when a creature you control dies,
 /// without presenting the "you may" choice from the oracle text.
+/// Thraben Sentry: "Whenever another creature you control dies, you may transform
+/// Thraben Sentry." A "you may" is a prompt, and declining has to be a real
+/// option — so check that the prompt appears and that both answers are honoured.
 #[test]
-fn bug_thraben_sentry_auto_transforms_without_choice() {
+fn thraben_sentry_asks_before_transforming() {
     let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Thraben Sentry
-    let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
-    assert!(!state.get_object(sentry).unwrap().is_transformed);
+    let up_to_the_choice = || {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+        assert!(!state.get_object(sentry).unwrap().is_transformed, "test precondition");
+        let victim = ready_creature(&mut state, P0, 1, 1);
+        mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+        mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+        mtg_engine::triggers::process_triggers(&mut state, &registry);
+        (state, sentry)
+    };
 
-    // Place and kill another creature
-    let victim = ready_creature(&mut state, P0, 1, 1);
-    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
-    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    let (state, sentry) = up_to_the_choice();
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            player, choice: ResolutionChoiceKind::YesNo { description, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "the Sentry's controller decides");
+            assert!(description.contains("Thraben Sentry"),
+                "the prompt should name the card, got {description:?}");
+        }
+        other => panic!("Thraben Sentry should ask before transforming, got {other:?}"),
+    }
+    assert!(!state.get_object(sentry).unwrap().is_transformed,
+        "it has not transformed while the answer is still pending");
 
-    // Process triggers
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
+    let declined = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(false) },
+        &registry,
+    );
+    assert!(!declined.get_object(sentry).unwrap().is_transformed,
+        "declining leaves the Sentry on its front face");
 
-    // The "you may transform" should present a choice, not auto-transform
-    let is_transformed = state.get_object(sentry).unwrap().is_transformed;
-    let has_choice = state.awaiting_action.is_some();
-
-    // BUG: Auto-transforms without presenting "you may" choice
-    assert!(!is_transformed || has_choice,
-        "Sentry should either present 'you may' choice or not auto-transform. Transformed: {is_transformed}, Choice pending: {has_choice}");
+    let accepted = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true) },
+        &registry,
+    );
+    assert!(accepted.get_object(sentry).unwrap().is_transformed,
+        "accepting transforms it");
 }
 
 /// When casting Harvest Pyre, the engine must let the player choose
@@ -817,39 +860,60 @@ fn bug_harvest_pyre_auto_selects_exile() {
 /// Bug: Mentor of the Meek says "you may pay {1}" to draw a card when
 /// a creature with power 2 or less enters. The code auto-pays without
 /// presenting a choice.
+/// Mentor of the Meek: "Whenever another creature with power 2 or less enters
+/// under your control, you may pay {1}. If you do, draw a card." Paying is the
+/// player's decision, so the draw must wait for an answer — and declining must
+/// leave the {1} in the pool.
 #[test]
-fn bug_mentor_of_the_meek_auto_pays() {
+fn mentor_of_the_meek_asks_before_paying() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Mentor of the Meek
     let mentor = named_creature(&mut state, &registry, "Mentor of the Meek", P0);
-
-    // Add {1} mana so the pay choice is available
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-
-    // Give P0 some library cards to draw from
     for _ in 0..3 {
         let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
         let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
         state.get_player_mut(P0).library_order.push(id);
     }
-
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
-    // Place a small creature and directly call the trigger handler
     let small = ready_creature(&mut state, P0, 1, 1);
     let behavior = registry.get(state.get_object(mentor).unwrap().card_id).unwrap();
     behavior.on_any_creature_enters(&mut state, mentor, small, P0, &registry);
 
-    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
-    let has_choice = state.awaiting_action.is_some();
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            player, choice: ResolutionChoiceKind::YesNo { description, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "the Mentor's controller decides");
+            assert!(description.contains("Mentor of the Meek"),
+                "the prompt should name the card, got {description:?}");
+        }
+        other => panic!("Mentor should ask before paying, got {other:?}"),
+    }
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), hand_before,
+        "no card is drawn while the answer is pending");
 
-    // "you may pay {1}" should present a choice, not auto-draw
-    // BUG: Auto-draws without presenting the pay choice
-    assert!(has_choice || hand_after == hand_before,
-        "Mentor should present 'you may pay' choice. Drew {} cards without asking.",
-        hand_after.saturating_sub(hand_before));
+    let declined = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(false) },
+        &registry,
+    );
+    assert_eq!(declined.objects_in_zone(Zone::Hand, P0).len(), hand_before,
+        "declining draws nothing");
+    assert_eq!(declined.get_player(P0).mana_pool.total(), 1,
+        "and costs nothing");
+
+    let paid = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true) },
+        &registry,
+    );
+    assert_eq!(paid.objects_in_zone(Zone::Hand, P0).len(), hand_before + 1,
+        "paying draws a card");
+    assert_eq!(paid.get_player(P0).mana_pool.total(), 0,
+        "and spends the {{1}}");
 }
 
 /// Bug: Skirsdag High Priest's ability costs "tap two untapped creatures
