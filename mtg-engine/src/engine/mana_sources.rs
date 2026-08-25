@@ -1,9 +1,9 @@
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
-use crate::ids::{CardId, ObjectId, PlayerId};
+use crate::ids::{ObjectId, PlayerId};
 use crate::mana;
 use crate::state::{GameState, LogLevel};
-use crate::types::{Zone, CardType, Supertype, ManaCost, ManaSymbol, ContinuousEffect};
+use crate::types::{Zone, CardType, Supertype, ManaCost, ContinuousEffect};
 use super::*;
 
 /// The mana abilities of `object_id` that could legally be activated right now.
@@ -229,105 +229,4 @@ pub(crate) fn execute_tap_plan_and_pay(
         activate_mana_source(state, src_id, ability_index, registry);
     }
     mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
-}
-/// Find alternative costs provided by continuous effects on permanents the caster controls.
-/// Returns a list of alternative `ManaCosts` that the caster may use for the given spell.
-pub(crate) fn alternative_costs_from_effects(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> Vec<ManaCost> {
-    use crate::types::{ContinuousEffect, SpellFilter};
-
-    let card_data = registry.card_data(card_id);
-    let is_creature = card_data.as_ref()
-        .is_some_and(|d| d.card_types.contains(&CardType::Creature));
-    let subtypes: Vec<String> = card_data.as_ref()
-        .map(|d| d.subtypes.clone())
-        .unwrap_or_default();
-
-    let mut alt_costs = Vec::new();
-    for obj in state.objects.values() {
-        if obj.zone != Zone::Battlefield || obj.controller != caster {
-            continue;
-        }
-        if let Some(behavior) = registry.get(obj.card_id) {
-            for effect in &behavior.card_data().continuous_effects {
-                if let ContinuousEffect::AlternativeCost { cost, filter } = effect {
-                    let applies = match filter {
-                        SpellFilter::CreatureSpells => is_creature,
-                        SpellFilter::CreatureWithSubtype(sub) => {
-                            is_creature && subtypes.iter().any(|s| s == sub)
-                        }
-                    };
-                    if applies {
-                        alt_costs.push(cost.clone());
-                    }
-                }
-            }
-        }
-    }
-    alt_costs
-}
-/// Compute the effective mana cost of a spell after applying cost reduction effects.
-/// Returns a reduced `ManaCost` (generic portion lowered, colored requirements unchanged).
-#[must_use]
-pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id: CardId, base_cost: &ManaCost, caster: PlayerId) -> ManaCost {
-    use crate::types::{ContinuousEffect, SpellFilter};
-
-    // Check if the card has a custom cost modification (e.g., Blasphemous Act).
-    if let Some(behavior) = registry.get(card_id) {
-        if let Some(modified) = behavior.modified_cost(state, registry) {
-            return modified;
-        }
-    }
-
-    let card_data = registry.card_data(card_id);
-    let is_creature = card_data.as_ref()
-        .is_some_and(|d| d.card_types.contains(&CardType::Creature));
-    let subtypes: Vec<String> = card_data.as_ref()
-        .map(|d| d.subtypes.clone())
-        .unwrap_or_default();
-
-    // Gather all ReduceCost effects from permanents the caster controls.
-    let mut total_reduction: u32 = 0;
-    for obj in state.objects.values() {
-        if obj.zone != Zone::Battlefield || obj.controller != caster {
-            continue;
-        }
-        if let Some(behavior) = registry.get(obj.card_id) {
-            for effect in &behavior.card_data().continuous_effects {
-                if let ContinuousEffect::ReduceCost { reduction, filter } = effect {
-                    let applies = match filter {
-                        SpellFilter::CreatureSpells => is_creature,
-                        SpellFilter::CreatureWithSubtype(sub) => {
-                            is_creature && subtypes.iter().any(|s| s == sub)
-                        }
-                    };
-                    if applies {
-                        total_reduction += reduction;
-                    }
-                }
-            }
-        }
-    }
-
-    if total_reduction == 0 {
-        return base_cost.clone();
-    }
-
-    // Apply reduction to generic mana first, keeping colored requirements.
-    let mut remaining_reduction = total_reduction;
-    let mut new_symbols = Vec::new();
-    for sym in &base_cost.symbols {
-        match sym {
-            ManaSymbol::Generic(n) => {
-                if remaining_reduction >= *n {
-                    remaining_reduction -= *n;
-                    // Reduced to zero, omit this symbol.
-                } else {
-                    new_symbols.push(ManaSymbol::Generic(*n - remaining_reduction));
-                    remaining_reduction = 0;
-                }
-            }
-            other => new_symbols.push(other.clone()),
-        }
-    }
-    ManaCost::new(new_symbols)
 }

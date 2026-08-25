@@ -6,6 +6,7 @@
 //!
 //! - [`actions`] — applying a chosen [`Action`], one module per variant.
 //! - [`legal`] — enumerating what a player may do right now.
+//! - [`costs`] — what a spell costs to cast (CR 601.2f).
 //! - [`mana_sources`] — producing mana and paying costs with it.
 //! - [`targeting`] — what a spell or ability may point at.
 //! - [`effects`] — applying a resolved effect.
@@ -14,22 +15,26 @@
 mod actions;
 mod legal;
 mod cards_flow;
+mod costs;
 mod effects;
 mod mana_sources;
 mod targeting;
 
 pub use cards_flow::{draw_cards, mill_cards, mill_one};
 pub use effects::apply_pending_effect;
+pub use costs::{
+    AdditionalCostPlan, CastMethod, SpellCost, additional_cost_plan, alternative_costs,
+    cost_to_cast, effective_spell_cost, pay_exile_creatures,
+};
 pub use mana_sources::{
-    activate_mana_source, available_mana_abilities, can_pay_with_sources,
-    effective_spell_cost, pay_cost_with_sources,
+    activate_mana_source, available_mana_abilities, can_pay_with_sources, pay_cost_with_sources,
 };
 pub use targeting::can_be_targeted_by;
 
 pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, legal_discard_actions};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};
 pub(crate) use mana_sources::{
-    activatable_mana_abilities, alternative_costs_from_effects, execute_tap_plan_and_pay,
+    activatable_mana_abilities, execute_tap_plan_and_pay,
     gather_mana_sources, plan_autotap_for_cost, prevents_artifact_abilities,
 };
 pub(crate) use targeting::{

@@ -1206,6 +1206,36 @@ impl GameState {
         count
     }
 
+    /// Continuous effects provided by permanents `player` controls, with
+    /// `When` conditions evaluated.
+    ///
+    /// Cost effects are keyed to who is casting, not to an `EffectScope`, so
+    /// they cannot come through `walk_effects`. Reading them here still means
+    /// reading them through `continuous_effects_of` — the two cost functions
+    /// used to walk `card_data().continuous_effects` directly and so ignored
+    /// a transformed permanent's back face and anything granted at runtime.
+    #[must_use]
+    pub fn effects_controlled_by(
+        &self,
+        player: crate::ids::PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<crate::types::ContinuousEffect> {
+        let mut out = Vec::new();
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield || source.controller != player {
+                continue;
+            }
+            for effect in self.continuous_effects_of(source.id, registry) {
+                let (inner, condition) = effect.unwrap_condition();
+                if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
+                    continue;
+                }
+                out.push(inner.clone());
+            }
+        }
+        out
+    }
+
     /// Continuous effects that modify the rules of the game rather than a
     /// permanent — the ones with no `EffectScope`. Conditions are evaluated,
     /// so a `When`-wrapped rule modification only shows up while it holds.

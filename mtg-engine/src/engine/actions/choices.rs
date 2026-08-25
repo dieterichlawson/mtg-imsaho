@@ -276,64 +276,11 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         let x = crate::funding::apply(&mut *state, player, options, response, registry);
                         state.log(LogLevel::Event, format!("Funded X = {x}"));
 
-                        // Step 4: pay additional costs (sacrifice / exile).
-                        if let Some(sac_id) = pending.sacrifice {
-                            let sac_name = card_name(&state, registry, sac_id);
-                            crate::destruction::sacrifice(&mut *state, sac_id, registry);
-                            state.log(LogLevel::Event,
-                                format!("Sacrificed {sac_name} as additional cost"));
-                        }
-                        let additional = registry.get(pending.card_id)
-                            .and_then(|b| b.card_data().additional_cost);
-                        if let Some(crate::cards::AdditionalCost::ExileCreaturesFromGraveyard(n)) = additional {
-                            let to_exile: Vec<ObjectId> = if pending.exile_ids.is_empty() {
-                                let mut cands: Vec<(ObjectId, i32)> = state.objects.values()
-                                    .filter(|o| {
-                                        o.zone == Zone::Graveyard && o.owner == player
-                                            && o.id != pending.object_id
-                                            && state.is_creature(o.id, registry)
-                                    })
-                                    .map(|o| (o.id, state.effective_power(o.id, registry).unwrap_or(0)))
-                                    .collect();
-                                cands.sort_by(|a, b| b.1.cmp(&a.1));
-                                cands.into_iter().take(n).map(|(id, _)| id).collect()
-                            } else {
-                                pending.exile_ids.clone()
-                            };
-                            if let Some(&first) = to_exile.first() {
-                                let power = state.effective_power(first, registry).unwrap_or(0);
-                                if let Some(obj) = state.get_object_mut(pending.object_id) {
-                                    obj.card_state.insert("exiled_power".into(),
-                                        ObjectId(u64::try_from(power).unwrap_or(0)));
-                                }
-                            }
-                            for eid in &to_exile {
-                                let name = card_name(&state, registry, *eid);
-                                state.move_object(*eid, Zone::Exile, registry);
-                                state.log(LogLevel::Event,
-                                    format!("Exiled {name} from graveyard as additional cost"));
-                            }
-                        } else if matches!(additional, Some(crate::cards::AdditionalCost::ExileXFromGraveyard)) {
-                            let gy_cards: Vec<ObjectId> = if pending.exile_ids.is_empty() {
-                                let count = pending.exile_count.unwrap_or(0) as usize;
-                                state.objects.values()
-                                    .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != pending.object_id)
-                                    .map(|o| o.id)
-                                    .take(count)
-                                    .collect()
-                            } else {
-                                pending.exile_ids.clone()
-                            };
-                            let count = u32::try_from(gy_cards.len()).unwrap_or(u32::MAX);
-                            for gid in &gy_cards {
-                                state.move_object(*gid, Zone::Exile, registry);
-                            }
-                            if let Some(obj) = state.get_object_mut(pending.object_id) {
-                                obj.card_state.insert("exile_count".into(), ObjectId(u64::from(count)));
-                            }
-                            state.log(LogLevel::Event,
-                                format!("Exiled {count} cards from graveyard as additional cost"));
-                        }
+                        // Step 4: pay additional costs (CR 601.2b), through
+                        // the same dispatch the eager cast path uses.
+                        crate::engine::costs::pay_additional_cost(
+                            state, registry, pending.card_id, pending.object_id, player,
+                            pending.sacrifice, pending.exile_count, &pending.exile_ids);
 
                         // Step 5: move spell to stack, set metadata,
                         // push StackEntry.

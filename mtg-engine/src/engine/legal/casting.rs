@@ -3,8 +3,7 @@
 use super::Ctx;
 use super::super::*;
 use crate::actions::Action;
-use crate::cards::AdditionalCost;
-use crate::ids::{CardId, ObjectId};
+use crate::ids::CardId;
 use crate::types::{Zone, CardType, ManaCost};
 
 /// Spells the player can cast from hand.
@@ -54,7 +53,7 @@ pub(crate) fn from_hand(
 
             // Check mana via autotap (applying cost reduction effects).
             // Also check if any continuous effects provide an alternative cost.
-            let alt_costs = alternative_costs_from_effects(state, registry, obj.card_id, player);
+            let alt_costs = alternative_costs(state, registry, obj.card_id, player);
             let has_alt_cost = !alt_costs.is_empty();
 
             // Build hand_costs for other spells (exclude this spell's cost).
@@ -112,34 +111,12 @@ pub(crate) fn from_hand(
                 continue;
             }
 
-            // Check additional costs.
-            let eligible_sacrifices: Vec<ObjectId> = match &data.additional_cost {
-                Some(AdditionalCost::SacrificeCreature) => {
-                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
-                        .iter()
-                        .filter(|o| state.is_creature(o.id, registry))
-                        .map(|o| o.id)
-                        .collect();
-                    if creatures.is_empty() { continue; }
-                    creatures
-                }
-                Some(AdditionalCost::ExileXFromGraveyard) => {
-                    // Player chooses X (0 to graveyard size). Actions are expanded below.
-                    vec![]
-                }
-                Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
-                    // Check that there are enough creature cards in graveyard.
-                    let creature_count = state.objects.values()
-                        .filter(|o| {
-                            o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
-                                && state.is_creature(o.id, registry)
-                        })
-                        .count();
-                    if creature_count < *n { continue; } // Not enough creatures to exile
-                    vec![] // No sacrifice needed — exile handled at cast time in submit_action
-                }
-                _ => vec![],
-            };
+            // Additional costs (CR 601.2b): can it be paid, and what are the
+            // choices? One determination, shared with the flashback path and
+            // with the cast handler.
+            let additional = additional_cost_plan(state, registry, obj.card_id, obj.id, player);
+            if !additional.payable { continue; }
+            let eligible_sacrifices = additional.sacrifice_options.clone();
 
             // Generate cast actions with valid targets.
             let target_req = behavior.target_requirement();
@@ -198,7 +175,12 @@ pub(crate) fn from_hand(
             if has_alt_cost {
                 // Use the first (cheapest) alternative cost. Multiple alternative costs
                 // would need a chooser, but for now there's only one source at a time.
-                let alt_mana = alt_costs[0].clone();
+                // An alternative cost is a base cost, not a total: CR 601.2f
+                // reductions still come off it.
+                let alt_mana = cost_to_cast(
+                    state, registry, obj.card_id, player,
+                    &CastMethod::Alternative(alt_costs[0].clone()),
+                ).mana;
                 // Compute autotap for the alternative cost.
                 let alt_tap_plan = mana::compute_autotap(&alt_mana, &player_state.mana_pool, &mana_sources, &other_hand_costs)
                     .unwrap_or_default();
@@ -237,26 +219,10 @@ pub(crate) fn from_hand(
                 }).unwrap_or_default();
                 // Expose max X for ExileXFromGraveyard spells so the player
                 // UI can show the effective damage in the label.
-                let exile_x_from_gy_max = if matches!(&data.additional_cost,
-                    Some(AdditionalCost::ExileXFromGraveyard)
-                ) {
-                    let n = state.objects.values()
-                        .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id)
-                        .count();
-                    Some(u32::try_from(n).unwrap_or(u32::MAX))
-                } else {
-                    None
-                };
+                let exile_x_from_gy_max = additional.exile_x_max;
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
-                let additional_cost_label = match &data.additional_cost {
-                    Some(AdditionalCost::SacrificeCreature) => Some("sacrifice a creature".into()),
-                    Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
-                        Some(format!("exile {} creature{} from GY", n, if *n == 1 { "" } else { "s" }))
-                    }
-                    Some(AdditionalCost::ExileXFromGraveyard) => Some("exile cards from GY".into()),
-                    None => None,
-                };
+                let additional_cost_label = additional.label.clone();
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
                     name: data.name.clone(),
@@ -350,33 +316,32 @@ pub(crate) fn flashback(
             // are funded via a ChooseXFunding prompt after the spell is
             // cast, exactly like non-flashback X casts — so here we only
             // need to verify the non-X portion is payable.
-            let fb_has_x = fb_cost.has_x();
+            // CR 601.2f: a cost reduction applies to whatever the base cost
+            // is, including one paid via flashback. This path used to autotap
+            // for the printed flashback cost directly, so a Zombie-spell
+            // discount reached spells cast from hand and nothing else.
+            let fb_total = cost_to_cast(
+                state, registry, obj.card_id, player,
+                &CastMethod::Alternative(fb_cost.clone()),
+            ).mana;
+            let fb_has_x = fb_total.has_x();
             let fb_non_x_cost;
             let fb_cost_for_autotap: &ManaCost = if fb_has_x {
-                fb_non_x_cost = fb_cost.without_x();
+                fb_non_x_cost = fb_total.without_x();
                 &fb_non_x_cost
             } else {
-                fb_cost
+                &fb_total
             };
             let Some(fb_tap_plan) = mana::compute_autotap(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &hand_costs) else {
                 // This particular cost is unaffordable; another may not be.
                 continue;
             };
 
-            // Check additional cost eligibility for graveyard casts.
-            {
-                use crate::cards::AdditionalCost;
-                if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = &data.additional_cost {
-                    // Count creature cards in graveyard (excluding the spell itself).
-                    let creature_count = state.objects.values()
-                        .filter(|o| {
-                            o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
-                                && state.is_creature(o.id, registry)
-                        })
-                        .count();
-                    if creature_count < *n { continue; }
-                }
-            }
+            // CR 601.2b: additional costs apply however the spell is cast.
+            // This used to check only `ExileCreaturesFromGraveyard`, the one
+            // kind Skaab Ruinator happens to have.
+            let additional = additional_cost_plan(state, registry, obj.card_id, obj.id, player);
+            if !additional.payable { continue; }
 
             let target_req = behavior.target_requirement();
 
@@ -399,7 +364,7 @@ pub(crate) fn flashback(
             for action in &mut cast_actions {
                 if let Action::CastSpell { tap_plan, alternative_cost, .. } = action {
                     tap_plan.clone_from(&fb_tap_plan);
-                    *alternative_cost = Some(fb_cost.clone());
+                    *alternative_cost = Some(fb_total.clone());
                 }
             }
             if !cast_actions.is_empty() {
@@ -411,9 +376,9 @@ pub(crate) fn flashback(
                     is_flashback: !cast_from_gy,
                     target_spec: spec,
                     tap_plan: fb_tap_plan,
-                    exile_x_from_gy_max: None,
-                    sacrifice_options: vec![], // Flashback spells don't have sacrifice additional costs
-                    additional_cost_label: None,
+                    exile_x_from_gy_max: additional.exile_x_max,
+                    sacrifice_options: additional.sacrifice_options.clone(),
+                    additional_cost_label: additional.label.clone(),
                 });
             }
             }

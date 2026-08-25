@@ -5,7 +5,7 @@ use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::ids::ObjectId;
 use crate::mana;
-use crate::state::{GameState, LogLevel};
+use crate::state::GameState;
 use crate::types::Zone;
 use super::super::*;
 
@@ -26,20 +26,28 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // Resolve the appropriate mana cost (applying cost reduction for
         // non-flashback). If an alternative_cost is provided (e.g.
         // Rooftop Storm's {0}), use it directly.
-        let cost = if let Some(alt) = alternative_cost {
-            alt.clone()
-        } else if is_flashback {
-            // Check until_end_of_turn for dynamically granted flashback.
-            let dynamic_fb = state.until_end_of_turn.iter()
-                .find_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
-                    if *target == object_id { Some(cost.clone()) } else { None }
-                } else { None });
-            dynamic_fb.unwrap_or_else(|| {
-                data.flashback_cost.expect("flashback cast on card without flashback_cost")
-            })
-        } else {
-            let base_cost = data.cost.expect("non-flashback spell must have a mana cost");
-            effective_spell_cost(&state, registry, card_id, &base_cost, player)
+        // `legal_actions` puts the determined total on the action, so the
+        // player is charged the cost they were offered. The fallback is for
+        // callers that build a `CastSpell` directly (tests, replays): work the
+        // cost out the same way, through the one determination.
+        let method = match (alternative_cost, is_flashback) {
+            (Some(alt), _) => CastMethod::Alternative(alt.clone()),
+            (None, true) => {
+                let dynamic_fb = state.until_end_of_turn.iter()
+                    .find_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
+                        if *target == object_id { Some(cost.clone()) } else { None }
+                    } else { None });
+                CastMethod::Alternative(dynamic_fb.unwrap_or_else(|| {
+                    data.flashback_cost.clone().expect("flashback cast on card without flashback_cost")
+                }))
+            }
+            (None, false) => CastMethod::Normal,
+        };
+        let cost = match &method {
+            // Already the determined total — reducing it again would
+            // double-count.
+            CastMethod::Alternative(c) if alternative_cost.is_some() => c.clone(),
+            _ => cost_to_cast(&state, registry, card_id, player, &method).mana,
         };
 
         // Rules-strict X-cost casting (CR 601.2h → 601.2i): costs are
@@ -111,99 +119,43 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
             // Fall through to the eager path and pay as X=0.
         }
 
-        // Rules-strict exile-cost casting: for spells with an
-        // `ExileXFromGraveyard` or `ExileCreaturesFromGraveyard(n)`
-        // additional cost, set up a `ChooseExileFromGraveyard` prompt
-        // and leave the spell in hand until the player submits
-        // `ChosenExileSet`. Mirrors the ChooseXFunding flow above.
-        //
-        // The prompt is only set up if the caller left `exile_ids`
-        // empty AND hasn't specified an exile_count (for variable-X
-        // exile cost). That lets tests and other code paths submit
-        // an already-resolved `CastSpell` with specific exile_ids
-        // (or an explicit X count) and bypass the prompt.
-        {
-            use crate::cards::AdditionalCost;
-            let additional = data.additional_cost.clone();
-            let needs_exile_prompt = exile_ids.is_empty() && match &additional {
-                Some(AdditionalCost::ExileXFromGraveyard) => exile_count.is_none(),
-                Some(AdditionalCost::ExileCreaturesFromGraveyard(_)) => true,
-                _ => false,
-            };
-            if needs_exile_prompt {
-                let (gy_options, min, max) = match &additional {
-                    Some(AdditionalCost::ExileXFromGraveyard) => {
-                        // Any card in the caster's graveyard is eligible,
-                        // except the spell itself (if cast from GY).
-                        let opts: Vec<ObjectId> = state.objects.values()
-                            .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != object_id)
-                            .map(|o| o.id)
-                            .collect();
-                        let n = opts.len();
-                        (opts, 0usize, n)
-                    }
-                    Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
-                        // Only creature cards in GY.
-                        let opts: Vec<ObjectId> = state.objects.values()
-                            .filter(|o| {
-                                o.zone == Zone::Graveyard && o.owner == player && o.id != object_id
-                                    && state.is_creature(o.id, registry)
-                            })
-                            .map(|o| o.id)
-                            .collect();
-                        (opts, *n, *n)
-                    }
-                    _ => unreachable!(),
-                };
-
-                let spell_name = card_name(&state, registry, object_id);
-                let description = match &additional {
-                    Some(AdditionalCost::ExileXFromGraveyard) => format!(
-                        "{spell_name}: choose 0-{} cards to exile from your graveyard (each exiled card adds to the spell's X)",
-                        gy_options.len()
-                    ),
-                    Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => format!(
-                        "{spell_name}: choose exactly {n} creature{} to exile from your graveyard",
-                        if *n == 1 { "" } else { "s" }
-                    ),
-                    _ => unreachable!(),
-                };
-
-                // For X-cost spells, the non_x_mana_cost is the stripped
-                // cost. For non-X spells, use the full cost.
-                let non_x_mana_cost = if has_x {
-                    cost.without_x()
-                } else {
-                    cost.clone()
-                };
-
-                state.pending_spell_cast = Some(crate::state::PendingSpellCast {
-                    object_id: object_id,
-                    player,
-                    card_id,
-                    targets: targets.to_vec(),
-                    sacrifice: sacrifice,
-                    exile_ids: exile_ids.to_vec(),
-                    exile_count: exile_count,
-                    tap_plan: tap_plan.to_vec(),
-                    alternative_cost: alternative_cost.cloned(),
-                    non_x_mana_cost,
-                    is_flashback,
-                });
-                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                    player,
-                    source: object_id,
-                    choice: crate::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
-                        description,
-                        options: gy_options,
-                        min,
-                        max,
-                        source_id: object_id,
-                    },
-                });
-                // Spell stays in hand; no mana tapped or paid yet.
-                return Applied::ReturnNow;
-            }
+        // Rules-strict exile-cost casting: a spell with an exile-from-graveyard
+        // additional cost sets up a `ChooseExileFromGraveyard` prompt and stays
+        // in its origin zone until the player submits `ChosenExileSet`, exactly
+        // as the ChooseXFunding flow above does. A caller that already named
+        // the cards (a test, a replay) skips the prompt.
+        if let Some(prompt) = costs::exile_prompt(
+            &state, registry, card_id, object_id, player, exile_count, exile_ids,
+            &card_name(&state, registry, object_id),
+        ) {
+            // For X-cost spells the stashed cost is the stripped one.
+            let non_x_mana_cost = if has_x { cost.without_x() } else { cost.clone() };
+            state.pending_spell_cast = Some(crate::state::PendingSpellCast {
+                object_id,
+                player,
+                card_id,
+                targets: targets.to_vec(),
+                sacrifice,
+                exile_ids: exile_ids.to_vec(),
+                exile_count,
+                tap_plan: tap_plan.to_vec(),
+                alternative_cost: alternative_cost.cloned(),
+                non_x_mana_cost,
+                is_flashback,
+            });
+            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                player,
+                source: object_id,
+                choice: crate::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
+                    description: prompt.description,
+                    options: prompt.options,
+                    min: prompt.min,
+                    max: prompt.max,
+                    source_id: object_id,
+                },
+            });
+            // Spell stays in hand; no mana tapped or paid yet.
+            return Applied::ReturnNow;
         }
 
         // Eager path: non-X spells and X-cost spells with max_x == 0.
@@ -222,106 +174,10 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                 .expect("legal_actions should have verified mana availability");
         }
 
-        // Pay additional costs (sacrifice) at cast time, before the spell goes on the stack.
-        if let Some(sac_id) = sacrifice {
-            let sac_name = card_name(&state, registry, sac_id);
-            crate::destruction::sacrifice(&mut *state, sac_id, registry);
-            state.log(LogLevel::Event,
-                format!("Sacrificed {sac_name} as additional cost"));
-        } else {
-            // Backward compatibility: if sacrifice is None but the spell has
-            // AdditionalCost::SacrificeCreature, auto-sacrifice the first creature.
-            use crate::cards::AdditionalCost;
-            let needs_sac = registry.get(card_id)
-                .is_some_and(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::SacrificeCreature)));
-            if needs_sac {
-                let creature = state.objects_in_zone(Zone::Battlefield, player)
-                    .iter()
-                    .find(|o| state.is_creature(o.id, registry))
-                    .map(|o| o.id);
-                if let Some(cid) = creature {
-                    let sac_name = card_name(&state, registry, cid);
-                    crate::destruction::sacrifice(&mut *state, cid, registry);
-                    state.log(LogLevel::Event,
-                        format!("Sacrificed {sac_name} as additional cost"));
-                }
-            }
-        }
-
-        // Handle ExileCreaturesFromGraveyard additional cost (Skaab Ruinator, Corpse Lunge, etc.).
-        {
-            use crate::cards::AdditionalCost;
-            if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = registry.get(card_id)
-                .and_then(|b| b.card_data().additional_cost)
-            {
-                // Use player-chosen exile_ids if provided, otherwise fall back to auto-pick.
-                let to_exile: Vec<ObjectId> = if exile_ids.is_empty() {
-                    let mut exile_candidates: Vec<(ObjectId, i32)> = state.objects.values()
-                        .filter(|o| {
-                            o.zone == Zone::Graveyard && o.owner == player && o.id != object_id
-                                && state.is_creature(o.id, registry)
-                        })
-                        .map(|o| (o.id, o.power.unwrap_or(0)))
-                        .collect();
-                    exile_candidates.sort_by(|a, b| b.1.cmp(&a.1));
-                    exile_candidates.into_iter().take(n).map(|(id, _)| id).collect()
-                } else {
-                    exile_ids.to_vec()
-                };
-
-                // Store the first exiled creature's power for cards that need it
-                // (Corpse Lunge uses the power to determine damage).
-                // Use `effective_power` so characteristic-defining-ability creatures
-                // (Boneyard Wurm, Splinterfright, etc.) whose P/T is a function of
-                // graveyard state — which CR 208.2 says "works in all zones" —
-                // store their CDA-computed power instead of the base 0.
-                if let Some(&first_exile) = to_exile.first() {
-                    let power = state.effective_power(first_exile, registry).unwrap_or(0);
-                    if let Some(obj) = state.get_object_mut(object_id) {
-                        obj.card_state.insert("exiled_power".into(), ObjectId(u64::try_from(power).unwrap_or(0)));
-                    }
-                }
-
-                for exile_id in &to_exile {
-                    let name = card_name(&state, registry, *exile_id);
-                    state.move_object(*exile_id, Zone::Exile, registry);
-                    state.log(LogLevel::Event,
-                        format!("Exiled {name} from graveyard as additional cost"));
-                }
-            }
-        }
-
-        // Handle ExileXFromGraveyard additional cost (Harvest Pyre).
-        // The player chose X via exile_count in the action.
-        {
-            use crate::cards::AdditionalCost;
-            let needs_exile_x = registry.get(card_id)
-                .is_some_and(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileXFromGraveyard)));
-            if needs_exile_x {
-                // If specific cards were chosen (via exile_ids), exile those exactly.
-                // Otherwise fall back to auto-selecting the first exile_count cards (legacy behavior).
-                let graveyard_cards: Vec<ObjectId> = if exile_ids.is_empty() {
-                    let x = exile_count.unwrap_or(0) as usize;
-                    state.objects.values()
-                        .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != object_id)
-                        .map(|o| o.id)
-                        .take(x)
-                        .collect()
-                } else {
-                    exile_ids.to_vec()
-                };
-                let count = u32::try_from(graveyard_cards.len()).unwrap_or(u32::MAX);
-                for gid in &graveyard_cards {
-                    state.move_object(*gid, Zone::Exile, registry);
-                }
-                // Store the count on the spell for resolution.
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.card_state.insert("exile_count".into(), ObjectId(u64::from(count)));
-                }
-                state.log(LogLevel::Event,
-                    format!("Exiled {count} cards from graveyard as additional cost"));
-            }
-        }
+        // CR 601.2b: additional costs are paid before the spell goes on the
+        // stack. One dispatch on the kind, shared with the exile-choice handler.
+        costs::pay_additional_cost(
+            state, registry, card_id, object_id, player, sacrifice, exile_count, exile_ids);
 
         // Move to stack and store targets.
         state.move_object(object_id, Zone::Stack, registry);
