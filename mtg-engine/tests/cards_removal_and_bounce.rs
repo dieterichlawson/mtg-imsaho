@@ -104,101 +104,106 @@ fn frightful_delusion_counters_and_discards() {
         "Controller of countered spell should discard a card");
 }
 
-// ── Creature-type filtered removal ──────────────────────────────────
+// ── What a removal spell is allowed to point at ─────────────────────
 
-/// Victim of Night destroys a non-Vampire/Werewolf/Zombie creature.
-#[test]
-fn victim_of_night_kills_normal_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let bears = ready_creature(&mut state, P1, 2, 2);
-    let card = castable_spell(&mut state, &reg, "Victim of Night", P0);
-
-    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(bears)]);
-
-    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard);
+/// A candidate for a removal spell to consider, built fresh per row.
+enum Candidate {
+    /// A vanilla creature of this size.
+    Creature(i32, i32),
+    /// A named card put onto the battlefield (for its subtypes).
+    Named(&'static str),
+    /// A basic land.
+    Land,
+    /// An Aura, which needs a creature to enchant — so this also supplies the
+    /// creature the row's "illegal" side uses.
+    Enchantment,
 }
 
-/// Victim of Night can't target a Vampire (Markov Patrician).
-#[test]
-fn victim_of_night_cant_target_vampire() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let vamp = named_creature(&mut state, &reg, "Markov Patrician", P1);
-
-    let _card = castable_spell(&mut state, &reg, "Victim of Night", P0);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let targets_vamp = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == vamp)))
-    });
-    assert!(!targets_vamp,
-        "Victim of Night should not be able to target a Vampire");
+fn place(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry, c: &Candidate) -> ObjectId {
+    match *c {
+        Candidate::Creature(p, t) => ready_creature(state, P1, p, t),
+        Candidate::Named(name) => named_creature(state, reg, name, P1),
+        Candidate::Land => {
+            let id = reg.get_id_by_name("Forest").unwrap();
+            let land = state.create_object(id, P1, Zone::Battlefield, None, None);
+            state.get_object_mut(land).unwrap().summoning_sick = false;
+            land
+        }
+        Candidate::Enchantment => {
+            let creature = ready_creature(state, P1, 2, 2);
+            let pac = castable_spell(state, reg, "Pacifism", P1);
+            // The Aura's controller has to hold priority to pay for it.
+            state.priority_player = Some(P1);
+            *state = cast_and_resolve(state, reg, pac, vec![Target::Object(creature)]);
+            pac
+        }
+    }
 }
 
-/// Smite the Monstrous destroys creature with power 4+.
+/// Targeted removal, and what each spell's text does and does not let it point
+/// at. CR 601.2c: the engine only offers legal targets, so both halves are
+/// observable from `legal_actions`.
+///
+/// Every row carries a legal candidate as well as an illegal one. Without it, a
+/// row asserts only "this target is not offered" — which an engine that offered
+/// nothing at all would satisfy. Three of the tests this replaces were exactly
+/// that shape.
 #[test]
-fn smite_the_monstrous_kills_big_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn targeted_removal_offers_the_targets_its_text_allows() {
+    // (spell, something it may target, something it may not, what the rule is)
+    const CASES: &[(&str, Candidate, Candidate, &str)] = &[
+        ("Victim of Night", Candidate::Creature(2, 2), Candidate::Named("Markov Patrician"),
+         "'creature that isn't a Vampire, Werewolf, or Zombie' — the Patrician is a Vampire"),
+        ("Smite the Monstrous", Candidate::Creature(5, 5), Candidate::Creature(2, 2),
+         "'creature with power 4 or greater'"),
+        ("Naturalize", Candidate::Enchantment, Candidate::Creature(3, 3),
+         "'target artifact or enchantment'"),
+        ("Bramblecrush", Candidate::Land, Candidate::Creature(3, 3),
+         "'target noncreature permanent'"),
+        ("Urgent Exorcism", Candidate::Named("Chapel Geist"), Candidate::Creature(3, 3),
+         "'target Spirit or enchantment' — the Geist is a Spirit"),
+    ];
 
-    let big = ready_creature(&mut state, P1, 5, 5);
-    let small = ready_creature(&mut state, P1, 2, 2);
+    for (spell_name, legal, illegal, rule) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card = castable_spell(&mut state, &reg, "Smite the Monstrous", P0);
+        let good = place(&mut state, &reg, legal);
+        let bad = place(&mut state, &reg, illegal);
+        state.priority_player = Some(P0);
+        let spell = castable_spell(&mut state, &reg, spell_name, P0);
 
-    // Should be able to target the 5/5 but not the 2/2.
-    let legal = engine::legal_actions(&state, &reg);
-    let targets_big = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == big)))
-    });
-    let targets_small = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == small)))
-    });
-    assert!(targets_big, "Should be able to target 5/5");
-    assert!(!targets_small, "Should not be able to target 2/2");
+        let offered = offered_targets(&state, &reg, spell);
+        assert!(offered.contains(&Target::Object(good)),
+            "{spell_name} should be able to target it: {rule}. offered: {offered:?}");
+        assert!(!offered.contains(&Target::Object(bad)),
+            "{spell_name} should not be able to target it: {rule}");
 
-    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(big)]);
-
-    assert_eq!(state.get_object(big).unwrap().zone, Zone::Graveyard);
+        // And the spell does what it says to the target it was allowed.
+        let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(good)]);
+        assert_eq!(state.get_object(good).unwrap().zone, Zone::Graveyard,
+            "{spell_name} destroys what it targeted");
+    }
 }
 
-/// Rebuke destroys an attacking creature.
+/// Rebuke ("Destroy target attacking creature") needs a combat to have a legal
+/// target at all, so it gets its own setup — same rule as the table above.
 #[test]
-fn rebuke_destroys_attacking_creature() {
+fn rebuke_only_targets_a_creature_that_is_attacking() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let attacker = ready_creature(&mut state, P0, 3, 3);
-    let non_attacker = ready_creature(&mut state, P0, 2, 2);
-
-    // Declare attacker.
+    let bystander = ready_creature(&mut state, P0, 2, 2);
     submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
     state.priority_player = Some(P1);
 
-    // P1 casts Rebuke.
-    let card = castable_spell(&mut state, &reg, "Rebuke", P1);
+    let rebuke = castable_spell(&mut state, &reg, "Rebuke", P1);
+    let offered = offered_targets(&state, &reg, rebuke);
+    assert!(offered.contains(&Target::Object(attacker)), "the attacking creature is a legal target");
+    assert!(!offered.contains(&Target::Object(bystander)), "the one that stayed home is not");
 
-    // Rebuke should only target the attacking creature.
-    let legal = engine::legal_actions(&state, &reg);
-    let targets_attacker = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == attacker)))
-    });
-    let targets_non_attacker = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == non_attacker)))
-    });
-    assert!(targets_attacker, "Should target the attacking creature");
-    assert!(!targets_non_attacker, "Should not target non-attacking creature");
-
-    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(attacker)]);
-
+    let state = cast_and_resolve(&state, &reg, rebuke, vec![Target::Object(attacker)]);
     assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Graveyard);
 }
 
@@ -220,104 +225,6 @@ fn silent_departure_bounces_creature() {
         "Creature should be returned to hand");
 }
 
-// ── Permanent removal ───────────────────────────────────────────────
-
-/// Naturalize destroys an enchantment.
-#[test]
-fn naturalize_destroys_enchantment() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put an enchantment on the battlefield.
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    let pac = castable_spell(&mut state, &reg, "Pacifism", P1);
-    state.priority_player = Some(P1);
-
-    state = cast_and_resolve(&state, &reg, pac, vec![Target::Object(creature)]);
-    assert_eq!(state.get_object(pac).unwrap().zone, Zone::Battlefield);
-
-    // P0 casts Naturalize on the Pacifism.
-    state.priority_player = Some(P0);
-    let nat = castable_spell(&mut state, &reg, "Naturalize", P0);
-
-    state = cast_and_resolve(&state, &reg, nat, vec![Target::Object(pac)]);
-
-    assert_eq!(state.get_object(pac).unwrap().zone, Zone::Graveyard,
-        "Naturalize should destroy the enchantment");
-}
-
-/// Naturalize can't target a creature (only artifacts/enchantments).
-#[test]
-fn naturalize_cant_target_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P1, 3, 3);
-
-    let _nat = castable_spell(&mut state, &reg, "Naturalize", P0);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let targets_creature = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == creature)))
-    });
-    assert!(!targets_creature, "Naturalize should not target a creature");
-}
-
-/// Bramblecrush destroys a noncreature permanent (e.g., a land).
-#[test]
-fn bramblecrush_destroys_land() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let forest_id = reg.get_id_by_name("Forest").unwrap();
-    let land = state.create_object(forest_id, P1, Zone::Battlefield, None, None);
-    state.get_object_mut(land).unwrap().name = "Forest".into();
-    state.get_object_mut(land).unwrap().summoning_sick = false;
-
-    let bc = castable_spell(&mut state, &reg, "Bramblecrush", P0);
-
-    state = cast_and_resolve(&state, &reg, bc, vec![Target::Object(land)]);
-
-    assert_eq!(state.get_object(land).unwrap().zone, Zone::Graveyard,
-        "Bramblecrush should destroy the land");
-}
-
-/// Bramblecrush can't target a creature.
-#[test]
-fn bramblecrush_cant_target_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P1, 3, 3);
-
-    let _bc = castable_spell(&mut state, &reg, "Bramblecrush", P0);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let targets_creature = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { targets, .. }
-            if targets.iter().any(|t| matches!(t, Target::Object(id) if *id == creature)))
-    });
-    assert!(!targets_creature, "Bramblecrush should not target a creature");
-}
-
-/// Urgent Exorcism destroys a Spirit creature.
-#[test]
-fn urgent_exorcism_destroys_spirit() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Chapel Geist is a Spirit.
-    let geist = named_creature(&mut state, &reg, "Chapel Geist", P1);
-
-    let ue = castable_spell(&mut state, &reg, "Urgent Exorcism", P0);
-
-    state = cast_and_resolve(&state, &reg, ue, vec![Target::Object(geist)]);
-
-    assert_eq!(state.get_object(geist).unwrap().zone, Zone::Graveyard,
-        "Urgent Exorcism should destroy a Spirit");
-}
-
 // ── Fight ───────────────────────────────────────────────────────────
 
 /// Prey Upon: your creature fights their creature. Both deal damage.
@@ -327,9 +234,7 @@ fn prey_upon_fight() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let mine = ready_creature(&mut state, P0, 3, 3);
-    state.get_object_mut(mine).unwrap().controller = P0;
     let theirs = ready_creature(&mut state, P1, 2, 2);
-    state.get_object_mut(theirs).unwrap().controller = P1;
 
     let pu = castable_spell(&mut state, &reg, "Prey Upon", P0);
 

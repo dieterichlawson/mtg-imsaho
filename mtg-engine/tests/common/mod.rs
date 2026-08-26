@@ -101,6 +101,21 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 /// the max (taps every offered source + drains pool). Tests wanting a
 /// specific X value should construct the `FundingResponse` themselves
 /// instead of calling this helper.
+/// Every target the engine currently offers for casting `spell`.
+///
+/// Scoped to `spell`: the hand-rolled version of this asked whether *any*
+/// castable spell named the target, which is only the same question when
+/// exactly one spell is castable.
+pub fn offered_targets(state: &GameState, registry: &CardRegistry, spell: ObjectId) -> Vec<Target> {
+    mtg_engine::engine::legal_actions(state, registry).actions.iter()
+        .filter_map(|a| match a {
+            Action::CastSpell { object_id, targets, .. } if *object_id == spell => Some(targets.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
 /// Activate `object_id`'s `ability_index`-th ability at `targets`.
 ///
 /// The `ActivateAbility` literal has seven fields and appeared 116 times; at
