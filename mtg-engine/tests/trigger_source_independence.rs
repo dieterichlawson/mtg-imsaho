@@ -10,9 +10,8 @@
 
 mod common;
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::{Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{DeadCreature, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
@@ -527,11 +526,7 @@ fn an_etb_trigger_collected_for_real_survives_its_source_dying() {
     let lib_before = state.get_player(P0).library_order.len();
 
     let skaab = castable_spell(&mut state, &registry, "Armored Skaab", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: skaab, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &registry,
-    );
+    state = cast_onto_stack(&state, &registry, skaab, vec![]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
     assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Battlefield,
         "test setup: the Skaab resolved onto the battlefield");

@@ -481,11 +481,7 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
 
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
     // Cast the spell and put it on the stack.
-    state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, spell, vec![]);
     // Resolve: this triggers a ChooseCardType choice.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert!(state.awaiting_action.is_some(), "Should be awaiting card type choice");
@@ -524,11 +520,7 @@ fn creeping_renaissance_only_returns_chosen_type() {
     }
 
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
-    state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, spell, vec![]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Choose "Enchantment" (index 2).
@@ -682,11 +674,7 @@ fn skaab_ruinator_cast_from_graveyard() {
     // (exile 3 creatures) and leaves the spell in the graveyard until
     // the cost is paid. Use the test helper to pick the max-power
     // subset (all three 1/1s).
-    let mut new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: ruinator, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    let mut new_state = cast_onto_stack(&state, &reg, ruinator, vec![]);
     new_state = resolve_exile_choice_max_power(&new_state, &reg);
 
     // Should be on the stack (not panicked!).

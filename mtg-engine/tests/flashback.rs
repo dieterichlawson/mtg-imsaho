@@ -108,22 +108,14 @@ fn flashback_spell_countered_is_exiled() {
     state.get_object_mut(gf).unwrap().name = "Geistflame".into();
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 4);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: gf, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, gf, vec![Target::Player(P1)]);
 
     // P1 casts Counterspell targeting Geistflame on the stack.
     let cs = spell_in_hand(&mut state, &reg, "Counterspell", P1);
     add_mana_for(&mut state, &reg, "Counterspell", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: cs, targets: vec![Target::Object(gf)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, cs, vec![Target::Object(gf)]);
     // Resolve the Counterspell (top of stack).
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 

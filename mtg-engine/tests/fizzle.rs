@@ -1,543 +1,254 @@
-//! Tests for proper spell fizzle implementation (CR 608.2b).
+//! CR 608.2b: as a spell resolves, its targets are checked again. A spell whose
+//! targets have *all* become illegal is countered by game rules — it never
+//! resolves at all, which is not the same as resolving and finding nothing to
+//! do. A spell that keeps at least one legal target resolves and does as much
+//! as it can.
 //!
-//! A spell whose targets are all illegal when it tries to resolve should
-//! be countered by game rules BEFORE `on_resolve` is called. This is different
-//! from `on_resolve` checking targets and doing nothing — the spell should
-//! never resolve at all.
-//!
-//! These tests verify the mechanism, not just the outcome.
+//! The difference is only observable in what the resolution emits, so these
+//! tests watch for `GameEvent::SpellResolved` rather than for the effect. A
+//! spell that "resolved but did nothing because the target was gone" emits it;
+//! a fizzled one must not.
 
 mod common;
 use common::*;
-use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
+use mtg_engine::actions::Target;
 use mtg_engine::events::GameEvent;
 use mtg_engine::types::*;
 
-// ════════════════════════════════════════════════════════════════════
-// Mechanism test: SpellResolved event should NOT be emitted for fizzle
-// ════════════════════════════════════════════════════════════════════
+/// Did the last resolution report the spell as resolved?
+fn resolved(state: &mtg_engine::state::GameState, spell: ObjectId) -> bool {
+    state.events.iter().any(|e| matches!(e, GameEvent::SpellResolved { object } if *object == spell))
+}
 
-/// When a spell fizzles, the engine should NOT emit `SpellResolved`.
-/// A fizzled spell was countered by game rules — it did not resolve.
+/// Cast `spell` at `target`, move the target to `moved_to`, then resolve.
+/// Events are cleared before resolution so only what the resolution emitted is
+/// visible.
+fn cast_then_move_target(
+    state: &mut mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    spell: ObjectId,
+    target: ObjectId,
+    moved_to: Zone,
+) {
+    *state = cast_onto_stack(state, reg, spell, vec![Target::Object(target)]);
+    state.move_object(target, moved_to, reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(state, reg);
+}
+
+// ---------------------------------------------------------------------------
+// A spell whose only target is gone is countered by game rules
+// ---------------------------------------------------------------------------
+
+/// Every kind of single-target spell in the set, each losing its one target
+/// before resolution. What varies is the card and where the target went; what
+/// must not vary is that the spell is countered rather than resolved.
+///
+/// One card per effect shape on purpose: a damage spell, an exile spell with a
+/// rider, a destroy spell, a pump spell, and an Aura — an Aura in particular
+/// has somewhere else it could wrongly end up (CR 704.5m).
 #[test]
-fn fizzled_spell_does_not_emit_resolved_event() {
+fn a_spell_whose_only_target_became_illegal_is_countered_by_game_rules() {
+    // (spell, target's power/toughness, where the target goes)
+    const CASES: &[(&str, i32, i32, Zone)] = &[
+        ("Lightning Bolt", 3, 3, Zone::Graveyard),
+        ("Swords to Plowshares", 5, 5, Zone::Exile),
+        ("Doom Blade", 5, 5, Zone::Exile),
+        ("Giant Growth", 2, 2, Zone::Graveyard),
+        ("Pacifism", 2, 2, Zone::Graveyard),
+    ];
+
+    for &(spell_name, power, toughness, moved_to) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let creature = ready_creature(&mut state, P1, power, toughness);
+        let spell = castable_spell(&mut state, &reg, spell_name, P0);
+        cast_then_move_target(&mut state, &reg, spell, creature, moved_to);
+
+        assert!(!resolved(&state, spell),
+            "{spell_name} lost its only target, so it is countered by game rules, \
+             not resolved (CR 608.2b)");
+        assert_eq!(state.get_object(spell).unwrap().zone, Zone::Graveyard,
+            "{spell_name} still goes to its owner's graveyard — including an Aura, \
+             which must not reach the battlefield with nothing to enchant");
+        assert_eq!(state.get_object(creature).unwrap().zone, moved_to,
+            "{spell_name} did nothing to the creature it could no longer see");
+        assert_eq!(state.get_player(P1).life, 20,
+            "{spell_name} did not touch the target's controller either — no \
+             redirected damage, and no Swords life gain");
+    }
+}
+
+/// A spell resolves when its target is still there. The control for the table
+/// above: without it, an engine that countered every spell would pass.
+#[test]
+fn a_spell_that_keeps_its_target_resolves() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P1, 3, 3);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Target dies before resolution.
-    state.move_object(creature, Zone::Graveyard, &reg);
+    state = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(creature)]);
     state.events.clear();
-
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    // Should NOT have a SpellResolved event — the spell fizzled.
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { object } if *object == bolt)
-    });
-    assert!(!has_resolved,
-        "Fizzled spell should NOT emit SpellResolved — it was countered by game rules, not resolved (CR 608.2b)");
+    assert!(resolved(&state, bolt), "the target never became illegal");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 3, "and the Bolt hit it");
 }
 
-/// A spell that resolves normally SHOULD emit `SpellResolved`.
+/// Two things that cannot become illegal targets, so the spells naming them
+/// cannot fizzle: no target at all, and a player (nobody leaves a two-player
+/// game mid-spell).
 #[test]
-fn resolved_spell_emits_resolved_event() {
+fn a_spell_with_nothing_that_can_become_illegal_always_resolves() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = ready_creature(&mut state, P1, 3, 3);
+    // No targets: Divination.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    stock_library(&mut state, &reg, P0, 5);
+    let div = castable_spell(&mut state, &reg, "Divination", P0);
+    state = cast_onto_stack(&state, &reg, div, vec![]);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(resolved(&state, div), "a spell with no targets has none to lose");
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 2, "and it drew its two cards");
+
+    // A player target: Lightning Bolt to the face.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bolt, vec![Target::Player(P1)]);
     state.events.clear();
-
-    // Target is still on the battlefield — spell resolves normally.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { object } if *object == bolt)
-    });
-    assert!(has_resolved,
-        "Spell with legal target should emit SpellResolved");
+    assert!(resolved(&state, bolt), "a player does not stop being a legal target");
+    assert_eq!(state.get_player(P1).life, 17, "and took the 3 damage");
 }
 
-// ════════════════════════════════════════════════════════════════════
-// Mechanism test: on_resolve should NOT be called for fizzle
-//
-// We test this using Swords to Plowshares, which exiles a creature
-// AND causes its controller to gain life. If on_resolve runs but the
-// zone check saves us, the life gain won't happen — but that's the
-// wrong reason. We verify via the SpellResolved event instead.
-//
-// More importantly: if someone later writes a card that does
-// "deal damage to target creature; draw a card", the fizzle must
-// prevent BOTH effects. We simulate this with a two-part test.
-// ════════════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------------------
+// More than one target (CR 608.2b)
+// ---------------------------------------------------------------------------
 
-/// Swords to Plowshares fizzle: no exile, no life gain, no `SpellResolved`.
+/// "Up to two target creatures" — one target going illegal is not enough to
+/// counter the spell; the rest of it still happens. All of them going illegal
+/// is.
 #[test]
-fn swords_fizzle_no_side_effects() {
+fn a_multi_target_spell_is_countered_only_when_every_target_is_illegal() {
+    let reg = registry();
+
+    // One of two dies: the survivor is still tapped.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = ready_creature(&mut state, P1, 3, 3);
+    let b = ready_creature(&mut state, P1, 2, 2);
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state = cast_onto_stack(&state, &reg, dread, vec![Target::Object(a), Target::Object(b)]);
+    state.move_object(a, Zone::Graveyard, &reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(resolved(&state, dread), "one legal target left, so the spell resolves");
+    assert!(state.get_object(b).unwrap().tapped,
+        "and does as much as it can: the surviving creature is tapped");
+
+    // Both die: countered by game rules.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = ready_creature(&mut state, P1, 3, 3);
+    let b = ready_creature(&mut state, P1, 2, 2);
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state = cast_onto_stack(&state, &reg, dread, vec![Target::Object(a), Target::Object(b)]);
+    state.move_object(a, Zone::Graveyard, &reg);
+    state.move_object(b, Zone::Graveyard, &reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!resolved(&state, dread), "no legal target left, so it is countered");
+    assert_eq!(state.get_object(dread).unwrap().zone, Zone::Graveyard);
+}
+
+/// Prey Upon ("Target creature you control fights target creature you don't
+/// control") keeps a legal target when the opponent's creature leaves, so the
+/// spell is *not* countered — it resolves and the fight simply does not happen,
+/// because a fight needs both creatures (CR 701.15).
+///
+/// Resolving-and-doing-nothing and being-countered look the same from the
+/// battlefield, which is why this asserts on both the spell's zone and the
+/// surviving creature's damage.
+#[test]
+fn prey_upon_resolves_without_fighting_when_one_of_its_two_targets_is_gone() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = ready_creature(&mut state, P1, 5, 5);
-    let swords = castable_spell(&mut state, &reg, "Swords to Plowshares", P0);
+    let mine = ready_creature(&mut state, P0, 3, 3);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: swords, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Target leaves battlefield before resolution.
-    state.move_object(creature, Zone::Exile, &reg);
-    state.events.clear();
-
+    let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
+    state = cast_onto_stack(&state, &reg, prey, vec![Target::Object(mine), Target::Object(theirs)]);
+    state.move_object(theirs, Zone::Graveyard, &reg);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    // No SpellResolved — fizzled.
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { .. })
-    });
-    assert!(!has_resolved,
-        "Swords to Plowshares should fizzle (not resolve) when target is gone");
-
-    // P1 should NOT have gained life (the creature was 5/5).
-    assert_eq!(state.get_player(P1).life, 20,
-        "No life gain from fizzled Swords to Plowshares");
+    assert_eq!(state.get_object(prey).unwrap().zone, Zone::Graveyard,
+        "one target is still legal, so the spell resolves");
+    assert_eq!(state.get_object(mine).unwrap().damage_marked, 0,
+        "but a fight needs two creatures, so mine takes nothing");
 }
 
-// ════════════════════════════════════════════════════════════════════
-// Flashback fizzle: should go to exile, not graveyard
-// ════════════════════════════════════════════════════════════════════
+// ---------------------------------------------------------------------------
+// Fizzling does not skip the flashback replacement (CR 702.33a)
+// ---------------------------------------------------------------------------
 
-/// A flashback spell that fizzles should still be exiled (not go to graveyard).
-/// The "exile instead of graveyard" replacement applies regardless of whether
-/// the spell resolved or fizzled.
+/// "Then exile it" applies to a flashback spell that was countered by game
+/// rules just as much as to one that resolved: the card left the stack either
+/// way.
 #[test]
-fn flashback_spell_fizzle_goes_to_exile() {
+fn a_fizzled_flashback_spell_is_still_exiled() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Put Geistflame in graveyard (for flashback).
-    let gf_id = reg.get_id_by_name("Geistflame").unwrap();
-    let geistflame = state.create_object(gf_id, P0, Zone::Graveyard, None, None);
-    state.get_object_mut(geistflame).unwrap().name = "Geistflame".into();
-
-    // Add flashback mana ({3}{R}).
+    let geistflame = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
+    // Flashback {3}{R}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
 
     let creature = ready_creature(&mut state, P1, 2, 2);
+    state = cast_onto_stack(&state, &reg, geistflame, vec![Target::Object(creature)]);
+    assert!(state.get_object(geistflame).unwrap().cast_with_flashback,
+        "test setup: this is the flashback cast, not a cast from hand");
 
-    // Cast with flashback.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    assert!(state.get_object(geistflame).unwrap().cast_with_flashback);
-
-    // Target dies before resolution.
     state.move_object(creature, Zone::Graveyard, &reg);
-
+    state.events.clear();
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    // Flashback spell should be in exile (not graveyard), even though it fizzled.
+    assert!(!resolved(&state, geistflame), "the target is gone, so it is countered");
     assert_eq!(state.get_object(geistflame).unwrap().zone, Zone::Exile,
-        "Flashback spell that fizzles should still go to exile, not graveyard");
+        "and the flashback replacement still exiles it rather than letting it \
+         return to the graveyard to be cast again");
+    assert_eq!(state.get_player(P1).life, 20, "no damage was dealt");
 }
 
-/// A flashback spell that fizzles should NOT emit `SpellResolved`.
-/// Before the fizzle fix, this would have emitted `SpellResolved` because
-/// `on_resolve` was always called — it just happened to not deal damage
-/// because the target was gone. The spell was treated as "resolved" when
-/// it should have been "countered by game rules."
+// ---------------------------------------------------------------------------
+// A spell is a legal target too
+// ---------------------------------------------------------------------------
+
+/// Counterspell whose target has already left the stack: the same rule, with a
+/// spell rather than a permanent as the target.
 #[test]
-fn flashback_spell_fizzle_no_resolved_event() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let gf_id = reg.get_id_by_name("Geistflame").unwrap();
-    let geistflame = state.create_object(gf_id, P0, Zone::Graveyard, None, None);
-    state.get_object_mut(geistflame).unwrap().name = "Geistflame".into();
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
-
-    let creature = ready_creature(&mut state, P1, 2, 2);
-
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Target dies before resolution.
-    state.move_object(creature, Zone::Graveyard, &reg);
-    state.events.clear();
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // Should NOT emit SpellResolved — the spell fizzled.
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { object } if *object == geistflame)
-    });
-    assert!(!has_resolved,
-        "Flashback spell that fizzles should NOT emit SpellResolved — \
-         it was countered by game rules, not resolved");
-
-    // Should still be in exile (flashback replacement applies to fizzled spells too).
-    assert_eq!(state.get_object(geistflame).unwrap().zone, Zone::Exile);
-
-    // P1 should not have taken damage.
-    assert_eq!(state.get_player(P1).life, 20);
-}
-
-// ════════════════════════════════════════════════════════════════════
-// Counterspell fizzle: target spell already left the stack
-// ════════════════════════════════════════════════════════════════════
-
-/// Counterspell targeting a spell that's already been removed from the stack.
-/// The Counterspell should fizzle — no `SpellResolved` event.
-#[test]
-fn counterspell_fizzle_no_resolved_event() {
+fn counterspell_is_countered_when_its_target_has_left_the_stack() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bolt, vec![Target::Player(P1)]);
 
     state.priority_player = Some(P1);
     let counter = castable_spell(&mut state, &reg, "Counterspell", P1);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, counter, vec![Target::Object(bolt)]);
 
-    // Bolt removed from stack before Counterspell resolves.
+    // The Bolt leaves the stack before the Counterspell resolves.
     state.stack.retain(|e| e.as_spell() != Some(bolt));
     state.move_object(bolt, Zone::Graveyard, &reg);
     state.events.clear();
-
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { object } if *object == counter)
-    });
-    assert!(!has_resolved,
-        "Counterspell with illegal target should fizzle, not resolve");
-}
-
-// ════════════════════════════════════════════════════════════════════
-// No-target spells should never fizzle
-// ════════════════════════════════════════════════════════════════════
-
-/// Spells with no targets (like Divination) can never fizzle.
-#[test]
-fn no_target_spell_always_resolves() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Give P0 a library to draw from.
-    let card_id = reg.get_id_by_name("Forest").unwrap();
-    for _ in 0..5 {
-        let id = state.create_object(card_id, P0, Zone::Library, None, None);
-        state.get_player_mut(P0).library_order.push(id);
-    }
-
-    let div = castable_spell(&mut state, &reg, "Divination", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: div, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    state.events.clear();
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { .. })
-    });
-    assert!(has_resolved, "Spell with no targets should always resolve");
-    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 2,
-        "Divination should draw 2 cards");
-}
-
-// ════════════════════════════════════════════════════════════════════
-// Player targets never become illegal (players can't leave the game
-// mid-spell in our 2-player implementation)
-// ════════════════════════════════════════════════════════════════════
-
-/// A spell targeting a player should always resolve (players don't become
-/// illegal targets in a 2-player game).
-#[test]
-fn player_target_never_fizzles() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    state.events.clear();
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    let has_resolved = state.events.iter().any(|e| {
-        matches!(e, GameEvent::SpellResolved { .. })
-    });
-    assert!(has_resolved, "Spell targeting a player should resolve normally");
-    assert_eq!(state.get_player(P1).life, 17, "Bolt should deal 3 damage");
-}
-
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Prey Upon has two targets. If one becomes illegal, the spell
-/// should fizzle entirely per the ruling. But the engine only fizzles
-/// if ALL targets are illegal (CR 608.2b general rule), while Prey Upon
-/// specifically requires both to be legal for the fight to happen.
-#[test]
-fn bug_prey_upon_doesnt_fizzle_with_one_illegal_target() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let my_creature = ready_creature(&mut state, P0, 3, 3);
-    let their_creature = ready_creature(&mut state, P1, 2, 2);
-
-    // Cast Prey Upon
-    let prey = castable_spell(&mut state, &registry, "Prey Upon", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: prey,
-            targets: vec![Target::Object(my_creature), Target::Object(their_creature)],
-            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-        },
-        &registry,
-    );
-
-    // Remove one target before resolution
-    state.move_object(their_creature, Zone::Graveyard, &registry);
-
-    // Resolve — should fizzle because fight requires both creatures
-    let my_damage_before = state.get_object(my_creature).unwrap().damage_marked;
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
-    let my_damage_after = state.get_object(my_creature).unwrap().damage_marked;
-
-    // Per MTG rules: with two target instances, if one target is illegal,
-    // the spell still resolves but the fight doesn't happen (fight requires
-    // both creatures). The spell should NOT fizzle — it resolves and does nothing.
-    let prey_zone = state.get_object(prey).unwrap().zone;
-    assert_eq!(prey_zone, Zone::Graveyard, "Prey Upon should be in graveyard after resolution");
-    // My creature should take no damage (fight didn't happen).
-    assert_eq!(my_damage_after, my_damage_before,
-        "No fight should occur when one target is illegal — my creature should be undamaged");
-}
-
-// ── Targets that stop being legal before resolution (CR 608.2b) ───
-//
-// Merged here from spell_fizzle.rs and engine_regressions.rs, which each
-// carried their own copy of this rule.
-
-#[test]
-fn giant_growth_target_dies_before_resolution() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    let growth = castable_spell(&mut state, &reg, "Giant Growth", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: growth, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Creature dies before Giant Growth resolves.
-    state.move_object(creature, Zone::Graveyard, &reg);
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // Creature should still be in graveyard, not buffed on battlefield.
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
-    assert_eq!(
-        state.get_object(growth).unwrap().zone,
-        Zone::Graveyard,
-        "Giant Growth should go to graveyard after resolving with no legal target"
-    );
-}
-
-#[test]
-fn aura_target_dies_before_resolution() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P1, 2, 2);
-
-    let pacifism = castable_spell(&mut state, &reg, "Pacifism", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: pacifism, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Creature dies before Pacifism resolves.
-    state.move_object(creature, Zone::Graveyard, &reg);
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // Pacifism should NOT be on the battlefield (no legal target to enchant).
-    assert_eq!(
-        state.get_object(pacifism).unwrap().zone,
-        Zone::Graveyard,
-        "Aura with no legal target on resolution should go to graveyard"
-    );
-}
-
-#[test]
-fn multi_target_spell_with_one_target_dying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature_a = ready_creature(&mut state, P1, 3, 3);
-    let creature_b = ready_creature(&mut state, P1, 2, 2);
-
-    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: dread,
-            targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
-            sacrifice: None,
-            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Creature A dies before resolution.
-    state.move_object(creature_a, Zone::Graveyard, &reg);
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // Creature B should still be tapped (partial resolution).
-    assert!(
-        state.get_object(creature_b).unwrap().tapped,
-        "Feeling of Dread should still tap creature B even if creature A died (rule 608.2b)"
-    );
-}
-
-#[test]
-fn multi_target_spell_with_all_targets_dying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature_a = ready_creature(&mut state, P1, 3, 3);
-    let creature_b = ready_creature(&mut state, P1, 2, 2);
-
-    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: dread,
-            targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
-            sacrifice: None,
-            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Both creatures die before resolution.
-    state.move_object(creature_a, Zone::Graveyard, &reg);
-    state.move_object(creature_b, Zone::Graveyard, &reg);
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // With all targets illegal, the spell should fizzle (no effect).
-    // Feeling of Dread just goes to graveyard.
-    assert_eq!(
-        state.get_object(dread).unwrap().zone,
-        Zone::Graveyard,
-        "Spell with all targets dead should go to graveyard"
-    );
-}
-
-#[test]
-fn spell_fizzles_when_single_target_illegal() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P1, 3, 3);
-
-    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Creature dies before bolt resolves.
-    state.move_object(creature, Zone::Graveyard, &reg);
-
-    // Clear events so we can check what the resolution generates.
-    state.events.clear();
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // Bolt should be in graveyard.
-    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Graveyard);
-
-    // The spell should NOT have resolved — no damage events.
-    let has_damage_event = state.events.iter().any(|e| matches!(e, GameEvent::CombatDamageDealt { .. }));
-    assert!(!has_damage_event,
-        "Spell with illegal target should fizzle, not deal damage (CR 608.2b)");
-
-    // P1 should still be at 20 life (bolt didn't redirect to player).
-    assert_eq!(state.get_player(P1).life, 20);
-}
-
-#[test]
-fn destroy_spell_fizzles_when_target_gone() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P1, 5, 5);
-    let doom = castable_spell(&mut state, &reg, "Doom Blade", P0);
-
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: doom, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-
-    // Creature exiled before resolution.
-    state.move_object(creature, Zone::Exile, &reg);
-
-    state.events.clear();
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    // Doom Blade should have fizzled — went to graveyard without resolving.
-    assert_eq!(state.get_object(doom).unwrap().zone, Zone::Graveyard);
-    // Creature is still in exile (wasn't destroyed because spell fizzled).
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile);
+    assert!(!resolved(&state, counter),
+        "the spell it named is no longer on the stack, so it is countered by \
+         game rules (CR 608.2b)");
 }

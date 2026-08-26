@@ -101,6 +101,25 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 /// the max (taps every offered source + drains pool). Tests wanting a
 /// specific X value should construct the `FundingResponse` themselves
 /// instead of calling this helper.
+/// Put `spell_id` on the stack with `targets` chosen, and stop there.
+///
+/// [`cast_and_resolve`] is the usual helper; this one is for tests that need to
+/// do something between the cast and the resolution — respond to it, or make a
+/// target illegal (CR 608.2b). The `CastSpell` literal has seven fields, five
+/// of which are `None`/`vec![]` at almost every call site.
+pub fn cast_onto_stack(
+    state: &GameState,
+    registry: &CardRegistry,
+    spell_id: ObjectId,
+    targets: Vec<Target>,
+) -> GameState {
+    mtg_engine::engine::submit_action(
+        state,
+        &Action::CastSpell { object_id: spell_id, targets, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        registry,
+    )
+}
+
 pub fn cast_and_resolve(
     state: &GameState,
     registry: &CardRegistry,

@@ -30,11 +30,7 @@ fn charmbreaker_devils_trigger_only_for_own_instants_and_sorceries() {
     let mut state = game_at_step(Step::PrecombatMain, P1);
     let _devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P1);
-    let mut state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P0)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    let mut state = cast_onto_stack(&state, &reg, bolt, vec![Target::Player(P0)]);
     triggers::collect_triggers(&mut state, &reg);
     assert_eq!(trigger_count(&state), 0,
         "opponent's spell must not put Charmbreaker Devils' trigger on the stack (CR 603.2)");
@@ -43,11 +39,7 @@ fn charmbreaker_devils_trigger_only_for_own_instants_and_sorceries() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let _devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
     let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
-    let mut state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
     triggers::collect_triggers(&mut state, &reg);
     assert_eq!(trigger_count(&state), 0,
         "a creature spell must not put Charmbreaker Devils' trigger on the stack (CR 603.2)");
@@ -56,11 +48,7 @@ fn charmbreaker_devils_trigger_only_for_own_instants_and_sorceries() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let _devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-    let mut state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    let mut state = cast_onto_stack(&state, &reg, bolt, vec![Target::Player(P1)]);
     triggers::collect_triggers(&mut state, &reg);
     assert_eq!(trigger_count(&state), 1,
         "own instant should put exactly one Charmbreaker Devils trigger on the stack");
@@ -854,11 +842,7 @@ fn bug_dearly_departed_graveyard_watcher_ignored() {
 
     // Cast a Human creature (triggers EntersBattlefield event)
     let human = castable_spell(&mut state, &registry, "Champion of the Parish", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: human, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &registry,
-    );
+    state = cast_onto_stack(&state, &registry, human, vec![]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     // Process triggers — Dearly Departed's graveyard ability should fire

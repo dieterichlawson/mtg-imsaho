@@ -560,11 +560,7 @@ fn frightful_delusion_choice_when_opponent_has_mana() {
     // P0 casts a creature.
     let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bears, vec![]);
 
     // P1 casts Frightful Delusion. Give P0 mana so they CAN pay.
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1); // P0 has {1} to pay
@@ -599,11 +595,7 @@ fn frightful_delusion_offers_the_choice_even_with_an_empty_pool() {
 
     let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bears, vec![]);
 
     // P0 has NO mana (pool empty after casting).
     assert_eq!(state.get_player(P0).mana_pool.total(), 0);

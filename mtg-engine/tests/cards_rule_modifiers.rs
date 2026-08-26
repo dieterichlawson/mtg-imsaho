@@ -268,11 +268,7 @@ fn snapcaster_mage_grants_flashback() {
 
     // Cast Snapcaster Mage (resolve immediately for ETB trigger).
     let snap = castable_spell(&mut state, &reg, "Snapcaster Mage", P0);
-    let mut new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: snap, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    let mut new_state = cast_onto_stack(&state, &reg, snap, vec![]);
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
 
     mtg_engine::triggers::process_triggers(&mut new_state, &reg);

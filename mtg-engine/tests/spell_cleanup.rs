@@ -50,11 +50,7 @@ fn divine_reckoning_stays_on_stack_until_choices_complete() {
     let kill1 = ready_creature(&mut state, P1, 4, 4);
 
     let spell = castable_spell(&mut state, &reg, "Divine Reckoning", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, spell, vec![]);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -92,11 +88,7 @@ fn immediate_resolution_cleanup_and_no_tracker_leak() {
 
     let target = ready_creature(&mut state, P1, 4, 4);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(target)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(target)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Graveyard);

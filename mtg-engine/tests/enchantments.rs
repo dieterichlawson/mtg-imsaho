@@ -3,9 +3,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::{Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
@@ -62,11 +61,7 @@ fn pacifism_prevents_attacking() {
     state.priority_player = Some(P1); // P1 casts it
 
     // Cast Pacifism on P0's creature.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: pac, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &registry,
-    );
+    state = cast_onto_stack(&state, &registry, pac, vec![Target::Object(creature)]);
     state.priority_player = Some(P0); // back to P0
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 

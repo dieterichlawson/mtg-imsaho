@@ -58,11 +58,7 @@ fn dissipate_counters_and_exiles() {
     // P0 casts a creature spell.
     let tusker = castable_spell(&mut state, &reg, "Kalonian Tusker", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: tusker, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, tusker, vec![]);
 
     // P1 casts Dissipate targeting the Tusker on the stack.
     let diss = castable_spell(&mut state, &reg, "Dissipate", P1);
@@ -87,11 +83,7 @@ fn frightful_delusion_counters_and_discards() {
     // P0 casts a creature.
     let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bears, vec![]);
 
     // P1 casts Frightful Delusion.
     let fd = castable_spell(&mut state, &reg, "Frightful Delusion", P1);
@@ -367,11 +359,7 @@ fn lost_in_the_mist_counters_and_bounces() {
     // P0 casts a spell.
     let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, bears, vec![]);
 
     // P1 casts Lost in the Mist targeting the spell + the creature.
     let litm = castable_spell(&mut state, &reg, "Lost in the Mist", P1);

@@ -160,20 +160,12 @@ fn frightful_delusion_discard_on_pay() {
     // P1 casts a creature.
     let creature = castable_spell(&mut state, &reg, "Grizzly Bears", P1);
     state.priority_player = Some(P1);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, creature, vec![]);
 
     // P0 casts Frightful Delusion targeting the creature spell.
     state.priority_player = Some(P0);
     let fd = castable_spell(&mut state, &reg, "Frightful Delusion", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
+    state = cast_onto_stack(&state, &reg, fd, vec![Target::Object(creature)]);
 
     // Give P1 mana to pay {1} and a card in hand to discard.
     state.get_player_mut(P1).mana_pool.add(ManaType::Colorless, 1);
