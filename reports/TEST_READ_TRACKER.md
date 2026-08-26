@@ -67,7 +67,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `snapshot_anthems.rs` | 238 | 4 |
 | x | `turn_structure.rs` | 237 | 12 |
 | x | `transform_dfc.rs` | 236 | 4 |
-|   | `harness_display.rs` | 235 | 4 |
+| x | `harness_display.rs` | 235 | 4 |
 | x | `apnap.rs` | 234 | 3 |
 |   | `mana_tap_bug.rs` | 234 | 5 |
 | x | `continuous_effects.rs` | 230 | 7 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**109/126 files read; 3424 lines remaining.**
+**110/126 files read; 3189 lines remaining.**

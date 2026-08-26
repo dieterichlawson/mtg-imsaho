@@ -1,235 +1,122 @@
-//! Failing tests for harness / display bugs documented in
-//! `audits/AUDIT_BUGS.md`. These bugs are about the labels and prompts
-//! the LLM player sees, not the underlying game state.
+//! What the player is shown, as opposed to what the game knows.
 //!
-//! Bugs covered in this file:
-//! - Bug 31-001: `PendingTrigger::display_name` uses front-face card
-//!   names for transformed DFCs — the stack shows "Tormented Pariah's
-//!   upkeep trigger" even though the battlefield has "Rampaging
-//!   Werewolf".
+//! An LLM player sees the `GameView` and the labels on the actions offered to
+//! it, and can only reason about what is in them. Three ways that has gone
+//! wrong: printed P/T shown for a creature whose P/T is a
+//! characteristic-defining ability (CR 208.2 — a CDA works in every zone),
+//! the front-face name shown for a transformed card, and internal object
+//! handles rendered into a label with `{:?}`.
 
 mod common;
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
-/// Bug 31-001 (`audits/AUDIT_BUGS.md)`: `PendingTrigger::display_name`
-/// at `triggers.rs` builds its labels with a closure that
-/// calls `registry.card_data(card_id)` — which always returns the
-/// FRONT face. So a transformed DFC's trigger label includes the
-/// front-face name, mismatching the battlefield display (which
-/// correctly shows the back-face name post-Bug-B fix).
+/// The view reports effective P/T wherever the card is.
 ///
-/// Oracle (Tormented Pariah front face): "Human Warrior Werewolf".
-/// Oracle (Rampaging Werewolf back face): "Werewolf".
-///
-/// Failure mode: the `card_name` closure reads `registry.card_data`
-/// without consulting `state.get_object(obj_id).is_transformed`. The
-/// fix would either thread a `&GameState` into `display_name` or
-/// store `is_transformed` on each `PendingTrigger` variant at
-/// collection time.
-///
-/// We construct a `PendingTrigger::UpkeepTrigger` for a transformed
-/// Tormented Pariah and check that the display label contains the
-/// back-face name ("Rampaging Werewolf") — or at least does NOT
-/// contain the front-face name. Today, `display_name` returns the
-/// front-face name, so either assertion catches the bug.
-///
-/// Note: this test calls the `display_name(&CardRegistry)` shape
-/// that exists today. The fix will change the signature to take a
-/// `&GameState` as well — that signature change itself is the
-/// "fix the bug" delta, so this test documents the pre-fix
-/// behavior that will need to be replaced rather than asserting
-/// the post-fix label shape.
+/// Geist-Honored Monk's "power and toughness are each equal to the number of
+/// creatures you control" is a CDA, so it has a real size in the graveyard and
+/// in hand as well as on the battlefield — and that is the number the player
+/// needs in order to decide whether reanimating it is worth anything.
 #[test]
-fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
-    let registry = CardRegistry::with_all_cards();
+fn the_view_shows_effective_power_in_every_zone() {
+    let reg = registry();
+
+    for zone in [Zone::Battlefield, Zone::Graveyard, Zone::Hand] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        // Two other creatures out, so the Monk's count differs from its
+        // printed 0/0 in every zone.
+        named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+        named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+
+        let card_id = reg.get_id_by_name("Geist-Honored Monk").unwrap();
+        let monk = state.create_object(card_id, P0, zone, Some(0), Some(0));
+        state.get_object_mut(monk).unwrap().name = "Geist-Honored Monk".into();
+        state.get_object_mut(monk).unwrap().summoning_sick = false;
+
+        let expected = state.effective_power(monk, &reg).expect("a CDA has a value");
+        assert!(expected >= 2,
+            "test precondition: in {zone:?} the value is {expected}, not the printed 0");
+
+        let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+        let shown = match zone {
+            Zone::Battlefield => view.battlefield.iter()
+                .find(|c| c.object_id == monk).and_then(|c| c.effective_power),
+            Zone::Graveyard => view.graveyards.iter()
+                .find(|(pid, _)| *pid == P0)
+                .and_then(|(_, cards)| cards.iter().find(|c| c.object_id == monk))
+                .and_then(|c| c.power),
+            _ => view.your_hand.iter().find(|c| c.object_id == monk).and_then(|c| c.power),
+        };
+
+        assert_eq!(shown, Some(expected),
+            "in {zone:?} the view must show the Monk's effective power, not the \
+             printed 0 — a CDA works in every zone (CR 208.2)");
+    }
+}
+
+/// A transformed card's trigger is labelled with the face that is showing.
+/// The battlefield says "Rampaging Werewolf"; a stack entry saying "Tormented
+/// Pariah" describes a permanent the player cannot see.
+#[test]
+fn a_transformed_cards_trigger_label_names_the_face_that_is_showing() {
+    let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    // Tormented Pariah transformed to Rampaging Werewolf.
-    let pariah = named_permanent(&mut state, &registry, "Tormented Pariah", P0);
-    mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
-    let pariah_card_id = state.get_object(pariah).unwrap().card_id;
+    let pariah = named_permanent(&mut state, &reg, "Tormented Pariah", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &reg);
+    let card_id = state.get_object(pariah).unwrap().card_id;
 
     let trigger = PendingTrigger {
-        source: TriggerSource::new(pariah, pariah_card_id, P0, "transform back if 2+ spells cast"),
+        source: TriggerSource::new(pariah, card_id, P0, "transform back if 2+ spells cast"),
         event: TriggerEvent::Upkeep,
     };
-    let label = trigger.display_name_with_state(&registry, Some(&state));
+    let label = trigger.display_name_with_state(&reg, Some(&state));
 
-    assert!(
-        !label.contains("Tormented Pariah"),
-        "PendingTrigger::display_name for a transformed DFC should NOT \
-         use the front-face name 'Tormented Pariah' — the battlefield \
-         shows 'Rampaging Werewolf' post-transform, and the stack \
-         label should match. Bug 31-001: the `card_name` closure calls \
-         registry.card_data() which always returns the front face. \
-         label = {label:?}",
-    );
+    assert!(!label.contains("Tormented Pariah"),
+        "the front-face name names a permanent that is not on the battlefield; \
+         label = {label:?}");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Boneyard Wurm's power/toughness is dynamic (= creature cards in
-/// your graveyard), but the `GameView` shows base P/T (0/0) from obj.power.
-/// The view should use `effective_power/effective_toughness`.
+/// No ability label anywhere in the set renders an internal handle.
+///
+/// `ObjectId(5)` means nothing to a player — there is no way to map it back to
+/// a creature. Skirsdag High Priest's tap-pair labels used to be built with
+/// `{:?}`; this checks every card rather than that one, over a board with
+/// enough going on for the enumerating abilities to enumerate something.
 #[test]
-fn bug_boneyard_wurm_view_shows_base_pt() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn no_ability_label_renders_an_internal_object_id() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
 
-    // Put 3 creature cards in P0's graveyard
-    for _ in 0..3 {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let _id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-    }
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    for name in names {
+        let card_id = reg.get_id_by_name(&name).expect("named card has an id");
+        let Some(behavior) = reg.get(card_id) else { continue };
 
-    // Place Boneyard Wurm
-    let wurm = named_permanent(&mut state, &registry, "Boneyard Wurm", P0);
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.creature_died_this_turn = true; // unlock the morbid ones
+        let id = named_permanent(&mut state, &reg, &name, P0);
+        // Fodder for abilities that enumerate creatures or graveyard cards.
+        for _ in 0..3 {
+            ready_creature(&mut state, P0, 2, 2);
+            named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+        }
+        ready_creature(&mut state, P1, 2, 2);
 
-    // Effective P/T should be 3/3 (dynamic)
-    let eff_p = state.effective_power(wurm, &registry).unwrap_or(0);
-    assert_eq!(eff_p, 3, "Boneyard Wurm should be 3/3 with 3 creatures in GY");
-
-    // Build GameView and check what it reports
-    let view = mtg_engine::view::GameView::for_player(&state, P0, &registry);
-
-    // Find the Wurm in the view
-    let wurm_view = view.battlefield.iter()
-        .find(|c| c.name == "Boneyard Wurm");
-
-    if let Some(wv) = wurm_view {
-        // BUG: View shows base P/T (0/0 or None) instead of effective (3/3)
-        assert_eq!(wv.effective_power, Some(3),
-            "GameView should show effective power 3, got {:?}", wv.effective_power);
-    } else {
-        panic!("Boneyard Wurm not found in view");
-    }
-}
-
-/// Bug 76-001 (`audits/AUDIT_BUGS.md)`: Skirsdag High Priest's
-/// `activated_abilities` formats the candidate creature `ObjectIds`
-/// with Rust's `{:?}` debug format, so the LLM player sees labels
-/// like `... (tap ObjectId(5) & ObjectId(12))`. `ObjectIds` are
-/// internal handles — the model has no way to map them to creature
-/// names.
-///
-/// Oracle (Skirsdag High Priest): "{T}, Tap two untapped creatures
-/// you control: Create a 5/5 black Demon creature token with flying.
-/// Activate this ability only if you control three or more creatures.
-/// Morbid — ..."
-///
-/// Failure mode: `skirsdag_high_priest.rs` calls
-/// `format!(... "tap {:?} & {:?} ...", candidates[i], candidates[j])`.
-/// Since `candidates[i]` is an `ObjectId`, this renders the literal
-/// `ObjectId(N)` substring. Compare with `format_combat_creature_list`
-/// in `mtg-player/src/llm.rs`, which uses creature names
-/// with `#1`/`#2` suffixes for collisions.
-#[test]
-fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Skirsdag High Priest needs the morbid condition AND at least
-    // three creatures total to enable the ability — so put one extra
-    // creature on top of the High Priest and the two tap candidates.
-    state.creature_died_this_turn = true;
-    let _high_priest = named_permanent(&mut state, &registry, "Skirsdag High Priest", P0);
-    let _victim_a = ready_creature(&mut state, P0, 2, 2);
-    let _victim_b = ready_creature(&mut state, P0, 2, 2);
-
-    let priest_card_id = registry.get_id_by_name("Skirsdag High Priest").unwrap();
-    let priest_obj = state
-        .objects
-        .values()
-        .find(|o| o.card_id == priest_card_id)
-        .map(|o| o.id)
-        .expect("Skirsdag High Priest should be on the battlefield");
-    let behavior = registry.get(priest_card_id).unwrap();
-    let abilities = behavior.activated_abilities(&state, priest_obj, &registry);
-
-    assert!(
-        !abilities.is_empty(),
-        "Test setup: Skirsdag High Priest should expose at least one \
-         enumerated tap-pair ability with morbid + 2 candidates"
-    );
-    for ab in &abilities {
-        assert!(
-            !ab.description.contains("ObjectId("),
-            "Skirsdag High Priest's activation label should not contain \
-             the Rust debug format 'ObjectId('. Bug 76-001: the format \
-             string uses {{:?}} which renders ObjectIds as ObjectId(N). \
-             description = {:?}",
-            ab.description,
-        );
-    }
-}
-
-/// Bug E1-002 (`audits/AUDIT_BUGS.md)`: The `CardView` projection in
-/// `mtg-engine/src/view.rs` reads `obj.power` / `obj.toughness`
-/// directly when building hand/graveyard/library views, so CDA
-/// creatures like Geist-Honored Monk render as their printed base
-/// (0/0) to the LLM.
-///
-/// Oracle (Geist-Honored Monk): "Power and toughness each equal to
-/// the number of creatures you control."
-///
-/// Per CR 208.2, a characteristic-defining ability "works in all
-/// zones." The view projection should consult `state.effective_power`
-/// / `state.effective_toughness`, not the raw `obj.power` /
-/// `obj.toughness` fields.
-///
-/// We put Geist-Honored Monk in P0's graveyard with another creature
-/// on P0's battlefield (so Monk's CDA value ≥1), then build a
-/// `GameView` and check the `CardView` for the Monk's effective P/T.
-#[test]
-fn bug_e1_002_cardview_uses_effective_pt_for_cda_creatures() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Another creature on P0's battlefield so Geist-Honored Monk's
-    // CDA count is non-zero.
-    let _bears = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
-
-    // Geist-Honored Monk in P0's graveyard.
-    let monk_card_id = registry.get_id_by_name("Geist-Honored Monk").unwrap();
-    let monk = state.create_object(monk_card_id, P0, Zone::Graveyard, Some(0), Some(0));
-    state.get_object_mut(monk).unwrap().name = "Geist-Honored Monk".into();
-
-    // Sanity: effective_power says the Monk is ≥1/1.
-    let eff_p = state.effective_power(monk, &registry).unwrap_or(0);
-    let eff_t = state.effective_toughness(monk, &registry).unwrap_or(0);
-    assert!(
-        eff_p >= 1 && eff_t >= 1,
-        "Test setup: Geist-Honored Monk with 1 creature on bf should \
-         have effective P/T ≥ 1/1, got {eff_p}/{eff_t}"
-    );
-
-    // Build a GameView from P0's perspective. The Monk's graveyard
-    // CardView should reflect the effective P/T, not the base 0/0.
-    let view = mtg_engine::view::GameView::for_player(&state, P0, &registry);
-    let monk_in_gy = view
-        .graveyards
-        .iter()
-        .find_map(|(pid, cards)| {
-            if *pid == P0 {
-                cards.iter().find(|c| c.object_id == monk).cloned()
-            } else {
-                None
+        for ability in behavior.activated_abilities(&state, id, &reg) {
+            checked += 1;
+            if ability.description.contains("ObjectId(") {
+                offenders.push(format!("{name}: {:?}", ability.description));
             }
-        });
-    let monk_view = monk_in_gy.expect("Monk should appear in P0's graveyard CardView");
+        }
+    }
 
-    let visible_power = monk_view.power.unwrap_or(0);
-    assert!(
-        visible_power >= 1,
-        "GameView's graveyard CardView for Geist-Honored Monk should \
-         reflect the effective power (≥1 with creatures on the \
-         battlefield), not the printed base 0. Bug E1-002: view.rs \
-         reads obj.power directly. CardView.power = {:?}",
-        monk_view.power,
-    );
+    assert!(checked >= 20,
+        "expected to have looked at a good number of ability labels, got {checked}");
+    assert!(offenders.is_empty(),
+        "{} ability label(s) render an internal handle the player cannot map to \
+         anything:\n  {}", offenders.len(), offenders.join("\n  "));
 }
