@@ -30,7 +30,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | regeneration (CR 701.15) | `regeneration.rs` |
 | planeswalkers, loyalty (CR 306, 606, 704.5i) | `planeswalkers.rs` |
 | combat | `combat.rs`, `combat_rules.rs`, `combat_regressions.rs` |
-| damage | `damage_pipeline.rs`, `damage_helper.rs`, `inline_damage.rs` |
+| damage | `damage_pipeline.rs`, `damage_helper.rs` (any target includes planeswalkers), `inline_damage.rs` |
 | state-based actions (CR 704) | `state_based_actions.rs`, `evil_twin_sba_guard.rs` |
 | copying (CR 706) | `copy_effects.rs` (what is copied), `token_copy.rs` (what `create_token_*` must carry across) |
 | transform / DFCs (CR 712) | `transform_dfc.rs`, `dfc_zone_cleanup.rs`, `transformed_display.rs`, `werewolf_cards.rs`, `werewolf_subtype_after_transform.rs` |

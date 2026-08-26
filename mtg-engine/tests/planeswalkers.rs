@@ -36,7 +36,7 @@ fn planeswalker_with_loyalty_survives() {
     let card_id = reg.get_id_by_name("Liliana of the Veil").unwrap();
     let liliana = state.create_object(card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(liliana).unwrap().name = "Liliana of the Veil".into();
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     check_state_based_actions(&mut state, &reg);
 
@@ -51,7 +51,7 @@ fn loyalty_abilities_appear_in_legal_actions() {
     let card_id = reg.get_id_by_name("Liliana of the Veil").unwrap();
     let liliana = state.create_object(card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(liliana).unwrap().name = "Liliana of the Veil".into();
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let legal = engine::legal_actions(&state, &reg);
 
@@ -83,9 +83,7 @@ fn loyalty_ability_adjusts_counters() {
     let card_id = reg.get_id_by_name("Liliana of the Veil").unwrap();
     let liliana = state.create_object(card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(liliana).unwrap().name = "Liliana of the Veil".into();
-    state.add_counters(liliana, CounterType::Loyalty, 3);
-
-    // Give both players cards to discard.
+    set_loyalty(&mut state, liliana, 3);
     let _p0_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
     let _p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
 

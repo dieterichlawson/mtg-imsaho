@@ -101,6 +101,18 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 /// the max (taps every offered source + drains pool). Tests wanting a
 /// specific X value should construct the `FundingResponse` themselves
 /// instead of calling this helper.
+/// Set a planeswalker's loyalty to exactly `n`.
+///
+/// [`named_permanent`] gives it the starting loyalty its card prints, so a test
+/// that wants a different number has to replace it rather than add to it —
+/// 31 sites used to `add_counters(.., Loyalty, 3)` on top of a Garruk that was
+/// already on 3, and the one test keying on the exact value was the only one
+/// that noticed.
+pub fn set_loyalty(state: &mut GameState, id: ObjectId, n: u32) {
+    state.get_object_mut(id).expect("planeswalker exists")
+        .counters.insert(CounterType::Loyalty, n);
+}
+
 /// Add mana of each listed kind to `player`'s pool.
 pub fn add_mana(state: &mut GameState, player: PlayerId, mana: &[(ManaType, u32)]) {
     for &(kind, n) in mana {
@@ -318,6 +330,12 @@ pub fn named_permanent(
     obj.name = name.into();
     obj.summoning_sick = false;
     obj.is_legendary = is_legendary;
+    // A planeswalker enters with its starting loyalty (CR 306.5b). The engine
+    // does that as part of entering; placing one directly has to do it too, or
+    // every planeswalker built this way is already dead to SBA 704.5i.
+    if let Some(loyalty) = registry.get(card_id).and_then(|b| b.starting_loyalty()) {
+        state.add_counters(id, CounterType::Loyalty, loyalty);
+    }
     id
 }
 

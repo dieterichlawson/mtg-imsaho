@@ -49,7 +49,7 @@ fn any_target_includes_non_token_planeswalker() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
     assert!(state.get_object(liliana).unwrap().card_types.is_empty(),
         "test precondition: non-token permanents have empty object-level card_types");
 

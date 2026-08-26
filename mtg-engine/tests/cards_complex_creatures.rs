@@ -1794,9 +1794,7 @@ fn liliana_plus_one_each_player_discards_with_choice() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
-
-    // Give both players multiple cards so they must choose.
+    set_loyalty(&mut state, liliana, 3);
     let p0_card_a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
     let p0_card_b = spell_in_hand(&mut state, &reg, "Bump in the Night", P0);
     let p1_card_a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
@@ -1856,9 +1854,7 @@ fn liliana_plus_one_single_card_auto_discards() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
-
-    // Give P0 one card and P1 one card.
+    set_loyalty(&mut state, liliana, 3);
     let p0_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
     let p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
 
@@ -1879,9 +1875,7 @@ fn liliana_plus_one_empty_hand_skipped() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
-
-    // P0 has no cards, P1 has one card.
+    set_loyalty(&mut state, liliana, 3);
     let p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
@@ -1899,7 +1893,7 @@ fn liliana_plus_one_both_empty_hands() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
@@ -1917,7 +1911,7 @@ fn liliana_minus_two_target_player_sacrifices_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let creature_a = ready_creature(&mut state, P1, 3, 3);
     let creature_b = ready_creature(&mut state, P1, 2, 2);
@@ -1951,7 +1945,7 @@ fn liliana_minus_two_single_creature_auto_sacrifices() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
@@ -1969,7 +1963,7 @@ fn liliana_minus_two_no_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P1)], &reg);
@@ -1985,7 +1979,7 @@ fn liliana_minus_two_can_target_self() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let own_creature = ready_creature(&mut state, P0, 2, 2);
 
@@ -2005,9 +1999,7 @@ fn liliana_minus_six_pile_division_and_choice() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 9);
-
-    // Give P1 three permanents.
+    set_loyalty(&mut state, liliana, 9);
     let c1 = ready_creature(&mut state, P1, 3, 3);
     let c2 = ready_creature(&mut state, P1, 2, 2);
     let c3 = ready_creature(&mut state, P1, 1, 1);
@@ -2058,7 +2050,7 @@ fn liliana_minus_six_empty_pile_allowed() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 9);
+    set_loyalty(&mut state, liliana, 9);
 
     let c1 = ready_creature(&mut state, P1, 3, 3);
 
@@ -2086,7 +2078,7 @@ fn liliana_minus_six_all_in_one_pile() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 9);
+    set_loyalty(&mut state, liliana, 9);
 
     let c1 = ready_creature(&mut state, P1, 3, 3);
     let c2 = ready_creature(&mut state, P1, 2, 2);
@@ -2115,7 +2107,7 @@ fn liliana_minus_six_no_permanents() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 9);
+    set_loyalty(&mut state, liliana, 9);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
@@ -2132,9 +2124,7 @@ fn liliana_minus_six_can_target_self() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 9);
-
-    // P0 has a creature (besides Liliana herself, which is also a permanent).
+    set_loyalty(&mut state, liliana, 9);
     let _c1 = ready_creature(&mut state, P0, 2, 2);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
@@ -2160,7 +2150,7 @@ fn garruk_creates_wolf_token() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, garruk, 3);
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
@@ -2176,7 +2166,7 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 2); // Only 2 loyalty.
+    set_loyalty(&mut state, garruk, 2);
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // Use the wolf token ability (costs 0 loyalty).
@@ -2198,7 +2188,7 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 2);
+    set_loyalty(&mut state, garruk, 2);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
@@ -2222,7 +2212,7 @@ fn garruk_back_face_sacrifice_to_tutor() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, garruk, 3);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
@@ -2260,7 +2250,7 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 4);
+    set_loyalty(&mut state, garruk, 4);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
@@ -2307,7 +2297,7 @@ fn garruk_back_face_tutor_shuffles_library() {
     let run = || {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-        state.add_counters(garruk, CounterType::Loyalty, 4);
+        set_loyalty(&mut state, garruk, 4);
         if let Some(obj) = state.get_object_mut(garruk) {
             obj.is_transformed = true;
             obj.name = "Garruk, the Veil-Cursed".into();
@@ -2354,7 +2344,7 @@ fn garruk_back_face_overrun() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 4);
+    set_loyalty(&mut state, garruk, 4);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
@@ -2393,7 +2383,7 @@ fn garruk_back_face_loyalty_abilities_shown_when_transformed() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, garruk, 3);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();

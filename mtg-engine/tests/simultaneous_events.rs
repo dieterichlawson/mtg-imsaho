@@ -133,7 +133,7 @@ fn liliana_plus_one_holds_every_discard_until_the_last_player_has_chosen() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
 
     let p0_a = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
     let p0_b = spell_in_hand(&mut state, &reg, "Chapel Geist", P0);
@@ -177,9 +177,7 @@ fn auto_discard_also_waits_for_the_other_player() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
-
-    // P0 has exactly one card (no choice); P1 has two (a real choice).
+    set_loyalty(&mut state, liliana, 3);
     let p0_only = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
     let p1_a = spell_in_hand(&mut state, &reg, "Walking Corpse", P1);
     let p1_b = spell_in_hand(&mut state, &reg, "Chapel Geist", P1);

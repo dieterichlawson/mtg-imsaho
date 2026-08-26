@@ -38,7 +38,7 @@ fn garruk_ultimate_buffs_non_token_creatures() {
     // The -3 lives on the back face, Garruk, the Veil-Cursed. X is the number
     // of creature cards in the graveyard, so put one there for a visible buff.
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    state.add_counters(garruk, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, garruk, 3);
     mtg_engine::cards::helpers::apply_transform(&mut state, garruk, &reg);
     named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
 
@@ -65,7 +65,7 @@ fn curse_of_the_pierced_heart_sees_non_token_planeswalkers() {
     let mut state = game_at_step(Step::Upkeep, P1);
 
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
+    set_loyalty(&mut state, liliana, 3);
     assert!(state.get_object(liliana).unwrap().card_types.is_empty(),
         "test precondition: non-token permanents have empty object-level card_types");
 

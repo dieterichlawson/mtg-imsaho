@@ -13,7 +13,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `werewolf_cards.rs` | 654 | 29 |
 | x | `trigger_source_independence.rs` | 642 | 20 |
 | x | `hexproof_filter.rs` | 635 | 11 |
-|   | `cards_spells_and_enchantments.rs` | 608 | 23 |
+| x | `cards_spells_and_enchantments.rs` | 608 | 23 |
 | x | `flashback.rs` | 604 | 21 |
 | x | `cards_death_triggers_and_tokens.rs` | 552 | 17 |
 | x | `cards_rule_modifiers.rs` | 545 | 21 |
@@ -29,7 +29,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `test_suite_guards.rs` | 435 | 4 |
 | x | `sacrifice_choice.rs` | 406 | 12 |
 | x | `cards_graveyard_interaction.rs` | 396 | 17 |
-|   | `cards_removal_and_bounce.rs` | 386 | 15 |
+| x | `cards_removal_and_bounce.rs` | 386 | 15 |
 | x | `mulligan.rs` | 369 | 9 |
 | x | `trigger_priority.rs` | 350 | 7 |
 | x | `inline_damage.rs` | 341 | 11 |
@@ -40,14 +40,14 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `state_based_actions.rs` | 334 | 10 |
 | x | `x_cost_funding_flow.rs` | 331 | 8 |
 | x | `cards_upkeep_triggers_and_curses.rs` | 330 | 13 |
-|   | `simultaneous_events.rs` | 327 | 9 |
+| x | `simultaneous_events.rs` | 327 | 9 |
 | x | `resolution_time_checks.rs` | 324 | 9 |
 | x | `characteristics_card_sweep.rs` | 319 | 9 |
 | x | `token_copy.rs` | 319 | 5 |
 | x | `cards_vanilla_and_keywords.rs` | 318 | 15 |
 | x | `trigger_target_recheck.rs` | 317 | 10 |
 | x | `replacement_effects.rs` | 316 | 9 |
-|   | `damage_helper.rs` | 314 | 5 |
+| x | `damage_helper.rs` | 314 | 5 |
 |   | `activated_no_stack.rs` | 310 | 10 |
 |   | `cards_activated_abilities.rs` | 302 | 9 |
 |   | `tokens_counters_triggers.rs` | 287 | 16 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**88/126 files read; 9558 lines remaining.**
+**92/126 files read; 7923 lines remaining.**

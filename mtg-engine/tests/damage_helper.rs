@@ -1,313 +1,123 @@
-//! Regressions for bugs documented in `audits/AUDIT_BUGS.md`. Each of these
-//! failed when it was written and passes now; they stay to protect against
-//! the bug coming back.
+//! CR 115.4a: "any target" means any creature, player, planeswalker or battle.
 //!
-//! This file covers the "Damage helper bypass — non-combat damage
-//! skips central pipeline" family. The root pattern is Bug 9F-002:
-//! several damage sources inline `obj.damage_marked += N` instead of
-//! routing through the central `PendingEffect::DealDamage` helper,
-//! which means each one independently has to remember to push
-//! `damaged_by`, decrement planeswalker loyalty, check protection,
-//! etc. The narrower bugs in this file expose specific consequences.
+//! The engine enumerated battlefield targets with `o.power.is_some()`, which is
+//! true of creatures and false of planeswalkers, so every "any target" spell and
+//! ability in the set quietly refused to point at one. It was wrong in two
+//! places — the cast-time enumerator and `cards/helpers.rs::any_targets`, which
+//! is what an ability uses when it picks its target on resolution — so both
+//! paths are checked here.
 //!
-//! Bugs covered in this file:
-//! - Bug T: Skirsdag Cultist and Rolling Temblor don't push to
-//!   `obj.damaged_by` when they apply damage
-//! - Bug BQ: `TargetRequirement::AnyTarget` enumeration filters by
-//!   `o.power.is_some()` so planeswalkers can't be chosen as the
-//!   "any target" — affects Brimstone Volley, Devil's Play, etc.
-//! - Bug BZ: `cards/helpers.rs::any_targets` (the on-resolve enumerator
-//!   used by Pitchburn Devils' death trigger) omits planeswalkers for
-//!   the same reason
-//! - Bug BR: Olivia Voldaren's first ability (`obj.damage_marked += 1`)
-//!   and Curse of the Pierced Heart's life-subtract bypass the central
-//!   damage helper and don't push source to `damaged_by`
+//! This file used to be five per-card regressions about damage bypassing the
+//! central pipeline. That rule is a build-failing source guard now
+//! (`test_suite_guards.rs::only_the_damage_pipeline_marks_damage`), and what
+//! the pipeline does with the damage is in `inline_damage.rs`; what is left is
+//! the targeting half, swept across every card that says "any target".
 
 mod common;
 use common::*;
 
-use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
+use mtg_engine::actions::Target;
+use mtg_engine::cards::TargetRequirement;
 use mtg_engine::types::*;
 
-/// Bug T (`audits/AUDIT_BUGS.md)`: Skirsdag Cultist's activated-ability
-/// damage doesn't push the source onto the target's `damaged_by` vector.
-///
-/// Oracle (Skirsdag Cultist): "{R}, {T}, Sacrifice a creature: Skirsdag
-/// Cultist deals 2 damage to any target."
-///
-/// Failure mode: `skirsdag_cultist.rs` does
-/// `obj.damage_marked += 2` directly, without the
-/// `obj.damaged_by.push(source_id)` that the rest of the codebase pairs
-/// it with. `damaged_by` is consulted by SBA 704.5h (deathtouch
-/// destruction) and by death-watch triggers that care about who killed
-/// what — leaving it stale silently breaks both. Compare to Olivia
-/// Voldaren's first-ability bite (`olivia_voldaren.rs`) which
-/// pushes correctly.
-#[test]
-fn bug_t_skirsdag_cultist_pushes_damaged_by() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let cultist = named_permanent(&mut state, &registry, "Skirsdag Cultist", P0);
-    let victim = ready_creature(&mut state, P1, 3, 3);
-
-    // Drive the activated ability directly. We don't care about cost
-    // payment for this test — only the damage code path.
-    let cultist_card_id = state.get_object(cultist).unwrap().card_id;
-    let behavior = registry.get(cultist_card_id).unwrap();
-    behavior.on_activate_ability(
-        &mut state,
-        cultist,
-        0,
-        &[Target::Object(victim)],
-        &registry,
-    );
-
-    let victim_obj = state.get_object(victim).unwrap();
-    assert!(
-        victim_obj.damage_marked >= 2,
-        "Test setup: Skirsdag Cultist should have written 2 damage to \
-         the victim, but damage_marked = {}",
-        victim_obj.damage_marked
-    );
-    assert!(
-        victim_obj.damaged_by.contains(&cultist),
-        "Skirsdag Cultist should push its ObjectId onto the victim's \
-         damaged_by vector when dealing damage. Bug T: the ability \
-         increments damage_marked directly without touching damaged_by, \
-         so deathtouch SBAs and death-watch triggers can't see who \
-         dealt the lethal damage. damaged_by = {:?}",
-        victim_obj.damaged_by,
-    );
+/// Put a planeswalker on `owner`'s battlefield. A real one from the registry,
+/// because the bug was that `power` is `None` for planeswalkers and the
+/// enumerator filtered on it.
+fn planeswalker(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry, owner: PlayerId) -> ObjectId {
+    let id = named_permanent(state, reg, "Garruk Relentless", owner);
+    assert!(state.get_object(id).unwrap().power.is_none(),
+        "test precondition: a planeswalker has no power, which is what the \
+         broken filter keyed on");
+    id
 }
 
-/// Bug T (`audits/AUDIT_BUGS.md)`: Rolling Temblor doesn't push itself
-/// onto each affected creature's `damaged_by` vector.
+/// Every card in the set whose declared target requirement is `AnyTarget` must
+/// offer a planeswalker when one is on the battlefield.
 ///
-/// Oracle (Rolling Temblor): "Rolling Temblor deals 2 damage to each
-/// creature without flying."
-///
-/// Failure mode: `rolling_temblor.rs` writes
-/// `obj.damage_marked += 2` for each non-flying creature without the
-/// matching `obj.damaged_by.push(source)`.
+/// Derived from the registry rather than hand-listed: a new "any target" card
+/// is covered the day it is added, and the floor makes a sweep that stops
+/// finding anything fail rather than pass silently.
 #[test]
-fn bug_t_rolling_temblor_pushes_damaged_by() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn every_any_target_spell_can_point_at_a_planeswalker() {
+    let reg = registry();
+    let mut checked = 0;
 
-    let _on_p0 = ready_creature(&mut state, P0, 2, 2);
-    let _on_p1 = ready_creature(&mut state, P1, 2, 2);
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    for name in names {
+        let card_id = reg.get_id_by_name(&name).expect("named card has an id");
+        let Some(behavior) = reg.get(card_id) else { continue };
+        if !matches!(behavior.target_requirement(), TargetRequirement::AnyTarget) {
+            continue;
+        }
+        let data = behavior.card_data();
+        // Only the ones castable as a spell go through the cast-time
+        // enumerator; the rest are activated or triggered abilities.
+        if data.cost.is_none() || data.card_types.iter().all(|t|
+            !matches!(t, CardType::Instant | CardType::Sorcery)) {
+            continue;
+        }
 
-    // Resolve Rolling Temblor by calling its on_resolve directly.
-    let temblor_card_id = registry.get_id_by_name("Rolling Temblor").unwrap();
-    let temblor = state.create_object(temblor_card_id, P0, Zone::Stack, None, None);
-    state.get_object_mut(temblor).unwrap().name = "Rolling Temblor".into();
-    let behavior = registry.get(temblor_card_id).unwrap();
-    behavior.on_resolve(&mut state, temblor, &[], &registry);
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let garruk = planeswalker(&mut state, &reg, P1);
+        let spell = castable_spell(&mut state, &reg, &data.name, P0);
 
-    // Every non-flying creature should have damage_marked >= 2 AND
-    // should list temblor in its damaged_by.
-    let creatures: Vec<_> = state
-        .objects
-        .values()
-        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
-        .map(|o| (o.id, o.damage_marked, o.damaged_by.clone()))
-        .collect();
-    assert!(!creatures.is_empty(), "Test setup: should have creatures in play");
-
-    for (id, damage, damaged_by) in &creatures {
-        assert!(
-            *damage >= 2,
-            "Test setup: creature {id:?} should have damage_marked >= 2"
-        );
-        assert!(
-            damaged_by.contains(&temblor),
-            "Rolling Temblor should push itself onto creature {id:?}'s \
-             damaged_by vector when dealing damage. Bug T: the on_resolve \
-             handler increments damage_marked directly without touching \
-             damaged_by. damaged_by = {damaged_by:?}",
-        );
+        let offered = offered_targets(&state, &reg, spell);
+        assert!(offered.contains(&Target::Object(garruk)),
+            "{}: 'any target' includes a planeswalker (CR 115.4a); offered {offered:?}",
+            data.name);
+        checked += 1;
     }
+
+    assert!(checked >= 3,
+        "expected the set's 'any target' spells to be found and checked, got {checked}");
 }
 
-/// Bug BQ (`audits/AUDIT_BUGS.md)`: `TargetRequirement::AnyTarget`
-/// filters battlefield objects with `o.power.is_some()`, which
-/// excludes planeswalkers. So Brimstone Volley, Devil's Play,
-/// Geistflame, Skirsdag Cultist, Blazing Torch, and Heretic's
-/// Punishment can't choose a planeswalker as their "any target".
-///
-/// Oracle (Brimstone Volley): "Brimstone Volley deals 3 damage to any
-/// target. Morbid — Brimstone Volley deals 5 damage instead if a
-/// creature died this turn."
-///
-/// Per CR 115.4a, "any target" is the modern oracle phrasing that
-/// means "any creature, player, planeswalker, or battle". A
-/// planeswalker should always be a legal target for these spells.
-///
-/// Failure mode: `engine.rs` (the cast-time arm) and
-/// `engine.rs+` (the activated-ability arm) both filter via
-/// `obj.power.is_some()`. Garruk Relentless has `power = None` in the
-/// registry, so the filter drops him. The "any target" prompt only
-/// lists creatures + players.
+/// The same rule on the resolution-time path: Pitchburn Devils' death trigger
+/// enumerates its own targets through `cards/helpers.rs::any_targets`, which
+/// was a separate copy of the same filter.
 #[test]
-fn bug_bq_brimstone_volley_can_target_planeswalker() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Garruk Relentless on P1's side. He's a Planeswalker, so
-    // obj.power = None — exactly the case the AnyTarget filter drops.
-    let garruk_card_id = registry.get_id_by_name("Garruk Relentless").unwrap();
-    let garruk = state.create_object(garruk_card_id, P1, Zone::Battlefield, None, None);
-    state.get_object_mut(garruk).unwrap().name = "Garruk Relentless".into();
-    state
-        .get_object_mut(garruk)
-        .unwrap()
-        .card_types = vec![CardType::Planeswalker];
-
-    // Brimstone Volley in P0's hand with mana ready.
-    let volley = castable_spell(&mut state, &registry, "Brimstone Volley", P0);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let can_target_garruk = legal.actions.iter().any(|a| matches!(
-        a,
-        Action::CastSpell { object_id, targets, .. }
-            if *object_id == volley
-                && targets.iter().any(|t| matches!(t, Target::Object(id) if *id == garruk))
-    ));
-
-    assert!(
-        can_target_garruk,
-        "Brimstone Volley's 'any target' should include Garruk Relentless \
-         (a planeswalker on the battlefield). Bug BQ: \
-         TargetRequirement::AnyTarget filters by o.power.is_some() and \
-         drops planeswalkers. legal_actions = {:?}",
-        legal
-            .actions
-            .iter()
-            .filter(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == volley))
-            .collect::<Vec<_>>(),
-    );
-}
-
-/// Bug BZ (`audits/AUDIT_BUGS.md)`: `cards/helpers.rs::any_targets`
-/// builds its target list from `creature_targets` + players, omitting
-/// planeswalkers. This is the on-resolve sibling of Bug BQ — Pitchburn
-/// Devils' on-death trigger uses this helper to enumerate targets, so
-/// the model is never offered Garruk or Liliana as a death-trigger
-/// target.
-///
-/// Oracle (Pitchburn Devils): "When this creature dies, it deals 3
-/// damage to any target."
-///
-/// Failure mode: `cards/helpers.rs` does
-/// `let mut targets = creature_targets(state); for player in
-/// &state.players { ... }` and `creature_targets` filters with
-/// `o.power.is_some()`. Planeswalkers are dropped. Pitchburn Devils'
-/// `on_dies` (at `pitchburn_devils.rs`) calls `any_targets(state)`
-/// and feeds the result into `present_target_choice` — the
-/// `awaiting_action`'s options end up missing the planeswalker.
-#[test]
-fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
+fn an_ability_that_picks_any_target_on_resolution_offers_a_planeswalker() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 
-    let registry = CardRegistry::with_all_cards();
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Garruk Relentless on P1's side.
-    let garruk_card_id = registry.get_id_by_name("Garruk Relentless").unwrap();
-    let garruk = state.create_object(garruk_card_id, P1, Zone::Battlefield, None, None);
-    state.get_object_mut(garruk).unwrap().name = "Garruk Relentless".into();
-    state
-        .get_object_mut(garruk)
-        .unwrap()
-        .card_types = vec![CardType::Planeswalker];
+    let garruk = planeswalker(&mut state, &reg, P1);
+    let devils = named_permanent(&mut state, &reg, "Pitchburn Devils", P0);
 
-    // Pitchburn Devils on P0's side. Drive the death via SBA so the
-    // SelfDies trigger enters the pipeline with stack-time targeting.
-    let pd = named_permanent(&mut state, &registry, "Pitchburn Devils", P0);
-    state.get_object_mut(pd).unwrap().damage_marked = 3;
-    state.events.clear();
-    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
-    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    kill_by_damage(&mut state, &reg, devils);
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
 
-    let garruk_in_options = match &state.awaiting_action {
+    let options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. },
-            ..
-        }) => options
-            .iter()
-            .any(|t| matches!(t, Target::Object(id) if *id == garruk)),
-        _ => false,
+            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.clone(),
+        other => panic!("Pitchburn Devils should ask where its 3 damage goes, got {other:?}"),
     };
 
-    assert!(
-        garruk_in_options,
-        "Pitchburn Devils' on-death 'deal 3 damage to any target' should \
-         offer Garruk Relentless as a target. Bug BZ: any_targets() builds \
-         from creature_targets() (filtered by o.power.is_some()) plus \
-         players, so planeswalkers are dropped. awaiting_action = {:?}",
-        state.awaiting_action,
-    );
+    assert!(options.iter().any(|t| matches!(t, Target::Object(id) if *id == garruk)),
+        "'it deals 3 damage to any target' includes a planeswalker; offered {options:?}");
 }
 
-/// Bug BR (`audits/AUDIT_BUGS.md)`: Olivia Voldaren's first ability
-/// (`obj.damage_marked += 1`) bypasses the central damage helper. If
-/// Olivia is pointed at a planeswalker, the code writes
-/// `damage_marked` instead of decrementing the planeswalker's
-/// loyalty counters. The central helper at
-/// `engine.rs` handles the planeswalker branch.
-///
-/// Oracle (Olivia Voldaren, first ability): "{1}{R}: This creature
-/// deals 1 damage to another target creature. That creature becomes
-/// a Vampire in addition to its other types."
-///
-/// Failure mode: `olivia_voldaren.rs` inline-writes
-/// `obj.damage_marked += 1; obj.damaged_by.push(object_id);` without
-/// checking whether the target is a planeswalker. We force the
-/// issue by manually calling `on_activate_ability` with a
-/// planeswalker target — even though `TargetFilter::Another` / the
-/// activated-ability target enumerator wouldn't ordinarily surface a
-/// planeswalker (Bug BQ), the engine has no defense-in-depth at the
-/// handler level. After firing, Garruk's `damage_marked` should be
-/// 0 and his loyalty counters should be 1 less than before.
+/// And the damage, once pointed there, removes loyalty (CR 120.3c) — the
+/// planeswalker branch of the pipeline, reached from an activated ability
+/// rather than a spell.
 #[test]
-fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
-    let registry = CardRegistry::with_all_cards();
+fn damage_from_an_activated_ability_takes_a_planeswalkers_loyalty() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_permanent(&mut state, &registry, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let garruk = planeswalker(&mut state, &reg, P1);
+    let before = counters_of(&state, garruk, CounterType::Loyalty);
+    assert!(before > 0, "test precondition: Garruk entered with loyalty");
 
-    // Garruk Relentless on P1's side with a starting loyalty of 3.
-    let garruk_card_id = registry.get_id_by_name("Garruk Relentless").unwrap();
-    let garruk = state.create_object(garruk_card_id, P1, Zone::Battlefield, None, None);
-    {
-        let obj = state.get_object_mut(garruk).unwrap();
-        obj.name = "Garruk Relentless".into();
-        obj.counters.insert(CounterType::Loyalty, 3);
-    }
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Red, 1)]);
+    let state = activate(&state, &reg, olivia, 0, vec![Target::Object(garruk)]);
 
-    // Fire Olivia's first ability targeting Garruk.
-    let olivia_card_id = registry.get_id_by_name("Olivia Voldaren").unwrap();
-    let behavior = registry.get(olivia_card_id).unwrap();
-    behavior.on_activate_ability(
-        &mut state,
-        olivia,
-        0,
-        &[Target::Object(garruk)],
-        &registry,
-    );
-
-    let loyalty = counters_of(&state, garruk, CounterType::Loyalty);
-    let damage_marked = state.get_object(garruk).unwrap().damage_marked;
-
-    assert!(
-        loyalty <= 2 && damage_marked == 0,
-        "Olivia Voldaren's 1 damage to a planeswalker should decrement \
-         the planeswalker's loyalty counters, not write to damage_marked. \
-         Bug BR: the handler inline-writes obj.damage_marked without \
-         checking if the target is a planeswalker. \
-         loyalty={loyalty}, damage_marked={damage_marked}",
-    );
+    assert_eq!(counters_of(&state, garruk, CounterType::Loyalty), before - 1,
+        "Olivia's 1 damage removes one loyalty counter");
+    assert_eq!(state.get_object(garruk).unwrap().damage_marked, 0,
+        "and marks no damage on the permanent, which nothing would ever clear");
 }
