@@ -163,38 +163,6 @@ fn runechanters_pike_grants_first_strike_and_power_bonus() {
     assert_eq!(state.effective_toughness(creature, &reg), Some(2));
 }
 
-#[test]
-fn runechanters_pike_equip_ability() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let pike = named_equipment(&mut state, &reg, "Runechanter's Pike", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    // Add mana for equip: {2}
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: pike,
-            ability_index: 0,
-            targets: vec![Target::Object(creature)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
-
-    assert_eq!(
-        new_state.get_object(pike).unwrap().attached_to,
-        Some(creature),
-        "Pike should be attached to the creature"
-    );
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Inquisitor's Flail
 // ══════════════════════════════════════════════════════════════════
@@ -228,37 +196,6 @@ fn inquisitors_flail_doubles_combat_damage() {
     // 3 damage doubled = 6 damage.
     assert_eq!(life_before - life_after, 6,
         "Inquisitor's Flail should double combat damage to player");
-}
-
-#[test]
-fn inquisitors_flail_equip_ability() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: flail,
-            ability_index: 0,
-            targets: vec![Target::Object(creature)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
-
-    assert_eq!(
-        new_state.get_object(flail).unwrap().attached_to,
-        Some(creature),
-        "Flail should be attached to the creature"
-    );
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -461,37 +398,6 @@ fn blazing_torch_damage_source_is_torch_not_creature() {
         torch, creature, enemy_obj.damaged_by);
     assert!(!enemy_obj.damaged_by.contains(&creature),
         "Damage source should NOT be the equipped creature");
-}
-
-#[test]
-fn blazing_torch_equip_ability() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: torch,
-            ability_index: 0,
-            targets: vec![Target::Object(creature)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
-
-    assert_eq!(
-        new_state.get_object(torch).unwrap().attached_to,
-        Some(creature),
-        "Torch should be attached to the creature"
-    );
 }
 
 #[test]

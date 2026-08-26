@@ -12,59 +12,32 @@ use mtg_engine::types::*;
 // ── Flying ──────────────────────────────────────────────────────────
 
 /// A creature with flying can only be blocked by creatures with flying or reach.
+/// CR 509.1b: a creature with flying can't be blocked except by creatures with
+/// flying or reach. Four tests used to take one cell of this each.
 #[test]
-fn flying_creature_cannot_be_blocked_by_ground_creature() {
+fn flying_restricts_who_can_block() {
+    // (attacker, blocker, blocker may block the attacker?)
+    const CASES: &[(&str, &str, bool)] = &[
+        ("Abbey Griffin", "Grizzly Bears",     false), // flyer vs ground: no
+        ("Abbey Griffin", "Moon Heron",        true),  // flyer vs flyer: yes
+        ("Moon Heron",    "Somberwald Spider", true),  // flyer vs reach: yes
+        ("Grizzly Bears", "Grizzly Bears",     true),  // ground attacker: unrestricted
+    ];
     let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    for &(attacker_name, blocker_name, can_block) in CASES {
+        let mut state = game_at_step(Step::DeclareBlockers, P0);
+        let attacker = named_creature(&mut state, &reg, attacker_name, P0);
+        let blocker = named_creature(&mut state, &reg, blocker_name, P1);
 
-    // P0's attacker: Abbey Griffin (2/2 flying)
-    let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
-
-    // P1's blocker: vanilla ground creature
-    let blocker = ready_creature(&mut state, P1, 3, 3);
-
-    assert!(!combat::can_block_attacker(&state, blocker, attacker, &reg),
-        "Ground creature should not be able to block a flyer");
+        assert_eq!(combat::can_block_attacker(&state, blocker, attacker, &reg), can_block,
+            "{blocker_name} should {}be able to block {attacker_name}",
+            if can_block { "" } else { "not " });
+    }
 }
 
 /// A creature with flying CAN be blocked by another creature with flying.
-#[test]
-fn flyer_can_block_flyer() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
-    let blocker = named_creature(&mut state, &reg, "Moon Heron", P1);
-
-    assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
-        "Flyer should be able to block another flyer");
-}
-
 /// A creature with reach can block a flyer.
-#[test]
-fn reach_can_block_flying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let attacker = named_creature(&mut state, &reg, "Moon Heron", P0);
-    let blocker = named_creature(&mut state, &reg, "Somberwald Spider", P1);
-
-    assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
-        "Spider with reach should block a flyer");
-}
-
 /// A non-flying attacker CAN be blocked by any creature (flying doesn't restrict ground blocks).
-#[test]
-fn ground_creature_can_be_blocked_normally() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-    let attacker = ready_creature(&mut state, P0, 3, 3);
-    let blocker = ready_creature(&mut state, P1, 2, 2);
-
-    assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
-        "Ground creature should be blockable by anything");
-}
-
 // ── Vigilance ───────────────────────────────────────────────────────
 
 /// Creatures with vigilance don't tap when attacking.

@@ -30,66 +30,33 @@ fn random_starting_player_single_player_game_is_deterministic() {
     }
 }
 
+/// MTR 2.3: the loser of the previous game chooses who plays first, and always
+/// elects to play. A drawn game has no loser, so the previous choice persists.
+///
+/// This was four tests over six cases; the whole rule is a truth table, so it
+/// reads as one.
 #[test]
-fn loser_chooses_after_p0_wins() {
-    // p0 was on the play and won → p1 (the loser) chooses next game →
-    // loser elects to play first → next starter is p1.
-    let next = engine::next_starter_loser_plays(
-        PlayerId(0),
-        Some(PlayerId(0)),
-        2,
-    );
-    assert_eq!(next, PlayerId(1));
-}
+fn the_loser_of_the_last_game_chooses_and_elects_to_play() {
+    // (who started last game, who won — None for a draw, who starts next)
+    const CASES: &[(u8, Option<u8>, u8)] = &[
+        (0, Some(0), 1),  // starter won, so the other player chooses and plays
+        (1, Some(1), 0),
+        (0, Some(1), 0),  // the non-starter won, so the starter chooses and plays
+        (1, Some(0), 1),
+        (0, None, 0),     // a draw has no loser — the previous choice stands
+        (1, None, 1),
+    ];
 
-#[test]
-fn loser_chooses_after_p1_wins() {
-    // p1 was on the play and won → p0 (the loser) chooses next game →
-    // next starter is p0.
-    let next = engine::next_starter_loser_plays(
-        PlayerId(1),
-        Some(PlayerId(1)),
-        2,
-    );
-    assert_eq!(next, PlayerId(0));
-}
-
-#[test]
-fn loser_chooses_when_non_starter_wins() {
-    // p0 was on the play but p1 won → p0 (the loser) chooses next game.
-    let next = engine::next_starter_loser_plays(
-        PlayerId(0),
-        Some(PlayerId(1)),
-        2,
-    );
-    assert_eq!(next, PlayerId(0));
-
-    // And the mirror case: p1 on the play, p0 won → p1 chooses next.
-    let next = engine::next_starter_loser_plays(
-        PlayerId(1),
-        Some(PlayerId(0)),
-        2,
-    );
-    assert_eq!(next, PlayerId(1));
-}
-
-#[test]
-fn drawn_game_keeps_previous_starter() {
-    // Per MTR §2.3, a drawn game has no loser and the previous pre-game
-    // choice persists into the next game.
-    let next = engine::next_starter_loser_plays(
-        PlayerId(0),
-        None,
-        2,
-    );
-    assert_eq!(next, PlayerId(0));
-
-    let next = engine::next_starter_loser_plays(
-        PlayerId(1),
-        None,
-        2,
-    );
-    assert_eq!(next, PlayerId(1));
+    for &(started, won, expected) in CASES {
+        let next = engine::next_starter_loser_plays(
+            PlayerId(started),
+            won.map(PlayerId),
+            2,
+        );
+        assert_eq!(next, PlayerId(expected),
+            "p{started} started and {} — p{expected} should start the next game",
+            won.map_or("the game was drawn".to_string(), |w| format!("p{w} won")));
+    }
 }
 
 #[test]

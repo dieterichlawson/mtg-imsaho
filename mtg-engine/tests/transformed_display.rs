@@ -1,68 +1,65 @@
-//! Regression test for Bug B (`BUG_REPORT_8SEAT.md)`: the `PermanentView`
-//! built from a transformed DFC was reading the name and `card_types`
-//! from `registry.card_data()` which unconditionally returns the front
-//! face, so a transformed Villagers of Estwald would render as
-//! "Villagers of Estwald" with back-face stats (4/6).
+//! Regression test for Bug B (`BUG_REPORT_8SEAT.md`): the `PermanentView` built
+//! from a transformed DFC read its name and `card_types` from
+//! `registry.card_data()`, which unconditionally returns the FRONT face — so a
+//! transformed Villagers of Estwald rendered as "Villagers of Estwald" with
+//! back-face stats (4/6).
+//!
+//! The view is what a player actually sees, so it has to follow the active
+//! face. Four tests used to check three named cards; this checks every DFC in
+//! the set, on both faces.
 
 mod common;
 use common::*;
 
 use mtg_engine::cards::helpers;
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::ids::PlayerId;
 use mtg_engine::types::Step;
 use mtg_engine::view::GameView;
 
-const P0: PlayerId = PlayerId(0);
-
 #[test]
-fn untransformed_dfc_shows_front_face_name() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &registry, "Villagers of Estwald", P0);
+fn the_view_shows_whichever_face_a_dfc_is_currently_on() {
+    let reg = registry();
 
-    let view = GameView::for_player(&state, P0, &registry);
-    let perm = view.battlefield.iter().find(|p| p.object_id == id).unwrap();
-    assert_eq!(perm.name, "Villagers of Estwald");
-    assert_eq!(perm.effective_power, Some(2));
-    assert_eq!(perm.effective_toughness, Some(3));
-}
+    let dfcs: Vec<String> = reg.all_names().iter()
+        .filter(|n| reg.get_id_by_name(n)
+            .and_then(|id| reg.get(id))
+            .is_some_and(|b| b.back_face_data().is_some()))
+        .map(|n| (*n).to_string())
+        .collect();
+    assert!(dfcs.len() >= 10,
+        "only {} DFCs found — this sweep has stopped covering the set", dfcs.len());
 
-#[test]
-fn transformed_dfc_shows_back_face_name() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &registry, "Villagers of Estwald", P0);
-    helpers::apply_transform(&mut state, id, &registry);
+    for name in &dfcs {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let id = named_creature(&mut state, &reg, name, P0);
+        let behavior = reg.get(state.get_object(id).unwrap().card_id).unwrap();
+        let front = behavior.card_data();
+        let back = behavior.back_face_data().unwrap();
 
-    let view = GameView::for_player(&state, P0, &registry);
-    let perm = view.battlefield.iter().find(|p| p.object_id == id).unwrap();
-    assert_eq!(perm.name, "Howlpack of Estwald",
-        "Transformed DFC must show back-face name, not front face");
-    assert_eq!(perm.effective_power, Some(4));
-    assert_eq!(perm.effective_toughness, Some(6));
-}
+        let shown = |state: &mtg_engine::state::GameState| {
+            let view = GameView::for_player(state, P0, &reg);
+            let perm = view.battlefield.iter()
+                .find(|p| p.object_id == id)
+                .unwrap_or_else(|| panic!("{name} missing from its controller's view"));
+            (perm.name.clone(), perm.effective_power, perm.effective_toughness)
+        };
 
-#[test]
-fn transformed_kruin_outlaw_shows_terror_name() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &registry, "Kruin Outlaw", P0);
-    helpers::apply_transform(&mut state, id, &registry);
+        let (shown_name, p, t) = shown(&state);
+        assert_eq!(shown_name, front.name, "{name} should render as its front face");
+        // A characteristic-defining ability sets P/T from game state, so only
+        // compare against the printed box when the card has one printed.
+        if behavior.dynamic_pt(&state, id, &reg).is_none() {
+            assert_eq!((p, t), (front.power, front.toughness),
+                "{name} should render its front-face size");
+        }
 
-    let view = GameView::for_player(&state, P0, &registry);
-    let perm = view.battlefield.iter().find(|p| p.object_id == id).unwrap();
-    assert_eq!(perm.name, "Terror of Kruin Pass");
-}
+        helpers::apply_transform(&mut state, id, &reg);
 
-#[test]
-fn transformed_civilized_scholar_shows_homicidal_brute_name() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &registry, "Civilized Scholar", P0);
-    helpers::apply_transform(&mut state, id, &registry);
-
-    let view = GameView::for_player(&state, P0, &registry);
-    let perm = view.battlefield.iter().find(|p| p.object_id == id).unwrap();
-    assert_eq!(perm.name, "Homicidal Brute");
+        let (shown_name, p, t) = shown(&state);
+        assert_eq!(shown_name, back.name,
+            "a transformed {name} must render as {}, not the front face", back.name);
+        if behavior.dynamic_pt(&state, id, &reg).is_none() {
+            assert_eq!((p, t), (back.power, back.toughness),
+                "a transformed {name} should render its back-face size");
+        }
+    }
 }
