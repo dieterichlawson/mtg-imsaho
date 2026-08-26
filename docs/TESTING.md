@@ -32,7 +32,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | combat | `combat.rs`, `combat_rules.rs`, `combat_regressions.rs` |
 | damage | `damage_pipeline.rs`, `damage_helper.rs`, `inline_damage.rs` |
 | state-based actions (CR 704) | `state_based_actions.rs`, `evil_twin_sba_guard.rs` |
-| copying (CR 706) | `copy_effects.rs`, `token_copy.rs`, `cackling_counterpart.rs` |
+| copying (CR 706) | `copy_effects.rs` (what is copied), `token_copy.rs` (what `create_token_*` must carry across) |
 | transform / DFCs (CR 712) | `transform_dfc.rs`, `dfc_zone_cleanup.rs`, `transformed_display.rs`, `werewolf_cards.rs`, `werewolf_subtype_after_transform.rs` |
 | zones and object identity (CR 400.7) | `zones_and_state.rs`, `zone_change_resets_object.rs`, `until_eot_object_identity.rs`, `token_is_not_a_card.rs` |
 | control and duration | `control_change.rs`, `control_durations.rs`, `enters_under_control.rs` |

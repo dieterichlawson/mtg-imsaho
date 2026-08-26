@@ -43,7 +43,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 |   | `simultaneous_events.rs` | 327 | 9 |
 | x | `resolution_time_checks.rs` | 324 | 9 |
 | x | `characteristics_card_sweep.rs` | 319 | 9 |
-|   | `token_copy.rs` | 319 | 5 |
+| x | `token_copy.rs` | 319 | 5 |
 | x | `cards_vanilla_and_keywords.rs` | 318 | 15 |
 |   | `trigger_target_recheck.rs` | 317 | 10 |
 |   | `replacement_effects.rs` | 316 | 9 |
@@ -81,7 +81,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 |   | `phantom_triggers.rs` | 209 | 7 |
 |   | `x_cost_spells.rs` | 208 | 4 |
 |   | `moonmist.rs` | 200 | 8 |
-|   | `geist_of_saint_traft.rs` | 198 | 5 |
+| x | `geist_of_saint_traft.rs` | 198 | 5 |
 | x | `creepy_doll.rs` | 184 | 5 |
 |   | `player_protection.rs` | 184 | 4 |
 |   | `zones_and_state.rs` | 183 | 8 |
@@ -121,7 +121,6 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `planeswalkers.rs` | 102 | 4 |
 | x | `death_trigger_regressions.rs` | 101 | 2 |
 | x | `curse_and_equip_scope.rs` | 92 | 3 |
-| x | `cackling_counterpart.rs` | 90 | 3 |
 | x | `instant_interaction.rs` | 89 | 4 |
 | x | `garruk_relentless.rs` | 86 | 3 |
 | x | `funding_build_options.rs` | 85 | 4 |
@@ -132,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**85/127 files read; 10708 lines remaining.**
+**86/126 files read; 10191 lines remaining.**

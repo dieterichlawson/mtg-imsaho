@@ -196,3 +196,35 @@ fn geist_no_spurious_end_combat_trigger_when_did_not_attack() {
          not attack this turn; the exile trigger only exists when an Angel token was created",
     );
 }
+
+/// Ruling: "The Angel token will be attacking the same player or planeswalker
+/// that Geist of Saint Traft is attacking." The defender is read from Geist's
+/// own entry in `combat.attackers`, not recomputed — recomputing it as "the
+/// controller's opponent" happens to agree in a two-player game and is the
+/// wrong rule.
+#[test]
+fn the_angel_token_attacks_whoever_geist_is_attacking() {
+    use mtg_engine::cards::AttackInfo;
+    use mtg_engine::state::CombatState;
+    use std::collections::HashMap;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+    let mut attackers = HashMap::new();
+    attackers.insert(geist, P1);
+    state.combat = Some(CombatState { attackers, ..Default::default() });
+
+    let card_id = state.get_object(geist).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
+
+    let angel = state.objects.values()
+        .find(|o| o.is_token && o.name.contains("Angel") && o.controller == P0)
+        .map(|o| o.id)
+        .expect("Geist should have spawned an Angel token");
+
+    assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P1),
+        "the Angel is inserted into combat attacking the same player as Geist");
+}

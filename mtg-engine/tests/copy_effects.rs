@@ -11,8 +11,6 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
-use mtg_engine::ids::ObjectId;
 use mtg_engine::state::{GameState, PendingEffect};
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
@@ -172,84 +170,119 @@ fn a_token_copy_fires_the_copied_creatures_etb_ability() {
          watchers must see it");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
 
-/// Bug: Evil Twin marked itself as a copy before the copy choice. The destroy ability
-/// comes from the "except it has..." clause, which only applies when a copy is made.
-/// Per ruling: "You can choose not to copy anything. In that case, Evil Twin enters
-/// as a 0/0 creature." A 0/0 that didn't copy anything should NOT have the destroy
-/// ability. The code comment claiming this is intentional is wrong per oracle text.
+/// A copy takes the source's colours. When the source is a card, they come
+/// from its face; when the source is a token, they live on the object — two
+/// different places for `create_token_copy` to read from, so both are checked.
 #[test]
-fn bug_evil_twin_marker_set_before_choice() {
-    let registry = CardRegistry::with_all_cards();
+fn a_token_copy_takes_its_sources_colors_from_wherever_they_live() {
+    let reg = registry();
+
+    // From a card's face.
     let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let cc = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
+    let state = cast_and_resolve(&state, &reg, cc, vec![Target::Object(bears)]);
+    let token = find_token_named(&state, "Grizzly Bears").expect("token copy exists");
+    assert_eq!(state.get_object(token).unwrap().colors, vec![Color::Green],
+        "the copy of a green Bear is green — an empty colour list is the bug \
+         this catches, and so is the wrong colour");
 
-    // Place a target creature and Evil Twin
-    let _target = ready_creature(&mut state, P1, 3, 3);
-    let twin = castable_spell(&mut state, &registry, "Evil Twin", P0);
-    state = cast_and_resolve(&state, &registry, twin, vec![]);
+    // From a token's own object.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let zombie = state.create_token_with_subtypes(
+        "Zombie", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+        vec![], vec!["Zombie".to_string()], &reg)[0];
+    let copy = state.create_token_copy(zombie, P0, &reg);
+    let copy_obj = state.get_object(copy).expect("copy token exists");
 
-    // Fire ETB triggers (this is where on_enter_battlefield runs)
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
-
-    // Check if the copy-grantor marker is set before the copy choice is made
-    let has_marker = state.get_object(twin).is_some_and(|o|
-        o.copy_grantor.is_some()
-    );
-
-    let has_choice = state.awaiting_action.is_some();
-
-    // The marker should only be set AFTER the player chooses to copy.
-    // If the player declines, the 0/0 Twin dies without the destroy ability.
-    // BUG: Marker is set before the choice is presented.
-    assert!(!(has_marker && has_choice),
-        "copy_grantor must not be set while the copy choice is still pending, \
-         or the granted ability would appear before the copy exists. \
-         Marker: {has_marker}, Choice: {has_choice}");
+    assert_eq!((copy_obj.power, copy_obj.toughness), (Some(2), Some(2)), "a copy of a 2/2 is a 2/2");
+    assert!(copy_obj.card_types.contains(&CardType::Creature),
+        "card types carry over, got {:?}", copy_obj.card_types);
+    assert!(copy_obj.subtypes.contains(&"Zombie".to_string()),
+        "subtypes carry over, got {:?}", copy_obj.subtypes);
+    assert!(copy_obj.colors.contains(&Color::Black),
+        "and colour, got {:?}", copy_obj.colors);
 }
 
-/// Bug: After Evil Twin copies a creature, the destroy ability
-/// ("{U}{B}, {T}: Destroy target creature with the same name")
-/// may not be accessible because the engine looks up abilities
-/// from the registry using `card_id`, which changed to the copied
-/// creature's `card_id`.
+// ── Evil Twin's "except it has..." clause ────────────────────────
+
+
+/// "You may have this creature enter as a copy of any creature on the
+/// battlefield, except it has '{U}{B}, {T}: Destroy target creature with the
+/// same name as this creature.'"
+///
+/// The granted ability comes from the "except it has" clause, which only
+/// applies once a copy is actually made. Ruling: "You can choose not to copy
+/// anything. In that case, Evil Twin enters as a 0/0 creature" — with no
+/// destroy ability.
+///
+/// The previous version asserted `!(has_marker && has_choice)`, which is
+/// satisfied by either half being false — including by an Evil Twin that never
+/// offered a choice at all. Both halves are asserted separately now.
 #[test]
-fn bug_evil_twin_ability_inaccessible_after_copy() {
-    let registry = CardRegistry::with_all_cards();
+fn evil_twin_is_not_marked_as_a_copy_until_the_choice_is_made() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place a creature to copy
-    let target = named_permanent(&mut state, &registry, "Grizzly Bears", P1);
+    ready_creature(&mut state, P1, 3, 3);
+    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
+    state = cast_and_resolve(&state, &reg, twin, vec![]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
-    // Place Evil Twin and trigger its ETB
-    let twin = named_permanent(&mut state, &registry, "Evil Twin", P0);
+    assert!(state.awaiting_action.is_some(),
+        "with a creature on the battlefield, the copy choice must be offered");
+    assert!(state.get_object(twin).is_some_and(|o| o.copy_grantor.is_none()),
+        "and until it is answered nothing has been copied, so the 'except it \
+         has' ability must not be granted yet");
+}
 
-    // Manually trigger the ETB and resolve the copy
-    let behavior = registry.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &[], &registry);
+/// After the copy, the granted ability is still reachable — the copy changes
+/// which card the permanent's abilities are looked up from, and the "except it
+/// has" clause has to survive that.
+#[test]
+fn evil_twin_keeps_its_granted_ability_after_copying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Resolve the copy choice (choose Grizzly Bears)
-    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. }) = &state.awaiting_action {
-        let action = Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(target))),
-        };
-        state = engine::submit_action(&state, &action, &registry);
-    }
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
 
-    // Twin should now be a copy of Grizzly Bears with the destroy ability
-    // Add mana for {U}{B}
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    reg.get(state.get_object(twin).unwrap().card_id).unwrap()
+        .on_enter_battlefield(&mut state, twin, &[], &reg);
 
-    // Check if the destroy ability is available
-    let legal = engine::legal_actions(&state, &registry);
-    let has_destroy = legal.actions.iter().any(|a| {
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == twin)
-    });
+    assert!(state.awaiting_action.is_some(), "the copy choice is offered");
+    state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
+    }, &reg);
 
-    // BUG: Destroy ability not available because card_id points to copied creature
-    assert!(has_destroy,
-        "Evil Twin should have the destroy ability after copying");
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Black, 1)]);
+    assert!(offers_ability_of(&state, &reg, twin),
+        "{{U}}{{B}}, {{T}}: Destroy target creature with the same name — the \
+         ability is granted by the copy effect, not by the copied card, so \
+         looking abilities up from the new card_id must not lose it");
+}
+
+/// CR 614.1d: "enter as a copy" is a replacement effect, so the permanent is
+/// already the copy when it arrives. Evil Twin's printed body is 0/0, and a
+/// 0/0 on the battlefield dies to SBA 704.5f — so entry has to hold the
+/// state-based check off until the copy has had its chance to apply.
+#[test]
+fn evil_twin_survives_state_based_actions_while_its_copy_choice_is_pending() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Something to copy, so the choice is not a silent no-op.
+    ready_creature(&mut state, P1, 2, 2);
+
+    // Enter through the real chokepoint, which arms the copy guard.
+    let card_id = reg.get_id_by_name("Evil Twin").unwrap();
+    let twin = state.create_object(card_id, P0, Zone::Hand, Some(0), Some(0));
+    state.get_object_mut(twin).unwrap().name = "Evil Twin".into();
+    state.move_object(twin, Zone::Battlefield, &reg);
+
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield),
+        "the printed 0/0 must not be swept away before the copy applies");
 }
