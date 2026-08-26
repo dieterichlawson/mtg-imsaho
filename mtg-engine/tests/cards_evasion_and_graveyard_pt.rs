@@ -1,15 +1,17 @@
 //! Creatures with evasion keywords, and creatures whose power and toughness
 //! are a function of the graveyard (CR 208.2).
 //!
-//! Cards covered (7), so this is greppable by name as well as by rule:
+//! Cards covered (6), so this is greppable by name as well as by rule:
 //!
 //! - Battleground Geist
-//! - Festerhide Boar
 //! - Gallows Warden
 //! - Geist-Honored Monk
 //! - Orchard Spirit
 //! - Spider Spawning
 //! - Wreath of Geists
+//!
+//! Festerhide Boar's morbid "enters with counters" is in `intervening_if.rs`,
+//! with the rest of CR 603.4.
 
 mod common;
 
@@ -21,52 +23,35 @@ use mtg_engine::triggers;
 use mtg_engine::types::*;
 // ── Spirit lords ───────────────────────────────────────────────────
 
-/// Battleground Geist gives other Spirits +1/+0 but not itself.
+/// "Other Spirit creatures you control get +N/+M." Four claims in one line —
+/// other, Spirit, you control, and the size — so each lord is checked against
+/// a board holding one of each.
 #[test]
-fn battleground_geist_buffs_other_spirits() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn a_spirit_lord_buffs_other_spirits_you_control_and_nothing_else() {
+    // (lord, its printed size, the power/toughness it grants)
+    const LORDS: &[(&str, (i32, i32), (i32, i32))] = &[
+        ("Battleground Geist", (3, 3), (1, 0)),
+        ("Gallows Warden", (3, 3), (0, 1)),
+    ];
 
-    let geist = named_permanent(&mut state, &reg, "Battleground Geist", P0);
-    let spirit = named_permanent(&mut state, &reg, "Chapel Geist", P0);
-    let non_spirit = ready_creature(&mut state, P0, 2, 2);
+    for &(name, printed, (dp, dt)) in LORDS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Battleground Geist: 3/3 base. Should NOT buff itself ("other").
-    assert_eq!(state.effective_power(geist, &reg), Some(3));
-    // Chapel Geist: 2/3 base + 1/0 from lord = 3/3.
-    assert_eq!(state.effective_power(spirit, &reg), Some(3));
-    assert_eq!(state.effective_toughness(spirit, &reg), Some(3));
-    // Non-spirit: no buff.
-    assert_eq!(state.effective_power(non_spirit, &reg), Some(2));
-}
+        let lord = named_permanent(&mut state, &reg, name, P0);
+        let spirit = named_permanent(&mut state, &reg, "Chapel Geist", P0);   // 2/3 Spirit
+        let non_spirit = ready_creature(&mut state, P0, 2, 2);
+        let their_spirit = named_permanent(&mut state, &reg, "Chapel Geist", P1);
 
-/// Gallows Warden gives other Spirits +0/+1 but not itself.
-#[test]
-fn gallows_warden_buffs_other_spirits() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pt = |s: &mtg_engine::state::GameState, id| {
+            (s.effective_power(id, &reg).unwrap(), s.effective_toughness(id, &reg).unwrap())
+        };
 
-    let warden = named_permanent(&mut state, &reg, "Gallows Warden", P0);
-    let spirit = named_permanent(&mut state, &reg, "Chapel Geist", P0);
-
-    // Warden: 3/3 base, should NOT buff itself.
-    assert_eq!(state.effective_toughness(warden, &reg), Some(3));
-    // Chapel Geist: 2/3 base + 0/1 from warden = 2/4.
-    assert_eq!(state.effective_toughness(spirit, &reg), Some(4));
-    assert_eq!(state.effective_power(spirit, &reg), Some(2));
-}
-
-/// Spirit lords don't buff opponent's spirits.
-#[test]
-fn spirit_lord_doesnt_buff_opponent() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let _geist = named_permanent(&mut state, &reg, "Battleground Geist", P0);
-    let enemy_spirit = named_permanent(&mut state, &reg, "Chapel Geist", P1);
-
-    // Opponent's spirit should NOT get the buff.
-    assert_eq!(state.effective_power(enemy_spirit, &reg), Some(2));
+        assert_eq!(pt(&state, lord), printed, "{name}: 'other' excludes itself");
+        assert_eq!(pt(&state, spirit), (2 + dp, 3 + dt), "{name}: your own Spirit is buffed");
+        assert_eq!(pt(&state, non_spirit), (2, 2), "{name}: a non-Spirit is not");
+        assert_eq!(pt(&state, their_spirit), (2, 3), "{name}: an opponent's Spirit is not");
+    }
 }
 
 // ── Dynamic P/T ────────────────────────────────────────────────────
@@ -78,109 +63,66 @@ fn geist_honored_monk_dynamic_pt_and_tokens() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let monk = castable_spell(&mut state, &reg, "Geist-Honored Monk", P0);
-
-    // Give P0 a library so draw doesn't fail.
-    let land_id = reg.get_id_by_name("Forest").unwrap();
-    for _ in 0..5 {
-        let id = state.create_object(land_id, P0, Zone::Library, None, None);
-        state.get_player_mut(P0).library_order.push(id);
-    }
+    stock_library(&mut state, &reg, P0, 5);
 
     state = cast_and_resolve(&state, &reg, monk, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
-    // Monk + 2 Spirit tokens = 3 creatures.
-    let creatures: Vec<_> = state.objects.values()
+    let creatures = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.controller == P0 && o.power.is_some())
-        .collect();
-    assert_eq!(creatures.len(), 3, "Monk + 2 Spirit tokens");
-
-    // Monk's P/T should be 3/3 (3 creatures you control).
-    assert_eq!(state.effective_power(monk, &reg), Some(3));
+        .count();
+    assert_eq!(creatures, 3, "Monk + 2 Spirit tokens");
+    assert_eq!(state.effective_power(monk, &reg), Some(3),
+        "and its P/T counts them, itself included");
     assert_eq!(state.effective_toughness(monk, &reg), Some(3));
 }
 
-/// Wreath of Geists gives +X/+X based on creature cards in graveyard.
+/// "Enchanted creature gets +X/+X, where X is the number of creature cards in
+/// your graveyard." A characteristic-defining count, so it is recomputed as the
+/// graveyard changes rather than fixed when the Aura resolved.
 #[test]
-fn wreath_of_geists_dynamic_buff() {
+fn wreath_of_geists_tracks_the_graveyard_as_it_changes() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
+    let wreath = castable_spell(&mut state, &reg, "Wreath of Geists", P0);
+    state = cast_and_resolve(&state, &reg, wreath, vec![Target::Object(creature)]);
 
-    // Put 3 creature cards in P0's graveyard.
-    for _ in 0..3 {
-        let c = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
-        state.get_object_mut(c).unwrap().name = "Dead Creature".into();
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "an empty graveyard is X = 0");
+
+    for expected in 3..=5 {
+        state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
+        assert_eq!(state.effective_power(creature, &reg), Some(expected),
+            "each creature card added to the graveyard raises X");
+        assert_eq!(state.effective_toughness(creature, &reg), Some(expected));
     }
-
-    let wreath = castable_spell(&mut state, &reg, "Wreath of Geists", P0);
-    state = cast_and_resolve(&state, &reg, wreath, vec![Target::Object(creature)]);
-
-    // 2/2 base + 3/3 from Wreath (3 creatures in graveyard) = 5/5.
-    assert_eq!(state.effective_power(creature, &reg), Some(5));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(5));
-}
-
-/// Wreath of Geists updates dynamically as graveyard changes.
-#[test]
-fn wreath_of_geists_updates_dynamically() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    let wreath = castable_spell(&mut state, &reg, "Wreath of Geists", P0);
-    state = cast_and_resolve(&state, &reg, wreath, vec![Target::Object(creature)]);
-
-    // No creatures in graveyard yet: 2/2 + 0/0 = 2/2.
-    assert_eq!(state.effective_power(creature, &reg), Some(2));
-
-    // Add a creature to graveyard: 2/2 + 1/1 = 3/3.
-    let _dead = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
-    assert_eq!(state.effective_power(creature, &reg), Some(3));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(3));
 }
 
 // ── Block restriction ──────────────────────────────────────────────
 
-/// Orchard Spirit can't be blocked by ground creatures.
+/// "Orchard Spirit can't be blocked except by creatures with flying or reach."
+/// Three rows, because "the ground creature can't block it" alone is also true
+/// of an Orchard Spirit that nothing at all could block.
 #[test]
-fn orchard_spirit_not_blocked_by_ground() {
+fn orchard_spirit_is_blocked_only_by_flying_or_reach() {
     let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    // (blocker, may it block)
+    const BLOCKERS: &[(&str, bool, &str)] = &[
+        ("Walking Corpse", false, "a ground creature"),
+        ("Chapel Geist", true, "flying"),
+        ("Somberwald Spider", true, "reach"),
+    ];
 
-    let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
-    let ground = ready_creature(&mut state, P1, 3, 3);
+    for &(name, may_block, why) in BLOCKERS {
+        let mut state = game_at_step(Step::DeclareBlockers, P0);
+        let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
+        let blocker = named_permanent(&mut state, &reg, name, P1);
 
-    assert!(!combat::can_block_attacker(&state, ground, spirit, &reg),
-        "Ground creature should not be able to block Orchard Spirit");
-}
-
-/// Orchard Spirit CAN be blocked by a creature with flying.
-#[test]
-fn orchard_spirit_blocked_by_flyer() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
-    let flyer = named_permanent(&mut state, &reg, "Chapel Geist", P1);
-
-    assert!(combat::can_block_attacker(&state, flyer, spirit, &reg),
-        "Flyer should be able to block Orchard Spirit");
-}
-
-/// Orchard Spirit CAN be blocked by a creature with reach.
-#[test]
-fn orchard_spirit_blocked_by_reach() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
-    let spider = named_permanent(&mut state, &reg, "Somberwald Spider", P1);
-
-    assert!(combat::can_block_attacker(&state, spider, spirit, &reg),
-        "Reach creature should be able to block Orchard Spirit");
+        assert_eq!(combat::can_block_attacker(&state, blocker, spirit, &reg), may_block,
+            "{name} ({why})");
+    }
 }
 
 // ── Token creation from graveyard ──────────────────────────────────
@@ -191,7 +133,6 @@ fn spider_spawning_creates_tokens() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Put 4 creature cards in graveyard.
     for i in 0..4 {
         let c = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
         state.get_object_mut(c).unwrap().name = format!("Dead {i}");
@@ -200,46 +141,8 @@ fn spider_spawning_creates_tokens() {
     let ss = castable_spell(&mut state, &reg, "Spider Spawning", P0);
     state = cast_and_resolve(&state, &reg, ss, vec![]);
 
-    // Should have 4 Spider tokens on the battlefield.
-    assert_eq!(count_tokens_named(&state, "Spider"), 4, "Should create 4 Spider tokens");
-
-    // Each should be 1/2 with reach.
+    assert_eq!(count_tokens_named(&state, "Spider"), 4, "one Spider per creature card");
     for spider in state.objects.values().filter(|o| o.is_token && o.name == "Spider") {
-        assert_eq!(spider.power, Some(1));
-        assert_eq!(spider.toughness, Some(2));
+        assert_eq!((spider.power, spider.toughness), (Some(1), Some(2)));
     }
-}
-
-// ── Morbid ETB ─────────────────────────────────────────────────────
-
-/// Festerhide Boar gets +1/+1 counters with morbid.
-#[test]
-fn festerhide_boar_morbid() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    state.creature_died_this_turn = true;
-
-    let boar = castable_spell(&mut state, &reg, "Festerhide Boar", P0);
-    state = cast_and_resolve(&state, &reg, boar, vec![]);
-    triggers::process_triggers(&mut state, &reg);
-
-    let counters = state.get_counter_count(boar, CounterType::PlusOnePlusOne);
-    assert_eq!(counters, 2, "Morbid Festerhide Boar should have 2 +1/+1 counters");
-    // 3/3 base + 2/2 from counters = 5/5.
-    assert_eq!(state.effective_power(boar, &reg), Some(5));
-}
-
-/// Festerhide Boar without morbid — no counters.
-#[test]
-fn festerhide_boar_no_morbid() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let boar = castable_spell(&mut state, &reg, "Festerhide Boar", P0);
-    state = cast_and_resolve(&state, &reg, boar, vec![]);
-    triggers::process_triggers(&mut state, &reg);
-
-    let counters = state.get_counter_count(boar, CounterType::PlusOnePlusOne);
-    assert_eq!(counters, 0, "No morbid = no counters");
-    assert_eq!(state.effective_power(boar, &reg), Some(3));
 }

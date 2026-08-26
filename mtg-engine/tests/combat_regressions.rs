@@ -222,34 +222,23 @@ fn first_strike_kill_prevents_regular_damage_back() {
         "dead blocker deals no regular-step damage");
 }
 
-/// Blazing Torch's granted ability must be offered to the equipped
-/// creature's controller only when that player also controls the Torch —
-/// its cost sacrifices the Torch, which only its controller may do.
+/// Blazing Torch's granted ability must be offered to the equipped creature's
+/// controller only when that player also controls the Torch — its cost
+/// sacrifices the Torch, which only its controller may do.
 #[test]
 fn opponents_equipment_grants_no_activatable_ability() {
     let reg = registry();
 
-    // Case 1: creature and torch share a controller — ability offered.
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
-    state.get_object_mut(torch).unwrap().attached_to = Some(creature);
+    // (who controls the Torch, is the ability offered to the creature's
+    //  controller)
+    for (torch_owner, offered) in [(P0, true), (P1, false)] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        let torch = named_equipment(&mut state, &reg, "Blazing Torch", torch_owner);
+        state.get_object_mut(torch).unwrap().attached_to = Some(creature);
 
-    let legal = engine::legal_actions(&state, &reg);
-    let torch_ability_offered = legal.actions.iter().any(|a| matches!(
-        a, Action::ActivateAbility { object_id, ability_index: 1, .. } if *object_id == creature));
-    assert!(torch_ability_offered,
-        "own torch on own creature: granted ability should be offered");
-
-    // Case 2: the torch belongs to the opponent — ability must NOT be offered.
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P1);
-    state.get_object_mut(torch).unwrap().attached_to = Some(creature);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let torch_ability_offered = legal.actions.iter().any(|a| matches!(
-        a, Action::ActivateAbility { object_id, ability_index: 1, .. } if *object_id == creature));
-    assert!(!torch_ability_offered,
-        "opponent's torch: the sacrifice cost is unpayable, ability must not be offered");
+        assert_eq!(offers_ability_of(&state, &reg, creature), offered,
+            "torch controlled by p{}: the sacrifice cost is payable only by its \
+             controller", torch_owner.0);
+    }
 }
