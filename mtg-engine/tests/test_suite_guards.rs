@@ -350,3 +350,87 @@ fn hook_calls(line: &str) -> Vec<(String, String)> {
     }
     out
 }
+
+// ── Tests that assert a card's own data back at itself ───────────────
+
+/// A test whose every assertion reads a `CardData` binding, and which never
+/// builds a `GameState`, is restating the card file. `power: Some(1)` in the
+/// card, `assert_eq!(data.power, Some(1))` in the test — there is no second
+/// source of truth here for it to disagree with, so it can only fail when
+/// somebody edits the card, and then it fails without telling them anything
+/// the diff did not.
+///
+/// 64 of these were removed. `card_data_invariants.rs` checks the
+/// *relationships* between the fields across all cards instead, and
+/// `characteristics_card_sweep.rs` checks that what a card prints is what the
+/// accessors report once it is on the battlefield.
+#[test]
+fn no_test_asserts_a_cards_data_back_at_itself() {
+    let mut offenders = Vec::new();
+
+    for path in test_files() {
+        let file = path.file_name().unwrap().to_string_lossy().to_string();
+        // The invariant files exist to read card data; that is the point.
+        if file == "card_data_invariants.rs" || file == "characteristics_card_sweep.rs" {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let lines: Vec<&str> = text.lines().collect();
+
+        for (start, end) in fn_spans(&lines) {
+            let body = &lines[start..end];
+            let blob = body.join("\n");
+            if !lines[start.saturating_sub(4)..start].iter().any(|l| l.contains("#[test]")) {
+                continue;
+            }
+            let asserts: Vec<&&str> = body.iter()
+                .filter(|l| l.trim_start().starts_with("assert"))
+                .collect();
+            if asserts.is_empty() {
+                continue;
+            }
+            // A test that builds a game is testing behaviour, whatever else it reads.
+            if ["game_at_step", "GameState::new", "create_object", "named_creature",
+                "move_object", "submit_action"].iter().any(|m| blob.contains(m)) {
+                continue;
+            }
+            let data_vars = card_data_bindings(&blob);
+            if data_vars.is_empty() {
+                continue;
+            }
+            if asserts.iter().all(|a| data_vars.iter().any(|v| mentions(a, v))) {
+                let name = body[0].trim().trim_start_matches("fn ")
+                    .split('(').next().unwrap_or("?").to_string();
+                offenders.push(format!("{file}:{}: {name} asserts only card data", start + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} test(s) restate a card's own data:\n  {}",
+        offenders.len(), offenders.join("\n  "));
+}
+
+/// `let <var> = ....card_data(..)` / `.back_face_data()` bindings.
+fn card_data_bindings(blob: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in blob.lines() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix("let ") else { continue };
+        let Some((var, rhs)) = rest.split_once(" = ") else { continue };
+        if rhs.contains("card_data(") || rhs.contains("back_face_data()") {
+            out.push(var.trim().to_string());
+        }
+    }
+    out
+}
+
+/// Whether `line` uses `var` as a whole identifier.
+fn mentions(line: &str, var: &str) -> bool {
+    let bytes: Vec<char> = line.chars().collect();
+    let target: Vec<char> = var.chars().collect();
+    bytes.windows(target.len().max(1)).enumerate().any(|(i, w)| {
+        w == target.as_slice()
+            && bytes.get(i.wrapping_sub(1)).is_none_or(|c| !c.is_alphanumeric() && *c != '_')
+            && bytes.get(i + target.len()).is_none_or(|c| !c.is_alphanumeric() && *c != '_')
+    })
+}

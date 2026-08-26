@@ -83,21 +83,6 @@ fn play_dual_and_check_tapped(
 }
 
 #[test]
-fn dual_lands_are_registered_as_lands() {
-    let reg = registry();
-    for case in DUAL_LANDS {
-        let id = reg.get_id_by_name(case.name)
-            .unwrap_or_else(|| panic!("{} should be registered", case.name));
-        let data = reg.card_data(id)
-            .unwrap_or_else(|| panic!("{} should have card data", case.name));
-        assert!(data.card_types.contains(&CardType::Land),
-            "{} should have CardType::Land", case.name);
-        assert!(data.cost.is_none(),
-            "{} should have no mana cost", case.name);
-    }
-}
-
-#[test]
 fn dual_lands_enter_tapped_without_matching_land() {
     let reg = registry();
     for case in DUAL_LANDS {

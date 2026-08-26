@@ -304,3 +304,37 @@ fn every_triggered_ability_describes_itself() {
     assert_covers(triggers, 80, "declare a triggered ability");
     assert_none(&offenders, "have an undescribed triggered ability");
 }
+
+/// A triggered ability that targets must say so.
+///
+/// The engine chooses a trigger's targets as it goes on the stack (CR 603.3b).
+/// If the ability's `target_requirement` is `None` the engine pushes it
+/// untargeted, and the card is left to pick something at resolution — which is
+/// both the wrong time and invisible to the "no legal target, no trigger" rule
+/// (CR 603.3c). Was four hand-listed cards; the declaration itself says which
+/// abilities target, so ask all of them.
+#[test]
+fn a_triggered_ability_whose_text_targets_declares_a_target_requirement() {
+    let reg = registry();
+    let mut targeting = 0;
+    let mut offenders = Vec::new();
+
+    for d in all_cards(&reg) {
+        for ability in &d.triggered_abilities {
+            let text = ability.description.to_lowercase();
+            // "target" in the ability's own description is the declaration that
+            // it targets. "that creature" / "enchanted player" do not target.
+            if !text.contains("target") {
+                continue;
+            }
+            targeting += 1;
+            if ability.target_requirement.is_none() {
+                offenders.push(format!(
+                    "{}: its {:?} ability says {:?} but declares no target_requirement",
+                    d.name, ability.kind, ability.description));
+            }
+        }
+    }
+    assert_covers(targeting, 8, "declare a targeting trigger");
+    assert_none(&offenders, "have a targeting trigger that does not declare its target");
+}

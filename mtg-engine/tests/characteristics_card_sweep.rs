@@ -235,3 +235,85 @@ fn bug_hinterland_harbor_misses_real_basic_lands() {
     assert!(!state.get_object(harbor).unwrap().tapped,
         "Hinterland Harbor should enter untapped — we control a Forest");
 }
+
+// -------------------------------------------------------------------------
+// The whole set, through the accessors.
+// -------------------------------------------------------------------------
+
+/// Whatever a card prints, `has_keyword` must report once the permanent is on
+/// the battlefield. That is the claim thirteen one-card tests in
+/// `cards_vanilla_and_keywords.rs` were reaching for by asserting
+/// `data.keywords.contains(&Flying)` — but reading `CardData` back at itself
+/// only restates the card file. What can actually break is the accessor layer
+/// between the printed face and the game, and that breaks for every card at
+/// once, so check every card at once.
+#[test]
+fn every_printed_keyword_is_reported_by_the_accessor() {
+    let reg = registry();
+    let mut checked = 0;
+    let mut offenders = Vec::new();
+
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        if data.keywords.is_empty() || !data.card_types.contains(&CardType::Creature) {
+            continue;
+        }
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let obj = named_creature(&mut state, &reg, name, P0);
+        for keyword in &data.keywords {
+            checked += 1;
+            if !state.has_keyword(obj, *keyword, &reg) {
+                offenders.push(format!("{name}: prints {keyword:?}, but has_keyword says no"));
+            }
+        }
+    }
+    assert!(checked >= 50,
+        "only {checked} printed keywords checked — this sweep has stopped covering the set");
+    assert!(offenders.is_empty(),
+        "{} card(s) do not report a keyword they print:\n  {}",
+        offenders.len(), offenders.join("\n  "));
+}
+
+/// The same for power and toughness: a creature with no counters, no auras and
+/// no effects on it is exactly its printed size. Five tests asserted this one
+/// vanilla creature at a time, against numbers retyped from the card file.
+#[test]
+fn every_creature_starts_at_its_printed_power_and_toughness() {
+    let reg = registry();
+    let mut checked = 0;
+    let mut offenders = Vec::new();
+
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        if !data.card_types.contains(&CardType::Creature) {
+            continue;
+        }
+        // Characteristic-defining abilities set P/T from game state rather than
+        // from the printed box, so they are not expected to match it.
+        if reg.get(id).is_some_and(|b| {
+            let mut probe = game_at_step(Step::PrecombatMain, P0);
+            let o = named_creature(&mut probe, &reg, name, P0);
+            b.dynamic_pt(&probe, o, &reg).is_some()
+        }) {
+            continue;
+        }
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let obj = named_creature(&mut state, &reg, name, P0);
+        checked += 1;
+        if state.effective_power(obj, &reg) != data.power {
+            offenders.push(format!("{name}: prints {:?} power, accessor says {:?}",
+                data.power, state.effective_power(obj, &reg)));
+        }
+        if state.effective_toughness(obj, &reg) != data.toughness {
+            offenders.push(format!("{name}: prints {:?} toughness, accessor says {:?}",
+                data.toughness, state.effective_toughness(obj, &reg)));
+        }
+    }
+    assert!(checked >= 100,
+        "only {checked} creatures checked — this sweep has stopped covering the set");
+    assert!(offenders.is_empty(),
+        "{} creature(s) do not start at their printed size:\n  {}",
+        offenders.len(), offenders.join("\n  "));
+}

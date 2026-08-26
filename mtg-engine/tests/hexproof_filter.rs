@@ -569,3 +569,67 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
     assert!(!p1_targetable,
         "Player with hexproof should not be targetable for Curse attachment");
 }
+
+/// Slayer of the Wicked and Geistcatcher's Rig each enumerated their ETB
+/// target inline — walking the battlefield, filtering on subtype or keyword,
+/// and offering the result. That path knows nothing about hexproof, so an
+/// opponent's hexproof Zombie was offered as a legal target (CR 702.11b).
+///
+/// Both now declare a `target_requirement`, which routes the enumeration
+/// through the engine, where hexproof is filtered once for every card. Found
+/// by `card_data_invariants.rs`'s sweep over targeting triggers, which the
+/// hand-listed four-card version of that test never reached.
+#[test]
+fn an_etb_trigger_does_not_offer_an_opponents_hexproof_creature() {
+    let reg = registry();
+
+    // (source card, a creature it could otherwise target, keyword it needs)
+    let cases: &[(&str, &str, Option<Keyword>)] = &[
+        ("Slayer of the Wicked", "Diregraf Ghoul", None),
+        ("Geistcatcher's Rig", "Abbey Griffin", Some(Keyword::Flying)),
+    ];
+
+    for (source_name, victim_name, needs) in cases {
+        // Control: without hexproof, the victim IS offered — otherwise this
+        // test would pass just as well for a card that targets nothing.
+        for hexproof in [false, true] {
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            let victim = named_creature(&mut state, &reg, victim_name, P1);
+            if let Some(kw) = needs {
+                assert!(state.has_keyword(victim, *kw, &reg),
+                    "test precondition: {victim_name} has {kw:?}");
+            }
+            if hexproof {
+                state.until_end_of_turn.push(
+                    mtg_engine::state::TemporaryEffect::GrantKeyword {
+                        target: victim,
+                        keyword: Keyword::Hexproof,
+                    },
+                );
+            }
+
+            let source = named_creature(&mut state, &reg, source_name, P0);
+            state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+                object: source,
+                controller: P0,
+            });
+            mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+            // With one legal target the engine auto-picks it as the trigger
+            // goes on the stack rather than prompting (CR 603.3d), so read the
+            // trigger's locked target — and the pending prompt when there is
+            // more than one.
+            let offered = state.stack.iter().any(|e| matches!(e,
+                mtg_engine::state::StackEntry::Trigger(t)
+                    if t.source.chosen_targets.contains(&Target::Object(victim))))
+                || matches!(&state.awaiting_action,
+                    Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+                        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+                    }) if options.contains(&Target::Object(victim)));
+            assert_eq!(offered, !hexproof,
+                "{source_name} should {} offer an opponent's {}{victim_name}",
+                if hexproof { "not" } else { "" },
+                if hexproof { "hexproof " } else { "" });
+        }
+    }
+}

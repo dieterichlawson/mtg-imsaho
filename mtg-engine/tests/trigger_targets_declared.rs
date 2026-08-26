@@ -19,37 +19,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::TriggerKind;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-/// Every card whose triggered ability targets must say so, or the engine
-/// cannot choose the target at the right time.
-#[test]
-fn targeted_triggers_declare_a_target_requirement() {
-    let reg = registry();
-    let cards = [
-        ("Elder Cathar", TriggerKind::SelfDies),
-        ("Bloodgift Demon", TriggerKind::Upkeep),
-        ("Selhoff Occultist", TriggerKind::SelfDies),
-        ("Selhoff Occultist", TriggerKind::AnyCreatureDies),
-    ];
-    // Curse of the Pierced Heart is deliberately absent: "deals 1 damage to
-    // enchanted player" does not target. Its ticket is about WHEN the trigger
-    // fires, covered by `curse_only_triggers_on_the_enchanted_players_upkeep`.
-    for (name, kind) in cards {
-        let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown {name}"));
-        let ability = reg.get(card_id).unwrap().card_data().triggered_abilities
-            .into_iter()
-            .find(|t| t.kind == kind)
-            .unwrap_or_else(|| panic!("{name} should declare a {kind:?} trigger"));
-        assert!(ability.target_requirement.is_some(),
-            "{name}'s {kind:?} ability targets, so it must declare a \
-             target_requirement — otherwise the engine pushes it untargeted \
-             and the card has to pick at resolution (CR 603.3b)");
-    }
-}
-
 /// CR 603.3c: with no legal target, the ability never reaches the stack.
 #[test]
 fn elder_cathar_trigger_is_removed_with_no_legal_targets() {

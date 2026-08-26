@@ -326,32 +326,41 @@ fn rolling_temblor_records_damage_source() {
 /// A creature made into a Vampire by Olivia (instance subtype only) should
 /// be a valid target for Slayer of the Wicked's ETB.
 /// Oracle: "you may destroy target Vampire, Werewolf, or Zombie"
+/// Slayer of the Wicked targets "Vampire, Werewolf, or Zombie". A creature that
+/// is one of those only because an effect granted it the subtype at runtime
+/// (Olivia Voldaren's first ability) is just as legal a target as one that
+/// prints it — the filter has to ask the accessor, not the printed face.
+///
+/// Checked through trigger collection rather than by calling the ETB hook: the
+/// target is chosen as the trigger goes on the stack (CR 603.3d), so the hook
+/// never enumerates anything.
 #[test]
 fn slayer_of_the_wicked_sees_instance_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let slayer = named_creature(&mut state, &reg, "Slayer of the Wicked", P0);
-
-    // Create a creature that's a Vampire only via instance subtypes.
+    // A Grizzly Bears that an effect has made a Vampire.
     let target = ready_creature(&mut state, P1, 3, 3);
-    state.get_object_mut(target).unwrap().subtypes = vec!["Vampire".into()];
-    let non_vamp_card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    state.get_object_mut(target).unwrap().card_id = non_vamp_card_id;
+    {
+        let obj = state.get_object_mut(target).unwrap();
+        obj.subtypes = vec!["Vampire".into()];
+        obj.card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    }
+    assert!(state.has_subtype(target, "Vampire", &reg), "test precondition");
 
-    // Fire ETB.
-    let behavior = reg.get(state.get_object(slayer).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, slayer, &[], &reg);
+    let slayer = named_creature(&mut state, &reg, "Slayer of the Wicked", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: slayer,
+        controller: P0,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
 
-    // The ETB should present the instance-Vampire as a valid target.
-    let has_target = matches!(&state.awaiting_action,
-        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
-            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. },
-            ..
-        }) if options.iter().any(|t| matches!(t, Target::Object(id) if *id == target))
-    );
-    assert!(has_target,
-        "Slayer of the Wicked should be able to target a creature with Vampire instance subtype");
+    // Sole legal target, so the engine locks it in rather than prompting.
+    let locked = state.stack.iter().any(|e| matches!(e,
+        mtg_engine::state::StackEntry::Trigger(t)
+            if t.source.chosen_targets.contains(&Target::Object(target))));
+    assert!(locked,
+        "a creature that is a Vampire by runtime grant should be a legal target");
 }
 
 // ────────────────────────────────────────────────────────────────────────────

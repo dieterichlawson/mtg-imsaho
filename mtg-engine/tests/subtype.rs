@@ -197,80 +197,41 @@ fn bug_ax_woodland_cemetery_untapped_with_swamp_in_play() {
 /// registry lookup returns None and the filter rejects every token.
 /// Bloodline Keeper's 2/2 Vampire tokens, Endless Ranks zombies, and
 /// Moan of the Unhallowed zombies are all untargetable.
+/// Bug AT (`audits/AUDIT_BUGS.md`): Slayer of the Wicked's ETB targets
+/// "Vampire, Werewolf, or Zombie", and a Vampire TOKEN qualifies. The card-side
+/// filter asked `registry.card_data()`, which returns nothing for a token, so
+/// tokens were invisible to it.
+///
+/// Checked through trigger collection: the target is chosen as the trigger goes
+/// on the stack (CR 603.3d), so the ETB hook never enumerates anything.
 #[test]
 fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
-    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
-
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Create a 2/2 Vampire token like Bloodline Keeper makes. P1 controls
-    // it so the only possible Slayer target is this token.
+    // A Vampire token for the opponent — no registry face at all.
     let token = state.create_token_with_subtypes(
-        "Vampire",
-        P1,
-        2,
-        2,
-        vec![Color::Black],
-        vec![CardType::Creature],
-        vec![],
+        "Vampire", P1, 2, 2,
+        vec![Color::Black], vec![CardType::Creature], vec![],
         vec!["Vampire".into()],
         &registry,
     )[0];
-    if let Some(obj) = state.get_object_mut(token) {
-        obj.summoning_sick = false;
-    }
-    // Sanity-check: the token's obj.subtypes carries the Vampire tag.
-    assert!(
-        state
-            .get_object(token)
-            .unwrap()
-            .subtypes
-            .iter()
-            .any(|s| s == "Vampire"),
-        "Test setup: Vampire token should have 'Vampire' in obj.subtypes"
-    );
+    assert!(state.has_subtype(token, "Vampire", &registry), "test precondition");
 
-    // Put Slayer of the Wicked onto the battlefield and fire its ETB
-    // handler. The bug is in `on_enter_battlefield` itself, not in
-    // `is_valid_target`, so we have to actually run the ETB code path.
-    let slayer_card_id = registry.get_id_by_name("Slayer of the Wicked").unwrap();
-    let slayer = state.create_object(
-        slayer_card_id,
-        P0,
-        Zone::Battlefield,
-        Some(3),
-        Some(2),
-    );
-    state.get_object_mut(slayer).unwrap().name = "Slayer of the Wicked".into();
-    let behavior = registry.get(slayer_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, slayer, &[], &registry);
+    let slayer = named_creature(&mut state, &registry, "Slayer of the Wicked", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: slayer,
+        controller: P0,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
-    // The ETB is "you may destroy target V/W/Z", so when there's at least
-    // one valid target the card sets up an awaiting_action::ChooseTarget
-    // with the token in the options list. Today the filter rejects the
-    // token (registry-only) and the targets vector is empty, so
-    // present_optional_target_choice silently early-returns and no
-    // awaiting_action is set.
-    let token_in_options = match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. },
-            ..
-        }) => options
-            .iter()
-            .any(|t| matches!(t, Target::Object(id) if *id == token)),
-        _ => false,
-    };
-
-    assert!(
-        token_in_options,
-        "Slayer of the Wicked's ETB should offer the Vampire TOKEN as a \
-         destroy target. Bug AT: the card-side filter only checks \
-         registry.card_data(), which returns None for tokens, so the \
-         targets list is empty and no choice is presented. \
-         awaiting_action = {:?}",
-        state.awaiting_action,
-    );
+    // Sole legal target, so the engine locks it in rather than prompting.
+    let locked = state.stack.iter().any(|e| matches!(e,
+        mtg_engine::state::StackEntry::Trigger(t)
+            if t.source.chosen_targets.contains(&Target::Object(token))));
+    assert!(locked,
+        "a Vampire token should be a legal target — the filter must ask the \
+         accessor, which unions the token's own subtypes with any registry face");
 }
 
 /// Bug AY (`audits/AUDIT_BUGS.md)`: `TargetFilter::HasSubtype` reads

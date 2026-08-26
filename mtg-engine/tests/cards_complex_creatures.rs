@@ -33,7 +33,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::{AttackInfo, TriggerKind};
+use mtg_engine::cards::AttackInfo;
 use mtg_engine::ids::CardId;
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
@@ -625,9 +625,9 @@ fn creeping_renaissance_flashback_exiles() {
         .count();
     assert_eq!(hand, 1, "Creature should be in hand");
 
-    // Creeping Renaissance should be exiled (flashback).
-    let cr = state.get_object(spell);
-    assert!(cr.is_none() || cr.unwrap().zone == Zone::Exile,
+    // Creeping Renaissance should be exiled (flashback). A card is never
+    // removed from the game outright, so "gone" is not an acceptable outcome.
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Exile,
         "Creeping Renaissance should be exiled after flashback");
 }
 
@@ -777,9 +777,10 @@ fn manor_gargoyle_loses_defender_and_gains_flying() {
     let behavior = reg.get(state.get_object(gargoyle).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, gargoyle, 0, &[], &reg);
 
-    // Should have lost Defender.
-    let obj = state.get_object(gargoyle).unwrap();
-    assert!(!obj.keywords.contains(&Keyword::Defender),
+    // Should have lost Defender. Asked through the accessor: `obj.keywords`
+    // holds only runtime grants and is empty for every registry card, so
+    // reading it directly would report "no Defender" whatever happened.
+    assert!(!state.has_keyword(gargoyle, Keyword::Defender, &reg),
         "Manor Gargoyle should lose Defender after activation");
 
     // Should have gained Flying (as until-end-of-turn keyword).
@@ -1135,30 +1136,6 @@ fn unholy_fiend_drains_life_at_end_step() {
     assert_eq!(state.players[0].life, life_before - 1);
 }
 
-#[test]
-fn cloistered_youth_front_face_has_upkeep_trigger_only() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Cloistered Youth").unwrap();
-    let behavior = reg.get(card_id).unwrap();
-    let data = behavior.card_data();
-
-    // Front face should only have the upkeep trigger.
-    assert_eq!(data.triggered_abilities.len(), 1);
-    assert_eq!(data.triggered_abilities[0].kind, TriggerKind::Upkeep);
-}
-
-#[test]
-fn unholy_fiend_back_face_has_end_step_trigger_only() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Cloistered Youth").unwrap();
-    let behavior = reg.get(card_id).unwrap();
-    let back = behavior.back_face_data().expect("Should have back face");
-
-    // Back face should only have the end step trigger.
-    assert_eq!(back.triggered_abilities.len(), 1);
-    assert_eq!(back.triggered_abilities[0].kind, TriggerKind::EndStep);
-}
-
 // ── Screeching Bat ──────────────────────────────────────────
 
 #[test]
@@ -1308,9 +1285,6 @@ fn stalking_vampire_does_not_have_flying() {
     assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
     assert!(!state.has_keyword(bat, Keyword::Flying, &reg),
         "Stalking Vampire should not have Flying");
-    // obj.keywords should be empty (back face has no keywords).
-    assert!(state.get_object(bat).unwrap().keywords.is_empty(),
-        "obj.keywords should be cleared on transform to back face");
 }
 
 #[test]
