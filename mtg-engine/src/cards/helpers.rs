@@ -27,7 +27,6 @@ pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]
             return true;
         }
     }
-    state.move_spell_after_resolve(aura_id, registry);
     false
 }
 
@@ -41,7 +40,6 @@ pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Targe
         }
         return true;
     }
-    state.move_spell_after_resolve(curse_id, registry);
     false
 }
 
@@ -58,15 +56,15 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
         };
         crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
-    state.move_spell_after_resolve(spell_id, registry);
 }
 
 /// Resolve a targeted destruction spell: destroy the first target creature
-/// via the destruction pipeline (checks indestructible/regeneration),
-/// then move the spell to the appropriate zone.
+/// via the destruction pipeline (checks indestructible/regeneration).
+///
+/// The spell's own trip to the graveyard is the engine's — see
+/// [`GameState::resolving_spell`] — so this takes no spell id.
 pub fn resolve_destroy(
     state: &mut GameState,
-    spell_id: ObjectId,
     targets: &[Target],
     registry: &crate::cards::CardRegistry,
 ) {
@@ -77,7 +75,6 @@ pub fn resolve_destroy(
             }
         }
     }
-    state.move_spell_after_resolve(spell_id, registry);
 }
 
 // ═══════════════════════════════════════════════════════════════════

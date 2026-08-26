@@ -40,9 +40,9 @@ impl CardBehavior for Bramblecrush {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // "Destroy" always goes through the destruction pipeline,
         // which checks indestructible and regeneration.
-        crate::cards::helpers::resolve_destroy(state, object_id, targets, registry);
+        crate::cards::helpers::resolve_destroy(state, targets, registry);
     }
 }

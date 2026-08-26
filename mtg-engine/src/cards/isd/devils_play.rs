@@ -46,7 +46,6 @@ impl CardBehavior for DevilsPlay {
         if x > 0 {
             crate::cards::helpers::resolve_damage(state, object_id, targets, x, registry);
         } else {
-            state.move_spell_after_resolve(object_id, registry);
         }
     }
 }

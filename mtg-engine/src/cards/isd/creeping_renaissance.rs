@@ -47,7 +47,6 @@ impl CardBehavior for CreepingRenaissance {
             choice: ResolutionChoiceKind::ChooseCardType {
                 description: "Creeping Renaissance: choose a permanent type".into(),
                 options,
-                spell_id: object_id,
                 controller,
             },
         });

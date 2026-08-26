@@ -574,3 +574,45 @@ fn only_the_damage_pipeline_removes_loyalty_for_damage() {
          (CR 120.3c), so that protection and prevention still apply:\n  {}",
         offenders.join("\n  "));
 }
+
+/// No card cleans up after its own resolution.
+///
+/// `GameState::resolving_spell` has documented the rule for as long as it has
+/// existed — "the ENGINE owns moving a resolved spell off the stack ... card
+/// code must never call `move_spell_after_resolve` from a pending-effect
+/// handler" — and sixteen call sites in `src/cards/` did it anyway.
+///
+/// Every one was redundant: `stack::resolve_spell` moves a spell that is still
+/// on the stack when `on_resolve` returns, and
+/// `engine::finish_spell_resolution_if_idle` moves it once a suspended choice
+/// chain completes. Redundant is the good case. The bad case is CR 608.2m —
+/// reaching the graveyard is the *final* step of resolution, so a card that
+/// moves itself and then presents another choice has left the stack
+/// mid-resolution, which is the Divine Reckoning bug `spell_cleanup.rs` was
+/// written for.
+///
+/// A counterspell disposing of the spell it countered is a different act and
+/// has its own entry point, `move_countered_spell` (CR 701.5a).
+#[test]
+fn no_card_moves_a_spell_off_the_stack_itself() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            if l.contains("move_spell_after_resolve") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a resolving spell's trip to the graveyard is the engine's, not the \
+         card's (CR 608.2m); to dispose of a *countered* spell use \
+         `move_countered_spell`:\n  {}",
+        offenders.join("\n  "));
+}

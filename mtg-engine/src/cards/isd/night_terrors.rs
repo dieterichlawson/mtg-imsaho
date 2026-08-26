@@ -65,12 +65,11 @@ impl CardBehavior for NightTerrors {
 
     /// "...exile a nonland card from it." Moving the chosen card to exile and
     /// finishing this spell's own resolution is Night Terrors' business.
-    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
         let name = state.obj_name(*id);
         state.move_object(*id, Zone::Exile, registry);
         state.log(crate::state::LogLevel::Event,
             format!("Night Terrors exiled {name} from hand"));
-        state.move_spell_after_resolve(source_id, registry);
     }
 }

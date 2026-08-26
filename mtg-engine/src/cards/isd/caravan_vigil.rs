@@ -42,7 +42,6 @@ impl CaravanVigil {
 
             crate::cards::helpers::shuffle_library(state, controller);
 
-            state.move_spell_after_resolve(spell_id, registry);
         }
     }
 }
@@ -84,7 +83,6 @@ impl CardBehavior for CaravanVigil {
             0 => {
                 state.log(LogLevel::Event, "Caravan Vigil: no basic land found in library".into());
                 crate::cards::helpers::shuffle_library(state, controller);
-                state.move_spell_after_resolve(object_id, registry);
             }
             1 => Self::finish_search(state, object_id, basic_lands[0], controller, registry),
             _ => {
@@ -116,7 +114,6 @@ impl CardBehavior for CaravanVigil {
 
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         let Some(land_id) = state.get_object(self_id).and_then(|o| o.card_state.get("morbid_land").copied()) else {
-            state.move_spell_after_resolve(self_id, registry);
             return;
         };
         let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
@@ -135,6 +132,5 @@ impl CardBehavior for CaravanVigil {
         // Shuffle library.
         crate::cards::helpers::shuffle_library(state, controller);
 
-        state.move_spell_after_resolve(self_id, registry);
     }
 }

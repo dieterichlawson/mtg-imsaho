@@ -34,7 +34,7 @@ impl CardBehavior for TributeToHunger {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id)
             .map_or(PlayerId(0), |o| o.controller);
 
@@ -49,7 +49,6 @@ impl CardBehavior for TributeToHunger {
 
         if opp_creatures.is_empty() {
             // No creatures to sacrifice.
-            state.move_spell_after_resolve(object_id, registry);
             return;
         }
 
@@ -87,6 +86,5 @@ impl CardBehavior for TributeToHunger {
             state.log(crate::state::LogLevel::Event,
                 format!("Tribute to Hunger: sacrificed {name}"));
         }
-        state.move_spell_after_resolve(source_id, registry);
     }
 }

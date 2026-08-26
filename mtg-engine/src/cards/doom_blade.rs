@@ -39,7 +39,7 @@ impl CardBehavior for DoomBlade {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        crate::cards::helpers::resolve_destroy(state, object_id, targets, registry);
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_destroy(state, targets, registry);
     }
 }

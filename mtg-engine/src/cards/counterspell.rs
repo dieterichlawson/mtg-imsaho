@@ -41,7 +41,7 @@ impl CardBehavior for Counterspell {
                 if obj.zone == Zone::Stack {
                     let countered_name = state.obj_name(*target_id);
                     state.stack.retain(|e| e.as_spell() != Some(*target_id));
-                    state.move_spell_after_resolve(*target_id, registry);
+                    state.move_countered_spell(*target_id, registry);
                     state.log(LogLevel::Event, format!("{countered_name} was countered"));
                 }
             }

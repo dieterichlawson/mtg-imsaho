@@ -33,7 +33,6 @@ impl CardBehavior for PastInFlames {
 
         // Move Past in Flames itself to graveyard/exile first, so it's in the graveyard
         // and can also get flashback if we want (but it already has flashback printed).
-        state.move_spell_after_resolve(object_id, registry);
 
         // Grant flashback to each instant and sorcery in the graveyard.
         let targets: Vec<(ObjectId, ManaCost)> = state.objects.values()

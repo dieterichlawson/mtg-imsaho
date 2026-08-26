@@ -29,7 +29,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     } else {
                         let name = state.obj_name(*spell_id);
                         state.stack.retain(|e| e.as_spell() != Some(*spell_id));
-                        state.move_spell_after_resolve(*spell_id, registry);
+                        state.move_countered_spell(*spell_id, registry);
                         state.log(LogLevel::Event, format!("{name} was countered"));
                     }
                     // Controller discards a card — player chooses which.
@@ -50,11 +50,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                                 discard_immediately: true,
                             },
                         });
-                        // Move the spell to graveyard before the discard choice.
-                        state.move_spell_after_resolve(*source_spell_id, registry);
                         return Applied::ReturnNow;
                     }
-                    state.move_spell_after_resolve(*source_spell_id, registry);
                 }
                 (ResolutionChoiceKind::YesNo { source_card, .. },
                  ResolvedChoice::YesNoDecision(yes)) => {
@@ -97,7 +94,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         behavior.on_discard_choice(&mut *state, choice_source, *discard_id, registry);
                     }
                 }
-                (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
+                (ResolutionChoiceKind::ChooseFromRevealed { revealed, .. },
                  ResolvedChoice::ChosenCard(keep_id)) => {
                     let keep_name = state.obj_name(*keep_id);
                     state.move_object(*keep_id, Zone::Hand, registry);
@@ -107,14 +104,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         }
                     }
                     state.log(LogLevel::Event, format!("Kept {keep_name}"));
-                    state.move_spell_after_resolve(*spell_id, registry);
                 }
                 (ResolutionChoiceKind::ChooseFromLibrary { searcher, destination, tapped, .. },
                  ResolvedChoice::ChosenCard(chosen_id)) => {
                     crate::cards::helpers::finish_library_search(
                         &mut *state, *searcher, *chosen_id, *destination, *tapped, registry);
                 }
-                (ResolutionChoiceKind::ChooseCardType { options, spell_id, controller, .. },
+                (ResolutionChoiceKind::ChooseCardType { options, controller, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
                     let chosen_type = options.get(*index).cloned().unwrap_or_default();
                     let card_type = match chosen_type.as_str() {
@@ -135,7 +131,6 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     }
                     state.log(LogLevel::Event,
                         format!("Creeping Renaissance: chose {chosen_type}. Returned {count} cards from graveyard to hand"));
-                    state.move_spell_after_resolve(*spell_id, registry);
                 }
                 (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
                  ResolvedChoice::ChosenSubset(pile_1_ids)) => {

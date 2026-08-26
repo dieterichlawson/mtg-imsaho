@@ -1708,9 +1708,13 @@ impl GameState {
         true
     }
 
-    /// Move a resolving spell to the appropriate zone.
-    /// Flashback spells go to exile; others go to graveyard.
-    pub fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
+    /// Move a spell that has finished resolving to the appropriate zone.
+    /// Flashback spells go to exile (CR 702.33a); others go to graveyard.
+    ///
+    /// Cleanup of a *resolving* spell is the engine's, not card code's — see
+    /// [`GameState::resolving_spell`]. `crate`-visible so that stays true; a
+    /// guard test in `test_suite_guards.rs` keeps card code from calling it.
+    pub(crate) fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
         let exile = self.get_object(object_id)
             .is_some_and(|o| o.cast_with_flashback);
         if exile {
@@ -1718,6 +1722,18 @@ impl GameState {
         } else {
             self.move_object(object_id, Zone::Graveyard, registry);
         }
+    }
+
+    /// CR 701.5a: a countered spell is put into its owner's graveyard — or
+    /// into exile if it was cast with flashback, the same zone rule a
+    /// resolved spell follows.
+    ///
+    /// Countering moves a spell *other* than the one resolving, which is why
+    /// this is public where [`GameState::move_spell_after_resolve`] is not:
+    /// a counterspell disposing of its target is not a spell cleaning up
+    /// after itself.
+    pub fn move_countered_spell(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
+        self.move_spell_after_resolve(object_id, registry);
     }
 
     /// Check if a player has hexproof (e.g., from Witchbane Orb).
@@ -2423,7 +2439,6 @@ pub enum ResolutionChoiceKind {
     ChooseFromRevealed {
         description: String,
         revealed: Vec<ObjectId>,
-        spell_id: ObjectId,
     },
     /// Search library for a card matching criteria and choose one (Garruk -1, etc.).
     /// All matching cards are shown to the player. They pick one to put into hand.
@@ -2448,7 +2463,6 @@ pub enum ResolutionChoiceKind {
     ChooseCardType {
         description: String,
         options: Vec<String>,
-        spell_id: ObjectId,
         controller: PlayerId,
     },
     /// Divide permanents into two piles (Liliana of the Veil -6).

@@ -48,7 +48,6 @@ impl CardBehavior for MawOfTheMire {
         if let Some(Target::Object(land_id)) = targets.first() {
             // If the target is illegal (not on battlefield), the spell fizzles — no effects.
             if !state.get_object(*land_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                state.move_spell_after_resolve(object_id, registry);
                 return;
             }
             let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
