@@ -175,6 +175,21 @@ pub fn cast_action(object_id: ObjectId, targets: Vec<Target>) -> Action {
     }
 }
 
+/// The options of the resolution choice the game is currently waiting on.
+///
+/// Panics if it is not waiting on a `ChooseTarget`, which is the point: a test
+/// that reaches for the options wants them to exist, and matching with a
+/// fallback to `false`/`vec![]` turns "the prompt never appeared" into a quiet
+/// pass.
+pub fn pending_choice_options(state: &GameState) -> Vec<Target> {
+    match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.clone(),
+        other => panic!("expected a ChooseTarget prompt, got {other:?}"),
+    }
+}
+
 /// Every target the engine currently offers for casting `spell`.
 ///
 /// Scoped to `spell`: the hand-rolled version of this asked whether *any*

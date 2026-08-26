@@ -26,85 +26,62 @@ use mtg_engine::types::*;
 // - Can target ANY creature (including own), not just opponent's
 // ════════════════════════════════════════════════════════════════════
 
-/// Fiend Hunter should be able to target own creatures, not just opponent's.
+/// "When Fiend Hunter enters the battlefield, you may exile another target
+/// creature." Another — not another *opponent's*: your own creature is a legal
+/// choice, and a real one (exiling it dodges a sweeper, and it comes back when
+/// the Hunter leaves).
+///
+/// Both of the tests this replaces asserted only that *a* choice was presented,
+/// which says nothing about who is in it — an engine auto-exiling the
+/// opponent's biggest creature and then asking an unrelated question passes
+/// that.
 #[test]
-fn fiend_hunter_can_target_own_creature() {
+fn fiend_hunter_offers_every_creature_but_itself() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // P0 has a creature they might want to "save" by exiling temporarily.
-    let own_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-
-    // Cast and resolve Fiend Hunter for P0.
-    let hunter = castable_spell(&mut state, &reg, "Fiend Hunter", P0);
-    let mut state = cast_and_resolve(&state, &reg, hunter, vec![]);
-    triggers::process_triggers(&mut state, &reg);
-
-    // The hunter should have the ability to target own_creature.
-    // Currently it only targets opponent creatures, so own_creature
-    // should NOT have been exiled (bug: it auto-exiles opponent's strongest).
-    // After fix: a ResolutionChoice should be presented with own_creature
-    // as an option.
-    //
-    // For now, check that if only own creatures exist, the hunter still
-    // has a valid target (doesn't just do nothing).
-    let own_creature_zone = state.get_object(own_creature).unwrap().zone;
-
-    // Fiend Hunter should present an optional choice including own creature.
-    assert!(state.awaiting_action.is_some(),
-        "Fiend Hunter should present a choice (not auto-target). \
-         Own creature zone: {own_creature_zone:?}");
-}
-
-/// Fiend Hunter should present a choice when multiple targets exist.
-#[test]
-fn fiend_hunter_presents_choice_with_multiple_targets() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Both players have creatures.
-    let _p0_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-    let _p1_creature_a = ready_creature(&mut state, P1, 3, 3);
-    let _p1_creature_b = ready_creature(&mut state, P1, 2, 2);
+    let own = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = ready_creature(&mut state, P1, 3, 3);
+    let theirs_too = ready_creature(&mut state, P1, 2, 2);
 
     let hunter = castable_spell(&mut state, &reg, "Fiend Hunter", P0);
     let mut state = cast_and_resolve(&state, &reg, hunter, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
-    // With 3 potential targets (own Bears + two opponent creatures),
-    // a choice should be presented, not auto-targeted.
-    assert!(state.awaiting_action.is_some(),
-        "Fiend Hunter should present a target choice with multiple valid targets");
+    let options = pending_choice_options(&state);
+    for (id, who) in [(own, "your own creature"), (theirs, "an opponent's"), (theirs_too, "and the other")] {
+        assert!(options.contains(&Target::Object(id)),
+            "{who} is a legal choice for 'another target creature'; offered {options:?}");
+    }
+    assert!(!options.contains(&Target::Object(hunter)),
+        "'another' excludes the Fiend Hunter itself");
+
+    // Nothing has been exiled while the choice is still pending.
+    for id in [own, theirs, theirs_too] {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════
 // Ranger's Guile (#3): "target creature you control"
 // ════════════════════════════════════════════════════════════════════
 
-/// Ranger's Guile should NOT be castable targeting an opponent's creature.
+/// "Target creature you control gets +1/+1 and gains hexproof until end of
+/// turn." You control — so an opponent's creature is not offered, and one of
+/// yours is. The second half matters: without it, an engine offering no
+/// targets at all satisfies the first.
 #[test]
-fn rangers_guile_cannot_target_opponent_creature() {
+fn rangers_guile_targets_only_your_own_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // P1 has a creature. P0 has Ranger's Guile.
-    let enemy = ready_creature(&mut state, P1, 3, 3);
-    let _rg = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    let theirs = ready_creature(&mut state, P1, 3, 3);
+    let guile = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
 
-    let legal = engine::legal_actions(&state, &reg);
-
-    // Ranger's Guile should NOT appear with an opponent's creature as target.
-    let targets_enemy = legal.actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            targets.iter().any(|t| {
-                if let Target::Object(id) = t { *id == enemy } else { false }
-            })
-        } else {
-            false
-        }
-    });
-    assert!(!targets_enemy,
-        "Ranger's Guile should not be able to target opponent's creature (Oracle: 'you control')");
+    let offered = offered_targets(&state, &reg, guile);
+    assert!(offered.contains(&Target::Object(mine)), "your own creature; offered {offered:?}");
+    assert!(!offered.contains(&Target::Object(theirs)), "not the opponent's");
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -127,23 +104,17 @@ fn morkrut_banshee_can_target_self() {
     // still there at 4-4=0 toughness on its way to dying, or SBA has already
     // taken it — both mean the -4/-4 landed; nothing on the battlefield at
     // full toughness would.
-    let banshee_obj = state.objects.values()
-        .find(|o| o.name == "Morkrut Banshee" && o.zone == Zone::Battlefield);
-
-    if let Some(b) = banshee_obj {
-        // If the banshee targeted itself with -4/-4, effective toughness
-        // should be 0 (4 base - 4 = 0).
-        let eff_t = state.effective_toughness(b.id, &reg);
-        assert_eq!(eff_t, Some(0),
-            "Morkrut Banshee should target itself when it's the only creature (morbid). \
-             Effective toughness should be 0 (4 - 4). Got: {eff_t:?}");
-    } else {
-        // Banshee might have already died from the -4/-4 SBA. That's also fine.
-        // (It would be in graveyard.)
-        let in_gy = state.objects.values()
-            .any(|o| o.name == "Morkrut Banshee" && o.zone == Zone::Graveyard);
-        assert!(in_gy,
-            "Morkrut Banshee should have targeted itself and died from -4/-4");
+    let obj = state.objects.values()
+        .find(|o| o.name == "Morkrut Banshee")
+        .expect("the Banshee is somewhere");
+    match obj.zone {
+        // Still on the battlefield, on its way out: 4 base toughness less 4.
+        Zone::Battlefield => assert_eq!(state.effective_toughness(obj.id, &reg), Some(0),
+            "the -4/-4 landed on the only legal target, which is itself"),
+        // Or state-based actions already took it, which means the same thing.
+        Zone::Graveyard => {}
+        other => panic!("the Banshee should be on the battlefield at 0 toughness or \
+                         already in the graveyard, not in {other:?}"),
     }
 }
 
@@ -174,16 +145,18 @@ fn frightful_delusion_discard_on_pay() {
     // Resolve Frightful Delusion. P1 should get a pay-or-not choice.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    // P1 pays {1} to keep their spell.
-    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. }) = &state.awaiting_action {
-        state = engine::submit_action(
-            &state,
-            &Action::ResolveChoice {
-                choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
-            },
-            &reg,
-        );
-    }
+    // P1 pays {1} to keep their spell. Asserted rather than tested for: with the
+    // payment inside an `if`, a Frightful Delusion that stopped asking would
+    // never pay and the discard below would be measuring the wrong scenario.
+    assert!(state.awaiting_action.is_some(),
+        "CR 608.2g: the spell's controller is asked whether to pay {{1}}");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
 
     // After paying, P1 should STILL have to discard a card.
     // Oracle: "Counter target spell unless its controller pays {1}. That player discards a card."
