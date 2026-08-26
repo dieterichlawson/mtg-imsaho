@@ -63,7 +63,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `copy_effects.rs` | 255 | 8 |
 | x | `cards_evasion_and_graveyard_pt.rs` | 245 | 12 |
 | x | `lands_and_mana.rs` | 243 | 12 |
-|   | `xcost_mana.rs` | 241 | 3 |
+| x | `xcost_mana.rs` | 241 | 3 |
 |   | `snapshot_anthems.rs` | 238 | 4 |
 |   | `turn_structure.rs` | 237 | 12 |
 |   | `transform_dfc.rs` | 236 | 4 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**105/126 files read; 4376 lines remaining.**
+**106/126 files read; 4135 lines remaining.**

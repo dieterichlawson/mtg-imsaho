@@ -103,6 +103,12 @@ fn no_test_comment_claims_the_test_is_failing() {
         "this test should fail",
         "expected to fail",
         "expected to FAIL",
+        // Present-tense narration of a bug that has since been fixed. A doc
+        // saying the test fails, attached to a test that passes, is worse than
+        // no doc at all: the next reader believes it.
+        "Today it doesn't",
+        "the bug fires here",
+        "still broken",
         "false positive",
     ];
     let mut offenders = Vec::new();
