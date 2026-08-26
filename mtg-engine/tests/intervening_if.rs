@@ -18,7 +18,6 @@
 mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::{GameState, StackEntry};
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
@@ -226,111 +225,89 @@ fn morbid_etb_triggers_only_when_a_creature_died() {
     }
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
+// ── Morbid on the other trigger timings ──────────────────────────
 
-/// Bug: Woodland Sleuth's morbid ETB can return itself if it dies in
-/// response to its own trigger. Per ruling: "if this happens, the ability
-/// could return Woodland Sleuth to your hand from your graveyard."
-/// Actually, the ruling says this IS correct — it CAN return itself.
-/// The bug might be that it can't. Let me verify.
+/// "Morbid — At the beginning of each end step, if a creature died this turn,
+/// destroy target non-Demon creature." The same CR 603.4 clause on an end-step
+/// trigger rather than an ETB, so it has to be checked in the step dispatch
+/// too. Both arms, because "nothing was destroyed" is also what an engine that
+/// never triggers at all would produce.
 #[test]
-fn bug_woodland_sleuth_can_return_itself_from_graveyard() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn reaper_from_the_abyss_end_step_trigger_respects_its_morbid_clause() {
+    for died in [false, true] {
+        let reg = registry();
+        let mut state = game_at_step(Step::EndStep, P0);
+        state.creature_died_this_turn = died;
 
-    // Set morbid (a creature died this turn)
-    state.creature_died_this_turn = true;
+        named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
+        let victim = ready_creature(&mut state, P1, 3, 3);
 
-    // Place Woodland Sleuth, then move to graveyard (died in response to own ETB)
-    let sleuth = named_card_in_graveyard(&mut state, &registry, "Woodland Sleuth", P0);
+        // The step event is what the ability watches for, and it targets — so
+        // the prompt has to be answered too (CR 603.3d).
+        state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::EndStep });
+        process_triggers_auto_target_opponent(&mut state, &reg);
 
-    // Fire the ETB trigger manually (it was triggered before death)
-    let behavior = registry.get(state.get_object(sleuth).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, sleuth, &[], &registry);
-
-    // With morbid active, the trigger should return a random creature card
-    // from the graveyard. Woodland Sleuth itself is now in the graveyard,
-    // so it's a valid target to return. Per the ruling, this is correct.
-    let sleuth_zone = state.get_object(sleuth).unwrap().zone;
-
-    // The test verifies the trigger actually fires even from the graveyard
-    // (which connects to BUG3 — ETB trigger suppressed when source leaves)
-    // If it returns itself, it's in Hand. If it returns nothing (bug), it stays in GY.
-    assert_eq!(sleuth_zone, Zone::Hand,
-        "Woodland Sleuth should be able to return itself from graveyard per ruling");
+        if died {
+            assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard,
+                "a creature died this turn, so the Reaper's trigger destroys one");
+        } else {
+            assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+                "no creature died this turn, so the ability never triggers");
+            assert!(state.stack.is_empty(),
+                "and nothing sits on the stack holding a priority window open");
+        }
+    }
 }
 
-/// Bug: Reaper from the Abyss has "Morbid — At the beginning of each
-/// end step, if a creature died this turn, destroy target non-Demon."
-/// The morbid condition is an intervening-if — it must be true both
-/// when the trigger goes on the stack AND when it resolves. The engine
-/// doesn't check the condition at trigger collection time.
+/// The morbid clause also gates an "enters with counters" replacement effect
+/// (CR 614.1c) rather than a trigger — a different path through the engine, so
+/// it needs its own check that the condition is consulted.
 #[test]
-fn bug_reaper_intervening_if_not_checked_at_trigger() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::EndStep, P0);
-    state.active_player = P0;
+fn morbid_enters_with_counters_only_when_a_creature_died() {
+    // (card, counters it enters with when a creature died this turn)
+    const CARDS: &[(&str, u32)] = &[
+        ("Festerhide Boar", 2),
+        ("Somberwald Spider", 2),
+    ];
 
-    // Place Reaper from the Abyss
-    let _reaper = named_creature(&mut state, &registry, "Reaper from the Abyss", P0);
+    for &(name, counters) in CARDS {
+        for died in [false, true] {
+            let reg = registry();
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            state.creature_died_this_turn = died;
 
-    // Morbid is NOT active — no creature died this turn
-    state.creature_died_this_turn = false;
+            let spell = castable_spell(&mut state, &reg, name, P0);
+            let state = cast_and_resolve(&state, &reg, spell, vec![]);
 
-    // Place a non-Demon target
-    let target = ready_creature(&mut state, P1, 3, 3);
-
-    // Process triggers — Reaper's end step trigger should NOT fire
-    // because morbid condition is false
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
-
-    // If the intervening-if is properly checked, no trigger fires
-    // and target stays alive
-    let target_alive = state.get_object(target).unwrap().zone == Zone::Battlefield;
-
-    // BUG: Trigger fires regardless of morbid condition
-    assert!(target_alive && state.stack.is_empty(),
-        "Reaper trigger should not fire when morbid is false");
+            let expected = if died { counters } else { 0 };
+            assert_eq!(counters_of(&state, spell, CounterType::PlusOnePlusOne), expected,
+                "{name} with creature_died_this_turn = {died}");
+        }
+    }
 }
 
-/// Bug: Woodland Sleuth has Morbid ETB: "if a creature died this turn,
-/// return a random creature card from your graveyard to your hand."
-/// The morbid condition should be checked both at trigger collection
-/// AND at resolution. If checked only at resolution, a creature dying
-/// between collection and resolution could incorrectly enable the ability.
+/// A morbid ETB that returns a creature card from your graveyard can return the
+/// source itself, if the source died in response to its own trigger: CR 113.7a
+/// keeps the ability on the stack, and by the time it resolves the card is in
+/// the graveyard and is as legal a choice as anything else there.
 #[test]
-fn bug_woodland_sleuth_intervening_if_not_at_collection() {
-    let registry = CardRegistry::with_all_cards();
+fn woodland_sleuth_can_return_itself_after_dying_to_its_own_trigger() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Morbid is NOT active
-    state.creature_died_this_turn = false;
-
-    // Place Woodland Sleuth — ETB trigger should NOT go on the stack
-    // because morbid is false at collection time
-    let _sleuth = named_creature(&mut state, &registry, "Woodland Sleuth", P0);
-
-    // Put a creature in graveyard (potential return target)
-    let gy_creature = {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
-        id
-    };
-
-    // Fire triggers — should NOT create a trigger because morbid is false
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
-
-    // Now set morbid to true (creature dies after trigger collection)
     state.creature_died_this_turn = true;
 
-    // Resolve any triggers — there should be none
-    let gy_creature_zone = state.get_object(gy_creature).unwrap().zone;
+    let sleuth = named_creature(&mut state, &reg, "Woodland Sleuth", P0);
+    let card_id = state.get_object(sleuth).unwrap().card_id;
+    state.stack.push(StackEntry::Trigger(PendingTrigger::new(
+        TriggerSource::new(sleuth, card_id, P0, "Woodland Sleuth"),
+        TriggerEvent::SelfEntered,
+    )));
+    // Killed with its own ETB trigger already on the stack.
+    state.move_object(sleuth, Zone::Graveyard, &reg);
 
-    // BUG: The trigger fires anyway because intervening-if isn't checked
-    // at collection time, only at resolution
-    assert_eq!(gy_creature_zone, Zone::Graveyard,
-        "Grizzly Bears should stay in graveyard — morbid was false when trigger would collect");
+    triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert_eq!(state.get_object(sleuth).unwrap().zone, Zone::Hand,
+        "the only creature card in the graveyard is the Sleuth itself, so that \
+         is what comes back");
 }
