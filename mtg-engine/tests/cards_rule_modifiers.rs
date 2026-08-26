@@ -210,19 +210,7 @@ fn kessig_wolf_run_grants_power_and_trample() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
 
-    let activated = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: wolf_run,
-            ability_index: 1,
-            targets: vec![Target::Object(creature)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let activated = activate(&state, &reg, wolf_run, 1, vec![Target::Object(creature)]);
     let new_state = resolve_funding_max(&activated, &reg);
 
     // Creature should have +1/+0 until end of turn (base 3/3 → 4/3).
@@ -263,8 +251,7 @@ fn snapcaster_mage_grants_flashback() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put Lightning Bolt in P0's graveyard.
-    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Graveyard, &reg);
+    let bolt = named_card_in_graveyard(&mut state, &reg, "Lightning Bolt", P0);
 
     // Cast Snapcaster Mage (resolve immediately for ETB trigger).
     let snap = castable_spell(&mut state, &reg, "Snapcaster Mage", P0);

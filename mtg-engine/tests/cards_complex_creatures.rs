@@ -653,8 +653,7 @@ fn skaab_ruinator_cast_from_graveyard() {
     state.priority_player = Some(P0);
 
     // Put Skaab Ruinator in graveyard.
-    let ruinator = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
-    state.move_object(ruinator, Zone::Graveyard, &reg);
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
 
     // Put 3 creature cards in graveyard for the additional cost.
     for _ in 0..3 {
@@ -693,8 +692,7 @@ fn skaab_ruinator_not_castable_without_enough_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.priority_player = Some(P0);
 
-    let ruinator = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
-    state.move_object(ruinator, Zone::Graveyard, &reg);
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
 
     // Only 2 creatures (need 3).
     for _ in 0..2 {
@@ -1451,19 +1449,7 @@ fn grimgrin_sacrifice_untaps_and_counters() {
     let zombie = ready_creature(&mut state, P0, 2, 2);
 
     // Activate through the engine, sacrificing the zombie (not Grimgrin itself).
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: grimgrin,
-            ability_index: 0,
-            targets: vec![],
-            tap_plan: vec![],
-            sacrifice: Some(zombie),
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate_sacrificing(&state, &reg, grimgrin, 0, vec![], zombie);
 
     // Grimgrin should be untapped.
     assert!(!new_state.get_object(grimgrin).unwrap().tapped);

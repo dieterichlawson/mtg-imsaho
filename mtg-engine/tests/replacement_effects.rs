@@ -63,8 +63,7 @@ fn a_replacement_about_your_own_arrival_applies_from_any_zone() {
     for _ in 0..3 {
         named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
     }
-    let horde = spell_in_hand(&mut state, &reg, "Unbreathing Horde", P0);
-    state.move_object(horde, Zone::Graveyard, &reg);
+    let horde = named_card_in_graveyard(&mut state, &reg, "Unbreathing Horde", P0);
     state.move_object(horde, Zone::Battlefield, &reg);
 
     assert_eq!(counters_of(&state, horde, CounterType::PlusOnePlusOne), 4,

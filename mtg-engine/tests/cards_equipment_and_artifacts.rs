@@ -42,19 +42,7 @@ fn travelers_amulet_finds_basic_land() {
     // Add mana for the ability: {1}
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: amulet,
-            ability_index: 0,
-            targets: vec![],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, amulet, 0, vec![]);
 
     // Amulet should be in graveyard (sacrificed).
     assert_eq!(
@@ -89,19 +77,7 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
 
     // Equip costs sacrifice a creature (no mana cost). The player explicitly
     // chooses creature_a as the sacrifice and creature_b as the equip target.
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: hauberk,
-            ability_index: 0,
-            targets: vec![Target::Object(creature_b)],
-            tap_plan: vec![],
-            sacrifice: Some(creature_a),
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate_sacrificing(&state, &reg, hauberk, 0, vec![Target::Object(creature_b)], creature_a);
 
     // Hauberk should be attached to creature_b (the target, not the sacrifice).
     assert_eq!(
@@ -201,79 +177,49 @@ fn inquisitors_flail_doubles_combat_damage() {
 // Trepanation Blade
 // ══════════════════════════════════════════════════════════════════
 
+/// "Whenever equipped creature attacks, defending player reveals cards from the
+/// top of their library until they reveal a land card. That creature gets +1/+0
+/// until end of turn for each card revealed this way."
+///
+/// The land is revealed *and* milled, so it counts too — the pump is the number
+/// of cards that left the library, not the number of nonlands before the land.
 #[test]
-fn trepanation_blade_attack_trigger_mills_and_pumps() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
+fn trepanation_blade_reveals_through_the_first_land_and_counts_it() {
+    // (library from the top, cards milled, resulting power of a 2/2)
+    const CASES: &[(&[&str], usize, i32)] = &[
+        (&["Lightning Bolt", "Lightning Bolt", "Forest"], 3, 5),
+        (&["Forest", "Lightning Bolt"], 1, 3),
+    ];
 
-    let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
+    for &(library, milled, power) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    // Attach the blade.
-    state.get_object_mut(blade).unwrap().attached_to = Some(creature);
+        let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        state.get_object_mut(blade).unwrap().attached_to = Some(creature);
 
-    // Set up P1's library with: [nonland, nonland, land].
-    // Use card IDs that have card_types set.
-    let bolt_card_id = reg.get_id_by_name("Lightning Bolt").unwrap();
-    let forest_card_id = reg.get_id_by_name("Forest").unwrap();
+        let cards: Vec<ObjectId> = library.iter()
+            .map(|n| {
+                let id = reg.get_id_by_name(n).unwrap();
+                state.create_object(id, P1, Zone::Library, None, None)
+            })
+            .collect();
+        state.get_player_mut(P1).library_order = cards.clone();
 
-    let lib1 = state.create_object(bolt_card_id, P1, Zone::Library, None, None);
+        submit_declare_attackers(&mut state, &[(creature, P1)], &reg);
+        triggers::process_triggers(&mut state, &reg);
 
-    let lib2 = state.create_object(bolt_card_id, P1, Zone::Library, None, None);
-
-    let lib3 = state.create_object(forest_card_id, P1, Zone::Library, None, None);
-
-    state.get_player_mut(P1).library_order = vec![lib1, lib2, lib3];
-
-    // Declare creature as attacker.
-    submit_declare_attackers(&mut state, &[(creature, P1)], &reg);
-
-    // Process triggers — the blade's attack trigger should fire.
-    triggers::process_triggers(&mut state, &reg);
-
-    // All 3 cards should be in graveyard (2 nonlands + 1 land).
-    assert_eq!(state.get_object(lib1).unwrap().zone, Zone::Graveyard);
-    assert_eq!(state.get_object(lib2).unwrap().zone, Zone::Graveyard);
-    assert_eq!(state.get_object(lib3).unwrap().zone, Zone::Graveyard);
-
-    // P1's library should be empty.
-    assert!(state.get_player(P1).library_order.is_empty());
-
-    // Creature should get +3/+0 until end of turn (3 cards milled).
-    assert_eq!(state.effective_power(creature, &reg), Some(5),
-        "2/2 creature should have +3/+0 from Trepanation Blade (3 cards milled)");
-    assert_eq!(state.effective_toughness(creature, &reg), Some(2),
-        "Toughness should be unchanged");
-}
-
-#[test]
-fn trepanation_blade_stops_at_first_land() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
-
-    let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    state.get_object_mut(blade).unwrap().attached_to = Some(creature);
-
-    // Library starts with a land card.
-    let forest_card_id = reg.get_id_by_name("Forest").unwrap();
-    let lib1 = state.create_object(forest_card_id, P1, Zone::Library, None, None);
-
-    let bolt_card_id = reg.get_id_by_name("Lightning Bolt").unwrap();
-    let lib2 = state.create_object(bolt_card_id, P1, Zone::Library, None, None);
-
-    state.get_player_mut(P1).library_order = vec![lib1, lib2];
-
-    submit_declare_attackers(&mut state, &[(creature, P1)], &reg);
-    triggers::process_triggers(&mut state, &reg);
-
-    // Only the first card (land) should be milled.
-    assert_eq!(state.get_object(lib1).unwrap().zone, Zone::Graveyard);
-    assert_eq!(state.get_object(lib2).unwrap().zone, Zone::Library,
-        "Second card should remain in library (stopped at first land)");
-
-    // +1/+0 for the one card milled.
-    assert_eq!(state.effective_power(creature, &reg), Some(3));
+        for (n, &id) in cards.iter().enumerate() {
+            let expected = if n < milled { Zone::Graveyard } else { Zone::Library };
+            assert_eq!(state.get_object(id).unwrap().zone, expected,
+                "{library:?}: card {n} ({}) should be in {expected:?}", library[n]);
+        }
+        assert_eq!(state.effective_power(creature, &reg), Some(power),
+            "{library:?}: +1/+0 for each of the {milled} cards revealed");
+        assert_eq!(state.effective_toughness(creature, &reg), Some(2),
+            "{library:?}: toughness is untouched");
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -307,19 +253,7 @@ fn blazing_torch_deals_damage_to_player() {
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(torch).unwrap().attached_to = Some(creature);
 
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: creature,
-            ability_index: 1,
-            targets: vec![Target::Player(P1)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, creature, 1, vec![Target::Player(P1)]);
 
     // P1 should have taken 2 damage.
     assert_eq!(new_state.get_player(P1).life, 18,
@@ -334,69 +268,30 @@ fn blazing_torch_deals_damage_to_player() {
         "Blazing Torch should be sacrificed");
 }
 
+/// "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target."
+///
+/// Ruling: "The source of the damage is Blazing Torch, not the equipped
+/// creature." That matters for protection and for damage-source watchers, and
+/// it is the half a test asserting only the 2 damage would miss.
 #[test]
-fn blazing_torch_deals_damage_to_creature() {
+fn blazing_torch_deals_its_damage_as_the_torch_not_the_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(torch).unwrap().attached_to = Some(creature);
-
     let enemy = ready_creature(&mut state, P1, 3, 3);
 
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: creature,
-            ability_index: 1,
-            targets: vec![Target::Object(enemy)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, creature, 1, vec![Target::Object(enemy)]);
 
-    // Enemy should have 2 damage marked.
-    assert_eq!(new_state.get_object(enemy).unwrap().damage_marked, 2,
-        "Target creature should have 2 damage from Blazing Torch");
-}
-
-#[test]
-fn blazing_torch_damage_source_is_torch_not_creature() {
-    // Per ruling: "The source of the damage is Blazing Torch, not the equipped creature."
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    state.get_object_mut(torch).unwrap().attached_to = Some(creature);
-
-    let enemy = ready_creature(&mut state, P1, 3, 3);
-
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: creature,
-            ability_index: 1,
-            targets: vec![Target::Object(enemy)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
-
-    // The damage source tracked on the creature should be the torch, not the equipped creature.
     let enemy_obj = new_state.get_object(enemy).unwrap();
+    assert_eq!(enemy_obj.damage_marked, 2, "the target creature takes 2");
     assert!(enemy_obj.damaged_by.contains(&torch),
-        "Damage source should be the torch ({}), not the creature ({}). Got: {:?}",
-        torch, creature, enemy_obj.damaged_by);
+        "and the source is the Torch ({torch}), not the creature ({creature}): {:?}",
+        enemy_obj.damaged_by);
     assert!(!enemy_obj.damaged_by.contains(&creature),
-        "Damage source should NOT be the equipped creature");
+        "the equipped creature did not deal this damage");
 }
 
 #[test]
@@ -449,7 +344,3 @@ fn equipment_enters_unattached() {
     assert!(obj.is_equipment, "Hauberk should be equipment");
     assert!(obj.attached_to.is_none(), "Equipment should enter unattached");
 }
-
-// ══════════════════════════════════════════════════════════════════
-// Equipment detaches when creature dies
-// ══════════════════════════════════════════════════════════════════

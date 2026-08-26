@@ -21,8 +21,7 @@ fn targets_player_not_card() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put a card in P1's graveyard.
-    let gy_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(gy_card, Zone::Graveyard, &reg);
+    let _gy_card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
 
     let actions = engine::legal_actions(&state, &reg);
     let ability_actions: Vec<_> = actions.actions.iter().filter(|a| {
@@ -49,8 +48,7 @@ fn auto_exiles_single_card() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put one creature in P1's graveyard.
-    let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(creature, Zone::Graveyard, &reg);
+    let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
 
     let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
@@ -72,8 +70,7 @@ fn no_life_gain_for_non_creature() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put a non-creature in P1's graveyard.
-    let noncreature = spell_in_hand(&mut state, &reg, "Doom Blade", P1);
-    state.move_object(noncreature, Zone::Graveyard, &reg);
+    let noncreature = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
     let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
@@ -93,10 +90,8 @@ fn multiple_cards_creates_resolution_choice() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put two cards in P1's graveyard.
-    let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(creature, Zone::Graveyard, &reg);
-    let instant = spell_in_hand(&mut state, &reg, "Doom Blade", P1);
-    state.move_object(instant, Zone::Graveyard, &reg);
+    let _creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let _instant = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
     let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
@@ -120,10 +115,8 @@ fn resolution_choice_exiles_and_gains_life() {
     let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
-    let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(creature, Zone::Graveyard, &reg);
-    let instant = spell_in_hand(&mut state, &reg, "Doom Blade", P1);
-    state.move_object(instant, Zone::Graveyard, &reg);
+    let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let instant = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
     // Activate ability targeting P1.
     let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
@@ -156,8 +149,7 @@ fn cannot_target_player_with_empty_graveyard() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // P1 has no cards in graveyard. P0 has one card.
-    let gy_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(gy_card, Zone::Graveyard, &reg);
+    let _gy_card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
 
     let actions = engine::legal_actions(&state, &reg);
     let ability_actions: Vec<_> = actions.actions.iter().filter(|a| {

@@ -23,12 +23,12 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `cards_shortcuts_taken.rs` | 487 | 13 |
 | x | `keywords.rs` | 486 | 21 |
 | x | `cards_lands_and_mana_sources.rs` | 479 | 17 |
-|   | `cards_equipment_and_artifacts.rs` | 455 | 12 |
+| x | `cards_equipment_and_artifacts.rs` | 455 | 12 |
 | x | `cards_combat_damage_triggers.rs` | 450 | 16 |
 | x | `engine_regressions.rs` | 437 | 14 |
 | x | `test_suite_guards.rs` | 435 | 4 |
 | x | `sacrifice_choice.rs` | 406 | 12 |
-|   | `cards_graveyard_interaction.rs` | 396 | 17 |
+| x | `cards_graveyard_interaction.rs` | 396 | 17 |
 |   | `cards_removal_and_bounce.rs` | 386 | 15 |
 |   | `mulligan.rs` | 369 | 9 |
 |   | `trigger_priority.rs` | 350 | 7 |
@@ -132,4 +132,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**75/127 files read; 14276 lines remaining.**
+**77/127 files read; 13425 lines remaining.**

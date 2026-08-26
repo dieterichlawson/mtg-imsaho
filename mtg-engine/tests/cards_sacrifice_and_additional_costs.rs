@@ -36,19 +36,7 @@ fn selfless_cathar_pump_all_creatures() {
     state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    let new_state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: cathar,
-            ability_index: 0,
-            targets: vec![],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, cathar, 0, vec![]);
 
     // Cathar should be in graveyard (sacrificed).
     assert_eq!(
@@ -75,19 +63,7 @@ fn silverchase_fox_exiles_enchantment() {
     state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    let new_state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: fox,
-            ability_index: 0,
-            targets: vec![Target::Object(enchantment)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, fox, 0, vec![Target::Object(enchantment)]);
 
     // Fox should be in graveyard (sacrificed).
     assert_eq!(
@@ -117,19 +93,7 @@ fn brain_weevil_forces_discard() {
     let hand_before = state.objects_in_zone(Zone::Hand, P1).len();
     assert_eq!(hand_before, 2);
 
-    let new_state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: weevil,
-            ability_index: 0,
-            targets: vec![Target::Player(P1)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, weevil, 0, vec![Target::Player(P1)]);
 
     // Weevil should be in graveyard (sacrificed).
     assert_eq!(
@@ -157,19 +121,7 @@ fn disciple_of_griselbrand_gains_life() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
     // Player explicitly chooses to sacrifice the fatty (5 toughness → 5 life).
-    let new_state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: disciple,
-            ability_index: 0,
-            targets: vec![],
-            tap_plan: vec![],
-            sacrifice: Some(fatty),
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate_sacrificing(&state, &reg, disciple, 0, vec![], fatty);
 
     // Should gain exactly 5 life (the fatty's toughness).
     let life_after = new_state.get_player(P0).life;
@@ -354,19 +306,7 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
     // Add red mana for the activation cost.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: cultist,
-            ability_index: 0,
-            targets: vec![Target::Object(target)],
-            tap_plan: vec![],
-            sacrifice: Some(fodder),
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let state = activate_sacrificing(&state, &reg, cultist, 0, vec![Target::Object(target)], fodder);
 
     // Target creature should have taken 2 damage.
     let obj = state.get_object(target).unwrap();
@@ -385,19 +325,7 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: cultist,
-            ability_index: 0,
-            targets: vec![Target::Player(P1)],
-            tap_plan: vec![],
-            sacrifice: Some(fodder),
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let state = activate_sacrificing(&state, &reg, cultist, 0, vec![Target::Player(P1)], fodder);
 
     assert_eq!(state.get_player(P1).life, 18, "Opponent should be at 18 life");
     assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Graveyard);
@@ -435,19 +363,7 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
         .collect();
     assert_eq!(creatures_before.len(), 1, "Only the apprentice on the battlefield");
 
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: apprentice,
-            ability_index: 0,
-            targets: vec![],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let state = activate(&state, &reg, apprentice, 0, vec![]);
 
     // After activation: a 2/2 token was created, but now the controller must choose
     // which creature to sacrifice. With 2 creatures (apprentice + token), a choice
@@ -486,19 +402,7 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: apprentice,
-            ability_index: 0,
-            targets: vec![],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let state = activate(&state, &reg, apprentice, 0, vec![]);
 
     // Find the token (is_token == true).
     let token = state.objects.values()

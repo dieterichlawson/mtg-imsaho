@@ -16,8 +16,7 @@ fn shuffles_own_graveyard_card_into_library() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(card, Zone::Graveyard, &reg);
+    let card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
     let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Player(P0), Target::Object(card)]);
@@ -32,8 +31,7 @@ fn shuffles_opponent_graveyard_card_into_library() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(card, Zone::Graveyard, &reg);
+    let card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
     let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Player(P1), Target::Object(card)]);
@@ -48,12 +46,9 @@ fn shuffles_up_to_three_cards() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(card1, Zone::Graveyard, &reg);
-    let card2 = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
-    state.move_object(card2, Zone::Graveyard, &reg);
-    let card3 = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(card3, Zone::Graveyard, &reg);
+    let card1 = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let card2 = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P0);
+    let card3 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
     let new_state = cast_and_resolve(&state, &reg, journey, vec![
@@ -76,10 +71,8 @@ fn resolving_only_moves_the_targeted_players_cards() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let own_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(own_card, Zone::Graveyard, &reg);
-    let opp_card = spell_in_hand(&mut state, &reg, "Doom Blade", P1);
-    state.move_object(opp_card, Zone::Graveyard, &reg);
+    let own_card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let opp_card = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
     // Memory's Journey targeting P0's graveyard card.
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);

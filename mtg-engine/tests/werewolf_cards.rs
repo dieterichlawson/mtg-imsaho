@@ -2,9 +2,8 @@
 
 mod common;
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::{Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::types::*;
 
 // ── Every werewolf, front face to back ────────────────────────────
@@ -371,19 +370,7 @@ fn nightfall_predator_can_fight_own_creature() {
     // Give mana for the {R} cost.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: ranger,
-            ability_index: 0,
-            targets: vec![Target::Object(own_creature)],
-            tap_plan: vec![],
-            sacrifice: None,
-            x_value: None,
-            source_card_id: None,
-        },
-        &reg,
-    );
+    let new_state = activate(&state, &reg, ranger, 0, vec![Target::Object(own_creature)]);
 
     // Both creatures should have dealt damage to each other.
     // Nightfall Predator is 4/4, own creature is 2/2.

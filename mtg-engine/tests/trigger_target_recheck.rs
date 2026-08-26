@@ -229,8 +229,7 @@ fn test_snapcaster_trigger_fizzles_if_target_exiled() {
     let snapcaster = named_creature(&mut state, &reg, "Snapcaster Mage", P0);
     let snapcaster_card = reg.get_id_by_name("Snapcaster Mage").unwrap();
 
-    let instant = spell_in_hand(&mut state, &reg, "Think Twice", P0);
-    state.move_object(instant, Zone::Graveyard, &reg);
+    let instant = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
 
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource { chosen_targets: vec![Target::Object(instant)], ..TriggerSource::new(snapcaster, snapcaster_card, P0, "Snapcaster Mage") },

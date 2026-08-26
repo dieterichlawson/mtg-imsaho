@@ -101,6 +101,48 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 /// the max (taps every offered source + drains pool). Tests wanting a
 /// specific X value should construct the `FundingResponse` themselves
 /// instead of calling this helper.
+/// Activate `object_id`'s `ability_index`-th ability at `targets`.
+///
+/// The `ActivateAbility` literal has seven fields and appeared 116 times; at
+/// almost every site the other four are `vec![]`/`None`. Use
+/// [`activate_sacrificing`] when the cost includes sacrificing a permanent.
+pub fn activate(
+    state: &GameState,
+    registry: &CardRegistry,
+    object_id: ObjectId,
+    ability_index: usize,
+    targets: Vec<Target>,
+) -> GameState {
+    mtg_engine::engine::submit_action(
+        state,
+        &Action::ActivateAbility {
+            object_id, ability_index, targets,
+            tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+        },
+        registry,
+    )
+}
+
+/// [`activate`], for an ability whose cost includes sacrificing `sacrifice`
+/// (Demonmail Hauberk's equip, Brimstone Volley's morbid check, …).
+pub fn activate_sacrificing(
+    state: &GameState,
+    registry: &CardRegistry,
+    object_id: ObjectId,
+    ability_index: usize,
+    targets: Vec<Target>,
+    sacrifice: ObjectId,
+) -> GameState {
+    mtg_engine::engine::submit_action(
+        state,
+        &Action::ActivateAbility {
+            object_id, ability_index, targets,
+            tap_plan: vec![], sacrifice: Some(sacrifice), x_value: None, source_card_id: None,
+        },
+        registry,
+    )
+}
+
 /// Put `spell_id` on the stack with `targets` chosen, and stop there.
 ///
 /// [`cast_and_resolve`] is the usual helper; this one is for tests that need to
