@@ -83,9 +83,9 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `moonmist.rs` | 200 | 8 |
 | x | `geist_of_saint_traft.rs` | 198 | 5 |
 | x | `creepy_doll.rs` | 184 | 5 |
-|   | `player_protection.rs` | 184 | 4 |
-|   | `zones_and_state.rs` | 183 | 8 |
-|   | `characteristics_targeting.rs` | 182 | 6 |
+| x | `player_protection.rs` | 184 | 4 |
+| x | `zones_and_state.rs` | 183 | 8 |
+| x | `characteristics_targeting.rs` | 182 | 6 |
 |   | `spell_cleanup.rs` | 180 | 4 |
 |   | `flashback_multiple_instances.rs` | 172 | 5 |
 |   | `mana_filters.rs` | 171 | 6 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**119/126 files read; 1242 lines remaining.**
+**122/126 files read; 693 lines remaining.**

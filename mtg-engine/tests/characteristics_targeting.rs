@@ -11,7 +11,6 @@
 mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
@@ -70,110 +69,110 @@ fn any_target_includes_non_token_planeswalker() {
         "Lightning Bolt (any target) should be able to target a non-token planeswalker; got {bolt_targets:?}");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A card's target filter has to match its own wording (CR 601.2c)
+// ---------------------------------------------------------------------------
 
-/// Bug: Victim of Night can target Vampire tokens.
-/// Oracle: "Destroy target non-Vampire, non-Werewolf, non-Zombie creature."
-/// The `is_valid_target` check uses `registry.card_data()` which returns None for
-/// tokens, so the subtype exclusion fails and tokens are targetable.
+/// What each card's `is_valid_target` must reject, and — as importantly — what
+/// it must still accept.
+///
+/// The rejection alone proves nothing: a filter that rejected everything, or an
+/// id the state has never heard of, satisfies it. One of the tests this
+/// replaces built its creature in `&mut state.clone()` and then asked about it
+/// in the original state, so the answer was "no such object" rather than
+/// anything about lands.
 #[test]
-fn bug_victim_of_night_can_target_vampire_token() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Create a Vampire token (like Bloodline Keeper creates)
-    let vampire_token = state.create_token_with_subtypes(
-        "Vampire", P1, 2, 2,
-        vec![Color::Black],
-        vec![CardType::Creature],
-        vec![],
-        vec!["Vampire".into()],
-        &registry,
-    )[0];
-    if let Some(obj) = state.get_object_mut(vampire_token) {
-        obj.summoning_sick = false;
+fn a_cards_target_filter_matches_its_wording() {
+    /// What to put on the battlefield and hand to `is_valid_target`.
+    enum Candidate {
+        /// A token with these subtypes — its characteristics live on the
+        /// object, which is where the registry-only filters used to miss them.
+        Token(&'static str, &'static [&'static str]),
+        VanillaCreature,
+        Caster,
+        Opponent,
     }
 
-    // Verify token has Vampire subtype
-    assert!(state.get_object(vampire_token).unwrap().subtypes.contains(&"Vampire".into()),
-        "Token should have Vampire subtype");
+    // (card, a target it must accept, one it must reject, the wording at issue)
+    let cases: &[(&str, Candidate, Candidate, &str)] = &[
+        ("Victim of Night", Candidate::VanillaCreature,
+         Candidate::Token("Vampire", &["Vampire"]),
+         "'non-Vampire, non-Werewolf, non-Zombie creature' — a Vampire token is \
+          a Vampire, and its subtypes are on the object, not in the registry"),
+        ("Tribute to Hunger", Candidate::Opponent, Candidate::Caster,
+         "'target opponent' is not 'target player'"),
+    ];
 
-    // Cast Victim of Night targeting the Vampire token
-    let _victim = castable_spell(&mut state, &registry, "Victim of Night", P0);
+    for (name, accept, reject, why) in cases {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Check if the Vampire token is a valid target
-    let behavior = registry.get(
-        registry.get_id_by_name("Victim of Night").unwrap()
-    ).unwrap();
-    let is_valid = behavior.is_valid_target(
-        &state, P0, &Target::Object(vampire_token), &registry
-    );
+        let mut place = |c: &Candidate| match c {
+            Candidate::Token(token_name, subtypes) => {
+                let id = state.create_token_with_subtypes(
+                    token_name, P1, 2, 2, vec![Color::Black], vec![CardType::Creature],
+                    vec![], subtypes.iter().map(|s| (*s).to_string()).collect(), &reg)[0];
+                state.get_object_mut(id).unwrap().summoning_sick = false;
+                Target::Object(id)
+            }
+            Candidate::VanillaCreature => Target::Object(ready_creature(&mut state, P1, 3, 3)),
+            Candidate::Caster => Target::Player(P0),
+            Candidate::Opponent => Target::Player(P1),
+        };
+        let good = place(accept);
+        let bad = place(reject);
 
-    // BUG: Token should NOT be a valid target (it's a Vampire),
-    // but is_valid_target only checks registry which has no data for tokens
-    assert!(!is_valid,
-        "Vampire token should NOT be a valid target for Victim of Night");
+        let behavior = reg.get(reg.get_id_by_name(name).unwrap()).unwrap();
+        assert!(behavior.is_valid_target(&state, P0, &good, &reg),
+            "{name} must accept {good:?}: {why}");
+        assert!(!behavior.is_valid_target(&state, P0, &bad, &reg),
+            "{name} must reject {bad:?}: {why}");
+    }
 }
 
-/// Bug: Tribute to Hunger says "target opponent" but has no `is_valid_target`
-/// override, so it can target any player including self.
+/// "Destroy target land. Into the Maw of Hell deals 13 damage to target
+/// creature." Two slots wanting different things, and which candidate may go in
+/// which is decided when the pairs are enumerated — `is_valid_target` has no
+/// slot to key on and legitimately accepts either kind.
+///
+/// The test this replaces asked `is_valid_target` about a creature and expected
+/// "no", which is not a question that function can answer. It also built the
+/// creature in `&mut state.clone()` and asked about it in the original state,
+/// so its "no" meant "no such object".
 #[test]
-fn bug_tribute_to_hunger_can_target_self() {
-    let registry = CardRegistry::with_all_cards();
-    let state = game_at_step(Step::PrecombatMain, P0);
-
-    // Check if Tribute to Hunger's is_valid_target allows targeting self
-    let behavior = registry.get(
-        registry.get_id_by_name("Tribute to Hunger").unwrap()
-    ).unwrap();
-
-    let can_target_self = behavior.is_valid_target(
-        &state, P0, &Target::Player(P0), &registry
-    );
-
-    // BUG: "target opponent" should not allow targeting self
-    assert!(!can_target_self,
-        "Tribute to Hunger says 'target opponent' but allows targeting self");
-}
-
-/// Bug: Unburial Rites has no `target_requirement` override, so the engine
-/// treats it as an untargeted spell. It can be cast with no creatures
-/// in any graveyard, and targets are selected at resolution not cast.
-#[test]
-fn bug_unburial_rites_castable_with_no_targets() {
-    let registry = CardRegistry::with_all_cards();
+fn into_the_maw_of_hell_pairs_a_land_with_a_creature_in_that_order() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Empty graveyards — no valid targets
-    let rites = castable_spell(&mut state, &registry, "Unburial Rites", P0);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    let maw = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
 
-    // Check if Unburial Rites can be cast
-    let can_cast = can_cast(&state, &registry, rites);
-
-    // BUG: Can cast with no legal targets because target_requirement is None
-    assert!(!can_cast,
-        "Unburial Rites should not be castable with no creature cards in any graveyard");
+    let sets = offered_target_sets(&state, &reg, maw);
+    assert!(!sets.is_empty(), "the spell is castable with a land and a creature out");
+    for set in &sets {
+        assert_eq!(set.len(), 2, "each offer names both targets; got {set:?}");
+        assert_eq!(set[0], Target::Object(land),
+            "the first slot is the land it destroys; got {set:?}");
+        assert_eq!(set[1], Target::Object(creature),
+            "and the second is the creature it burns; got {set:?}");
+    }
 }
 
-/// Bug: Into the Maw of Hell's `is_valid_target` accepts creatures for
-/// the land target slot. Oracle says "Destroy target land" — the first
-/// target must be a land, not a creature.
+/// "Return target creature card from your graveyard to the battlefield" needs a
+/// creature card in a graveyard to point at, so with none anywhere the spell is
+/// not castable at all (CR 601.2c) — rather than castable and choosing its
+/// target on resolution.
 #[test]
-fn bug_into_the_maw_accepts_creatures_as_land_target() {
-    let registry = CardRegistry::with_all_cards();
-    let state = game_at_step(Step::PrecombatMain, P0);
+fn unburial_rites_is_not_castable_with_no_creature_card_to_return() {
+    let reg = registry();
 
-    let behavior = registry.get(
-        registry.get_id_by_name("Into the Maw of Hell").unwrap()
-    ).unwrap();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let rites = castable_spell(&mut state, &reg, "Unburial Rites", P0);
+    assert!(!can_cast(&state, &reg, rites), "no graveyard has a creature card in it");
 
-    // A creature should NOT be a valid target for the land slot
-    let creature = Target::Object(ready_creature(&mut state.clone(), P1, 3, 3));
-    let is_valid = behavior.is_valid_target(&state, P0, &creature, &registry);
-
-    // BUG: Creatures are accepted as valid targets
-    assert!(!is_valid,
-        "Into the Maw of Hell should only target lands, not creatures");
+    named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    assert!(can_cast(&state, &reg, rites),
+        "and one appearing makes it castable — the assertion above is about the \
+         target, not about the mana");
 }

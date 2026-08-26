@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Action;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::types::*;
@@ -13,7 +12,7 @@ use mtg_engine::types::*;
 /// even if controlled by another player.
 #[test]
 fn objects_go_to_owners_graveyard() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 owns a creature, but P1 controls it.
@@ -47,7 +46,7 @@ fn hand_filters_by_owner() {
 /// Verify that `submit_action` returns a new state without modifying the original.
 #[test]
 fn submit_action_preserves_original_state() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let land = spell_in_hand(&mut state, &registry, "Forest", P0);
 
@@ -66,7 +65,7 @@ fn submit_action_preserves_original_state() {
 /// Zone change counter increments on each zone change.
 #[test]
 fn zone_change_counter_increments() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
     assert_eq!(state.get_object(creature).unwrap().zone_change_count, 0);
@@ -84,7 +83,7 @@ fn zone_change_counter_increments() {
 /// Leaving the battlefield resets tapped, damage, and summoning sickness.
 #[test]
 fn leaving_battlefield_resets_state() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
@@ -102,14 +101,12 @@ fn leaving_battlefield_resets_state() {
 /// Creature spell goes on the stack, not directly to battlefield.
 #[test]
 fn creature_spell_goes_on_stack() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
-    let new_state = engine::submit_action(
-        &state, &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }, &registry,
-    );
+    let new_state = cast_onto_stack(&state, &registry, creature, vec![]);
 
     assert_eq!(new_state.get_object(creature).unwrap().zone, Zone::Stack);
     assert_eq!(new_state.stack.len(), 1);
@@ -118,7 +115,7 @@ fn creature_spell_goes_on_stack() {
 /// Creature resolves to battlefield with summoning sickness.
 #[test]
 fn creature_resolves_with_summoning_sickness() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
@@ -137,15 +134,11 @@ fn creature_resolves_with_summoning_sickness() {
 /// End-to-end: tap two Forests, cast Kalonian Tusker, resolve it.
 #[test]
 fn full_cast_and_resolve_sequence() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-
-    let forest1 = state.create_object(forest_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(forest1).unwrap().summoning_sick = false;
-    let forest2 = state.create_object(forest_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(forest2).unwrap().summoning_sick = false;
+    let forest1 = named_permanent(&mut state, &registry, "Forest", P0);
+    let forest2 = named_permanent(&mut state, &registry, "Forest", P0);
     let tusker = spell_in_hand(&mut state, &registry, "Kalonian Tusker", P0);
 
     // Tap Forest 1.
@@ -165,9 +158,7 @@ fn full_cast_and_resolve_sequence() {
     assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Green), 2);
 
     // Cast Kalonian Tusker.
-    state = engine::submit_action(
-        &state, &Action::CastSpell { object_id: tusker, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }, &registry,
-    );
+    state = cast_onto_stack(&state, &registry, tusker, vec![]);
     assert_eq!(state.get_object(tusker).unwrap().zone, Zone::Stack);
     assert_eq!(state.get_player(P0).mana_pool.total(), 0);
 

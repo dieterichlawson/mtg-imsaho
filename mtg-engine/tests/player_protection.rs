@@ -16,7 +16,7 @@ mod common;
 use common::*;
 use mtg_engine::actions::{ResolvedChoice, Target};
 use mtg_engine::cards::{CardBehavior, CardData, CardRegistry};
-use mtg_engine::ids::{CardId, ObjectId};
+use mtg_engine::ids::CardId;
 use mtg_engine::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use mtg_engine::types::*;
 
@@ -48,21 +48,22 @@ impl CardBehavior for WardOfRed {
     }
 }
 
-/// The full set plus the ward.
-fn registry() -> (CardRegistry, CardId) {
+/// The full set plus the ward. Named apart from `common::registry` rather than
+/// shadowing it, so a reader can see at a glance which one a test is using.
+fn registry_with_ward() -> (CardRegistry, CardId) {
     let mut reg = CardRegistry::with_all_cards();
     let ward = reg.register(Box::new(WardOfRed));
     (reg, ward)
 }
 
-fn give_ward(state: &mut GameState, ward: CardId, player: mtg_engine::ids::PlayerId) -> ObjectId {
+fn give_ward(state: &mut GameState, ward: CardId, player: PlayerId) -> ObjectId {
     let id = state.create_object(ward, player, Zone::Battlefield, None, None);
     state.get_object_mut(id).unwrap().name = "Ward of Red".into();
     id
 }
 
 /// Put a named Curse card into a player's library.
-fn curse_in_library(state: &mut GameState, reg: &CardRegistry, name: &str, player: mtg_engine::ids::PlayerId) -> ObjectId {
+fn curse_in_library(state: &mut GameState, reg: &CardRegistry, name: &str, player: PlayerId) -> ObjectId {
     let id = state.create_object(reg.get_id_by_name(name).unwrap(), player, Zone::Library, None, None);
     state.get_object_mut(id).unwrap().name = name.into();
     state.get_player_mut(player).library_order.push(id);
@@ -71,7 +72,7 @@ fn curse_in_library(state: &mut GameState, reg: &CardRegistry, name: &str, playe
 
 #[test]
 fn a_player_with_protection_cannot_be_enchanted_by_that_color() {
-    let (reg, ward) = registry();
+    let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     give_ward(&mut state, ward, P1);
 
@@ -95,7 +96,7 @@ fn a_player_with_protection_cannot_be_enchanted_by_that_color() {
 /// enchant.
 #[test]
 fn bitterheart_witch_does_not_offer_a_protected_player() {
-    let (reg, ward) = registry();
+    let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     give_ward(&mut state, ward, P1);
     curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
@@ -124,7 +125,7 @@ fn bitterheart_witch_does_not_offer_a_protected_player() {
 /// Curse, not per player.
 #[test]
 fn bitterheart_witch_still_offers_the_player_for_a_curse_of_another_color() {
-    let (reg, ward) = registry();
+    let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     give_ward(&mut state, ward, P1);
     curse_in_library(&mut state, &reg, "Curse of Death's Hold", P0);
@@ -149,7 +150,7 @@ fn bitterheart_witch_still_offers_the_player_for_a_curse_of_another_color() {
 /// the battlefield attached to a player it can't enchant.
 #[test]
 fn a_curse_does_not_enter_attached_to_a_player_it_cannot_enchant() {
-    let (reg, ward) = registry();
+    let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let ward_id = give_ward(&mut state, ward, P1);
     let curse = curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
