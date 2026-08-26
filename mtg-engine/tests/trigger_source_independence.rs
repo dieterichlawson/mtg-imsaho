@@ -563,7 +563,7 @@ fn test_trepanation_blade_trigger_resolves_after_equipment_destroyed() {
 // -------------------------------------------------------------------------
 
 /// Bug: ETB triggers are suppressed when source leaves battlefield before resolution.
-/// The trigger resolution in triggers.rs:893-899 checks zone == Battlefield.
+/// The trigger resolution in triggers.rs checks zone == Battlefield.
 /// Per MTG rules, ETB triggers resolve independently — removing the source
 /// doesn't prevent the trigger from resolving.
 ///

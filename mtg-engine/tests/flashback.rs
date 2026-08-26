@@ -576,9 +576,6 @@ fn bug_past_in_flames_free_flashback_for_no_cost_cards() {
 /// We put a Devil's Play in exile with `cast_with_flashback = true`,
 /// move it back to hand via the engine's `move_object` (simulating
 /// Runic Repetition), and assert the flag is now false.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BS is fixed.
 #[test]
 fn bug_bs_runic_repetition_resets_cast_with_flashback() {
     let registry = CardRegistry::with_all_cards();

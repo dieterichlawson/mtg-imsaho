@@ -146,7 +146,7 @@ fn fiend_hunter_trigger_fizzles_when_locked_target_dies() {
 /// damage by this creature this turn dies, you gain life equal to
 /// that creature's toughness."
 ///
-/// Failure mode: `abattoir_ghoul.rs:39-42` does
+/// Failure mode: `abattoir_ghoul.rs` does
 /// ```
 /// let controller = match state.get_object(self_id) {
 ///     Some(o) if o.zone == Zone::Battlefield => o.controller,
@@ -166,15 +166,12 @@ fn fiend_hunter_trigger_fizzles_when_locked_target_dies() {
 /// resolution time.
 ///
 /// NOTE: the same `o.zone == Zone::Battlefield` early-return gate
-/// exists in Murder of Crows (`murder_of_crows.rs:38-43`),
-/// Rage Thrower (`rage_thrower.rs:38-43`), and
-/// Selhoff Occultist (`selhoff_occultist.rs:47-54`). All four use
+/// exists in Murder of Crows (`murder_of_crows.rs`),
+/// Rage Thrower (`rage_thrower.rs`), and
+/// Selhoff Occultist (`selhoff_occultist.rs`). All four use
 /// the identical zone-gate pattern. One test covers the shared
 /// defect; the other three need the same one-line fix (drop the
 /// zone guard, mirror Falkenrath Noble's handler which is correct).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BT is fixed.
 #[test]
 fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
     let registry = CardRegistry::with_all_cards();
@@ -228,9 +225,9 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
 /// Oracle (Charmbreaker Devils): "Whenever you cast an instant or
 /// sorcery spell, this creature gets +4/+0 until end of turn."
 ///
-/// Failure mode: `charmbreaker_devils.rs:75-92` filters by `caster ==
+/// Failure mode: `charmbreaker_devils.rs` filters by `caster ==
 /// controller` but does NOT filter by spell type. The dispatcher
-/// (`triggers.rs:727`) explicitly says "Dispatch `SpellCast` triggers
+/// (`triggers.rs`) explicitly says "Dispatch `SpellCast` triggers
 /// for ALL spell types... Individual card handlers can filter by
 /// spell type if needed" — Charmbreaker doesn't.
 ///
@@ -239,9 +236,6 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
 /// handler should be a no-op (Grizzly Bears is a creature, not an
 /// instant or sorcery). Today the handler unconditionally pushes a
 /// `+4/+0` `ModifyPT` into `until_end_of_turn`.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug L is fixed.
 #[test]
 fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
     let registry = CardRegistry::with_all_cards();
@@ -285,13 +279,10 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
 /// event." So "your" should be the last-known *controller*, which is
 /// the Traitorous Blood caster — not the original owner.
 ///
-/// Failure mode: `moldgraf_monstrosity.rs:42-46` reads `o.owner`,
+/// Failure mode: `moldgraf_monstrosity.rs` reads `o.owner`,
 /// while Doomed Traveler and Mausoleum Guard correctly read
 /// `o.controller`. We test by giving Moldgraf an `owner != controller`
 /// state and observing whose graveyard is reanimated from.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug CA is fixed.
 #[test]
 fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
     let registry = CardRegistry::with_all_cards();
@@ -338,16 +329,13 @@ fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
 /// Oracle (Burning Vengeance): "Whenever you cast a spell from your
 /// graveyard, this enchantment deals 2 damage to any target."
 ///
-/// Failure mode: `burning_vengeance.rs:55-68` calls
+/// Failure mode: `burning_vengeance.rs` calls
 /// `present_target_choice(...)` to set up the `awaiting_action`, then
 /// unconditionally logs "deals 2 damage to opponent (flashback spell
 /// cast)". The actual target hasn't been picked yet.
 ///
 /// We fire the handler and assert that the freshly-written log entries
 /// don't contain the hard-coded "to opponent" phrasing.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BU is fixed.
 #[test]
 fn bug_bu_burning_vengeance_no_stale_opponent_log() {
     let registry = CardRegistry::with_all_cards();
@@ -400,7 +388,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
 /// Oracle (Selfless Cathar): "{1}{W}, Sacrifice this creature:
 /// Creatures you control get +1/+1 until end of turn."
 ///
-/// Failure mode: `engine.rs:574-587` checks
+/// Failure mode: `engine.rs` checks
 /// `ability_has_sac_cost = !matches!(ab.sacrifice_cost, SacrificeCost::None);`
 /// then short-circuits the mana autotap. `SacrificeThis` hits this
 /// branch even though it doesn't conflict with land-tap ordering.
@@ -408,9 +396,6 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
 /// We put Selfless Cathar with two untapped Plains (enough to
 /// autotap {1}{W}), and assert that its activated ability shows up
 /// in `legal_actions`.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug K is fixed.
 #[test]
 fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     let registry = CardRegistry::with_all_cards();
@@ -473,9 +458,6 @@ fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
 /// We put Undead Alchemist + a P1 creature on top of P1's library,
 /// call `mill_cards` on P1, and check that the milled creature
 /// ends up in exile (and a Zombie token appears for P0).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 17-002 is fixed.
 #[test]
 fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     let registry = CardRegistry::with_all_cards();
@@ -530,7 +512,7 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
 /// instant or sorcery card in your graveyard gains flashback until
 /// end of turn."
 ///
-/// Failure mode: `triggers.rs:975-981` resolves the ETB trigger by
+/// Failure mode: `triggers.rs` resolves the ETB trigger by
 /// calling `behavior.on_enter_battlefield`, which is where the
 /// target choice lives. The trigger was queued at collection time
 /// with no target — opponents couldn't respond to "Snapcaster
@@ -685,7 +667,7 @@ fn simultaneous_triggers_auto_order_no_prompt() {
 /// graveyard, each Human creature you control enters with an
 /// additional +1/+1 counter on it."
 ///
-/// Failure mode: `dearly_departed.rs:30-36` declares a
+/// Failure mode: `dearly_departed.rs` declares a
 /// `TriggeredAbilityDef { kind: TriggerKind::AnyCreatureEnters }`.
 /// The fix replaces this with a `ReplacementEffect`-style entry
 /// that's consulted during the entry event.
@@ -693,9 +675,6 @@ fn simultaneous_triggers_auto_order_no_prompt() {
 /// We check the `card_data`'s `triggered_abilities` list is empty
 /// (i.e., the trigger has been removed) — the fingerprint of the
 /// fix.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug Q is fixed.
 #[test]
 fn bug_q_dearly_departed_is_not_a_trigger() {
     let registry = CardRegistry::with_all_cards();
@@ -730,22 +709,19 @@ fn bug_q_dearly_departed_is_not_a_trigger() {
 /// Oracle (Skeletal Grimace): "Enchanted creature gets +1/+1 and
 /// has '{B}: Regenerate this creature.'"
 ///
-/// Failure mode: `engine.rs:528-559` collects the activated
+/// Failure mode: `engine.rs` collects the activated
 /// abilities for a permanent by walking the permanent's own
 /// behavior and all attached auras. The collection puts both the
 /// native `{T}: deal 2 damage` (index 0) and the aura-granted
 /// `{B}: Regenerate` (index 0) into the list — but the `(obj_id,
 /// ability_index)` key pair collides, so the LLM player's dedup
-/// loop at `llm.rs:2086` collapses them into one entry.
+/// loop at `llm.rs` collapses them into one entry.
 ///
 /// We attach Skeletal Grimace to Daybreak Ranger, call
 /// `legal_actions`, and check that the `activatable_abilities`
 /// list for the Ranger contains TWO distinct entries (one for the
 /// native tap-damage ability, one for the aura-granted
 /// regeneration). Today only one is reachable.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug X is fixed.
 #[test]
 fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
     let registry = CardRegistry::with_all_cards();

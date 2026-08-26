@@ -38,17 +38,14 @@ use mtg_engine::types::*;
 /// Oracle (Skirsdag Cultist): "{R}, {T}, Sacrifice a creature: Skirsdag
 /// Cultist deals 2 damage to any target."
 ///
-/// Failure mode: `skirsdag_cultist.rs:54-58` does
+/// Failure mode: `skirsdag_cultist.rs` does
 /// `obj.damage_marked += 2` directly, without the
 /// `obj.damaged_by.push(source_id)` that the rest of the codebase pairs
 /// it with. `damaged_by` is consulted by SBA 704.5h (deathtouch
 /// destruction) and by death-watch triggers that care about who killed
 /// what — leaving it stale silently breaks both. Compare to Olivia
-/// Voldaren's first-ability bite (`olivia_voldaren.rs:104-106`) which
+/// Voldaren's first-ability bite (`olivia_voldaren.rs`) which
 /// pushes correctly.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug T is fixed.
 #[test]
 fn bug_t_skirsdag_cultist_pushes_damaged_by() {
     let registry = CardRegistry::with_all_cards();
@@ -93,12 +90,9 @@ fn bug_t_skirsdag_cultist_pushes_damaged_by() {
 /// Oracle (Rolling Temblor): "Rolling Temblor deals 2 damage to each
 /// creature without flying."
 ///
-/// Failure mode: `rolling_temblor.rs:36-39` writes
+/// Failure mode: `rolling_temblor.rs` writes
 /// `obj.damage_marked += 2` for each non-flying creature without the
 /// matching `obj.damaged_by.push(source)`.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug T is fixed.
 #[test]
 fn bug_t_rolling_temblor_pushes_damaged_by() {
     let registry = CardRegistry::with_all_cards();
@@ -153,14 +147,11 @@ fn bug_t_rolling_temblor_pushes_damaged_by() {
 /// means "any creature, player, planeswalker, or battle". A
 /// planeswalker should always be a legal target for these spells.
 ///
-/// Failure mode: `engine.rs:1378-1393` (the cast-time arm) and
-/// `engine.rs:1890+` (the activated-ability arm) both filter via
+/// Failure mode: `engine.rs` (the cast-time arm) and
+/// `engine.rs+` (the activated-ability arm) both filter via
 /// `obj.power.is_some()`. Garruk Relentless has `power = None` in the
 /// registry, so the filter drops him. The "any target" prompt only
 /// lists creatures + players.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BQ is fixed.
 #[test]
 fn bug_bq_brimstone_volley_can_target_planeswalker() {
     let registry = CardRegistry::with_all_cards();
@@ -211,16 +202,13 @@ fn bug_bq_brimstone_volley_can_target_planeswalker() {
 /// Oracle (Pitchburn Devils): "When this creature dies, it deals 3
 /// damage to any target."
 ///
-/// Failure mode: `cards/helpers.rs:182-187` does
+/// Failure mode: `cards/helpers.rs` does
 /// `let mut targets = creature_targets(state); for player in
 /// &state.players { ... }` and `creature_targets` filters with
 /// `o.power.is_some()`. Planeswalkers are dropped. Pitchburn Devils'
-/// `on_dies` (at `pitchburn_devils.rs:37`) calls `any_targets(state)`
+/// `on_dies` (at `pitchburn_devils.rs`) calls `any_targets(state)`
 /// and feeds the result into `present_target_choice` — the
 /// `awaiting_action`'s options end up missing the planeswalker.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BZ is fixed.
 #[test]
 fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -270,13 +258,13 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
 /// Olivia is pointed at a planeswalker, the code writes
 /// `damage_marked` instead of decrementing the planeswalker's
 /// loyalty counters. The central helper at
-/// `engine.rs:2854-2877` handles the planeswalker branch.
+/// `engine.rs` handles the planeswalker branch.
 ///
 /// Oracle (Olivia Voldaren, first ability): "{1}{R}: This creature
 /// deals 1 damage to another target creature. That creature becomes
 /// a Vampire in addition to its other types."
 ///
-/// Failure mode: `olivia_voldaren.rs:104-106` inline-writes
+/// Failure mode: `olivia_voldaren.rs` inline-writes
 /// `obj.damage_marked += 1; obj.damaged_by.push(object_id);` without
 /// checking whether the target is a planeswalker. We force the
 /// issue by manually calling `on_activate_ability` with a
@@ -285,9 +273,6 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
 /// planeswalker (Bug BQ), the engine has no defense-in-depth at the
 /// handler level. After firing, Garruk's `damage_marked` should be
 /// 0 and his loyalty counters should be 1 less than before.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BR is fixed.
 #[test]
 fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
     let registry = CardRegistry::with_all_cards();

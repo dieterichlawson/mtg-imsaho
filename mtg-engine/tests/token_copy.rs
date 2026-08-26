@@ -44,17 +44,14 @@ use mtg_engine::types::*;
 /// Oracle (Cackling Counterpart): "Create a token that's a copy of
 /// target creature you control."
 ///
-/// Failure mode: `state.rs:432-447` (`create_token_copy`) creates the
+/// Failure mode: `state.rs` (`create_token_copy`) creates the
 /// token via `create_token_with_subtypes` (which always sets
 /// `is_legendary: false`), then patches `obj.card_id`. It never sets
 /// `obj.is_legendary` from `card_data.supertypes`. SBA's legend-rule
-/// loop (`sba.rs:248-269`) walks `is_legendary && obj.name` matches
+/// loop (`sba.rs`) walks `is_legendary && obj.name` matches
 /// — neither the source Olivia nor the token-copy Olivia gets
 /// flagged because the token's `is_legendary = false`, so the SBA
 /// finds zero pairs and lets both stay.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 0F-002 is fixed.
 #[test]
 fn bug_0f_002_token_copy_of_legendary_creature_is_legendary() {
     let registry = CardRegistry::with_all_cards();
@@ -91,9 +88,9 @@ fn bug_0f_002_token_copy_of_legendary_creature_is_legendary() {
 /// target creature with the same name as this creature.'" (CR 614.1d
 /// "enter as a copy" — replacement, not trigger.)
 ///
-/// Failure mode: `evil_twin.rs:43-61` builds an `EntersBattlefield`
+/// Failure mode: `evil_twin.rs` builds an `EntersBattlefield`
 /// trigger that calls `present_optional_target_choice`. The priority
-/// loop at `engine.rs:4085-4096` runs SBA *before* `collect_triggers`
+/// loop at `engine.rs` runs SBA *before* `collect_triggers`
 /// pushes the ETB trigger onto the stack, and SBA 704.5f kills any
 /// creature with toughness ≤ 0 — including a freshly entered 0/0
 /// Evil Twin. By the time the ETB trigger resolves, Evil Twin is
@@ -102,9 +99,6 @@ fn bug_0f_002_token_copy_of_legendary_creature_is_legendary() {
 /// We put Evil Twin onto the battlefield in its native 0/0 form (the
 /// state right after entering, before triggers fire) and run SBA. The
 /// fix should make Evil Twin survive SBA so its copy effect can apply.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BJ is fixed.
 #[test]
 fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
     let registry = CardRegistry::with_all_cards();
@@ -148,7 +142,7 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
 /// Oracle (Cackling Counterpart): "Create a token that's a copy of
 /// target creature you control."
 ///
-/// Failure mode: `state.rs:432-447` calls `create_token_with_subtypes`
+/// Failure mode: `state.rs` calls `create_token_with_subtypes`
 /// (which generates primary + extras under Parallel Lives), then
 /// patches ONLY the returned primary's `card_id`. The extras stay at
 /// `CardId(0)`. `registry.get(CardId(0))` returns None, so the
@@ -159,9 +153,6 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
 /// Splinterfright, then look at all Splinterfright-named tokens on
 /// the battlefield. Every token copy should have the source's
 /// `card_id` patched — but only the primary does.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 0F-001 is fixed.
 #[test]
 fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
     let registry = CardRegistry::with_all_cards();
@@ -219,14 +210,11 @@ fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
 /// Oracle (Army of the Damned): "Create thirteen **tapped** 2/2
 /// black Zombie creature tokens."
 ///
-/// Failure mode: `army_of_the_damned.rs:41-56` creates each token,
+/// Failure mode: `army_of_the_damned.rs` creates each token,
 /// receives the primary id, and does `obj.tapped = true;`. With
 /// Parallel Lives in play, the helper creates two copies per
 /// iteration but only returns the primary, so 13 tokens are tapped
 /// and 13 are untapped (instead of the expected 26 tapped).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 4D-001 is fixed.
 #[test]
 fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
     let registry = CardRegistry::with_all_cards();
@@ -273,7 +261,7 @@ fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
 /// Per Scryfall ruling: "The Angel token will be attacking the same
 /// player or planeswalker that Geist of Saint Traft is attacking."
 ///
-/// Failure mode: `geist_of_saint_traft.rs:74-78` reads
+/// Failure mode: `geist_of_saint_traft.rs` reads
 /// `state.opponent(controller)` instead of
 /// `state.combat.as_ref().and_then(|c| c.attackers.get(&self_id).copied())`.
 /// We exercise the bug by running the trigger with Geist's combat
@@ -284,13 +272,6 @@ fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
 /// wrong. The assertion enforces the shape of the fix (read from
 /// `combat.attackers`) — a test that would catch the bug if the
 /// engine gains real multiplayer/planeswalker combat support.
-///
-/// This test asserts the EXPECTED CORRECT behavior. It passes today
-/// (1v1 coincidence) but will continue to hold once the handler reads
-/// from `combat.attackers` — so it doubles as a regression test
-/// guarding the shape of the fix. The bug entry itself is "latent in
-/// 1v1" so no test can observe it divergently; tracking as
-/// `not-reproduced` with an explicit assertion for the fix shape.
 #[test]
 fn bug_by_geist_angel_token_defender_matches_geist() {
     use mtg_engine::state::CombatState;

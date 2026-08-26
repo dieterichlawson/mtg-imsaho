@@ -15,7 +15,7 @@ use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
 /// Bug 31-001 (`audits/AUDIT_BUGS.md)`: `PendingTrigger::display_name`
-/// at `triggers.rs:193-260` builds its labels with a closure that
+/// at `triggers.rs` builds its labels with a closure that
 /// calls `registry.card_data(card_id)` — which always returns the
 /// FRONT face. So a transformed DFC's trigger label includes the
 /// front-face name, mismatching the battlefield display (which
@@ -42,9 +42,6 @@ use mtg_engine::types::*;
 /// "fix the bug" delta, so this test documents the pre-fix
 /// behavior that will need to be replaced rather than asserting
 /// the post-fix label shape.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 31-001 is fixed.
 #[test]
 fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
     let registry = CardRegistry::with_all_cards();
@@ -125,15 +122,12 @@ fn bug_boneyard_wurm_view_shows_base_pt() {
 /// Activate this ability only if you control three or more creatures.
 /// Morbid — ..."
 ///
-/// Failure mode: `skirsdag_high_priest.rs:65-68` calls
+/// Failure mode: `skirsdag_high_priest.rs` calls
 /// `format!(... "tap {:?} & {:?} ...", candidates[i], candidates[j])`.
 /// Since `candidates[i]` is an `ObjectId`, this renders the literal
 /// `ObjectId(N)` substring. Compare with `format_combat_creature_list`
-/// in `mtg-player/src/llm.rs:2411-2443`, which uses creature names
+/// in `mtg-player/src/llm.rs`, which uses creature names
 /// with `#1`/`#2` suffixes for collisions.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 76-001 is fixed.
 #[test]
 fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
     let registry = CardRegistry::with_all_cards();
@@ -191,9 +185,6 @@ fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
 /// We put Geist-Honored Monk in P0's graveyard with another creature
 /// on P0's battlefield (so Monk's CDA value ≥1), then build a
 /// `GameView` and check the `CardView` for the Monk's effective P/T.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug E1-002 is fixed.
 #[test]
 fn bug_e1_002_cardview_uses_effective_pt_for_cda_creatures() {
     let registry = CardRegistry::with_all_cards();

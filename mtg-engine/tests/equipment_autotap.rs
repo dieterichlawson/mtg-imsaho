@@ -499,7 +499,7 @@ fn equip_can_reattach_via_autotap() {
 // Bug AJ regression: equipment equip-ability must appear exactly once
 // in legal_actions, even when the equipment is already attached to a
 // creature. The engine's attached-iteration loop in legal_actions
-// (engine.rs:551-559) calls each attached object's `activated_abilities`
+// (engine.rs) calls each attached object's `activated_abilities`
 // with the *attached creature's* object_id; equipment cards must gate
 // on `power.is_none()` or they will return their equip ability for the
 // creature query too, producing a duplicate Action::ActivateAbility

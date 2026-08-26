@@ -31,9 +31,9 @@ use mtg_engine::types::*;
 /// Oracle (Devil's Play): "Devil's Play deals X damage to any target.
 /// Flashback {X}{R}{R}{R}."
 ///
-/// Failure mode: the normal-cast path at `engine.rs:849-877` has
+/// Failure mode: the normal-cast path at `engine.rs` has
 /// explicit X handling ("strip X from cost, tap all mana sources").
-/// The flashback path at `engine.rs:1121` calls
+/// The flashback path at `engine.rs` calls
 /// `mana::compute_autotap(fb_cost, ...)` directly without stripping
 /// X. `compute_autotap` early-returns `None` for X-cost, the caller
 /// `continue`s, and no flashback action is emitted — even when the
@@ -43,9 +43,6 @@ use mtg_engine::types::*;
 /// Mountains (enough for X=4 flashback). The legal-actions list
 /// should include a flashback cast of Devil's Play. Today it
 /// doesn't.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug I is fixed.
 #[test]
 fn bug_i_devils_play_flashback_appears_in_legal_actions() {
     let registry = CardRegistry::with_all_cards();
@@ -100,7 +97,7 @@ fn bug_i_devils_play_flashback_appears_in_legal_actions() {
 /// Oracle (Boneyard Wurm): "Boneyard Wurm's power and toughness are
 /// each equal to the number of creature cards in your graveyard."
 ///
-/// Failure mode: `engine.rs:2119-2152` builds
+/// Failure mode: `engine.rs` builds
 /// `exile_candidates: Vec<(ObjectId, i32)>` from `o.power.unwrap_or(0)`.
 /// For a graveyard containing only Boneyard Wurm (base power 0),
 /// `exiled_power` is stored as 0 — so Corpse Lunge's `on_resolve`
@@ -110,9 +107,6 @@ fn bug_i_devils_play_flashback_appears_in_legal_actions() {
 /// We put a Boneyard Wurm as the only creature in P0's graveyard
 /// (effective power 1, since the Wurm counts itself), cast Corpse
 /// Lunge at a P1 creature, and check the damage dealt.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 17-001 is fixed.
 #[test]
 fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
     use mtg_engine::actions::Target;

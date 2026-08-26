@@ -104,7 +104,7 @@ fn enters_with_correct_counter_count() {
 /// still in the graveyard zone (it hasn't fully entered yet) and the
 /// "Zombie cards in your graveyard" count includes the Horde itself.
 ///
-/// Failure mode: `unbreathing_horde.rs:94-103` runs the
+/// Failure mode: `unbreathing_horde.rs` runs the
 /// `add_zombie_counters` helper from the `on_enter_battlefield`
 /// handler — i.e. AFTER the move to battlefield. By that point,
 /// `count_zombies_in_graveyard` no longer sees the Horde (it's on
@@ -116,9 +116,6 @@ fn enters_with_correct_counter_count() {
 /// reanimation), then fire the ETB handler. The fix should give the
 /// Horde three +1/+1 counters (2 other Zombies + the Horde itself);
 /// the bug gives it only two.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AC is fixed.
 #[test]
 fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
     let registry = CardRegistry::with_all_cards();

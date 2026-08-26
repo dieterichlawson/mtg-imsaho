@@ -85,7 +85,7 @@ fn choose_object(
 /// your graveyard: Create a 1/1 white Spirit creature token with
 /// flying."
 ///
-/// Failure mode: `moorland_haunt.rs:85-90` does
+/// Failure mode: `moorland_haunt.rs` does
 /// `state.objects_in_zone(Graveyard, controller).iter().filter(...).map(o.id).next()`
 /// — it picks the first matching creature deterministically and
 /// exiles it without ever asking the player. With multiple creatures
@@ -96,9 +96,6 @@ fn choose_object(
 /// We put two distinct creatures into P0's graveyard, fire Moorland
 /// Haunt's activation directly, and assert that NO creature has been
 /// exiled yet — the fix should set up an awaiting choice instead.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug D is fixed.
 /// Moorland Haunt: "{1}{W}{U}, {T}, Exile a creature card from your graveyard:
 /// Create a 1/1 white Spirit creature token with flying." Which card is exiled
 /// is the player's call whenever more than one is eligible.
@@ -146,7 +143,7 @@ fn moorland_haunt_offers_every_graveyard_creature_to_exile() {
 /// Oracle (Caravan Vigil): "Search your library for a basic land card,
 /// reveal it, put it into your hand, then shuffle. ..."
 ///
-/// Failure mode: `caravan_vigil.rs:39-50` calls
+/// Failure mode: `caravan_vigil.rs` calls
 /// `library_order.iter().find(|&id| <is basic land>)`. The first
 /// matching basic in library order is the one that lands in hand,
 /// regardless of which colour the player wants. A B/R deck splashing
@@ -157,9 +154,6 @@ fn moorland_haunt_offers_every_graveyard_creature_to_exile() {
 /// resolve Caravan Vigil. The bug auto-picks the Forest. The fix
 /// should pause for a player choice instead, so neither basic land
 /// has moved to hand yet when `on_resolve` returns.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug P is fixed.
 /// Caravan Vigil: "Search your library for a basic land card, reveal it, put it
 /// into your hand, then shuffle." Which basic to fetch is the player's decision
 /// — it decides which colour the deck can cast next turn.
@@ -201,7 +195,7 @@ fn caravan_vigil_offers_every_basic_land_in_the_library() {
         "the Forest stays in the library");
 }
 
-/// Bug W (`audits/AUDIT_BUGS.md)`: The legend-rule SBA in `sba.rs:248-269`
+/// Bug W (`audits/AUDIT_BUGS.md)`: The legend-rule SBA in `sba.rs`
 /// auto-picks which copy to keep when a player controls two legendary
 /// permanents with the same name. CR 704.5j explicitly says the player
 /// chooses.
@@ -210,7 +204,7 @@ fn caravan_vigil_offers_every_basic_land_in_the_library() {
 /// permanents with the same name, that player chooses one of them, and
 /// the rest are put into their owners' graveyards."
 ///
-/// Failure mode: `sba.rs:251-269` builds a `legend_groups` `HashMap` and
+/// Failure mode: `sba.rs` builds a `legend_groups` `HashMap` and
 /// for each group of size > 1 keeps `ids[0]` and moves the rest to
 /// graveyard. There's no `awaiting_action` prompt and no player input
 /// — the kept permanent is whichever `HashMap` iteration surfaced
@@ -220,9 +214,6 @@ fn caravan_vigil_offers_every_basic_land_in_the_library() {
 /// reanimating one onto the existing one) and run SBA. The bug
 /// silently drops one of them; the fix should pause for a player
 /// choice with both Olivias still on the battlefield.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug W is fixed.
 /// CR 704.5j: with two legendary permanents of the same name, "that player
 /// chooses one of them, and the rest are put into their owners' graveyards".
 /// SBA used to keep `ids[0]` and bin the other without asking.
@@ -267,14 +258,11 @@ fn legend_rule_lets_the_player_choose_which_one_to_keep() {
 /// your library for a basic land card, reveal it, put it into your
 /// hand, then shuffle."
 ///
-/// Failure mode: `travelers_amulet.rs:57-65` does
+/// Failure mode: `travelers_amulet.rs` does
 /// `library_order.iter().find(|&&id| <is basic land>)` and auto-
 /// picks the first match. A B/R deck splashing green cannot
 /// specifically tutor a Forest if Mountain or Swamp comes first in
 /// library order.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 76-003 is fixed.
 /// Traveler's Amulet: "{1}, Sacrifice this artifact: Search your library for a
 /// basic land card, reveal it, put it into your hand, then shuffle." Same search
 /// shape as Caravan Vigil, same player decision.
@@ -320,7 +308,7 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
 /// Oracle (Nevermore): "As this enchantment enters, choose a nonland
 /// card name. Spells with the chosen name can't be cast."
 ///
-/// Failure mode: `nevermore.rs:42-70` iterates
+/// Failure mode: `nevermore.rs` iterates
 /// `state.objects.values()` filtering for `Zone::Hand` + opponent
 /// owner, extracts the first nonland name, and stores it as the
 /// blocked name. No player choice is presented.
@@ -330,9 +318,6 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
 /// — the bug's fingerprint. After the fix the handler should pause
 /// for a `ChooseCardName`-style choice (which doesn't exist yet, so
 /// we instead assert that the name wasn't leaked from opp's hand).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug E is fixed.
 /// Nevermore: "As Nevermore enters, choose a nonland card name. Spells with the
 /// chosen name can't be cast." The choice is the controller's, made from the
 /// card pool — not by peeking at the opponent's hand, which is both an
@@ -494,9 +479,6 @@ fn bug_f_stitched_drake_enumerates_exile_choices() {
 /// is that after resolving Memory's Journey with the wrong-player
 /// graveyard target, the P0-owned card is NOT moved to any library —
 /// the oracle restriction must prevent it.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug O is fixed.
 #[test]
 fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
     let registry = CardRegistry::with_all_cards();
@@ -542,8 +524,8 @@ fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
 /// Oracle (Kessig Wolf Run): "{X}{R}{G}, {T}: Target creature gets
 /// +X/+0 and gains trample until end of turn."
 ///
-/// Failure mode: `engine.rs:588-599` (`legal_actions` for activated
-/// abilities) and `engine.rs:2288-2305` (apply path) treat the X-cost
+/// Failure mode: `engine.rs` (`legal_actions` for activated
+/// abilities) and `engine.rs` (apply path) treat the X-cost
 /// ability as a single entry. There's no `X` dimension in
 /// `Action::ActivateAbility`, and the only way to set X is to
 /// pre-tap lands into the pool. The player can't express "I want
@@ -553,9 +535,6 @@ fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
 /// there should be multiple distinct `ActivateAbility` entries (one
 /// per X) — or equivalently a follow-up X-selection prompt. Today
 /// there's only one entry.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug U is fixed.
 #[test]
 fn bug_u_kessig_wolf_run_enumerates_x_choices() {
     let registry = CardRegistry::with_all_cards();
@@ -623,9 +602,6 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
 /// activate the Amulet, and check that the remaining 20 cards are
 /// not in the original insertion order. With 20 cards the probability
 /// of a random shuffle reproducing the same order is 1/20! ≈ 4e-19.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BF is fixed.
 #[test]
 fn bug_bf_travelers_amulet_shuffles_library_after_search() {
     let registry = CardRegistry::with_all_cards();

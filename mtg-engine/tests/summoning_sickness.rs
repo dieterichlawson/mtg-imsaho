@@ -148,8 +148,6 @@ fn bug_summoning_sickness_not_enforced_for_tap_abilities() {
         matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest)
     });
 
-    // BUG: This assertion should pass (ability should NOT be available)
-    // but currently fails because engine doesn't check summoning sickness for tap abilities
     assert!(!has_priest_ability,
         "Priest with summoning sickness should NOT be able to activate {{T}} ability");
 }

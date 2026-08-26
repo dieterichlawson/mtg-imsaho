@@ -58,9 +58,6 @@ use mtg_engine::types::*;
 /// states in a loop and run the check multiple times to defeat the
 /// flakiness — a correct implementation returns the same (negative)
 /// answer every time, a buggy one flips roughly half the time.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 99-003 is fixed.
 #[test]
 fn bug_99_003_daybreak_ranger_no_cross_contamination() {
     let registry = CardRegistry::with_all_cards();
@@ -123,17 +120,14 @@ fn bug_99_003_daybreak_ranger_no_cross_contamination() {
 /// moment loyalty hit ≤2, so the trigger should have been queued
 /// before the zero-loyalty SBA ran.
 ///
-/// Failure mode: `sba.rs:184-210` moves planeswalkers with 0
+/// Failure mode: `sba.rs` moves planeswalkers with 0
 /// loyalty to graveyard in the same iteration, BEFORE the state
-/// trigger check at `sba.rs:212+`. If damage takes Garruk from
+/// trigger check at `sba.rs+`. If damage takes Garruk from
 /// 3 → 0 directly, he dies without transforming.
 ///
 /// We put Garruk on the battlefield with 3 loyalty counters, strip
 /// them, and run SBA. The fix should leave Garruk on the
 /// battlefield in his transformed (Garruk, the Veil-Cursed) form.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BE is fixed.
 #[test]
 fn bug_be_garruk_transforms_before_zero_loyalty_death() {
     let registry = CardRegistry::with_all_cards();

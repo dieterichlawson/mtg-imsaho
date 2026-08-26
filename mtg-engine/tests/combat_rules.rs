@@ -35,7 +35,7 @@ use std::collections::HashMap;
 /// creatures, the attacking player may divide its combat damage any
 /// way they choose among those blockers."
 ///
-/// Failure mode: `combat.rs:289-293` hard-codes "assign all
+/// Failure mode: `combat.rs` hard-codes "assign all
 /// remaining power to the current blocker for non-trample
 /// attackers", then `remaining_power = 0` for every subsequent
 /// blocker.
@@ -44,9 +44,6 @@ use std::collections::HashMap;
 /// blockers, run `deal_combat_damage`, and assert that both
 /// blockers die (since the attacker has enough power to kill both
 /// with optimal distribution).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 17-005 is fixed.
 #[test]
 fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
     use mtg_engine::state::CombatState;
@@ -97,7 +94,7 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
 /// Oracle (Furor of the Bitten): "Enchanted creature attacks each
 /// combat if able."
 ///
-/// Failure mode: `engine.rs:2381-2407` enumerates forced attackers,
+/// Failure mode: `engine.rs` enumerates forced attackers,
 /// filtering only Defender / tapped / summoning-sick / already-
 /// attacking. It does NOT call `state.can_attack`, which is the
 /// function that consults `PreventAttack` / `ConditionalPreventAttack`
@@ -109,9 +106,6 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
 /// AND Bonds of Faith (`ConditionalPreventAttack`) attached. We submit
 /// an empty `DeclareAttackers` action; the engine's forced-attack
 /// loop should NOT add the locked creature to `combat.attackers`.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BP is fixed.
 #[test]
 fn bug_bp_forced_attack_respects_cant_attack() {
     use mtg_engine::actions::Action;

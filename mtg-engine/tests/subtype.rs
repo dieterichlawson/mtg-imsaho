@@ -143,16 +143,13 @@ fn test_built_and_game_built_objects_agree_on_characteristics() {
 /// Oracle (Woodland Cemetery): "Woodland Cemetery enters tapped unless
 /// you control a Swamp or a Forest."
 ///
-/// Failure mode: `woodland_cemetery.rs:21-22` checks
+/// Failure mode: `woodland_cemetery.rs` checks
 /// `o.subtypes.iter().any(|s| s == "Swamp") || ...` against the instance
 /// `obj.subtypes` vector. Because of Bug BD, basic Swamps on the
 /// battlefield have `obj.subtypes = []` (their "Swamp" subtype lives in
 /// the registry). The check returns false, so Woodland Cemetery enters
 /// tapped even when a Swamp is in play. Hinterland Harbor is the
 /// counter-example that got this right by also consulting the registry.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AX is fixed.
 #[test]
 fn bug_ax_woodland_cemetery_untapped_with_swamp_in_play() {
     let registry = CardRegistry::with_all_cards();
@@ -195,15 +192,12 @@ fn bug_ax_woodland_cemetery_untapped_with_swamp_in_play() {
 /// Oracle (Slayer of the Wicked): "When Slayer of the Wicked enters the
 /// battlefield, you may destroy target Vampire, Werewolf, or Zombie."
 ///
-/// Failure mode: `slayer_of_the_wicked.rs:42-46` calls
+/// Failure mode: `slayer_of_the_wicked.rs` calls
 /// `registry.card_data(o.card_id)` and checks the registry's subtypes.
 /// Tokens are created with `card_id: CardId(0)` (a sentinel), so the
 /// registry lookup returns None and the filter rejects every token.
 /// Bloodline Keeper's 2/2 Vampire tokens, Endless Ranks zombies, and
 /// Moan of the Unhallowed zombies are all untargetable.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AT is fixed.
 #[test]
 fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -287,7 +281,7 @@ fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
 /// Oracle (Olivia Voldaren, second ability): "{3}{B}{B}: Gain control of
 /// target Vampire."
 ///
-/// Failure mode: `engine.rs:1808-1810` and `engine.rs:1944` both
+/// Failure mode: `engine.rs` and `engine.rs` both
 /// implement `HasSubtype` as `obj.subtypes.contains(subtype)`. Regular
 /// creatures cast from hand have `obj.subtypes = []` (Bug BD), so their
 /// subtypes live only in the registry. `matches_ability_target_filter`
@@ -297,9 +291,6 @@ fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
 ///
 /// This test goes through `engine::legal_actions` so it exercises the
 /// real activated-ability target-enumeration pipeline.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AY is fixed.
 #[test]
 fn bug_ay_olivia_vampire_steal_can_target_registry_vampire() {
     let registry = CardRegistry::with_all_cards();
@@ -356,9 +347,6 @@ fn bug_ay_olivia_vampire_steal_can_target_registry_vampire() {
 ///
 /// Oracle (Vampiric Fury): "Vampire creatures you control get +2/+0
 /// and gain first strike until end of turn."
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AT is fixed.
 #[test]
 fn bug_at_vampiric_fury_buffs_vampire_token() {
     let registry = CardRegistry::with_all_cards();
@@ -405,19 +393,16 @@ fn bug_at_vampiric_fury_buffs_vampire_token() {
 /// Vampire **in addition to its other types**. ..."
 /// Oracle (Gatstaf Shepherd front face): "Human Werewolf".
 ///
-/// Failure mode: `moonmist.rs:43-56` does
+/// Failure mode: `moonmist.rs` does
 /// `if !o.subtypes.is_empty() { o.subtypes.iter().any(|s| s == "Human") }`
 /// — when the instance vector is populated (e.g. by Olivia's bite, which
 /// only pushes "Vampire") it stops looking at the registry. Olivia's
-/// hook (`olivia_voldaren.rs:107-110`) `obj.subtypes.push("Vampire")`
+/// hook (`olivia_voldaren.rs`) `obj.subtypes.push("Vampire")`
 /// onto an empty vector, so a bitten Gatstaf Shepherd has
 /// `obj.subtypes = ["Vampire"]`. Moonmist sees no "Human", concludes
 /// it isn't a Human, and skips the transform — even though oracle text
 /// for both cards says the creature is still a Human in addition to
 /// being a Vampire.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AU is fixed.
 #[test]
 fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
     let registry = CardRegistry::with_all_cards();
@@ -433,7 +418,7 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
 
     // Simulate the Olivia bite: push "Vampire" onto the empty
     // obj.subtypes vector. This is exactly what Olivia's
-    // `on_activate_ability` does at olivia_voldaren.rs:108-110.
+    // `on_activate_ability` does at olivia_voldaren.rs.
     state
         .get_object_mut(shepherd)
         .unwrap()
@@ -480,15 +465,12 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
 ///
 /// Oracle (Urgent Exorcism): "Destroy target Spirit or enchantment."
 ///
-/// Failure mode: `urgent_exorcism.rs:33-49` calls
+/// Failure mode: `urgent_exorcism.rs` calls
 /// `registry.card_data(obj.card_id)` and asks the registry whether the
 /// object is a Spirit or enchantment. Tokens have `card_id: CardId(0)`,
 /// so the registry lookup returns None, and the filter rejects every
 /// token. The fix is the Bug AT pattern: also consult the instance
 /// `obj.subtypes` and `obj.card_types`.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 31-003 is fixed.
 #[test]
 fn bug_31_003_urgent_exorcism_targets_spirit_token() {
     let registry = CardRegistry::with_all_cards();
@@ -545,15 +527,12 @@ fn bug_31_003_urgent_exorcism_targets_spirit_token() {
 /// Oracle (Tormented Pariah front face): "Human Warrior Werewolf".
 /// Oracle (Rampaging Werewolf back face): "Werewolf" (no Human subtype).
 ///
-/// Failure mode: `avacynian_priest.rs:52-69` checks
+/// Failure mode: `avacynian_priest.rs` checks
 /// `registry.card_data(o.card_id).subtypes.contains("Human") || o.subtypes.contains("Human")`.
 /// For a transformed Tormented Pariah, `obj.subtypes = ["Werewolf"]`
 /// (back face — set by `apply_transform`) but `registry.card_data(...)`
 /// returns the front face, which still says Human. So `is_human = true`
 /// and the Pariah is rejected — even though its live face is non-Human.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 31-002 is fixed.
 #[test]
 fn bug_31_002_avacynian_priest_can_tap_transformed_werewolf() {
     let registry = CardRegistry::with_all_cards();
@@ -606,16 +585,13 @@ fn bug_31_002_avacynian_priest_can_tap_transformed_werewolf() {
 /// +1/+1 counters on it instead."
 /// Oracle (Tormented Pariah / Rampaging Werewolf): see Bug 31-002 above.
 ///
-/// Failure mode: `elder_cathar.rs:50-58` checks
+/// Failure mode: `elder_cathar.rs` checks
 /// `o.subtypes.iter().any(|s| s == "Human") || registry.card_data(o.card_id).subtypes.iter().any(|s| s == "Human")`.
 /// For a transformed Tormented Pariah, `obj.subtypes = ["Werewolf"]`
 /// (no Human) but the registry returns the front face which DOES have
 /// Human, so `is_human = true` and the bonus fires. The transformed
 /// werewolf gets two counters when oracle text says it should only get
 /// one (because its live face is not a Human).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 31-004 is fixed.
 #[test]
 fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
     let registry = CardRegistry::with_all_cards();
@@ -696,7 +672,7 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
 /// Oracle (Insectile Aberration, back face): "Creature — Insect" (the
 /// front-face Human and Wizard subtypes are gone).
 ///
-/// Failure mode: `delver_of_secrets.rs:146-149` does
+/// Failure mode: `delver_of_secrets.rs` does
 /// ```
 /// obj.is_transformed = true;
 /// obj.name = "Insectile Aberration".into();
@@ -713,9 +689,6 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
 /// We simulate the post-Bug-BD state by writing the front-face subtypes
 /// onto `obj.subtypes` directly, then driving Delver's "yes, reveal"
 /// path with an instant on top of the library so the transform fires.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 99-002 is fixed.
 #[test]
 fn bug_99_002_delver_transform_updates_obj_subtypes() {
     let registry = CardRegistry::with_all_cards();
@@ -766,7 +739,7 @@ fn bug_99_002_delver_transform_updates_obj_subtypes() {
 /// Oracle (Cloistered Youth front face): "Human" subtype.
 /// Oracle (Unholy Fiend back face): "Horror" subtype (Human dropped).
 ///
-/// Failure mode: `combat.rs:402-415` calls `registry.card_data()`
+/// Failure mode: `combat.rs` calls `registry.card_data()`
 /// which always returns front-face data. For a transformed Cloistered
 /// Youth, `obj.subtypes = ["Horror"]` (back face) and
 /// `registry.card_data().subtypes = ["Human"]` (front face). The
@@ -774,9 +747,6 @@ fn bug_99_002_delver_transform_updates_obj_subtypes() {
 ///
 /// We transform Cloistered Youth via `apply_transform`, then call
 /// `combat::get_subtypes` and assert "Human" is NOT in the result.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AO is fixed.
 #[test]
 fn bug_ao_get_subtypes_excludes_dropped_front_face_subtype() {
     let registry = CardRegistry::with_all_cards();

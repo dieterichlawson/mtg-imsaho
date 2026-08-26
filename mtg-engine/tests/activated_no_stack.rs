@@ -16,6 +16,18 @@ fn setup_skirsdag(state: &mut GameState, reg: &CardRegistry) -> (ObjectId, Objec
     (priest, creature1, creature2)
 }
 
+/// Resolve the ability sitting on top of the stack.
+///
+/// Every test below activates an ability and checks its effect has *not*
+/// happened yet. On its own that passes for an ability that is simply broken,
+/// so each one now resolves the stack entry afterwards and checks the effect
+/// does land — "not yet" only means something next to "and now".
+fn resolve_the_ability(state: &mut GameState, reg: &CardRegistry) {
+    assert!(!state.stack.is_empty(),
+        "CR 602.2a: activating should have put the ability on the stack");
+    mtg_engine::stack::resolve_top_of_stack(state, reg);
+}
+
 fn add_library_cards(state: &mut GameState, player: PlayerId, count: usize) {
     let idx = player.0 as usize;
     for _ in 0..count {
@@ -42,6 +54,12 @@ fn test_back_from_the_brink_can_be_responded_to() {
         count_tokens_named(&state, "Unbreathing Horde"), 0,
         "CR 602.2a: activated ability should be on the stack; token created only on resolution"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(
+        count_tokens_named(&state, "Unbreathing Horde"), 1,
+        "and the token does arrive once the ability resolves"
+    );
 }
 
 // CR 602.2a: Kessig Wolf Run's pump ability should go on the stack before
@@ -65,6 +83,14 @@ fn test_kessig_wolf_run_pump_can_be_responded_to() {
         state.effective_power(target, &reg).unwrap(), base_power,
         "CR 602.2a: Kessig Wolf Run pump should not apply until ability resolves from stack"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(
+        state.effective_power(target, &reg).unwrap(), base_power + 3,
+        "and the +3/+0 does apply once the ability resolves"
+    );
+    assert!(state.has_keyword(target, Keyword::Trample, &reg),
+        "along with the trample it grants");
 }
 
 // CR 602.2a: Nephalia Drownyard's mill ability should go on the stack.
@@ -86,6 +112,12 @@ fn test_nephalia_drownyard_mill_can_be_responded_to() {
         state.players[1].library_order.len(), lib_before,
         "CR 602.2a: Nephalia Drownyard mill should not occur until ability resolves from stack"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(
+        state.players[1].library_order.len(), lib_before - 3,
+        "and the mill does happen once the ability resolves — Drownyard mills three"
+    );
 }
 
 // CR 602.2a: Tree of Redemption's exchange ability should go on the stack.
@@ -106,6 +138,12 @@ fn test_tree_of_redemption_exchange_can_be_responded_to() {
         state.players[0].life, life_before,
         "CR 602.2a: Tree of Redemption exchange should not occur until ability resolves from stack"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(
+        state.players[0].life, 13,
+        "and the exchange does happen once the ability resolves — life becomes the Tree's toughness"
+    );
 }
 
 // CR 602.2a: Full Moon's Rise sacrifice-and-regenerate ability should go on
@@ -125,6 +163,12 @@ fn full_moons_rise_regenerate_can_be_responded_to() {
     assert_eq!(
         state.get_object(werewolf).unwrap().regeneration_shields, 0,
         "CR 602.2a: regeneration shields should not apply until ability resolves from stack"
+    );
+
+    resolve_the_ability(&mut state, &reg);
+    assert!(
+        state.get_object(werewolf).unwrap().regeneration_shields > 0,
+        "and the shield does go up once the ability resolves"
     );
 }
 
@@ -191,6 +235,12 @@ fn skirsdag_ability_should_use_stack() {
         count_tokens_named(&state, "Demon"), 0,
         "CR 602.2a: Skirsdag High Priest should not create Demon token until ability resolves"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(
+        count_tokens_named(&state, "Demon"), 1,
+        "and the Demon does arrive once the ability resolves"
+    );
 }
 
 // CR 602.2a: the two creatures tapped as part of Skirsdag High Priest's
@@ -220,6 +270,12 @@ fn skirsdag_tap_cost_paid_before_stack() {
         count_tokens_named(&state, "Demon"), 0,
         "CR 602.2a: Demon token should not be created until ability resolves from stack"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(count_tokens_named(&state, "Demon"), 1,
+        "and the Demon does arrive once the ability resolves");
+    assert!(state.get_object(creature1).unwrap().tapped,
+        "the creatures tapped as a cost stay tapped");
 }
 
 // CR 302.6: the {T} restriction (summoning sickness) applies only to the
@@ -248,4 +304,8 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
         count_tokens_named(&state, "Demon"), 0,
         "CR 602.2a: Demon token should not exist until ability resolves from stack"
     );
+
+    resolve_the_ability(&mut state, &reg);
+    assert_eq!(count_tokens_named(&state, "Demon"), 1,
+        "and the Demon does arrive once the ability resolves");
 }

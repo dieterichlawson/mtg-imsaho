@@ -113,7 +113,7 @@ fn removing_more_counters_than_present_does_not_underflow() {
 /// on this creature. Then if there are five or more hatchling
 /// counters on it, remove all of them and transform it."
 ///
-/// Failure mode: `ludevics_test_subject.rs:90-108` does
+/// Failure mode: `ludevics_test_subject.rs` does
 /// ```
 /// obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
 /// ```
@@ -126,9 +126,6 @@ fn removing_more_counters_than_present_does_not_underflow() {
 /// ability, `obj.card_state` should NOT contain a `hatchling_counters`
 /// key — the counter must live in the real counter pipeline so other
 /// effects can interact with it.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 76-002 is fixed.
 #[test]
 fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
     let registry = CardRegistry::with_all_cards();

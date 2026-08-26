@@ -50,9 +50,6 @@ use mtg_engine::types::*;
 /// `engine::can_be_targeted_by`. So Pitchburn Devils' controller is
 /// offered Lumberknot (an opponent's hexproof creature) as a damage
 /// target, even though CR 702.11b forbids it.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 17-003 is fixed.
 #[test]
 fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -99,9 +96,6 @@ fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
 ///
 /// Oracle (Crossway Vampire): "When this creature enters, target
 /// creature can't block this turn."
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 17-003 is fixed.
 #[test]
 fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -140,9 +134,6 @@ fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
 ///
 /// Oracle (Fiend Hunter): "When this creature enters, you may exile
 /// another target creature."
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 17-003 is fixed.
 #[test]
 fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -181,15 +172,12 @@ fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
 /// counter on this creature."
 /// Oracle (Lumberknot): "Hexproof".
 ///
-/// Failure mode: `grimgrin_corpse_born.rs:100-105` builds the target
+/// Failure mode: `grimgrin_corpse_born.rs` builds the target
 /// list as `objects_in_zone(Battlefield, defender) | filter(power.is_some) |
 /// filter(!has_protection_from)`. There's no `has_keyword(Hexproof)`
 /// check, so an opponent's Lumberknot is offered as a destroy target
 /// even though hexproof should make it untargetable to Grimgrin's
 /// controller.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug E1-001 is fixed.
 #[test]
 fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -242,21 +230,18 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
 /// Oracle (Witchbane Orb): "You have hexproof. (You can't be the target
 /// of spells or abilities your opponents control, ...)"
 ///
-/// Failure mode: `falkenrath_noble.rs:62` builds the target list with
+/// Failure mode: `falkenrath_noble.rs` builds the target list with
 /// `state.players.iter().map(|p| Target::Player(p.id))`. No filter on
 /// `state.player_has_hexproof`. The Bitterheart Witch handler shows the
-/// correct shape (`bitterheart_witch.rs:14-17`).
+/// correct shape (`bitterheart_witch.rs`).
 ///
 /// NOTE: the same missing `player_has_hexproof` filter exists in
-/// Bloodgift Demon (`bloodgift_demon.rs:48-51`),
-/// Selhoff Occultist (`selhoff_occultist.rs:57-59`), and
-/// Rage Thrower (`rage_thrower.rs:44-47`). All four cards use the
+/// Bloodgift Demon (`bloodgift_demon.rs`),
+/// Selhoff Occultist (`selhoff_occultist.rs`), and
+/// Rage Thrower (`rage_thrower.rs`). All four cards use the
 /// identical `state.players.iter()` pattern with no hexproof check.
 /// One test covers the shared defect; the other three cards need
 /// the same one-line fix.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 0F-003 is fixed.
 #[test]
 fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -306,7 +291,7 @@ fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
 /// Oracle (Into the Maw of Hell): "Destroy target land. Into the Maw of
 /// Hell deals 13 damage to target creature."
 ///
-/// Failure mode: `engine.rs:1496` and `engine.rs:1609`
+/// Failure mode: `engine.rs` and `engine.rs`
 /// (`generate_cast_actions_with_targets` and `valid_targets_for_req`'s
 /// `PermanentWithFilter(_)` arms) discard the inner filter — they
 /// return every battlefield permanent and rely on the card's
@@ -318,9 +303,6 @@ fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
 /// opponent's Makeshift Mauler; the prompt offered Mauler as a
 /// first-target option, the model picked it, and the engine then dealt
 /// 13 damage to the model's *own* Rakish Heir.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug H is fixed.
 #[test]
 fn bug_h_maw_of_hell_first_target_must_be_a_land() {
     let registry = CardRegistry::with_all_cards();
@@ -377,7 +359,7 @@ fn bug_h_maw_of_hell_first_target_must_be_a_land() {
 /// Oracle (Unburial Rites): "Return target creature card from your
 /// graveyard to the battlefield. Flashback {3}{W}."
 ///
-/// Failure mode: `engine.rs:1670-1683` (the `GraveyardCreature` arm of
+/// Failure mode: `engine.rs` (the `GraveyardCreature` arm of
 /// `valid_targets_for_req`) iterates every object whose `zone ==
 /// Graveyard`, irrespective of `obj.owner`. Unburial Rites doesn't
 /// override `is_valid_target` to add an owner filter, so opponent's
@@ -387,9 +369,6 @@ fn bug_h_maw_of_hell_first_target_must_be_a_land() {
 /// Audit log evidence: Seat 1 cast Unburial Rites at lines 30188-30189
 /// and the prompt offered Selfless Cathar / Avacynian Priest with no
 /// owner labels.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AD is fixed.
 #[test]
 fn bug_ad_unburial_rites_only_targets_casters_graveyard() {
     let registry = CardRegistry::with_all_cards();
@@ -439,7 +418,7 @@ fn bug_ad_unburial_rites_only_targets_casters_graveyard() {
 /// has both the old flashback cost and the new one. The card's
 /// controller may choose either cost to pay when casting it."
 ///
-/// Failure mode: `snapcaster_mage.rs:49-58` filters with
+/// Failure mode: `snapcaster_mage.rs` filters with
 /// `... && d.flashback_cost.is_none()`. Every printed-flashback
 /// instant/sorcery (Ancient Grudge, Forbidden Alchemy, Devil's Play,
 /// Burning Vengeance, etc.) is silently dropped from Snapcaster's
@@ -450,9 +429,6 @@ fn bug_ad_unburial_rites_only_targets_casters_graveyard() {
 /// Snapcaster's ETB. Snapcaster should record a temporary
 /// `GrantFlashback` effect on the Ancient Grudge object; today it
 /// silently drops the trigger because the eligible list is empty.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 9F-001 is fixed.
 #[test]
 fn bug_9f_001_snapcaster_can_grant_flashback_to_card_with_printed_flashback() {
     use mtg_engine::state::TemporaryEffect;
@@ -507,9 +483,6 @@ fn bug_9f_001_snapcaster_can_grant_flashback_to_card_with_printed_flashback() {
 /// enumeration in `generate_cast_actions_with_targets` then emits
 /// `(your, your)`, `(your, opp)`, `(opp, your)`, `(opp, opp)` pairs
 /// — none of which are filtered.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AW is fixed.
 #[test]
 fn bug_aw_prey_upon_rejects_two_of_your_own_creatures() {
     let registry = CardRegistry::with_all_cards();

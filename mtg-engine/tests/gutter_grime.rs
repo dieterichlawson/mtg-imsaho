@@ -211,7 +211,7 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
 /// control dies, put a slime counter on this enchantment, then create
 /// a green Ooze creature token..."
 ///
-/// Failure mode: `gutter_grime.rs:43-81`. The dispatcher correctly
+/// Failure mode: `gutter_grime.rs`. The dispatcher correctly
 /// queues the trigger, the controller filter passes, then
 /// `state.get_object(dead_id).map(|o| o.is_token).unwrap_or(false)`
 /// returns `false` for an already-cleaned-up token. The fix needs the
@@ -222,9 +222,6 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
 /// We simulate the post-cleanup state by passing a `dead_id` that's not
 /// in `state.objects` and observing whether Gutter Grime's slime
 /// counter was incremented.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug 99-001 is fixed.
 #[test]
 fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
     let registry = CardRegistry::with_all_cards();

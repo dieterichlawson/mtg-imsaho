@@ -38,15 +38,12 @@ use mtg_engine::types::*;
 /// Oracle (Rally the Peasants): "Creatures you control get +2/+0 until
 /// end of turn. Flashback {2}{R}."
 ///
-/// Failure mode: `rally_the_peasants.rs:30-51` collects creature ids
+/// Failure mode: `rally_the_peasants.rs` collects creature ids
 /// at resolution, then pushes one `TemporaryEffect::ModifyPT` per
 /// existing target into `state.until_end_of_turn`. The `effective_power`
 /// machinery only walks `until_end_of_turn` for matches against the
 /// queried object's id, so a creature entering after Rally resolved
 /// has no matching `ModifyPT` and doesn't get the +2/+0.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AP is fixed.
 #[test]
 fn bug_ap_rally_the_peasants_buffs_creatures_entering_later() {
     let registry = CardRegistry::with_all_cards();
@@ -89,10 +86,6 @@ fn bug_ap_rally_the_peasants_buffs_creatures_entering_later() {
 ///
 /// Oracle (Vampiric Fury): "Vampire creatures you control get +2/+0
 /// and gain first strike until end of turn."
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing once both Bug AP (snapshot) and
-/// Bug AT (registry-only filter) are fixed.
 #[test]
 fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
     let registry = CardRegistry::with_all_cards();
@@ -130,7 +123,7 @@ fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
 /// Oracle (Instigator Gang front face): "Attacking creatures you
 /// control get +1/+0."
 ///
-/// Failure mode: `instigator_gang.rs:89-110` runs in
+/// Failure mode: `instigator_gang.rs` runs in
 /// `on_any_creature_attacks` and writes a `ModifyPT { target,
 /// power_mod: 1, ... }` into `until_end_of_turn`. The effect is keyed
 /// to the attacker (not the source Instigator Gang), so the
@@ -143,9 +136,6 @@ fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
 /// graveyard. The bug means the attacker still reports the +1
 /// power; the fix should make the static ability evaluate live, so
 /// the bonus disappears once Instigator Gang is gone.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BK is fixed.
 #[test]
 fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
     use mtg_engine::state::TemporaryEffect;
@@ -202,15 +192,12 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
 /// Oracle (Spare from Evil): "Creatures you control gain protection
 /// from non-Human creatures until end of turn."
 ///
-/// Failure mode: `spare_from_evil.rs:36-55` does the same
+/// Failure mode: `spare_from_evil.rs` does the same
 /// snapshot-at-resolution shape as Rally the Peasants — collect
 /// creature ids, push one `GrantProtection` effect per target. A
 /// Mausoleum Guard death-trigger spirit that enters after Spare
 /// resolves has no `GrantProtection` entry, so `has_protection_from`
 /// returns false for a non-Human attacker targeting the spirit.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug AZ is fixed.
 #[test]
 fn bug_az_spare_from_evil_protects_creatures_entering_later() {
     let registry = CardRegistry::with_all_cards();
