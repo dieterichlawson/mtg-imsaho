@@ -26,8 +26,8 @@ fn sick_named(
     state: &mut mtg_engine::state::GameState,
     reg: &CardRegistry,
     name: &str,
-    owner: mtg_engine::ids::PlayerId,
-) -> mtg_engine::ids::ObjectId {
+    owner: PlayerId,
+) -> ObjectId {
     let id = named_permanent(state, reg, name, owner);
     state.get_object_mut(id).unwrap().summoning_sick = true;
     id
@@ -35,7 +35,7 @@ fn sick_named(
 
 /// Grant haste the way an effect does — `obj.keywords` is the *printed* set
 /// for objects with no registry face, not a place effects write to.
-fn grant_haste(state: &mut mtg_engine::state::GameState, id: mtg_engine::ids::ObjectId) {
+fn grant_haste(state: &mut mtg_engine::state::GameState, id: ObjectId) {
     state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
         target: id,
         keyword: Keyword::Haste,
@@ -45,7 +45,7 @@ fn grant_haste(state: &mut mtg_engine::state::GameState, id: mtg_engine::ids::Ob
 fn mana_ability_actions(
     state: &mtg_engine::state::GameState,
     reg: &CardRegistry,
-    object_id: mtg_engine::ids::ObjectId,
+    object_id: ObjectId,
 ) -> usize {
     mtg_engine::engine::legal_actions(state, reg)
         .actions
@@ -170,17 +170,11 @@ fn skirsdag_high_priest_with_haste_can_activate_while_summoning_sick() {
     named_permanent(&mut state, &reg, "Walking Corpse", P0);
     state.creature_died_this_turn = true;
 
-    let count = |state: &mtg_engine::state::GameState| {
-        mtg_engine::engine::legal_actions(state, &reg).actions.iter()
-            .filter(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest))
-            .count()
-    };
-
-    assert_eq!(count(&state), 0,
+    assert!(!offers_ability_of(&state, &reg, priest),
         "without haste a summoning-sick Priest cannot pay {{T}}");
 
     grant_haste(&mut state, priest);
-    assert!(count(&state) > 0,
+    assert!(offers_ability_of(&state, &reg, priest),
         "with haste the Priest can pay {{T}} the turn it arrives (CR 302.6)");
 }
 
@@ -202,60 +196,53 @@ fn a_tap_ability_cannot_fund_itself_from_its_own_mana_ability() {
     named_permanent(&mut state, &reg, "Forest", P0);
     named_permanent(&mut state, &reg, "Plains", P0);
 
-    let township_abilities = |state: &mtg_engine::state::GameState| {
-        mtg_engine::engine::legal_actions(state, &reg).actions.iter()
-            .filter(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == township))
-            .count()
-    };
-
-    assert_eq!(township_abilities(&state), 0,
+    assert!(!offers_ability_of(&state, &reg, township),
         "{{2}}{{G}}{{W}},{{T}} needs four other mana sources — the Township's own \
          {{T}}: Add {{C}} is unavailable because that tap pays the ability's {{T}} (CR 602.2h)");
 
     // A fourth land makes the cost genuinely payable.
     named_permanent(&mut state, &reg, "Plains", P0);
-    assert!(township_abilities(&state) > 0,
+    assert!(offers_ability_of(&state, &reg, township),
         "with four other lands the ability is payable");
 }
 
 /// The same rule for the other four ISD utility lands, which share the
 /// "{cost}, {T}:" over "{T}: Add {C}" shape.
+///
+/// Each row is run twice — one land short, then with that land added — because
+/// "the ability is not offered" is also what you get from the wrong *colours*
+/// of mana. Only the second half shows that the count was the limit and that
+/// the land's own {T} was the mana that did not close the gap.
 #[test]
 fn the_isd_utility_lands_do_not_fund_their_own_tap_abilities() {
     let reg = registry();
-    // (land, number of other lands that is one short of paying its cost)
-    for (name, one_short) in [
-        ("Kessig Wolf Run", 1),      // {1}{R}, {T}
-        ("Moorland Haunt", 2),       // {1}{W}{U}, {T}
-        ("Nephalia Drownyard", 2),   // {1}{U}{B}, {T}
-        ("Stensia Bloodhall", 4),    // {3}{B}{R}, {T}
-    ] {
+    // (land, the other lands that exactly pay its activation cost)
+    let lands: &[(&str, &[&str])] = &[
+        ("Kessig Wolf Run", &["Mountain", "Forest"]),                 // {X}{R}{G}, {T} at X=0
+        ("Nephalia Drownyard", &["Island", "Swamp", "Forest"]),       // {1}{U}{B}, {T}
+        ("Gavony Township", &["Forest", "Plains", "Island", "Swamp"]), // {2}{G}{W}, {T}
+        ("Stensia Bloodhall", &["Swamp", "Mountain", "Forest", "Island", "Plains"]), // {3}{B}{R}, {T}
+    ];
+
+    for &(name, exact) in lands {
+        // One short: every land but the last of the set that would pay for it.
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let land = named_permanent(&mut state, &reg, name, P0);
-        // Wastes-style filler: five basics of every color, so color is never
-        // the limiting factor — only the count is.
-        for _ in 0..one_short {
-            for basic in ["Plains", "Island", "Swamp", "Mountain", "Forest"] {
-                let b = named_permanent(&mut state, &reg, basic, P0);
-                state.get_object_mut(b).unwrap().tapped = true;
-            }
+        // Kessig Wolf Run targets a creature and Stensia Bloodhall a player, so
+        // give every row a creature — without one, "not offered" would be about
+        // the target rather than about the mana.
+        ready_creature(&mut state, P0, 2, 2);
+        for basic in &exact[..exact.len() - 1] {
+            named_permanent(&mut state, &reg, basic, P0);
         }
-        // Untap exactly `one_short` of them, one of each color in rotation.
-        let mut untapped = 0;
-        let ids: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
-            .iter().map(|o| o.id).filter(|&id| id != land).collect();
-        for id in ids {
-            if untapped >= one_short { break; }
-            state.get_object_mut(id).unwrap().tapped = false;
-            untapped += 1;
-        }
+        assert!(!offers_ability_of(&state, &reg, land),
+            "{name}: one mana short, and its own {{T}}: Add {{C}} must not close \
+             the gap — that tap is already paying the ability's {{T}} (CR 602.2h)");
 
-        // The land itself is untapped and could add {C} — but that tap is
-        // spoken for by the ability's own {T}.
-        let offered = mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
-            .filter(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == land))
-            .count();
-        assert_eq!(offered, 0,
-            "{name}: one mana short, and its own {{T}}: Add {{C}} must not close the gap");
+        // The missing land, and only that, makes it payable.
+        named_permanent(&mut state, &reg, exact[exact.len() - 1], P0);
+        assert!(offers_ability_of(&state, &reg, land),
+            "{name}: with all of {exact:?} untapped the cost is payable, so the \
+             assertion above was about the count and not about colours");
     }
 }
