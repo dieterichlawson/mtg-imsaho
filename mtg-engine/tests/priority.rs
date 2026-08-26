@@ -1,4 +1,5 @@
-//! Tests for priority passing, the stack, and action timing rules.
+//! Priority passing, the stack, and action timing — including that a spell
+//! cast through the real game loop resolves exactly once.
 
 mod common;
 
@@ -124,4 +125,40 @@ fn cannot_cast_with_wrong_color() {
     let actions = engine::legal_actions(&state, &registry);
     assert!(!actions.actions.iter().any(|a| matches!(a, Action::CastSpell { .. })),
         "Should not be able to cast GG with only red mana");
+}
+
+// -------------------------------------------------------------------------
+// One resolution per spell, through the real loop
+// -------------------------------------------------------------------------
+
+/// A spell cast through the game loop resolves once. The loop used to run
+/// `resolve_top_of_stack` on a clone it then threw away before resolving for
+/// real; a Lightning Bolt dealing 6 instead of 3 is what a second resolution
+/// would look like.
+#[test]
+fn a_spell_cast_through_the_game_loop_resolves_exactly_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.get_player_mut(P1).life = 10;
+
+    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
+    stock_library(&mut state, &reg, P0, 20);
+    stock_library(&mut state, &reg, P1, 20);
+
+    let mut cast = false;
+    let mut actions = 0;
+    engine::run_game_loop(&mut state, &reg, |_, player, _| {
+        actions += 1;
+        if actions > 30 {
+            return mtg_engine::actions::Action::Concede;
+        }
+        if player == P0 && !cast {
+            cast = true;
+            return cast_action(bolt, vec![mtg_engine::actions::Target::Player(P1)]);
+        }
+        mtg_engine::actions::Action::PassPriority
+    });
+
+    assert_eq!(state.get_player(P1).life, 7,
+        "10 less Lightning Bolt's 3 — 4 would mean it resolved twice");
 }

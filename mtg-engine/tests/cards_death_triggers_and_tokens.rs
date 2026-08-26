@@ -1,6 +1,6 @@
 //! Cards whose behaviour is a death trigger, a token, or an anthem over them.
 //!
-//! Cards covered (15), so this is greppable by name as well as by rule:
+//! Cards covered (16), so this is greppable by name as well as by rule:
 //!
 //! - Doomed Traveler
 //! - Elder Cathar
@@ -11,6 +11,7 @@
 //! - Mausoleum Guard
 //! - Midnight Haunting
 //! - Moan of the Unhallowed
+//! - Murder of Crows
 //! - Pitchburn Devils
 //! - Rage Thrower
 //! - Slayer of the Wicked
@@ -421,4 +422,120 @@ fn token_has_summoning_sickness() {
     let obj = state.get_object(token).unwrap();
     assert!(obj.summoning_sick,
         "Token should have summoning sickness on the turn it was created");
+}
+
+// -------------------------------------------------------------------------
+// Falkenrath Noble — a death-watch that sees every creature, its own included
+// -------------------------------------------------------------------------
+
+/// Falkenrath Noble SHOULD trigger when an opponent's creature dies.
+/// Oracle: "Whenever this creature or another creature dies" — any creature.
+#[test]
+fn falkenrath_noble_triggers_on_opponent_creature_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
+
+    // P1's creature dies.
+    let enemy = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(enemy).unwrap().damage_marked = 2;
+
+    let p0_life_before = state.get_player(P0).life;
+    let p1_life_before = state.get_player(P1).life;
+
+    check_state_based_actions(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    // Noble SHOULD trigger — "another creature dies" includes opponent's creatures.
+    assert_eq!(state.get_player(P0).life, p0_life_before + 1,
+        "Falkenrath Noble should gain 1 life when any creature dies");
+    assert_eq!(state.get_player(P1).life, p1_life_before - 1,
+        "Falkenrath Noble should drain opponent when any creature dies");
+}
+
+/// Falkenrath Noble SHOULD trigger when your own creature dies.
+#[test]
+fn falkenrath_noble_triggers_on_own_creature_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
+    let ally = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(ally).unwrap().damage_marked = 2;
+
+    let p0_life_before = state.get_player(P0).life;
+    let p1_life_before = state.get_player(P1).life;
+
+    check_state_based_actions(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, p0_life_before + 1,
+        "Falkenrath Noble should gain 1 life when your creature dies");
+    assert_eq!(state.get_player(P1).life, p1_life_before - 1,
+        "Falkenrath Noble should drain opponent when your creature dies");
+}
+
+/// Falkenrath Noble SHOULD trigger on itself dying.
+/// Oracle: "Whenever THIS CREATURE or another creature dies" — includes self.
+#[test]
+fn falkenrath_noble_triggers_on_self_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
+    state.get_object_mut(noble).unwrap().damage_marked = 5;
+
+    let p0_life_before = state.get_player(P0).life;
+    let p1_life_before = state.get_player(P1).life;
+
+    check_state_based_actions(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    // Noble SHOULD trigger on its own death ("this creature ... dies").
+    assert_eq!(state.get_player(P0).life, p0_life_before + 1,
+        "Falkenrath Noble should trigger on its own death");
+    assert_eq!(state.get_player(P1).life, p1_life_before - 1,
+        "Falkenrath Noble should drain opponent on its own death");
+}
+
+// -------------------------------------------------------------------------
+// Murder of Crows
+// -------------------------------------------------------------------------
+
+/// Murder of Crows: when another creature dies, the controller should get
+/// a choice to draw (optional). If they draw, they must choose a card to discard.
+#[test]
+fn murder_of_crows_presents_draw_choice() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 has Murder of Crows.
+    let _crows = named_permanent(&mut state, &reg, "Murder of Crows", P0);
+
+    // Give P0 some cards in hand so the discard has options.
+    let hand_card = state.create_object(CardId(9999), P0, Zone::Hand, None, None);
+    state.get_object_mut(hand_card).unwrap().name = "Hand Card".into();
+
+    // A creature dies (P1's).
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+
+    // Give P0 library cards to draw from.
+    let lib_card = state.create_object(CardId(9999), P0, Zone::Library, None, None);
+    state.get_object_mut(lib_card).unwrap().name = "Library Card".into();
+    state.get_player_mut(P0).library_order.push(lib_card);
+
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    // Murder of Crows should present a "you may draw" yes/no choice.
+    assert!(state.awaiting_action.is_some(),
+        "Murder of Crows should present a yes/no draw choice");
+    // Hand should still have 1 card (draw hasn't happened yet — waiting for choice).
+    let hand_count = state.objects_in_zone(Zone::Hand, P0).len();
+    assert_eq!(hand_count, 1,
+        "Draw should NOT have happened yet (waiting for 'you may' choice)");
 }

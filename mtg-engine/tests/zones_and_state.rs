@@ -1,4 +1,5 @@
-//! Tests for zone rules, game state immutability, and object tracking.
+//! Zone rules, game-state immutability, and object tracking — including the
+//! distinction between looking at a library and drawing from it.
 
 mod common;
 
@@ -7,6 +8,7 @@ use mtg_engine::actions::Action;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::types::*;
+use mtg_engine::cards::CardRegistry;
 
 /// Rule 400.3: Objects always go to their OWNER's graveyard/hand/library,
 /// even if controlled by another player.
@@ -171,4 +173,36 @@ fn full_cast_and_resolve_sequence() {
     assert_eq!(obj.power, Some(3));
     assert_eq!(obj.toughness, Some(3));
     assert!(state.stack.is_empty());
+}
+
+// -------------------------------------------------------------------------
+// Looking at a library is not drawing from it
+// -------------------------------------------------------------------------
+
+/// Bug: Mirror-Mad Phantasm's ability uses `draw_top_card` for the reveal loop,
+/// which sets `has_drawn_from_empty=true` if library runs out. This causes the
+/// player to lose via SBA even though they didn't actually draw from empty.
+/// CR 701.15a: revealing is not drawing. `reveal_top_card` must not set
+/// `has_drawn_from_empty`, or a reveal loop that runs the library out — the
+/// shape Mirror-Mad Phantasm and Trepanation Blade both use — would lose its
+/// controller the game to SBA (CR 704.5b).
+#[test]
+fn revealing_past_the_end_of_a_library_is_not_drawing_from_it() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(bears, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(id);
+    }
+
+    let mut revealed = 0;
+    while state.get_player_mut(P0).reveal_top_card().is_some() {
+        revealed += 1;
+        assert!(revealed <= 3, "reveal_top_card kept handing out cards past the end");
+    }
+    assert_eq!(revealed, 3, "every card in the library is revealed exactly once");
+    assert!(!state.get_player(P0).has_drawn_from_empty,
+        "running the library out by revealing must not flag a draw from an empty library");
 }

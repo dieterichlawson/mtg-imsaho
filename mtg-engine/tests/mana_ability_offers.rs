@@ -1,11 +1,12 @@
-//! Tapping lands for mana, one at a time.
+//! Every mana source is offered separately.
 //!
 //! Reported from a real game: with four Swamps and a Stensia Bloodhall out,
 //! tapping a Swamp and the Bloodhall appeared to produce nothing, and only
-//! tapping two more Swamps made mana show up. The cause was that mana
-//! abilities were being deduplicated by their *description* — every Swamp
-//! offers the same "{T}: Add {B}" — so the four Swamps collapsed to one
-//! offer and the rest were unreachable.
+//! tapping two more Swamps made mana show up. Mana abilities were being
+//! deduplicated by their *description* — every Swamp offers the same
+//! "{T}: Add {B}" — so the four Swamps collapsed to one offer and the rest
+//! were unreachable. A mana ability is identified by its source, not by the
+//! text it prints.
 
 mod common;
 use common::*;

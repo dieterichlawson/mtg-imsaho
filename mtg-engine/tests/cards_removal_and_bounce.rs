@@ -277,3 +277,33 @@ fn lost_in_the_mist_counters_and_bounces() {
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Hand,
         "Permanent should be bounced to hand");
 }
+
+// -------------------------------------------------------------------------
+// Bramblecrush
+// -------------------------------------------------------------------------
+
+/// Bramblecrush should use the destruction pipeline for non-creature permanents.
+/// An indestructible enchantment should survive Bramblecrush.
+#[test]
+fn bramblecrush_respects_indestructible() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create a non-creature permanent (enchantment) with indestructible.
+    let enchantment = state.create_object(CardId(9999), P1, Zone::Battlefield, None, None);
+    state.get_object_mut(enchantment).unwrap().name = "Indestructible Enchantment".into();
+    state.get_object_mut(enchantment).unwrap().card_types = vec![CardType::Enchantment];
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
+            target: enchantment,
+            keyword: Keyword::Indestructible,
+        },
+    );
+
+    let crush = castable_spell(&mut state, &reg, "Bramblecrush", P0);
+    state = cast_and_resolve(&state, &reg, crush, vec![Target::Object(enchantment)]);
+
+    // Indestructible enchantment should survive.
+    assert_eq!(state.get_object(enchantment).unwrap().zone, Zone::Battlefield,
+        "Bramblecrush should respect indestructible on non-creature permanents");
+}

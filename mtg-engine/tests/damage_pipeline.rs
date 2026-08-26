@@ -14,6 +14,7 @@ use mtg_engine::damage::{deal_damage, DamageKind};
 use mtg_engine::engine;
 use mtg_engine::events::DamageTarget;
 use mtg_engine::types::*;
+use mtg_engine::sba::check_state_based_actions;
 
 /// Fight damage is noncombat damage and must respect Unbreathing Horde's
 /// "prevent that damage, remove a +1/+1 counter" replacement (CR 614.1a).
@@ -150,4 +151,28 @@ fn bug_prey_upon_uses_combat_damage_for_fight() {
         "Fight damage should NOT emit CombatDamageDealt");
     assert!(has_non_combat_damage,
         "Fight damage should emit NonCombatDamageDealt");
+}
+
+// -------------------------------------------------------------------------
+// Marked damage is not a toughness reduction
+// -------------------------------------------------------------------------
+
+/// Damage is marked on creatures, not subtracted from toughness.
+/// A 3/3 with 2 damage still has effective toughness 3, not 1.
+#[test]
+fn damage_does_not_reduce_effective_toughness() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(creature).unwrap().damage_marked = 2;
+
+    assert_eq!(
+        state.effective_toughness(creature, &reg),
+        Some(3),
+        "Effective toughness should not be reduced by damage — damage is tracked separately"
+    );
+    // But the creature is still alive (2 damage < 3 toughness).
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
 }

@@ -1,9 +1,11 @@
-//! Regression tests for CR 603.2 / 603.3d trigger dispatch:
-//! - Conditional SpellCast watchers (Charmbreaker Devils) must not create
-//!   stack entries for spells that don't satisfy the trigger condition.
-//! - ETB triggers with declared target requirements (Fiend Hunter) lock
-//!   their target as the trigger goes on the stack; creatures entering
-//!   afterwards are not legal targets.
+//! Trigger dispatch (CR 603.2 / 603.3d): which triggers a given event reaches,
+//! how many times, and what each one is told.
+//!
+//! A watcher must not create a stack entry for an event that fails its
+//! condition (Charmbreaker Devils), a trigger with a declared target
+//! requirement locks that target as it goes on the stack (Fiend Hunter), a
+//! death event must not reach permanents that are not watching for one, and
+//! one death is one trigger, not two.
 
 mod common;
 use common::*;
@@ -15,6 +17,9 @@ use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::triggers;
 use mtg_engine::types::*;
+use mtg_engine::combat;
+use mtg_engine::events::GameEvent;
+use mtg_engine::sba::check_state_based_actions;
 
 fn trigger_count(state: &mtg_engine::state::GameState) -> usize {
     state.stack.iter().filter(|e| matches!(e, StackEntry::Trigger(_))).count()
@@ -905,4 +910,157 @@ fn bug_undead_alchemist_trigger_only_from_own_mill() {
     // Should mill 2 cards (replacement effect)
     assert!(milled >= 2,
         "Undead Alchemist should cause 2 cards to be milled when Zombie deals combat damage. Milled: {milled}");
+}
+
+// -------------------------------------------------------------------------
+// What a death event reaches, and how often
+// -------------------------------------------------------------------------
+
+/// Lands and other permanents without death triggers should NOT generate
+/// triggered abilities when a creature dies.
+#[test]
+fn lands_should_not_trigger_on_creature_death() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put a Swamp on the battlefield (has no death triggers).
+    let swamp_id = registry.get_id_by_name("Swamp").unwrap();
+    state.create_object(swamp_id, P0, Zone::Battlefield, None, None);
+
+    // Put a Falkenrath Noble on the battlefield (HAS a death trigger).
+    let _noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
+
+    // Put an opponent creature that will die.
+    let victim = ready_creature(&mut state, P1, 1, 1);
+
+    // Kill the victim via combat damage.
+    state.get_object_mut(victim).unwrap().damage_marked = 5;
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    // Verify the CreatureDied event was generated.
+    let death_events: Vec<_> = state.events.iter().filter(|e|
+        matches!(e, mtg_engine::events::GameEvent::CreatureDied { .. })
+    ).collect();
+    assert!(!death_events.is_empty(), "Expected at least one CreatureDied event");
+
+    // Process triggers.
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Check the stack and awaiting_action: should only have triggers from
+    // Falkenrath Noble (which has AnyCreatureDies), NOT from Swamp.
+    let stack_names: Vec<String> = state.stack.iter().map(|entry| {
+        match entry {
+            mtg_engine::state::StackEntry::Trigger(t) => t.display_name(&registry),
+            mtg_engine::state::StackEntry::Spell(id) =>
+                state.get_object(*id).map_or("?".into(), |o| o.name.clone()),
+            mtg_engine::state::StackEntry::Ability { source_id, .. } =>
+                state.get_object(*source_id).map_or("?".into(), |o| o.name.clone()),
+        }
+    }).collect();
+
+    for name in &stack_names {
+        assert!(!name.contains("Swamp"),
+            "Swamp should not have a triggered ability on creature death, but found: {name}");
+    }
+
+    // The Noble's trigger targets a player (CR 603.3d), so with two players to
+    // choose between it is waiting on that choice rather than sitting on the
+    // stack. Accept either, but require it to be the Noble's — "something is
+    // pending" would be satisfied by any card at all.
+    let noble_on_stack = stack_names.iter().any(|n| n.contains("Falkenrath Noble"));
+    let noble_asking = matches!(&state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { source, .. })
+            if state.get_object(*source).is_some_and(|o| o.name == "Falkenrath Noble"));
+    assert!(noble_on_stack || noble_asking,
+        "Falkenrath Noble should have a death trigger, stack: {:?}, awaiting: {:?}",
+        stack_names, state.awaiting_action);
+}
+
+/// A creature's death is logged once per creature. The two creatures here
+/// trade, so two entries is right; the regression was each death being logged
+/// twice, giving four.
+#[test]
+fn creature_death_logged_once() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 3, 3);
+
+    // Simulate combat: they trade.
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &registry);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &registry);
+    combat::deal_combat_damage(&mut state, &registry);
+    // SBAs kill both creatures.
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    // Count how many "died" log entries there are.
+    let death_logs: Vec<_> = state.game_log.iter()
+        .filter(|e| e.message.contains("died"))
+        .collect();
+
+    // There should be exactly 2 (one per creature), not 4.
+    assert_eq!(death_logs.len(), 2,
+        "Expected 2 death log entries (one per creature), got {}: {:?}",
+        death_logs.len(), death_logs.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
+// -------------------------------------------------------------------------
+// What a dies trigger is told
+// -------------------------------------------------------------------------
+
+/// When a creature dies, the `CreatureDied` event should contain the
+/// correct `card_id` and controller from when it was on the battlefield.
+#[test]
+fn dies_trigger_has_correct_info() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = CardId(42);
+    let creature = state.create_object(card_id, P0, Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    state.get_object_mut(creature).unwrap().controller = P1; // controlled by P1
+
+    // Kill via lethal damage.
+    state.get_object_mut(creature).unwrap().damage_marked = 5;
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+
+    // Find the CreatureDied event.
+    let died_event = state.events.iter().find(|e| {
+        matches!(e, GameEvent::CreatureDied { object, .. } if *object == creature)
+    });
+    assert!(died_event.is_some(), "Should emit CreatureDied event");
+
+    if let Some(GameEvent::CreatureDied { card_id: cid, controller, .. }) = died_event {
+        assert_eq!(*cid, card_id, "CreatureDied should have the correct card_id");
+        assert_eq!(*controller, P1, "CreatureDied should record the controller");
+    }
+}
+
+/// When a creature dies, death-watch triggers on other permanents should fire.
+#[test]
+fn death_watch_triggers_fire_on_creature_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place an Unruly Mob (gains +1/+1 counter when another creature you control dies).
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
+
+    // Place a creature that will die.
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+
+    // Run SBAs to kill the victim.
+    check_state_based_actions(&mut state, &reg);
+
+    // Process triggers (the death-watch should fire).
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    // Unruly Mob should have gained a +1/+1 counter.
+    let counter_count = state.get_counter_count(mob, CounterType::PlusOnePlusOne);
+    assert_eq!(
+        counter_count, 1,
+        "Unruly Mob should gain a +1/+1 counter when another creature you control dies"
+    );
 }

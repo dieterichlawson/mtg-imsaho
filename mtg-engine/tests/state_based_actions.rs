@@ -1,4 +1,5 @@
-//! Tests for state-based actions (rule 704).
+//! State-based actions (CR 704). Includes the legend rule (CR 704.5j) and
+//! counter annihilation (CR 704.5q), which are checked here and nowhere else.
 
 mod common;
 use common::*;
@@ -331,4 +332,166 @@ fn indestructible_stops_destruction_and_lethal_damage_but_nothing_else() {
             "sacrifice succeeds on an indestructible creature");
         assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
     }
+}
+
+// -------------------------------------------------------------------------
+// The legend rule (CR 704.5j)
+// -------------------------------------------------------------------------
+
+/// Two legendary creatures with the same name — one should be removed by SBAs.
+/// Uses the registry to check legendary status via CardData.supertypes.
+/// Since no legendary cards exist in the registry yet, we simulate by
+/// setting the `is_legendary` flag directly on the `GameObject`.
+#[test]
+fn legend_rule_removes_duplicate() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create two legendary creatures with the same name.
+    let card_id = CardId(200);
+    let legend1 = state.create_object(card_id, P0, Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(legend1).unwrap().name = "Thalia".into();
+    state.get_object_mut(legend1).unwrap().summoning_sick = false;
+    state.get_object_mut(legend1).unwrap().is_legendary = true;
+
+    let legend2 = state.create_object(card_id, P0, Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(legend2).unwrap().name = "Thalia".into();
+    state.get_object_mut(legend2).unwrap().summoning_sick = false;
+    state.get_object_mut(legend2).unwrap().is_legendary = true;
+
+    check_state_based_actions(&mut state, &reg);
+
+    // SBA should have set up a legend-rule choice.
+    assert!(state.awaiting_action.is_some(),
+        "Legend rule SBA should present a choice for which legendary to keep");
+
+    // Resolve the choice: keep legend1.
+    let new_state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(legend1))),
+        },
+        &reg,
+    );
+
+    // Track the two by id. Identifying them by the hand-set name does not
+    // work: CR 400.7 restores an object's PRINTED name when it leaves the
+    // battlefield, so the loser reverts to whatever `card_id` actually names.
+    assert_eq!(new_state.get_object(legend1).unwrap().zone, Zone::Battlefield,
+        "Legend rule: the kept legendary stays (CR 704.5k)");
+    assert_eq!(new_state.get_object(legend2).unwrap().zone, Zone::Graveyard,
+        "Legend rule: the duplicate goes to the graveyard");
+}
+
+/// Legendary permanents with DIFFERENT names are fine — both stay.
+#[test]
+fn legend_rule_different_names_coexist() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let legend1 = state.create_object(CardId(200), P0, Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(legend1).unwrap().name = "Thalia".into();
+    state.get_object_mut(legend1).unwrap().is_legendary = true;
+
+    let legend2 = state.create_object(CardId(201), P0, Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(legend2).unwrap().name = "Geist".into();
+    state.get_object_mut(legend2).unwrap().is_legendary = true;
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(legend1).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(legend2).unwrap().zone, Zone::Battlefield);
+}
+
+/// Different players can each control a legendary with the same name.
+#[test]
+fn legend_rule_different_controllers_ok() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = CardId(200);
+    let legend_p0 = state.create_object(card_id, P0, Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(legend_p0).unwrap().name = "Thalia".into();
+    state.get_object_mut(legend_p0).unwrap().is_legendary = true;
+
+    let legend_p1 = state.create_object(card_id, P1, Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(legend_p1).unwrap().name = "Thalia".into();
+    state.get_object_mut(legend_p1).unwrap().is_legendary = true;
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(legend_p0).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(legend_p1).unwrap().zone, Zone::Battlefield);
+}
+
+/// Non-legendary permanents with the same name are unaffected.
+#[test]
+fn legend_rule_ignores_non_legendary() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let c1 = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c1).unwrap().name = "Grizzly Bears".into();
+    let c2 = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c2).unwrap().name = "Grizzly Bears".into();
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(c2).unwrap().zone, Zone::Battlefield);
+}
+
+// -------------------------------------------------------------------------
+// +1/+1 and -1/-1 counters annihilate (CR 704.5q)
+// -------------------------------------------------------------------------
+
+/// Equal numbers of +1/+1 and -1/-1 counters: all removed.
+/// CR 704.5q: if a permanent has both +1/+1 and -1/-1 counters, N of each are
+/// removed, where N is the smaller of the two counts. Five one-case tests used
+/// to walk this; the interesting part is the arithmetic at the boundary, so it
+/// reads better as the table it always was.
+#[test]
+fn plus_and_minus_counters_annihilate_in_pairs() {
+    // (base size, start +1/+1, start -1/-1, left +1/+1, left -1/-1)
+    // Each creature is big enough to survive its own case, so the counter
+    // arithmetic is what is under test rather than the toughness check.
+    const CASES: &[(i32, u32, u32, u32, u32)] = &[
+        (2, 3, 3, 0, 0),   // equal counts cancel out entirely
+        (2, 5, 2, 3, 0),   // more plus: the surplus stays
+        (5, 1, 4, 0, 3),   // more minus: 5/5 down to 2/2, still alive
+        (2, 3, 0, 3, 0),   // only one kind — nothing to annihilate
+    ];
+    let reg = registry();
+    for &(base, plus, minus, left_plus, left_minus) in CASES {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let creature = ready_creature(&mut state, P0, base, base);
+        state.add_counters(creature, CounterType::PlusOnePlusOne, plus);
+        state.add_counters(creature, CounterType::MinusOneMinusOne, minus);
+
+        check_state_based_actions(&mut state, &reg);
+
+        assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), left_plus,
+            "{plus} +1/+1 and {minus} -1/-1 should leave {left_plus} +1/+1");
+        assert_eq!(state.get_counter_count(creature, CounterType::MinusOneMinusOne), left_minus,
+            "{plus} +1/+1 and {minus} -1/-1 should leave {left_minus} -1/-1");
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+            "a {base}/{base} survives {left_minus} net -1/-1 counters");
+    }
+}
+
+/// Annihilation happens before the toughness check, so it can still leave a
+/// creature dead: a 1/1 with one +1/+1 and two -1/-1 annihilates down to a
+/// single -1/-1 and is a 0/0.
+#[test]
+fn annihilation_can_still_leave_a_creature_dead() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 1, 1);
+    state.add_counters(creature, CounterType::PlusOnePlusOne, 1);
+    state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "one -1/-1 survives the annihilation and makes the 1/1 a 0/0");
 }

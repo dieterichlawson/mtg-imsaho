@@ -1,25 +1,22 @@
-//! Regressions for bugs documented in `audits/AUDIT_BUGS.md`. Each of these
-//! failed when it was written and passes now; they stay to protect against
-//! the bug coming back.
+//! Combat rules: who may attack, who may block, and how damage is assigned.
 //!
-//! This file covers the "Combat / attack-phase rules" family.
-//!
-//! Bugs covered in this file:
-//! - Bug BP: Forced-attack effects (Furor of the Bitten, Curse of
-//!   the Nightly Hunt) don't consult `can't attack` continuous
-//!   effects (Bonds of Faith), so a creature can be forced to
-//!   attack while Bonds of Faith simultaneously prevents it.
-//! - Bug 17-005: Non-trample attackers blocked by multiple creatures
-//!   dump all damage on the first blocker in iteration order,
-//!   instead of letting the attacking player divide damage per
-//!   CR 510.1c.
+//! CR 508 (declaring attackers), CR 509 (declaring blockers), CR 510 (the
+//! combat damage step). `combat.rs` covers the same pipeline through the
+//! submitted-action path; this file works on the rules themselves —
+//! restrictions, requirements, damage assignment, and the extra damage step
+//! first strike creates (CR 510.5).
 
 mod common;
 use common::*;
+use mtg_engine::actions::Action;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
+use mtg_engine::combat;
+use mtg_engine::events::GameEvent;
+use mtg_engine::sba::check_state_based_actions;
+use mtg_engine::state::AwaitingAction;
 
 /// Bug 17-005 (`audits/AUDIT_BUGS.md)`: A 5-power non-trample attacker
 /// blocked by two 2/2s dumps all 5 damage on the first blocker in
@@ -220,4 +217,344 @@ fn a_tapped_creature_is_not_forced_to_attack() {
         "a tapped Juggernaut is not eligible to attack");
     assert!(!must_attack.contains(&jug),
         "and cannot be forced to");
+}
+
+// -------------------------------------------------------------------------
+// A combat nobody attacked in
+// -------------------------------------------------------------------------
+
+/// After declaring zero attackers, the game loop skips to `EndCombat`.
+/// This tests the game loop code path (not `submit_action`, which doesn't skip).
+/// The bug is in `run_game_loop_inner`'s post-action handler for `DeclareAttackers`.
+///
+/// We test this by running the game loop with a callback that records what
+/// steps the game passes through.
+#[test]
+fn no_attackers_game_loop_skips_to_end_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::BeginCombat, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    attacks_unblocked(&mut state, attacker, P1);
+
+    // Fill libraries so we don't hit empty-library SBA.
+    let land_id = reg.get_id_by_name("Forest").unwrap();
+    for p in 0..2u8 {
+        let mut lib = Vec::new();
+        for _ in 0..20 {
+            let id = state.create_object(land_id, mtg_engine::ids::PlayerId(p), Zone::Library, None, None);
+            lib.push(id);
+        }
+        state.players[p as usize].library_order = lib;
+    }
+
+    let mut action_count = 0;
+
+    engine::run_game_loop(&mut state, &reg, |game_state, _player, legal| {
+        action_count += 1;
+
+        // Safety valve: don't run forever.
+        if action_count > 50 {
+            return Action::Concede;
+        }
+
+        // When asked to declare attackers, declare none.
+        if legal.combat_prompt.is_some() {
+            if game_state.step == Step::DeclareAttackers {
+                return Action::DeclareAttackers { attackers: vec![] };
+            }
+            if game_state.step == Step::DeclareBlockers {
+                return Action::DeclareBlockers { assignments: vec![] };
+            }
+        }
+
+        // Otherwise just pass priority to advance the game.
+        Action::PassPriority
+    });
+
+    // Check that DeclareBlockers was reached by looking at StepStarted events.
+    // Auto-pass may skip asking the player, but the step should still be entered.
+    let saw_declare_blockers = state.events.iter().any(|e| {
+        matches!(e, GameEvent::StepStarted { step: Step::DeclareBlockers })
+    });
+    // Also check the game log for the step.
+    let log_has_blockers = state.game_log.iter().any(|e| {
+        e.message.contains("DeclareBlockers")
+    });
+    assert!(saw_declare_blockers || log_has_blockers,
+        "Game loop should pass through DeclareBlockers even with zero attackers (CR 507-510)");
+}
+
+// -------------------------------------------------------------------------
+// Declaring, blocking, and the damage steps
+// -------------------------------------------------------------------------
+
+/// A tapped creature can't be declared as a blocker (CR 509.1a). The
+/// validating gate must drop it, leaving the attacker unblocked.
+#[test]
+fn an_illegal_block_by_a_tapped_creature_does_not_absorb_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(blocker).unwrap().tapped = true;
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &reg);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
+        "a tapped creature isn't blocking, so it takes no combat damage");
+    assert_eq!(state.get_player(P1).life, p1_life - 2,
+        "the block was illegal; the attacker is unblocked and hits the player");
+}
+
+/// A creature the attacking player controls can't be declared as a blocker —
+/// only the defending player's creatures block (CR 509.1a).
+#[test]
+fn attacking_players_own_creature_cannot_block() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let fake_blocker = ready_creature(&mut state, P0, 2, 2); // controlled by the attacker's player
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(fake_blocker, attacker)], &reg);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, p1_life - 2,
+        "a creature controlled by the attacker can't block; attacker is unblocked");
+}
+
+/// The DeclareAttackers handler validates eligibility: a summoning-sick
+/// creature (no haste) submitted as an attacker is dropped.
+#[test]
+fn ineligible_attacker_is_filtered_by_the_handler() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let sick = sick_creature(&mut state, P0, 2, 2);
+    let ready = ready_creature(&mut state, P0, 3, 3);
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+    state.priority_player = Some(P0);
+
+    let state = engine::submit_action(
+        &state,
+        &Action::DeclareAttackers { attackers: vec![(sick, P1), (ready, P1)] },
+        &reg,
+    );
+
+    let attacking: Vec<_> = state.combat.as_ref()
+        .map(|c| c.attackers.keys().copied().collect())
+        .unwrap_or_default();
+    assert!(attacking.contains(&ready), "the eligible creature attacks");
+    assert!(!attacking.contains(&sick),
+        "a summoning-sick creature without haste can't be declared as an attacker");
+}
+
+/// A blocker that regenerates away first-strike lethal damage is removed
+/// from combat and must not deal its damage in the regular step.
+#[test]
+fn regenerated_blocker_deals_no_regular_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(blocker).unwrap().regeneration_shields = 1;
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    // First strike killed the blocker; it regenerated (tapped, healed,
+    // removed from combat).
+    let b = state.get_object(blocker).unwrap();
+    assert_eq!(b.zone, Zone::Battlefield, "blocker should have regenerated");
+    assert!(b.tapped, "regeneration taps the creature");
+    assert_eq!(b.regeneration_shields, 0);
+
+    // CR 701.15c: the regenerated creature was removed from combat and must
+    // NOT deal regular combat damage to the attacker.
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
+        "attacker must take no damage from a blocker that left combat");
+    // The attacker remains blocked (no trample): the player takes nothing.
+    assert_eq!(state.get_player(P1).life, p1_life);
+}
+
+/// A double-striker whose blocker regenerated away stays BLOCKED
+/// (CR 510.1c): its regular-step damage hits nothing — not the player.
+#[test]
+fn double_striker_stays_blocked_when_blocker_leaves_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::DoubleStrike);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(blocker).unwrap().regeneration_shields = 1;
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    // Blocker regenerated away the first-strike damage and left combat.
+    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
+        "regeneration clears marked damage; regular-step damage must not land");
+    // The attacker is still blocked and has no trample: regular-step damage
+    // is assigned to nothing — the defending player takes none.
+    assert_eq!(state.get_player(P1).life, p1_life,
+        "blocked double-striker must not hit the player when its blocker leaves combat");
+}
+
+/// CR 510.5: with first strikers in combat there are TWO combat damage
+/// steps, with SBAs and a priority round between them. The engine models
+/// this by repeating Step::CombatDamage.
+#[test]
+fn first_strike_creates_second_combat_damage_step_with_window() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // 2/2 first striker attacks; 4/4 blocks (survives first strike).
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 4, 4);
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    // Enter the combat damage step: FIRST instance — first-strike damage only.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(state.combat_damage_step_pending,
+        "a second combat damage step must be pending (CR 510.5)");
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2,
+        "first striker deals its damage in the first step");
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
+        "non-first-striker deals nothing in the first step");
+
+    // Priority window between the steps: the defender removes the attacker
+    // (as a Doom Blade would during this round of priority).
+    state.move_object(attacker, Zone::Graveyard, &reg);
+
+    // All players pass: the step repeats — SECOND instance, regular damage.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage,
+        "Step::CombatDamage must repeat for the regular damage step");
+    assert!(!state.combat_damage_step_pending);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2,
+        "the removed attacker deals no regular damage; blocker keeps only first-strike damage");
+
+    // And the step sequence continues normally afterwards.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat);
+}
+
+/// Without first strikers, the combat damage step happens exactly once.
+#[test]
+fn no_first_strike_single_combat_damage_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(!state.combat_damage_step_pending,
+        "no first strikers: no second damage step");
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 2);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2);
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat);
+}
+
+/// First-strike deaths produce their triggers BEFORE regular damage: the
+/// window lets death triggers resolve between the two damage steps.
+#[test]
+fn first_strike_kill_prevents_regular_damage_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // 2/2 first striker vs 2/2 blocker: blocker dies to first strike and
+    // never deals regular damage back.
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    // The game loop runs SBAs before granting priority (CR 117.5).
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
+        "blocker dies to first-strike damage before the regular step");
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
+        "dead blocker deals no regular-step damage");
+}
+
+/// Blazing Torch's granted ability must be offered to the equipped creature's
+/// controller only when that player also controls the Torch — its cost
+/// sacrifices the Torch, which only its controller may do.
+#[test]
+fn opponents_equipment_grants_no_activatable_ability() {
+    let reg = registry();
+
+    // (who controls the Torch, is the ability offered to the creature's
+    //  controller)
+    for (torch_owner, offered) in [(P0, true), (P1, false)] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        let torch = named_equipment(&mut state, &reg, "Blazing Torch", torch_owner);
+        state.get_object_mut(torch).unwrap().attached_to = Some(creature);
+
+        assert_eq!(offers_ability_of(&state, &reg, creature), offered,
+            "torch controlled by p{}: the sacrifice cost is payable only by its \
+             controller", torch_owner.0);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Both sides lethal
+// -------------------------------------------------------------------------
+
+/// When two creatures deal lethal damage to each other in combat,
+/// both should die simultaneously when SBAs are checked.
+#[test]
+fn mutually_lethal_combat_both_die() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 3, 3);
+
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 3);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 3);
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(
+        state.get_object(attacker).unwrap().zone,
+        Zone::Graveyard,
+        "Attacker should die from mutually lethal combat"
+    );
+    assert_eq!(
+        state.get_object(blocker).unwrap().zone,
+        Zone::Graveyard,
+        "Blocker should die from mutually lethal combat"
+    );
+    // Player takes no damage — attacker was blocked.
+    assert_eq!(state.get_player(P1).life, 20);
 }

@@ -1,4 +1,5 @@
-//! Tests for enchantments, auras, and continuous effects.
+//! Enchantments and auras: what an aura grants while it is attached, and what
+//! happens to it when what it enchants goes away (CR 704.5m).
 
 mod common;
 
@@ -182,4 +183,55 @@ fn the_view_shows_printed_and_effective_power_side_by_side() {
 
     assert_eq!(find(hs).attached_to, Some(enchanted),
         "and the Aura shows what it is attached to, so the player can see why");
+}
+
+// -------------------------------------------------------------------------
+// An aura with nothing to enchant (CR 704.5m)
+// -------------------------------------------------------------------------
+
+/// When the enchanted creature dies, the aura should fall off and go
+/// to the graveyard via SBA 704.5m (aura not attached to a legal permanent).
+#[test]
+fn aura_goes_to_graveyard_when_creature_dies() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+
+    // Attach an aura to the creature.
+    let aura_id = reg.get_id_by_name("Holy Strength").unwrap();
+    let aura = state.create_object(aura_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(aura).unwrap().attached_to = Some(creature);
+    state.get_object_mut(aura).unwrap().summoning_sick = false;
+
+    // Kill the creature directly.
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    // SBA should clean up the unattached aura.
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(
+        state.get_object(aura).unwrap().zone,
+        Zone::Graveyard,
+        "Aura should fall off and go to graveyard when enchanted creature dies (rule 704.5m)"
+    );
+}
+
+/// Aura stays on the battlefield as long as its enchanted creature is alive.
+#[test]
+fn aura_stays_while_creature_alive() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 3, 3);
+
+    let aura = state.create_object(CardId(50), P0, Zone::Battlefield, None, None);
+    state.get_object_mut(aura).unwrap().attached_to = Some(creature);
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(
+        state.get_object(aura).unwrap().zone,
+        Zone::Battlefield,
+        "Aura should stay on battlefield while its target is alive"
+    );
 }
