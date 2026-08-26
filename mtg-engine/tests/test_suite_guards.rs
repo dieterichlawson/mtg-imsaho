@@ -101,6 +101,9 @@ fn no_test_comment_claims_the_test_is_failing() {
         "currently fails",
         "will start passing",
         "this test should fail",
+        "expected to fail",
+        "expected to FAIL",
+        "false positive",
     ];
     let mut offenders = Vec::new();
 

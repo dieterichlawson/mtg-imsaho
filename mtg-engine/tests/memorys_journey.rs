@@ -68,9 +68,11 @@ fn shuffles_up_to_three_cards() {
     assert_eq!(new_state.get_object(card3).unwrap().zone, Zone::Library);
 }
 
-/// Memory's Journey requires a player target (for choosing whose graveyard).
+/// Resolving against one player's graveyard leaves the other's alone.
+/// (Which cards are *offered* is checked in `multi_target_and_mill.rs`, on
+/// `legal_actions`; this one is about what resolution actually moves.)
 #[test]
-fn legal_actions_dont_mix_graveyards() {
+fn resolving_only_moves_the_targeted_players_cards() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -94,26 +96,32 @@ fn legal_actions_dont_mix_graveyards() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: Memory's Journey targets up to 3 cards in a graveyard AND
-/// has a mandatory player target (to determine whose graveyard).
-/// The card may be missing the player targeting requirement.
+/// "Target player shuffles up to three target cards from THEIR graveyard" —
+/// the player is a target in its own right, and the cards are constrained by
+/// it. Without the player slot the card offered every graveyard at once.
 #[test]
-fn bug_memorys_journey_missing_player_target() {
+fn memorys_journey_targets_a_player_and_then_their_cards() {
+    use mtg_engine::cards::TargetRequirement;
+
     let registry = CardRegistry::with_all_cards();
-    let _state = game_at_step(Step::PrecombatMain, P0);
+    let behavior = registry
+        .get(registry.get_id_by_name("Memory's Journey").unwrap())
+        .unwrap();
 
-    // Check the target requirement
-    let behavior = registry.get(
-        registry.get_id_by_name("Memory's Journey").unwrap()
-    ).unwrap();
-    let req = behavior.target_requirement();
-
-    // Oracle: "Target player shuffles up to three target cards from their graveyard into their library."
-    // This needs BOTH a player target AND card targets.
-    // BUG: May be missing the player target requirement
-    let req_str = format!("{req:?}");
-    let has_player_target = req_str.contains("Player");
-
-    assert!(has_player_target,
-        "Memory's Journey should target a player. Target requirement: {req:?}");
+    // Matched structurally rather than by searching the Debug string, so a
+    // requirement that merely mentions a player somewhere cannot satisfy it.
+    match behavior.target_requirement() {
+        TargetRequirement::TwoTargets(first, second) => {
+            assert!(matches!(*first, TargetRequirement::PlayerOnly),
+                "the first target is the player whose graveyard it is, got {first:?}");
+            match *second {
+                TargetRequirement::UpToTargets(3, inner) => assert!(
+                    matches!(*inner, TargetRequirement::GraveyardCardOwnedByTargetPlayer),
+                    "the cards must be constrained to the targeted player's \
+                     graveyard (CR 601.2c), got {inner:?}"),
+                other => panic!("expected 'up to three' cards, got {other:?}"),
+            }
+        }
+        other => panic!("expected TwoTargets(player, up-to-three cards), got {other:?}"),
+    }
 }

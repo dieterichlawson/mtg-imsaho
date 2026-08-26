@@ -122,9 +122,11 @@ fn morkrut_banshee_can_target_self() {
     let mut state = cast_and_resolve(&state, &reg, banshee, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
-    // With only Morkrut Banshee on the battlefield, it should be able
-    // to target itself (the only valid target). Currently it excludes
-    // self and does nothing.
+    // With only Morkrut Banshee on the battlefield, it is the only legal
+    // target for its own morbid ETB, so it must target itself. Either it is
+    // still there at 4-4=0 toughness on its way to dying, or SBA has already
+    // taken it — both mean the -4/-4 landed; nothing on the battlefield at
+    // full toughness would.
     let banshee_obj = state.objects.values()
         .find(|o| o.name == "Morkrut Banshee" && o.zone == Zone::Battlefield);
 

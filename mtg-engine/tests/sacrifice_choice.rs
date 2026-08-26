@@ -143,6 +143,7 @@ fn hauberk_does_not_offer_combo_where_target_equals_sacrifice() {
     let _c = ready_creature(&mut state, P0, 3, 3);
 
     let legal = engine::legal_actions(&state, &reg);
+    let mut examined = 0;
     for act in &legal.actions {
         if let Action::ActivateAbility { object_id, targets, sacrifice, .. } = act {
             if *object_id != hauberk { continue; }
@@ -150,12 +151,18 @@ fn hauberk_does_not_offer_combo_where_target_equals_sacrifice() {
                 Some(Target::Object(id)) => *id,
                 _ => continue,
             };
+            examined += 1;
             assert_ne!(
                 Some(target_id), *sacrifice,
                 "engine offered a target=sacrifice combo, which would fizzle"
             );
         }
     }
+    // Without this the loop body could never run and the test would pass by
+    // examining nothing at all.
+    assert!(examined >= 6,
+        "three creatures should give at least 3 targets x 2 other sacrifices = 6 \
+         combos to check, examined {examined}");
 }
 
 // ════════════════════════════════════════════════════════════════════

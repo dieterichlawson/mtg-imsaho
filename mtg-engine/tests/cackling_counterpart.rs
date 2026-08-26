@@ -20,44 +20,26 @@ fn make_zombie_token(state: &mut mtg_engine::state::GameState, registry: &CardRe
     ids.into_iter().next().unwrap()
 }
 
+/// CR 707.2: a token copy has the copiable characteristics of the original.
+/// For a token those live on the object itself, so this is the path that
+/// `create_token_copy` has to carry over by hand.
 #[test]
-fn cackling_counterpart_copy_of_zombie_token_preserves_card_types() {
+fn a_token_copy_of_a_token_keeps_its_characteristics() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let zombie = make_zombie_token(&mut state, &registry, P0);
     let copy = state.create_token_copy(zombie, P0, &registry);
-
     let copy_obj = state.get_object(copy).expect("copy token should exist");
-    assert_eq!(
-        copy_obj.card_types.contains(&CardType::Creature),
-        true,
-        "token copy of 2/2 black Zombie should have Creature card type, got {:?}",
-        copy_obj.card_types,
-    );
-    assert_eq!(
-        copy_obj.subtypes.contains(&"Zombie".to_string()),
-        true,
-        "token copy of 2/2 black Zombie should have Zombie subtype, got {:?}",
-        copy_obj.subtypes,
-    );
-}
 
-#[test]
-fn cackling_counterpart_copy_of_zombie_token_preserves_color() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let zombie = make_zombie_token(&mut state, &registry, P0);
-    let copy = state.create_token_copy(zombie, P0, &registry);
-
-    let copy_obj = state.get_object(copy).expect("copy token should exist");
-    assert_eq!(
-        copy_obj.colors.contains(&Color::Black),
-        true,
-        "token copy of 2/2 black Zombie should be black, got colors={:?}",
-        copy_obj.colors,
-    );
+    assert_eq!(copy_obj.power, Some(2), "a copy of a 2/2 is a 2/2");
+    assert_eq!(copy_obj.toughness, Some(2));
+    assert!(copy_obj.card_types.contains(&CardType::Creature),
+        "card types must carry over, got {:?}", copy_obj.card_types);
+    assert!(copy_obj.subtypes.contains(&"Zombie".to_string()),
+        "subtypes must carry over, got {:?}", copy_obj.subtypes);
+    assert!(copy_obj.colors.contains(&Color::Black),
+        "colour must carry over, got {:?}", copy_obj.colors);
 }
 
 // -------------------------------------------------------------------------

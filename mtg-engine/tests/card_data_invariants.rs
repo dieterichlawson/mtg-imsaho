@@ -338,3 +338,53 @@ fn a_triggered_ability_whose_text_targets_declares_a_target_requirement() {
     assert_covers(targeting, 8, "declare a targeting trigger");
     assert_none(&offenders, "have a targeting trigger that does not declare its target");
 }
+
+/// A card's declared trigger kinds must match what its text says it watches.
+///
+/// Creepy Doll had a per-card test asserting it declares
+/// `DealsCombatDamageToCreature` and NOT `Blocks` / `BecomesBlocked` — a real
+/// constraint, written out for one card. The oracle text says which event a
+/// trigger watches, so the constraint generalises: if the text says "deals
+/// combat damage to a creature", the declaration has to say so too.
+#[test]
+fn a_triggers_declared_kind_matches_what_its_text_watches() {
+    use mtg_engine::cards::TriggerKind;
+
+    // (phrase in the ability's own description, the kind it must be declared as)
+    const SAYS: &[(&str, TriggerKind)] = &[
+        ("deals combat damage to a creature", TriggerKind::DealsCombatDamageToCreature),
+        ("at the beginning of your upkeep", TriggerKind::Upkeep),
+        ("at the beginning of each upkeep", TriggerKind::Upkeep),
+        ("at the beginning of your end step", TriggerKind::EndStep),
+        ("when this creature dies", TriggerKind::SelfDies),
+        ("when this creature enters", TriggerKind::EntersBattlefield),
+        ("when this permanent enters", TriggerKind::EntersBattlefield),
+    ];
+
+    let reg = registry();
+    let mut matched = 0;
+    let mut offenders = Vec::new();
+
+    for d in all_cards(&reg) {
+        let text = d.oracle_text.to_lowercase();
+        for (phrase, kind) in SAYS {
+            if !text.contains(phrase) {
+                continue;
+            }
+            matched += 1;
+            let front = d.triggered_abilities.iter().any(|a| a.kind == *kind);
+            let back = reg
+                .get_id_by_name(&d.name)
+                .and_then(|id| reg.get(id))
+                .and_then(|b| b.back_face_data())
+                .is_some_and(|back| back.triggered_abilities.iter().any(|a| a.kind == *kind));
+            if !front && !back {
+                offenders.push(format!(
+                    "{}: text says {phrase:?} but no {kind:?} trigger is declared",
+                    d.name));
+            }
+        }
+    }
+    assert_covers(matched, 25, "have text naming one of these trigger events");
+    assert_none(&offenders, "declare a trigger kind that does not match their text");
+}

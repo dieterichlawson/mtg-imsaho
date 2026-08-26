@@ -1,7 +1,6 @@
-//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
-//! Each test is expected to FAIL until the corresponding bug is
-//! fixed. Once the fix lands the test transitions from "proves the
-//! bug exists" to "regression-protects against the bug coming back".
+//! Regressions for bugs documented in `audits/AUDIT_BUGS.md`. Each of these
+//! failed when it was written and passes now; they stay to protect against
+//! the bug coming back.
 //!
 //! This file covers the "Damage helper bypass — non-combat damage
 //! skips central pipeline" family. The root pattern is Bug 9F-002:

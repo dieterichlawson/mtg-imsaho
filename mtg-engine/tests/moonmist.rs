@@ -185,7 +185,7 @@ fn bug_moonmist_second_cast_fails() {
     // is now a Werewolf (not Human), and Moonmist says "transform all Humans"
     // Actually, Moonmist says "Transform all Humans." — a Werewolf on the back
     // face IS a Werewolf, not a Human, so the second Moonmist correctly
-    // does NOT transform it back. This may be a FALSE POSITIVE.
+    // does NOT transform it back.
     // Let me check the oracle text...
     // Oracle: "Transform all Humans. Prevent all combat damage..."
     // Back face is Werewolf, not Human, so second Moonmist shouldn't transform it.

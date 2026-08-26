@@ -12,25 +12,6 @@ use mtg_engine::events::{DamageTarget, GameEvent};
 use mtg_engine::state::StackEntry;
 use mtg_engine::types::*;
 
-/// Creepy Doll should have `DealsCombatDamageToCreature` trigger, not Blocks/BecomesBlocked.
-#[test]
-fn has_correct_trigger_kind() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Creepy Doll").unwrap();
-    let data = reg.card_data(id).unwrap();
-
-    let trigger_kinds: Vec<_> = data.triggered_abilities.iter()
-        .map(|t| &t.kind)
-        .collect();
-
-    assert!(trigger_kinds.iter().any(|k| matches!(k, mtg_engine::cards::TriggerKind::DealsCombatDamageToCreature)),
-        "Should have DealsCombatDamageToCreature trigger");
-    assert!(!trigger_kinds.iter().any(|k| matches!(k, mtg_engine::cards::TriggerKind::Blocks)),
-        "Should NOT have Blocks trigger");
-    assert!(!trigger_kinds.iter().any(|k| matches!(k, mtg_engine::cards::TriggerKind::BecomesBlocked)),
-        "Should NOT have BecomesBlocked trigger");
-}
-
 /// The trigger should fire when `CombatDamageDealt` event targets a creature.
 #[test]
 fn trigger_fires_on_combat_damage_to_creature() {

@@ -1,6 +1,6 @@
-//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
-//! Each test is expected to FAIL until the corresponding bug is
-//! fixed.
+//! Regressions for bugs documented in `audits/AUDIT_BUGS.md`. Each of these
+//! failed when it was written and passes now; they stay to protect against
+//! the bug coming back.
 //!
 //! This file covers the "Combat / attack-phase rules" family.
 //!
@@ -171,12 +171,11 @@ fn bug_bp_forced_attack_respects_cant_attack() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// FALSE POSITIVE: Bloodcrazed Neonate with Pacifism is correctly NOT forced to attack.
-/// Oracle: "This creature attacks each combat if able."
-/// "If able" means the creature must actually be able to attack.
-/// Pacifism prevents attacking, so the force-attack should be skipped.
+/// "Attacks each combat IF ABLE" — Pacifism makes it unable, so the force does
+/// not apply. The same rule as the Bonds of Faith test above, reached through a
+/// different "can't attack" effect.
 #[test]
-fn bug_force_attack_ignores_cant_attack() {
+fn a_creature_under_pacifism_is_not_forced_to_attack() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -187,41 +186,48 @@ fn bug_force_attack_ignores_cant_attack() {
     let pacifism = castable_spell(&mut state, &registry, "Pacifism", P0);
     state = cast_and_resolve(&state, &registry, pacifism, vec![Target::Object(neonate)]);
 
-    // Move to DeclareAttackers step
+    // The attackers prompt is produced for a pending `DeclareAttackers`
+    // awaiting-action, not merely for being in the step.
     state.step = Step::DeclareAttackers;
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
 
-    // Get legal actions — neonate should NOT be in must_attack
     let legal = engine::legal_actions(&state, &registry);
 
-    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) = legal.combat_prompt.as_ref() {
-        // Correctly: Neonate is excluded from eligible (Pacifism prevents it)
-        assert!(!eligible.contains(&neonate));
-        assert!(!must_attack.contains(&neonate));
-    }
+    // The prompt has to be there — with the assertions inside an `if let`,
+    // a missing prompt would silently assert nothing at all.
+    let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) =
+        legal.combat_prompt.as_ref()
+    else {
+        panic!("expected a ChooseAttackers prompt, got {:?}", legal.combat_prompt);
+    };
+    assert!(!eligible.contains(&neonate),
+        "Pacifism prevents attacking, so the Neonate is not even eligible");
+    assert!(!must_attack.contains(&neonate),
+        "and 'attacks each combat if able' cannot force a creature that is unable");
 }
 
-/// Bug: Galvanic Juggernaut has "attacks each combat if able" but the
-/// force-attack logic may not check all "if able" conditions.
-/// (This may be a false positive like Bloodcrazed Neonate.)
+/// The third route to "unable": Galvanic Juggernaut enters tapped and does not
+/// untap, and a tapped creature cannot attack.
 #[test]
-fn bug_galvanic_juggernaut_force_attack_when_unable() {
+fn a_tapped_creature_is_not_forced_to_attack() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     // Place Galvanic Juggernaut (has ForceAttack + it enters tapped + PreventUntap)
     let jug = named_creature(&mut state, &registry, "Galvanic Juggernaut", P0);
 
-    // Tap it (it enters tapped and doesn't untap)
-    if let Some(obj) = state.get_object_mut(jug) {
-        obj.tapped = true;
-    }
+    // Tap it (it enters tapped and doesn't untap).
+    state.get_object_mut(jug).unwrap().tapped = true;
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
 
-    // A tapped creature cannot attack, so force-attack should NOT apply
     let legal = engine::legal_actions(&state, &registry);
-    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) = legal.combat_prompt.as_ref() {
-        assert!(!eligible.contains(&jug),
-            "Tapped Juggernaut should not be eligible to attack");
-        assert!(!must_attack.contains(&jug),
-            "Tapped Juggernaut should not be forced to attack");
-    }
+    let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) =
+        legal.combat_prompt.as_ref()
+    else {
+        panic!("expected a ChooseAttackers prompt, got {:?}", legal.combat_prompt);
+    };
+    assert!(!eligible.contains(&jug),
+        "a tapped Juggernaut is not eligible to attack");
+    assert!(!must_attack.contains(&jug),
+        "and cannot be forced to");
 }

@@ -1,0 +1,136 @@
+# Test file read tracker
+
+One row per integration-test file. `[x]` = read line by line and acted on.
+
+| done | file | lines | tests |
+|---|---|---:|---:|
+| x | `cards_complex_creatures.rs` | 2841 | 90 |
+| x | `auto_pick.rs` | 970 | 15 |
+| x | `trigger_dispatch.rs` | 924 | 17 |
+| x | `cards_morbid_and_ltb.rs` | 917 | 30 |
+| x | `cards_sacrifice_and_additional_costs.rs` | 782 | 24 |
+| x | `subtype.rs` | 736 | 12 |
+| x | `werewolf_cards.rs` | 654 | 29 |
+|   | `trigger_source_independence.rs` | 642 | 20 |
+|   | `hexproof_filter.rs` | 635 | 11 |
+|   | `cards_spells_and_enchantments.rs` | 608 | 23 |
+|   | `flashback.rs` | 604 | 21 |
+|   | `cards_death_triggers_and_tokens.rs` | 552 | 17 |
+|   | `cards_rule_modifiers.rs` | 545 | 21 |
+| x | `engine_edge_cases.rs` | 544 | 18 |
+|   | `fizzle.rs` | 543 | 15 |
+| x | `equipment_autotap.rs` | 498 | 11 |
+| x | `cards_shortcuts_taken.rs` | 487 | 13 |
+| x | `keywords.rs` | 486 | 21 |
+| x | `cards_lands_and_mana_sources.rs` | 479 | 17 |
+|   | `cards_equipment_and_artifacts.rs` | 455 | 12 |
+| x | `cards_combat_damage_triggers.rs` | 450 | 16 |
+| x | `engine_regressions.rs` | 437 | 14 |
+| x | `test_suite_guards.rs` | 435 | 4 |
+|   | `sacrifice_choice.rs` | 406 | 12 |
+|   | `cards_graveyard_interaction.rs` | 396 | 17 |
+|   | `cards_removal_and_bounce.rs` | 386 | 15 |
+|   | `mulligan.rs` | 369 | 9 |
+|   | `trigger_priority.rs` | 350 | 7 |
+|   | `inline_damage.rs` | 341 | 11 |
+| x | `card_data_invariants.rs` | 340 | 12 |
+|   | `combat.rs` | 337 | 16 |
+|   | `activated_abilities.rs` | 336 | 12 |
+|   | `intervening_if.rs` | 336 | 11 |
+| x | `state_based_actions.rs` | 334 | 10 |
+|   | `x_cost_funding_flow.rs` | 331 | 8 |
+|   | `cards_upkeep_triggers_and_curses.rs` | 330 | 13 |
+|   | `simultaneous_events.rs` | 327 | 9 |
+|   | `resolution_time_checks.rs` | 324 | 9 |
+| x | `characteristics_card_sweep.rs` | 319 | 9 |
+|   | `token_copy.rs` | 319 | 5 |
+| x | `cards_vanilla_and_keywords.rs` | 318 | 15 |
+|   | `trigger_target_recheck.rs` | 317 | 10 |
+|   | `replacement_effects.rs` | 316 | 9 |
+|   | `damage_helper.rs` | 314 | 5 |
+|   | `activated_no_stack.rs` | 310 | 10 |
+|   | `cards_activated_abilities.rs` | 302 | 9 |
+|   | `tokens_counters_triggers.rs` | 287 | 16 |
+|   | `spells.rs` | 286 | 13 |
+| x | `cards_equipment_costs.rs` | 279 | 8 |
+|   | `gutter_grime.rs` | 278 | 6 |
+|   | `trigger_snapshots.rs` | 275 | 8 |
+|   | `cards_regressions.rs` | 273 | 7 |
+|   | `spell_costs.rs` | 267 | 10 |
+|   | `ghoulcallers_chant.rs` | 265 | 8 |
+|   | `tap_cost_legality.rs` | 261 | 9 |
+|   | `combat_regressions.rs` | 255 | 9 |
+| x | `copy_effects.rs` | 255 | 8 |
+|   | `cards_evasion_and_graveyard_pt.rs` | 245 | 12 |
+|   | `lands_and_mana.rs` | 243 | 12 |
+|   | `xcost_mana.rs` | 241 | 3 |
+|   | `snapshot_anthems.rs` | 238 | 4 |
+|   | `turn_structure.rs` | 237 | 12 |
+|   | `transform_dfc.rs` | 236 | 4 |
+|   | `harness_display.rs` | 235 | 4 |
+|   | `apnap.rs` | 234 | 3 |
+|   | `mana_tap_bug.rs` | 234 | 5 |
+|   | `continuous_effects.rs` | 230 | 7 |
+|   | `combat_rules.rs` | 227 | 4 |
+|   | `ability_target_protection.rs` | 226 | 5 |
+|   | `equipment_human_conditional.rs` | 224 | 5 |
+|   | `kruin_outlaw.rs` | 222 | 6 |
+|   | `enchantments.rs` | 219 | 9 |
+|   | `engine_regressions_2.rs` | 218 | 4 |
+|   | `token_is_not_a_card.rs` | 213 | 8 |
+|   | `phantom_triggers.rs` | 209 | 7 |
+|   | `x_cost_spells.rs` | 208 | 4 |
+|   | `moonmist.rs` | 200 | 8 |
+|   | `geist_of_saint_traft.rs` | 198 | 5 |
+| x | `creepy_doll.rs` | 184 | 5 |
+|   | `player_protection.rs` | 184 | 4 |
+|   | `zones_and_state.rs` | 183 | 8 |
+|   | `characteristics_targeting.rs` | 182 | 6 |
+|   | `spell_cleanup.rs` | 180 | 4 |
+|   | `flashback_multiple_instances.rs` | 172 | 5 |
+|   | `mana_filters.rs` | 171 | 6 |
+| x | `graveyard_shovel.rs` | 170 | 6 |
+|   | `inquisitors_flail.rs` | 170 | 6 |
+| x | `engine_knows_no_cards.rs` | 162 | 2 |
+| x | `regeneration.rs` | 162 | 8 |
+| x | `unbreathing_horde.rs` | 159 | 4 |
+| x | `characteristics_invariant.rs` | 157 | 2 |
+| x | `control_durations.rs` | 155 | 6 |
+| x | `damage_pipeline.rs` | 153 | 5 |
+| x | `attacking_creatures_anthem.rs` | 150 | 6 |
+| x | `counter_costs.rs` | 148 | 5 |
+| x | `enters_tapped_replacement.rs` | 148 | 6 |
+| x | `olivia_voldaren.rs` | 148 | 6 |
+| x | `infernal_plunge.rs` | 147 | 5 |
+| x | `enter_trigger_conditions.rs` | 142 | 6 |
+| x | `multi_target_and_mill.rs` | 139 | 5 |
+| x | `zone_change_resets_object.rs` | 139 | 5 |
+| x | `trigger_independence.rs` | 136 | 4 |
+| x | `summoning_sickness.rs` | 135 | 6 |
+| x | `empty_triggers.rs` | 132 | 4 |
+| x | `kessig_wolf_run.rs` | 131 | 4 |
+| x | `priority.rs` | 127 | 7 |
+| x | `enters_under_control.rs` | 124 | 4 |
+| x | `dfc_zone_cleanup.rs` | 120 | 2 |
+| x | `memorys_journey.rs` | 119 | 5 |
+| x | `your_upkeep_scope.rs` | 118 | 2 |
+| x | `evil_twin_sba_guard.rs` | 111 | 4 |
+| x | `trigger_targets_declared.rs` | 109 | 4 |
+| x | `werewolf_subtype_after_transform.rs` | 106 | 4 |
+| x | `civilized_scholar_triggers.rs` | 104 | 3 |
+| x | `planeswalkers.rs` | 102 | 4 |
+| x | `death_trigger_regressions.rs` | 101 | 2 |
+| x | `curse_and_equip_scope.rs` | 92 | 3 |
+| x | `cackling_counterpart.rs` | 90 | 3 |
+| x | `instant_interaction.rs` | 89 | 4 |
+| x | `garruk_relentless.rs` | 86 | 3 |
+| x | `funding_build_options.rs` | 85 | 4 |
+| x | `control_change.rs` | 80 | 3 |
+| x | `witchbane_orb.rs` | 79 | 3 |
+| x | `match_play_draw.rs` | 66 | 4 |
+| x | `transformed_display.rs` | 65 | 1 |
+| x | `until_eot_object_identity.rs` | 63 | 2 |
+| x | `ltb_controller.rs` | 57 | 2 |
+| x | `endless_ranks_of_the_dead.rs` | 43 | 1 |
+
+**64/128 files read; 19457 lines remaining.**
