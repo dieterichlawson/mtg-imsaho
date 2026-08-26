@@ -60,7 +60,6 @@ fn bug_i_devils_play_flashback_appears_in_legal_actions() {
     for _ in 0..7 {
         let m = state.create_object(mountain_card_id, P0, Zone::Battlefield, None, None);
         state.get_object_mut(m).unwrap().name = "Mountain".into();
-        state.get_object_mut(m).unwrap().card_types = vec![CardType::Land];
     }
 
     // A target creature so the any-target enumeration has something
@@ -193,7 +192,6 @@ fn bug_y_screeching_bat_transform_offered_with_untapped_lands() {
         let s = state.create_object(swamp_card_id, P0, Zone::Battlefield, None, None);
         let obj = state.get_object_mut(s).unwrap();
         obj.name = "Swamp".into();
-        obj.card_types = vec![CardType::Land];
     }
 
     // Mana pool is empty (just entered upkeep) — the bug fires here.

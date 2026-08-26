@@ -408,7 +408,6 @@ fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     for _ in 0..2 {
         let p = state.create_object(plains_card_id, P0, Zone::Battlefield, None, None);
         state.get_object_mut(p).unwrap().name = "Plains".into();
-        state.get_object_mut(p).unwrap().card_types = vec![CardType::Land];
     }
 
     assert_eq!(

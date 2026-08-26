@@ -545,7 +545,6 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
     let run_card_id = registry.get_id_by_name("Kessig Wolf Run").unwrap();
     let run = state.create_object(run_card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(run).unwrap().name = "Kessig Wolf Run".into();
-    state.get_object_mut(run).unwrap().card_types = vec![CardType::Land];
 
     let _target = ready_creature(&mut state, P0, 2, 2);
 

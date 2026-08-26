@@ -328,7 +328,6 @@ fn bug_h_maw_of_hell_first_target_must_be_a_land() {
         let card_id = registry.get_id_by_name("Swamp").unwrap();
         let id = state.create_object(card_id, P0, Zone::Battlefield, None, None);
         state.get_object_mut(id).unwrap().name = "Swamp".into();
-        state.get_object_mut(id).unwrap().card_types = vec![CardType::Land];
         id
     };
 

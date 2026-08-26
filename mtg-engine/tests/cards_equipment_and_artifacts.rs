@@ -37,7 +37,6 @@ fn travelers_amulet_finds_basic_land() {
     {
         let obj = state.get_object_mut(forest).unwrap();
         obj.name = "Forest".into();
-        obj.card_types = vec![CardType::Land];
     }
     state.get_player_mut(P0).library_order.push(forest);
 
@@ -153,15 +152,11 @@ fn runechanters_pike_grants_first_strike_and_power_bonus() {
 
     // Put 2 instant cards and 1 sorcery card in the graveyard.
     let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
-    let bolt1 = state.create_object(bolt_id, P0, Zone::Graveyard, None, None);
-    state.get_object_mut(bolt1).unwrap().card_types = vec![CardType::Instant];
-
-    let bolt2 = state.create_object(bolt_id, P0, Zone::Graveyard, None, None);
-    state.get_object_mut(bolt2).unwrap().card_types = vec![CardType::Instant];
+    state.create_object(bolt_id, P0, Zone::Graveyard, None, None);
+    state.create_object(bolt_id, P0, Zone::Graveyard, None, None);
 
     let div_id = reg.get_id_by_name("Divination").unwrap();
-    let div = state.create_object(div_id, P0, Zone::Graveyard, None, None);
-    state.get_object_mut(div).unwrap().card_types = vec![CardType::Sorcery];
+    state.create_object(div_id, P0, Zone::Graveyard, None, None);
 
     // Now creature should get +3/+0 (3 instant/sorcery cards).
     assert_eq!(state.effective_power(creature, &reg), Some(5));
@@ -287,13 +282,10 @@ fn trepanation_blade_attack_trigger_mills_and_pumps() {
     let forest_card_id = reg.get_id_by_name("Forest").unwrap();
 
     let lib1 = state.create_object(bolt_card_id, P1, Zone::Library, None, None);
-    state.get_object_mut(lib1).unwrap().card_types = vec![CardType::Instant];
 
     let lib2 = state.create_object(bolt_card_id, P1, Zone::Library, None, None);
-    state.get_object_mut(lib2).unwrap().card_types = vec![CardType::Instant];
 
     let lib3 = state.create_object(forest_card_id, P1, Zone::Library, None, None);
-    state.get_object_mut(lib3).unwrap().card_types = vec![CardType::Land];
 
     state.get_player_mut(P1).library_order = vec![lib1, lib2, lib3];
 
@@ -330,11 +322,9 @@ fn trepanation_blade_stops_at_first_land() {
     // Library starts with a land card.
     let forest_card_id = reg.get_id_by_name("Forest").unwrap();
     let lib1 = state.create_object(forest_card_id, P1, Zone::Library, None, None);
-    state.get_object_mut(lib1).unwrap().card_types = vec![CardType::Land];
 
     let bolt_card_id = reg.get_id_by_name("Lightning Bolt").unwrap();
     let lib2 = state.create_object(bolt_card_id, P1, Zone::Library, None, None);
-    state.get_object_mut(lib2).unwrap().card_types = vec![CardType::Instant];
 
     state.get_player_mut(P1).library_order = vec![lib1, lib2];
 

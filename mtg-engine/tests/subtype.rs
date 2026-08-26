@@ -161,7 +161,6 @@ fn bug_ax_woodland_cemetery_untapped_with_swamp_in_play() {
     let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();
     let swamp = state.create_object(swamp_card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(swamp).unwrap().name = "Swamp".into();
-    state.get_object_mut(swamp).unwrap().card_types = vec![CardType::Land];
 
     // Cast Woodland Cemetery and resolve it onto the battlefield.
     let wc_card_id = registry.get_id_by_name("Woodland Cemetery").unwrap();

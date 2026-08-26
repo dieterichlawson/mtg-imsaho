@@ -27,6 +27,8 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | mana | `lands_and_mana.rs`, `mana_filters.rs`, `mana_tap_bug.rs`, `equipment_autotap.rs` |
 | targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs` |
 | fizzling | `fizzle.rs` |
+| regeneration (CR 701.15) | `regeneration.rs` |
+| planeswalkers, loyalty (CR 306, 606, 704.5i) | `planeswalkers.rs` |
 | combat | `combat.rs`, `combat_rules.rs`, `combat_regressions.rs` |
 | damage | `damage_pipeline.rs`, `damage_helper.rs`, `inline_damage.rs` |
 | state-based actions (CR 704) | `state_based_actions.rs`, `evil_twin_sba_guard.rs` |

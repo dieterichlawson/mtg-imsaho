@@ -288,7 +288,6 @@ fn test_charmbreaker_devils_trigger_resolves_after_death() {
     let devils_card = reg.get_id_by_name("Charmbreaker Devils").unwrap();
 
     let instant = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
-    state.get_object_mut(instant).unwrap().card_types = vec![CardType::Instant];
 
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource::new(devils, devils_card, P0, "Charmbreaker Devils"),
@@ -533,12 +532,10 @@ fn test_trepanation_blade_trigger_resolves_after_equipment_destroyed() {
     let filler = reg.get_id_by_name("Walking Corpse").unwrap();
     for _ in 0..2 {
         let id = state.create_object(filler, P1, Zone::Library, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().card_types = vec![CardType::Creature];
         state.players[1].library_order.push(id);
     }
     let land_card = reg.get_id_by_name("Forest").unwrap();
     let land = state.create_object(land_card, P1, Zone::Library, None, None);
-    state.get_object_mut(land).unwrap().card_types = vec![CardType::Land];
     state.players[1].library_order.push(land);
 
     let lib_before = state.players[1].library_order.len();

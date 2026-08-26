@@ -286,7 +286,6 @@ fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
     {
         let obj = state.get_object_mut(garruk).unwrap();
         obj.name = "Garruk Relentless".into();
-        obj.card_types = vec![CardType::Planeswalker];
         obj.counters.insert(CounterType::Loyalty, 3);
     }
 
