@@ -1,170 +1,117 @@
-//! Tests for Inquisitor's Flail.
+//! Inquisitor's Flail: a doubling replacement effect that applies to combat
+//! damage in both directions.
 //!
-//! Oracle: {2} Artifact — Equipment
-//! If equipped creature would deal combat damage, it deals double that damage instead.
-//! If another source would deal combat damage to equipped creature, it deals double
-//! that damage to equipped creature instead.
-//! Equip {2}
+//! Oracle: {2} Artifact — Equipment. "If equipped creature would deal combat
+//! damage, it deals double that damage instead. If another source would deal
+//! combat damage to equipped creature, it deals double that damage to
+//! equipped creature instead. Equip {2}."
+//!
+//! Both clauses say *combat* damage (CR 510.1c). Fight is not combat damage —
+//! CR 701.12a is a pair of creatures dealing damage equal to their power, not
+//! a combat damage step — so neither clause applies to it.
 
 mod common;
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-/// Equipped creature deals double combat damage to a player.
-#[test]
-fn doubles_damage_to_player() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    let creature = ready_creature(&mut state, P0, 4, 4);
+/// A creature with the Flail attached, ready to attack.
+fn equipped(state: &mut GameState, reg: &mtg_engine::cards::CardRegistry,
+            power: i32, toughness: i32) -> ObjectId {
+    let creature = ready_creature(state, P0, power, toughness);
+    let flail = named_equipment(state, reg, "Inquisitor's Flail", P0);
     state.get_object_mut(flail).unwrap().attached_to = Some(creature);
-
-    // Creature attacks P1 unblocked.
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(creature, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
-
-    let life_before = state.get_player(P1).life;
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-    let life_after = state.get_player(P1).life;
-
-    assert_eq!(life_before - life_after, 8,
-        "4 power with Flail should deal 8 damage to player");
+    creature
 }
 
-/// Equipped creature deals double combat damage to a blocking creature.
+/// Damage the equipped creature *deals* in combat is doubled — to a player and
+/// to a blocking creature alike — and is not doubled when the Flail is on the
+/// battlefield but attached to nothing. The unattached row is the control:
+/// "8 damage" alone is also what an engine that doubles unconditionally does.
 #[test]
-fn doubles_damage_to_creature() {
+fn the_equipped_creature_deals_double_combat_damage() {
     let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    let attacker = ready_creature(&mut state, P0, 2, 2);
+    // Unblocked, to a player.
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let creature = equipped(&mut state, &reg, 4, 4);
+    attacks_unblocked(&mut state, creature, P1);
+    let before = state.get_player(P1).life;
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    assert_eq!(before - state.get_player(P1).life, 8,
+        "a 4-power attacker with the Flail deals 8 to the player");
+
+    // Blocked, to the blocker.
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = equipped(&mut state, &reg, 2, 2);
     let blocker = ready_creature(&mut state, P1, 5, 5);
-    state.get_object_mut(flail).unwrap().attached_to = Some(attacker);
-
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(attacker, P1)].into_iter().collect(),
-        blocker_assignments: [(attacker, vec![blocker])].into_iter().collect(),
-        ..Default::default()
-    });
-
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 4,
+        "a 2-power attacker with the Flail deals 4 to its blocker");
 
-    let blocker_damage = state.get_object(blocker).unwrap().damage_marked;
-    assert_eq!(blocker_damage, 4,
-        "2 power with Flail should deal 4 damage to blocker");
-}
-
-/// Equipped creature takes double combat damage from blockers.
-#[test]
-fn doubles_damage_taken_from_blocker() {
-    let reg = registry();
+    // Control: a Flail on the battlefield but equipping nothing doubles nothing.
     let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    let attacker = ready_creature(&mut state, P0, 3, 6);
-    let blocker = ready_creature(&mut state, P1, 2, 2);
-    state.get_object_mut(flail).unwrap().attached_to = Some(attacker);
-
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(attacker, P1)].into_iter().collect(),
-        blocker_assignments: [(attacker, vec![blocker])].into_iter().collect(),
-        ..Default::default()
-    });
-
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-
-    let attacker_damage = state.get_object(attacker).unwrap().damage_marked;
-    assert_eq!(attacker_damage, 4,
-        "Equipped creature should take double damage from 2-power blocker (4 instead of 2)");
-}
-
-/// Without Flail equipped, damage is normal.
-#[test]
-fn no_doubling_without_flail() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let _flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    // Flail NOT attached.
+    named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
-
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(creature, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
-
-    let life_before = state.get_player(P1).life;
+    attacks_unblocked(&mut state, creature, P1);
+    let before = state.get_player(P1).life;
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-    let life_after = state.get_player(P1).life;
-
-    assert_eq!(life_before - life_after, 3,
-        "Without Flail equipped, damage should be normal");
+    assert_eq!(before - state.get_player(P1).life, 3,
+        "an unattached Flail doubles nothing");
 }
 
-/// Per ruling: two Inquisitor's Flails should quadruple damage (2^2 = 4x).
+/// The second clause: combat damage dealt *to* the equipped creature by
+/// another source is doubled too.
+#[test]
+fn the_equipped_creature_takes_double_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = equipped(&mut state, &reg, 3, 6);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 4,
+        "a 2-power blocker deals 4 to the equipped creature, not 2");
+}
+
+/// CR 616.1: several doubling replacements each apply once, so two Flails
+/// quadruple rather than triple.
 #[test]
 fn two_flails_quadruple_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let flail1 = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    let flail2 = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
+    for _ in 0..2 {
+        let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
+        state.get_object_mut(flail).unwrap().attached_to = Some(creature);
+    }
+    attacks_unblocked(&mut state, creature, P1);
 
-    state.get_object_mut(flail1).unwrap().attached_to = Some(creature);
-    state.get_object_mut(flail2).unwrap().attached_to = Some(creature);
-
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(creature, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
-
-    let life_before = state.get_player(P1).life;
+    let before = state.get_player(P1).life;
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-    let life_after = state.get_player(P1).life;
-
-    assert_eq!(life_before - life_after, 12,
-        "Two Flails should quadruple damage: 3 * 4 = 12");
+    assert_eq!(before - state.get_player(P1).life, 12,
+        "3 power doubled twice is 12, not 9");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Inquisitor's Flail doubles combat damage, but fight damage
-/// (from Prey Upon etc.) is not combat damage. The Flail's doubling
-/// should NOT apply to fight damage.
+/// Both clauses say *combat* damage, and fight is not combat damage. Neither
+/// the damage the equipped creature deals in a fight nor the damage it takes
+/// there is doubled.
 #[test]
-fn bug_inquisitors_flail_doubles_fight_damage() {
-    let registry = CardRegistry::with_all_cards();
+fn fight_damage_is_not_combat_damage_and_is_not_doubled() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place a creature with Inquisitor's Flail equipped
-    let creature = ready_creature(&mut state, P0, 3, 3);
-    let flail = named_permanent(&mut state, &registry, "Inquisitor's Flail", P0);
-    if let Some(obj) = state.get_object_mut(flail) {
-        obj.is_equipment = true;
-        obj.attached_to = Some(creature);
-    }
-
-    // Place an opponent's creature to fight
+    let creature = equipped(&mut state, &reg, 3, 9);
     let opponent = ready_creature(&mut state, P1, 5, 5);
 
-    // Use the fight function directly
-    mtg_engine::combat::fight(&mut state, creature, opponent, &registry);
+    mtg_engine::combat::fight(&mut state, creature, opponent, &reg);
 
-    // Fight damage should be 3 (NOT doubled to 6)
-    let damage_on_opponent = state.get_object(opponent).unwrap().damage_marked;
-
-    // BUG: Flail doubles fight damage even though fight is not combat damage
-    assert_eq!(damage_on_opponent, 3,
-        "Fight damage should be 3 (not doubled by Flail). Got: {damage_on_opponent}");
+    assert_eq!(state.get_object(opponent).unwrap().damage_marked, 3,
+        "the equipped creature's fight damage is its power, undoubled");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 5,
+        "and the fight damage it takes is undoubled too");
 }

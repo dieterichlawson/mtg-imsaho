@@ -86,11 +86,11 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `player_protection.rs` | 184 | 4 |
 | x | `zones_and_state.rs` | 183 | 8 |
 | x | `characteristics_targeting.rs` | 182 | 6 |
-|   | `spell_cleanup.rs` | 180 | 4 |
-|   | `flashback_multiple_instances.rs` | 172 | 5 |
-|   | `mana_filters.rs` | 171 | 6 |
+| x | `spell_cleanup.rs` | 180 | 4 |
+| x | `flashback_multiple_instances.rs` | 172 | 5 |
+| x | `mana_filters.rs` | 171 | 6 |
 | x | `graveyard_shovel.rs` | 170 | 6 |
-|   | `inquisitors_flail.rs` | 170 | 6 |
+| x | `inquisitors_flail.rs` | 170 | 6 |
 | x | `engine_knows_no_cards.rs` | 162 | 2 |
 | x | `regeneration.rs` | 162 | 8 |
 | x | `unbreathing_horde.rs` | 159 | 4 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**122/126 files read; 693 lines remaining.**
+**126/126 files read; 0 lines remaining — every test file in the suite has been read line by line.**

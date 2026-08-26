@@ -10,7 +10,7 @@ use mtg_engine::cards::CardRegistry;
 // Re-exported: `use common::*` is already how tests reach P0/P1 and the
 // helpers below, so the id types come with them.
 pub use mtg_engine::ids::{CardId, ObjectId, PlayerId};
-use mtg_engine::state::GameState;
+pub use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
 pub const P0: PlayerId = PlayerId(0);
@@ -709,4 +709,41 @@ pub fn kill_by_damage(state: &mut GameState, registry: &CardRegistry, id: Object
 pub fn can_cast(state: &GameState, registry: &CardRegistry, id: ObjectId) -> bool {
     mtg_engine::engine::legal_actions(state, registry).actions.iter()
         .any(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == id))
+}
+
+/// Put the game into the state `combat::declare_blockers` leaves behind: each
+/// attacker attacking the named player, with its blockers assigned and its
+/// blocked-ness recorded.
+///
+/// Thirty-one sites across sixteen files used to build `CombatState` by hand,
+/// in three different shapes, and every one of them left `blocked_attackers`
+/// empty. The engine never does: CR 509.2 makes blocked-ness permanent for
+/// the combat, so an attacker whose blockers all leave is still blocked and
+/// still deals no damage to the player. A test standing on a state the engine
+/// cannot produce can pass while the path it claims to cover is broken.
+pub fn declare_combat(state: &mut GameState, attacks: &[(ObjectId, PlayerId, &[ObjectId])]) {
+    let mut combat = mtg_engine::state::CombatState::new();
+    for &(attacker, defender, blockers) in attacks {
+        combat.attackers.insert(attacker, defender);
+        combat.blocker_assignments.insert(attacker, blockers.to_vec());
+        if !blockers.is_empty() {
+            combat.blocked_attackers.insert(attacker);
+        }
+    }
+    state.combat = Some(combat);
+}
+
+/// One attacker, unblocked.
+pub fn attacks_unblocked(state: &mut GameState, attacker: ObjectId, defender: PlayerId) {
+    declare_combat(state, &[(attacker, defender, &[])]);
+}
+
+/// One attacker, blocked by `blockers`.
+pub fn attacks_blocked_by(
+    state: &mut GameState,
+    attacker: ObjectId,
+    defender: PlayerId,
+    blockers: &[ObjectId],
+) {
+    declare_combat(state, &[(attacker, defender, blockers)]);
 }
