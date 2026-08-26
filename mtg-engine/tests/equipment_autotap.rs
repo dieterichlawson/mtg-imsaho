@@ -298,25 +298,47 @@ fn mask_of_avacyn_equip_offered_with_three_untapped_lands() {
 // and which actually attaches the equipment when submitted.
 // ════════════════════════════════════════════════════════════════════
 
+/// Every Equipment in the set whose equip cost is plain mana, as
+/// (name, generic mana value). Read off the card rather than hand-listed, so a
+/// newly added Equipment is covered the day it is registered and a renamed one
+/// cannot silently drop out of the table.
+fn equipment_with_a_mana_equip_cost() -> Vec<(String, usize)> {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut out = Vec::new();
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        if !data.subtypes.iter().any(|s| s == "Equipment") {
+            continue;
+        }
+        let obj = equipment(&mut state, &reg, name, P0);
+        let Some(ability) = reg.get(id).unwrap().activated_abilities(&state, obj, &reg)
+            .into_iter()
+            .find(|a| a.description.to_lowercase().contains("equip"))
+        else { continue };
+        // Sacrifice-cost equips (Demonmail Hauberk) are not autotap cases.
+        if !matches!(ability.sacrifice_cost, mtg_engine::cards::SacrificeCost::None) {
+            continue;
+        }
+        let cost = ability.cost.mana_value() as usize;
+        if cost > 0 {
+            out.push(((*name).to_string(), cost));
+        }
+    }
+    out.sort();
+    out
+}
+
 #[test]
 fn every_mana_cost_equipment_in_isd_can_be_equipped_via_autotap() {
     let reg = registry();
-    let cases: &[(&str, usize)] = &[
-        ("Silver-Inlaid Dagger", 2),
-        ("Butcher's Cleaver", 3),
-        ("Cobbled Wings", 1),
-        ("Blazing Torch", 1),
-        ("Sharpened Pitchfork", 1),
-        ("Wooden Stake", 1),
-        ("Mask of Avacyn", 3),
-        ("Trepanation Blade", 2),
-        ("Inquisitor's Flail", 2),
-        // Skipped if not in the registry — see the get_id_by_name guard below.
-    ];
-    for &(name, equip_cost) in cases {
-        if reg.get_id_by_name(name).is_none() {
-            continue;
-        }
+    let cases = equipment_with_a_mana_equip_cost();
+    assert!(cases.len() >= 8,
+        "only {} mana-cost Equipment found — this sweep has stopped covering the set",
+        cases.len());
+    for (name, equip_cost) in &cases {
+        let (name, equip_cost) = (name.as_str(), *equip_cost);
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let bears = named_creature(&mut state, &reg, "Grizzly Bears", P0);
         let eq = equipment(&mut state, &reg, name, P0);
@@ -497,57 +519,45 @@ fn assert_equip_ability_unique_after_attach(reg: &CardRegistry, equip_name: &str
     let state = engine::submit_action(&state, &action_a, reg);
     assert_eq!(state.get_object(eq).unwrap().attached_to, Some(bears_a));
 
-    // Now count actions targeting bears_b. Without the Bug AJ fix there are 2:
-    // one with object_id = eq, one with object_id = bears_a.
+    // Now look at the actions targeting bears_b. The equip ability belongs to
+    // the equipment: exactly one, offered by `eq`. Without the Bug AJ fix a
+    // second copy appears with `object_id = bears_a` — the equipment's own
+    // ability list misapplied to the creature it is attached to, which is
+    // recognisable by its missing `source_card_id`.
+    //
+    // Abilities the equipment *grants* to the equipped creature (Blazing
+    // Torch's "{T}, Sacrifice: deal 2 damage") also show up on bears_a, and
+    // those are correct — they carry the granting card's id.
     let legal = engine::legal_actions(&state, reg);
     let to_b: Vec<&Action> = legal.actions.iter().filter(|a| matches!(a,
         Action::ActivateAbility { targets, .. }
             if targets == &[Target::Object(bears_b)])).collect();
-    assert_eq!(to_b.len(), 1,
-        "{}: equip ability should appear exactly once per target, got {}: {:?}",
-        equip_name, to_b.len(), to_b);
-    if let Action::ActivateAbility { object_id, .. } = to_b[0] {
-        assert_eq!(*object_id, eq,
-            "{equip_name}: equip action's object_id should be the equipment, not the attached creature");
+
+    let from_equipment = to_b.iter().filter(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == eq)).count();
+    assert_eq!(from_equipment, 1,
+        "{equip_name}: the equip ability should appear exactly once per target, got {from_equipment}: {to_b:?}");
+
+    let misrouted: Vec<&&Action> = to_b.iter().filter(|a| matches!(a,
+        Action::ActivateAbility { object_id, source_card_id: None, .. } if *object_id != eq)).collect();
+    assert!(misrouted.is_empty(),
+        "{equip_name}: the equipment's own ability was offered on the creature it is \
+         attached to, not on the equipment: {misrouted:?}");
+}
+
+#[test]
+fn no_equipment_offers_its_equip_ability_twice_after_attaching() {
+    let reg = registry();
+    let cases = equipment_with_a_mana_equip_cost();
+    assert!(cases.len() >= 8,
+        "only {} mana-cost Equipment found — this sweep has stopped covering the set",
+        cases.len());
+    for (name, equip_cost) in &cases {
+        // Two creatures and enough lands to equip twice over.
+        assert_equip_ability_unique_after_attach(&reg, name, equip_cost * 2);
     }
 }
 
-#[test]
-fn cobbled_wings_equip_unique_after_attach() {
-    assert_equip_ability_unique_after_attach(&registry(), "Cobbled Wings", 4);
-}
-
-#[test]
-fn silver_inlaid_dagger_equip_unique_after_attach() {
-    assert_equip_ability_unique_after_attach(&registry(), "Silver-Inlaid Dagger", 5);
-}
-
-#[test]
-fn mask_of_avacyn_equip_unique_after_attach() {
-    assert_equip_ability_unique_after_attach(&registry(), "Mask of Avacyn", 6);
-}
-
-#[test]
-fn butchers_cleaver_equip_unique_after_attach() {
-    assert_equip_ability_unique_after_attach(&registry(), "Butcher's Cleaver", 6);
-}
-
-#[test]
-fn sharpened_pitchfork_equip_unique_after_attach() {
-    assert_equip_ability_unique_after_attach(&registry(), "Sharpened Pitchfork", 4);
-}
-
-#[test]
-fn wooden_stake_equip_unique_after_attach() {
-    assert_equip_ability_unique_after_attach(&registry(), "Wooden Stake", 4);
-}
-
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Mask of Avacyn generates a duplicate equip action via the
-/// attached-aura loop, enabling broken re-equip behavior.
 #[test]
 fn bug_mask_of_avacyn_duplicate_equip_action() {
     let registry = CardRegistry::with_all_cards();

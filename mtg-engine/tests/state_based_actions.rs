@@ -59,26 +59,34 @@ fn empty_library_loss_is_deferred_to_sba() {
     assert!(state.get_player(P0).lost);
 }
 
-/// Rule 704.5f: Creature with 0 toughness goes to graveyard.
+/// Rules 704.5f and 704.5g: a creature dies when its toughness is 0 or less,
+/// or when marked damage is at least its toughness. Six one-assert tests used
+/// to walk this boundary a case at a time; the boundary is the point, so walk
+/// it in one place where a missing case is visible.
 #[test]
-fn zero_toughness_creature_dies() {
+fn a_creature_dies_exactly_at_the_toughness_boundary() {
+    // (toughness, damage marked, dies?)
+    const CASES: &[(i32, u32, bool)] = &[
+        (0, 0, true),    // 704.5f: zero toughness, no damage needed
+        (-1, 0, true),   // 704.5f: negative toughness too
+        (4, 3, false),   // 704.5g: below lethal
+        (3, 3, true),    // exactly lethal
+        (1, 100, true),  // overkill is still just lethal
+        (3, 0, false),   // undamaged
+    ];
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = state.create_object(CardId(99), P0, Zone::Battlefield, Some(5), Some(0));
+    for &(toughness, damage, dies) in CASES {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let creature = state.create_object(CardId(99), P0, Zone::Battlefield, Some(2), Some(toughness));
+        state.get_object_mut(creature).unwrap().damage_marked = damage;
 
-    check_state_based_actions(&mut state, &reg);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
-}
+        check_state_based_actions(&mut state, &reg);
 
-/// Negative toughness also kills a creature.
-#[test]
-fn negative_toughness_creature_dies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = state.create_object(CardId(99), P0, Zone::Battlefield, Some(3), Some(-1));
-
-    check_state_based_actions(&mut state, &reg);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+        let expected = if dies { Zone::Graveyard } else { Zone::Battlefield };
+        assert_eq!(state.get_object(creature).unwrap().zone, expected,
+            "a {toughness}-toughness creature with {damage} damage should {}",
+            if dies { "die" } else { "survive" });
+    }
 }
 
 /// Rule 704.3: SBAs repeat until none are performed. Multiple SBAs
@@ -97,74 +105,21 @@ fn sbas_repeat_until_stable() {
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 
-/// Creature with damage less than its toughness survives.
+/// Rule 704.5a: a player at 0 or less life loses. The interesting part is
+/// where the line is, so state it once.
 #[test]
-fn creature_survives_non_lethal_damage() {
+fn a_player_loses_exactly_at_zero_life() {
+    const CASES: &[(i32, bool)] = &[(1, false), (0, true), (-10, true)];
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 4);
-    state.get_object_mut(creature).unwrap().damage_marked = 3;
+    for &(life, loses) in CASES {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.players[0].life = life;
 
-    check_state_based_actions(&mut state, &reg);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
-        "3 damage on a 4-toughness creature should not be lethal");
-}
+        check_state_based_actions(&mut state, &reg);
 
-/// Exactly lethal damage kills a creature.
-#[test]
-fn exactly_lethal_damage_kills() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 3);
-    state.get_object_mut(creature).unwrap().damage_marked = 3;
-
-    check_state_based_actions(&mut state, &reg);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
-}
-
-/// Overkill damage also kills.
-#[test]
-fn overkill_damage_kills() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 1, 1);
-    state.get_object_mut(creature).unwrap().damage_marked = 100;
-
-    check_state_based_actions(&mut state, &reg);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
-}
-
-/// Player at exactly 0 life loses.
-#[test]
-fn exactly_zero_life_is_loss() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    state.players[0].life = 0;
-
-    check_state_based_actions(&mut state, &reg);
-    assert!(state.players[0].lost);
-}
-
-/// Negative life also loses.
-#[test]
-fn negative_life_is_loss() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    state.players[0].life = -10;
-
-    check_state_based_actions(&mut state, &reg);
-    assert!(state.players[0].lost);
-}
-
-/// Player at 1 life does NOT lose.
-#[test]
-fn one_life_is_not_loss() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    state.players[0].life = 1;
-
-    check_state_based_actions(&mut state, &reg);
-    assert!(!state.players[0].lost);
+        assert_eq!(state.players[0].lost, loses,
+            "a player at {life} life should {}", if loses { "lose" } else { "not lose" });
+    }
 }
 
 /// No SBAs when everything is fine — check returns false.

@@ -7,27 +7,88 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-// ── Reckless Waif ─────────────────────────────────────────────────
+// ── Every werewolf, front face to back ────────────────────────────
 
+/// Transforming does not make a new object (CR 711.5) — it turns the same
+/// permanent's other face up, and every characteristic the game reads must
+/// come from that face afterwards.
+///
+/// Seven of these were written one card at a time, each asserting the back
+/// face's printed numbers ("should be 7/7", "should be 3/2"). Those numbers
+/// are already written down in the card file, so restating them proved
+/// nothing about the engine; what needs checking is that the *accessors*
+/// follow the face. This asserts each card against its own back-face data,
+/// for every werewolf in the set at once.
 #[test]
-fn reckless_waif_transforms_when_no_spells_cast() {
+fn every_werewolf_reads_its_back_face_after_transforming() {
     let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    // num_spells_cast_last_turn is empty (no spells cast), is_first_turn is false
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
-    assert_eq!(state.effective_power(waif, &reg).unwrap(), 1);
-    assert_eq!(state.effective_toughness(waif, &reg).unwrap(), 1);
+    let werewolves: Vec<String> = reg.all_names().iter()
+        .filter(|name| {
+            reg.get_id_by_name(name)
+                .and_then(|id| reg.get(id))
+                .and_then(|b| b.back_face_data().map(|back| {
+                    let front = b.card_data();
+                    front.subtypes.iter().chain(back.subtypes.iter()).any(|s| s == "Werewolf")
+                }))
+                .unwrap_or(false)
+        })
+        .map(|n| (*n).to_string())
+        .collect();
+    assert!(werewolves.len() >= 8,
+        "only {} werewolves found — this sweep has stopped covering the set",
+        werewolves.len());
 
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+    for name in &werewolves {
+        let mut state = game_at_step(Step::Upkeep, P0);
+        let id = named_creature(&mut state, &reg, name, P0);
+        let behavior = reg.get(state.get_object(id).unwrap().card_id).unwrap();
+        let front = behavior.card_data();
+        let back = behavior.back_face_data().unwrap();
 
-    // Should be transformed to Merciless Predator 3/2
-    let obj = state.get_object(waif).unwrap();
-    assert!(obj.is_transformed, "Reckless Waif should transform when no spells cast last turn");
-    assert_eq!(obj.name, "Merciless Predator");
-    assert_eq!(state.effective_power(waif, &reg).unwrap(), 3);
-    assert_eq!(state.effective_toughness(waif, &reg).unwrap(), 2);
+        // Front face first, so a card that never transformed cannot pass by
+        // having had the back face's characteristics all along.
+        assert_eq!(state.effective_power(id, &reg), front.power,
+            "{name} does not start with its front-face power");
+        assert_eq!(state.effective_toughness(id, &reg), front.toughness,
+            "{name} does not start with its front-face toughness");
+
+        // "At the beginning of each upkeep, if no spells were cast last turn,
+        // transform this creature." No spells were cast, so it transforms.
+        fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+        let obj = state.get_object(id).unwrap();
+        assert!(obj.is_transformed, "{name} did not transform on a quiet upkeep");
+        assert_eq!(obj.name, back.name, "{name} kept its front-face name");
+        assert_eq!(state.effective_power(id, &reg), back.power,
+            "{name} kept its front-face power after transforming");
+        assert_eq!(state.effective_toughness(id, &reg), back.toughness,
+            "{name} kept its front-face toughness after transforming");
+
+        for kw in &back.keywords {
+            assert!(state.has_keyword(id, *kw, &reg),
+                "{} did not pick up its back face's {kw:?}", back.name);
+        }
+        for kw in &front.keywords {
+            if !back.keywords.contains(kw) {
+                assert!(!state.has_keyword(id, *kw, &reg),
+                    "{} kept {kw:?} from its front face", back.name);
+            }
+        }
+        for sub in &back.subtypes {
+            assert!(state.has_subtype(id, sub, &reg),
+                "{} did not pick up its back face's {sub:?} subtype", back.name);
+        }
+        for sub in &front.subtypes {
+            if !back.subtypes.contains(sub) {
+                assert!(!state.has_subtype(id, sub, &reg),
+                    "{} kept {sub:?} from its front face", back.name);
+            }
+        }
+    }
 }
+
+// ── Reckless Waif ─────────────────────────────────────────────────
 
 #[test]
 fn reckless_waif_transforms_on_the_games_first_upkeep() {
@@ -85,23 +146,6 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
 // ── Gatstaf Shepherd ──────────────────────────────────────────────
 
 #[test]
-fn gatstaf_shepherd_transforms_and_gains_intimidate() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
-
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
-
-    let obj = state.get_object(shepherd).unwrap();
-    assert!(obj.is_transformed);
-    assert_eq!(obj.name, "Gatstaf Howler");
-    assert_eq!(state.effective_power(shepherd, &reg).unwrap(), 3);
-    assert_eq!(state.effective_toughness(shepherd, &reg).unwrap(), 3);
-    assert!(state.has_keyword(shepherd, Keyword::Intimidate, &reg),
-        "Gatstaf Howler should have Intimidate");
-}
-
-#[test]
 fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
@@ -122,42 +166,7 @@ fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
 
 // ── Village Ironsmith ─────────────────────────────────────────────
 
-#[test]
-fn village_ironsmith_keeps_first_strike_on_both_faces() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    let ironsmith = named_creature(&mut state, &reg, "Village Ironsmith", P0);
-
-    // Front face: first strike
-    assert!(state.has_keyword(ironsmith, Keyword::FirstStrike, &reg));
-
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
-
-    // Back face (Ironfang): still first strike
-    assert!(state.get_object(ironsmith).unwrap().is_transformed);
-    assert_eq!(state.effective_power(ironsmith, &reg).unwrap(), 3);
-    assert_eq!(state.effective_toughness(ironsmith, &reg).unwrap(), 1);
-    assert!(state.has_keyword(ironsmith, Keyword::FirstStrike, &reg),
-        "Ironfang should have First Strike");
-}
-
 // ── Villagers of Estwald ──────────────────────────────────────────
-
-#[test]
-fn villagers_of_estwald_transforms_to_large_body() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    let villagers = named_creature(&mut state, &reg, "Villagers of Estwald", P0);
-
-    assert_eq!(state.effective_power(villagers, &reg).unwrap(), 2);
-    assert_eq!(state.effective_toughness(villagers, &reg).unwrap(), 3);
-
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(state.effective_power(villagers, &reg).unwrap(), 4);
-    assert_eq!(state.effective_toughness(villagers, &reg).unwrap(), 6);
-    assert_eq!(state.get_object(villagers).unwrap().name, "Howlpack of Estwald");
-}
 
 // ── Hanweir Watchkeep ─────────────────────────────────────────────
 
@@ -185,38 +194,7 @@ fn hanweir_watchkeep_loses_defender_gains_force_attack() {
 
 // ── Tormented Pariah ──────────────────────────────────────────────
 
-#[test]
-fn tormented_pariah_transforms_to_large_werewolf() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    let pariah = named_creature(&mut state, &reg, "Tormented Pariah", P0);
-
-    assert_eq!(state.effective_power(pariah, &reg).unwrap(), 3);
-    assert_eq!(state.effective_toughness(pariah, &reg).unwrap(), 2);
-
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(state.effective_power(pariah, &reg).unwrap(), 6);
-    assert_eq!(state.effective_toughness(pariah, &reg).unwrap(), 4);
-    assert_eq!(state.get_object(pariah).unwrap().name, "Rampaging Werewolf");
-}
-
 // ── Grizzled Outcasts ─────────────────────────────────────────────
-
-#[test]
-fn grizzled_outcasts_transforms_to_7_7() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    let outcasts = named_creature(&mut state, &reg, "Grizzled Outcasts", P0);
-
-    assert_eq!(state.effective_power(outcasts, &reg).unwrap(), 4);
-
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(state.effective_power(outcasts, &reg).unwrap(), 7);
-    assert_eq!(state.effective_toughness(outcasts, &reg).unwrap(), 7);
-    assert_eq!(state.get_object(outcasts).unwrap().name, "Krallenhorde Wantons");
-}
 
 // ── Mayor of Avabruck ─────────────────────────────────────────────
 
@@ -351,22 +329,6 @@ fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
 }
 
 // ── Daybreak Ranger ───────────────────────────────────────────────
-
-#[test]
-fn daybreak_ranger_transforms_to_nightfall_predator() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    let ranger = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
-
-    assert_eq!(state.effective_power(ranger, &reg).unwrap(), 2);
-
-    fire_step_trigger(&mut state, Step::Upkeep, &reg);
-
-    assert!(state.get_object(ranger).unwrap().is_transformed);
-    assert_eq!(state.effective_power(ranger, &reg).unwrap(), 4);
-    assert_eq!(state.effective_toughness(ranger, &reg).unwrap(), 4);
-    assert_eq!(state.get_object(ranger).unwrap().name, "Nightfall Predator");
-}
 
 #[test]
 fn daybreak_ranger_has_activated_ability_on_front_face() {

@@ -33,169 +33,74 @@ fn has_trigger_for_card(state: &GameState, card_id: CardId) -> bool {
     on_stack || in_pending
 }
 
-// Oracle: "At the beginning of your upkeep, return target Spirit card
-// from your graveyard to your hand."
-// "Your upkeep" means only the controller's upkeep (CR 603.2).
+/// Every card whose upkeep or end-step trigger is scoped to its controller,
+/// checked in both directions at once: it fires on the controller's step and
+/// stays silent on the opponent's.
+///
+/// Six of these were written one card at a time, and every one asserted only
+/// that nothing fired on the opponent's step — which a card with no trigger at
+/// all would also satisfy. Sweeping the set covers the cards nobody typed out,
+/// and asserting the positive direction is what makes the negative one mean
+/// something.
 #[test]
-fn test_angel_of_flight_alabaster_trigger_only_on_your_upkeep() {
+fn a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses() {
     let reg = registry();
-    let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
 
-    // P1 is active (this is P1's upkeep). P0 controls Angel.
-    let mut state = game_at_step(Step::Upkeep, P1);
-    let _angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
-
-    // Put a Spirit in P0's graveyard so the trigger would have a valid target.
-    let _spirit = named_card_in_graveyard(&mut state, &reg, "Voiceless Spirit", P0);
-
-    collect_step_triggers(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(
-        has_trigger_for_card(&state, angel_card), false,
-        "Angel of Flight Alabaster should not trigger during opponent's upkeep (CR 603.2)"
-    );
-}
-
-// Oracle: "At the beginning of your upkeep, target player draws a card
-// and loses 1 life."
-// "Your upkeep" means only the controller's upkeep.
-#[test]
-fn test_bloodgift_demon_trigger_only_on_your_upkeep() {
-    let reg = registry();
-    let demon_card = reg.get_id_by_name("Bloodgift Demon").unwrap();
-
-    // P1 is active (this is P1's upkeep). P0 controls Bloodgift Demon.
-    let mut state = game_at_step(Step::Upkeep, P1);
-    let _demon = named_creature(&mut state, &reg, "Bloodgift Demon", P0);
-
-    collect_step_triggers(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(
-        has_trigger_for_card(&state, demon_card), false,
-        "Bloodgift Demon should not trigger during opponent's upkeep (CR 603.2)"
-    );
-}
-
-// Oracle (back face): "At the beginning of your end step, create a 2/2
-// green Wolf creature token."
-// "Your end step" means only the controller's end step.
-#[test]
-fn test_howlpack_alpha_end_step_trigger_only_on_your_end_step() {
-    let reg = registry();
-    let mayor_card = reg.get_id_by_name("Mayor of Avabruck").unwrap();
-
-    // P1 is active (this is P1's end step). P0 controls Howlpack Alpha.
-    let mut state = game_at_step(Step::EndStep, P1);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
-    state.get_object_mut(mayor).unwrap().is_transformed = true;
-
-    collect_step_triggers(&mut state, Step::EndStep, &reg);
-
-    assert_eq!(
-        has_trigger_for_card(&state, mayor_card), false,
-        "Howlpack Alpha should not create Wolf tokens during opponent's end step (CR 603.2)"
-    );
-}
-
-// Oracle: "At the beginning of your upkeep, mill two cards."
-// "Your upkeep" means only the controller's upkeep.
-#[test]
-fn test_splinterfright_trigger_only_on_your_upkeep() {
-    let reg = registry();
-    let splinter_card = reg.get_id_by_name("Splinterfright").unwrap();
-
-    // P1 is active (this is P1's upkeep). P0 controls Splinterfright.
-    let mut state = game_at_step(Step::Upkeep, P1);
-    let _splinter = named_creature(&mut state, &reg, "Splinterfright", P0);
-
-    collect_step_triggers(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(
-        has_trigger_for_card(&state, splinter_card), false,
-        "Splinterfright should not trigger during opponent's upkeep (CR 603.2)"
-    );
-}
-
-// Oracle (front face): "At the beginning of your upkeep, you may
-// transform Cloistered Youth."
-// "Your upkeep" means only the controller's upkeep.
-#[test]
-fn test_cloistered_youth_no_phantom_upkeep_trigger() {
-    let reg = registry();
-    let youth_card = reg.get_id_by_name("Cloistered Youth").unwrap();
-
-    // P1 is active (this is P1's upkeep). P0 controls Cloistered Youth.
-    let mut state = game_at_step(Step::Upkeep, P1);
-    let _youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
-
-    collect_step_triggers(&mut state, Step::Upkeep, &reg);
-
-    assert_eq!(
-        has_trigger_for_card(&state, youth_card), false,
-        "Cloistered Youth should not trigger during opponent's upkeep (CR 603.2)"
-    );
-}
-
-// Oracle (back face): "At the beginning of your end step, you lose 1 life."
-// "Your end step" means only the controller's end step.
-#[test]
-fn test_unholy_fiend_no_phantom_end_step_trigger() {
-    let reg = registry();
-    let youth_card = reg.get_id_by_name("Cloistered Youth").unwrap();
-
-    // P1 is active (this is P1's end step). P0 controls Unholy Fiend.
-    let mut state = game_at_step(Step::EndStep, P1);
-    let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
-    state.get_object_mut(youth).unwrap().is_transformed = true;
-
-    let life_before = state.players[0].life;
-
-    collect_step_triggers(&mut state, Step::EndStep, &reg);
-
-    assert_eq!(
-        has_trigger_for_card(&state, youth_card), false,
-        "Unholy Fiend should not trigger during opponent's end step (CR 603.2)"
-    );
-    assert_eq!(
-        state.players[0].life, life_before,
-        "P0 should not lose life from Unholy Fiend during opponent's end step"
-    );
-}
-
-// Oracle: "At the beginning of your upkeep, create X 2/2 black Zombie
-// creature tokens, where X is half the number of Zombies you control,
-// rounded down."
-// "Your upkeep" means only the controller's upkeep.
-#[test]
-fn endless_ranks_no_phantom_trigger_opponent_upkeep() {
-    let reg = registry();
-    let ranks_card = reg.get_id_by_name("Endless Ranks of the Dead").unwrap();
-
-    // P1 is active (this is P1's upkeep). P0 controls Endless Ranks.
-    let mut state = game_at_step(Step::Upkeep, P1);
-    let _ranks = named_creature(&mut state, &reg, "Endless Ranks of the Dead", P0);
-
-    for _ in 0..4 {
-        let z = ready_creature(&mut state, P0, 2, 2);
-        let obj = state.get_object_mut(z).unwrap();
-        obj.name = "Zombie".into();
-        obj.is_token = true;
+    // (card name, the step its "your" trigger is scoped to)
+    let mut cases: Vec<(String, Step)> = Vec::new();
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(behavior) = reg.get(id) else { continue };
+        for ability in &behavior.card_data().triggered_abilities {
+            let step = match ability.kind {
+                mtg_engine::cards::TriggerKind::Upkeep => Step::Upkeep,
+                mtg_engine::cards::TriggerKind::EndStep => Step::EndStep,
+                _ => continue,
+            };
+            if behavior.step_trigger_scope(&ability.kind, false)
+                == mtg_engine::cards::TriggerScope::Your
+            {
+                cases.push(((*name).to_string(), step));
+            }
+        }
     }
+    cases.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1))));
+    cases.dedup();
+    assert!(cases.len() >= 6,
+        "only {} cards declare a controller-scoped step trigger — this sweep has \
+         stopped covering the set", cases.len());
 
-    collect_step_triggers(&mut state, Step::Upkeep, &reg);
+    for (name, step) in &cases {
+        let card = reg.get_id_by_name(name).unwrap();
 
-    assert_eq!(
-        has_trigger_for_card(&state, ranks_card), false,
-        "Endless Ranks of the Dead should not trigger during opponent's upkeep (CR 603.2)"
-    );
+        // P0 controls the permanent and is the active player: it fires.
+        let mut own = game_at_step(*step, P0);
+        let _id = named_creature(&mut own, &reg, name, P0);
+        // Several of these want a graveyard card to target, so give every one
+        // something to find — a missing target must never be the reason
+        // nothing fired.
+        let _spirit = named_card_in_graveyard(&mut own, &reg, "Voiceless Spirit", P0);
+        collect_step_triggers(&mut own, *step, &reg);
+        assert!(has_trigger_for_card(&own, card),
+            "{name}'s {step:?} trigger did not fire on its own controller's step");
+
+        // Same board, opponent's step: it does not.
+        let mut theirs = game_at_step(*step, P1);
+        let _id = named_creature(&mut theirs, &reg, name, P0);
+        let _spirit = named_card_in_graveyard(&mut theirs, &reg, "Voiceless Spirit", P0);
+        collect_step_triggers(&mut theirs, *step, &reg);
+        assert!(!has_trigger_for_card(&theirs, card),
+            "{name}'s \"your {step:?}\" trigger fired on the opponent's step (CR 603.2)");
+    }
 }
+
 
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// FALSE POSITIVE: Trigger system correctly pre-filters upkeep triggers
-/// by controller. No spurious triggers go on the stack during opponent's upkeep.
+/// The end-to-end version of the same rule: the sweep above stops at trigger
+/// collection, this one runs the full dispatch and checks the stack is clean.
 #[test]
 fn nothing_reaches_the_stack_during_an_opponents_upkeep() {
     let registry = CardRegistry::with_all_cards();

@@ -6,7 +6,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{CardRegistry, TriggerKind};
 use mtg_engine::ids::PlayerId;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
@@ -20,47 +20,50 @@ fn kill_creature(state: &mut mtg_engine::state::GameState, registry: &CardRegist
     mtg_engine::sba::check_state_based_actions(state, registry);
 }
 
+/// The whole set at once: a creature that declares no `SelfDies`,
+/// `LeavesBattlefield` or `AnyCreatureDies` ability puts nothing on the stack
+/// when it dies. Naming three vanilla creatures one test each covered three
+/// cards; this covers every one that qualifies, including the next one added.
 #[test]
-fn typhoid_rats_death_creates_no_stack_entries() {
-    // Oracle: Typhoid Rats has only "Deathtouch". No dies or LTB handler.
+fn no_creature_without_a_death_ability_puts_a_trigger_on_the_stack_when_it_dies() {
     let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let rats = named_creature(&mut state, &registry, "Typhoid Rats", P0);
 
-    kill_creature(&mut state, &registry, rats);
-    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    let silent: Vec<String> = registry
+        .all_names()
+        .iter()
+        .filter(|name| {
+            let Some(id) = registry.get_id_by_name(name) else { return false };
+            let Some(data) = registry.card_data(id) else { return false };
+            data.card_types.contains(&mtg_engine::types::CardType::Creature)
+                && !data.triggered_abilities.iter().any(|t| matches!(
+                    t.kind,
+                    TriggerKind::SelfDies
+                        | TriggerKind::LeavesBattlefield
+                        | TriggerKind::AnyCreatureDies
+                ))
+        })
+        .map(|n| (*n).to_string())
+        .collect();
+    assert!(silent.len() >= 60,
+        "only {} creatures have no death ability — this sweep has stopped covering the set",
+        silent.len());
 
-    let trigger_count = state.stack.iter().filter(|e| matches!(e, StackEntry::Trigger(_))).count();
-    assert_eq!(trigger_count, 0,
-        "Typhoid Rats has no dies/LTB handler per oracle; stack should have no triggers");
-}
+    for name in &silent {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let id = named_creature(&mut state, &registry, name, P0);
+        kill_creature(&mut state, &registry, id);
+        mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
-#[test]
-fn fortress_crab_death_creates_no_stack_entries() {
-    // Oracle: Fortress Crab is a vanilla 1/6.
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let crab = named_creature(&mut state, &registry, "Fortress Crab", P0);
-
-    kill_creature(&mut state, &registry, crab);
-    mtg_engine::triggers::collect_triggers(&mut state, &registry);
-
-    let trigger_count = state.stack.iter().filter(|e| matches!(e, StackEntry::Trigger(_))).count();
-    assert_eq!(trigger_count, 0, "Fortress Crab is vanilla — no triggers");
-}
-
-#[test]
-fn walking_corpse_death_creates_no_stack_entries() {
-    // Oracle: Walking Corpse is vanilla.
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let wc = named_creature(&mut state, &registry, "Walking Corpse", P0);
-
-    kill_creature(&mut state, &registry, wc);
-    mtg_engine::triggers::collect_triggers(&mut state, &registry);
-
-    let trigger_count = state.stack.iter().filter(|e| matches!(e, StackEntry::Trigger(_))).count();
-    assert_eq!(trigger_count, 0, "Walking Corpse is vanilla — no triggers");
+        let triggers: Vec<_> = state.stack.iter()
+            .filter_map(|e| match e {
+                StackEntry::Trigger(t) => Some(format!("{:?}", t.event)),
+                _ => None,
+            })
+            .collect();
+        assert!(triggers.is_empty(),
+            "{name} declares no death or leaves-the-battlefield ability, but dying \
+             put {triggers:?} on the stack");
+    }
 }
 
 #[test]
