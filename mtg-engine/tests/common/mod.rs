@@ -648,8 +648,11 @@ pub fn kill_by_damage(state: &mut GameState, registry: &CardRegistry, id: Object
     state.get_object_mut(id).expect("creature to kill").damage_marked = lethal;
     state.events.clear();
     mtg_engine::sba::check_state_based_actions(state, registry);
-    assert_eq!(state.get_object(id).map(|o| o.zone), Some(Zone::Graveyard),
-        "kill_by_damage: {lethal} damage should have been lethal");
+    // A token that dies ceases to exist in the same SBA pass (CR 111.7), so
+    // "it is gone" and "it is in the graveyard" are both success.
+    assert!(state.get_object(id).is_none_or(|o| o.zone == Zone::Graveyard),
+        "kill_by_damage: {lethal} damage should have been lethal, but it is in {:?}",
+        state.get_object(id).map(|o| o.zone));
 }
 
 /// Whether the engine currently offers `id` as a spell its controller may cast.
