@@ -96,77 +96,117 @@ fn immediate_resolution_cleanup_and_no_tracker_leak() {
 }
 
 // -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
+// Night Terrors: the same rule on a spell whose choice picks a card in a
+// hand rather than a permanent on the battlefield.
 // -------------------------------------------------------------------------
 
-/// Bug: Night Terrors is never moved off the stack when the target
-/// player has multiple nonland cards in hand (choice mechanism fails).
+/// Night Terrors is "target player reveals their hand, you choose a nonland
+/// card from it, exile that card". With more than one nonland card the
+/// controller gets a choice, so the spell is mid-resolution and must stay on
+/// the stack until that choice is answered (CR 608.2m).
+///
+/// The choice is answered by *name*, not by taking `options.first()`: a
+/// Night Terrors that offered the wrong cards — or the land — would still
+/// have a first option to take.
 #[test]
-fn bug_night_terrors_stuck_on_stack() {
-    let registry = CardRegistry::with_all_cards();
+fn night_terrors_stays_on_stack_until_its_choice_is_answered() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Give P1 multiple nonland cards in hand
-    for name in ["Grizzly Bears", "Lightning Bolt", "Giant Growth"] {
-        spell_in_hand(&mut state, &registry, name, P1);
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P1);
+    let growth = spell_in_hand(&mut state, &reg, "Giant Growth", P1);
+    // A land in the same hand: "nonland card" is part of the effect, and
+    // without one here the filter would never be exercised.
+    let forest = spell_in_hand(&mut state, &reg, "Forest", P1);
+
+    let nt = castable_spell(&mut state, &reg, "Night Terrors", P0);
+    state = cast_and_resolve(&state, &reg, nt, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_object(nt).unwrap().zone, Zone::Stack,
+        "Night Terrors must stay on the stack while its choice is pending (CR 608.2m)");
+
+    let mut offered = pending_choice_options(&state);
+    offered.sort_by_key(|t| match t { Target::Object(o) => o.0, _ => u64::MAX });
+    let mut expected = vec![Target::Object(bears), Target::Object(bolt), Target::Object(growth)];
+    expected.sort_by_key(|t| match t { Target::Object(o) => o.0, _ => u64::MAX });
+    assert_eq!(offered, expected,
+        "every nonland card in the revealed hand is offered, and the land is not");
+
+    // The controller of Night Terrors makes the choice, not the revealing player.
+    let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action else {
+        unreachable!("just asserted a ChooseTarget prompt is pending");
+    };
+    assert_eq!(*player, P0, "Night Terrors' controller chooses the card to exile");
+
+    state = answer_choice_with(&state, &reg, bolt);
+
+    assert!(state.awaiting_action.is_none());
+    assert_eq!(state.get_object(nt).unwrap().zone, Zone::Graveyard,
+        "the spell reaches the graveyard once its choice chain completes");
+    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Exile, "the chosen card is exiled");
+    for (id, name) in [(bears, "Grizzly Bears"), (growth, "Giant Growth"), (forest, "Forest")] {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Hand,
+            "{name} was not chosen and stays in hand");
     }
-
-    // Cast Night Terrors targeting P1
-    let nt = castable_spell(&mut state, &registry, "Night Terrors", P0);
-    state = cast_and_resolve(&state, &registry, nt, vec![Target::Player(P1)]);
-
-    // Resolve any pending choices
-    // The spell should either be in graveyard (resolved) or awaiting a choice
-    let _nt_zone = state.get_object(nt).unwrap().zone;
-    let has_choice = state.awaiting_action.is_some();
-
-    // With multiple nonland cards, a choice should be presented
-    assert!(has_choice,
-        "Night Terrors should present choice for multiple nonland cards");
-
-    // Simulate choosing the first option
-    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
-        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. },
-        ..
-    }) = &state.awaiting_action {
-        if let Some(first_target) = options.first() {
-            let choice_action = Action::ResolveChoice {
-                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(first_target.clone())),
-            };
-            state = engine::submit_action(&state, &choice_action, &registry);
-        }
-    }
-
-    // After resolving the choice, Night Terrors should be in the graveyard
-    let nt_zone_after = state.get_object(nt).unwrap().zone;
-    // BUG: Night Terrors stays on the stack because ExileAndStore doesn't
-    // call move_spell_after_resolve for the source spell
-    assert_eq!(nt_zone_after, Zone::Graveyard,
-        "Night Terrors should be in graveyard after choice resolves. Zone: {nt_zone_after:?}");
 }
 
-/// Bug: Night Terrors uses `ExileAndStore` as its `PendingEffect`, but
-/// it should just exile (not store). `ExileAndStore` is for Fiend Hunter-
-/// style effects that need to track what was exiled for later return.
+/// The other two arms of the same effect. One nonland card is not a choice —
+/// the engine must not stop for a prompt with a single option — and no nonland
+/// card at all is not a choice either; both finish the spell in one pass.
 #[test]
-fn bug_night_terrors_wrong_pending_effect() {
-    let registry = CardRegistry::with_all_cards();
+fn night_terrors_without_a_choice_to_make_resolves_in_one_pass() {
+    let reg = registry();
+
+    // Exactly one nonland card: auto-selected, no prompt.
     let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let forest = spell_in_hand(&mut state, &reg, "Forest", P1);
+    let nt = castable_spell(&mut state, &reg, "Night Terrors", P0);
+    state = cast_and_resolve(&state, &reg, nt, vec![Target::Player(P1)]);
 
-    // Give P1 multiple nonland cards
-    let _card1 = spell_in_hand(&mut state, &registry, "Grizzly Bears", P1);
-    let _card2 = spell_in_hand(&mut state, &registry, "Lightning Bolt", P1);
+    assert!(state.awaiting_action.is_none(),
+        "one nonland card is not a choice — the engine must not prompt for it");
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Exile);
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Hand);
+    assert_eq!(state.get_object(nt).unwrap().zone, Zone::Graveyard);
 
-    // Cast Night Terrors targeting P1
-    let nt = castable_spell(&mut state, &registry, "Night Terrors", P0);
-    state = cast_and_resolve(&state, &registry, nt, vec![Target::Player(P1)]);
+    // No nonland card: nothing is exiled and the spell still finishes.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forest = spell_in_hand(&mut state, &reg, "Forest", P1);
+    let nt = castable_spell(&mut state, &reg, "Night Terrors", P0);
+    state = cast_and_resolve(&state, &reg, nt, vec![Target::Player(P1)]);
 
-    // Check what PendingEffect is used in the choice
-    let uses_exile_and_store = state.awaiting_action.as_ref().is_some_and(|aa| {
-        format!("{aa:?}").contains("ExileAndStore")
-    });
+    assert!(state.awaiting_action.is_none());
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Hand,
+        "a land is not a legal pick, so the hand is untouched");
+    assert_eq!(state.get_object(nt).unwrap().zone, Zone::Graveyard,
+        "a Night Terrors that finds nothing to exile still leaves the stack");
+}
 
-    // BUG: Uses ExileAndStore instead of plain Exile
-    assert!(!uses_exile_and_store,
-        "Night Terrors should use a plain Exile effect, not ExileAndStore");
+/// Night Terrors exiles for good. It is not a Fiend Hunter-style
+/// exile-and-return: the spell records nothing about what it exiled, and no
+/// later event brings the card back.
+#[test]
+fn night_terrors_exiles_permanently_and_records_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    stock_library(&mut state, &reg, P0, 6);
+    stock_library(&mut state, &reg, P1, 6);
+
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    spell_in_hand(&mut state, &reg, "Lightning Bolt", P1);
+    let nt = castable_spell(&mut state, &reg, "Night Terrors", P0);
+    state = cast_and_resolve(&state, &reg, nt, vec![Target::Player(P1)]);
+    state = answer_choice_with(&state, &reg, bears);
+
+    assert!(state.get_object(nt).unwrap().card_state.is_empty(),
+        "nothing is remembered about the exiled card — a returning effect is what \
+         needs a record, and this spell has none");
+
+    // A full turn's worth of triggers and state-based actions, with the spell
+    // itself now in the graveyard: nothing returns the card.
+    advance_to_next_turn(&mut state, &reg);
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Exile,
+        "the card stays exiled");
 }

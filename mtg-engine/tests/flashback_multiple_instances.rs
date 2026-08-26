@@ -21,18 +21,18 @@ use mtg_engine::types::*;
 
 /// Every distinct flashback cost offered for `card` this turn.
 fn flashback_costs(state: &GameState, reg: &CardRegistry, card: ObjectId) -> Vec<ManaCost> {
-    let mut costs: Vec<ManaCost> = mtg_engine::engine::legal_actions(state, reg).actions.iter()
-        .filter_map(|a| match a {
-            Action::CastSpell { object_id, alternative_cost: Some(c), .. } if *object_id == card => Some(c.clone()),
-            _ => None,
-        })
-        .collect();
-    costs.dedup();
+    let mut costs: Vec<ManaCost> = Vec::new();
+    for action in &mtg_engine::engine::legal_actions(state, reg).actions {
+        if let Action::CastSpell { object_id, alternative_cost: Some(cost), .. } = action {
+            // `ManaCost` is not ordered, so this is the dedup rather than
+            // `sort` + `dedup` — which would drop only *adjacent* repeats and
+            // quietly let "both costs offered" pass on one cost listed twice.
+            if *object_id == card && !costs.contains(cost) {
+                costs.push(cost.clone());
+            }
+        }
+    }
     costs
-}
-
-fn card_in_graveyard(state: &mut GameState, reg: &CardRegistry, name: &str) -> ObjectId {
-    named_card_in_graveyard(state, reg, name, P0)
 }
 
 /// A card with printed flashback that is also granted flashback must offer
@@ -42,8 +42,8 @@ fn both_granted_and_printed_flashback_costs_are_offered() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Devil's Play has a printed flashback cost distinct from its mana cost.
-    let card = card_in_graveyard(&mut state, &reg, "Geistflame");
+    // Geistflame has a printed flashback cost distinct from its mana cost.
+    let card = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
     let printed = reg.card_data(state.get_object(card).unwrap().card_id).unwrap()
         .flashback_cost.expect("Geistflame has printed flashback");
     let mana_cost = reg.card_data(state.get_object(card).unwrap().card_id).unwrap()
@@ -72,7 +72,7 @@ fn an_unaffordable_granted_cost_does_not_hide_the_payable_printed_one() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card = card_in_graveyard(&mut state, &reg, "Geistflame");
+    let card = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
     let data = reg.card_data(state.get_object(card).unwrap().card_id).unwrap();
     let printed = data.flashback_cost.clone().unwrap();
 
@@ -114,59 +114,44 @@ fn a_card_with_no_mana_cost_gains_no_flashback() {
          made — substituting a free cost made it castable for {{0}}");
 }
 
-/// A card that already has a flashback grant is still a legal Snapcaster
-/// target — CR 702.33 allows several instances at once, so refusing meant a
-/// second Snapcaster's trigger was removed under CR 603.3c.
+/// CR 702.33 allows several instances of flashback at once, so nothing about
+/// a card's *existing* flashback makes it an illegal Snapcaster target —
+/// whether that flashback is printed on the card or was granted earlier this
+/// turn. Refusing either removed a second Snapcaster's trigger under
+/// CR 603.3c instead of stacking a second instance.
+///
+/// The control row is a plain card with no flashback of any kind: without it,
+/// an `is_valid_target` that said yes to everything would pass this test.
 #[test]
-fn snapcaster_can_target_a_card_that_already_has_flashback() {
+fn a_cards_existing_flashback_never_makes_it_an_illegal_snapcaster_target() {
     let reg = registry();
+    let behavior = reg.get(reg.get_id_by_name("Snapcaster Mage").unwrap()).unwrap();
+
+    // (what the card already has, the card, whether a grant is added on top)
+    let cases: [(&str, &str, bool); 3] = [
+        ("no flashback at all", "Geistflame", false),
+        ("flashback printed on the card", "Think Twice", false),
+        ("flashback granted earlier this turn", "Geistflame", true),
+    ];
+
+    for (what, name, grant) in cases {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let card = named_card_in_graveyard(&mut state, &reg, name, P0);
+        if grant {
+            state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
+                target: card,
+                cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]),
+            });
+        }
+        assert!(behavior.is_valid_target(&state, P0, &Target::Object(card), &reg),
+            "{name} ({what}) is an instant or sorcery card in a graveyard, so it \
+             is a legal Snapcaster target (CR 702.33)");
+    }
+
+    // And the requirement Snapcaster does have is still enforced: the target
+    // has to be an instant or sorcery card in a graveyard.
     let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let card = card_in_graveyard(&mut state, &reg, "Geistflame");
-    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
-        target: card,
-        cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]),
-    });
-
-    let snapcaster = reg.get_id_by_name("Snapcaster Mage").unwrap();
-    let behavior = reg.get(snapcaster).unwrap();
-    assert!(behavior.is_valid_target(&state, P0, &mtg_engine::actions::Target::Object(card), &reg),
-        "a card that already has flashback is still a legal target");
-}
-
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Snapcaster Mage grants flashback to an instant or sorcery in
-/// the graveyard, but incorrectly excludes cards that already have
-/// innate flashback. The oracle says "target instant or sorcery card"
-/// with no restriction on existing flashback.
-#[test]
-fn bug_snapcaster_excludes_innate_flashback_cards() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put Think Twice (has innate flashback) in P0's graveyard
-    let think_twice = {
-        let card_id = registry.get_id_by_name("Think Twice").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, None, None);
-        state.get_object_mut(id).unwrap().name = "Think Twice".into();
-        id
-    };
-
-    // Cast Snapcaster Mage — should be able to target Think Twice
-    let _snap = castable_spell(&mut state, &registry, "Snapcaster Mage", P0);
-
-    // Check if Think Twice is a valid target
-    let behavior = registry.get(
-        registry.get_id_by_name("Snapcaster Mage").unwrap()
-    ).unwrap();
-    let is_valid = behavior.is_valid_target(
-        &state, P0, &Target::Object(think_twice), &registry
-    );
-
-    // BUG: Think Twice excluded because it has innate flashback
-    assert!(is_valid,
-        "Snapcaster Mage should be able to target cards with innate flashback");
+    let creature = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    assert!(!behavior.is_valid_target(&state, P0, &Target::Object(creature), &reg),
+        "a creature card in the graveyard is not a legal Snapcaster target");
 }
