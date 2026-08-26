@@ -176,11 +176,12 @@ fn full_moons_rise_shields_on_resolution() {
     );
 }
 
-// CR 602.2a: Mirror-Mad Phantasm's ability should go on the stack after
-// activation. Player B receives priority and can counter the ability
-// (e.g., Stifle) or exile the Phantasm before it resolves.
+// "{1}{U}: This creature's owner shuffles it into their library. If that player
+// does, they reveal cards from the top of that library until a card named
+// Mirror-Mad Phantasm is revealed. The player puts that card onto the
+// battlefield and all other cards revealed this way into their graveyard."
 #[test]
-fn mirror_mad_phantasm_opponent_can_respond() {
+fn mirror_mad_phantasm_shuffles_and_digs_itself_back_out_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -191,12 +192,20 @@ fn mirror_mad_phantasm_opponent_can_respond() {
     behavior.on_activate_ability(&mut state, phantasm, 0, &[], &reg);
 
     assert_eq!(state.players[0].library_order.len(), 10,
-        "CR 602.2a: nothing has been shuffled or milled yet");
+        "CR 602.2a: with the ability on the stack, nothing has been shuffled or \
+         milled yet — this is the window to respond in");
 
     resolve_the_ability(&mut state, &reg);
-    assert!(state.players[0].library_order.len() < 10,
-        "and once it resolves the Phantasm is shuffled in and cards are revealed \
-         until its copy turns up, so the library is smaller");
+
+    // How many cards get milled depends on where the shuffle put the Phantasm,
+    // so what is asserted is what does not depend on that.
+    assert_eq!(state.get_object(phantasm).unwrap().zone, Zone::Battlefield,
+        "it shuffles in, is revealed, and comes back onto the battlefield");
+    let library = state.players[0].library_order.len();
+    let graveyard = state.objects_in_zone(Zone::Graveyard, P0).len();
+    assert_eq!(library + graveyard, 10,
+        "every stocked card is either still in the library or was revealed and \
+         milled; library={library}, graveyard={graveyard}");
 }
 
 // Per Scryfall ruling on Mirror-Mad Phantasm: if the creature is no longer on
