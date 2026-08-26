@@ -6,7 +6,6 @@
 
 mod common;
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
 /// The blanket prevention Moonmist puts up: everything except Wolves and
@@ -117,15 +116,13 @@ fn transforms_back_face_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Start with an already-transformed Thraben Sentry (now Thraben Militia).
+    // Already transformed, through the engine's own transform rather than by
+    // writing the fields a transform happens to touch.
     let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
-    if let Some(obj) = state.get_object_mut(sentry) {
-        obj.is_transformed = true;
-        obj.name = "Thraben Militia".into();
-        obj.subtypes = vec!["Human".into(), "Soldier".into()];
-        obj.power = Some(5);
-        obj.toughness = Some(4);
-    }
+    mtg_engine::cards::helpers::apply_transform(&mut state, sentry, &reg);
+    assert!(state.has_subtype(sentry, "Human", &reg),
+        "test precondition: Thraben Militia is a Human on the back face, which \
+         is what makes it a Moonmist target again");
 
     let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
     let new_state = cast_and_resolve(&state, &reg, moonmist, vec![]);
@@ -155,46 +152,49 @@ fn does_not_transform_non_dfc_human() {
     assert_eq!(new_state.get_object(inquisitor).unwrap().name, "Elite Inquisitor");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// "Transform all Humans" means Humans, both times
+// ---------------------------------------------------------------------------
 
-/// Bug: Casting Moonmist twice in a row should transform Werewolves
-/// back and forth. If a Werewolf transforms to back face from the first
-/// Moonmist, the second should transform it back to front face.
+/// Moonmist transforms Humans. A Werewolf's back face is a Werewolf, not a
+/// Human — so casting Moonmist twice does not flip a werewolf there and back.
+/// It goes over on the first cast and stays over; only returning to its Human
+/// front face makes it a Moonmist target again.
+///
+/// This replaces a test whose body was a note working the rule out in prose
+/// ("Let me check the oracle text... This test doesn't reproduce the exact
+/// scenario. Mark as needs rework.") and which asserted nothing at all after
+/// its first cast.
 #[test]
-fn bug_moonmist_second_cast_fails() {
-    let registry = CardRegistry::with_all_cards();
+fn moonmist_only_transforms_whatever_is_a_human_right_now() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place a Werewolf DFC (Village Ironsmith)
-    let werewolf = named_permanent(&mut state, &registry, "Village Ironsmith", P0);
-    assert!(!state.get_object(werewolf).unwrap().is_transformed, "Should start as front face");
+    // Village Ironsmith is a Human Werewolf; its back face, Ironfang, is a
+    // Werewolf.
+    let ironsmith = named_permanent(&mut state, &reg, "Village Ironsmith", P0);
+    assert!(state.has_subtype(ironsmith, "Human", &reg), "test precondition: a Human");
 
-    // Cast first Moonmist — transforms all Humans to Werewolves
-    let moon1 = castable_spell(&mut state, &registry, "Moonmist", P0);
-    state = cast_and_resolve(&state, &registry, moon1, vec![]);
+    let first = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let mut state = cast_and_resolve(&state, &reg, first, vec![]);
+    assert!(state.get_object(ironsmith).unwrap().is_transformed,
+        "the Human transforms");
+    assert!(!state.has_subtype(ironsmith, "Human", &reg),
+        "and the back face is not a Human");
 
-    assert!(state.get_object(werewolf).unwrap().is_transformed, "Should be transformed after first Moonmist");
+    let second = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let mut state = cast_and_resolve(&state, &reg, second, vec![]);
+    assert!(state.get_object(ironsmith).unwrap().is_transformed,
+        "a second Moonmist finds no Human to transform, so it stays a Werewolf \
+         — 'transform all Humans' is not 'transform all werewolf cards'");
 
-    // Cast second Moonmist — should transform back
-    let moon2 = castable_spell(&mut state, &registry, "Moonmist", P0);
-    let _state = cast_and_resolve(&state, &registry, moon2, vec![]);
+    // Back to the front face by its own upkeep trigger, and Moonmist reaches
+    // it again.
+    mtg_engine::cards::helpers::apply_transform(&mut state, ironsmith, &reg);
+    assert!(state.has_subtype(ironsmith, "Human", &reg), "a Human once more");
 
-    // BUG: Second Moonmist may fail to transform back because the creature
-    // is now a Werewolf (not Human), and Moonmist says "transform all Humans"
-    // Actually, Moonmist says "Transform all Humans." — a Werewolf on the back
-    // face IS a Werewolf, not a Human, so the second Moonmist correctly
-    // does NOT transform it back.
-    // Let me check the oracle text...
-    // Oracle: "Transform all Humans. Prevent all combat damage..."
-    // Back face is Werewolf, not Human, so second Moonmist shouldn't transform it.
-    // But the audit said "Second Moonmist fails to transform Werewolf DFCs
-    // after they naturally untransform back to their Human front face."
-    // That means: front face Human → Moonmist → back face Werewolf →
-    // natural untransform → front face Human → second Moonmist → should transform again.
-    // The bug is about the SECOND Moonmist after a natural untransform, not
-    // two Moonmists in a row.
-    // This test doesn't reproduce the exact scenario. Mark as needs rework.
-    // Test needs rework — see comment.
+    let third = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let state = cast_and_resolve(&state, &reg, third, vec![]);
+    assert!(state.get_object(ironsmith).unwrap().is_transformed,
+        "so the next Moonmist transforms it again");
 }

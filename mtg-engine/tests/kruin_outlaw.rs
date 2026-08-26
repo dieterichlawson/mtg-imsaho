@@ -1,222 +1,109 @@
-//! Tests for Kruin Outlaw / Terror of Kruin Pass.
+//! Terror of Kruin Pass (Kruin Outlaw's back face): "Double strike. Werewolves
+//! you control can't be blocked except by two or more creatures."
 //!
-//! Terror of Kruin Pass (back face):
-//! - Double strike
-//! - Werewolves you control have menace.
-//! - Transform back if a player cast 2+ spells last turn.
+//! Menace granted by a permanent to a class of other permanents, which means
+//! three separate claims — it reaches Werewolves, it reaches its own controller's
+//! only, and it reaches itself ("Werewolves you control" includes it).
 
 mod common;
-
 use common::*;
 use mtg_engine::types::*;
-/// Terror of Kruin Pass grants "can't be blocked except by two or more creatures"
-/// to all Werewolves you control, including itself.
+
+/// Put Terror of Kruin Pass — the back face — onto `owner`'s battlefield.
+fn terror_of_kruin_pass(
+    state: &mut mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    owner: PlayerId,
+) -> ObjectId {
+    let id = named_permanent(state, reg, "Kruin Outlaw", owner);
+    // Through the engine's own transform, so the object ends up in the state a
+    // real transform leaves it in rather than one the test invented.
+    mtg_engine::cards::helpers::apply_transform(state, id, reg);
+    assert_eq!(state.get_object(id).unwrap().name, "Terror of Kruin Pass", "test setup");
+    id
+}
+
+/// Declare `blockers` against `attacker` and report how many the engine kept.
+fn blockers_accepted(
+    state: &mut mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    attacker: ObjectId,
+    defender: PlayerId,
+    blockers: &[ObjectId],
+) -> usize {
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(attacker, defender);
+    combat.blocker_assignments.insert(attacker, vec![]);
+    state.combat = Some(combat);
+
+    let pairs: Vec<_> = blockers.iter().map(|b| (*b, attacker)).collect();
+    submit_declare_blockers(state, defender, &pairs, reg);
+    state.combat.as_ref().unwrap().blocker_assignments[&attacker].len()
+}
+
+/// Who the menace reaches, and who it does not.
+///
+/// The negative rows are what separate this from a Terror that gave menace to
+/// every creature on the battlefield — including the opponent's, which would
+/// be helping them.
 #[test]
-fn terror_of_kruin_pass_self_requires_two_blockers() {
+fn terror_of_kruin_pass_gives_menace_to_your_werewolves_only() {
+    // (whose creature, its subtype, does one blocker suffice)
+    const CASES: &[(bool, &str, bool, &str)] = &[
+        (true, "Werewolf", false, "your Werewolf needs two blockers"),
+        (true, "Human", true, "a non-Werewolf of yours does not"),
+        (false, "Werewolf", true, "and neither does an opponent's Werewolf"),
+    ];
+
+    for &(yours, subtype, one_blocker_is_enough, why) in CASES {
+        let reg = registry();
+        let (attacker_owner, defender) = if yours { (P0, P1) } else { (P1, P0) };
+        let mut state = game_at_step(Step::DeclareBlockers, attacker_owner);
+        state.active_player = attacker_owner;
+
+        terror_of_kruin_pass(&mut state, &reg, P0);
+
+        let attacker = ready_creature(&mut state, attacker_owner, 3, 3);
+        state.get_object_mut(attacker).unwrap().subtypes = vec![subtype.into()];
+        let blocker = ready_creature(&mut state, defender, 2, 2);
+
+        let accepted = blockers_accepted(&mut state, &reg, attacker, defender, &[blocker]);
+        assert_eq!(accepted == 1, one_blocker_is_enough, "{why}");
+    }
+}
+
+/// "Werewolves you control" includes the Terror itself, so it needs two
+/// blockers too — and two is enough.
+#[test]
+fn terror_of_kruin_pass_needs_two_blockers_itself() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    // Put Terror of Kruin Pass on the battlefield (transformed).
-    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
-    if let Some(obj) = state.get_object_mut(terror) {
-        obj.is_transformed = true;
-        obj.name = "Terror of Kruin Pass".into();
-    }
+    let terror = terror_of_kruin_pass(&mut state, &reg, P0);
+    let first = ready_creature(&mut state, P1, 2, 2);
+    let second = ready_creature(&mut state, P1, 2, 2);
 
-    // Set up combat with Terror attacking.
-    let mut combat_state = mtg_engine::state::CombatState {
-        attackers: std::collections::HashMap::new(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    };
-    combat_state.attackers.insert(terror, P1);
-    combat_state.blocker_assignments.insert(terror, vec![]);
-    state.combat = Some(combat_state);
-
-    // Defender has one creature.
-    let blocker1 = ready_creature(&mut state, P1, 2, 2);
-
-    // Try to block with only 1 creature — should be rejected.
-    submit_declare_blockers(&mut state, P1, &[(blocker1, terror)], &reg);
-    let assigned = state.combat.as_ref().unwrap()
-        .blocker_assignments.get(&terror).unwrap();
-    assert_eq!(assigned.len(), 0,
-        "Terror of Kruin Pass should reject a single blocker");
+    assert_eq!(blockers_accepted(&mut state, &reg, terror, P1, &[first]), 0,
+        "one blocker is turned away");
+    assert_eq!(blockers_accepted(&mut state, &reg, terror, P1, &[first, second]), 2,
+        "two are accepted — the restriction is 'except by two or more', not \
+         'can't be blocked'");
 }
 
-/// Terror of Kruin Pass allows blocking by 2+ creatures.
+/// The restriction is the Menace keyword, so it shows up in `has_keyword` and
+/// not only in the blocker validation.
 #[test]
-fn terror_of_kruin_pass_allows_two_blockers() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
-    if let Some(obj) = state.get_object_mut(terror) {
-        obj.is_transformed = true;
-        obj.name = "Terror of Kruin Pass".into();
-    }
-
-    let mut combat_state = mtg_engine::state::CombatState {
-        attackers: std::collections::HashMap::new(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    };
-    combat_state.attackers.insert(terror, P1);
-    combat_state.blocker_assignments.insert(terror, vec![]);
-    state.combat = Some(combat_state);
-
-    let blocker1 = ready_creature(&mut state, P1, 2, 2);
-    let blocker2 = ready_creature(&mut state, P1, 2, 2);
-
-    submit_declare_blockers(
-        &mut state,
-        P1,
-        &[(blocker1, terror), (blocker2, terror)],
-        &reg,
-    );
-    let assigned = state.combat.as_ref().unwrap()
-        .blocker_assignments.get(&terror).unwrap();
-    assert_eq!(assigned.len(), 2,
-        "Terror of Kruin Pass should allow 2 blockers");
-}
-
-/// Terror of Kruin Pass grants the blocking restriction to OTHER Werewolves you control.
-#[test]
-fn terror_of_kruin_pass_grants_restriction_to_other_werewolves() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    // Terror of Kruin Pass on the battlefield (transformed).
-    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
-    if let Some(obj) = state.get_object_mut(terror) {
-        obj.is_transformed = true;
-        obj.name = "Terror of Kruin Pass".into();
-    }
-
-    // Another Werewolf creature controlled by P0.
-    let other_wolf = ready_creature(&mut state, P0, 3, 3);
-    if let Some(obj) = state.get_object_mut(other_wolf) {
-        obj.subtypes = vec!["Werewolf".into()];
-    }
-
-    // Set up combat with the other Werewolf attacking.
-    let mut combat_state = mtg_engine::state::CombatState {
-        attackers: std::collections::HashMap::new(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    };
-    combat_state.attackers.insert(other_wolf, P1);
-    combat_state.blocker_assignments.insert(other_wolf, vec![]);
-    state.combat = Some(combat_state);
-
-    let blocker1 = ready_creature(&mut state, P1, 2, 2);
-
-    // Try to block with only 1 creature — should be rejected.
-    submit_declare_blockers(&mut state, P1, &[(blocker1, other_wolf)], &reg);
-    let assigned = state.combat.as_ref().unwrap()
-        .blocker_assignments.get(&other_wolf).unwrap();
-    assert_eq!(assigned.len(), 0,
-        "Other Werewolves should also require 2+ blockers when Terror of Kruin Pass is on battlefield");
-}
-
-/// Non-Werewolf creatures should NOT get the blocking restriction from Terror of Kruin Pass.
-#[test]
-fn terror_of_kruin_pass_does_not_affect_non_werewolves() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
-    if let Some(obj) = state.get_object_mut(terror) {
-        obj.is_transformed = true;
-        obj.name = "Terror of Kruin Pass".into();
-    }
-
-    // A non-Werewolf creature.
-    let human = ready_creature(&mut state, P0, 3, 3);
-    if let Some(obj) = state.get_object_mut(human) {
-        obj.subtypes = vec!["Human".into()];
-    }
-
-    let mut combat_state = mtg_engine::state::CombatState {
-        attackers: std::collections::HashMap::new(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    };
-    combat_state.attackers.insert(human, P1);
-    combat_state.blocker_assignments.insert(human, vec![]);
-    state.combat = Some(combat_state);
-
-    let blocker1 = ready_creature(&mut state, P1, 2, 2);
-
-    // Blocking with 1 creature should be fine for non-Werewolves.
-    submit_declare_blockers(&mut state, P1, &[(blocker1, human)], &reg);
-    let assigned = state.combat.as_ref().unwrap()
-        .blocker_assignments.get(&human).unwrap();
-    assert_eq!(assigned.len(), 1,
-        "Non-Werewolf should be blockable by 1 creature");
-}
-
-/// Opponent's Werewolves should NOT get the restriction.
-#[test]
-fn terror_of_kruin_pass_does_not_affect_opponent_werewolves() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P1);
-    state.active_player = P1;
-
-    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
-    if let Some(obj) = state.get_object_mut(terror) {
-        obj.is_transformed = true;
-        obj.name = "Terror of Kruin Pass".into();
-    }
-
-    // Opponent's Werewolf.
-    let opp_wolf = ready_creature(&mut state, P1, 3, 3);
-    if let Some(obj) = state.get_object_mut(opp_wolf) {
-        obj.subtypes = vec!["Werewolf".into()];
-    }
-
-    let mut combat_state = mtg_engine::state::CombatState {
-        attackers: std::collections::HashMap::new(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    };
-    combat_state.attackers.insert(opp_wolf, P0);
-    combat_state.blocker_assignments.insert(opp_wolf, vec![]);
-    state.combat = Some(combat_state);
-
-    let blocker1 = ready_creature(&mut state, P0, 2, 2);
-
-    // Opponent's Werewolf should be blockable by 1 creature.
-    submit_declare_blockers(&mut state, P0, &[(blocker1, opp_wolf)], &reg);
-    let assigned = state.combat.as_ref().unwrap()
-        .blocker_assignments.get(&opp_wolf).unwrap();
-    assert_eq!(assigned.len(), 1,
-        "Opponent's Werewolves should not be affected by our Terror of Kruin Pass");
-}
-
-/// Terror of Kruin Pass grants the menace keyword (not just blocking restriction).
-#[test]
-fn terror_of_kruin_pass_grants_menace_keyword() {
+fn terror_of_kruin_pass_grants_menace_as_a_keyword() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
-    if let Some(obj) = state.get_object_mut(terror) {
-        obj.is_transformed = true;
-        obj.name = "Terror of Kruin Pass".into();
-    }
-
-    // Another Werewolf you control.
+    let terror = terror_of_kruin_pass(&mut state, &reg, P0);
     let wolf = ready_creature(&mut state, P0, 2, 2);
-    if let Some(obj) = state.get_object_mut(wolf) {
-        obj.subtypes = vec!["Werewolf".into()];
-    }
+    state.get_object_mut(wolf).unwrap().subtypes = vec!["Werewolf".into()];
+    let human = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(human).unwrap().subtypes = vec!["Human".into()];
 
-    // Terror of Kruin Pass itself should have menace.
-    assert!(state.has_keyword(terror, Keyword::Menace, &reg),
-        "Terror of Kruin Pass should have menace");
-
-    // Other Werewolves you control should also have menace.
-    assert!(state.has_keyword(wolf, Keyword::Menace, &reg),
-        "Other Werewolves you control should have menace");
+    assert!(state.has_keyword(terror, Keyword::Menace, &reg), "the Terror itself");
+    assert!(state.has_keyword(wolf, Keyword::Menace, &reg), "another of your Werewolves");
+    assert!(!state.has_keyword(human, Keyword::Menace, &reg), "but not a non-Werewolf");
 }

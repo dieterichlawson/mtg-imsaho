@@ -74,13 +74,13 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `combat_rules.rs` | 227 | 4 |
 | x | `ability_target_protection.rs` | 226 | 5 |
 | x | `equipment_human_conditional.rs` | 224 | 5 |
-|   | `kruin_outlaw.rs` | 222 | 6 |
+| x | `kruin_outlaw.rs` | 222 | 6 |
 |   | `enchantments.rs` | 219 | 9 |
 |   | `engine_regressions_2.rs` | 218 | 4 |
 |   | `token_is_not_a_card.rs` | 213 | 8 |
 |   | `phantom_triggers.rs` | 209 | 7 |
 |   | `x_cost_spells.rs` | 208 | 4 |
-|   | `moonmist.rs` | 200 | 8 |
+| x | `moonmist.rs` | 200 | 8 |
 | x | `geist_of_saint_traft.rs` | 198 | 5 |
 | x | `creepy_doll.rs` | 184 | 5 |
 |   | `player_protection.rs` | 184 | 4 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**112/126 files read; 2731 lines remaining.**
+**114/126 files read; 2309 lines remaining.**
