@@ -3,7 +3,6 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::state::GameState;
@@ -12,7 +11,7 @@ use mtg_engine::types::*;
 /// Rule 502.4: No player receives priority during the untap step.
 #[test]
 fn no_priority_during_untap() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::Cleanup, P0);
     state.priority_player = None;
 
@@ -22,49 +21,35 @@ fn no_priority_during_untap() {
         "No player should have priority during untap (rule 502.4)");
 }
 
-/// Rule 500.1: The combat phase happens every turn, even with no creatures.
-/// Mana pools empty between pre-combat main and the combat phase.
+/// CR 106.4: a mana pool empties at the end of every step and phase, not only
+/// at end of turn. Three boundaries, because "it emptied" at one of them is
+/// also true of an engine that empties pools at some unrelated moment.
 #[test]
-fn mana_empties_between_main_and_combat() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 3);
+fn a_mana_pool_empties_at_every_step_boundary() {
+    // (step to float mana in, the step that follows it)
+    const BOUNDARIES: &[(Step, Step)] = &[
+        (Step::Upkeep, Step::Draw),
+        (Step::PrecombatMain, Step::BeginCombat),
+        (Step::DeclareAttackers, Step::DeclareBlockers),
+    ];
 
-    engine::advance_step(&mut state, &registry);
-    assert_eq!(state.step, Step::BeginCombat);
-    assert_eq!(state.get_player(P0).mana_pool.total(), 0,
-        "Mana should empty at step boundary (rule 106.4)");
-}
+    for &(from, to) in BOUNDARIES {
+        let registry = registry();
+        let mut state = game_at_step(from, P0);
+        state.get_player_mut(P0).mana_pool.add(ManaType::Green, 3);
 
-/// Rule 106.4: Mana empties at the end of EVERY step, not just end of turn.
-#[test]
-fn mana_empties_between_upkeep_and_draw() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::Upkeep, P0);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 2);
+        engine::advance_step(&mut state, &registry);
 
-    engine::advance_step(&mut state, &registry);
-    assert_eq!(state.step, Step::Draw);
-    assert_eq!(state.get_player(P0).mana_pool.total(), 0,
-        "Mana should empty between upkeep and draw (rule 106.4)");
-}
-
-/// Mana empties between declare attackers and declare blockers steps.
-#[test]
-fn mana_empties_between_combat_steps() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-
-    engine::advance_step(&mut state, &registry);
-    assert_eq!(state.step, Step::DeclareBlockers);
-    assert_eq!(state.get_player(P0).mana_pool.total(), 0);
+        assert_eq!(state.step, to, "test setup: {from:?} is followed by {to:?}");
+        assert_eq!(state.get_player(P0).mana_pool.total(), 0,
+            "mana floated in {from:?} is gone by {to:?}");
+    }
 }
 
 /// The first player skips their draw step on the first turn.
 #[test]
 fn first_player_skips_first_draw() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = GameState::new(2);
     state.is_first_turn = true;
     state.step = Step::Upkeep;
@@ -84,7 +69,7 @@ fn first_player_skips_first_draw() {
 /// Opponent's permanents do NOT untap.
 #[test]
 fn untap_step_untaps_only_active_players_permanents() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::Cleanup, P0);
     state.priority_player = None;
 
@@ -111,7 +96,7 @@ fn untap_step_untaps_only_active_players_permanents() {
 /// Damage marked on creatures persists until the cleanup step.
 #[test]
 fn damage_persists_between_steps() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let creature = ready_creature(&mut state, P0, 2, 5);
     state.get_object_mut(creature).unwrap().damage_marked = 3;
@@ -129,7 +114,7 @@ fn damage_persists_between_steps() {
 /// Rule 514.2: Damage is removed during the cleanup step.
 #[test]
 fn damage_removed_during_cleanup() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::EndStep, P0);
     let creature = ready_creature(&mut state, P0, 2, 5);
     state.get_object_mut(creature).unwrap().damage_marked = 4;
@@ -143,7 +128,7 @@ fn damage_removed_during_cleanup() {
 /// Rule 514.1: Discard to hand size (7) during cleanup.
 #[test]
 fn discard_to_hand_size_during_cleanup() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::EndStep, P0);
     for _ in 0..9 {
         state.create_object(CardId(1), P0, Zone::Hand, None, None);
@@ -166,7 +151,7 @@ fn submit_action_discard_cards_for_cleanup_moves_cards_to_graveyard() {
     use mtg_engine::actions::Action;
     use mtg_engine::state::AwaitingAction;
 
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::Cleanup, P0);
     let mut hand = Vec::new();
     for _ in 0..9 {
@@ -200,7 +185,7 @@ fn submit_action_discard_cards_for_cleanup_moves_cards_to_graveyard() {
 fn submit_action_discard_cards_without_awaiting_logs_per_card() {
     use mtg_engine::actions::Action;
 
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let c1 = state.create_object(CardId(1), P0, Zone::Hand, None, None);
     let c2 = state.create_object(CardId(1), P0, Zone::Hand, None, None);
@@ -223,7 +208,7 @@ fn submit_action_discard_cards_without_awaiting_logs_per_card() {
 /// No discard needed if hand size is 7 or less.
 #[test]
 fn no_discard_needed_at_seven_or_less() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::EndStep, P0);
     for _ in 0..7 {
         state.create_object(CardId(1), P0, Zone::Hand, None, None);
