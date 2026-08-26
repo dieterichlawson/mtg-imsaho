@@ -158,7 +158,6 @@ fn regex_lite_rs_backtick() -> impl Fn(&str) -> Vec<String> {
     }
 }
 
-
 // ── Tests that call a card hook the card does not implement ──────────
 
 /// The set of `fn on_*` / `fn resolve_*` methods each card overrides, by card

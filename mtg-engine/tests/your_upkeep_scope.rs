@@ -94,7 +94,6 @@ fn a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses() {
     }
 }
 
-
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------

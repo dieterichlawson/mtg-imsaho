@@ -8,7 +8,6 @@ use mtg_engine::engine;
 use mtg_engine::state::AwaitingAction;
 use mtg_engine::types::*;
 
-
 /// A tapped creature can't be declared as a blocker (CR 509.1a). The
 /// validating gate must drop it, leaving the attacker unblocked.
 #[test]

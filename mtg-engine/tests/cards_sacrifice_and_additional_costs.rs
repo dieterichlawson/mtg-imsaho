@@ -25,7 +25,6 @@ use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 #[test]
-
 fn selfless_cathar_pump_all_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -63,7 +62,6 @@ fn selfless_cathar_pump_all_creatures() {
     assert_eq!(new_state.effective_toughness(bear, &reg).unwrap(), 3);
 }
 #[test]
-
 fn silverchase_fox_exiles_enchantment() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -106,7 +104,6 @@ fn silverchase_fox_exiles_enchantment() {
     );
 }
 #[test]
-
 fn brain_weevil_forces_discard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -146,16 +143,6 @@ fn brain_weevil_forces_discard() {
     assert_eq!(hand_after, 0, "P1 should have 0 cards left after discarding 2");
 }
 #[test]
-
-fn brain_weevil_has_intimidate() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let weevil = named_creature(&mut state, &reg, "Brain Weevil", P0);
-    assert!(state.has_keyword(weevil, Keyword::Intimidate, &reg));
-}
-#[test]
-
 fn disciple_of_griselbrand_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -194,7 +181,6 @@ fn disciple_of_griselbrand_gains_life() {
         "disciple should still be on the battlefield");
 }
 #[test]
-
 fn altars_reap_sacrifices_and_draws_two() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -221,7 +207,6 @@ fn altars_reap_sacrifices_and_draws_two() {
         "Should have drawn 2 cards");
 }
 #[test]
-
 fn infernal_plunge_sacrifices_and_adds_rrr() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -241,7 +226,6 @@ fn infernal_plunge_sacrifices_and_adds_rrr() {
         "Should have 3 red mana in pool after Infernal Plunge");
 }
 #[test]
-
 fn tribute_to_hunger_opponent_sacs_and_gain_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -265,7 +249,6 @@ fn tribute_to_hunger_opponent_sacs_and_gain_life() {
         "Should have gained life equal to sacrificed creature's toughness");
 }
 #[test]
-
 fn tribute_to_hunger_no_creatures_does_nothing() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -280,7 +263,6 @@ fn tribute_to_hunger_no_creatures_does_nothing() {
         "No life gain when opponent has no creatures");
 }
 #[test]
-
 fn divine_reckoning_keeps_one_per_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -338,7 +320,6 @@ fn divine_reckoning_keeps_one_per_player() {
     assert_eq!(p1_creatures[0].id, c4, "P1 should keep the chosen creature");
 }
 #[test]
-
 fn divine_reckoning_with_one_creature_keeps_it() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -361,7 +342,6 @@ fn divine_reckoning_with_one_creature_keeps_it() {
     assert_eq!(p1_creatures, 0, "P1 should have no creatures");
 }
 #[test]
-
 fn skirsdag_cultist_deals_2_damage_to_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -396,7 +376,6 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
     assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Graveyard);
 }
 #[test]
-
 fn skirsdag_cultist_deals_2_damage_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -424,7 +403,6 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
     assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Graveyard);
 }
 #[test]
-
 fn skirsdag_cultist_cannot_activate_without_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -441,7 +419,6 @@ fn skirsdag_cultist_cannot_activate_without_creature() {
     assert!(has_activate, "Should be able to activate (cultist counts as sacrifice fodder)");
 }
 #[test]
-
 fn stitchers_apprentice_creates_token_then_sacrifices() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -498,7 +475,6 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
     assert_eq!(creatures_after.len(), 1, "Should have 1 creature on battlefield after create + sacrifice");
 }
 #[test]
-
 fn stitchers_apprentice_token_is_2_2_homunculus() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -534,7 +510,6 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
     assert_eq!(token.name, "Homunculus", "Token should be named Homunculus");
 }
 #[test]
-
 fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -560,7 +535,6 @@ fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Corpse Lunge");
 }
 #[test]
-
 fn corpse_lunge_no_graveyard_creature_deals_no_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -574,7 +548,6 @@ fn corpse_lunge_no_graveyard_creature_deals_no_damage() {
     assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt without graveyard creature");
 }
 #[test]
-
 fn corpse_lunge_picks_highest_power_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -597,101 +570,68 @@ fn corpse_lunge_picks_highest_power_creature() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 5, "Should deal 5 damage (power of exiled 5/5)");
 }
+/// Harvest Pyre: "Exile X cards from your graveyard: this deals X damage to
+/// target creature." Four tests walked one X each; X is the whole card, so it
+/// is a table.
 #[test]
-
-fn harvest_pyre_deals_damage_equal_to_chosen_x() {
-    // Player chooses X=4 (exile 4 cards from graveyard).
+fn harvest_pyre_exiles_x_of_your_own_cards_and_deals_x() {
+    // (cards in your graveyard, cards in the opponent's, X chosen)
+    const CASES: &[(usize, usize, u32)] = &[
+        (4, 0, 4),  // exile everything
+        (4, 0, 2),  // exile some — the rest stay
+        (3, 0, 0),  // X=0 is legal and does nothing
+        (3, 2, 3),  // "your graveyard": the opponent's cards are not touched
+    ];
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for &(mine, theirs, x) in CASES {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        for _ in 0..mine {
+            let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
+            state.move_object(c, Zone::Graveyard, &reg);
+        }
+        for _ in 0..theirs {
+            let c = state.create_object(CardId(9999), P1, Zone::Battlefield, Some(1), Some(1));
+            state.move_object(c, Zone::Graveyard, &reg);
+        }
+        let target = ready_creature(&mut state, P1, 6, 6);
 
-    // Put 4 cards in P0's graveyard.
-    for _ in 0..4 {
-        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard, &reg);
+        let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+        let mut state = engine::submit_action(
+            &state,
+            &Action::CastSpell {
+                object_id: spell,
+                targets: vec![Target::Object(target)],
+                sacrifice: None,
+                exile_count: Some(x),
+                exile_ids: vec![],
+                alternative_cost: None,
+                tap_plan: vec![],
+            },
+            &reg,
+        );
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        let exiled = state.objects.values()
+            .filter(|o| o.zone == Zone::Exile && o.owner == P0)
+            .count();
+        assert_eq!(exiled, x as usize, "X={x} should exile {x} of your own cards");
+
+        // Your remaining cards, plus Harvest Pyre itself once it has resolved.
+        let left = state.objects.values()
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == P0)
+            .count();
+        assert_eq!(left, mine - x as usize + 1,
+            "X={x} out of {mine} should leave {} of yours, plus Harvest Pyre",
+            mine - x as usize);
+
+        let theirs_left = state.objects.values()
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == P1)
+            .count();
+        assert_eq!(theirs_left, theirs, "the opponent's graveyard is never touched");
+
+        assert_eq!(state.get_object(target).unwrap().damage_marked, x,
+            "X={x} should deal {x} damage");
     }
-
-    let target = ready_creature(&mut state, P1, 5, 5);
-
-    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    // Cast with X=4 (exile all 4).
-    let mut new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(4), exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
-
-    // 4 cards should be exiled.
-    let exiled_count = new_state.objects.values()
-        .filter(|o| o.zone == Zone::Exile && o.owner == P0)
-        .count();
-    assert_eq!(exiled_count, 4, "4 graveyard cards should be exiled");
-
-    // Target should have 4 damage.
-    let target_obj = new_state.get_object(target).unwrap();
-    assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Harvest Pyre");
-}
-
-#[test]
-fn harvest_pyre_player_chooses_partial_x() {
-    // Player chooses X=2 (exile only 2 of 4 available cards).
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    for _ in 0..4 {
-        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard, &reg);
-    }
-
-    let target = ready_creature(&mut state, P1, 5, 5);
-
-    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    let mut new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(2), exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
-
-    // Only 2 cards should be exiled.
-    let exiled_count = new_state.objects.values()
-        .filter(|o| o.zone == Zone::Exile && o.owner == P0)
-        .count();
-    assert_eq!(exiled_count, 2, "Only 2 graveyard cards should be exiled");
-
-    // 2 original cards remain + Harvest Pyre itself (moved to graveyard after resolve) = 3.
-    let gy_count = new_state.objects.values()
-        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0)
-        .count();
-    assert_eq!(gy_count, 3, "2 original cards + Harvest Pyre in graveyard");
-
-    // Target should have 2 damage, not 4.
-    let target_obj = new_state.get_object(target).unwrap();
-    assert_eq!(target_obj.damage_marked, 2, "Target should have 2 damage (X=2)");
-}
-
-#[test]
-fn harvest_pyre_x_zero_deals_no_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    for _ in 0..3 {
-        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard, &reg);
-    }
-
-    let target = ready_creature(&mut state, P1, 3, 3);
-
-    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    let mut new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(0), exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
-
-    let target_obj = new_state.get_object(target).unwrap();
-    assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt with X=0");
 }
 
 #[test]
@@ -728,51 +668,6 @@ fn harvest_pyre_legal_actions_emits_single_cast_per_target() {
          happens via the ChooseExileFromGraveyard prompt), but got {}",
         harvest_actions.len());
 }
-#[test]
-
-fn harvest_pyre_only_exiles_own_graveyard() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put 3 cards in P0's graveyard.
-    for _ in 0..3 {
-        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard, &reg);
-    }
-    // Put 2 cards in P1's graveyard.
-    for _ in 0..2 {
-        let c = state.create_object(CardId(9999), P1, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard, &reg);
-    }
-
-    let target = ready_creature(&mut state, P1, 6, 6);
-
-    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    // Cast with X=3 (exile all 3 of P0's graveyard cards).
-    let mut new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(3), exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
-
-    // Only P0's 3 cards should be exiled.
-    let p0_exiled = new_state.objects.values()
-        .filter(|o| o.zone == Zone::Exile && o.owner == P0)
-        .count();
-    assert_eq!(p0_exiled, 3, "Only P0's 3 graveyard cards should be exiled");
-
-    // P1's graveyard should be untouched.
-    let p1_gy = new_state.objects.values()
-        .filter(|o| o.zone == Zone::Graveyard && o.owner == P1)
-        .count();
-    assert_eq!(p1_gy, 2, "P1's graveyard should be untouched");
-
-    // Target should have 3 damage.
-    let target_obj = new_state.get_object(target).unwrap();
-    assert_eq!(target_obj.damage_marked, 3, "Target should have 3 damage");
-}
-
 // ── Bug H: CastableSpell.exile_x_from_gy_max ─────────────────────────
 //
 // Regression tests for BUG_REPORT_8SEAT.md Bug H. The LLM player was

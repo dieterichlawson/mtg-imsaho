@@ -23,7 +23,6 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-
 /// Put a creature token straight into the graveyard, modelling the window
 /// between the token arriving there and the next SBA pass sweeping it up.
 fn creature_token_in_graveyard(

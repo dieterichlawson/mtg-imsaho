@@ -21,7 +21,6 @@ mod common;
 use common::*;
 use mtg_engine::types::*;
 
-
 /// The ordinary case, both faces.
 #[test]
 fn attacking_creatures_you_control_get_the_bonus() {

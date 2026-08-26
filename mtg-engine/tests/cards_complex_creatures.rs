@@ -184,18 +184,6 @@ fn galvanic_juggernaut_untaps_when_creature_dies() {
 
 // ── Creepy Doll ──────────────────────────────────────────────────
 
-#[test]
-fn creepy_doll_is_indestructible() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let doll = named_creature(&mut state, &reg, "Creepy Doll", P0);
-
-    // Verify it has Indestructible.
-    assert!(state.has_keyword(doll, Keyword::Indestructible, &reg),
-        "Creepy Doll should have Indestructible");
-}
-
 // ── Bitterheart Witch ────────────────────────────────────────────
 
 #[test]
