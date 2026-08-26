@@ -103,7 +103,7 @@ fn a_creature_put_onto_the_battlefield_attacking_gets_the_bonus() {
     // creature that arrives already in combat, with no AttackersDeclared for it.
     let latecomer = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let base = state.effective_power(latecomer, &reg).unwrap();
-    state.combat.as_mut().unwrap().attackers.insert(latecomer, P1);
+    joins_the_attack(&mut state, latecomer, P1);
 
     assert_eq!(state.effective_power(latecomer, &reg).unwrap(), base + 1,
         "it is an attacking creature you control, however it got there");

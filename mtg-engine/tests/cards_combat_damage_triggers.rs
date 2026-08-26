@@ -165,8 +165,7 @@ fn stromkirk_noble_cant_be_blocked_by_humans() {
     let human = named_permanent(&mut state, &reg, "Unruly Mob", P1);
 
     // Set up combat.
-    state.combat = Some(mtg_engine::state::CombatState::new());
-    state.combat.as_mut().unwrap().attackers.insert(noble, P1);
+    attacks_unblocked(&mut state, noble, P1);
 
     // Human should not be able to block the Noble.
     let can_block = combat::can_block_attacker(&state, human, noble, &reg);

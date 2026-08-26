@@ -161,10 +161,7 @@ fn wooden_stake_destroys_vampire_on_block() {
     state.step = Step::DeclareBlockers;
     state.active_player = P1;
     // Set up combat with vampire as attacker.
-    let mut combat = mtg_engine::state::CombatState::new();
-    combat.attackers.insert(vampire, P0);
-    combat.blocker_assignments.insert(vampire, vec![]);
-    state.combat = Some(combat);
+    attacks_blocked_by(&mut state, vampire, P0, &[]);
 
     // Declare blockers: creature blocks vampire.
     submit_declare_blockers(&mut state, P0, &[(creature, vampire)], &reg);
@@ -193,10 +190,7 @@ fn wooden_stake_does_not_destroy_non_vampire() {
 
     state.step = Step::DeclareBlockers;
     state.active_player = P1;
-    let mut combat = mtg_engine::state::CombatState::new();
-    combat.attackers.insert(bear, P0);
-    combat.blocker_assignments.insert(bear, vec![]);
-    state.combat = Some(combat);
+    attacks_blocked_by(&mut state, bear, P0, &[]);
 
     submit_declare_blockers(&mut state, P0, &[(creature, bear)], &reg);
     mtg_engine::triggers::process_triggers(&mut state, &reg);

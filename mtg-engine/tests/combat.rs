@@ -354,10 +354,7 @@ fn blockers_accepted_for(
     attacker: ObjectId,
     blocker: ObjectId,
 ) -> Vec<ObjectId> {
-    let mut combat = mtg_engine::state::CombatState::new();
-    combat.attackers.insert(attacker, P1);
-    combat.blocker_assignments.insert(attacker, vec![]);
-    state.combat = Some(combat);
+    attacks_unblocked(state, attacker, P1);
     state.step = Step::DeclareBlockers;
 
     combat::declare_blockers_with_registry(state, &[(blocker, attacker)], reg);

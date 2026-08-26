@@ -210,9 +210,8 @@ fn annihilation_can_still_leave_a_creature_dead() {
 fn no_attackers_game_loop_skips_to_end_combat() {
     let reg = registry();
     let mut state = game_at_step(Step::BeginCombat, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
-    ready_creature(&mut state, P0, 3, 3);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    attacks_unblocked(&mut state, attacker, P1);
 
     // Fill libraries so we don't hit empty-library SBA.
     let land_id = reg.get_id_by_name("Forest").unwrap();

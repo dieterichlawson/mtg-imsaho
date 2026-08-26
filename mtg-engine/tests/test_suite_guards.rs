@@ -616,3 +616,46 @@ fn no_card_moves_a_spell_off_the_stack_itself() {
          `move_countered_spell`:\n  {}",
         offenders.join("\n  "));
 }
+
+/// No test builds a `CombatState` by hand.
+///
+/// Thirty-one sites across sixteen files did, in three different shapes, and
+/// every one of them left `blocked_attackers` empty — a state the engine
+/// never produces, because `declare_blockers` records blocked-ness and
+/// CR 509.2 makes it permanent for the combat. One of them went further and
+/// keyed `blocker_assignments` by the *blocker*, so the engine saw an
+/// unblocked attacker and two creatures that were never in combat together;
+/// the test's "neither took damage" was true with the effect under test
+/// deleted.
+///
+/// `common::declare_combat` (and `attacks_unblocked` / `attacks_blocked_by`)
+/// build what the engine builds.
+#[test]
+fn no_test_assembles_combat_state_by_hand() {
+    let mut offenders = Vec::new();
+    for path in test_files() {
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        // `common/mod.rs` is where the helper that builds it lives.
+        if name == "mod.rs" {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            let builds = l.contains("CombatState")
+                || l.contains(".attackers.insert(")
+                || l.contains(".blocker_assignments.insert(");
+            if builds {
+                offenders.push(format!("{name}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "set combat up with `declare_combat` / `attacks_unblocked` / \
+         `attacks_blocked_by`, which record blocked-ness the way the engine \
+         does (CR 509.2):\n  {}",
+        offenders.join("\n  "));
+}

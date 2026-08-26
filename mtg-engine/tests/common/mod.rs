@@ -747,3 +747,14 @@ pub fn attacks_blocked_by(
 ) {
     declare_combat(state, &[(attacker, defender, blockers)]);
 }
+
+/// Add an attacker to a combat already under way — a creature put onto the
+/// battlefield attacking (CR 508.4), which was never *declared* as an attacker
+/// and so fired no `AttackersDeclared` for anything to watch.
+///
+/// Distinct from [`declare_combat`], which replaces the whole combat state.
+pub fn joins_the_attack(state: &mut GameState, attacker: ObjectId, defender: PlayerId) {
+    let combat = state.combat.get_or_insert_with(mtg_engine::state::CombatState::new);
+    combat.attackers.insert(attacker, defender);
+    combat.blocker_assignments.insert(attacker, Vec::new());
+}

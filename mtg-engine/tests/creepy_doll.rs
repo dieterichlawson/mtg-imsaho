@@ -17,13 +17,9 @@ use mtg_engine::types::*;
 fn trigger_fires_on_combat_damage_to_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
     let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
-
-    // Set up combat: doll attacks, target blocks.
-    state.combat.as_mut().unwrap().attackers.insert(doll, P1);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
 
     // Emit combat damage event (doll deals 1 damage to target creature).
     state.events.push(GameEvent::CombatDamageDealt {
@@ -46,10 +42,8 @@ fn trigger_fires_on_combat_damage_to_creature() {
 fn trigger_does_not_fire_on_combat_damage_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
     let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
-    state.combat.as_mut().unwrap().attackers.insert(doll, P1);
+    attacks_unblocked(&mut state, doll, P1);
 
     // Emit combat damage event (doll deals 1 damage to player).
     state.events.push(GameEvent::CombatDamageDealt {

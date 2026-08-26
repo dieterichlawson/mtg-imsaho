@@ -136,11 +136,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     let cage = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
 
     // Set up combat: Kessig Cagebreakers is attacking P1.
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(cage, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, cage, P1);
 
     // Put 3 creatures in graveyard.
     for _ in 0..3 {
@@ -1484,11 +1480,7 @@ fn grimgrin_attack_trigger_destroys_and_adds_counter() {
     let defender_creature = ready_creature(&mut state, P1, 3, 3);
 
     // Set up combat state with Grimgrin attacking P1.
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(grimgrin, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, grimgrin, P1);
 
     // Fire the AttackersDeclared event and run the trigger pipeline.
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
@@ -1516,11 +1508,7 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
     let creature_b = ready_creature(&mut state, P1, 3, 3);
 
     // Set up combat state with Grimgrin attacking P1.
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(grimgrin, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, grimgrin, P1);
 
     // Fire the AttackersDeclared event and collect triggers (which enters
     // the stack-time target-choice prompt because there are two valid defenders).
@@ -1562,11 +1550,7 @@ fn grimgrin_attack_no_targets_no_counter() {
     let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     // Defender has NO creatures.
 
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(grimgrin, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, grimgrin, P1);
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
         attackers: vec![(grimgrin, P1)],
@@ -1592,11 +1576,7 @@ fn grimgrin_attack_indestructible_target_still_gets_counter() {
         obj.keywords.push(Keyword::Indestructible);
     }
 
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(grimgrin, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, grimgrin, P1);
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
         attackers: vec![(grimgrin, P1)],
@@ -1625,11 +1605,7 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
     // Controller also has another creature (should NOT be targetable).
     let own_creature = ready_creature(&mut state, P0, 3, 3);
 
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(grimgrin, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, grimgrin, P1);
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
         attackers: vec![(grimgrin, P1)],
@@ -1651,10 +1627,8 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
 fn geist_angel_exiled_at_end_of_combat() {
     let reg = registry();
     let mut state = game_at_step(Step::EndCombat, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
     let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
-    state.combat.as_mut().unwrap().attackers.insert(geist, P1);
+    attacks_unblocked(&mut state, geist, P1);
 
     // Attack to create the angel.
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();

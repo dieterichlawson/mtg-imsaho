@@ -21,11 +21,7 @@ fn geist_creates_angel_on_attack() {
 
     // Simulate attack trigger.
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(geist, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, geist, P1);
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
     // Should have created an Angel token on the battlefield, tapped and attacking.
@@ -43,11 +39,7 @@ fn angel_exiled_at_end_of_combat() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(geist, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, geist, P1);
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
@@ -73,11 +65,7 @@ fn angel_exiled_even_if_geist_dies() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(geist, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, geist, P1);
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
@@ -107,11 +95,7 @@ fn angel_exiled_even_if_geist_dies() {
 
 fn setup_geist_attacking(state: &mut mtg_engine::state::GameState, reg: &CardRegistry) -> (mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId) {
     let geist = named_permanent(state, reg, "Geist of Saint Traft", P0);
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(geist, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(state, geist, P1);
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(state, geist, AttackInfo::new(geist, P1), &[], reg);
 
@@ -205,16 +189,11 @@ fn geist_no_spurious_end_combat_trigger_when_did_not_attack() {
 #[test]
 fn the_angel_token_attacks_whoever_geist_is_attacking() {
     use mtg_engine::cards::AttackInfo;
-    use mtg_engine::state::CombatState;
-    use std::collections::HashMap;
-
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
-    let mut attackers = HashMap::new();
-    attackers.insert(geist, P1);
-    state.combat = Some(CombatState { attackers, ..Default::default() });
+    attacks_unblocked(&mut state, geist, P1);
 
     let card_id = state.get_object(geist).unwrap().card_id;
     reg.get(card_id).unwrap()

@@ -132,8 +132,7 @@ fn trepanation_blade_stops_on_land() {
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
 
     // Set up combat with attacker attacking P1.
-    state.combat = Some(mtg_engine::state::CombatState::new());
-    state.combat.as_mut().unwrap().attackers.insert(attacker, P1);
+    attacks_unblocked(&mut state, attacker, P1);
 
     // Set up P1's library: [nonland, land, nonland, nonland]
     let nonland1_card_id = reg.get_id_by_name("Grizzly Bears").unwrap();

@@ -31,10 +31,7 @@ fn blockers_accepted(
     defender: PlayerId,
     blockers: &[ObjectId],
 ) -> usize {
-    let mut combat = mtg_engine::state::CombatState::new();
-    combat.attackers.insert(attacker, defender);
-    combat.blocker_assignments.insert(attacker, vec![]);
-    state.combat = Some(combat);
+    attacks_unblocked(state, attacker, defender);
 
     let pairs: Vec<_> = blockers.iter().map(|b| (*b, attacker)).collect();
     submit_declare_blockers(state, defender, &pairs, reg);

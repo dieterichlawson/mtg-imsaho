@@ -33,62 +33,66 @@ fn sets_prevention_flag() {
         "Moonmist should set the prevention flag");
 }
 
-/// Non-Wolf/Werewolf creature deals no combat damage to player after Moonmist.
+/// "Prevent all combat damage that would be dealt this turn by creatures that
+/// aren't Werewolves or Wolves." One rule, reached three ways: damage to a
+/// player, damage a non-Wolf attacker deals to its blocker, and damage that
+/// blocker deals back.
+///
+/// Every row runs twice — with the prevention and without it — because "no
+/// damage was dealt" is also what a combat that never happened looks like.
+/// The blocked row used to key `blocker_assignments` by the *blocker*, so the
+/// engine saw an unblocked attacker and two creatures that were never in
+/// combat with each other; both halves read 0 with Moonmist deleted.
 #[test]
-fn prevents_non_wolf_combat_damage_to_player() {
+fn moonmist_prevents_combat_damage_from_everything_but_wolves() {
     let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-    state.until_end_of_turn.push(moonmist_prevention());
-    state.combat = Some(mtg_engine::state::CombatState::new());
 
-    // A plain 3/3 creature (not Wolf or Werewolf).
-    let attacker = ready_creature(&mut state, P0, 3, 3);
-    state.combat.as_mut().unwrap().attackers.insert(attacker, P1);
+    /// Runs one combat, with or without Moonmist's prevention, and reports
+    /// (life lost by P1, damage on the attacker, damage on the blocker).
+    fn combat(reg: &mtg_engine::cards::CardRegistry, wolf: bool, blocked: bool,
+              prevented: bool) -> (i32, u32, u32) {
+        let mut state = game_at_step(Step::CombatDamage, P0);
+        if prevented {
+            state.until_end_of_turn.push(moonmist_prevention());
+        }
+        let attacker = if wolf {
+            named_permanent(&mut state, reg, "Darkthicket Wolf", P0)
+        } else {
+            ready_creature(&mut state, P0, 3, 3)
+        };
+        let blocker = ready_creature(&mut state, P1, 2, 2);
+        if blocked {
+            attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+        } else {
+            attacks_unblocked(&mut state, attacker, P1);
+        }
 
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+        mtg_engine::combat::deal_combat_damage(&mut state, reg);
 
-    assert_eq!(state.players[1].life, 20,
-        "Non-Wolf creature should deal no combat damage after Moonmist");
-}
+        (20 - state.players[1].life,
+         state.get_object(attacker).unwrap().damage_marked,
+         state.get_object(blocker).unwrap().damage_marked)
+    }
 
-/// Wolf creature still deals combat damage after Moonmist.
-#[test]
-fn wolf_still_deals_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-    state.until_end_of_turn.push(moonmist_prevention());
-    state.combat = Some(mtg_engine::state::CombatState::new());
+    // Unblocked non-Wolf: no damage to the player — but it would have dealt some.
+    assert_eq!(combat(&reg, false, false, true).0, 0,
+        "a non-Wolf attacker deals no combat damage to the player");
+    assert!(combat(&reg, false, false, false).0 > 0,
+        "control: without Moonmist that same attacker does get through");
 
-    // Use a named Wolf card.
-    let wolf = named_permanent(&mut state, &reg, "Darkthicket Wolf", P0);
-    state.combat.as_mut().unwrap().attackers.insert(wolf, P1);
+    // Blocked non-Wolf: neither side takes damage, and both would have.
+    let (_, attacker_dmg, blocker_dmg) = combat(&reg, false, true, true);
+    assert_eq!((attacker_dmg, blocker_dmg), (0, 0),
+        "neither a non-Wolf attacker nor its non-Wolf blocker deals damage");
+    let (_, attacker_dmg, blocker_dmg) = combat(&reg, false, true, false);
+    assert!(attacker_dmg > 0 && blocker_dmg > 0,
+        "control: without Moonmist the same block trades damage both ways \
+         (got attacker {attacker_dmg}, blocker {blocker_dmg}) — if either is 0 \
+         the combat was not set up, and the assertion above proves nothing");
 
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-
-    assert!(state.players[1].life < 20,
-        "Wolf creature should still deal combat damage after Moonmist");
-}
-
-/// Non-Wolf creature deals no combat damage to creatures after Moonmist.
-#[test]
-fn prevents_non_wolf_combat_damage_to_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-    state.until_end_of_turn.push(moonmist_prevention());
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
-    let attacker = ready_creature(&mut state, P0, 3, 3);
-    let blocker = ready_creature(&mut state, P1, 2, 2);
-    state.combat.as_mut().unwrap().attackers.insert(attacker, P1);
-    state.combat.as_mut().unwrap().blocker_assignments.insert(blocker, vec![attacker]);
-
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-
-    // Neither creature should have taken damage (both are non-Wolf/Werewolf).
-    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
-        "Attacker should take no damage when blocker's damage is prevented");
-    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
-        "Blocker should take no damage when attacker's damage is prevented");
+    // A Wolf is exempt.
+    assert!(combat(&reg, true, false, true).0 > 0,
+        "a Wolf still deals its combat damage through Moonmist");
 }
 
 /// Moonmist transforms a front-face Human DFC to its back face.

@@ -112,10 +112,7 @@ fn elite_inquisitor_protection_prevents_damage() {
     let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
 
     // Set up combat: vampire attacks, inquisitor blocks.
-    let mut combat = mtg_engine::state::CombatState::new();
-    combat.attackers.insert(vampire, P0);
-    combat.blocker_assignments.insert(vampire, vec![inquisitor]);
-    state.combat = Some(combat);
+    attacks_blocked_by(&mut state, vampire, P0, &[inquisitor]);
 
     // Deal combat damage.
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
@@ -152,10 +149,7 @@ fn ashmouth_hound_deals_damage_on_block() {
     state.get_object_mut(attacker).unwrap().name = "Enemy".into();
 
     // Set up combat.
-    let mut combat = mtg_engine::state::CombatState::new();
-    combat.attackers.insert(attacker, P0);
-    combat.blocker_assignments.insert(attacker, vec![hound]);
-    state.combat = Some(combat);
+    attacks_blocked_by(&mut state, attacker, P0, &[hound]);
 
     // Fire blockers declared event.
     state.events.push(GameEvent::BlockersDeclared {

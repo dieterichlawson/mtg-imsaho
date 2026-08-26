@@ -113,10 +113,7 @@ fn bug_protection_doesnt_prevent_zombie_source_targeting() {
     // We can test this by checking if Grimgrin's on_attacks would present Grave Bramble
     // as a valid target. Set up combat state.
     state.step = Step::DeclareAttackers;
-    state.combat = Some(mtg_engine::state::CombatState::new());
-    if let Some(ref mut combat) = state.combat {
-        combat.attackers.insert(grimgrin, P1);
-    }
+    attacks_unblocked(&mut state, grimgrin, P1);
 
     // Fire the attack trigger
     let behavior = registry.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
@@ -162,10 +159,7 @@ fn bug_protection_incorrectly_prevents_blocking_zombies() {
     }
 
     // Set up combat — zombie is attacking
-    state.combat = Some(mtg_engine::state::CombatState::new());
-    if let Some(ref mut combat) = state.combat {
-        combat.attackers.insert(zombie, P1);
-    }
+    attacks_unblocked(&mut state, zombie, P1);
 
     // Grave Bramble should be able to block the Zombie
     // (protection prevents the Zombie from blocking Bramble, NOT the other way around)

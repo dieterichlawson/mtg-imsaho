@@ -158,11 +158,7 @@ fn inquisitors_flail_doubles_combat_damage() {
         "3/3 creature with Inquisitor's Flail should still show 3 effective power");
 
     // Set up combat: creature attacks P1 unblocked.
-    state.combat = Some(mtg_engine::state::CombatState {
-        attackers: [(creature, P1)].into_iter().collect(),
-        blocker_assignments: std::collections::HashMap::new(),
-        ..Default::default()
-    });
+    attacks_unblocked(&mut state, creature, P1);
 
     let life_before = state.get_player(P1).life;
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);

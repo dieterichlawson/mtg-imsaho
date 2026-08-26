@@ -16,17 +16,13 @@ use mtg_engine::types::*;
 fn prevents_combat_damage_removes_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
     let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     // Give it 3 +1/+1 counters.
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
 
     // Attacker attacks, Horde blocks.
     let attacker = ready_creature(&mut state, P1, 2, 2);
-    state.combat.as_mut().unwrap().attackers.insert(attacker, P0);
-    // blocker_assignments maps attacker -> [blockers]
-    state.combat.as_mut().unwrap().blocker_assignments.insert(attacker, vec![horde]);
+    attacks_blocked_by(&mut state, attacker, P0, &[horde]);
 
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 
@@ -43,15 +39,12 @@ fn prevents_combat_damage_removes_counter() {
 fn still_deals_damage_to_others() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
     let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
 
     let blocker = ready_creature(&mut state, P1, 2, 5);
     // Horde attacks, blocker blocks.
-    state.combat.as_mut().unwrap().attackers.insert(horde, P1);
-    state.combat.as_mut().unwrap().blocker_assignments.insert(horde, vec![blocker]);
+    attacks_blocked_by(&mut state, horde, P1, &[blocker]);
 
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 

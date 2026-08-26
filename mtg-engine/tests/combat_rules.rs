@@ -20,7 +20,6 @@ use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
-use std::collections::HashMap;
 
 /// Bug 17-005 (`audits/AUDIT_BUGS.md)`: A 5-power non-trample attacker
 /// blocked by two 2/2s dumps all 5 damage on the first blocker in
@@ -46,7 +45,6 @@ use std::collections::HashMap;
 /// with optimal distribution).
 #[test]
 fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
-    use mtg_engine::state::CombatState;
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
@@ -58,15 +56,7 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
     let blocker_b = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(blocker_b).unwrap().card_types = vec![CardType::Creature];
 
-    let mut attackers_map = HashMap::new();
-    attackers_map.insert(attacker, P1);
-    let mut blocker_assignments = HashMap::new();
-    blocker_assignments.insert(attacker, vec![blocker_a, blocker_b]);
-    state.combat = Some(CombatState {
-        attackers: attackers_map,
-        blocker_assignments,
-        ..Default::default()
-    });
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker_a, blocker_b]);
 
     mtg_engine::combat::deal_combat_damage(&mut state, &registry);
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
