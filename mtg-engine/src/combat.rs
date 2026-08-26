@@ -414,27 +414,45 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
         .map(|o| o.id)
         .collect::<Vec<_>>()
         .into_iter()
-        // `can_block` is the "can't block" query (Vampire Interloper, and
-        // Bonds of Faith's conditional form); this used to ask it and then ask
-        // the same question again inline.
-        .filter(|&id| state.can_block(id, registry))
-        // "Can't block this turn" (e.g., Nightbird's Clutches).
-        .filter(|&id| !state.until_end_of_turn.iter().any(|e| matches!(e,
-            crate::state::TemporaryEffect::CantBlock { target } if *target == id
-        )))
+        .filter(|&id| can_block_at_all(state, id, registry))
         .collect()
 }
 
-/// Check if a blocker can legally block a specific attacker.
-/// Enforces flying (only blocked by flying/reach) and intimidate (only by artifact/same color).
+/// Whether `blocker_id` may block *anything* this combat — the restrictions
+/// that do not depend on which attacker is being blocked (CR 509.1a/509.1b).
+///
+/// This is the half of blocking legality that `eligible_blockers` used to own
+/// alone. `can_block_attacker` did not ask it, so the two paths disagreed:
+/// a Vampire Interloper ("can't block") was filtered out of the prompt but
+/// accepted by `declare_blockers_with_registry`, which validates through
+/// `can_block_attacker`. Both now go through here.
 #[must_use]
-pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
+pub fn can_block_at_all(state: &GameState, blocker_id: ObjectId, registry: &CardRegistry) -> bool {
     // A blocker must be an untapped creature on the battlefield (CR 509.1a).
-    // This is a pure per-pair legality predicate; whether the attacker is
-    // actually attacking is enforced by the caller with combat context
-    // (declare_blockers_with_registry).
     let Some(blocker) = state.get_object(blocker_id) else { return false };
     if blocker.zone != Zone::Battlefield || blocker.tapped || !state.is_creature(blocker_id, registry) {
+        return false;
+    }
+    // `can_block` is the "can't block" query (Vampire Interloper, and Bonds of
+    // Faith's conditional form).
+    if !state.can_block(blocker_id, registry) {
+        return false;
+    }
+    // "Can't block this turn" (e.g., Nightbird's Clutches).
+    !state.until_end_of_turn.iter().any(|e| matches!(e,
+        crate::state::TemporaryEffect::CantBlock { target } if *target == blocker_id
+    ))
+}
+
+/// Check if a blocker can legally block a specific attacker: the blanket
+/// restrictions of [`can_block_at_all`], plus evasion (flying, intimidate,
+/// protection) evaluated against this particular attacker.
+///
+/// Whether the attacker is actually attacking is enforced by the caller with
+/// combat context (`declare_blockers_with_registry`).
+#[must_use]
+pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
+    if !can_block_at_all(state, blocker_id, registry) {
         return false;
     }
 

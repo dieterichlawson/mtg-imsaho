@@ -34,25 +34,27 @@ fn flashback_offered_from_graveyard() {
         "legal_actions should offer CastSpell for a flashback card in the graveyard");
 }
 
-/// A card with flashback in the hand should only be castable at its normal cost,
-/// not via flashback.
+/// A card with flashback in hand is an ordinary card: cast for {R}, resolved
+/// into the graveyard.
+///
+/// The `CastSpell` action names only the object, so "is it offered?" cannot
+/// tell a normal cast from a flashback cast. What separates them is what the
+/// cast costs and where the card ends up (CR 702.33a): {R} rather than {3}{R},
+/// and the graveyard rather than exile.
 #[test]
-fn flashback_not_offered_from_hand() {
+fn a_flashback_card_in_hand_is_cast_normally() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let card = spell_in_hand(&mut state, &reg, "Geistflame", P0);
-
-    // Give exactly {R} (enough for normal Geistflame, not enough for {3}{R} flashback).
+    // Exactly {R}: enough for the printed cost, one short of flashback's {3}{R}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let legal = engine::legal_actions(&state, &reg);
-    let has_cast = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == card)
-    });
-    // It IS offered — as a normal cast from hand at cost {R}.
-    assert!(has_cast,
-        "Geistflame should be castable from hand at normal cost R");
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard,
+        "cast from hand for {{R}}, so it goes to the graveyard — exile here would          mean the engine treated a hand cast as a flashback cast");
+    assert_eq!(state.get_player(P1).life, 19, "and it resolved: Geistflame's 1 damage");
 }
 
 /// Flashback is NOT offered when the player lacks mana for the flashback cost.
@@ -100,25 +102,6 @@ fn flashback_spell_is_exiled_after_resolve() {
         "Flashback spell should be exiled after resolution, not in graveyard");
 }
 
-/// A spell cast normally from hand goes to graveyard after resolution.
-#[test]
-fn normal_cast_goes_to_graveyard() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let card = castable_spell(&mut state, &reg, "Geistflame", P0);
-
-    state = cast_and_resolve(
-        &state,
-        &reg,
-        card,
-        vec![Target::Player(P1)],
-    );
-
-    assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard,
-        "Normal cast should go to graveyard after resolution");
-}
-
 /// A flashback spell that is countered should still be exiled (not graveyard).
 #[test]
 fn flashback_spell_countered_is_exiled() {
@@ -163,14 +146,7 @@ fn mill_cards_moves_to_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Manually stock P1's library with 5 cards.
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let mut lib_cards = Vec::new();
-    for _ in 0..5 {
-        let obj = state.create_object(mountain_id, P1, Zone::Library, None, None);
-        state.get_object_mut(obj).unwrap().name = "Mountain".into();
-        lib_cards.push(obj);
-    }
-    state.get_player_mut(P1).library_order = lib_cards.clone();
+    let lib_cards = stock_library(&mut state, &reg, P1, 5);
 
     // Mill 3 cards.
     engine::mill_cards(&mut state, P1, 3, &reg);
@@ -196,11 +172,7 @@ fn think_twice_draws_from_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Stock library so there's a card to draw.
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let lib_card = state.create_object(mountain_id, P0, Zone::Library, None, None);
-    state.get_object_mut(lib_card).unwrap().name = "Mountain".into();
-    state.get_player_mut(P0).library_order = vec![lib_card];
+    stock_library(&mut state, &reg, P0, 1);
 
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
@@ -226,14 +198,7 @@ fn dream_twist_mills_three() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Stock P1's library with 5 cards.
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let mut lib_cards = Vec::new();
-    for _ in 0..5 {
-        let obj = state.create_object(mountain_id, P1, Zone::Library, None, None);
-        state.get_object_mut(obj).unwrap().name = "Mountain".into();
-        lib_cards.push(obj);
-    }
-    state.get_player_mut(P1).library_order = lib_cards.clone();
+    let lib_cards = stock_library(&mut state, &reg, P1, 5);
 
     // Cast Dream Twist from hand. Cost: {U}.
     let dt = castable_spell(&mut state, &reg, "Dream Twist", P0);
@@ -345,14 +310,7 @@ fn desperate_ravings_draws_two_discards_one() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Stock library with 3 cards to draw from.
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let mut lib_cards = Vec::new();
-    for _ in 0..3 {
-        let obj = state.create_object(mountain_id, P0, Zone::Library, None, None);
-        state.get_object_mut(obj).unwrap().name = "Mountain".into();
-        lib_cards.push(obj);
-    }
-    state.get_player_mut(P0).library_order = lib_cards;
+    stock_library(&mut state, &reg, P0, 3);
 
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
@@ -362,10 +320,8 @@ fn desperate_ravings_draws_two_discards_one() {
     state = cast_and_resolve(&state, &reg, dr, vec![]);
 
     let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
-    // Before: hand_before cards + Desperate Ravings (which goes to stack then graveyard).
-    // The spell is cast from hand (removing it), then draws 2, discards 1 => net +1 from the
-    // state before casting. But hand_before was measured before we created the spell card.
-    // So: hand_before (0) -> +1 (create DR) -> -1 (cast DR) -> +2 (draw) -> -1 (discard) = 1
+    // `hand_before` is measured before Desperate Ravings is put in hand, so the
+    // spell itself nets out: +2 drawn, -1 discarded.
     assert_eq!(hand_after, hand_before + 1,
         "Desperate Ravings should result in net +1 hand size (draw 2, discard 1, minus the spell)");
 }
@@ -379,14 +335,7 @@ fn forbidden_alchemy_draws_and_mills() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Stock library with 5 cards.
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let mut lib_cards = Vec::new();
-    for _ in 0..5 {
-        let obj = state.create_object(mountain_id, P0, Zone::Library, None, None);
-        state.get_object_mut(obj).unwrap().name = "Mountain".into();
-        lib_cards.push(obj);
-    }
-    state.get_player_mut(P0).library_order = lib_cards.clone();
+    let lib_cards = stock_library(&mut state, &reg, P0, 5);
 
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
@@ -442,27 +391,6 @@ fn feeling_of_dread_taps_creature() {
         "Feeling of Dread should tap the target creature");
 }
 
-/// Nightbird's Clutches prevents target creatures from blocking this turn.
-#[test]
-fn nightbirds_clutches_taps_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P1, 3, 3);
-    assert!(!state.until_end_of_turn.iter().any(|e| matches!(e,
-        mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == creature)),
-        "Creature should start able to block");
-
-    // Cast Nightbird's Clutches. Cost: {1}{R}.
-    let nc = castable_spell(&mut state, &reg, "Nightbird's Clutches", P0);
-
-    state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(creature)]);
-
-    assert!(state.until_end_of_turn.iter().any(|e| matches!(e,
-        mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == creature)),
-        "Nightbird's Clutches should prevent the target creature from blocking");
-}
-
 /// Bump in the Night flashback: opponent loses 3 life and Bump is exiled.
 #[test]
 fn bump_in_the_night_flashback_exiles() {
@@ -489,10 +417,11 @@ fn bump_in_the_night_flashback_exiles() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: Nevermore bans a card by name, but the ban isn't checked
-/// when casting that card via flashback from the graveyard.
+/// CR 702.33a: flashback is a way of casting the card, so anything that stops
+/// the card being cast stops the flashback cast too. Nevermore's ban used to be
+/// checked only on the cast-from-hand path.
 #[test]
-fn bug_nevermore_not_enforced_for_flashback() {
+fn nevermore_stops_the_card_it_names_from_being_flashed_back() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -526,58 +455,69 @@ fn bug_nevermore_not_enforced_for_flashback() {
         }
     });
 
-    // BUG: Nevermore ban doesn't apply to flashback casts
     assert!(!can_flashback,
         "Think Twice should not be castable via flashback while Nevermore names it");
 }
 
-/// Bug: Past in Flames gives flashback equal to a card's mana cost,
-/// but cards with no mana cost get `ManaCost::free()`, making them
-/// castable for free from the graveyard.
+/// "Each instant and sorcery card in your graveyard gains flashback until end
+/// of turn. The flashback cost is equal to its mana cost" (CR 702.33a).
+///
+/// This used to cast Past in Flames with an empty graveyard and assert that no
+/// card had been granted a free flashback — true of nothing at all, so it would
+/// have passed however the grant was implemented. It now stocks the graveyard
+/// and checks the grant that is actually made: the right cards, at the right
+/// cost, castable for it.
 #[test]
-fn bug_past_in_flames_free_flashback_for_no_cost_cards() {
-    let registry = CardRegistry::with_all_cards();
+fn past_in_flames_grants_flashback_at_each_cards_own_cost() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Cast Past in Flames
-    let pif = castable_spell(&mut state, &registry, "Past in Flames", P0);
-    state = cast_and_resolve(&state, &registry, pif, vec![]);
+    // Think Twice is an instant costing {1}{U}; the Bears are a creature card,
+    // which the ability does not reach.
+    let think_twice = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
+    let bears = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
 
-    // Check the until_end_of_turn flashback entries
-    // Any card with cost=None should NOT get flashback (or should get cost=None flashback
-    // which is uncastable), not ManaCost::free()
-    let free_flashbacks: Vec<_> = state.until_end_of_turn.iter()
-        .filter_map(|e| if let mtg_engine::state::TemporaryEffect::GrantFlashback { cost, .. } = e {
-            Some(cost)
-        } else { None })
-        .filter(|cost| cost.symbols.is_empty())
+    let pif = castable_spell(&mut state, &reg, "Past in Flames", P0);
+    state = cast_and_resolve(&state, &reg, pif, vec![]);
+
+    let granted: Vec<_> = state.until_end_of_turn.iter()
+        .filter_map(|e| match e {
+            mtg_engine::state::TemporaryEffect::GrantFlashback { target, cost } => Some((*target, cost)),
+            _ => None,
+        })
         .collect();
 
-    // BUG: Cards with no mana cost get ManaCost::free() flashback
-    assert!(free_flashbacks.is_empty(),
-        "Cards with no mana cost should not get free flashback. Found {} free flashback entries",
-        free_flashbacks.len());
+    let tt = granted.iter().find(|(t, _)| *t == think_twice)
+        .unwrap_or_else(|| panic!("Think Twice should have gained flashback, granted: {granted:?}"));
+    assert_eq!(tt.1.mana_value(), 2,
+        "the flashback cost is equal to its mana cost, {{1}}{{U}} — an empty cost          here would make it castable for free");
+    assert!(!granted.iter().any(|(t, _)| *t == bears),
+        "a creature card in the graveyard gains nothing");
+
+    // And the grant is real: with {1}{U} up, the engine offers the cast.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(legal.actions.iter().any(|a|
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == think_twice)),
+        "Think Twice should now be castable from the graveyard");
 }
 
-/// Bug BS (`audits/AUDIT_BUGS.md)`: `cast_with_flashback` persists on
-/// the object when Runic Repetition returns an exiled flashback
-/// card to hand. The next time that card is cast normally,
-/// `move_spell_after_resolve` sees the stale flag and sends the
-/// card to exile instead of graveyard.
+/// Bug BS (`audits/AUDIT_BUGS.md)`: `cast_with_flashback` persisted on the
+/// object when Runic Repetition returned an exiled flashback card to hand. The
+/// next time that card was cast normally, `move_spell_after_resolve` saw the
+/// stale flag and sent the card to exile instead of the graveyard.
 ///
 /// Oracle (Runic Repetition): "Return target exiled card with
 /// flashback you own to your hand."
 ///
-/// Failure mode: `state.rs::move_object` clears battlefield-related
-/// fields but does not reset `cast_with_flashback`. The cast handler
-/// only SETS the flag when `is_flashback = true`; it never clears it
-/// on a normal cast.
+/// Failure mode: `state.rs::move_object` cleared battlefield-related fields but
+/// not `cast_with_flashback`, and the cast handler only ever SET the flag.
 ///
 /// We put a Devil's Play in exile with `cast_with_flashback = true`,
 /// move it back to hand via the engine's `move_object` (simulating
 /// Runic Repetition), and assert the flag is now false.
 #[test]
-fn bug_bs_runic_repetition_resets_cast_with_flashback() {
+fn runic_repetition_clears_the_flashback_flag_on_the_returned_card() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 

@@ -6,6 +6,7 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
+use mtg_engine::ids::ObjectId;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::AwaitingAction;
@@ -334,4 +335,70 @@ fn submit_action_declare_blockers_with_none_logs_no_blockers() {
         "no blockers should be recorded against any attacker");
     assert!(new_state.game_log.iter().any(|e| e.message.contains("declared no blockers")),
         "log should contain the 'declared no blockers' message");
+}
+
+// ---------------------------------------------------------------------------
+// The two halves of blocking legality agree (CR 509.1a/509.1b)
+// ---------------------------------------------------------------------------
+//
+// `eligible_blockers` (what the prompt offers) and `can_block_attacker` (what
+// `declare_blockers_with_registry` validates against) used to enforce different
+// rules: the blanket "can't block" restrictions lived only in the first. Both go
+// through `can_block_at_all` now, and these are the two restrictions that were
+// enforced in the prompt but not in the action.
+
+/// Declare a block through the validating path and report who ended up blocking.
+fn blockers_accepted_for(
+    state: &mut mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    attacker: ObjectId,
+    blocker: ObjectId,
+) -> Vec<ObjectId> {
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(attacker, P1);
+    combat.blocker_assignments.insert(attacker, vec![]);
+    state.combat = Some(combat);
+    state.step = Step::DeclareBlockers;
+
+    combat::declare_blockers_with_registry(state, &[(blocker, attacker)], reg);
+    state.combat.as_ref().unwrap().blocker_assignments[&attacker].clone()
+}
+
+/// "Vampire Interloper can't block." A printed restriction, so it holds whether
+/// the block is offered or submitted directly.
+#[test]
+fn a_creature_that_cant_block_is_rejected_as_a_blocker() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let interloper = named_creature(&mut state, &reg, "Vampire Interloper", P1);
+
+    assert!(!combat::eligible_blockers(&state, P1, &reg).contains(&interloper),
+        "it is not offered as a blocker");
+    assert!(blockers_accepted_for(&mut state, &reg, attacker, interloper).is_empty(),
+        "and submitting it anyway must not block either");
+}
+
+/// "Up to two target creatures can't block this turn" (Nightbird's Clutches) —
+/// the same rule reached through a temporary effect rather than a printed one.
+#[test]
+fn a_creature_that_cant_block_this_turn_is_rejected_as_a_blocker() {
+    use mtg_engine::actions::Target;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 3, 3);
+    assert!(combat::eligible_blockers(&state, P1, &reg).contains(&blocker),
+        "test setup: it could block to begin with");
+
+    let nc = castable_spell(&mut state, &reg, "Nightbird's Clutches", P0);
+    state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(blocker)]);
+
+    assert!(!combat::eligible_blockers(&state, P1, &reg).contains(&blocker),
+        "it is no longer offered as a blocker");
+    assert!(blockers_accepted_for(&mut state, &reg, attacker, blocker).is_empty(),
+        "and submitting it anyway must not block either");
 }

@@ -468,10 +468,11 @@ pub fn advance_to_next_turn(state: &mut GameState, registry: &CardRegistry) {
 /// Use this for tests that just need cards to be there; when the identity of
 /// the card matters, build it yourself.
 #[allow(dead_code)]
-pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: PlayerId, n: usize) {
+pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: PlayerId, n: usize) -> Vec<ObjectId> {
     let card_id = registry.get_id_by_name("Forest").expect("Forest is in the registry");
-    for _ in 0..n {
-        let id = state.create_object(card_id, player, Zone::Library, None, None);
-        state.get_player_mut(player).library_order.push(id);
-    }
+    let ids: Vec<ObjectId> = (0..n)
+        .map(|_| state.create_object(card_id, player, Zone::Library, None, None))
+        .collect();
+    state.get_player_mut(player).library_order.extend(&ids);
+    ids
 }
