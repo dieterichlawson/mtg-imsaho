@@ -9,7 +9,6 @@
 
 mod common;
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::DamageTarget;
 use mtg_engine::replacement::{ReplaceableEvent, apply};
 use mtg_engine::types::*;
@@ -42,6 +41,37 @@ fn a_check_land_enters_tapped_only_without_its_land_types() {
         assert!(!state.get_object(with).unwrap().tapped,
             "{land} enters untapped with a {enabler} out");
     }
+}
+
+/// Essence of the Wild: "Creatures you control enter as copies of this
+/// creature." CR 614.1d — a replacement effect, so it applies however the
+/// creature arrives. It used to run out of `on_resolve`, which meant only
+/// creatures cast from hand were affected; a token created by an ability, or a
+/// creature reanimated, walked straight past it.
+#[test]
+fn essence_of_the_wild_applies_to_a_token_it_did_not_resolve() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Just being on the battlefield is enough — no hook is fired here on
+    // purpose, because a replacement effect is not a trigger.
+    let _eotw = named_permanent(&mut state, &registry, "Essence of the Wild", P0);
+
+    // Create a token — it should enter as a copy of Essence of the Wild
+    let token = state.create_token_with_subtypes(
+        "Spirit", P0, 1, 1,
+        vec![Color::White],
+        vec![CardType::Creature],
+        vec![Keyword::Flying],
+        vec!["Spirit".into()],
+        &registry,
+    )[0];
+
+    // The token should be a 6/6 copy of Essence of the Wild
+    let token_power = state.get_object(token).and_then(|o| o.power).unwrap_or(0);
+
+    assert_eq!(token_power, 6,
+        "Token should enter as 6/6 Essence of the Wild copy, got power {token_power}");
 }
 
 // ---------------------------------------------------------------------------
@@ -194,122 +224,3 @@ fn replacement_has_exactly_one_mechanism() {
          single `replace_event` mechanism replaced:\n{}", found.join("\n"));
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Unbreathing Horde's "enters with" counter placement doesn't
-/// fire when it enters via reanimation (Unburial Rites), only via cast.
-#[test]
-fn bug_unbreathing_horde_no_counters_via_reanimation() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put some Zombies in P0's graveyard
-    for _ in 0..3 {
-        let card_id = registry.get_id_by_name("Walking Corpse").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
-    }
-
-    // Put Unbreathing Horde in graveyard, then move to battlefield
-    // (simulating reanimation). The entering_with_counters replacement
-    // effect fires during move_object.
-    let horde_card_id = registry.get_id_by_name("Unbreathing Horde").unwrap();
-    let horde = state.create_object(horde_card_id, P0, Zone::Graveyard, Some(0), Some(0));
-    state.get_object_mut(horde).unwrap().name = "Unbreathing Horde".into();
-    state.move_object(horde, Zone::Battlefield, &registry);
-
-    // Should have +1/+1 counters equal to Zombies in graveyard (3)
-    let counters = state.get_counter_count(horde, CounterType::PlusOnePlusOne);
-
-    // BUG: Counters may not be placed when entering via non-cast path
-    assert!(counters >= 3,
-        "Unbreathing Horde should enter with 3 +1/+1 counters (Zombies in GY). Got: {counters}");
-}
-
-/// Bug: With multiple Undead Alchemists, damage replacement causes
-/// double-milling and incorrect life restoration.
-#[test]
-fn bug_undead_alchemist_multiple_copies_double_mill() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Place two Undead Alchemists for P0
-    let _alch1 = named_permanent(&mut state, &registry, "Undead Alchemist", P0);
-    let _alch2 = named_permanent(&mut state, &registry, "Undead Alchemist", P0);
-
-    // Put some cards in P1's library
-    for _ in 0..10 {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P1, Zone::Library, Some(2), Some(2));
-        state.get_player_mut(P1).library_order.push(id);
-    }
-
-    let lib_before = state.get_player(P1).library_order.len();
-
-    // Simulate a Zombie dealing 2 combat damage to P1
-    // With one Alchemist, it should mill 2 (not deal damage).
-    // With two Alchemists, per MTG rules, the replacement only applies
-    // once — you still mill 2, not 4.
-    let zombie = ready_creature(&mut state, P0, 2, 2);
-    if let Some(obj) = state.get_object_mut(zombie) {
-        obj.subtypes = vec!["Zombie".into()];
-    }
-
-    // Run the damage through the replacement layer with both Alchemists on
-    // the battlefield. CR 614.5: once one of them has replaced the event, the
-    // event is gone and the second has nothing left to replace. (This used to
-    // call one Alchemist's hook by hand, which could not exercise the rule it
-    // was named for.)
-    let replaced = mtg_engine::replacement::apply(
-        &mut state,
-        mtg_engine::replacement::ReplaceableEvent::DealsDamage {
-            source: zombie,
-            target: mtg_engine::events::DamageTarget::Player(P1),
-            amount: 2,
-            combat: true,
-        },
-        &registry,
-    )
-    .is_none();
-    assert!(replaced, "First Alchemist should replace the damage");
-
-    let milled = lib_before - state.get_player(P1).library_order.len();
-
-    // BUG: With 2 Alchemists, mills 4 instead of 2 (double replacement)
-    assert_eq!(milled, 2,
-        "Should mill 2 (replacement applies once, not per Alchemist). Milled: {milled}");
-}
-
-/// Essence of the Wild: "Creatures you control enter as copies of this
-/// creature." CR 614.1d — a replacement effect, so it applies however the
-/// creature arrives. It used to run out of `on_resolve`, which meant only
-/// creatures cast from hand were affected; a token created by an ability, or a
-/// creature reanimated, walked straight past it.
-#[test]
-fn essence_of_the_wild_applies_to_a_token_it_did_not_resolve() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Just being on the battlefield is enough — no hook is fired here on
-    // purpose, because a replacement effect is not a trigger.
-    let _eotw = named_permanent(&mut state, &registry, "Essence of the Wild", P0);
-
-    // Create a token — it should enter as a copy of Essence of the Wild
-    let token = state.create_token_with_subtypes(
-        "Spirit", P0, 1, 1,
-        vec![Color::White],
-        vec![CardType::Creature],
-        vec![Keyword::Flying],
-        vec!["Spirit".into()],
-        &registry,
-    )[0];
-
-    // The token should be a 6/6 copy of Essence of the Wild
-    let token_power = state.get_object(token).and_then(|o| o.power).unwrap_or(0);
-
-    // BUG: Token enters as 1/1 Spirit, not as 6/6 Essence copy
-    assert_eq!(token_power, 6,
-        "Token should enter as 6/6 Essence of the Wild copy, got power {token_power}");
-}

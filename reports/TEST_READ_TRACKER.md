@@ -45,8 +45,8 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `characteristics_card_sweep.rs` | 319 | 9 |
 | x | `token_copy.rs` | 319 | 5 |
 | x | `cards_vanilla_and_keywords.rs` | 318 | 15 |
-|   | `trigger_target_recheck.rs` | 317 | 10 |
-|   | `replacement_effects.rs` | 316 | 9 |
+| x | `trigger_target_recheck.rs` | 317 | 10 |
+| x | `replacement_effects.rs` | 316 | 9 |
 |   | `damage_helper.rs` | 314 | 5 |
 |   | `activated_no_stack.rs` | 310 | 10 |
 |   | `cards_activated_abilities.rs` | 302 | 9 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**86/126 files read; 10191 lines remaining.**
+**88/126 files read; 9558 lines remaining.**
