@@ -12,8 +12,6 @@
 mod common;
 use common::*;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::types::*;
 
@@ -249,76 +247,46 @@ fn claiming_to_pay_without_the_mana_does_not_save_the_spell() {
         "an unpayable cost is unpaid, so the spell is countered");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A target that stays put but stops qualifying (CR 608.2b)
+// ---------------------------------------------------------------------------
 
-/// CR 608.2b: a spell whose only target has become illegal is countered on
-/// resolution. Gaining hexproof in response makes an opponent's creature an
-/// illegal target, so the spell does nothing.
+/// `fizzle.rs` covers a target that leaves the battlefield. This is the other
+/// half of the same rule: the permanent is still right there, and no longer a
+/// legal target — because it gained hexproof, or because the property the
+/// spell asked for is no longer true of it.
+///
+/// Both rows need the spell to be countered rather than merely to fail: a
+/// destroy spell that resolved and found nothing to destroy leaves the same
+/// battlefield, so each row also checks the spell was not reported as resolved.
 #[test]
-fn a_target_that_gains_hexproof_in_response_makes_the_spell_fizzle() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn a_target_that_stops_qualifying_makes_the_spell_fizzle() {
+    // (spell, the target's printed p/t, what changes about it before resolution)
+    let cases: &[(&str, i32, i32, fn(&mut mtg_engine::state::GameState, ObjectId), &str)] = &[
+        ("Doom Blade", 3, 3,
+         |state, id| state.get_object_mut(id).unwrap().keywords.push(Keyword::Hexproof),
+         "'target nonblack creature' can no longer be targeted at all (CR 702.11b)"),
+        ("Smite the Monstrous", 4, 4,
+         |state, id| state.get_object_mut(id).unwrap().power = Some(2),
+         "'creature with power 4 or greater' is no longer true of it"),
+    ];
 
-    // Place a creature for P1
-    let creature = ready_creature(&mut state, P1, 3, 3);
+    for &(spell_name, power, toughness, change, why) in cases {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Cast Doom Blade targeting it
-    let doom = castable_spell(&mut state, &registry, "Doom Blade", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: doom,
-            targets: vec![Target::Object(creature)],
-            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-        },
-        &registry,
-    );
+        let creature = ready_creature(&mut state, P1, power, toughness);
+        let spell = castable_spell(&mut state, &reg, spell_name, P0);
+        state = cast_onto_stack(&state, &reg, spell, vec![Target::Object(creature)]);
 
-    // Before resolution, give the creature hexproof.
-    if let Some(obj) = state.get_object_mut(creature) {
-        obj.keywords.push(Keyword::Hexproof);
+        change(&mut state, creature);
+        state.events.clear();
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+            "{spell_name}: {why}");
+        assert!(!state.events.iter().any(|e| matches!(e,
+            mtg_engine::events::GameEvent::SpellResolved { object } if *object == spell)),
+            "{spell_name} is countered by game rules, not resolved with nothing to do");
     }
-
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
-
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
-        "Creature with hexproof should not be destroyed — spell should fizzle");
-}
-
-/// Bug: Smite the Monstrous targets creatures with power 4+, but if the
-/// creature's power decreases before resolution (e.g., Giant Growth wore off),
-/// the spell should fizzle. The engine doesn't re-check power at resolution.
-#[test]
-fn bug_smite_power_not_rechecked_at_resolution() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Place a 4/4 creature for P1
-    let creature = ready_creature(&mut state, P1, 4, 4);
-
-    // Cast Smite the Monstrous targeting it
-    let smite = castable_spell(&mut state, &registry, "Smite the Monstrous", P0);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: smite,
-            targets: vec![Target::Object(creature)],
-            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-        },
-        &registry,
-    );
-
-    // Before resolution, reduce creature's power below 4
-    if let Some(obj) = state.get_object_mut(creature) {
-        obj.power = Some(2); // Now 2/4 — below threshold
-    }
-
-    // Resolve — should fizzle because target no longer has power 4+
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
-
-    // BUG: Creature is destroyed even though power is now 2
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
-        "Smite should fizzle when target's power drops below 4 before resolution");
 }

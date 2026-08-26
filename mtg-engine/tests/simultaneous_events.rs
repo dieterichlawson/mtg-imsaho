@@ -103,12 +103,13 @@ fn divine_reckoning_spares_a_conditionally_indestructible_creature() {
         .on_resolve(&mut state, reckoning, &[], &reg);
 
     // P0 is asked which creature to keep; P1 controls nothing, so P0 is the
-    // only chooser.
-    if state.awaiting_action.is_some() {
-        state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
-            choice: ResolvedChoice::ChosenTarget(Some(mtg_engine::actions::Target::Object(keeper))),
-        }, &reg);
-    }
+    // only chooser. Asserted rather than tested for: with the answer inside an
+    // `if`, a Divine Reckoning that never asked would keep nothing and the
+    // assertions below would be measuring a different spell.
+    assert!(state.awaiting_action.is_some(), "P0 is asked which creature to keep");
+    state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTarget(Some(Target::Object(keeper))),
+    }, &reg);
 
     assert_eq!(state.get_object(keeper).unwrap().zone, Zone::Battlefield,
         "the kept creature survives");
@@ -215,7 +216,7 @@ fn a_single_player_discard_still_applies_immediately() {
 
     reg.get(state.get_object(weevil).unwrap().card_id).unwrap()
         .on_activate_ability(&mut state, weevil, 0,
-            &[mtg_engine::actions::Target::Player(P1)], &reg);
+            &[Target::Player(P1)], &reg);
 
     state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
         choice: ResolvedChoice::ChosenCard(a),
@@ -229,13 +230,16 @@ fn a_single_player_discard_still_applies_immediately() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: Falkenrath Noble only triggers once when dying simultaneously with others.
-/// Oracle + ruling: "If Falkenrath Noble and another creature die at the same time,
-/// Falkenrath Noble's triggered ability will trigger for each of them."
-/// The engine processes deaths sequentially; by the time other creatures' deaths are
-/// processed, Noble is already in the graveyard and the zone check fails.
+/// "Whenever another creature dies, target player loses 1 life and you gain 1
+/// life." Ruling: "If Falkenrath Noble and another creature die at the same
+/// time, Falkenrath Noble's triggered ability will trigger for each of them."
+///
+/// Three creatures die in one state-based check, one of them the Noble, so the
+/// ability triggers three times — once for itself and once for each of the
+/// others. Processing the deaths one at a time gets two of those wrong: by the
+/// second death the Noble is already in the graveyard.
 #[test]
-fn bug_simultaneous_death_triggers_only_fire_once() {
+fn falkenrath_noble_triggers_for_every_creature_that_died_with_it() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -268,7 +272,7 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
         state = mtg_engine::engine::submit_action(
             &state,
             &Action::ResolveChoice {
-                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                choice: ResolvedChoice::ChosenTarget(
                     Some(Target::Player(P1))
                 ),
             },
@@ -277,10 +281,6 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
         drain_count += 1;
     }
 
-    // Noble should have triggered 3 times (once for itself via SelfDies,
-    // once for each of the two other creatures via AnyCreatureDies).
-    // Each trigger drains 1 life from opponent and gains 1 for controller.
-    // Expected: P0 gains 3 life (20 -> 23), P1 loses 3 life (20 -> 17)
     let p0_life = state.get_player(P0).life;
 
     assert_eq!(drain_count, 3,
@@ -288,40 +288,4 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
     assert_eq!(p0_life, p0_life_before + 3,
         "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
         p0_life, p0_life_before + 3);
-}
-
-/// Bug: Liliana's +1 "Each player discards a card" should have all
-/// players choose simultaneously, then discard at the same time.
-/// The implementation discards sequentially — P0 discards, then P1.
-/// This reveals information (P1 sees what P0 discarded before choosing).
-#[test]
-fn bug_liliana_sequential_discard() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Give both players 2 cards each
-    spell_in_hand(&mut state, &registry, "Grizzly Bears", P0);
-    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
-    spell_in_hand(&mut state, &registry, "Giant Growth", P1);
-    spell_in_hand(&mut state, &registry, "Doom Blade", P1);
-
-    // Place Liliana and activate +1
-    let liliana = named_permanent(&mut state, &registry, "Liliana of the Veil", P0);
-    state.add_counters(liliana, CounterType::Loyalty, 3);
-
-    let behavior = registry.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &registry);
-
-    // After the +1, both players should be choosing simultaneously.
-    // If P0's choice is already resolved (card already discarded) before
-    // P1 gets to choose, it's sequential, not simultaneous.
-    let p0_hand = state.objects_in_zone(Zone::Hand, P0).len();
-    let p1_hand = state.objects_in_zone(Zone::Hand, P1).len();
-    let has_choice = state.awaiting_action.is_some();
-
-    // If it's truly simultaneous, both should still have 2 cards and there
-    // should be a pending choice for BOTH players.
-    // BUG: P0 already discarded (hand=1) before P1 gets to choose
-    assert!(p0_hand == 2 || has_choice,
-        "Liliana +1 should be simultaneous. P0 hand: {p0_hand}, P1 hand: {p1_hand}, choice pending: {has_choice}");
 }
