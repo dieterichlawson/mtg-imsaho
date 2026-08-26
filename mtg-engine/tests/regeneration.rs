@@ -13,7 +13,6 @@
 mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
@@ -86,11 +85,7 @@ fn regeneration_shields_expire_at_cleanup() {
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature).unwrap().regeneration_shields = 1;
 
-    // Advance to cleanup.
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup { break; }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
         "Unused regeneration shields should expire at cleanup");

@@ -120,13 +120,7 @@ fn giant_growth_until_end_of_turn() {
     assert_eq!(state.effective_power(creature, &registry), Some(5));
     assert_eq!(state.effective_toughness(creature, &registry), Some(5));
 
-    // Advance to cleanup — effect should wear off.
-    loop {
-        engine::advance_step(&mut state, &registry);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &registry);
 
     // Effect should be gone.
     assert_eq!(state.until_end_of_turn.len(), 0);

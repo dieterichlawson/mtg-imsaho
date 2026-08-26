@@ -57,13 +57,7 @@ fn cleanup_sba_kills_creature_when_buff_expires() {
         state.players[p as usize].library_order = lib;
     }
 
-    // Advance to cleanup step.
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     // After cleanup: EOT buff expired, SBAs ran and found 0 toughness.
     // The creature should have been killed during cleanup (CR 514.3a).
@@ -101,12 +95,7 @@ fn cleanup_sba_creature_survives_when_still_healthy() {
         state.players[p as usize].library_order = lib;
     }
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "3/3 creature with no damage should survive cleanup");
@@ -143,12 +132,7 @@ fn cleanup_clears_damage_and_buffs_simultaneously() {
         state.players[p as usize].library_order = lib;
     }
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Creature should survive cleanup: damage AND buff both clear, leaving a 2/2 with 0 damage");

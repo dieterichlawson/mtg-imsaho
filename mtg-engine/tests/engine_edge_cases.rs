@@ -5,7 +5,6 @@ mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
-use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
@@ -250,13 +249,7 @@ fn cleanup_clears_until_end_of_turn_effects() {
     assert_eq!(state.effective_power(creature, &reg), Some(5));
     assert_eq!(state.effective_toughness(creature, &reg), Some(5));
 
-    // Advance to cleanup step.
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert_eq!(
         state.effective_power(creature, &reg),
@@ -294,13 +287,7 @@ fn creature_dies_in_cleanup_when_eot_buff_expires() {
     check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
 
-    // Advance to cleanup (buff removed, damage cleared).
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     // During cleanup, damage is cleared AND the buff expires.
     // The creature is now 1/1 with 0 damage — it lives.
@@ -325,12 +312,7 @@ fn cleanup_clears_keyword_grants() {
 
     assert!(state.has_keyword(creature, Keyword::Flying, &reg));
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert!(
         !state.has_keyword(creature, Keyword::Flying, &reg),
@@ -362,12 +344,7 @@ fn cleanup_restores_removed_keywords() {
         "Defender should be temporarily removed"
     );
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert!(
         state.has_keyword(creature, Keyword::Defender, &reg),
@@ -388,12 +365,7 @@ fn cleanup_clears_cant_block() {
     assert!(state.until_end_of_turn.iter().any(|e| matches!(e,
         mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == creature)));
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert!(
         state.until_end_of_turn.is_empty(),
@@ -417,12 +389,7 @@ fn cleanup_clears_protection_grants() {
 
     assert!(!state.until_end_of_turn.is_empty());
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert!(
         state.until_end_of_turn.is_empty(),
@@ -444,12 +411,7 @@ fn cleanup_reverts_control_changes() {
     state.get_object_mut(creature).unwrap().controller = P0;
     assert_eq!(state.get_object(creature).unwrap().controller, P0);
 
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup {
-            break;
-        }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert_eq!(
         state.get_object(creature).unwrap().controller,

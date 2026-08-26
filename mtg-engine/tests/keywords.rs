@@ -473,11 +473,7 @@ fn spell_grants_keyword_until_eot() {
     assert_eq!(state.effective_power(creature, &reg), Some(4));
     assert_eq!(state.effective_toughness(creature, &reg), Some(4));
 
-    // Advance to cleanup.
-    loop {
-        engine::advance_step(&mut state, &reg);
-        if state.step == Step::Cleanup { break; }
-    }
+    advance_to_cleanup(&mut state, &reg);
 
     assert!(!state.has_keyword(creature, Keyword::Lifelink, &reg),
         "Lifelink should expire at end of turn");

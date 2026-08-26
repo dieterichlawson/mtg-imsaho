@@ -395,3 +395,83 @@ pub fn plan_entering(
         registry,
     )
 }
+
+/// Advance to this turn's cleanup step, so "until end of turn" effects wear off
+/// the way the game ends them (CR 514.2) rather than by the test clearing
+/// `state.until_end_of_turn` itself.
+///
+/// A test that clears the list by hand — or, worse, replays the cleanup step's
+/// body inline — asserts that its own copy of the rule works. Deleting the
+/// engine's cleanup step entirely would leave such a test passing.
+#[allow(dead_code)]
+pub fn advance_to_cleanup(state: &mut GameState, registry: &CardRegistry) {
+    advance_to_step(state, registry, Step::Cleanup);
+}
+
+/// Advance until the game reaches `step`, running every step in between and
+/// answering the combat declarations with "nobody attacks, nobody blocks".
+///
+/// The declarations have to be answered rather than stepped past: the engine
+/// parks an `AwaitingAction` at each of them, and a state still holding one has
+/// no legal actions at all, so a later assertion about what a player may do
+/// would be reading a stalled game.
+#[allow(dead_code)]
+pub fn advance_to_step(state: &mut GameState, registry: &CardRegistry, step: Step) {
+    for _ in 0..80 {
+        match state.awaiting_action {
+            Some(mtg_engine::state::AwaitingAction::DeclareAttackers) => {
+                *state = mtg_engine::engine::submit_action(
+                    state, &Action::DeclareAttackers { attackers: vec![] }, registry);
+            }
+            Some(mtg_engine::state::AwaitingAction::DeclareBlockers { .. }) => {
+                *state = mtg_engine::engine::submit_action(
+                    state, &Action::DeclareBlockers { assignments: vec![] }, registry);
+            }
+            _ => mtg_engine::engine::advance_step(state, registry),
+        }
+        if state.step == step && state.awaiting_action.is_none() {
+            return;
+        }
+    }
+    panic!("never reached {step:?} from {:?}", state.step);
+}
+
+/// Advance into the next player's turn, so once-per-turn state resets the way
+/// the game resets it. Same reasoning as [`advance_to_cleanup`].
+#[allow(dead_code)]
+pub fn advance_to_next_turn(state: &mut GameState, registry: &CardRegistry) {
+    let turn = state.turn_number;
+    for _ in 0..80 {
+        match state.awaiting_action {
+            Some(mtg_engine::state::AwaitingAction::DeclareAttackers) => {
+                *state = mtg_engine::engine::submit_action(
+                    state, &Action::DeclareAttackers { attackers: vec![] }, registry);
+            }
+            Some(mtg_engine::state::AwaitingAction::DeclareBlockers { .. }) => {
+                *state = mtg_engine::engine::submit_action(
+                    state, &Action::DeclareBlockers { assignments: vec![] }, registry);
+            }
+            _ => mtg_engine::engine::advance_step(state, registry),
+        }
+        if state.turn_number != turn {
+            return;
+        }
+    }
+    panic!("never reached the next turn from {:?}", state.step);
+}
+
+/// Put `n` filler cards into `player`'s library.
+///
+/// A game built with [`game_at_step`] starts with empty libraries, so any test
+/// that takes a real draw step — anything using [`advance_to_next_turn`] — has
+/// to stock one or the player decks out and the game ends underneath the test.
+/// Use this for tests that just need cards to be there; when the identity of
+/// the card matters, build it yourself.
+#[allow(dead_code)]
+pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: PlayerId, n: usize) {
+    let card_id = registry.get_id_by_name("Forest").expect("Forest is in the registry");
+    for _ in 0..n {
+        let id = state.create_object(card_id, player, Zone::Library, None, None);
+        state.get_player_mut(player).library_order.push(id);
+    }
+}

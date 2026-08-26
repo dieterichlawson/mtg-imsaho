@@ -137,19 +137,11 @@ fn bug_control_change_not_reverted_at_eot() {
     assert_eq!(state.get_object(creature).unwrap().controller, P0,
         "Traitorous Blood should give control to P0");
 
-    // Simulate the cleanup step inline (matching engine.rs cleanup)
-    for effect in &state.until_end_of_turn {
-        if let mtg_engine::state::TemporaryEffect::ChangeControl { target, original_controller } = effect {
-            if let Some(obj) = state.objects.get_mut(target) {
-                if obj.zone == Zone::Battlefield {
-                    obj.controller = *original_controller;
-                }
-            }
-        }
-    }
-    state.until_end_of_turn.clear();
+    // Run the game to the cleanup step. Replaying the cleanup step's body here
+    // instead would assert only that the copy works — it would still pass with
+    // the engine's cleanup deleted.
+    advance_to_cleanup(&mut state, &registry);
 
-    // After cleanup, control should revert to P1.
     assert_eq!(state.get_object(creature).unwrap().controller, P1,
         "Control should revert to P1 at end of turn");
 }

@@ -25,12 +25,24 @@ fn resolve_after_source_dies(
     source: mtg_engine::ids::ObjectId,
     event: TriggerEvent,
 ) {
+    resolve_after_source_dies_targeting(state, reg, source, event, vec![]);
+}
+
+/// The same, for an ability that targets: CR 603.3d locks targets in when the
+/// trigger goes on the stack, so they are chosen before the source dies.
+fn resolve_after_source_dies_targeting(
+    state: &mut mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    source: mtg_engine::ids::ObjectId,
+    event: TriggerEvent,
+    targets: Vec<Target>,
+) {
     let card_id = state.get_object(source).unwrap().card_id;
     let controller = state.get_object(source).unwrap().controller;
-    state.stack.push(StackEntry::Trigger(PendingTrigger::new(
-        TriggerSource::new(source, card_id, controller, ""),
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource { chosen_targets: targets, ..TriggerSource::new(source, card_id, controller, "") },
         event,
-    )));
+    }));
     state.move_object(source, Zone::Graveyard, reg);
     mtg_engine::triggers::resolve_next_trigger(state, reg);
 }
@@ -102,16 +114,8 @@ fn burning_vengeance_deals_its_damage_after_being_destroyed() {
     let spell = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
 
-    let card_id = state.get_object(vengeance).unwrap().card_id;
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource {
-            chosen_targets: vec![mtg_engine::actions::Target::Player(P1)],
-            ..TriggerSource::new(vengeance, card_id, P0, "")
-        },
-        event: TriggerEvent::SpellCast { caster: P0, spell_id: spell },
-    }));
-    state.move_object(vengeance, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    resolve_after_source_dies_targeting(&mut state, &reg, vengeance,
+        TriggerEvent::SpellCast { caster: P0, spell_id: spell }, vec![Target::Player(P1)]);
 
     assert_eq!(state.get_player(P1).life, 18,
         "CR 113.7a: destroying Burning Vengeance in response still deals the 2 damage");
@@ -237,341 +241,282 @@ fn trigger_dispatch_does_not_gate_on_the_source_zone() {
 
 // -------------------------------------------------------------------------
 // Per-card cases
-// -------------------------------------------------------------------------
-
-// CR 113.7a: A triggered ability on the stack is independent of its source.
-// Removing the source after the trigger is on the stack does not counter it.
-// The engine gates trigger resolution on `source.zone == Battlefield`,
-// which incorrectly prevents resolution when the source has left.
+//
+// Each of these is the same rule as the six above, reached through a different
+// card's trigger. They go through `resolve_after_source_dies` for exactly the
+// reason the helper exists: the shape (stack the trigger, remove the source,
+// resolve) is the rule, and a test that hand-rolls it can quietly stop testing
+// it.
 
 // Angel of Flight Alabaster: "At the beginning of your upkeep, return target
 // Spirit card from your graveyard to your hand."
-// Destroying the Angel after the trigger stacks should not prevent the return.
 #[test]
-fn test_angel_of_flight_alabaster_trigger_resolves_after_death() {
+fn angel_of_flight_alabaster_returns_its_spirit_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
     let angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
-    let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
-
-    // An actual Spirit card: the Angel's ability targets "target Spirit card
-    // in your graveyard", and CR 608.2b re-checks that on resolution. A
-    // synthetic creature with no subtypes is not a legal target, so the
-    // trigger would rightly fizzle for a reason unrelated to this test.
+    // An actual Spirit card: the ability targets "target Spirit card in your
+    // graveyard" and CR 608.2b re-checks that on resolution, so a synthetic
+    // creature with no subtypes would fizzle for an unrelated reason.
     let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource { chosen_targets: vec![Target::Object(spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
-        event: TriggerEvent::Upkeep,
-    }));
+    resolve_after_source_dies_targeting(&mut state, &reg, angel, TriggerEvent::Upkeep,
+        vec![Target::Object(spirit)]);
 
-    state.move_object(angel, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        state.get_object(spirit).unwrap().zone,
-        Zone::Hand,
-        "CR 113.7a: Angel upkeep trigger should return Spirit to hand even after Angel is destroyed"
-    );
+    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Hand,
+        "CR 113.7a: the Angel dying does not counter its own upkeep trigger");
 }
 
 // Charmbreaker Devils: "At the beginning of your upkeep, return an instant or
 // sorcery card at random from your graveyard to your hand."
-// Destroying the Devils after the trigger stacks should not prevent the return.
 #[test]
-fn test_charmbreaker_devils_trigger_resolves_after_death() {
+fn charmbreaker_devils_returns_a_spell_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
     let devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
-    let devils_card = reg.get_id_by_name("Charmbreaker Devils").unwrap();
-
     let instant = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(devils, devils_card, P0, "Charmbreaker Devils"),
-        event: TriggerEvent::Upkeep,
-    }));
+    resolve_after_source_dies(&mut state, &reg, devils, TriggerEvent::Upkeep);
 
-    state.move_object(devils, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        state.get_object(instant).unwrap().zone,
-        Zone::Hand,
-        "CR 113.7a: Devils upkeep trigger should return instant to hand even after Devils are destroyed"
-    );
+    assert_eq!(state.get_object(instant).unwrap().zone, Zone::Hand,
+        "CR 113.7a: the Devils dying does not counter their own upkeep trigger");
 }
 
 // Geist of Saint Traft: "Whenever Geist of Saint Traft attacks, create a 4/4
 // white Angel creature token with flying that's tapped and attacking."
-// Destroying the Geist after the attack trigger stacks should still create the token.
 #[test]
-fn test_geist_of_saint_traft_angel_token_created_after_death() {
+fn geist_of_saint_traft_makes_its_angel_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
-    let geist_card = reg.get_id_by_name("Geist of Saint Traft").unwrap();
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(geist, geist_card, P0, "Geist of Saint Traft"),
-        event: TriggerEvent::Attacks { attacker: geist, defending_player: P1 },
-    }));
+    resolve_after_source_dies(&mut state, &reg, geist,
+        TriggerEvent::Attacks { attacker: geist, defending_player: P1 });
 
-    state.move_object(geist, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        count_tokens_named(&state, "Angel"),
-        1,
-        "CR 113.7a: Geist attack trigger should create Angel token even after Geist is destroyed"
-    );
+    assert_eq!(count_tokens_named(&state, "Angel"), 1,
+        "CR 113.7a: killing the Geist with its attack trigger on the stack \
+         still leaves the Angel");
 }
 
 // Kessig Cagebreakers: "Whenever Kessig Cagebreakers attacks, create a 2/2
-// green Wolf creature token that's tapped and attacking for each creature
-// card in your graveyard."
-// After destroying Cagebreakers in response, the count includes Cagebreakers itself.
+// green Wolf creature token that's tapped and attacking for each creature card
+// in your graveyard." Counted on resolution, so the Cagebreakers themselves
+// count — three Wolves, not two.
 #[test]
-fn test_kessig_cagebreakers_tokens_created_after_death() {
+fn kessig_cagebreakers_counts_itself_among_the_dead() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let cb = named_creature(&mut state, &reg, "Kessig Cagebreakers", P0);
-    let cb_card = reg.get_id_by_name("Kessig Cagebreakers").unwrap();
+    for pt in [2, 3] {
+        let c = ready_creature(&mut state, P0, pt, pt);
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
 
-    let c1 = ready_creature(&mut state, P0, 2, 2);
-    state.move_object(c1, Zone::Graveyard, &reg);
-    let c2 = ready_creature(&mut state, P0, 3, 3);
-    state.move_object(c2, Zone::Graveyard, &reg);
+    resolve_after_source_dies(&mut state, &reg, cb,
+        TriggerEvent::Attacks { attacker: cb, defending_player: P1 });
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(cb, cb_card, P0, "Kessig Cagebreakers"),
-        event: TriggerEvent::Attacks { attacker: cb, defending_player: P1 },
-    }));
+    assert_eq!(count_tokens_named(&state, "Wolf"), 3,
+        "CR 113.7a/608.2: the count happens on resolution, by which time the \
+         Cagebreakers are themselves a creature card in the graveyard");
+}
 
-    state.move_object(cb, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+// Endless Ranks of the Dead: "At the beginning of your upkeep, create X 2/2
+// black Zombie creature tokens, where X is half the number of Zombies you
+// control, rounded down."
+#[test]
+fn endless_ranks_of_the_dead_makes_its_zombies_after_being_destroyed() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
 
-    assert_eq!(
-        count_tokens_named(&state, "Wolf"),
-        3,
-        "CR 113.7a: Cagebreakers should create 3 Wolf tokens even after death (2 original + itself)"
-    );
+    let ranks = named_creature(&mut state, &reg, "Endless Ranks of the Dead", P0);
+    for _ in 0..4 {
+        let z = ready_creature(&mut state, P0, 2, 2);
+        let obj = state.get_object_mut(z).unwrap();
+        obj.is_token = true;
+        obj.subtypes = vec!["Zombie".into()];
+        obj.name = "Zombie".into();
+    }
+    assert_eq!(count_tokens_named(&state, "Zombie"), 4, "test setup");
+
+    resolve_after_source_dies(&mut state, &reg, ranks, TriggerEvent::Upkeep);
+
+    assert_eq!(count_tokens_named(&state, "Zombie"), 6,
+        "CR 113.7a: four Zombies makes two more, even though the enchantment \
+         that counted them is gone");
 }
 
 // Splinterfright: "At the beginning of your upkeep, mill two cards."
-// Destroying Splinterfright after the trigger stacks should not prevent the mill.
 #[test]
-fn test_splinterfright_mill_resolves_after_death() {
+fn splinterfright_mills_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
     let splinter = named_creature(&mut state, &reg, "Splinterfright", P0);
-    let splinter_card = reg.get_id_by_name("Splinterfright").unwrap();
-
     let filler = reg.get_id_by_name("Forest").unwrap();
     for _ in 0..5 {
         let id = state.create_object(filler, P0, Zone::Library, None, None);
-        state.players[0].library_order.push(id);
+        state.get_player_mut(P0).library_order.push(id);
     }
-    let lib_before = state.players[0].library_order.len();
+    let before = state.get_player(P0).library_order.len();
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(splinter, splinter_card, P0, "Splinterfright"),
-        event: TriggerEvent::Upkeep,
-    }));
+    resolve_after_source_dies(&mut state, &reg, splinter, TriggerEvent::Upkeep);
 
-    state.move_object(splinter, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    let lib_after = state.players[0].library_order.len();
-    assert_eq!(
-        lib_before - lib_after,
-        2,
-        "CR 113.7a: Splinterfright upkeep trigger should mill 2 even after destruction"
-    );
+    assert_eq!(before - state.get_player(P0).library_order.len(), 2,
+        "CR 113.7a: the mill still happens after Splinterfright is destroyed");
 }
 
-// Undead Alchemist: "Whenever a creature card is put into an opponent's graveyard
-// from their library, exile that card and create a 2/2 black Zombie creature token."
-// Destroying the Alchemist after the trigger stacks should not prevent exile + token.
+// Undead Alchemist: "Whenever a creature card is put into an opponent's
+// graveyard from their library, exile that card and create a 2/2 black Zombie
+// creature token."
 #[test]
-fn test_undead_alchemist_watch_resolves_after_death() {
+fn undead_alchemist_exiles_and_makes_its_zombie_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let alchemist = named_creature(&mut state, &reg, "Undead Alchemist", P0);
-    let alchemist_card = reg.get_id_by_name("Undead Alchemist").unwrap();
-
     let milled = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(alchemist, alchemist_card, P0, "Undead Alchemist"),
-        event: TriggerEvent::CreatureCardMilled { milled_object: milled, milled_player: P1 },
-    }));
+    resolve_after_source_dies(&mut state, &reg, alchemist,
+        TriggerEvent::CreatureCardMilled { milled_object: milled, milled_player: P1 });
 
-    state.move_object(alchemist, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        state.get_object(milled).unwrap().zone,
-        Zone::Exile,
-        "CR 113.7a: Alchemist trigger should exile milled creature even after Alchemist is destroyed"
-    );
-    assert_eq!(
-        count_tokens_named(&state, "Zombie"),
-        1,
-        "CR 113.7a: Alchemist trigger should create Zombie token even after Alchemist is destroyed"
-    );
-}
-
-// Gutter Grime: "Whenever a nontoken creature you control dies, put a slime
-// counter on Gutter Grime, then create a green Ooze creature token."
-// When Gutter Grime and a creature are destroyed simultaneously, the death
-// trigger should still fire per CR 603.10.
-#[test]
-fn test_gutter_grime_creates_token_when_ltb() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
-    let grime_card = reg.get_id_by_name("Gutter Grime").unwrap();
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    state.move_object(grime, Zone::Graveyard, &reg);
-    state.move_object(creature, Zone::Graveyard, &reg);
-
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(grime, grime_card, P0, "Gutter Grime"),
-        event: TriggerEvent::CreatureDied { dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false } },
-    }));
-
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        count_tokens_named(&state, "Ooze"),
-        1,
-        "CR 603.10: Gutter Grime death-watch should create Ooze token after simultaneous destruction"
-    );
-}
-
-// Murder of Crows: "Whenever another creature dies, you may draw a card.
-// If you do, discard a card."
-// When Murder of Crows and another creature die simultaneously, the death
-// trigger should still present the draw choice per CR 603.10.
-#[test]
-fn test_murder_of_crows_trigger_resolves_after_simultaneous_death() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let murder = named_creature(&mut state, &reg, "Murder of Crows", P0);
-    let murder_card = reg.get_id_by_name("Murder of Crows").unwrap();
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    state.move_object(murder, Zone::Graveyard, &reg);
-    state.move_object(creature, Zone::Graveyard, &reg);
-
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(murder, murder_card, P0, "Murder of Crows"),
-        event: TriggerEvent::CreatureDied { dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false } },
-    }));
-
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        state.awaiting_action.is_some(),
-        true,
-        "CR 603.10: Murder of Crows trigger should present draw choice even after simultaneous death"
-    );
+    assert_eq!(state.get_object(milled).unwrap().zone, Zone::Exile,
+        "CR 113.7a: the exile still happens after the Alchemist is destroyed");
+    assert_eq!(count_tokens_named(&state, "Zombie"), 1, "and so does the token");
 }
 
 // Mentor of the Meek: "Whenever a creature with power 2 or less enters the
 // battlefield under your control, you may pay {1}. If you do, draw a card."
-// Destroying Mentor after the trigger stacks should not prevent the pay choice.
 #[test]
-fn test_mentor_of_the_meek_trigger_resolves_after_removal() {
+fn mentor_of_the_meek_offers_its_payment_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
-    let mentor_card = reg.get_id_by_name("Mentor of the Meek").unwrap();
-    let small_creature = ready_creature(&mut state, P0, 1, 1);
+    let small = ready_creature(&mut state, P0, 1, 1);
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(mentor, mentor_card, P0, "Mentor of the Meek"),
-        event: TriggerEvent::CreatureEntered { entered: small_creature, entered_controller: P0 },
-    }));
+    resolve_after_source_dies(&mut state, &reg, mentor,
+        TriggerEvent::CreatureEntered { entered: small, entered_controller: P0 });
 
-    state.move_object(mentor, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert_eq!(
-        state.awaiting_action.is_some(),
-        true,
-        "CR 113.7a: Mentor trigger should present pay choice even after Mentor is destroyed"
-    );
+    assert!(state.awaiting_action.is_some(),
+        "CR 113.7a: destroying the Mentor still presents the 'you may pay {{1}}' choice");
 }
 
 // Trepanation Blade: "Whenever equipped creature attacks, defending player
-// reveals cards from the top of their library until they reveal a land card.
-// That creature gets +1/+0 until end of turn for each card revealed this way."
-// Destroying the Blade after the trigger stacks should not prevent the mill + pump.
+// reveals cards from the top of their library until they reveal a land card."
+// An Equipment's trigger is as independent of the Equipment as a creature's is
+// of the creature.
 #[test]
-fn test_trepanation_blade_trigger_resolves_after_equipment_destroyed() {
+fn trepanation_blade_mills_after_the_equipment_is_destroyed() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
-    let blade_card = reg.get_id_by_name("Trepanation Blade").unwrap();
     state.get_object_mut(blade).unwrap().attached_to = Some(creature);
 
     let filler = reg.get_id_by_name("Walking Corpse").unwrap();
     for _ in 0..2 {
         let id = state.create_object(filler, P1, Zone::Library, Some(2), Some(2));
-        state.players[1].library_order.push(id);
+        state.get_player_mut(P1).library_order.push(id);
     }
     let land_card = reg.get_id_by_name("Forest").unwrap();
     let land = state.create_object(land_card, P1, Zone::Library, None, None);
-    state.players[1].library_order.push(land);
+    state.get_player_mut(P1).library_order.push(land);
+    let before = state.get_player(P1).library_order.len();
 
-    let lib_before = state.players[1].library_order.len();
+    resolve_after_source_dies(&mut state, &reg, blade,
+        TriggerEvent::Attacks { attacker: blade, defending_player: P1 });
 
-    state.stack.push(StackEntry::Trigger(PendingTrigger {
-        source: TriggerSource::new(blade, blade_card, P0, "Trepanation Blade"),
-        event: TriggerEvent::Attacks { attacker: blade, defending_player: P1 },
-    }));
-
-    state.move_object(blade, Zone::Graveyard, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    let lib_after = state.players[1].library_order.len();
-    assert_ne!(
-        lib_before, lib_after,
-        "CR 113.7a: Trepanation Blade trigger should mill even after equipment is destroyed"
-    );
+    assert!(state.get_player(P1).library_order.len() < before,
+        "CR 113.7a: the reveal still happens after the Blade is destroyed");
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: ETB triggers are suppressed when source leaves battlefield before resolution.
-/// The trigger resolution in triggers.rs checks zone == Battlefield.
-/// Per MTG rules, ETB triggers resolve independently — removing the source
-/// doesn't prevent the trigger from resolving.
-///
-/// This test goes through the trigger dispatch system (not calling handler directly)
-/// to demonstrate the bug is in the trigger resolution path.
+// Sturmgeist: "Whenever Sturmgeist deals combat damage to a player, draw a
+// card." Reached through the dispatcher, not by calling the hook — a card
+// hook called directly cannot tell you whether trigger dispatch honours
+// CR 113.7a, which is the whole subject of this file.
 #[test]
-fn bug_etb_trigger_suppressed_when_source_leaves() {
+fn sturmgeist_draws_after_dying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let sturmgeist = named_creature(&mut state, &reg, "Sturmgeist", P0);
+    let card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+    state.get_player_mut(P0).library_order.push(lib_card);
+    let before = state.objects_in_zone(Zone::Hand, P0).len();
+
+    resolve_after_source_dies(&mut state, &reg, sturmgeist,
+        TriggerEvent::CombatDamageToPlayer { damaged_player: P1, amount: 3 });
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), before + 1,
+        "CR 113.7a: the draw still happens after Sturmgeist is destroyed");
+}
+
+// ---------------------------------------------------------------------------
+// Simultaneous death (CR 603.10)
+// ---------------------------------------------------------------------------
+//
+// A death-watch trigger whose watcher died in the same event still fires: the
+// game looks back in time, so the watcher was there when the creature died.
+
+// Gutter Grime: "Whenever a nontoken creature you control dies, put a slime
+// counter on Gutter Grime, then create a green Ooze creature token."
+#[test]
+fn gutter_grime_makes_its_ooze_after_dying_alongside_the_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    resolve_after_source_dies(&mut state, &reg, grime, TriggerEvent::CreatureDied {
+        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+    });
+
+    assert_eq!(count_tokens_named(&state, "Ooze"), 1,
+        "CR 603.10: a death-watch fires for a creature that died simultaneously \
+         with the watcher");
+}
+
+// Murder of Crows: "Whenever another creature dies, you may draw a card. If you
+// do, discard a card."
+#[test]
+fn murder_of_crows_offers_its_draw_after_dying_alongside_the_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let murder = named_creature(&mut state, &reg, "Murder of Crows", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    resolve_after_source_dies(&mut state, &reg, murder, TriggerEvent::CreatureDied {
+        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+    });
+
+    assert!(state.awaiting_action.is_some(),
+        "CR 603.10: the draw choice is offered even though the Crows died too");
+}
+
+// ---------------------------------------------------------------------------
+// The whole path, not just dispatch
+// ---------------------------------------------------------------------------
+
+/// The tests above stack the trigger by hand, which proves dispatch is right
+/// but assumes the collector put one there. This one casts Armored Skaab for
+/// real, lets the ETB trigger be collected, kills it, and only then processes
+/// triggers — so a regression anywhere along cast → resolve → collect → process
+/// shows up here.
+#[test]
+fn an_etb_trigger_collected_for_real_survives_its_source_dying() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Give P0 some library cards to mill
     for _ in 0..10 {
         let card = state.create_object(
             registry.get_id_by_name("Grizzly Bears").unwrap(),
@@ -581,62 +526,19 @@ fn bug_etb_trigger_suppressed_when_source_leaves() {
     }
     let lib_before = state.get_player(P0).library_order.len();
 
-    // Cast Armored Skaab — this will put it on the stack
     let skaab = castable_spell(&mut state, &registry, "Armored Skaab", P0);
     state = engine::submit_action(
         &state,
         &Action::CastSpell { object_id: skaab, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &registry,
     );
-    // Resolve — moves to battlefield, queues ETB trigger
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Battlefield,
+        "test setup: the Skaab resolved onto the battlefield");
 
-    // Skaab is now on battlefield with ETB trigger pending
-    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Battlefield);
-
-    // Kill Skaab before the ETB trigger resolves (move to graveyard)
     state.move_object(skaab, Zone::Graveyard, &registry);
-    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Graveyard);
-
-    // Process pending triggers — the ETB mill should still happen
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
-    let lib_after = state.get_player(P0).library_order.len();
-
-    // BUG: Mill doesn't happen because trigger resolution checks zone == Battlefield
-    assert_eq!(lib_before - lib_after, 4,
-        "ETB trigger should still mill 4 even after Skaab left the battlefield");
-}
-
-/// Bug: Sturmgeist's combat damage trigger ("draw a card") is skipped
-/// if Sturmgeist leaves the battlefield before resolution (same as BUG3).
-#[test]
-fn bug_sturmgeist_draw_skipped_when_leaves() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let sturmgeist = named_creature(&mut state, &registry, "Sturmgeist", P0);
-
-    // Give P0 a library card to draw from (draw_cards pulls from the library)
-    {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
-        state.get_player_mut(P0).library_order.push(lib_card);
-    }
-    let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
-
-    // Simulate combat damage to player trigger, then move Sturmgeist to GY
-    state.move_object(sturmgeist, Zone::Graveyard, &registry);
-
-    // Call the trigger handler directly
-    let behavior = registry.get(state.get_object(sturmgeist).unwrap().card_id).unwrap();
-    behavior.on_combat_damage_to_player(&mut state, sturmgeist, P1, 3, &registry);
-
-    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
-
-    // Per MTG rules, the trigger should still draw a card even if Sturmgeist
-    // is no longer on the battlefield (the trigger already went on the stack)
-    // BUG: Draw is skipped because handler checks zone == Battlefield
-    assert_eq!(hand_after, hand_before + 1,
-        "Should draw 1 card even after Sturmgeist left. Hand: {hand_before} -> {hand_after}");
+    assert_eq!(lib_before - state.get_player(P0).library_order.len(), 4,
+        "CR 113.7a: the Skaab's ETB mill happens even though it is already dead");
 }

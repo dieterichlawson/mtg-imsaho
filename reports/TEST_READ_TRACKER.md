@@ -11,8 +11,8 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `cards_sacrifice_and_additional_costs.rs` | 782 | 24 |
 | x | `subtype.rs` | 736 | 12 |
 | x | `werewolf_cards.rs` | 654 | 29 |
-|   | `trigger_source_independence.rs` | 642 | 20 |
-|   | `hexproof_filter.rs` | 635 | 11 |
+| x | `trigger_source_independence.rs` | 642 | 20 |
+| x | `hexproof_filter.rs` | 635 | 11 |
 |   | `cards_spells_and_enchantments.rs` | 608 | 23 |
 |   | `flashback.rs` | 604 | 21 |
 |   | `cards_death_triggers_and_tokens.rs` | 552 | 17 |
@@ -27,7 +27,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `cards_combat_damage_triggers.rs` | 450 | 16 |
 | x | `engine_regressions.rs` | 437 | 14 |
 | x | `test_suite_guards.rs` | 435 | 4 |
-|   | `sacrifice_choice.rs` | 406 | 12 |
+| x | `sacrifice_choice.rs` | 406 | 12 |
 |   | `cards_graveyard_interaction.rs` | 396 | 17 |
 |   | `cards_removal_and_bounce.rs` | 386 | 15 |
 |   | `mulligan.rs` | 369 | 9 |
@@ -68,11 +68,11 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 |   | `turn_structure.rs` | 237 | 12 |
 |   | `transform_dfc.rs` | 236 | 4 |
 |   | `harness_display.rs` | 235 | 4 |
-|   | `apnap.rs` | 234 | 3 |
+| x | `apnap.rs` | 234 | 3 |
 |   | `mana_tap_bug.rs` | 234 | 5 |
-|   | `continuous_effects.rs` | 230 | 7 |
-|   | `combat_rules.rs` | 227 | 4 |
-|   | `ability_target_protection.rs` | 226 | 5 |
+| x | `continuous_effects.rs` | 230 | 7 |
+| x | `combat_rules.rs` | 227 | 4 |
+| x | `ability_target_protection.rs` | 226 | 5 |
 |   | `equipment_human_conditional.rs` | 224 | 5 |
 |   | `kruin_outlaw.rs` | 222 | 6 |
 |   | `enchantments.rs` | 219 | 9 |
@@ -131,6 +131,5 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `transformed_display.rs` | 65 | 1 |
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
-| x | `endless_ranks_of_the_dead.rs` | 43 | 1 |
 
-**64/128 files read; 19457 lines remaining.**
+**71/127 files read; 16857 lines remaining.**

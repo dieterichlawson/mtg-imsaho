@@ -288,16 +288,22 @@ fn avacynian_priest_requires_tap() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: `abilities_activated_this_turn` is never cleared between turns.
-/// This causes once-per-turn abilities (Darkthicket Wolf's {2}{G}: +2/+2)
-/// to be permanently locked after first use.
+/// CR 602.2a: "Activate only once each turn" is a restriction on this turn, so
+/// the ability comes back on the next one. Darkthicket Wolf's {2}{G}: +2/+2 was
+/// permanently locked after its first use, because
+/// `abilities_activated_this_turn` was never cleared at the turn change.
 #[test]
-fn bug_once_per_turn_never_clears() {
+fn a_once_per_turn_ability_is_available_again_on_a_later_turn() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Darkthicket Wolf
     let wolf = named_creature(&mut state, &registry, "Darkthicket Wolf", P0);
+
+    // Real turns mean real draw steps; without libraries both players deck out
+    // and the game ends before the second activation is reached.
+    stock_library(&mut state, &registry, P0, 10);
+    stock_library(&mut state, &registry, P1, 10);
 
     // Add mana for {2}{G} activation cost
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
@@ -314,23 +320,23 @@ fn bug_once_per_turn_never_clears() {
         matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf)).unwrap().clone();
     state = engine::submit_action(&state, &activate_action, &registry);
 
-    // Simulate turn change — clear turn-based state
-    // The engine now clears abilities_activated_this_turn at turn transition.
-    state.until_end_of_turn.clear();
-    for obj in state.objects.values_mut() {
-        obj.abilities_activated_this_turn.clear();
-    }
+    // Take the turn change for real: the engine clears
+    // `abilities_activated_this_turn` at the transition, and a test that clears
+    // it by hand would pass even if the engine stopped doing so.
+    // Two turn changes, so we are back in P0's own precombat main with P0
+    // holding priority — the same position the first activation happened from.
+    advance_to_next_turn(&mut state, &registry);
+    advance_to_next_turn(&mut state, &registry);
+    advance_to_step(&mut state, &registry, Step::PrecombatMain);
+    assert_eq!(state.active_player, P0, "test setup: back on P0's turn");
 
-    // Add mana for next turn's activation ({2}{G})
+    // Add mana for this turn's activation ({2}{G})
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
-    // Check if ability is available on the "next turn"
     let legal2 = engine::legal_actions(&state, &registry);
     let has_ability2 = legal2.actions.iter().any(|a|
         matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
-
-    // BUG: Ability is NOT available because abilities_activated_this_turn persists
     assert!(has_ability2,
         "Once-per-turn ability should be available again on a new turn");
 }

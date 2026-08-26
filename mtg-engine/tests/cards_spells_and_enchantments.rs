@@ -25,41 +25,28 @@ use mtg_engine::triggers;
 use mtg_engine::types::*;
 // ── Scourge of Geier Reach ──────────────────────────────────────
 
-/// Scourge gets +1/+1 for each creature opponents control.
+/// "Scourge of Geier Reach gets +1/+1 for each creature your opponents
+/// control" — a characteristic-defining count that has to be recomputed as the
+/// board changes, and has to count the right half of the board.
 #[test]
-fn scourge_of_geier_reach_scales_with_opponent_creatures() {
+fn scourge_of_geier_reach_counts_only_opponents_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let scourge = named_creature(&mut state, &reg, "Scourge of Geier Reach", P0);
+    let pt = |s: &mtg_engine::state::GameState| {
+        (s.effective_power(scourge, &reg).unwrap(), s.effective_toughness(scourge, &reg).unwrap())
+    };
 
-    // No opponent creatures: base 3/3.
-    assert_eq!(state.effective_power(scourge, &reg).unwrap(), 3);
-    assert_eq!(state.effective_toughness(scourge, &reg).unwrap(), 3);
+    assert_eq!(pt(&state), (3, 3), "an empty board leaves it at its printed 3/3");
 
-    // Add 2 opponent creatures.
-    ready_creature(&mut state, P1, 1, 1);
-    ready_creature(&mut state, P1, 2, 2);
-
-    // Should be 5/5 (3 + 2 opponent creatures).
-    assert_eq!(state.effective_power(scourge, &reg).unwrap(), 5);
-    assert_eq!(state.effective_toughness(scourge, &reg).unwrap(), 5);
-}
-
-/// Scourge doesn't count own creatures.
-#[test]
-fn scourge_of_geier_reach_ignores_own_creatures() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let scourge = named_creature(&mut state, &reg, "Scourge of Geier Reach", P0);
-
-    // Add friendly creatures - shouldn't affect P/T.
     ready_creature(&mut state, P0, 1, 1);
     ready_creature(&mut state, P0, 2, 2);
+    assert_eq!(pt(&state), (3, 3), "its controller's own creatures are not counted");
 
-    assert_eq!(state.effective_power(scourge, &reg).unwrap(), 3);
-    assert_eq!(state.effective_toughness(scourge, &reg).unwrap(), 3);
+    ready_creature(&mut state, P1, 1, 1);
+    ready_creature(&mut state, P1, 2, 2);
+    assert_eq!(pt(&state), (5, 5), "two creatures across the table make it a 5/5");
 }
 
 // ── Army of the Damned ──────────────────────────────────────────
@@ -111,18 +98,6 @@ fn night_revelers_has_haste_with_opponent_human() {
 }
 
 // ── Elite Inquisitor ────────────────────────────────────────────
-
-/// Elite Inquisitor has first strike and vigilance.
-#[test]
-fn elite_inquisitor_keywords() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let inquisitor = named_creature(&mut state, &reg, "Elite Inquisitor", P0);
-
-    assert!(state.has_keyword(inquisitor, Keyword::FirstStrike, &reg));
-    assert!(state.has_keyword(inquisitor, Keyword::Vigilance, &reg));
-}
 
 /// Elite Inquisitor has protection from Vampires, Werewolves, Zombies.
 /// Combat damage from those subtypes is prevented.
@@ -298,31 +273,12 @@ fn burning_vengeance_triggers_on_flashback() {
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
     state.get_object_mut(spell).unwrap().name = "Think Twice".into();
 
-    // Fire SpellCast event.
+    // Fire SpellCast event. CR 603.3d: "deals 2 damage to any target" needs a
+    // target chosen as the trigger goes on the stack, so processing runs
+    // through the helper that answers that prompt via `submit_action`, the way
+    // a player would.
     state.events.push(GameEvent::SpellCast { player: P0, object: spell });
-    triggers::process_triggers(&mut state, &reg);
-
-    // Burning Vengeance now presents a target choice. Resolve it by targeting P1.
-    assert!(state.awaiting_action.is_some(), "Should be awaiting target choice");
-    // CR 603.3d: the prompt's effect is AttachTargetToPendingTrigger — it
-    // attaches the chosen target and pushes the trigger onto the stack.
-    let effect = match &state.awaiting_action {
-        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
-            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { effect, .. },
-            ..
-        }) => effect.clone(),
-        _ => panic!("expected ChooseTarget prompt"),
-    };
-    state.awaiting_action = None;
-    mtg_engine::engine::apply_pending_effect(
-        &mut state,
-        &mtg_engine::actions::Target::Player(P1),
-        &effect,
-        &reg,
-    );
-    // Resolve the trigger on the stack to actually apply the damage.
-    triggers::process_triggers(&mut state, &reg);
-
+    process_triggers_auto_target_opponent(&mut state, &reg);
     // Opponent should have lost 2 life.
     assert_eq!(state.get_player(P1).life, 18,
         "Burning Vengeance should deal 2 damage to opponent on flashback cast");
@@ -383,33 +339,6 @@ fn traitorous_blood_steals_untaps_and_grants_keywords() {
         "Traitorous Blood should grant trample");
 }
 
-/// Traitorous Blood control change reverts at end of turn.
-#[test]
-fn traitorous_blood_reverts_at_end_of_turn() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let enemy = ready_creature(&mut state, P1, 4, 4);
-    state.get_object_mut(enemy).unwrap().name = "Enemy Beast".into();
-
-    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(enemy)]);
-
-    // Verify steal happened.
-    assert_eq!(state.get_object(enemy).unwrap().controller, P0);
-
-    // The control change should be tracked for revert.
-    let control_change = state.until_end_of_turn.iter().find_map(|e| {
-        if let mtg_engine::state::TemporaryEffect::ChangeControl { target, original_controller } = e {
-            Some((*target, *original_controller))
-        } else { None }
-    });
-    assert!(control_change.is_some(), "Control change should be recorded for end-of-turn revert");
-    let (obj_id, original_controller) = control_change.unwrap();
-    assert_eq!(obj_id, enemy);
-    assert_eq!(original_controller, P1, "Original controller should be recorded as P1");
-}
-
 // ── Blasphemous Act ────────────────────────────────────────────
 
 /// Blasphemous Act deals 13 damage to each creature.
@@ -432,7 +361,8 @@ fn blasphemous_act_deals_13_damage_to_all_creatures() {
     assert_eq!(state.get_object(c1).unwrap().damage_marked, 13,
         "Blasphemous Act should deal 13 damage to creature");
 
-    // c2 had 3 toughness with 13 damage, should be dead after SBAs.
+    // The 3-toughness creature takes the same 13; nothing here runs SBAs, so it
+    // is still on the battlefield holding lethal damage.
     assert_eq!(state.get_object(c2).unwrap().damage_marked, 13,
         "Blasphemous Act should deal 13 damage to opponent's creature too");
 }
@@ -546,18 +476,9 @@ fn sever_the_bloodline_exiles_all_with_same_name() {
 
 // ── Angelic Overseer ───────────────────────────────────────────
 
-/// Angelic Overseer has flying always.
-#[test]
-fn angelic_overseer_has_flying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let angel = named_creature(&mut state, &reg, "Angelic Overseer", P0);
-    assert!(state.has_keyword(angel, Keyword::Flying, &reg),
-        "Angelic Overseer should always have flying");
-}
-
-/// Angelic Overseer gets hexproof and indestructible when you control a Human.
+/// "Flying. As long as you control a Human, Angelic Overseer has hexproof and
+/// indestructible." Two of its three keywords come and go with the board; the
+/// third must not.
 #[test]
 fn angelic_overseer_hexproof_indestructible_with_human() {
     let reg = registry();
@@ -586,6 +507,10 @@ fn angelic_overseer_hexproof_indestructible_with_human() {
         "Angelic Overseer should lose hexproof when Human leaves");
     assert!(!state.has_keyword(angel, Keyword::Indestructible, &reg),
         "Angelic Overseer should lose indestructible when Human leaves");
+
+    // Flying is printed, not conditional, so it survives all of that.
+    assert!(state.has_keyword(angel, Keyword::Flying, &reg),
+        "flying is unconditional — losing the Human must not take it too");
 }
 
 /// Angelic Overseer survives destroy effects when indestructible.

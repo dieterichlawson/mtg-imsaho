@@ -436,3 +436,43 @@ fn mentions(line: &str, var: &str) -> bool {
             && bytes.get(i + target.len()).is_none_or(|c| !c.is_alphanumeric() && *c != '_')
     })
 }
+
+/// A test must not perform a step's or a turn's own bookkeeping by hand.
+///
+/// Three tests used to end a turn by clearing `until_end_of_turn` themselves —
+/// one of them replayed the whole cleanup step inline, under the comment
+/// "matching engine.rs cleanup" — and then asserted the result. What they
+/// asserted was that their own copy of the rule worked: deleting the engine's
+/// cleanup step outright left all three green. Ending the turn for real found a
+/// once-per-turn ability that was never re-enabled between turns.
+///
+/// `common::advance_to_cleanup` / `advance_to_next_turn` run the real steps.
+#[test]
+fn no_test_ends_the_turn_by_hand() {
+    // Fields the engine resets as part of a step or turn transition. A test
+    // that writes one is standing in for the engine.
+    const ENGINE_BOOKKEEPING: &[&str] = &[
+        "until_end_of_turn.clear()",
+        "abilities_activated_this_turn.clear()",
+        "num_spells_cast_this_turn.clear()",
+        "regeneration_shields = 0",
+        "damage_marked = 0",
+    ];
+    let mut offenders = Vec::new();
+    for path in test_files() {
+        let file = path.file_name().unwrap().to_string_lossy().to_string();
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        for (n, line) in text.lines().enumerate() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            if let Some(pat) = ENGINE_BOOKKEEPING.iter().find(|p| line.contains(**p)) {
+                offenders.push(format!("{file}:{}: {pat}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} test(s) do a step's own bookkeeping instead of running the step \
+         (use common::advance_to_cleanup / advance_to_next_turn):\n  {}",
+        offenders.len(), offenders.join("\n  "));
+}
