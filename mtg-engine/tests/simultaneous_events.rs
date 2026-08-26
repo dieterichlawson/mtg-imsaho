@@ -30,8 +30,8 @@ fn conditional_indestructible_survives_when_last_protector_dies_simultaneously()
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let human = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let overseer = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+    let human = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let overseer = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
     assert!(state.has_subtype(human, "Human", &reg), "test precondition");
     assert!(state.has_keyword(overseer, Keyword::Indestructible, &reg),
         "test precondition: the Overseer is indestructible while the Human is around");
@@ -52,8 +52,8 @@ fn simultaneous_destruction_is_order_independent() {
     let reg = registry();
     for overseer_first in [true, false] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let human = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-        let overseer = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+        let human = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let overseer = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
 
         let doomed = if overseer_first { [overseer, human] } else { [human, overseer] };
         mtg_engine::destruction::try_destroy_all(&mut state, &doomed, &reg);
@@ -70,7 +70,7 @@ fn all_unchosen_creatures_destroyed_without_intermediate_state_changes() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let doomed: Vec<_> = (0..3)
-        .map(|_| named_creature(&mut state, &reg, "Walking Corpse", P0))
+        .map(|_| named_permanent(&mut state, &reg, "Walking Corpse", P0))
         .collect();
 
     let results = mtg_engine::destruction::try_destroy_all(&mut state, &doomed, &reg);
@@ -93,9 +93,9 @@ fn divine_reckoning_spares_a_conditionally_indestructible_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 keeps a Walking Corpse; the Overseer and the last Human are "the rest".
-    let keeper = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let human = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let overseer = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+    let keeper = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let human = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let overseer = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
 
     let reckoning = spell_in_hand(&mut state, &reg, "Divine Reckoning", P0);
     state.move_object(reckoning, Zone::Stack, &reg);
@@ -131,7 +131,7 @@ fn liliana_plus_one_holds_every_discard_until_the_last_player_has_chosen() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let p0_a = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
@@ -175,7 +175,7 @@ fn auto_discard_also_waits_for_the_other_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     // P0 has exactly one card (no choice); P1 has two (a real choice).
@@ -208,7 +208,7 @@ fn a_single_player_discard_still_applies_immediately() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let weevil = named_creature(&mut state, &reg, "Brain Weevil", P0);
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
     let a = spell_in_hand(&mut state, &reg, "Walking Corpse", P1);
     spell_in_hand(&mut state, &reg, "Chapel Geist", P1);
     spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P1);
@@ -242,7 +242,7 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
     let p0_life_before = state.get_player(P0).life;
 
     // Place Falkenrath Noble and two other creatures for P0
-    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
     let creature1 = ready_creature(&mut state, P0, 1, 1);
     let creature2 = ready_creature(&mut state, P0, 1, 1);
 
@@ -306,7 +306,7 @@ fn bug_liliana_sequential_discard() {
     spell_in_hand(&mut state, &registry, "Doom Blade", P1);
 
     // Place Liliana and activate +1
-    let liliana = named_creature(&mut state, &registry, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &registry, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let behavior = registry.get(state.get_object(liliana).unwrap().card_id).unwrap();

@@ -72,7 +72,7 @@ fn cobbled_wings_equip_only_your_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _opponent_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
+    let _opponent_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
     let _wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
 
     // Add mana for equip cost.
@@ -111,7 +111,7 @@ fn equipping_grants_the_printed_bonus() {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         // Grizzly Bears is a 2/2 Bear — deliberately not a Human, so only the
         // unconditional half of a conditional equipment applies.
-        let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+        let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
         let equipment = equipment_on_battlefield(&mut state, &reg, name, P0);
 
         for keyword in *keywords {
@@ -147,7 +147,7 @@ fn wooden_stake_destroys_vampire_on_block() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Set up: P0 has a creature with Wooden Stake, P1 has a Vampire attacker.
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0); // 2/2
     let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
 
     // Equip.
@@ -155,7 +155,7 @@ fn wooden_stake_destroys_vampire_on_block() {
     state = equip(&state, &reg, stake_obj, creature);
 
     // P1 has a Vampire attacker (Markov Patrician is a 3/1 Vampire with no evasion).
-    let vampire = named_creature(&mut state, &reg, "Markov Patrician", P1);
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
 
     // Move to declare blockers step with the vampire attacking.
     state.step = Step::DeclareBlockers;
@@ -182,14 +182,14 @@ fn wooden_stake_does_not_destroy_non_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
     state = equip(&state, &reg, stake_obj, creature);
 
     // P1 has a non-Vampire attacker.
-    let bear = named_creature(&mut state, &reg, "Grizzly Bears", P1);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
 
     state.step = Step::DeclareBlockers;
     state.active_player = P1;
@@ -215,7 +215,7 @@ fn equipment_detaches_when_creature_dies() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0); // 2/2
     let wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
 
     // Equip.
@@ -238,8 +238,8 @@ fn equipment_can_be_moved_to_different_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature1 = named_creature(&mut state, &reg, "Grizzly Bears", P0);
-    let creature2 = named_creature(&mut state, &reg, "Savannah Lions", P0);
+    let creature1 = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let creature2 = named_permanent(&mut state, &reg, "Savannah Lions", P0);
     let wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
 
     // Equip to first creature.
@@ -260,7 +260,7 @@ fn equipment_cast_and_equip_full_flow() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
 
     // Cast Cobbled Wings.
     let wings = castable_spell(&mut state, &reg, "Cobbled Wings", P0);

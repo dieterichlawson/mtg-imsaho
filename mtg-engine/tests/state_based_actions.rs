@@ -145,7 +145,7 @@ fn bug_grimoire_legend_rule_not_applied() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place a legendary creature on P0's battlefield
-    let existing = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+    let existing = named_permanent(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
 
     // Put another copy of the same legendary in P1's graveyard
     let _graveyard_copy = {
@@ -156,7 +156,7 @@ fn bug_grimoire_legend_rule_not_applied() {
     };
 
     // Simulate Grimoire's ability 1 (return all creatures as Zombies)
-    let grimoire = named_creature(&mut state, &registry, "Grimoire of the Dead", P0);
+    let grimoire = named_permanent(&mut state, &registry, "Grimoire of the Dead", P0);
     let behavior = registry.get(state.get_object(grimoire).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, grimoire, 1, &[], &registry);
 
@@ -203,10 +203,10 @@ fn bug_angelic_overseer_sba_ordering() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Angelic Overseer (indestructible while you control a Human)
-    let overseer = named_creature(&mut state, &registry, "Angelic Overseer", P0);
+    let overseer = named_permanent(&mut state, &registry, "Angelic Overseer", P0);
 
     // Place a Human
-    let human = named_creature(&mut state, &registry, "Champion of the Parish", P0);
+    let human = named_permanent(&mut state, &registry, "Champion of the Parish", P0);
 
     // Deal lethal damage to both simultaneously (board wipe)
     if let Some(obj) = state.get_object_mut(overseer) {

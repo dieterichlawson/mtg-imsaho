@@ -54,8 +54,8 @@ fn rakish_heir_gives_its_counter_after_trading_in_combat() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let heir = named_creature(&mut state, &reg, "Rakish Heir", P0);
-    let other = named_creature(&mut state, &reg, "Stromkirk Noble", P0);
+    let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let other = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
 
     resolve_after_source_dies(&mut state, &reg, heir,
         TriggerEvent::AnyCombatDamageToPlayer { dealer: other, damaged_player: P1, amount: 1 });
@@ -72,7 +72,7 @@ fn balefire_dragon_wipes_the_board_after_being_killed_in_response() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let dragon = named_creature(&mut state, &reg, "Balefire Dragon", P0);
+    let dragon = named_permanent(&mut state, &reg, "Balefire Dragon", P0);
     let victim = ready_creature(&mut state, P1, 2, 2);
 
     resolve_after_source_dies(&mut state, &reg, dragon,
@@ -91,7 +91,7 @@ fn curiosity_offers_its_draw_after_the_aura_is_destroyed() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     let bearer = ready_creature(&mut state, P0, 2, 2);
-    let aura = named_creature(&mut state, &reg, "Curiosity", P0);
+    let aura = named_permanent(&mut state, &reg, "Curiosity", P0);
     state.get_object_mut(aura).unwrap().attached_to = Some(bearer);
 
     resolve_after_source_dies(&mut state, &reg, aura,
@@ -109,7 +109,7 @@ fn burning_vengeance_deals_its_damage_after_being_destroyed() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let vengeance = named_creature(&mut state, &reg, "Burning Vengeance", P0);
+    let vengeance = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
     let spell = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
 
@@ -254,7 +254,7 @@ fn angel_of_flight_alabaster_returns_its_spirit_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let angel = named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
     // An actual Spirit card: the ability targets "target Spirit card in your
     // graveyard" and CR 608.2b re-checks that on resolution, so a synthetic
     // creature with no subtypes would fizzle for an unrelated reason.
@@ -274,7 +274,7 @@ fn charmbreaker_devils_returns_a_spell_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
     let instant = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
 
     resolve_after_source_dies(&mut state, &reg, devils, TriggerEvent::Upkeep);
@@ -290,7 +290,7 @@ fn geist_of_saint_traft_makes_its_angel_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
 
     resolve_after_source_dies(&mut state, &reg, geist,
         TriggerEvent::Attacks { attacker: geist, defending_player: P1 });
@@ -309,7 +309,7 @@ fn kessig_cagebreakers_counts_itself_among_the_dead() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let cb = named_creature(&mut state, &reg, "Kessig Cagebreakers", P0);
+    let cb = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
     for pt in [2, 3] {
         let c = ready_creature(&mut state, P0, pt, pt);
         state.move_object(c, Zone::Graveyard, &reg);
@@ -331,7 +331,7 @@ fn endless_ranks_of_the_dead_makes_its_zombies_after_being_destroyed() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let ranks = named_creature(&mut state, &reg, "Endless Ranks of the Dead", P0);
+    let ranks = named_permanent(&mut state, &reg, "Endless Ranks of the Dead", P0);
     for _ in 0..4 {
         let z = ready_creature(&mut state, P0, 2, 2);
         let obj = state.get_object_mut(z).unwrap();
@@ -354,7 +354,7 @@ fn splinterfright_mills_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let splinter = named_creature(&mut state, &reg, "Splinterfright", P0);
+    let splinter = named_permanent(&mut state, &reg, "Splinterfright", P0);
     let filler = reg.get_id_by_name("Forest").unwrap();
     for _ in 0..5 {
         let id = state.create_object(filler, P0, Zone::Library, None, None);
@@ -376,7 +376,7 @@ fn undead_alchemist_exiles_and_makes_its_zombie_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let alchemist = named_creature(&mut state, &reg, "Undead Alchemist", P0);
+    let alchemist = named_permanent(&mut state, &reg, "Undead Alchemist", P0);
     let milled = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
 
     resolve_after_source_dies(&mut state, &reg, alchemist,
@@ -394,7 +394,7 @@ fn mentor_of_the_meek_offers_its_payment_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
     let small = ready_creature(&mut state, P0, 1, 1);
 
     resolve_after_source_dies(&mut state, &reg, mentor,
@@ -443,7 +443,7 @@ fn sturmgeist_draws_after_dying() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let sturmgeist = named_creature(&mut state, &reg, "Sturmgeist", P0);
+    let sturmgeist = named_permanent(&mut state, &reg, "Sturmgeist", P0);
     let card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
     let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
     state.get_player_mut(P0).library_order.push(lib_card);
@@ -470,7 +470,7 @@ fn gutter_grime_makes_its_ooze_after_dying_alongside_the_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.move_object(creature, Zone::Graveyard, &reg);
 
@@ -490,7 +490,7 @@ fn murder_of_crows_offers_its_draw_after_dying_alongside_the_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let murder = named_creature(&mut state, &reg, "Murder of Crows", P0);
+    let murder = named_permanent(&mut state, &reg, "Murder of Crows", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.move_object(creature, Zone::Graveyard, &reg);
 

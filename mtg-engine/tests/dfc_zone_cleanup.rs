@@ -32,7 +32,7 @@ fn transform_then_move(
 ) -> (mtg_engine::state::GameState, mtg_engine::ids::ObjectId, mtg_engine::cards::CardRegistry) {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &reg, front_name, P0);
+    let id = named_permanent(&mut state, &reg, front_name, P0);
     apply_transform(&mut state, id, &reg);
     state.move_object(id, dest, &reg);
     (state, id, reg)
@@ -103,7 +103,7 @@ fn every_transformed_dfc_shows_its_front_face_after_leaving_the_battlefield() {
 fn garruk_name_resets_after_zone_change() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
 
     let obj = state.get_object_mut(garruk).unwrap();
     obj.is_transformed = true;

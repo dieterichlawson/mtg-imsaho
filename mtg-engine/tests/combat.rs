@@ -228,7 +228,7 @@ fn submit_action_declare_blockers_records_assignments() {
 fn submit_action_declare_attackers_forces_must_attack_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
-    let neonate = named_creature(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    let neonate = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
     state.get_object_mut(neonate).unwrap().summoning_sick = false;
     state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
 
@@ -254,7 +254,7 @@ fn submit_action_declare_attackers_forces_must_attack_creatures() {
 fn submit_action_declare_attackers_skips_force_when_already_declared() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
-    let neonate = named_creature(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    let neonate = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
     state.get_object_mut(neonate).unwrap().summoning_sick = false;
     state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
 
@@ -372,7 +372,7 @@ fn a_creature_that_cant_block_is_rejected_as_a_blocker() {
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     let attacker = ready_creature(&mut state, P0, 3, 3);
-    let interloper = named_creature(&mut state, &reg, "Vampire Interloper", P1);
+    let interloper = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
 
     assert!(!combat::eligible_blockers(&state, P1, &reg).contains(&interloper),
         "it is not offered as a blocker");

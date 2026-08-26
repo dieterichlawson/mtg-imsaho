@@ -73,7 +73,7 @@ fn equip_can_target_the_already_equipped_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let gear = named_equipment(&mut state, &reg, "Cobbled Wings", P0);
-    let only_creature = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let only_creature = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     state.get_object_mut(gear).unwrap().attached_to = Some(only_creature);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
 

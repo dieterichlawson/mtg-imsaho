@@ -82,7 +82,7 @@ fn creatures_that_leave_spirits_behind_leave_the_right_number() {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
-        let creature = named_creature(&mut state, &reg, name, P0);
+        let creature = named_permanent(&mut state, &reg, name, P0);
         kill_by_damage(&mut state, &reg, creature);
         triggers::process_triggers(&mut state, &reg);
 
@@ -139,7 +139,7 @@ fn slayer_of_the_wicked_destroys_zombie() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P1 has a Walking Corpse (Zombie) on the battlefield.
-    let wc = named_creature(&mut state, &reg, "Walking Corpse", P1);
+    let wc = named_permanent(&mut state, &reg, "Walking Corpse", P1);
 
     // Cast Slayer of the Wicked.
     let slayer = castable_spell(&mut state, &reg, "Slayer of the Wicked", P0);
@@ -210,7 +210,7 @@ fn pitchburn_devils_deals_3_on_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let pd = named_creature(&mut state, &reg, "Pitchburn Devils", P0);
+    let pd = named_permanent(&mut state, &reg, "Pitchburn Devils", P0);
 
     kill_by_damage(&mut state, &reg, pd);
 
@@ -241,7 +241,7 @@ fn falkenrath_noble_drains_on_any_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Falkenrath Noble on P0's side.
-    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
 
     // A creature on P0's side to kill (Noble triggers on any creature dying).
     let victim = ready_creature(&mut state, P0, 1, 1);
@@ -263,7 +263,7 @@ fn rage_thrower_deals_2_on_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Rage Thrower on P0's side.
-    let _rt = named_creature(&mut state, &reg, "Rage Thrower", P0);
+    let _rt = named_permanent(&mut state, &reg, "Rage Thrower", P0);
 
     // A creature on P1's side to kill.
     let victim = ready_creature(&mut state, P1, 1, 1);
@@ -315,10 +315,10 @@ fn a_death_watcher_counts_the_deaths_its_text_names() {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
-        let watcher = named_creature(&mut state, &reg, watcher_name, P0);
+        let watcher = named_permanent(&mut state, &reg, watcher_name, P0);
         let base = state.effective_power(watcher, &reg).expect("watcher is a creature");
         let victim = match victim_name {
-            Some(n) => named_creature(&mut state, &reg, n, victim_controller),
+            Some(n) => named_permanent(&mut state, &reg, n, victim_controller),
             None => ready_creature(&mut state, victim_controller, 1, 1),
         };
 
@@ -339,7 +339,7 @@ fn elder_cathar_grants_counter_on_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar on P0's side.
-    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P0);
+    let cathar = named_permanent(&mut state, &reg, "Elder Cathar", P0);
 
     // Another creature on P0's side to receive the counter.
     let buddy = ready_creature(&mut state, P0, 2, 2);

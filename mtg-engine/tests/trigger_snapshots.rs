@@ -40,7 +40,7 @@ fn mill_occurs_when_equipped_creature_dies_before_trigger_resolves() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
     stack_library(&mut state, &reg, P1);
@@ -67,8 +67,8 @@ fn the_buff_goes_to_the_creature_that_attacked_not_the_current_host() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let bystander = named_creature(&mut state, &reg, "Chapel Geist", P0);
+    let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let bystander = named_permanent(&mut state, &reg, "Chapel Geist", P0);
     let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
     stack_library(&mut state, &reg, P1);
@@ -98,7 +98,7 @@ fn trepanation_blade_mills_the_defending_player() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
     stack_library(&mut state, &reg, P1);
@@ -125,8 +125,8 @@ fn selhoff_occultist_mills_even_when_it_died_in_the_same_wipe() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let occultist = named_creature(&mut state, &reg, "Selhoff Occultist", P0);
-    let other = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let occultist = named_permanent(&mut state, &reg, "Selhoff Occultist", P0);
+    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     for name in ["Chapel Geist", "Forest"] {
         let id = state.create_object(reg.get_id_by_name(name).unwrap(), P1, Zone::Library, None, None);
         state.get_player_mut(P1).library_order.push(id);
@@ -152,8 +152,8 @@ fn rage_thrower_deals_damage_even_when_it_died_in_the_same_wipe() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let thrower = named_creature(&mut state, &reg, "Rage Thrower", P0);
-    let other = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let life_before = state.get_player(P1).life;
 
     mtg_engine::destruction::try_destroy_all(&mut state, &[thrower, other], &reg);
@@ -174,8 +174,8 @@ fn a_trigger_that_counters_itself_does_nothing_once_it_has_left() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let knot = named_creature(&mut state, &reg, "Lumberknot", P0);
-    let other = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let knot = named_permanent(&mut state, &reg, "Lumberknot", P0);
+    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
 
     mtg_engine::destruction::try_destroy_all(&mut state, &[knot, other], &reg);
 
@@ -208,7 +208,7 @@ fn every_werewolf_uses_the_same_transform_condition() {
         // No spells last turn, and it is the game's first turn.
         let mut state = game_at_step(Step::Upkeep, P0);
         state.is_first_turn = true;
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         assert!(reg.get(state.get_object(id).unwrap().card_id).unwrap()
             .should_transform(&state, id, &reg),
             "{name}: no spells were cast last turn, so it transforms — being the \
@@ -217,7 +217,7 @@ fn every_werewolf_uses_the_same_transform_condition() {
         // One spell last turn: stays on the front face.
         let mut state = game_at_step(Step::Upkeep, P0);
         state.num_spells_cast_last_turn.insert(P0, 1);
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         assert!(!reg.get(state.get_object(id).unwrap().card_id).unwrap()
             .should_transform(&state, id, &reg),
             "{name}: a spell was cast last turn");
@@ -225,7 +225,7 @@ fn every_werewolf_uses_the_same_transform_condition() {
         // Transformed, two spells last turn: turns back.
         let mut state = game_at_step(Step::Upkeep, P0);
         state.num_spells_cast_last_turn.insert(P0, 2);
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         state.get_object_mut(id).unwrap().is_transformed = true;
         assert!(reg.get(state.get_object(id).unwrap().card_id).unwrap()
             .should_transform(&state, id, &reg),
@@ -247,7 +247,7 @@ fn x_cost_creature_activation_costs_only_non_x_portion() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let brink = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    let brink = named_permanent(&mut state, &reg, "Back from the Brink", P0);
 
     // Mikaeus, the Lunarch is {X}{W} — the set's one creature card with {X}.
     let mikaeus = named_card_in_graveyard(&mut state, &reg, "Mikaeus, the Lunarch", P0);

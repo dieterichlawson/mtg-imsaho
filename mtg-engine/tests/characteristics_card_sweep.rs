@@ -31,13 +31,13 @@ fn garruk_ultimate_buffs_non_token_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let bear = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let bear = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     assert!(state.get_object(bear).unwrap().card_types.is_empty(),
         "test precondition: non-token permanents have empty object-level card_types");
 
     // The -3 lives on the back face, Garruk, the Veil-Cursed. X is the number
     // of creature cards in the graveyard, so put one there for a visible buff.
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
     mtg_engine::cards::helpers::apply_transform(&mut state, garruk, &reg);
     named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
@@ -64,7 +64,7 @@ fn curse_of_the_pierced_heart_sees_non_token_planeswalkers() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P1);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P1);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
     state.add_counters(liliana, CounterType::Loyalty, 3);
     assert!(state.get_object(liliana).unwrap().card_types.is_empty(),
         "test precondition: non-token permanents have empty object-level card_types");
@@ -96,7 +96,7 @@ fn human_equipment_bonus_survives_gaining_another_subtype() {
     let reg = registry();
     for gear_name in ["Silver-Inlaid Dagger", "Butcher's Cleaver"] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
         let gear = named_equipment(&mut state, &reg, gear_name, P0);
         state.get_object_mut(gear).unwrap().attached_to = Some(pilgrim);
 
@@ -123,8 +123,8 @@ fn hamlet_captain_does_not_buff_transformed_werewolves() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let captain = named_creature(&mut state, &reg, "Hamlet Captain", P0);
-    let villager = named_creature(&mut state, &reg, "Villagers of Estwald", P0);
+    let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
+    let villager = named_permanent(&mut state, &reg, "Villagers of Estwald", P0);
     mtg_engine::cards::helpers::apply_transform(&mut state, villager, &reg);
     assert!(!state.has_subtype(villager, "Human", &reg),
         "test precondition: Howlpack of Estwald is a Werewolf, not a Human");
@@ -147,7 +147,7 @@ fn runtime_granted_types_and_colors_are_cleared_on_zone_change() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
     {
         let obj = state.get_object_mut(pilgrim).unwrap();
         obj.subtypes.push("Vampire".into());
@@ -260,7 +260,7 @@ fn every_printed_keyword_is_reported_by_the_accessor() {
             continue;
         }
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let obj = named_creature(&mut state, &reg, name, P0);
+        let obj = named_permanent(&mut state, &reg, name, P0);
         for keyword in &data.keywords {
             checked += 1;
             if !state.has_keyword(obj, *keyword, &reg) {
@@ -294,13 +294,13 @@ fn every_creature_starts_at_its_printed_power_and_toughness() {
         // from the printed box, so they are not expected to match it.
         if reg.get(id).is_some_and(|b| {
             let mut probe = game_at_step(Step::PrecombatMain, P0);
-            let o = named_creature(&mut probe, &reg, name, P0);
+            let o = named_permanent(&mut probe, &reg, name, P0);
             b.dynamic_pt(&probe, o, &reg).is_some()
         }) {
             continue;
         }
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let obj = named_creature(&mut state, &reg, name, P0);
+        let obj = named_permanent(&mut state, &reg, name, P0);
         checked += 1;
         if state.effective_power(obj, &reg) != data.power {
             offenders.push(format!("{name}: prints {:?} power, accessor says {:?}",

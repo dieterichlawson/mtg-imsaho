@@ -66,10 +66,10 @@ fn bug_99_003_daybreak_ranger_no_cross_contamination() {
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
         // ranger_a: front face (Daybreak Ranger, "deal 2 to flying").
-        let ranger_a = named_creature(&mut state, &registry, "Daybreak Ranger", P0);
+        let ranger_a = named_permanent(&mut state, &registry, "Daybreak Ranger", P0);
 
         // ranger_b: transformed (Nightfall Predator, "fight any creature").
-        let ranger_b = named_creature(&mut state, &registry, "Daybreak Ranger", P0);
+        let ranger_b = named_permanent(&mut state, &registry, "Daybreak Ranger", P0);
         mtg_engine::cards::helpers::apply_transform(&mut state, ranger_b, &registry);
 
         // Non-flying target on P1's side.
@@ -180,7 +180,7 @@ fn bug_delver_reveal_suppressed_for_non_instant_sorcery() {
     state.active_player = P0;
 
     // Place Delver of Secrets (front face)
-    let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
+    let delver = named_permanent(&mut state, &registry, "Delver of Secrets", P0);
 
     // Put a creature (not instant/sorcery) on top of library
     let _creature_card = {
@@ -212,7 +212,7 @@ fn bug_thraben_sentry_vigilance_retained_after_transform() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+    let sentry = named_permanent(&mut state, &registry, "Thraben Sentry", P0);
 
     // Set keywords on object to match front face (Vigilance)
     if let Some(obj) = state.get_object_mut(sentry) {

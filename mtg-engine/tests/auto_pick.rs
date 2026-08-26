@@ -113,7 +113,7 @@ fn moorland_haunt_offers_every_graveyard_creature_to_exile() {
         })
         .collect();
 
-    let haunt = named_creature(&mut state, &registry, "Moorland Haunt", P0);
+    let haunt = named_permanent(&mut state, &registry, "Moorland Haunt", P0);
     let behavior = registry.get(state.get_object(haunt).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, haunt, 1, &[], &registry);
 
@@ -221,8 +221,8 @@ fn legend_rule_lets_the_player_choose_which_one_to_keep() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia_a = named_creature(&mut state, &registry, "Olivia Voldaren", P0);
-    let olivia_b = named_creature(&mut state, &registry, "Olivia Voldaren", P0);
+    let olivia_a = named_permanent(&mut state, &registry, "Olivia Voldaren", P0);
+    let olivia_b = named_permanent(&mut state, &registry, "Olivia Voldaren", P0);
     assert!(
         state.get_object(olivia_a).unwrap().is_legendary
             && state.get_object(olivia_b).unwrap().is_legendary,
@@ -281,7 +281,7 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
         })
         .collect();
 
-    let amulet = named_creature(&mut state, &registry, "Traveler's Amulet", P0);
+    let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
     let behavior = registry.get(state.get_object(amulet).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
 
@@ -628,7 +628,7 @@ fn bug_bf_travelers_amulet_shuffles_library_after_search() {
         .collect();
 
     // Traveler's Amulet on the battlefield. Fire activation directly.
-    let amulet = named_creature(&mut state, &registry, "Traveler's Amulet", P0);
+    let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
     let amulet_card_id = state.get_object(amulet).unwrap().card_id;
     let behavior = registry.get(amulet_card_id).unwrap();
     behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
@@ -673,7 +673,7 @@ fn falkenrath_noble_offers_both_players_as_the_drain_target() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let _noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
     let victim = ready_creature(&mut state, P1, 1, 1);
     mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
@@ -717,7 +717,7 @@ fn thraben_sentry_asks_before_transforming() {
 
     let up_to_the_choice = || {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+        let sentry = named_permanent(&mut state, &registry, "Thraben Sentry", P0);
         assert!(!state.get_object(sentry).unwrap().is_transformed, "test precondition");
         let victim = ready_creature(&mut state, P0, 1, 1);
         mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
@@ -843,7 +843,7 @@ fn mentor_of_the_meek_asks_before_paying() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mentor = named_creature(&mut state, &registry, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &registry, "Mentor of the Meek", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
     for _ in 0..3 {
         let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
@@ -898,7 +898,7 @@ fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Skirsdag High Priest and 3 other creatures
-    let priest = named_creature(&mut state, &registry, "Skirsdag High Priest", P0);
+    let priest = named_permanent(&mut state, &registry, "Skirsdag High Priest", P0);
     let _c1 = ready_creature(&mut state, P0, 1, 1);
     let _c2 = ready_creature(&mut state, P0, 2, 2);
     let _c3 = ready_creature(&mut state, P0, 3, 3);
@@ -936,7 +936,7 @@ fn bug_brain_weevil_incomplete_discard() {
     assert_eq!(hand_before, 3);
 
     // Place Brain Weevil and activate its sacrifice ability targeting P1
-    let weevil = named_creature(&mut state, &registry, "Brain Weevil", P0);
+    let weevil = named_permanent(&mut state, &registry, "Brain Weevil", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 

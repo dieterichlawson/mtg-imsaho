@@ -43,7 +43,7 @@ fn laboratory_maniac_replaces_the_empty_draw_loss_for_its_controller() {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
         if let Some(p) = maniac_controller {
-            named_creature(&mut state, &reg, "Laboratory Maniac", p);
+            named_permanent(&mut state, &reg, "Laboratory Maniac", p);
         }
         let opponent = state.opponent(drawer);
 
@@ -78,7 +78,7 @@ fn parallel_lives_doubles_only_its_controllers_tokens() {
     assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 1,
         "without Parallel Lives, creating one token creates one token");
 
-    named_creature(&mut state, &reg, "Parallel Lives", P0);
+    named_permanent(&mut state, &reg, "Parallel Lives", P0);
 
     make(&mut state, "Angel", P0);
     assert_eq!(count_tokens_named_by(&state, "Angel", P0), 2,
@@ -98,8 +98,8 @@ fn heartless_summoning_shrinks_the_creatures_it_cheapens() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    named_creature(&mut state, &reg, "Heartless Summoning", P0);
-    let creature = named_creature(&mut state, &reg, "Kindercatch", P0); // printed 6/6
+    named_permanent(&mut state, &reg, "Heartless Summoning", P0);
+    let creature = named_permanent(&mut state, &reg, "Kindercatch", P0); // printed 6/6
 
     assert_eq!(state.effective_power(creature, &reg).unwrap(), 5);
     assert_eq!(state.effective_toughness(creature, &reg).unwrap(), 5);
@@ -129,7 +129,7 @@ fn a_cost_modifier_reaches_the_spells_its_text_names() {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
-        named_creature(&mut state, &reg, modifier, P0);
+        named_permanent(&mut state, &reg, modifier, P0);
         let spell = spell_in_hand(&mut state, &reg, spell_name, P0);
         for &(kind, n) in mana {
             state.get_player_mut(P0).mana_pool.add(kind, n);
@@ -150,7 +150,7 @@ fn nevermore_bans_the_name_it_chose_and_nothing_else() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P1);
 
-    let nevermore = named_creature(&mut state, &reg, "Nevermore", P0);
+    let nevermore = named_permanent(&mut state, &reg, "Nevermore", P0);
     state.get_object_mut(nevermore).unwrap().instance_continuous_effects = Some(vec![
         ContinuousEffect::PreventCastingNamed { name: "Lightning Bolt".into() },
     ]);
@@ -201,7 +201,7 @@ fn kessig_wolf_run_grants_power_and_trample() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
     // {1}{R}{G} in the pool: {R}{G} pays the non-X portion, leaving 1
@@ -227,7 +227,7 @@ fn kessig_wolf_run_taps_for_mana() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
 
     // Activate mana ability.
     let new_state = engine::submit_action(

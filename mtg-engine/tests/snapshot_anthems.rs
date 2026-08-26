@@ -99,7 +99,7 @@ fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
 
     // A Vampire enters AFTER the anthem resolved. Per oracle it
     // should still get +2/+0 this turn.
-    let vamp = named_creature(&mut state, &registry, "Stromkirk Noble", P0);
+    let vamp = named_permanent(&mut state, &registry, "Stromkirk Noble", P0);
 
     let eff_p = state.effective_power(vamp, &registry).unwrap_or(0);
     assert_eq!(
@@ -142,7 +142,7 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let gang = named_creature(&mut state, &registry, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &registry, "Instigator Gang", P0);
     let attacker = ready_creature(&mut state, P0, 2, 2);
     state
         .get_object_mut(attacker)

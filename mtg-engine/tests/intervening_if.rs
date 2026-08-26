@@ -40,7 +40,7 @@ fn upkeep_stack_entries(state: &mut GameState, reg: &CardRegistry, object: Objec
 
 /// Put a werewolf on the battlefield already transformed to its back face.
 fn transformed(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
-    let id = named_creature(state, reg, name, owner);
+    let id = named_permanent(state, reg, name, owner);
     state.get_object_mut(id).unwrap().is_transformed = true;
     id
 }
@@ -52,7 +52,7 @@ fn gatstaf_shepherd_front_trigger_skipped_when_spell_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     state.num_spells_cast_last_turn.insert(P0, 1);
-    let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
 
     assert_eq!(upkeep_stack_entries(&mut state, &reg, shepherd), 0,
         "a spell was cast last turn, so the intervening-if is false and the \
@@ -63,7 +63,7 @@ fn gatstaf_shepherd_front_trigger_skipped_when_spell_cast() {
 fn gatstaf_shepherd_front_trigger_fires_when_no_spells_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
 
     assert_eq!(upkeep_stack_entries(&mut state, &reg, shepherd), 1,
         "no spells were cast last turn, so the ability must still trigger \
@@ -136,13 +136,13 @@ fn every_werewolf_upkeep_trigger_respects_its_intervening_if() {
         // Front face, condition false: a spell was cast last turn.
         let mut state = game_at_step(Step::Upkeep, P0);
         state.num_spells_cast_last_turn.insert(P0, 1);
-        let front = named_creature(&mut state, &reg, name, P0);
+        let front = named_permanent(&mut state, &reg, name, P0);
         assert_eq!(upkeep_stack_entries(&mut state, &reg, front), 0,
             "{name} (front) must not trigger when a spell was cast last turn");
 
         // Front face, condition true: no spells cast last turn.
         let mut state = game_at_step(Step::Upkeep, P0);
-        let front = named_creature(&mut state, &reg, name, P0);
+        let front = named_permanent(&mut state, &reg, name, P0);
         assert_eq!(upkeep_stack_entries(&mut state, &reg, front), 1,
             "{name} (front) must trigger when no spells were cast last turn");
 
@@ -208,7 +208,7 @@ fn morbid_etb_triggers_only_when_a_creature_died() {
     for name in ["Woodland Sleuth", "Hollowhenge Scavenger", "Morkrut Banshee"] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         assert!(!state.creature_died_this_turn, "test precondition");
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         assert_eq!(etb_stack_entries(&mut state, &reg, id), 0,
             "{name}: no creature died this turn, so the morbid ability must not \
              trigger — no stack entry, no priority window");
@@ -219,7 +219,7 @@ fn morbid_etb_triggers_only_when_a_creature_died() {
         // the battlefield so the single legal target is auto-picked. With two
         // choices the dispatch would stop to prompt instead of pushing, which
         // would fail this assertion for a reason unrelated to CR 603.4.
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         assert_eq!(etb_stack_entries(&mut state, &reg, id), 1,
             "{name}: a creature died this turn, so the morbid ability must trigger");
     }
@@ -239,7 +239,7 @@ fn reaper_from_the_abyss_end_step_trigger_respects_its_morbid_clause() {
         let mut state = game_at_step(Step::EndStep, P0);
         state.creature_died_this_turn = died;
 
-        named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
+        named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
         let victim = ready_creature(&mut state, P1, 3, 3);
 
         // The step event is what the ability watches for, and it targets — so
@@ -296,7 +296,7 @@ fn woodland_sleuth_can_return_itself_after_dying_to_its_own_trigger() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
 
-    let sleuth = named_creature(&mut state, &reg, "Woodland Sleuth", P0);
+    let sleuth = named_permanent(&mut state, &reg, "Woodland Sleuth", P0);
     let card_id = state.get_object(sleuth).unwrap().card_id;
     state.stack.push(StackEntry::Trigger(PendingTrigger::new(
         TriggerSource::new(sleuth, card_id, P0, "Woodland Sleuth"),

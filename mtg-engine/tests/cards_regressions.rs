@@ -33,7 +33,7 @@ fn fiend_hunter_can_target_own_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has a creature they might want to "save" by exiling temporarily.
-    let own_creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+    let own_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
 
     // Cast and resolve Fiend Hunter for P0.
     let hunter = castable_spell(&mut state, &reg, "Fiend Hunter", P0);
@@ -63,7 +63,7 @@ fn fiend_hunter_presents_choice_with_multiple_targets() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Both players have creatures.
-    let _p0_creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+    let _p0_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let _p1_creature_a = ready_creature(&mut state, P1, 3, 3);
     let _p1_creature_b = ready_creature(&mut state, P1, 2, 2);
 
@@ -206,7 +206,7 @@ fn murder_of_crows_presents_draw_choice() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has Murder of Crows.
-    let _crows = named_creature(&mut state, &reg, "Murder of Crows", P0);
+    let _crows = named_permanent(&mut state, &reg, "Murder of Crows", P0);
 
     // Give P0 some cards in hand so the discard has options.
     let hand_card = state.create_object(CardId(9999), P0, Zone::Hand, None, None);

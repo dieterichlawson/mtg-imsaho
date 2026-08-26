@@ -33,7 +33,7 @@ fn scourge_of_geier_reach_counts_only_opponents_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let scourge = named_creature(&mut state, &reg, "Scourge of Geier Reach", P0);
+    let scourge = named_permanent(&mut state, &reg, "Scourge of Geier Reach", P0);
     let pt = |s: &mtg_engine::state::GameState| {
         (s.effective_power(scourge, &reg).unwrap(), s.effective_toughness(scourge, &reg).unwrap())
     };
@@ -78,14 +78,14 @@ fn night_revelers_has_haste_with_opponent_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let revelers = named_creature(&mut state, &reg, "Night Revelers", P0);
+    let revelers = named_permanent(&mut state, &reg, "Night Revelers", P0);
 
     // No opponent Humans: no haste.
     assert!(!state.has_keyword(revelers, Keyword::Haste, &reg),
         "Night Revelers should not have haste without opponent Human");
 
     // Add a Human creature to the opponent.
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P1);
+    let human = named_permanent(&mut state, &reg, "Champion of the Parish", P1);
 
     // Now should have haste.
     assert!(state.has_keyword(revelers, Keyword::Haste, &reg),
@@ -106,10 +106,10 @@ fn elite_inquisitor_protection_prevents_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P1);
 
-    let inquisitor = named_creature(&mut state, &reg, "Elite Inquisitor", P0);
+    let inquisitor = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
 
     // Create a Vampire attacker.
-    let vampire = named_creature(&mut state, &reg, "Markov Patrician", P1);
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
 
     // Set up combat: vampire attacks, inquisitor blocks.
     let mut combat = mtg_engine::state::CombatState::new();
@@ -131,8 +131,8 @@ fn elite_inquisitor_cant_be_blocked_by_zombies() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let inquisitor = named_creature(&mut state, &reg, "Elite Inquisitor", P0);
-    let zombie = named_creature(&mut state, &reg, "Diregraf Ghoul", P1);
+    let inquisitor = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+    let zombie = named_permanent(&mut state, &reg, "Diregraf Ghoul", P1);
 
     // Zombie should not be able to block Elite Inquisitor (protection from Zombies).
     assert!(!mtg_engine::combat::can_block_attacker(&state, zombie, inquisitor, &reg),
@@ -147,7 +147,7 @@ fn ashmouth_hound_deals_damage_on_block() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P1);
 
-    let hound = named_creature(&mut state, &reg, "Ashmouth Hound", P0);
+    let hound = named_permanent(&mut state, &reg, "Ashmouth Hound", P0);
     let attacker = ready_creature(&mut state, P1, 3, 3);
     state.get_object_mut(attacker).unwrap().name = "Enemy".into();
 
@@ -176,8 +176,8 @@ fn hamlet_captain_buffs_humans_on_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let captain = named_creature(&mut state, &reg, "Hamlet Captain", P0);
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
+    let human = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
     let non_human = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(non_human).unwrap().name = "Bear".into();
 
@@ -206,8 +206,8 @@ fn hamlet_captain_buffs_humans_on_block() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P1);
 
-    let captain = named_creature(&mut state, &reg, "Hamlet Captain", P0);
-    let human = named_creature(&mut state, &reg, "Elite Inquisitor", P0);
+    let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
+    let human = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
     let attacker = ready_creature(&mut state, P1, 3, 3);
 
     // Declare blockers event.
@@ -260,7 +260,7 @@ fn burning_vengeance_triggers_on_flashback() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _bv = named_creature(&mut state, &reg, "Burning Vengeance", P0);
+    let _bv = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
 
     // Create a flashback spell on the stack, marked as cast_with_flashback.
     let spell = state.create_object(
@@ -290,7 +290,7 @@ fn burning_vengeance_ignores_non_flashback() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _bv = named_creature(&mut state, &reg, "Burning Vengeance", P0);
+    let _bv = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
 
     // Create a normal spell on the stack (not flashback).
     let spell = state.create_object(
@@ -425,7 +425,7 @@ fn cackling_counterpart_creates_token_copy() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let original = named_creature(&mut state, &reg, "Chapel Geist", P0);
+    let original = named_permanent(&mut state, &reg, "Chapel Geist", P0);
 
     let spell = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
     let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(original)]);
@@ -483,7 +483,7 @@ fn angelic_overseer_hexproof_indestructible_with_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let angel = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+    let angel = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
 
     // Without a Human: no hexproof or indestructible.
     assert!(!state.has_keyword(angel, Keyword::Hexproof, &reg),
@@ -492,7 +492,7 @@ fn angelic_overseer_hexproof_indestructible_with_human() {
         "Angelic Overseer should not be indestructible without a Human");
 
     // Add a Human.
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let human = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
 
     // Now should have hexproof and indestructible.
     assert!(state.has_keyword(angel, Keyword::Hexproof, &reg),
@@ -518,8 +518,8 @@ fn angelic_overseer_survives_destroy_with_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let angel = named_creature(&mut state, &reg, "Angelic Overseer", P0);
-    let _human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let angel = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
+    let _human = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
 
     // Try to destroy the angel.
     let result = mtg_engine::destruction::try_destroy(&mut state, angel, &reg);

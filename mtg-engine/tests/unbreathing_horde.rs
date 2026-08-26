@@ -18,7 +18,7 @@ fn prevents_combat_damage_removes_counter() {
     let mut state = game_at_step(Step::CombatDamage, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     // Give it 3 +1/+1 counters.
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
 
@@ -45,7 +45,7 @@ fn still_deals_damage_to_others() {
     let mut state = game_at_step(Step::CombatDamage, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
 
     let blocker = ready_creature(&mut state, P1, 2, 5);
@@ -70,8 +70,8 @@ fn enters_with_correct_counter_count() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put 2 zombies on battlefield.
-    let _z1 = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let _z2 = named_creature(&mut state, &reg, "Diregraf Ghoul", P0);
+    let _z1 = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let _z2 = named_permanent(&mut state, &reg, "Diregraf Ghoul", P0);
 
     // Put 1 zombie in graveyard.
     let _z3 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);

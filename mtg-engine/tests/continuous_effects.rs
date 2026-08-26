@@ -25,8 +25,8 @@ fn bonds_of_faith_reads_the_condition_in_both_directions() {
     let reg = registry();
 
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let human = named_creature(&mut state, &reg, "Doomed Traveler", P0); // Human Soldier 1/1
-    let bonds = named_creature(&mut state, &reg, "Bonds of Faith", P0);
+    let human = named_permanent(&mut state, &reg, "Doomed Traveler", P0); // Human Soldier 1/1
+    let bonds = named_permanent(&mut state, &reg, "Bonds of Faith", P0);
     state.get_object_mut(bonds).unwrap().attached_to = Some(human);
 
     assert_eq!(state.effective_power(human, &reg), Some(3),
@@ -36,7 +36,7 @@ fn bonds_of_faith_reads_the_condition_in_both_directions() {
 
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let beast = ready_creature(&mut state, P0, 2, 2); // no subtypes
-    let bonds = named_creature(&mut state, &reg, "Bonds of Faith", P0);
+    let bonds = named_permanent(&mut state, &reg, "Bonds of Faith", P0);
     state.get_object_mut(bonds).unwrap().attached_to = Some(beast);
 
     assert_eq!(state.effective_power(beast, &reg), Some(2),
@@ -52,11 +52,11 @@ fn angelic_overseer_gains_and_loses_its_keywords_with_the_board() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let overseer = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+    let overseer = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
     assert!(!state.has_keyword(overseer, Keyword::Hexproof, &reg),
         "no Human out, no hexproof");
 
-    let human = named_creature(&mut state, &reg, "Doomed Traveler", P0);
+    let human = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
     assert!(state.has_keyword(overseer, Keyword::Hexproof, &reg));
     assert!(state.has_keyword(overseer, Keyword::Indestructible, &reg));
 
@@ -74,7 +74,7 @@ fn manor_gargoyle_condition_on_a_keyword_does_not_recurse() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gargoyle = named_creature(&mut state, &reg, "Manor Gargoyle", P0);
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P0);
     assert!(state.has_keyword(gargoyle, Keyword::Defender, &reg));
     assert!(state.has_keyword(gargoyle, Keyword::Indestructible, &reg),
         "indestructible while it has defender");
@@ -108,7 +108,7 @@ fn a_condition_can_wrap_an_effect_that_never_had_a_conditional_twin() {
     assert!(!state.cant_be_blocked(attacker, &reg),
         "no Human out, so the condition does not hold");
 
-    named_creature(&mut state, &reg, "Doomed Traveler", P0);
+    named_permanent(&mut state, &reg, "Doomed Traveler", P0);
     assert!(state.cant_be_blocked(attacker, &reg),
         "with a Human out the wrapped effect applies");
 }
@@ -133,7 +133,7 @@ fn a_conditional_pt_bonus_granted_at_runtime_applies() {
 
     assert_eq!(state.effective_power(creature, &reg), Some(2),
         "condition does not hold yet");
-    named_creature(&mut state, &reg, "Doomed Traveler", P0);
+    named_permanent(&mut state, &reg, "Doomed Traveler", P0);
     assert_eq!(state.effective_power(creature, &reg), Some(5),
         "an instance-level conditional P/T bonus applies like a printed one");
 }
@@ -201,7 +201,7 @@ fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
     // being a Human. (Overwriting `obj.subtypes` would not model anything the
     // engine does: outside transform, subtypes are only ever added to, so
     // `has_subtype` unions the object's runtime grants with its active face.)
-    let human = named_creature(&mut state, &registry, "Cloistered Youth", P0);
+    let human = named_permanent(&mut state, &registry, "Cloistered Youth", P0);
 
     // Cast Bonds of Faith on it
     let bonds = castable_spell(&mut state, &registry, "Bonds of Faith", P0);

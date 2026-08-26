@@ -39,7 +39,7 @@ fn a_pump_ability_changes_the_creature_it_is_activated_on() {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
-        let creature = named_creature(&mut state, &reg, name, P0);
+        let creature = named_permanent(&mut state, &reg, name, P0);
         assert_eq!(
             (state.effective_power(creature, &reg), state.effective_toughness(creature, &reg)),
             (Some(printed.0), Some(printed.1)), "{name} starts at its printed size");
@@ -68,7 +68,7 @@ fn lantern_spirit_returns_itself_to_hand() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let spirit = named_creature(&mut state, &reg, "Lantern Spirit", P0);
+    let spirit = named_permanent(&mut state, &reg, "Lantern Spirit", P0);
     add_mana(&mut state, P0, &[(ManaType::Blue, 1)]);
     state = activate_only_offered_ability(&state, &reg);
 
@@ -83,7 +83,7 @@ fn manor_skeleton_regenerates_out_of_lethal_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let skeleton = named_creature(&mut state, &reg, "Manor Skeleton", P0);
+    let skeleton = named_permanent(&mut state, &reg, "Manor Skeleton", P0);
     add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Black, 1)]);
     state = activate_only_offered_ability(&state, &reg);
     assert_eq!(state.get_object(skeleton).unwrap().regeneration_shields, 1,
@@ -110,7 +110,7 @@ fn an_unrestricted_pump_ability_stacks_with_itself() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf = named_creature(&mut state, &reg, "Feral Ridgewolf", P0);
+    let wolf = named_permanent(&mut state, &reg, "Feral Ridgewolf", P0);
     for expected in [3, 5] {
         add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Red, 1)]);
         state = activate_only_offered_ability(&state, &reg);
@@ -130,7 +130,7 @@ fn a_once_per_turn_ability_is_blocked_this_turn_and_offered_the_next() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
+    let wolf = named_permanent(&mut state, &reg, "Darkthicket Wolf", P0);
     // Real turns mean real draw steps; without libraries both players deck out
     // and the game ends before the second activation is reached.
     stock_library(&mut state, &reg, P0, 10);
@@ -168,9 +168,9 @@ fn avacynian_priest_taps_a_non_human_and_then_cannot_be_paid_again() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
-    let wolf = named_creature(&mut state, &reg, "Kessig Wolf", P1);      // not a Human
-    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P1);   // a Human
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    let wolf = named_permanent(&mut state, &reg, "Kessig Wolf", P1);      // not a Human
+    let cathar = named_permanent(&mut state, &reg, "Elder Cathar", P1);   // a Human
 
     add_mana(&mut state, P0, &[(ManaType::Colorless, 1)]);
     let legal = mtg_engine::engine::legal_actions(&state, &reg);

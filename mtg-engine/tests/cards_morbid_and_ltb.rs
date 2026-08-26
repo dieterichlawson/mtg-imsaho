@@ -217,7 +217,7 @@ fn bonds_of_faith_buffs_human() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar is a Human Soldier.
-    let creature = named_creature(&mut state, &reg, "Elder Cathar", P0);
+    let creature = named_permanent(&mut state, &reg, "Elder Cathar", P0);
 
     let bof = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
 
@@ -308,10 +308,10 @@ fn grave_bramble_protection_prevents_zombie_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Attacker is a Zombie (Walking Corpse).
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P0);
 
     // Blocker is Grave Bramble (protection from Zombies).
-    let bramble = named_creature(&mut state, &reg, "Grave Bramble", P1);
+    let bramble = named_permanent(&mut state, &reg, "Grave Bramble", P1);
 
     submit_declare_attackers(&mut state, &[(zombie, P1)], &reg);
     submit_declare_blockers(&mut state, P1, &[(bramble, zombie)], &reg);
@@ -371,7 +371,7 @@ fn one_eyed_scarecrow_debuffs_opponent_flyers() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has One-Eyed Scarecrow on battlefield.
-    let _scarecrow = named_creature(&mut state, &reg, "One-Eyed Scarecrow", P0);
+    let _scarecrow = named_permanent(&mut state, &reg, "One-Eyed Scarecrow", P0);
 
     // P1 has a flyer (Moon Heron 3/2 flying).
     let heron_id = reg.get_id_by_name("Moon Heron").unwrap();
@@ -411,10 +411,10 @@ fn elder_cathar_gives_two_counters_to_human() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar on battlefield.
-    let ec = named_creature(&mut state, &reg, "Elder Cathar", P0);
+    let ec = named_permanent(&mut state, &reg, "Elder Cathar", P0);
 
     // A Human ally (Doomed Traveler).
-    let human = named_creature(&mut state, &reg, "Doomed Traveler", P0);
+    let human = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
 
     // Kill Elder Cathar.
     state.get_object_mut(ec).unwrap().damage_marked = 2;
@@ -430,7 +430,7 @@ fn elder_cathar_gives_one_counter_to_non_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ec = named_creature(&mut state, &reg, "Elder Cathar", P0);
+    let ec = named_permanent(&mut state, &reg, "Elder Cathar", P0);
 
     // A non-Human ally (Grizzly Bears = Bear).
     let bears = ready_creature(&mut state, P0, 2, 2);
@@ -453,7 +453,7 @@ fn invisible_stalker_unblockable() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let stalker = named_creature(&mut state, &reg, "Invisible Stalker", P0);
+    let stalker = named_permanent(&mut state, &reg, "Invisible Stalker", P0);
 
     let blocker = ready_creature(&mut state, P1, 5, 5);
 
@@ -471,7 +471,7 @@ fn vampire_interloper_cant_block() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let vi = named_creature(&mut state, &reg, "Vampire Interloper", P1);
+    let vi = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
 
     let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(!eligible.contains(&vi),
@@ -657,7 +657,7 @@ fn pitchburn_devils_choice_with_targets() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Pitchburn Devils on P0's battlefield.
-    let pd = named_creature(&mut state, &reg, "Pitchburn Devils", P0);
+    let pd = named_permanent(&mut state, &reg, "Pitchburn Devils", P0);
 
     // P1 has a creature (so there are multiple damage targets).
     let blocker = ready_creature(&mut state, P1, 4, 4);

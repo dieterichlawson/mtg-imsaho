@@ -114,7 +114,7 @@ fn bug_bp_forced_attack_respects_cant_attack() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     // Grizzly Bears — not a Human.
-    let bears = named_creature(&mut state, &registry, "Grizzly Bears", P0);
+    let bears = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
 
     // Bonds of Faith attached to the Bears (non-Human → can't attack
     // per oracle).
@@ -180,7 +180,7 @@ fn a_creature_under_pacifism_is_not_forced_to_attack() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Bloodcrazed Neonate (has ForceAttack via continuous effect)
-    let neonate = named_creature(&mut state, &registry, "Bloodcrazed Neonate", P0);
+    let neonate = named_permanent(&mut state, &registry, "Bloodcrazed Neonate", P0);
 
     // Cast Pacifism on the Neonate (gives PreventAttack + PreventBlock)
     let pacifism = castable_spell(&mut state, &registry, "Pacifism", P0);
@@ -214,7 +214,7 @@ fn a_tapped_creature_is_not_forced_to_attack() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     // Place Galvanic Juggernaut (has ForceAttack + it enters tapped + PreventUntap)
-    let jug = named_creature(&mut state, &registry, "Galvanic Juggernaut", P0);
+    let jug = named_permanent(&mut state, &registry, "Galvanic Juggernaut", P0);
 
     // Tap it (it enters tapped and doesn't untap).
     state.get_object_mut(jug).unwrap().tapped = true;

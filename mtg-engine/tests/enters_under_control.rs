@@ -75,8 +75,8 @@ fn fiend_hunter_returns_the_creature_to_its_owner() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let hunter = named_creature(&mut state, &reg, "Fiend Hunter", P0);
-    let victim = named_creature(&mut state, &reg, "Walking Corpse", P1);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+    let victim = named_permanent(&mut state, &reg, "Walking Corpse", P1);
 
     // Fiend Hunter exiles it and remembers it.
     state.move_object(victim, Zone::Exile, &reg);
@@ -106,7 +106,7 @@ fn splinterfright_counts_its_owners_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let fright = named_creature(&mut state, &reg, "Splinterfright", P0);
+    let fright = named_permanent(&mut state, &reg, "Splinterfright", P0);
     // Two creature cards in P0's graveyard, none in P1's.
     named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
     named_card_in_graveyard(&mut state, &reg, "Avacyn's Pilgrim", P0);

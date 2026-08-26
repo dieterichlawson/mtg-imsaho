@@ -136,7 +136,7 @@ fn human_equipment_bonuses_apply_when_attached_to_human() {
     let reg = registry();
     for case in HUMAN_CONDITIONAL {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
         let gear = equipment(&mut state, &reg, case.equipment, P0);
         let state = equip(&state, &reg, gear, pilgrim, case.equip_cost);
         assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, true);
@@ -148,7 +148,7 @@ fn human_equipment_bonuses_skip_conditional_on_non_human() {
     let reg = registry();
     for case in HUMAN_CONDITIONAL {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P0);
         let gear = equipment(&mut state, &reg, case.equipment, P0);
         let state = equip(&state, &reg, gear, zombie, case.equip_cost);
         assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
@@ -165,7 +165,7 @@ fn human_equipment_conditional_bonus_drops_when_creature_transforms() {
     let reg = registry();
     for case in HUMAN_CONDITIONAL {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let villager = named_creature(&mut state, &reg, "Villagers of Estwald", P0);
+        let villager = named_permanent(&mut state, &reg, "Villagers of Estwald", P0);
         let gear = equipment(&mut state, &reg, case.equipment, P0);
         let mut state = equip(&state, &reg, gear, villager, case.equip_cost);
         assert_equipped_matches(&state, &reg, villager, VILLAGER_BASE, case, true);
@@ -184,7 +184,7 @@ fn human_equipment_conditional_bonus_appears_when_subtype_added() {
     let reg = registry();
     for case in HUMAN_CONDITIONAL {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P0);
         let gear = equipment(&mut state, &reg, case.equipment, P0);
         let mut state = equip(&state, &reg, gear, zombie, case.equip_cost);
         assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
@@ -201,8 +201,8 @@ fn human_equipment_bonuses_follow_reattachment() {
     let reg = registry();
     for case in HUMAN_CONDITIONAL {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-        let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P0);
         let gear = equipment(&mut state, &reg, case.equipment, P0);
 
         // Attach to Human — full bonus on pilgrim, nothing on zombie.

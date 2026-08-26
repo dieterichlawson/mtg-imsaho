@@ -15,7 +15,7 @@ fn can_activate_with_rg_only() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let _wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
     let _creature = ready_creature(&mut state, P0, 2, 2);
 
     // Add just {R}{G} — X will be 0.
@@ -37,7 +37,7 @@ fn cannot_activate_without_rg() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let _wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
     let _creature = ready_creature(&mut state, P0, 2, 2);
 
     // Only {R} — no green.
@@ -58,7 +58,7 @@ fn x_equals_3_gives_plus_3() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     // Add {R}{G} + 3 colorless = 5 mana total. We'll fund X = 3 from the
@@ -101,7 +101,7 @@ fn x_equals_0_gives_trample_only() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     // Just {R}{G} — X = 0.

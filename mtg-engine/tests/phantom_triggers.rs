@@ -22,7 +22,7 @@ fn no_phantom_self_etb_for_creature_without_etb() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Vampire Interloper directly on the battlefield and emit the ETB event.
-    let interloper = named_creature(&mut state, &reg, "Vampire Interloper", P0);
+    let interloper = named_permanent(&mut state, &reg, "Vampire Interloper", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: interloper,
         controller: P0,
@@ -42,9 +42,9 @@ fn real_etb_trigger_still_fires() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let crossway = named_creature(&mut state, &reg, "Crossway Vampire", P0);
+    let crossway = named_permanent(&mut state, &reg, "Crossway Vampire", P0);
     // Need a valid target for the ETB.
-    let _enemy = named_creature(&mut state, &reg, "Vampire Interloper", P1);
+    let _enemy = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
 
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: crossway,
@@ -81,7 +81,7 @@ fn champion_in_graveyard_does_not_trigger() {
     state.get_object_mut(champion).unwrap().name = "Champion of the Parish".into();
 
     // A Human enters the battlefield under the same controller.
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let human = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: human,
         controller: P0,
@@ -104,9 +104,9 @@ fn champion_on_battlefield_does_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _champion = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let _champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
 
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let human = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: human,
         controller: P0,
@@ -148,9 +148,9 @@ fn dearly_departed_on_battlefield_does_not_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _departed = named_creature(&mut state, &reg, "Dearly Departed", P0);
+    let _departed = named_permanent(&mut state, &reg, "Dearly Departed", P0);
 
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let human = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: human,
         controller: P0,
@@ -180,10 +180,10 @@ fn bug_stitchers_apprentice_trigger_desync() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Stitcher's Apprentice
-    let apprentice = named_creature(&mut state, &registry, "Stitcher's Apprentice", P0);
+    let apprentice = named_permanent(&mut state, &registry, "Stitcher's Apprentice", P0);
 
     // Place Falkenrath Noble (triggers on any creature death)
-    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let _noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
 
     // Place a creature to sacrifice
     let _victim = ready_creature(&mut state, P0, 1, 1);

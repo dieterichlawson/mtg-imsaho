@@ -28,7 +28,7 @@ fn charmbreaker_devils_trigger_only_for_own_instants_and_sorceries() {
 
     // Case 1: opponent casts an instant — no trigger for P0's Devils.
     let mut state = game_at_step(Step::PrecombatMain, P1);
-    let _devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let _devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P1);
     let mut state = cast_onto_stack(&state, &reg, bolt, vec![Target::Player(P0)]);
     triggers::collect_triggers(&mut state, &reg);
@@ -37,7 +37,7 @@ fn charmbreaker_devils_trigger_only_for_own_instants_and_sorceries() {
 
     // Case 2: controller casts a creature spell — still no trigger.
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let _devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let _devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
     let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
     let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
     triggers::collect_triggers(&mut state, &reg);
@@ -46,7 +46,7 @@ fn charmbreaker_devils_trigger_only_for_own_instants_and_sorceries() {
 
     // Case 3: controller casts an instant — the trigger IS created.
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let _devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let _devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     let mut state = cast_onto_stack(&state, &reg, bolt, vec![Target::Player(P1)]);
     triggers::collect_triggers(&mut state, &reg);
@@ -167,7 +167,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
 
     // Abattoir Ghoul belongs to P0, who should gain 1 life from the
     // dying Voiceless Spirit (1 toughness).
-    let ghoul = named_creature(&mut state, &registry, "Abattoir Ghoul", P0);
+    let ghoul = named_permanent(&mut state, &registry, "Abattoir Ghoul", P0);
     // Move the Ghoul to graveyard to mirror the simultaneous-death
     // state at trigger-resolution time.
     state.move_object(ghoul, Zone::Graveyard, &registry);
@@ -229,7 +229,7 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let devils = named_creature(&mut state, &registry, "Charmbreaker Devils", P0);
+    let devils = named_permanent(&mut state, &registry, "Charmbreaker Devils", P0);
     let base_power = state.effective_power(devils, &registry).unwrap_or(0);
 
     // Spawn a Grizzly Bears spell on the stack and dispatch the
@@ -329,7 +329,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let vengeance = named_creature(&mut state, &registry, "Burning Vengeance", P0);
+    let vengeance = named_permanent(&mut state, &registry, "Burning Vengeance", P0);
     // Make sure there's at least one creature target so
     // present_target_choice sets awaiting_action (rather than an
     // empty-targets no-op).
@@ -389,7 +389,7 @@ fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cathar = named_creature(&mut state, &registry, "Selfless Cathar", P0);
+    let cathar = named_permanent(&mut state, &registry, "Selfless Cathar", P0);
 
     // Two untapped Plains so {1}{W} is autotap-reachable.
     let plains_card_id = registry.get_id_by_name("Plains").unwrap();
@@ -450,7 +450,7 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _alchemist = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+    let _alchemist = named_permanent(&mut state, &registry, "Undead Alchemist", P0);
 
     // Put a creature card on top of P1's library.
     let bears_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
@@ -614,8 +614,8 @@ fn simultaneous_triggers_auto_order_no_prompt() {
     // life equal to that creature's toughness"). Untargeted triggers
     // exercise the stack-ordering code path without invoking CR 603.3d
     // stack-time target choices.
-    let ghoul1 = named_creature(&mut state, &registry, "Abattoir Ghoul", P0);
-    let ghoul2 = named_creature(&mut state, &registry, "Abattoir Ghoul", P0);
+    let ghoul1 = named_permanent(&mut state, &registry, "Abattoir Ghoul", P0);
+    let ghoul2 = named_permanent(&mut state, &registry, "Abattoir Ghoul", P0);
 
     // Kill a creature damaged by both ghouls simultaneously.
     let victim = ready_creature(&mut state, P1, 1, 5);
@@ -714,7 +714,7 @@ fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ranger = named_creature(&mut state, &registry, "Daybreak Ranger", P0);
+    let ranger = named_permanent(&mut state, &registry, "Daybreak Ranger", P0);
 
     // Skeletal Grimace attached to Daybreak Ranger.
     let grimace_card_id = registry.get_id_by_name("Skeletal Grimace").unwrap();
@@ -777,7 +777,7 @@ fn burning_vengeance_triggers_only_for_your_own_graveyard_instants() {
     // graveyard or from hand, and count the triggers it put on the stack.
     let cast = |zone: Zone, name: &str, caster: PlayerId| {
         let mut state = game_at_step(Step::PrecombatMain, caster);
-        let _bv = named_creature(&mut state, &reg, "Burning Vengeance", P0);
+        let _bv = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
 
         let card_id = reg.get_id_by_name(name).unwrap();
         let spell = state.create_object(card_id, caster, zone, None, None);
@@ -867,7 +867,7 @@ fn bug_undead_alchemist_trigger_only_from_own_mill() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Undead Alchemist
-    let alchemist = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+    let alchemist = named_permanent(&mut state, &registry, "Undead Alchemist", P0);
 
     // Place a regular Zombie (not the Alchemist)
     let zombie = ready_creature(&mut state, P0, 2, 2);

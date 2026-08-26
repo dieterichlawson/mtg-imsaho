@@ -26,8 +26,8 @@ fn flying_restricts_who_can_block() {
     let reg = registry();
     for &(attacker_name, blocker_name, can_block) in CASES {
         let mut state = game_at_step(Step::DeclareBlockers, P0);
-        let attacker = named_creature(&mut state, &reg, attacker_name, P0);
-        let blocker = named_creature(&mut state, &reg, blocker_name, P1);
+        let attacker = named_permanent(&mut state, &reg, attacker_name, P0);
+        let blocker = named_permanent(&mut state, &reg, blocker_name, P1);
 
         assert_eq!(combat::can_block_attacker(&state, blocker, attacker, &reg), can_block,
             "{blocker_name} should {}be able to block {attacker_name}",
@@ -46,7 +46,7 @@ fn vigilance_does_not_tap_on_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
+    let attacker = named_permanent(&mut state, &reg, "Abbey Griffin", P0);
 
     submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
@@ -75,7 +75,7 @@ fn defender_cannot_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let defender = named_creature(&mut state, &reg, "Grave Bramble", P0);
+    let defender = named_permanent(&mut state, &reg, "Grave Bramble", P0);
 
     let eligible = combat::eligible_attackers(&state, P0, &reg);
     assert!(!eligible.contains(&defender),
@@ -88,7 +88,7 @@ fn defender_can_block() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let defender = named_creature(&mut state, &reg, "Grave Bramble", P1);
+    let defender = named_permanent(&mut state, &reg, "Grave Bramble", P1);
 
     let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(eligible.contains(&defender),
@@ -135,7 +135,7 @@ fn hexproof_prevents_opponent_targeting() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P1 has Invisible Stalker on battlefield.
-    let stalker = named_creature(&mut state, &reg, "Invisible Stalker", P1);
+    let stalker = named_permanent(&mut state, &reg, "Invisible Stalker", P1);
 
     // P0 has Lightning Bolt in hand with mana to cast it.
     let _bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
@@ -151,7 +151,7 @@ fn hexproof_prevents_opponent_targeting() {
         "Lightning Bolt should not be able to target a hexproof creature controlled by opponent");
 
     // But P0 CAN target their own hexproof creature (hexproof only stops opponents).
-    let stalker_p0 = named_creature(&mut state, &reg, "Invisible Stalker", P0);
+    let stalker_p0 = named_permanent(&mut state, &reg, "Invisible Stalker", P0);
 
     let legal2 = engine::legal_actions(&state, &reg);
     let targets_own = legal2.actions.iter().any(|a| {
@@ -172,7 +172,7 @@ fn intimidate_blocks_different_color() {
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     // Spectral Rider is white with intimidate.
-    let attacker = named_creature(&mut state, &reg, "Spectral Rider", P0);
+    let attacker = named_permanent(&mut state, &reg, "Spectral Rider", P0);
     state.get_object_mut(attacker).unwrap().colors = vec![Color::White];
 
     // Green creature can't block it.
@@ -196,11 +196,11 @@ fn artifact_creature_blocks_intimidate() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Spectral Rider", P0);
+    let attacker = named_permanent(&mut state, &reg, "Spectral Rider", P0);
     state.get_object_mut(attacker).unwrap().colors = vec![Color::White];
 
     // One-Eyed Scarecrow is an artifact creature.
-    let blocker = named_creature(&mut state, &reg, "One-Eyed Scarecrow", P1);
+    let blocker = named_permanent(&mut state, &reg, "One-Eyed Scarecrow", P1);
 
     assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
         "Artifact creature should be able to block an intimidate creature");
@@ -215,7 +215,7 @@ fn deathtouch_kills_with_one_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Typhoid Rats (1/1 deathtouch) attacks, blocked by a 5/5.
-    let attacker = named_creature(&mut state, &reg, "Typhoid Rats", P0);
+    let attacker = named_permanent(&mut state, &reg, "Typhoid Rats", P0);
 
     let blocker = ready_creature(&mut state, P1, 5, 5);
 
@@ -268,7 +268,7 @@ fn lifelink_gains_life_on_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Markov Patrician", P0);
+    let attacker = named_permanent(&mut state, &reg, "Markov Patrician", P0);
 
     submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
     submit_declare_blockers(&mut state, P1, &[], &reg);
@@ -286,7 +286,7 @@ fn lifelink_gains_life_from_creature_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Markov Patrician", P0);
+    let attacker = named_permanent(&mut state, &reg, "Markov Patrician", P0);
 
     let blocker = ready_creature(&mut state, P1, 1, 4);
 
@@ -352,10 +352,10 @@ fn first_strike_kills_before_normal_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Voiceless Spirit: 2/1 flying, first strike
-    let attacker = named_creature(&mut state, &reg, "Voiceless Spirit", P0);
+    let attacker = named_permanent(&mut state, &reg, "Voiceless Spirit", P0);
 
     // Blocker: Moon Heron 3/2 (would kill the 2/1 in simultaneous damage, but first strike prevents it)
-    let blocker = named_creature(&mut state, &reg, "Moon Heron", P1);
+    let blocker = named_permanent(&mut state, &reg, "Moon Heron", P1);
 
     submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
     submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
@@ -419,7 +419,7 @@ fn blocker_validation_rejects_ground_blocking_flyer() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let attacker = named_creature(&mut state, &reg, "Moon Heron", P0);
+    let attacker = named_permanent(&mut state, &reg, "Moon Heron", P0);
 
     let blocker = ready_creature(&mut state, P1, 2, 2);
 

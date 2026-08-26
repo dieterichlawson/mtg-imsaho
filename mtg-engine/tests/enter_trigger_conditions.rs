@@ -47,7 +47,7 @@ fn enter_watch_triggers(state: &GameState, watcher: ObjectId) -> usize {
 fn mentor_triggers_for_a_small_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
 
     // Avacyn's Pilgrim is a 1/1.
     enter_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
@@ -61,7 +61,7 @@ fn mentor_triggers_for_a_small_creature() {
 fn mentor_does_not_trigger_for_a_big_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
 
     // Bloodgift Demon is a 5/4.
     enter_creature(&mut state, &reg, "Bloodgift Demon", P0);
@@ -76,7 +76,7 @@ fn mentor_does_not_trigger_for_a_big_creature() {
 fn mentor_does_not_trigger_for_an_opponents_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
 
     enter_creature(&mut state, &reg, "Avacyn's Pilgrim", P1);
     triggers::collect_triggers(&mut state, &reg);
@@ -102,7 +102,7 @@ fn mentor_does_not_trigger_for_itself() {
 fn pumping_after_entry_does_not_undo_the_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
 
     let pilgrim = enter_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
     triggers::collect_triggers(&mut state, &reg);
@@ -125,7 +125,7 @@ fn pumping_after_entry_does_not_undo_the_trigger() {
 fn shrinking_after_entry_does_not_create_a_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
 
     let demon = enter_creature(&mut state, &reg, "Bloodgift Demon", P0);
     triggers::collect_triggers(&mut state, &reg);

@@ -32,8 +32,8 @@ fn evil_twin_may_copy_a_hexproof_creature_it_could_not_target() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
-    let hexproof = named_creature(&mut state, &reg, "Walking Corpse", P1);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    let hexproof = named_permanent(&mut state, &reg, "Walking Corpse", P1);
     state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
         target: hexproof, keyword: Keyword::Hexproof,
     });
@@ -64,7 +64,7 @@ fn copying_a_token_preserves_its_keywords() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let token = *state.create_token_with_subtypes(
         "Spirit", P1, 1, 1, vec![Color::White], vec![CardType::Creature],
         vec![Keyword::Flying], vec!["Spirit".into()], &reg)
@@ -85,9 +85,9 @@ fn a_copy_fires_the_copied_creatures_etb_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     // Fiend Hunter's ETB exiles a creature — an unmistakable ability.
-    let hunter = named_creature(&mut state, &reg, "Fiend Hunter", P1);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P1);
 
     state.pending_triggers.clear();
     copy_onto(&mut state, &reg, twin, hunter);
@@ -106,8 +106,8 @@ fn a_copy_of_a_vanilla_creature_raises_no_etb_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
-    let vanilla = named_creature(&mut state, &reg, "Walking Corpse", P1);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    let vanilla = named_permanent(&mut state, &reg, "Walking Corpse", P1);
 
     state.pending_triggers.clear();
     copy_onto(&mut state, &reg, twin, vanilla);
@@ -126,7 +126,7 @@ fn cackling_counterpart_creates_a_token_copy() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let original = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let original = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
     let spell = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
     let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(original)]);
 
@@ -151,8 +151,8 @@ fn a_token_copy_fires_the_copied_creatures_etb_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
-    let original = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    let original = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
 
     // A 1/1 token entering under P0's control satisfies Mentor's condition.
     state.stack.clear();
@@ -221,10 +221,10 @@ fn bug_evil_twin_ability_inaccessible_after_copy() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place a creature to copy
-    let target = named_creature(&mut state, &registry, "Grizzly Bears", P1);
+    let target = named_permanent(&mut state, &registry, "Grizzly Bears", P1);
 
     // Place Evil Twin and trigger its ETB
-    let twin = named_creature(&mut state, &registry, "Evil Twin", P0);
+    let twin = named_permanent(&mut state, &registry, "Evil Twin", P0);
 
     // Manually trigger the ETB and resolve the copy
     let behavior = registry.get(state.get_object(twin).unwrap().card_id).unwrap();

@@ -412,7 +412,7 @@ fn nevermore_stops_the_card_it_names_from_being_flashed_back() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Nevermore naming "Think Twice"
-    let nevermore = named_creature(&mut state, &registry, "Nevermore", P0);
+    let nevermore = named_permanent(&mut state, &registry, "Nevermore", P0);
     if let Some(obj) = state.get_object_mut(nevermore) {
         obj.instance_continuous_effects = Some(vec![
             ContinuousEffect::PreventCastingNamed { name: "Think Twice".into() },

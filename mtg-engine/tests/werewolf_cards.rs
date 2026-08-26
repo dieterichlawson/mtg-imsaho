@@ -40,7 +40,7 @@ fn every_werewolf_reads_its_back_face_after_transforming() {
 
     for name in &werewolves {
         let mut state = game_at_step(Step::Upkeep, P0);
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         let behavior = reg.get(state.get_object(id).unwrap().card_id).unwrap();
         let front = behavior.card_data();
         let back = behavior.back_face_data().unwrap();
@@ -99,7 +99,7 @@ fn reckless_waif_transforms_on_the_games_first_upkeep() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     state.is_first_turn = true;
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
@@ -113,7 +113,7 @@ fn reckless_waif_stays_human_when_spells_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     state.num_spells_cast_last_turn.insert(P0, 1);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
@@ -125,7 +125,7 @@ fn reckless_waif_stays_human_when_spells_cast() {
 fn reckless_waif_transforms_back_when_two_spells_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     // Manually transform to werewolf side
     state.get_object_mut(waif).unwrap().is_transformed = true;
@@ -148,7 +148,7 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
 fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
 
     // Transform to werewolf
     state.get_object_mut(shepherd).unwrap().is_transformed = true;
@@ -173,7 +173,7 @@ fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
 fn hanweir_watchkeep_loses_defender_gains_force_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let watchkeep = named_creature(&mut state, &reg, "Hanweir Watchkeep", P0);
+    let watchkeep = named_permanent(&mut state, &reg, "Hanweir Watchkeep", P0);
 
     // Front face: Defender
     assert!(state.has_keyword(watchkeep, Keyword::Defender, &reg));
@@ -201,8 +201,8 @@ fn hanweir_watchkeep_loses_defender_gains_force_attack() {
 fn mayor_of_avabruck_buffs_humans_on_front_face() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
-    let human = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    let human = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     // Mayor gives other Humans +1/+1
     assert_eq!(state.effective_power(human, &reg).unwrap(), 2, "Reckless Waif should get +1/+1 from Mayor");
@@ -215,8 +215,8 @@ fn mayor_of_avabruck_buffs_humans_on_front_face() {
 fn mayor_of_avabruck_transforms_and_buffs_werewolves() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
-    let other_wolf = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    let other_wolf = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     // Transform both
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
@@ -236,7 +236,7 @@ fn mayor_of_avabruck_transforms_and_buffs_werewolves() {
 fn howlpack_alpha_creates_wolf_token_on_end_step() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
     // Transform to Howlpack Alpha
     state.get_object_mut(mayor).unwrap().is_transformed = true;
     state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
@@ -254,7 +254,7 @@ fn howlpack_alpha_creates_wolf_token_on_end_step() {
 fn howlpack_alpha_does_not_create_token_on_front_face() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
-    let _mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    let _mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
     // Front face (not transformed)
 
     fire_step_trigger(&mut state, Step::EndStep, &reg);
@@ -268,7 +268,7 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
     let reg = registry();
     // Active player is P1 (opponent), but Mayor belongs to P0
     let mut state = game_at_step(Step::EndStep, P1);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
     // Transform to Howlpack Alpha
     state.get_object_mut(mayor).unwrap().is_transformed = true;
     state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
@@ -288,7 +288,7 @@ fn mayor_of_avabruck_does_not_transform_when_a_spell_was_cast() {
     let mut state = game_at_step(Step::Upkeep, P0);
     state.is_first_turn = true;
     state.num_spells_cast_last_turn.insert(P0, 1);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
@@ -303,7 +303,7 @@ fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
     // only get +1/+1 from Howlpack Alpha's first ability.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
     // Transform to Howlpack Alpha
     state.get_object_mut(mayor).unwrap().is_transformed = true;
     state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
@@ -333,7 +333,7 @@ fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
 fn daybreak_ranger_has_activated_ability_on_front_face() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let ranger = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
 
     let abilities = reg.get(state.get_object(ranger).unwrap().card_id).unwrap()
         .activated_abilities(&state, ranger, &reg);
@@ -345,7 +345,7 @@ fn daybreak_ranger_has_activated_ability_on_front_face() {
 fn nightfall_predator_has_fight_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let ranger = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
     state.get_object_mut(ranger).unwrap().is_transformed = true;
 
     let abilities = reg.get(state.get_object(ranger).unwrap().card_id).unwrap()
@@ -360,7 +360,7 @@ fn nightfall_predator_can_fight_own_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ranger = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
     state.get_object_mut(ranger).unwrap().is_transformed = true;
     state.get_object_mut(ranger).unwrap().name = "Nightfall Predator".into();
 
@@ -386,7 +386,7 @@ fn nightfall_predator_can_fight_own_creature() {
 fn instigator_gang_transforms_and_gains_trample() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
 
     assert!(!state.has_keyword(gang, Keyword::Trample, &reg));
 
@@ -402,7 +402,7 @@ fn instigator_gang_transforms_and_gains_trample() {
 fn instigator_gang_buffs_itself_when_attacking() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
 
     // Base power is 2.
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 2);
@@ -419,7 +419,7 @@ fn instigator_gang_buffs_itself_when_attacking() {
 fn instigator_gang_buffs_other_attackers_you_control() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
     let ally = ready_creature(&mut state, P0, 3, 3);
 
     // Declare both as attackers.
@@ -437,7 +437,7 @@ fn instigator_gang_buffs_other_attackers_you_control() {
 fn instigator_gang_does_not_buff_opponent_attackers() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P1);
-    let _gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let _gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
     let enemy = ready_creature(&mut state, P1, 2, 2);
 
     // Opponent's creature attacks.
@@ -452,7 +452,7 @@ fn instigator_gang_does_not_buff_opponent_attackers() {
 fn wildblood_pack_buffs_itself_plus_3() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
 
     // Transform to Wildblood Pack.
     state.get_object_mut(gang).unwrap().is_transformed = true;
@@ -472,7 +472,7 @@ fn wildblood_pack_buffs_itself_plus_3() {
 fn ulvenwald_mystics_transforms_and_gains_regenerate() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let mystics = named_creature(&mut state, &reg, "Ulvenwald Mystics", P0);
+    let mystics = named_permanent(&mut state, &reg, "Ulvenwald Mystics", P0);
 
     // Front face: no activated abilities
     let front_abilities = reg.get(state.get_object(mystics).unwrap().card_id).unwrap()
@@ -496,7 +496,7 @@ fn ulvenwald_mystics_transforms_and_gains_regenerate() {
 fn kruin_outlaw_transforms_gains_double_strike_and_menace() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let outlaw = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let outlaw = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
 
     // Front: first strike, no double strike or menace
     assert!(state.has_keyword(outlaw, Keyword::FirstStrike, &reg));
@@ -521,7 +521,7 @@ fn kruin_outlaw_transforms_gains_double_strike_and_menace() {
 fn transformed_werewolf_has_werewolf_subtype_not_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     // Front face: Human subtype
     assert!(state.matches_filter(waif,
@@ -546,9 +546,9 @@ fn transformed_werewolf_has_werewolf_subtype_not_human() {
 fn multiple_werewolves_transform_on_same_upkeep() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
-    let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
-    let outcasts = named_creature(&mut state, &reg, "Grizzled Outcasts", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
+    let outcasts = named_permanent(&mut state, &reg, "Grizzled Outcasts", P0);
 
     // No spells cast last turn, all should transform
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
@@ -562,8 +562,8 @@ fn multiple_werewolves_transform_on_same_upkeep() {
 fn multiple_werewolves_transform_back_together() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
-    let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
 
     // Manually transform to werewolf side
     state.get_object_mut(waif).unwrap().is_transformed = true;
@@ -584,7 +584,7 @@ fn multiple_werewolves_transform_back_together() {
 fn werewolf_side_stays_if_one_spell_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
     state.get_object_mut(waif).unwrap().is_transformed = true;
 
     // Only 1 spell cast last turn: not enough to transform back
@@ -600,7 +600,7 @@ fn werewolf_side_stays_if_one_spell_cast() {
 fn human_side_stays_if_any_spell_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
     // Opponent cast 1 spell last turn
     state.num_spells_cast_last_turn.insert(P1, 1);

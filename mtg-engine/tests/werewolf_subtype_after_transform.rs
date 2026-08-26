@@ -29,7 +29,7 @@ fn transformed_villagers_of_estwald_has_werewolf_subtype_not_human() {
     // no longer copied onto `obj.subtypes`, they are read from the face.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &registry, "Villagers of Estwald", P0);
+    let id = named_permanent(&mut state, &registry, "Villagers of Estwald", P0);
 
     helpers::apply_transform(&mut state, id, &registry);
 
@@ -47,7 +47,7 @@ fn transformed_kruin_outlaw_swaps_first_strike_for_double_strike() {
     // Kruin Outlaw front: First Strike. Back (Terror of Kruin Pass): Double Strike.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let id = named_creature(&mut state, &registry, "Kruin Outlaw", P0);
+    let id = named_permanent(&mut state, &registry, "Kruin Outlaw", P0);
 
     assert!(state.has_keyword(id, Keyword::FirstStrike, &registry),
         "front face must have First Strike");
@@ -68,11 +68,11 @@ fn bonds_of_faith_prevents_attack_on_transformed_werewolf() {
     //   - Bonds of Faith should NOT grant +2/+2, and SHOULD prevent it from attacking.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let wolf = named_creature(&mut state, &registry, "Villagers of Estwald", P0);
+    let wolf = named_permanent(&mut state, &registry, "Villagers of Estwald", P0);
     helpers::apply_transform(&mut state, wolf, &registry);
 
     // Attach Bonds of Faith to the transformed wolf.
-    let bonds = named_creature(&mut state, &registry, "Bonds of Faith", P0);
+    let bonds = named_permanent(&mut state, &registry, "Bonds of Faith", P0);
     state.get_object_mut(bonds).unwrap().attached_to = Some(wolf);
 
     // Effective P/T should be 4/6 (Howlpack base). NOT 6/8 (with +2/+2 bonus).
@@ -93,8 +93,8 @@ fn bonds_of_faith_still_buffs_human_on_front_face() {
     // and should still receive +2/+2 from Bonds of Faith.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let villagers = named_creature(&mut state, &registry, "Villagers of Estwald", P0);
-    let bonds = named_creature(&mut state, &registry, "Bonds of Faith", P0);
+    let villagers = named_permanent(&mut state, &registry, "Villagers of Estwald", P0);
+    let bonds = named_permanent(&mut state, &registry, "Bonds of Faith", P0);
     state.get_object_mut(bonds).unwrap().attached_to = Some(villagers);
 
     // Villagers front: 2/3 + 2/+2 = 4/5.

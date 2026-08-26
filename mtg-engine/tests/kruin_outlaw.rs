@@ -17,7 +17,7 @@ fn terror_of_kruin_pass_self_requires_two_blockers() {
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     // Put Terror of Kruin Pass on the battlefield (transformed).
-    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
     if let Some(obj) = state.get_object_mut(terror) {
         obj.is_transformed = true;
         obj.name = "Terror of Kruin Pass".into();
@@ -50,7 +50,7 @@ fn terror_of_kruin_pass_allows_two_blockers() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
     if let Some(obj) = state.get_object_mut(terror) {
         obj.is_transformed = true;
         obj.name = "Terror of Kruin Pass".into();
@@ -87,7 +87,7 @@ fn terror_of_kruin_pass_grants_restriction_to_other_werewolves() {
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     // Terror of Kruin Pass on the battlefield (transformed).
-    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
     if let Some(obj) = state.get_object_mut(terror) {
         obj.is_transformed = true;
         obj.name = "Terror of Kruin Pass".into();
@@ -125,7 +125,7 @@ fn terror_of_kruin_pass_does_not_affect_non_werewolves() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
     if let Some(obj) = state.get_object_mut(terror) {
         obj.is_transformed = true;
         obj.name = "Terror of Kruin Pass".into();
@@ -163,7 +163,7 @@ fn terror_of_kruin_pass_does_not_affect_opponent_werewolves() {
     let mut state = game_at_step(Step::DeclareBlockers, P1);
     state.active_player = P1;
 
-    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
     if let Some(obj) = state.get_object_mut(terror) {
         obj.is_transformed = true;
         obj.name = "Terror of Kruin Pass".into();
@@ -200,7 +200,7 @@ fn terror_of_kruin_pass_grants_menace_keyword() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    let terror = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
     if let Some(obj) = state.get_object_mut(terror) {
         obj.is_transformed = true;
         obj.name = "Terror of Kruin Pass".into();

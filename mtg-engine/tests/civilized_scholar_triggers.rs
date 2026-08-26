@@ -25,7 +25,7 @@ const P0: PlayerId = PlayerId(0);
 fn front_face_civilized_scholar_has_no_end_step_trigger() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::EndStep, P0);
-    let scholar = named_creature(&mut state, &registry, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
     assert!(!state.get_object(scholar).unwrap().is_transformed,
         "setup sanity: scholar should be on front face");
 
@@ -43,7 +43,7 @@ fn front_face_civilized_scholar_has_no_end_step_trigger() {
 fn back_face_homicidal_brute_has_end_step_trigger() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::EndStep, P0);
-    let scholar = named_creature(&mut state, &registry, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
 
     // Transform to Homicidal Brute (back face) via the shared helper.
     helpers::apply_transform(&mut state, scholar, &registry);
@@ -81,7 +81,7 @@ fn an_attack_before_transforming_still_counts_for_the_back_face() {
 
     // Place Civilized Scholar, already transformed to Homicidal Brute
     let turn = state.turn_number;
-    let brute = named_creature(&mut state, &registry, "Civilized Scholar", P0);
+    let brute = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
     if let Some(obj) = state.get_object_mut(brute) {
         obj.is_transformed = true;
         obj.name = "Homicidal Brute".into();

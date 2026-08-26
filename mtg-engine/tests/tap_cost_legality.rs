@@ -21,14 +21,14 @@ use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 /// Put a named permanent onto the battlefield *this turn*, so it still has
-/// summoning sickness. `named_creature` deliberately clears the flag.
+/// summoning sickness. `named_permanent` deliberately clears the flag.
 fn sick_named(
     state: &mut mtg_engine::state::GameState,
     reg: &CardRegistry,
     name: &str,
     owner: mtg_engine::ids::PlayerId,
 ) -> mtg_engine::ids::ObjectId {
-    let id = named_creature(state, reg, name, owner);
+    let id = named_permanent(state, reg, name, owner);
     state.get_object_mut(id).unwrap().summoning_sick = true;
     id
 }
@@ -78,7 +78,7 @@ fn a_mana_creature_cannot_be_tapped_for_mana_the_turn_it_arrives() {
 fn a_settled_mana_creature_is_a_mana_source() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
 
     assert_eq!(mana_ability_actions(&state, &reg, pilgrim), 1);
     assert_eq!(mtg_engine::engine::available_mana_abilities(&state, pilgrim, &reg).len(), 1);
@@ -106,7 +106,7 @@ fn haste_lets_a_mana_creature_tap_the_turn_it_arrives() {
 fn a_mana_ability_keeps_its_own_conditions() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let assistant = named_creature(&mut state, &reg, "Deranged Assistant", P0);
+    let assistant = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
 
     state.get_player_mut(P0).library_order.clear();
     assert!(mtg_engine::engine::available_mana_abilities(&state, assistant, &reg).is_empty(),
@@ -140,12 +140,12 @@ fn tapped_and_off_battlefield_permanents_cannot_pay_a_tap_cost() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let tapped = named_creature(&mut state, &reg, "Forest", P0);
+    let tapped = named_permanent(&mut state, &reg, "Forest", P0);
     state.get_object_mut(tapped).unwrap().tapped = true;
     assert!(!state.can_pay_tap_cost(tapped, &reg));
     assert!(mtg_engine::engine::available_mana_abilities(&state, tapped, &reg).is_empty());
 
-    let gone = named_creature(&mut state, &reg, "Forest", P0);
+    let gone = named_permanent(&mut state, &reg, "Forest", P0);
     state.move_object(gone, Zone::Graveyard, &reg);
     assert!(!state.can_pay_tap_cost(gone, &reg));
     assert!(mtg_engine::engine::available_mana_abilities(&state, gone, &reg).is_empty(),
@@ -166,8 +166,8 @@ fn skirsdag_high_priest_with_haste_can_activate_while_summoning_sick() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let priest = sick_named(&mut state, &reg, "Skirsdag High Priest", P0);
-    named_creature(&mut state, &reg, "Walking Corpse", P0);
-    named_creature(&mut state, &reg, "Walking Corpse", P0);
+    named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    named_permanent(&mut state, &reg, "Walking Corpse", P0);
     state.creature_died_this_turn = true;
 
     let count = |state: &mtg_engine::state::GameState| {
@@ -197,10 +197,10 @@ fn a_tap_ability_cannot_fund_itself_from_its_own_mana_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let township = named_creature(&mut state, &reg, "Gavony Township", P0);
-    named_creature(&mut state, &reg, "Forest", P0);
-    named_creature(&mut state, &reg, "Forest", P0);
-    named_creature(&mut state, &reg, "Plains", P0);
+    let township = named_permanent(&mut state, &reg, "Gavony Township", P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    named_permanent(&mut state, &reg, "Plains", P0);
 
     let township_abilities = |state: &mtg_engine::state::GameState| {
         mtg_engine::engine::legal_actions(state, &reg).actions.iter()
@@ -213,7 +213,7 @@ fn a_tap_ability_cannot_fund_itself_from_its_own_mana_ability() {
          {{T}}: Add {{C}} is unavailable because that tap pays the ability's {{T}} (CR 602.2h)");
 
     // A fourth land makes the cost genuinely payable.
-    named_creature(&mut state, &reg, "Plains", P0);
+    named_permanent(&mut state, &reg, "Plains", P0);
     assert!(township_abilities(&state) > 0,
         "with four other lands the ability is payable");
 }
@@ -231,12 +231,12 @@ fn the_isd_utility_lands_do_not_fund_their_own_tap_abilities() {
         ("Stensia Bloodhall", 4),    // {3}{B}{R}, {T}
     ] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let land = named_creature(&mut state, &reg, name, P0);
+        let land = named_permanent(&mut state, &reg, name, P0);
         // Wastes-style filler: five basics of every color, so color is never
         // the limiting factor — only the count is.
         for _ in 0..one_short {
             for basic in ["Plains", "Island", "Swamp", "Mountain", "Forest"] {
-                let b = named_creature(&mut state, &reg, basic, P0);
+                let b = named_permanent(&mut state, &reg, basic, P0);
                 state.get_object_mut(b).unwrap().tapped = true;
             }
         }

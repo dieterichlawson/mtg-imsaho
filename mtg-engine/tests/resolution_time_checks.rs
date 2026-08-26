@@ -30,8 +30,8 @@ fn moldgraf_simultaneous_death_second_trigger_does_not_exile_live_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let first = named_creature(&mut state, &reg, "Moldgraf Monstrosity", P0);
-    let second = named_creature(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let first = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let second = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
     let fodder = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
 
     mtg_engine::destruction::try_destroy_all(&mut state, &[first, second], &reg);
@@ -63,7 +63,7 @@ fn moldgraf_exile_skipped_when_already_exiled_still_returns_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let monstrosity = named_creature(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
     let a = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
     let b = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
@@ -91,8 +91,8 @@ fn ghost_quarter_may_choice_offered_when_no_basics() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let quarter = named_creature(&mut state, &reg, "Ghost Quarter", P0);
-    let victim = named_creature(&mut state, &reg, "Kessig Wolf Run", P1);
+    let quarter = named_permanent(&mut state, &reg, "Ghost Quarter", P0);
+    let victim = named_permanent(&mut state, &reg, "Kessig Wolf Run", P1);
 
     // P1's library: no basics, and in a known order.
     let library: Vec<_> = ["Chapel Geist", "Walking Corpse", "Avacyn's Pilgrim"].iter()
@@ -130,8 +130,8 @@ fn ghost_quarter_declining_the_search_does_not_shuffle() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let quarter = named_creature(&mut state, &reg, "Ghost Quarter", P0);
-    let victim = named_creature(&mut state, &reg, "Kessig Wolf Run", P1);
+    let quarter = named_permanent(&mut state, &reg, "Ghost Quarter", P0);
+    let victim = named_permanent(&mut state, &reg, "Kessig Wolf Run", P1);
 
     let library: Vec<_> = ["Forest", "Island", "Chapel Geist", "Walking Corpse"].iter()
         .map(|name| {
@@ -168,7 +168,7 @@ fn auto_counter_when_controller_has_no_floating_mana_but_has_lands() {
     // P0's spell on the stack, an untapped Island, and an empty pool.
     let bears = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
     state.move_object(bears, Zone::Stack, &reg);
-    named_creature(&mut state, &reg, "Island", P0);
+    named_permanent(&mut state, &reg, "Island", P0);
     assert_eq!(state.get_player(P0).mana_pool.total(), 0, "test precondition");
 
     let fd = spell_in_hand(&mut state, &reg, "Frightful Delusion", P1);

@@ -285,14 +285,14 @@ fn fn_spans(lines: &[&str]) -> Vec<(usize, usize)> {
     out
 }
 
-/// `let <var> = named_creature(.., "<Card>", ..)` bindings in a function body.
+/// `let <var> = named_permanent(.., "<Card>", ..)` bindings in a function body.
 fn named_objects(blob: &str) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
     for line in blob.lines() {
         let t = line.trim();
         let Some(rest) = t.strip_prefix("let ") else { continue };
         let Some((var, rhs)) = rest.split_once(" = ") else { continue };
-        if !(rhs.starts_with("named_creature(")
+        if !(rhs.starts_with("named_permanent(")
             || rhs.starts_with("named_equipment(")
             || rhs.starts_with("named_card_in_graveyard("))
         {
@@ -392,7 +392,7 @@ fn no_test_asserts_a_cards_data_back_at_itself() {
                 continue;
             }
             // A test that builds a game is testing behaviour, whatever else it reads.
-            if ["game_at_step", "GameState::new", "create_object", "named_creature",
+            if ["game_at_step", "GameState::new", "create_object", "named_permanent",
                 "move_object", "submit_action"].iter().any(|m| blob.contains(m)) {
                 continue;
             }

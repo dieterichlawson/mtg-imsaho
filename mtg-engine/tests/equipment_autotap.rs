@@ -79,7 +79,7 @@ fn setup_with_lands(
     n_forests: usize,
 ) -> (GameState, ObjectId, ObjectId, Vec<ObjectId>) {
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = named_creature(&mut state, reg, creature_name, P0);
+    let creature = named_permanent(&mut state, reg, creature_name, P0);
     let eq = equipment(&mut state, reg, equipment_name, P0);
     let lands = untapped_lands(&mut state, reg, "Forest", P0, n_forests);
     // Mana pool starts empty — that is the entire point of this test.
@@ -146,7 +146,7 @@ fn silver_inlaid_dagger_offered_with_floating_mana_too() {
     // The legacy "mana pool only" path must still work.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
     let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
     let action = find_equip_action(&state, &reg, dagger, pilgrim);
@@ -234,7 +234,7 @@ fn every_mana_cost_equipment_in_isd_can_be_equipped_via_autotap() {
     for (name, equip_cost) in &cases {
         let (name, equip_cost) = (name.as_str(), *equip_cost);
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let bears = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+        let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
         let eq = equipment(&mut state, &reg, name, P0);
         let _forests = untapped_lands(&mut state, &reg, "Forest", P0, equip_cost);
 
@@ -282,7 +282,7 @@ fn elder_of_laurels_activated_ability_offered_with_untapped_lands() {
         return;
     }
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let elder = named_creature(&mut state, &reg, "Elder of Laurels", P0);
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
     // Three Forests + one of any colour gives us {3}{G}: 4 generic mana, one green.
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 4);
 
@@ -302,7 +302,7 @@ fn elder_of_laurels_activated_ability_not_offered_with_three_lands() {
         return;
     }
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let elder = named_creature(&mut state, &reg, "Elder of Laurels", P0);
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 3);
 
     let legal = engine::legal_actions(&state, &reg);
@@ -322,7 +322,7 @@ fn equip_is_not_offered_at_instant_speed() {
     // Set the active player to P1, so it's the opponent's turn from P0's POV.
     let mut state = game_at_step(Step::PrecombatMain, P1);
     state.priority_player = Some(P0); // P0 has priority during opp's main phase
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
     let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 2);
 
@@ -343,7 +343,7 @@ fn equip_is_not_offered_at_instant_speed() {
 fn equip_cannot_target_opponent_creature_via_autotap() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let opp_bears = named_creature(&mut state, &reg, "Grizzly Bears", P1);
+    let opp_bears = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
     let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 2);
 
@@ -363,8 +363,8 @@ fn equip_cannot_target_opponent_creature_via_autotap() {
 fn equip_can_reattach_via_autotap() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let bears_a = named_creature(&mut state, &reg, "Grizzly Bears", P0);
-    let bears_b = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+    let bears_a = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let bears_b = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 4); // enough for two equips
 
@@ -403,8 +403,8 @@ fn equip_can_reattach_via_autotap() {
 
 fn assert_equip_ability_unique_after_attach(reg: &CardRegistry, equip_name: &str, n_lands: usize) {
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let bears_a = named_creature(&mut state, reg, "Grizzly Bears", P0);
-    let bears_b = named_creature(&mut state, reg, "Grizzly Bears", P0);
+    let bears_a = named_permanent(&mut state, reg, "Grizzly Bears", P0);
+    let bears_b = named_permanent(&mut state, reg, "Grizzly Bears", P0);
     let eq = equipment(&mut state, reg, equip_name, P0);
     let _forests = untapped_lands(&mut state, reg, "Forest", P0, n_lands);
 
@@ -458,7 +458,7 @@ fn bug_mask_of_avacyn_duplicate_equip_action() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Mask of Avacyn and two creatures
-    let mask = named_creature(&mut state, &registry, "Mask of Avacyn", P0);
+    let mask = named_permanent(&mut state, &registry, "Mask of Avacyn", P0);
     if let Some(obj) = state.get_object_mut(mask) {
         obj.is_equipment = true;
     }

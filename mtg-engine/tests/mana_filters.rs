@@ -32,9 +32,9 @@ fn grotto_color_ability_funds_spell_in_tap_plan() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     for _ in 0..3 {
-        named_creature(&mut state, &reg, "Plains", P0);
+        named_permanent(&mut state, &reg, "Plains", P0);
     }
-    named_creature(&mut state, &reg, "Shimmering Grotto", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
 
     // Orchard Spirit is {2}{G} — no green source but the Grotto, and it needs
     // all four lands: two Plains for the generic, one to pay the Grotto's {1}.
@@ -52,7 +52,7 @@ fn without_the_grotto_there_is_no_green() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     for _ in 0..4 {
-        named_creature(&mut state, &reg, "Plains", P0);
+        named_permanent(&mut state, &reg, "Plains", P0);
     }
     let wolf = spell_in_hand(&mut state, &reg, "Orchard Spirit", P0);
 
@@ -66,9 +66,9 @@ fn a_filter_does_not_add_mana() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     for _ in 0..2 {
-        named_creature(&mut state, &reg, "Plains", P0);
+        named_permanent(&mut state, &reg, "Plains", P0);
     }
-    named_creature(&mut state, &reg, "Shimmering Grotto", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
     let wolf = spell_in_hand(&mut state, &reg, "Orchard Spirit", P0);
 
     assert!(!castable(&state, &reg, wolf),
@@ -80,7 +80,7 @@ fn a_filter_does_not_add_mana() {
 fn the_grotto_still_taps_for_colorless_for_free() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let grotto = named_creature(&mut state, &reg, "Shimmering Grotto", P0);
+    let grotto = named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
 
     let offered: Vec<usize> = mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
         .filter_map(|a| match a {
@@ -110,7 +110,7 @@ fn the_grotto_still_taps_for_colorless_for_free() {
 fn activating_the_filter_spends_and_produces() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let grotto = named_creature(&mut state, &reg, "Shimmering Grotto", P0);
+    let grotto = named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
 
     state = mtg_engine::engine::submit_action(&state,
@@ -144,7 +144,7 @@ fn every_tap_plan_the_solver_returns_actually_pays_the_cost() {
         for spell_name in costs {
             let mut state = game_at_step(Step::PrecombatMain, P0);
             for land in *board {
-                named_creature(&mut state, &reg, land, P0);
+                named_permanent(&mut state, &reg, land, P0);
             }
             let spell = spell_in_hand(&mut state, &reg, spell_name, P0);
             let Some(cost) = reg.card_data(state.get_object(spell).unwrap().card_id)

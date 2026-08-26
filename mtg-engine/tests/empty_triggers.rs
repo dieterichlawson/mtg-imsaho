@@ -50,7 +50,7 @@ fn no_creature_without_a_death_ability_puts_a_trigger_on_the_stack_when_it_dies(
 
     for name in &silent {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let id = named_creature(&mut state, &registry, name, P0);
+        let id = named_permanent(&mut state, &registry, name, P0);
         kill_creature(&mut state, &registry, id);
         mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
@@ -72,8 +72,8 @@ fn aura_leaving_battlefield_creates_no_ltb_trigger() {
     // battlefield should not push an LTB trigger.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let target = named_creature(&mut state, &registry, "Grizzly Bears", P0);
-    let aura = named_creature(&mut state, &registry, "Dead Weight", P0);
+    let target = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
+    let aura = named_permanent(&mut state, &registry, "Dead Weight", P0);
     state.get_object_mut(aura).unwrap().attached_to = Some(target);
 
     // Move aura off battlefield (simulates destruction).
@@ -97,7 +97,7 @@ fn fiend_hunter_ltb_trigger_still_fires() {
     // Regression in the opposite direction: the gate must not break this.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hunter = named_creature(&mut state, &registry, "Fiend Hunter", P0);
+    let hunter = named_permanent(&mut state, &registry, "Fiend Hunter", P0);
 
     state.move_object(hunter, Zone::Graveyard, &registry);
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
@@ -117,7 +117,7 @@ fn doomed_traveler_selfdies_trigger_still_fires() {
     // token with flying." Gate must not break this.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let traveler = named_creature(&mut state, &registry, "Doomed Traveler", P0);
+    let traveler = named_permanent(&mut state, &registry, "Doomed Traveler", P0);
 
     kill_creature(&mut state, &registry, traveler);
     mtg_engine::triggers::collect_triggers(&mut state, &registry);

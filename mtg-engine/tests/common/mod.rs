@@ -295,8 +295,14 @@ pub fn resolve_funding_max(state: &GameState, registry: &CardRegistry) -> GameSt
     mtg_engine::engine::submit_action(state, &action, registry)
 }
 
-/// Place a named card on the battlefield, ready to act. Returns the object ID.
-pub fn named_creature(
+/// Put a named card from the registry onto the battlefield, untapped and not
+/// summoning sick.
+///
+/// Called `named_creature` until it turned out to be placing lands, artifacts,
+/// enchantments and planeswalkers under 37 distinct card names. P/T and the
+/// legendary flag come from the registry; card types and subtypes do not — the
+/// characteristics accessors read those from the active face.
+pub fn named_permanent(
     state: &mut GameState,
     registry: &CardRegistry,
     name: &str,
@@ -356,7 +362,7 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
 }
 
 /// Place a named card directly into `owner`'s graveyard. Equivalent to
-/// `named_creature(...)` followed by `state.move_object(..., Graveyard)`,
+/// `named_permanent(...)` followed by `state.move_object(..., Graveyard)`,
 /// which appeared in ~9 tests. Useful for setting up graveyard-matters
 /// scenarios (Dearly Departed in the graveyard, Unbreathing Horde
 /// counting Zombies, flashback targets, reanimation fodder).
@@ -366,7 +372,7 @@ pub fn named_card_in_graveyard(
     name: &str,
     owner: PlayerId,
 ) -> ObjectId {
-    let id = named_creature(state, registry, name, owner);
+    let id = named_permanent(state, registry, name, owner);
     state.move_object(id, Zone::Graveyard, registry);
     id
 }
@@ -482,7 +488,7 @@ pub fn named_equipment(
     name: &str,
     owner: PlayerId,
 ) -> ObjectId {
-    let id = named_creature(state, registry, name, owner);
+    let id = named_permanent(state, registry, name, owner);
     let obj = state.get_object_mut(id).unwrap();
     obj.is_equipment = true;
     id

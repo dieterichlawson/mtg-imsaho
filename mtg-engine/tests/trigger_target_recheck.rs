@@ -25,7 +25,7 @@ fn a_trigger_fizzles_when_its_target_stops_satisfying_the_cards_restriction() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let angel = named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
     let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
 
     // A card in the graveyard that is NOT a Spirit. It satisfies the generic
@@ -52,7 +52,7 @@ fn a_trigger_with_a_still_legal_target_resolves() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let angel = named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
     let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
     let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
@@ -76,7 +76,7 @@ fn an_attack_in_an_earlier_turn_does_not_keep_the_brute_transformed() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
 
-    let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
 
     // It attacked on the front face this turn...
@@ -100,7 +100,7 @@ fn an_attack_this_turn_keeps_the_brute_transformed() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
 
-    let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
 
     behavior.on_attacks(&mut state, scholar, AttackInfo::new(scholar, P1), &[], &reg);
@@ -125,7 +125,7 @@ fn test_angel_of_flight_alabaster_fizzles_on_illegal_target() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let angel = named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
     let angel_card = reg.get_id_by_name("Angel of Flight Alabaster").unwrap();
 
     let spirit = ready_creature(&mut state, P0, 2, 2);
@@ -158,7 +158,7 @@ fn test_grimgrin_attack_trigger_fizzles_on_illegal_target() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     let grimgrin_card = reg.get_id_by_name("Grimgrin, Corpse-Born").unwrap();
 
     let target_creature = ready_creature(&mut state, P1, 3, 3);
@@ -195,7 +195,7 @@ fn test_morkrut_banshee_fizzles_on_illegal_target() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
 
-    let banshee = named_creature(&mut state, &reg, "Morkrut Banshee", P0);
+    let banshee = named_permanent(&mut state, &reg, "Morkrut Banshee", P0);
     let banshee_card = reg.get_id_by_name("Morkrut Banshee").unwrap();
 
     let target_creature = ready_creature(&mut state, P1, 4, 4);
@@ -226,7 +226,7 @@ fn test_snapcaster_trigger_fizzles_if_target_exiled() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let snapcaster = named_creature(&mut state, &reg, "Snapcaster Mage", P0);
+    let snapcaster = named_permanent(&mut state, &reg, "Snapcaster Mage", P0);
     let snapcaster_card = reg.get_id_by_name("Snapcaster Mage").unwrap();
 
     let instant = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
@@ -261,7 +261,7 @@ fn reaper_target_bounced_before_resolve() {
     let mut state = game_at_step(Step::EndStep, P0);
     state.creature_died_this_turn = true;
 
-    let reaper = named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
+    let reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
     let reaper_card = reg.get_id_by_name("Reaper from the Abyss").unwrap();
 
     let creature = ready_creature(&mut state, P1, 3, 3);
@@ -293,7 +293,7 @@ fn reaper_target_becomes_demon_before_resolve() {
     let mut state = game_at_step(Step::EndStep, P0);
     state.creature_died_this_turn = true;
 
-    let reaper = named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
+    let reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
     let reaper_card = reg.get_id_by_name("Reaper from the Abyss").unwrap();
 
     let creature = ready_creature(&mut state, P1, 3, 3);

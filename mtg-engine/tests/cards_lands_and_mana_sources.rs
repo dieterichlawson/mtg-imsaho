@@ -210,7 +210,7 @@ fn avacyns_pilgrim_taps_for_white() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
 
     let legal = engine::legal_actions(&state, &reg);
     let mana_action = legal.actions.iter().find(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == pilgrim));
@@ -244,7 +244,7 @@ fn deranged_assistant_taps_for_colorless() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let assistant = named_creature(&mut state, &reg, "Deranged Assistant", P0);
+    let assistant = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
 
     // Need at least one card in library for the mill cost.
     let forest_id = reg.get_id_by_name("Forest").unwrap();
@@ -269,7 +269,7 @@ fn ghoulcallers_bell_mills_both_players() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let bell = named_creature(&mut state, &reg, "Ghoulcaller's Bell", P0);
+    let bell = named_permanent(&mut state, &reg, "Ghoulcaller's Bell", P0);
 
     // Put cards in both libraries.
     let forest_id = reg.get_id_by_name("Forest").unwrap();
@@ -302,7 +302,7 @@ fn graveyard_shovel_exiles_and_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
 
     // Put a creature in graveyard.
     let creature = ready_creature(&mut state, P1, 3, 3);
@@ -439,7 +439,7 @@ fn stony_silence_blocks_artifact_mana_abilities() {
     state.priority_player = Some(P0);
 
     // Put Sol Ring on the battlefield (artifact with mana ability).
-    let sol_ring = named_creature(&mut state, &reg, "Sol Ring", P0);
+    let sol_ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
 
     // Without Stony Silence: Sol Ring's mana ability should be available.
     let actions_before = engine::legal_actions(&state, &reg);
@@ -447,7 +447,7 @@ fn stony_silence_blocks_artifact_mana_abilities() {
     assert!(has_mana_ability, "Sol Ring mana ability should be available without Stony Silence");
 
     // Put Stony Silence on the battlefield.
-    let _stony = named_creature(&mut state, &reg, "Stony Silence", P0);
+    let _stony = named_permanent(&mut state, &reg, "Stony Silence", P0);
 
     // With Stony Silence: Sol Ring's mana ability should be blocked.
     let actions_after = engine::legal_actions(&state, &reg);
@@ -463,10 +463,10 @@ fn stony_silence_does_not_block_non_artifact_mana() {
     state.priority_player = Some(P0);
 
     // Put a Forest on the battlefield.
-    let forest = named_creature(&mut state, &reg, "Forest", P0);
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
 
     // Put Stony Silence on the battlefield.
-    let _stony = named_creature(&mut state, &reg, "Stony Silence", P0);
+    let _stony = named_permanent(&mut state, &reg, "Stony Silence", P0);
 
     // Forest mana ability should still work.
     let actions = engine::legal_actions(&state, &reg);

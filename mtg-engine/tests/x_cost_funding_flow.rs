@@ -17,23 +17,7 @@ use mtg_engine::funding::FundingResponse;
 use mtg_engine::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use mtg_engine::types::*;
 
-fn place_land(
-    state: &mut GameState,
-    registry: &CardRegistry,
-    name: &str,
-    owner: mtg_engine::ids::PlayerId,
-) -> mtg_engine::ids::ObjectId {
-    let card_id = registry
-        .get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {name}"));
-    let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
-    let obj = state.get_object_mut(id).unwrap();
-    obj.name = name.into();
-    obj.summoning_sick = false;
-    id
-}
-
-fn cast_devils_play(state: &GameState, registry: &CardRegistry, dp: mtg_engine::ids::ObjectId) -> GameState {
+fn cast_devils_play(state: &GameState, registry: &CardRegistry, dp: ObjectId) -> GameState {
     let legal = engine::legal_actions(state, registry);
     let cast_action = legal
         .actions
@@ -59,7 +43,7 @@ fn funding_prompt_is_presented_after_non_x_payment() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     for _ in 0..3 {
-        place_land(&mut state, &registry, "Mountain", P0);
+        named_permanent(&mut state, &registry, "Mountain", P0);
     }
     let _ = ready_creature(&mut state, P1, 2, 2);
 
@@ -86,7 +70,7 @@ fn rules_strict_spell_stays_in_hand_until_funding_completes() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     let mountains: Vec<_> = (0..3)
-        .map(|_| place_land(&mut state, &registry, "Mountain", P0))
+        .map(|_| named_permanent(&mut state, &registry, "Mountain", P0))
         .collect();
     let _ = ready_creature(&mut state, P1, 2, 2);
 
@@ -146,7 +130,7 @@ fn x_equals_sum_of_funding_allocations() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     for _ in 0..5 {
-        place_land(&mut state, &registry, "Mountain", P0);
+        named_permanent(&mut state, &registry, "Mountain", P0);
     }
     let _ = ready_creature(&mut state, P1, 5, 5);
 
@@ -176,7 +160,7 @@ fn funding_prefers_pool_then_taps() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 2);
-    let mountain = place_land(&mut state, &registry, "Mountain", P0);
+    let mountain = named_permanent(&mut state, &registry, "Mountain", P0);
     let _ = ready_creature(&mut state, P1, 5, 5);
 
     let post_cast = cast_devils_play(&state, &registry, dp);
@@ -210,7 +194,7 @@ fn x_equals_zero_is_legal_and_pool_unchanged() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     for _ in 0..3 {
-        place_land(&mut state, &registry, "Mountain", P0);
+        named_permanent(&mut state, &registry, "Mountain", P0);
     }
     let _ = ready_creature(&mut state, P1, 2, 2);
 
@@ -239,7 +223,7 @@ fn spellcast_event_fires_after_funding_not_before() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     for _ in 0..3 {
-        place_land(&mut state, &registry, "Mountain", P0);
+        named_permanent(&mut state, &registry, "Mountain", P0);
     }
     let _ = ready_creature(&mut state, P1, 2, 2);
 
@@ -279,7 +263,7 @@ fn spells_cast_counter_increments_after_funding() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
     for _ in 0..2 {
-        place_land(&mut state, &registry, "Mountain", P0);
+        named_permanent(&mut state, &registry, "Mountain", P0);
     }
     let _ = ready_creature(&mut state, P1, 2, 2);
 
@@ -299,33 +283,42 @@ fn spells_cast_counter_increments_after_funding() {
     );
 }
 
+/// The autotap planner has to spend floating mana before it decides which
+/// lands to tap: with {B} in the pool, one untapped Swamp and one tapped one,
+/// Altar's Reap ({1}{B}, sacrifice a creature) is payable — and paying it must
+/// leave the pool empty, the untapped Swamp tapped, and the creature
+/// sacrificed.
+///
+/// This used to be named `..._would_cast_if_supported`, and asserted only that
+/// the cast was offered before dropping the resulting state on the floor.
 #[test]
-fn floating_plus_swamp_and_sac_cost_would_cast_if_supported() {
-    // Regression scenario the user explicitly worried about:
-    //   "1B floating, 1 tapped Swamp, 1 untapped Swamp, legal sac target,
-    //    spell with cost {1}{B} and a sacrifice additional cost"
-    // The autotap planner already handles this correctly via Phase 0
-    // (deduct pool before planning). This test validates using a simpler
-    // non-X stand-in: Altar's Reap ({1}{B}, sac a creature).
+fn floating_mana_is_spent_before_lands_are_tapped() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let reap = spell_in_hand(&mut state, &registry, "Altar's Reap", P0);
 
-    // Exactly one untapped Swamp + {B} floating.
-    place_land(&mut state, &registry, "Swamp", P0);
-    let tapped_sw = place_land(&mut state, &registry, "Swamp", P0);
-    state.get_object_mut(tapped_sw).unwrap().tapped = true;
+    let untapped = named_permanent(&mut state, &registry, "Swamp", P0);
+    let already_tapped = named_permanent(&mut state, &registry, "Swamp", P0);
+    state.get_object_mut(already_tapped).unwrap().tapped = true;
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
 
-    let _sac_target = ready_creature(&mut state, P0, 1, 1);
+    let sac_target = ready_creature(&mut state, P0, 1, 1);
+
+    assert!(can_cast(&state, &registry, reap),
+        "{{B}} floating plus one untapped Swamp covers {{1}}{{B}}");
 
     let legal = engine::legal_actions(&state, &registry);
-    let cast_action = legal
-        .actions
-        .iter()
+    let cast = legal.actions.iter()
         .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == reap))
-        .expect(
-            "Altar's Reap ({1}{B}, sac) should be castable with {B} floating + 1 untapped Swamp + sac target",
-        );
-    let _new_state = engine::submit_action(&state, cast_action, &registry);
+        .expect("the cast the assertion above just found")
+        .clone();
+    let state = engine::submit_action(&state, &cast, &registry);
+
+    assert_eq!(state.get_object(reap).unwrap().zone, Zone::Stack, "the spell was cast");
+    assert!(state.get_object(untapped).unwrap().tapped,
+        "the untapped Swamp paid the generic half");
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0,
+        "and the floating {{B}} paid the coloured half rather than being left behind");
+    assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
+        "the additional cost was paid too (CR 601.2h)");
 }

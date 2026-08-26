@@ -277,7 +277,7 @@ fn falkenrath_noble_triggers_on_opponent_creature_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
 
     // P1's creature dies.
     let enemy = ready_creature(&mut state, P1, 1, 1);
@@ -302,7 +302,7 @@ fn falkenrath_noble_triggers_on_own_creature_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
     let ally = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(ally).unwrap().damage_marked = 2;
 
@@ -325,7 +325,7 @@ fn falkenrath_noble_triggers_on_self_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
+    let noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
     state.get_object_mut(noble).unwrap().damage_marked = 5;
 
     let p0_life_before = state.get_player(P0).life;
@@ -394,7 +394,7 @@ fn bonds_of_faith_gives_plus_two_to_human() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar is a Human.
-    let creature = named_creature(&mut state, &reg, "Elder Cathar", P0);
+    let creature = named_permanent(&mut state, &reg, "Elder Cathar", P0);
 
     let base_power = state.effective_power(creature, &reg).unwrap();
     let base_toughness = state.effective_toughness(creature, &reg).unwrap();

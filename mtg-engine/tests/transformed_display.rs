@@ -30,7 +30,7 @@ fn the_view_shows_whichever_face_a_dfc_is_currently_on() {
 
     for name in &dfcs {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let id = named_creature(&mut state, &reg, name, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
         let behavior = reg.get(state.get_object(id).unwrap().card_id).unwrap();
         let front = behavior.card_data();
         let back = behavior.back_face_data().unwrap();

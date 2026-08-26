@@ -8,7 +8,7 @@ use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
 fn setup_skirsdag(state: &mut GameState, reg: &CardRegistry) -> (ObjectId, ObjectId, ObjectId) {
-    let priest = named_creature(state, reg, "Skirsdag High Priest", P0);
+    let priest = named_permanent(state, reg, "Skirsdag High Priest", P0);
     let creature1 = ready_creature(state, P0, 2, 2);
     let creature2 = ready_creature(state, P0, 2, 2);
     state.creature_died_this_turn = true;
@@ -43,7 +43,7 @@ fn test_back_from_the_brink_can_be_responded_to() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let brink = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    let brink = named_permanent(&mut state, &reg, "Back from the Brink", P0);
     let gy_creature = named_card_in_graveyard(&mut state, &reg, "Unbreathing Horde", P0);
 
     let behavior = reg.get(state.get_object(brink).unwrap().card_id).unwrap();
@@ -69,7 +69,7 @@ fn test_kessig_wolf_run_pump_can_be_responded_to() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
     let target = ready_creature(&mut state, P0, 2, 2);
 
     state.last_activated_x_value = Some(3);
@@ -99,7 +99,7 @@ fn test_nephalia_drownyard_mill_can_be_responded_to() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let drownyard = named_creature(&mut state, &reg, "Nephalia Drownyard", P0);
+    let drownyard = named_permanent(&mut state, &reg, "Nephalia Drownyard", P0);
     add_library_cards(&mut state, P1, 5);
 
     let lib_before = state.players[1].library_order.len();
@@ -127,7 +127,7 @@ fn test_tree_of_redemption_exchange_can_be_responded_to() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _tree = named_creature(&mut state, &reg, "Tree of Redemption", P0);
+    let _tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     let life_before = state.players[0].life;
 
     let behavior = reg.get(state.get_object(_tree).unwrap().card_id).unwrap();
@@ -153,8 +153,8 @@ fn full_moons_rise_regenerate_can_be_responded_to() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let full_moon = named_creature(&mut state, &reg, "Full Moon's Rise", P0);
-    let werewolf = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
+    let full_moon = named_permanent(&mut state, &reg, "Full Moon's Rise", P0);
+    let werewolf = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
 
     let behavior = reg.get(state.get_object(full_moon).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, full_moon, 0, &[], &reg);
@@ -179,7 +179,7 @@ fn mirror_mad_phantasm_opponent_can_respond() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let phantasm = named_creature(&mut state, &reg, "Mirror-Mad Phantasm", P0);
+    let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
     add_library_cards(&mut state, P0, 10);
 
     let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
@@ -200,7 +200,7 @@ fn mirror_mad_phantasm_source_removed_before_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let phantasm = named_creature(&mut state, &reg, "Mirror-Mad Phantasm", P0);
+    let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
     add_library_cards(&mut state, P0, 10);
 
     let lib_before = state.players[0].library_order.len();
@@ -287,7 +287,7 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let priest = named_creature(&mut state, &reg, "Skirsdag High Priest", P0);
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
     let _creature_nonsick = ready_creature(&mut state, P0, 2, 2);
     let creature_sick = sick_creature(&mut state, P0, 2, 2);
     state.creature_died_this_turn = true;

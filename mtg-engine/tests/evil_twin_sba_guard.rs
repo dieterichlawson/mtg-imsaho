@@ -50,7 +50,7 @@ fn guard_armed_at_entry_protects_before_copy_resolves() {
 fn copy_success_disarms_guard_and_is_mortal_again() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let bears = named_creature(&mut state, &r, "Grizzly Bears", P1);
+    let bears = named_permanent(&mut state, &r, "Grizzly Bears", P1);
     let twin = enter_twin(&mut state, &r);
 
     // Resolve the copy onto Grizzly Bears.
@@ -73,7 +73,7 @@ fn copy_success_disarms_guard_and_is_mortal_again() {
 fn declining_copy_lets_the_0_0_die() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let _other = named_creature(&mut state, &r, "Grizzly Bears", P1);
+    let _other = named_permanent(&mut state, &r, "Grizzly Bears", P1);
     let twin = enter_twin(&mut state, &r);
 
     // Present the copy choice, then decline it.

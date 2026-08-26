@@ -25,7 +25,7 @@ fn boneyard_wurm_pt_equals_creatures_in_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wurm = named_creature(&mut state, &reg, "Boneyard Wurm", P0);
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
 
     // No creatures in graveyard yet.
     assert_eq!(state.effective_power(wurm, &reg).unwrap(), 0);
@@ -49,7 +49,7 @@ fn splinterfright_mills_on_upkeep() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let _splinter = named_creature(&mut state, &reg, "Splinterfright", P0);
+    let _splinter = named_permanent(&mut state, &reg, "Splinterfright", P0);
 
     // Put cards in library.
     for _ in 0..4 {
@@ -75,7 +75,7 @@ fn bloodgift_demon_draws_and_loses_life() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let _demon = named_creature(&mut state, &reg, "Bloodgift Demon", P0);
+    let _demon = named_permanent(&mut state, &reg, "Bloodgift Demon", P0);
 
     // Library card to draw.
     let lib = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
@@ -112,7 +112,7 @@ fn endless_ranks_creates_zombie_tokens() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let _enchantment = named_creature(&mut state, &reg, "Endless Ranks of the Dead", P0);
+    let _enchantment = named_permanent(&mut state, &reg, "Endless Ranks of the Dead", P0);
 
     // Create 5 Zombies on the battlefield.
     for _ in 0..5 {
@@ -141,7 +141,7 @@ fn reaper_destroys_non_demon_on_morbid_end_step() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
 
-    let _reaper = named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
+    let _reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
 
     // Set morbid.
@@ -162,7 +162,7 @@ fn reaper_no_trigger_without_morbid() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
 
-    let _reaper = named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
+    let _reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
 
     // No morbid.
@@ -224,7 +224,7 @@ fn angel_of_flight_alabaster_returns_spirit() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let _angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let _angel = named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
 
     // Put a Spirit in graveyard.
     let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
@@ -244,7 +244,7 @@ fn charmbreaker_devils_plus4_on_spell_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
 
     // Put an instant spell on the stack and fire SpellCast event.
     let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();

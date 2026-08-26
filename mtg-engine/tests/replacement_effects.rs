@@ -36,7 +36,7 @@ fn a_check_land_enters_tapped_only_without_its_land_types() {
             "{land} alone enters tapped");
 
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        named_creature(&mut state, &reg, enabler, P0);
+        named_permanent(&mut state, &reg, enabler, P0);
         let with = spell_in_hand(&mut state, &reg, land, P0);
         state.move_object(with, Zone::Battlefield, &reg);
         assert!(!state.get_object(with).unwrap().tapped,
@@ -100,9 +100,9 @@ fn a_replacement_can_apply_from_the_graveyard_to_another_permanent() {
 fn a_replaced_event_is_not_replaced_again() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    named_creature(&mut state, &reg, "Undead Alchemist", P0);
-    named_creature(&mut state, &reg, "Undead Alchemist", P0);
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P0);
 
     for _ in 0..10 {
         let id = state.create_object(
@@ -129,8 +129,8 @@ fn a_replaced_event_is_not_replaced_again() {
 fn modifying_replacements_compound() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_creature(&mut state, &reg, "Parallel Lives", P0);
-    named_creature(&mut state, &reg, "Parallel Lives", P0);
+    named_permanent(&mut state, &reg, "Parallel Lives", P0);
+    named_permanent(&mut state, &reg, "Parallel Lives", P0);
 
     let before = state.objects_in_zone(Zone::Battlefield, P0).iter().filter(|o| o.is_token).count();
     state.create_token_with_subtypes(
@@ -236,8 +236,8 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place two Undead Alchemists for P0
-    let _alch1 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
-    let _alch2 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+    let _alch1 = named_permanent(&mut state, &registry, "Undead Alchemist", P0);
+    let _alch2 = named_permanent(&mut state, &registry, "Undead Alchemist", P0);
 
     // Put some cards in P1's library
     for _ in 0..10 {
@@ -294,7 +294,7 @@ fn essence_of_the_wild_applies_to_a_token_it_did_not_resolve() {
 
     // Just being on the battlefield is enough — no hook is fired here on
     // purpose, because a replacement effect is not a trigger.
-    let _eotw = named_creature(&mut state, &registry, "Essence of the Wild", P0);
+    let _eotw = named_permanent(&mut state, &registry, "Essence of the Wild", P0);
 
     // Create a token — it should enter as a copy of Essence of the Wild
     let token = state.create_token_with_subtypes(

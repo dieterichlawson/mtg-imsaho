@@ -21,8 +21,8 @@ fn a_copy_reverts_to_its_printed_card_on_leaving_the_battlefield() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
-    let victim = named_creature(&mut state, &reg, "Bloodgift Demon", P1);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    let victim = named_permanent(&mut state, &reg, "Bloodgift Demon", P1);
 
     // Resolve the copy the way the ETB choice does.
     mtg_engine::engine::apply_pending_effect(
@@ -50,7 +50,7 @@ fn an_exchanged_base_toughness_does_not_survive_a_zone_change() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let tree = named_creature(&mut state, &reg, "Tree of Redemption", P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     let printed = state.get_object(tree).unwrap().toughness;
     assert_eq!(printed, Some(13), "test precondition: Tree of Redemption is 0/13");
 
@@ -89,7 +89,7 @@ fn a_token_copy_of_a_werewolf_cannot_transform() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
     let token = state.create_token_copy(waif, P0, &reg);
     assert!(state.get_object(token).unwrap().is_token, "test precondition");
 
@@ -115,7 +115,7 @@ fn bug_card_state_not_reset_on_zone_change() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Ludevic's Test Subject
-    let subject = named_creature(&mut state, &registry, "Ludevic's Test Subject", P0);
+    let subject = named_permanent(&mut state, &registry, "Ludevic's Test Subject", P0);
 
     // Add some hatchling counters via card_state
     if let Some(obj) = state.get_object_mut(subject) {

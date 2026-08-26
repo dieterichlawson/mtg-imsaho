@@ -104,7 +104,7 @@ fn a_card_with_no_mana_cost_gains_no_flashback() {
     // A graveyard card with no mana cost at all.
     let costless = state.create_object(mtg_engine::ids::CardId(0), P0, Zone::Graveyard, None, None);
 
-    let snap_obj = named_creature(&mut state, &reg, "Snapcaster Mage", P0);
+    let snap_obj = named_permanent(&mut state, &reg, "Snapcaster Mage", P0);
     let before = state.until_end_of_turn.len();
     behavior.on_enter_battlefield(&mut state, snap_obj,
         &[mtg_engine::actions::Target::Object(costless)], &reg);

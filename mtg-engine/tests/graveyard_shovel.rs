@@ -16,7 +16,7 @@ fn targets_player_not_card() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
     // Give P0 mana to activate.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
@@ -44,7 +44,7 @@ fn auto_exiles_single_card() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put one creature in P1's graveyard.
@@ -66,7 +66,7 @@ fn no_life_gain_for_non_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put a non-creature in P1's graveyard.
@@ -86,7 +86,7 @@ fn multiple_cards_creates_resolution_choice() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Put two cards in P1's graveyard.
@@ -112,7 +112,7 @@ fn resolution_choice_exiles_and_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
@@ -145,7 +145,7 @@ fn cannot_target_player_with_empty_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shovel = named_creature(&mut state, &reg, "Graveyard Shovel", P0);
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // P1 has no cards in graveyard. P0 has one card.

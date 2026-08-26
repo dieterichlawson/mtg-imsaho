@@ -29,8 +29,8 @@ fn elder_cathar_trigger_is_removed_with_no_legal_targets() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar dies with no other creature its controller controls.
-    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P0);
-    named_creature(&mut state, &reg, "Walking Corpse", P1); // opponent's — not a legal target
+    let cathar = named_permanent(&mut state, &reg, "Elder Cathar", P0);
+    named_permanent(&mut state, &reg, "Walking Corpse", P1); // opponent's — not a legal target
     mtg_engine::destruction::try_destroy(&mut state, cathar, &reg);
     triggers::collect_triggers(&mut state, &reg);
 
@@ -52,8 +52,8 @@ fn elder_cathar_puts_counters_on_the_declared_target() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P0);
-    let bear = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let cathar = named_permanent(&mut state, &reg, "Elder Cathar", P0);
+    let bear = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     mtg_engine::destruction::try_destroy(&mut state, cathar, &reg);
     triggers::process_triggers(&mut state, &reg);
 
@@ -68,8 +68,8 @@ fn elder_cathar_human_bonus_survives_the_declared_target_path() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P0);
-    let human = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let cathar = named_permanent(&mut state, &reg, "Elder Cathar", P0);
+    let human = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
     mtg_engine::destruction::try_destroy(&mut state, cathar, &reg);
     triggers::process_triggers(&mut state, &reg);
 

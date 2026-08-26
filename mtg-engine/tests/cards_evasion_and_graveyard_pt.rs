@@ -27,8 +27,8 @@ fn battleground_geist_buffs_other_spirits() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let geist = named_creature(&mut state, &reg, "Battleground Geist", P0);
-    let spirit = named_creature(&mut state, &reg, "Chapel Geist", P0);
+    let geist = named_permanent(&mut state, &reg, "Battleground Geist", P0);
+    let spirit = named_permanent(&mut state, &reg, "Chapel Geist", P0);
     let non_spirit = ready_creature(&mut state, P0, 2, 2);
 
     // Battleground Geist: 3/3 base. Should NOT buff itself ("other").
@@ -46,8 +46,8 @@ fn gallows_warden_buffs_other_spirits() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let warden = named_creature(&mut state, &reg, "Gallows Warden", P0);
-    let spirit = named_creature(&mut state, &reg, "Chapel Geist", P0);
+    let warden = named_permanent(&mut state, &reg, "Gallows Warden", P0);
+    let spirit = named_permanent(&mut state, &reg, "Chapel Geist", P0);
 
     // Warden: 3/3 base, should NOT buff itself.
     assert_eq!(state.effective_toughness(warden, &reg), Some(3));
@@ -62,8 +62,8 @@ fn spirit_lord_doesnt_buff_opponent() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _geist = named_creature(&mut state, &reg, "Battleground Geist", P0);
-    let enemy_spirit = named_creature(&mut state, &reg, "Chapel Geist", P1);
+    let _geist = named_permanent(&mut state, &reg, "Battleground Geist", P0);
+    let enemy_spirit = named_permanent(&mut state, &reg, "Chapel Geist", P1);
 
     // Opponent's spirit should NOT get the buff.
     assert_eq!(state.effective_power(enemy_spirit, &reg), Some(2));
@@ -150,7 +150,7 @@ fn orchard_spirit_not_blocked_by_ground() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let spirit = named_creature(&mut state, &reg, "Orchard Spirit", P0);
+    let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
     let ground = ready_creature(&mut state, P1, 3, 3);
 
     assert!(!combat::can_block_attacker(&state, ground, spirit, &reg),
@@ -163,8 +163,8 @@ fn orchard_spirit_blocked_by_flyer() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let spirit = named_creature(&mut state, &reg, "Orchard Spirit", P0);
-    let flyer = named_creature(&mut state, &reg, "Chapel Geist", P1);
+    let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
+    let flyer = named_permanent(&mut state, &reg, "Chapel Geist", P1);
 
     assert!(combat::can_block_attacker(&state, flyer, spirit, &reg),
         "Flyer should be able to block Orchard Spirit");
@@ -176,8 +176,8 @@ fn orchard_spirit_blocked_by_reach() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let spirit = named_creature(&mut state, &reg, "Orchard Spirit", P0);
-    let spider = named_creature(&mut state, &reg, "Somberwald Spider", P1);
+    let spirit = named_permanent(&mut state, &reg, "Orchard Spirit", P0);
+    let spider = named_permanent(&mut state, &reg, "Somberwald Spider", P1);
 
     assert!(combat::can_block_attacker(&state, spider, spirit, &reg),
         "Reach creature should be able to block Orchard Spirit");

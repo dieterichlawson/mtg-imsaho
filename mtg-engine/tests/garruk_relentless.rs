@@ -11,7 +11,7 @@ fn garruk_damage_respects_protection() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
     state.get_object_mut(garruk).unwrap().subtypes.push("Green".into());
 
@@ -41,7 +41,7 @@ fn garruk_fight_creature_lifelink_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
 
     let creature = ready_creature(&mut state, P1, 2, 2);

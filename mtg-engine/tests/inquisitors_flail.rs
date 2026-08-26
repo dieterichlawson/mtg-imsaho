@@ -149,7 +149,7 @@ fn bug_inquisitors_flail_doubles_fight_damage() {
 
     // Place a creature with Inquisitor's Flail equipped
     let creature = ready_creature(&mut state, P0, 3, 3);
-    let flail = named_creature(&mut state, &registry, "Inquisitor's Flail", P0);
+    let flail = named_permanent(&mut state, &registry, "Inquisitor's Flail", P0);
     if let Some(obj) = state.get_object_mut(flail) {
         obj.is_equipment = true;
         obj.attached_to = Some(creature);

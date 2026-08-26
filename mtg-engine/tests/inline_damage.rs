@@ -83,7 +83,7 @@ fn prevent_and_remove_a_counter_replaces_the_damage() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let source = ready_creature(&mut state, P0, 13, 13);
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
     let vanilla = ready_creature(&mut state, P1, 3, 15);
 
@@ -157,7 +157,7 @@ fn blasphemous_act_consults_each_creature_separately() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
     let vanilla = ready_creature(&mut state, P1, 3, 15);
 
@@ -182,7 +182,7 @@ fn harvest_pyres_chosen_x_still_goes_through_the_pipeline() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
     for _ in 0..3 {
         named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);

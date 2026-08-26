@@ -100,7 +100,7 @@ fn bitterheart_witch_does_not_offer_a_protected_player() {
     give_ward(&mut state, ward, P1);
     curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
 
-    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
     mtg_engine::destruction::try_destroy(&mut state, witch, &reg);
 
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
@@ -129,7 +129,7 @@ fn bitterheart_witch_still_offers_the_player_for_a_curse_of_another_color() {
     give_ward(&mut state, ward, P1);
     curse_in_library(&mut state, &reg, "Curse of Death's Hold", P0);
 
-    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
     mtg_engine::destruction::try_destroy(&mut state, witch, &reg);
 
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
@@ -154,7 +154,7 @@ fn a_curse_does_not_enter_attached_to_a_player_it_cannot_enchant() {
     let ward_id = give_ward(&mut state, ward, P1);
     let curse = curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
 
-    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
     mtg_engine::destruction::try_destroy(&mut state, witch, &reg);
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
 

@@ -61,7 +61,7 @@ fn wolf_still_deals_damage() {
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     // Use a named Wolf card.
-    let wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
+    let wolf = named_permanent(&mut state, &reg, "Darkthicket Wolf", P0);
     state.combat.as_mut().unwrap().attackers.insert(wolf, P1);
 
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
@@ -98,7 +98,7 @@ fn transforms_front_face_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let sentry = named_creature(&mut state, &reg, "Thraben Sentry", P0);
+    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
     assert!(!state.get_object(sentry).unwrap().is_transformed);
     assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Sentry");
 
@@ -118,7 +118,7 @@ fn transforms_back_face_human() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Start with an already-transformed Thraben Sentry (now Thraben Militia).
-    let sentry = named_creature(&mut state, &reg, "Thraben Sentry", P0);
+    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
     if let Some(obj) = state.get_object_mut(sentry) {
         obj.is_transformed = true;
         obj.name = "Thraben Militia".into();
@@ -143,7 +143,7 @@ fn does_not_transform_non_dfc_human() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elite Inquisitor is a Human but not a DFC.
-    let inquisitor = named_creature(&mut state, &reg, "Elite Inquisitor", P0);
+    let inquisitor = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
     assert!(!state.get_object(inquisitor).unwrap().is_transformed);
 
     let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
@@ -168,7 +168,7 @@ fn bug_moonmist_second_cast_fails() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place a Werewolf DFC (Village Ironsmith)
-    let werewolf = named_creature(&mut state, &registry, "Village Ironsmith", P0);
+    let werewolf = named_permanent(&mut state, &registry, "Village Ironsmith", P0);
     assert!(!state.get_object(werewolf).unwrap().is_transformed, "Should start as front face");
 
     // Cast first Moonmist — transforms all Humans to Werewolves

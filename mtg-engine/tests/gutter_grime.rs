@@ -25,7 +25,7 @@ fn gutter_grime_creates_dynamic_pt_ooze() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put Gutter Grime on the battlefield.
-    let gutter_grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let gutter_grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
     // Put a nontoken creature on the battlefield for P0.
     let creature = ready_creature(&mut state, P0, 2, 2);
@@ -67,7 +67,7 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gutter_grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let gutter_grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
     // Kill first creature.
     let creature1 = ready_creature(&mut state, P0, 2, 2);
@@ -121,7 +121,7 @@ fn gutter_grime_ignores_token_deaths() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gutter_grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let gutter_grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
     // Create a token creature.
     let token_id = state.create_token("Spirit", P0, 1, 1,
@@ -147,7 +147,7 @@ fn gutter_grime_ignores_opponent_deaths() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gutter_grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let gutter_grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
     // Create opponent's creature.
     let opp_creature = ready_creature(&mut state, P1, 2, 2);
@@ -170,7 +170,7 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gutter_grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let gutter_grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
     // Kill a creature to create an Ooze.
     let creature = ready_creature(&mut state, P0, 2, 2);
@@ -227,7 +227,7 @@ fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grime = named_creature(&mut state, &registry, "Gutter Grime", P0);
+    let grime = named_permanent(&mut state, &registry, "Gutter Grime", P0);
     let slime_before = state
         .get_object(grime)
         .unwrap()

@@ -22,8 +22,8 @@ fn ghost_quarter_can_target_non_token_land() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gq = named_creature(&mut state, &reg, "Ghost Quarter", P0);
-    let forest = named_creature(&mut state, &reg, "Forest", P1);
+    let gq = named_permanent(&mut state, &reg, "Ghost Quarter", P0);
+    let forest = named_permanent(&mut state, &reg, "Forest", P1);
     assert!(state.get_object(forest).unwrap().card_types.is_empty(),
         "test precondition: non-token permanents have empty object-level card_types");
 
@@ -48,7 +48,7 @@ fn any_target_includes_non_token_planeswalker() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P1);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
     state.add_counters(liliana, CounterType::Loyalty, 3);
     assert!(state.get_object(liliana).unwrap().card_types.is_empty(),
         "test precondition: non-token permanents have empty object-level card_types");

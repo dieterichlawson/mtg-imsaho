@@ -75,7 +75,7 @@ fn a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses() {
 
         // P0 controls the permanent and is the active player: it fires.
         let mut own = game_at_step(*step, P0);
-        let _id = named_creature(&mut own, &reg, name, P0);
+        let _id = named_permanent(&mut own, &reg, name, P0);
         // Several of these want a graveyard card to target, so give every one
         // something to find — a missing target must never be the reason
         // nothing fired.
@@ -86,7 +86,7 @@ fn a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses() {
 
         // Same board, opponent's step: it does not.
         let mut theirs = game_at_step(*step, P1);
-        let _id = named_creature(&mut theirs, &reg, name, P0);
+        let _id = named_permanent(&mut theirs, &reg, name, P0);
         let _spirit = named_card_in_graveyard(&mut theirs, &reg, "Voiceless Spirit", P0);
         collect_step_triggers(&mut theirs, *step, &reg);
         assert!(!has_trigger_for_card(&theirs, card),
@@ -107,7 +107,7 @@ fn nothing_reaches_the_stack_during_an_opponents_upkeep() {
     state.active_player = P1;
 
     // Place Charmbreaker Devils for P0 (NOT the active player)
-    let _devils = named_creature(&mut state, &registry, "Charmbreaker Devils", P0);
+    let _devils = named_permanent(&mut state, &registry, "Charmbreaker Devils", P0);
 
     // Process triggers during P1's upkeep
     mtg_engine::triggers::process_triggers(&mut state, &registry);

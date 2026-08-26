@@ -299,7 +299,7 @@ fn vampiric_fury_buffs_vampires() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Markov Patrician is a vampire.
-    let vamp = named_creature(&mut state, &reg, "Markov Patrician", P0);
+    let vamp = named_permanent(&mut state, &reg, "Markov Patrician", P0);
 
     // Non-vampire creature.
     let nonvamp = ready_creature(&mut state, P0, 2, 2);

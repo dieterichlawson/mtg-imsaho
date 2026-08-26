@@ -185,7 +185,7 @@ fn bug_ghost_quarter_missing_shuffle() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Ghost Quarter for P0
-    let gq = named_creature(&mut state, &registry, "Ghost Quarter", P0);
+    let gq = named_permanent(&mut state, &registry, "Ghost Quarter", P0);
 
     // Place a target land for P1
     let target_land = {

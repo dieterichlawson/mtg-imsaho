@@ -107,7 +107,7 @@ fn cda_does_not_count_tokens_in_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let fright = named_creature(&mut state, &reg, "Splinterfright", P0);
+    let fright = named_permanent(&mut state, &reg, "Splinterfright", P0);
     creature_token_in_graveyard(&mut state, &reg, "Spirit", vec!["Spirit".into()], P0);
 
     assert_eq!(state.effective_power(fright, &reg), Some(0),
@@ -129,7 +129,7 @@ fn cda_does_not_count_tokens_in_graveyard() {
 fn tree_destroyed_in_response_no_exchange() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let tree = named_creature(&mut state, &reg, "Tree of Redemption", P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     state.get_player_mut(P0).life = 4;
 
     state.move_object(tree, Zone::Graveyard, &reg);
@@ -146,7 +146,7 @@ fn tree_destroyed_in_response_no_exchange() {
 fn tree_bounced_in_response_no_exchange() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let tree = named_creature(&mut state, &reg, "Tree of Redemption", P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     state.get_player_mut(P0).life = 4;
 
     state.move_object(tree, Zone::Hand, &reg);
@@ -165,7 +165,7 @@ fn tree_bounced_in_response_no_exchange() {
 fn tree_on_the_battlefield_exchanges_normally() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let tree = named_creature(&mut state, &reg, "Tree of Redemption", P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     state.get_player_mut(P0).life = 4;
 
     reg.get(state.get_object(tree).unwrap().card_id).unwrap()
@@ -188,8 +188,8 @@ fn mindshrieker_milled_creature_triggers_undead_alchemist() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    named_creature(&mut state, &reg, "Undead Alchemist", P0);
-    let shrieker = named_creature(&mut state, &reg, "Mindshrieker", P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
 
     // Opponent's library: one creature card on top.
     let top = state.create_object(

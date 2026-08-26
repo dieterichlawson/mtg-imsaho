@@ -17,7 +17,7 @@ fn grants_player_hexproof() {
 
     assert!(!state.player_has_hexproof(P0, &reg), "Should not have hexproof without Orb");
 
-    let _orb = named_creature(&mut state, &reg, "Witchbane Orb", P0);
+    let _orb = named_permanent(&mut state, &reg, "Witchbane Orb", P0);
 
     assert!(state.player_has_hexproof(P0, &reg), "Should have hexproof with Orb");
     assert!(!state.player_has_hexproof(P1, &reg), "Opponent should not have hexproof");
@@ -30,7 +30,7 @@ fn opponent_cannot_target_hexproof_player() {
     let mut state = game_at_step(Step::PrecombatMain, P1);
 
     // P0 has Witchbane Orb.
-    let _orb = named_creature(&mut state, &reg, "Witchbane Orb", P0);
+    let _orb = named_permanent(&mut state, &reg, "Witchbane Orb", P0);
 
     // P1 tries to cast a player-targeting spell (like Bump in the Night) at P0.
     // Bump in the Night: {B} Sorcery - Target player loses 3 life.
@@ -58,7 +58,7 @@ fn can_target_self_with_hexproof() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has Witchbane Orb.
-    let _orb = named_creature(&mut state, &reg, "Witchbane Orb", P0);
+    let _orb = named_permanent(&mut state, &reg, "Witchbane Orb", P0);
 
     // P0 tries to cast Dream Twist (targets any player) at themselves.
     let twist = castable_spell(&mut state, &reg, "Dream Twist", P0);

@@ -28,7 +28,7 @@ fn travelers_amulet_finds_basic_land() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put the amulet on the battlefield.
-    let amulet = named_creature(&mut state, &reg, "Traveler's Amulet", P0);
+    let amulet = named_permanent(&mut state, &reg, "Traveler's Amulet", P0);
 
     // Put a basic Forest in P0's library.
     let forest_card_id = reg.get_id_by_name("Forest").unwrap();

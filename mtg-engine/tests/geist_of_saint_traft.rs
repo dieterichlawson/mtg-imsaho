@@ -17,7 +17,7 @@ fn geist_creates_angel_on_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
 
     // Simulate attack trigger.
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
@@ -42,7 +42,7 @@ fn angel_exiled_at_end_of_combat() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
@@ -72,7 +72,7 @@ fn angel_exiled_even_if_geist_dies() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
@@ -106,7 +106,7 @@ fn angel_exiled_even_if_geist_dies() {
 // -------------------------------------------------------------------------
 
 fn setup_geist_attacking(state: &mut mtg_engine::state::GameState, reg: &CardRegistry) -> (mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId) {
-    let geist = named_creature(state, reg, "Geist of Saint Traft", P0);
+    let geist = named_permanent(state, reg, "Geist of Saint Traft", P0);
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
@@ -166,7 +166,7 @@ fn geist_no_spurious_end_combat_trigger_when_did_not_attack() {
     let mut state = game_at_step(Step::EndCombat, P0);
 
     // Geist is on the battlefield but did not attack this turn.
-    let _geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let _geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
 
     // Push the StepStarted{EndCombat} event and collect triggers without resolving them.
     // This lets us inspect what was queued before auto-resolution clears the stack.

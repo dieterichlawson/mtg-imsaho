@@ -15,7 +15,7 @@ fn olivia_ability_0_deals_damage_and_makes_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
     state.get_object_mut(target).unwrap().subtypes = vec!["Human".into()];
 
@@ -42,7 +42,7 @@ fn olivia_ability_0_cannot_target_self() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
 
     let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, olivia, 0, &[Target::Object(olivia)], &reg);
@@ -58,7 +58,7 @@ fn olivia_ability_1_steals_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let target = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(target).unwrap().subtypes = vec!["Vampire".into()];
 
@@ -76,7 +76,7 @@ fn olivia_ability_1_rejects_non_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let target = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(target).unwrap().subtypes = vec!["Human".into()];
 
@@ -94,7 +94,7 @@ fn olivia_stolen_creatures_return_when_olivia_leaves() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let target1 = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(target1).unwrap().subtypes = vec!["Vampire".into()];
     let target2 = ready_creature(&mut state, P1, 3, 3);
@@ -126,7 +126,7 @@ fn olivia_ability_1_target_filter_requires_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let vampire = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(vampire).unwrap().subtypes = vec!["Vampire".into()];
     let human = ready_creature(&mut state, P1, 2, 2);

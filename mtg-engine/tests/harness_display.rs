@@ -48,7 +48,7 @@ fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
     let mut state = game_at_step(Step::Upkeep, P0);
 
     // Tormented Pariah transformed to Rampaging Werewolf.
-    let pariah = named_creature(&mut state, &registry, "Tormented Pariah", P0);
+    let pariah = named_permanent(&mut state, &registry, "Tormented Pariah", P0);
     mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
     let pariah_card_id = state.get_object(pariah).unwrap().card_id;
 
@@ -88,7 +88,7 @@ fn bug_boneyard_wurm_view_shows_base_pt() {
     }
 
     // Place Boneyard Wurm
-    let wurm = named_creature(&mut state, &registry, "Boneyard Wurm", P0);
+    let wurm = named_permanent(&mut state, &registry, "Boneyard Wurm", P0);
 
     // Effective P/T should be 3/3 (dynamic)
     let eff_p = state.effective_power(wurm, &registry).unwrap_or(0);
@@ -137,7 +137,7 @@ fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
     // three creatures total to enable the ability — so put one extra
     // creature on top of the High Priest and the two tap candidates.
     state.creature_died_this_turn = true;
-    let _high_priest = named_creature(&mut state, &registry, "Skirsdag High Priest", P0);
+    let _high_priest = named_permanent(&mut state, &registry, "Skirsdag High Priest", P0);
     let _victim_a = ready_creature(&mut state, P0, 2, 2);
     let _victim_b = ready_creature(&mut state, P0, 2, 2);
 
@@ -192,7 +192,7 @@ fn bug_e1_002_cardview_uses_effective_pt_for_cda_creatures() {
 
     // Another creature on P0's battlefield so Geist-Honored Monk's
     // CDA count is non-zero.
-    let _bears = named_creature(&mut state, &registry, "Grizzly Bears", P0);
+    let _bears = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
 
     // Geist-Honored Monk in P0's graveyard.
     let monk_card_id = registry.get_id_by_name("Geist-Honored Monk").unwrap();

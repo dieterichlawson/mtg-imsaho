@@ -98,8 +98,8 @@ fn non_active_player_triggers_resolve_first() {
 
     // Create P1's trigger first (lower ObjectId) to ensure the test
     // catches ordering bugs — HashMap iteration would process P1 first.
-    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P1);
-    let _thrower = named_creature(&mut state, &reg, "Rage Thrower", P0);
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P1);
+    let _thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
 
     // P1's creature dies. Both triggers fire.
     let victim = ready_creature(&mut state, P1, 1, 1);
@@ -156,8 +156,8 @@ fn same_player_multiple_triggers_all_fire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _thrower = named_creature(&mut state, &reg, "Rage Thrower", P0);
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let _thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
 
     let victim = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;
@@ -196,8 +196,8 @@ fn apnap_lifo_order_with_life_totals() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P1);
-    let _thrower = named_creature(&mut state, &reg, "Rage Thrower", P0);
+    let _noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P1);
+    let _thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
 
     let victim = ready_creature(&mut state, P1, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;

@@ -50,7 +50,7 @@ fn bug_t_skirsdag_cultist_pushes_damaged_by() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cultist = named_creature(&mut state, &registry, "Skirsdag Cultist", P0);
+    let cultist = named_permanent(&mut state, &registry, "Skirsdag Cultist", P0);
     let victim = ready_creature(&mut state, P1, 3, 3);
 
     // Drive the activated ability directly. We don't care about cost
@@ -226,7 +226,7 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
 
     // Pitchburn Devils on P0's side. Drive the death via SBA so the
     // SelfDies trigger enters the pipeline with stack-time targeting.
-    let pd = named_creature(&mut state, &registry, "Pitchburn Devils", P0);
+    let pd = named_permanent(&mut state, &registry, "Pitchburn Devils", P0);
     state.get_object_mut(pd).unwrap().damage_marked = 3;
     state.events.clear();
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
@@ -277,7 +277,7 @@ fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &registry, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &registry, "Olivia Voldaren", P0);
 
     // Garruk Relentless on P1's side with a starting loyalty of 3.
     let garruk_card_id = registry.get_id_by_name("Garruk Relentless").unwrap();

@@ -21,8 +21,8 @@ fn olivia_with_a_stolen_vampire() -> (mtg_engine::state::GameState, mtg_engine::
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
-    let vampire = named_creature(&mut state, &reg, "Markov Patrician", P1);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
     assert!(state.has_subtype(vampire, "Vampire", &reg), "test precondition");
 
     reg.get(state.get_object(olivia).unwrap().card_id).unwrap()
@@ -81,9 +81,9 @@ fn every_stolen_creature_goes_back_at_once() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &reg, "Olivia Voldaren", P0);
-    let a = named_creature(&mut state, &reg, "Markov Patrician", P1);
-    let b = named_creature(&mut state, &reg, "Vampire Interloper", P1);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let a = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+    let b = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
 
     let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(a)], &reg);

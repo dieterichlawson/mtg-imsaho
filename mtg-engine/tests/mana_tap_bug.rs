@@ -50,7 +50,7 @@ fn setup_turn19_state() -> (GameState, CardRegistry) {
     let _bloodhall = state.create_object(bloodhall_id, P0, Zone::Battlefield, None, None);
 
     // P0's creatures
-    let _vi = named_creature(&mut state, &registry, "Vampire Interloper", P0);
+    let _vi = named_permanent(&mut state, &registry, "Vampire Interloper", P0);
 
     // Falkenrath Marauders in hand
     let fm_id = registry.get_id_by_name("Falkenrath Marauders").unwrap();
@@ -70,8 +70,8 @@ fn setup_turn19_state() -> (GameState, CardRegistry) {
     state.create_object(township_id, P1, Zone::Battlefield, None, None);
 
     // P1's creatures
-    let _hamlet = named_creature(&mut state, &registry, "Hamlet Captain", P1);
-    let _champ = named_creature(&mut state, &registry, "Champion of the Parish", P1);
+    let _hamlet = named_permanent(&mut state, &registry, "Hamlet Captain", P1);
+    let _champ = named_permanent(&mut state, &registry, "Champion of the Parish", P1);
 
     state.players[0].life = 9;
     state.players[1].life = 6;

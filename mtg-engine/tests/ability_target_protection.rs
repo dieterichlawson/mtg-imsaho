@@ -46,7 +46,7 @@ fn avacynian_priest_cannot_target_creature_with_protection_from_its_source() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
     let zombie = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(zombie).unwrap().subtypes = vec!["Zombie".into()];
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
@@ -70,7 +70,7 @@ fn elder_of_laurels_cannot_target_creature_with_protection_from_its_source() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let elder = named_creature(&mut state, &reg, "Elder of Laurels", P0);
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
     let bear = ready_creature(&mut state, P0, 2, 2);
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
@@ -101,10 +101,10 @@ fn bug_protection_doesnt_prevent_zombie_source_targeting() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Grave Bramble for P1 (has protection from Zombies)
-    let bramble = named_creature(&mut state, &registry, "Grave Bramble", P1);
+    let bramble = named_permanent(&mut state, &registry, "Grave Bramble", P1);
 
     // Place Grimgrin for P0 (is a Zombie)
-    let grimgrin = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
 
     // Grimgrin is a Zombie. Its attack trigger targets a creature defending player controls.
     // Grave Bramble has protection from Zombies, so Grimgrin's ability should not be
@@ -153,7 +153,7 @@ fn bug_protection_incorrectly_prevents_blocking_zombies() {
     state.active_player = P0;
 
     // Place Grave Bramble for P1 (has Defender + Protection from Zombies)
-    let bramble = named_creature(&mut state, &registry, "Grave Bramble", P1);
+    let bramble = named_permanent(&mut state, &registry, "Grave Bramble", P1);
 
     // Place a Zombie attacker for P0
     let zombie = ready_creature(&mut state, P0, 2, 2);

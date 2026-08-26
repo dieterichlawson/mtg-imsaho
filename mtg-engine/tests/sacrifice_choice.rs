@@ -176,7 +176,7 @@ fn disciple_of_griselbrand_player_picks_highest_toughness_sacrifice() {
     // the highest toughness for max life gain).
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let disciple = named_creature(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
     let small = ready_creature(&mut state, P0, 1, 1);
     let big = ready_creature(&mut state, P0, 2, 6);
 
@@ -210,7 +210,7 @@ fn disciple_of_griselbrand_can_sacrifice_itself() {
     // (and lose the disciple). The legal_actions list should include this combo.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let disciple = named_creature(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
     let legal = engine::legal_actions(&state, &reg);
@@ -236,7 +236,7 @@ fn skirsdag_cultist_explicit_sacrifice() {
     // sacrifice and the opponent creature as the damage target.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
     let fodder = ready_creature(&mut state, P0, 1, 1);
     let target = ready_creature(&mut state, P1, 3, 3);
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
@@ -274,7 +274,7 @@ fn skirsdag_cultist_combo_count_excludes_self_targeting_sacrifices() {
     //   total = 8
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
     let _fodder = ready_creature(&mut state, P0, 1, 1);
     let _target = ready_creature(&mut state, P1, 3, 3);
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
@@ -304,7 +304,7 @@ fn skirsdag_cultist_targeting_own_creature_excludes_fizzling_combo() {
     // creature would fizzle the damage. The combo must be filtered out.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
     let own_creature = ready_creature(&mut state, P0, 2, 2);
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
@@ -340,7 +340,7 @@ fn disciple_does_not_appear_with_only_untapped_lands_and_no_floating_mana() {
     // {1} and then sacrificing that same creature, or other autotap weirdness.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let disciple = named_creature(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
     let _fodder = ready_creature(&mut state, P0, 1, 1);
     // 1 untapped Forest, but no mana floating in the pool.
     let forest_id = reg.get_id_by_name("Forest").unwrap();
@@ -362,7 +362,7 @@ fn disciple_appears_when_mana_is_already_in_the_pool() {
     // now the ability should appear.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let disciple = named_creature(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
     let _fodder = ready_creature(&mut state, P0, 1, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
@@ -386,7 +386,7 @@ fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Demonmail Hauberk (equipment)
-    let hauberk = named_creature(&mut state, &registry, "Demonmail Hauberk", P0);
+    let hauberk = named_permanent(&mut state, &registry, "Demonmail Hauberk", P0);
     if let Some(obj) = state.get_object_mut(hauberk) {
         obj.is_equipment = true;
     }

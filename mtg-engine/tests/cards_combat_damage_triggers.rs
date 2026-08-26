@@ -29,7 +29,7 @@ fn abattoir_ghoul_gains_life_from_damaged_creature_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ghoul = named_creature(&mut state, &reg, "Abattoir Ghoul", P0);
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
     let victim = ready_creature(&mut state, P1, 2, 3); // 2/3 creature
 
     // Simulate the ghoul having dealt damage to the victim this turn.
@@ -52,7 +52,7 @@ fn abattoir_ghoul_no_life_if_not_damaged_by_ghoul() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _ghoul = named_creature(&mut state, &reg, "Abattoir Ghoul", P0);
+    let _ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
     let victim = ready_creature(&mut state, P1, 2, 3);
 
     // Victim dies without being damaged by the ghoul.
@@ -70,7 +70,7 @@ fn abattoir_ghoul_uses_last_known_toughness_with_counters() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ghoul = named_creature(&mut state, &reg, "Abattoir Ghoul", P0);
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
     let victim = ready_creature(&mut state, P1, 2, 3); // base 2/3
 
     // Give the victim a +1/+1 counter (effective toughness = 4).
@@ -96,10 +96,10 @@ fn champion_of_the_parish_counter_on_human_etb() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let champion = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
 
     // Another Human enters the battlefield under our control.
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let human = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: human,
         controller: P0,
@@ -116,10 +116,10 @@ fn champion_of_the_parish_no_counter_on_non_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let champion = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
 
     // A non-Human creature enters.
-    let vampire = named_creature(&mut state, &reg, "Rakish Heir", P0);
+    let vampire = named_permanent(&mut state, &reg, "Rakish Heir", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: vampire,
         controller: P0,
@@ -136,10 +136,10 @@ fn champion_of_the_parish_no_counter_on_opponent_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let champion = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+    let champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
 
     // Opponent's Human enters.
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P1);
+    let human = named_permanent(&mut state, &reg, "Unruly Mob", P1);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: human,
         controller: P1,
@@ -159,10 +159,10 @@ fn stromkirk_noble_cant_be_blocked_by_humans() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let noble = named_creature(&mut state, &reg, "Stromkirk Noble", P0);
+    let noble = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
 
     // Create a Human blocker.
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P1);
+    let human = named_permanent(&mut state, &reg, "Unruly Mob", P1);
 
     // Set up combat.
     state.combat = Some(mtg_engine::state::CombatState::new());
@@ -186,8 +186,8 @@ fn rakish_heir_counter_on_other_vampire_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let _heir = named_creature(&mut state, &reg, "Rakish Heir", P0);
-    let other_vamp = named_creature(&mut state, &reg, "Stromkirk Noble", P0);
+    let _heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let other_vamp = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
 
     state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
         source: other_vamp,
@@ -207,7 +207,7 @@ fn rakish_heir_no_counter_on_non_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let _heir = named_creature(&mut state, &reg, "Rakish Heir", P0); // watcher
+    let _heir = named_permanent(&mut state, &reg, "Rakish Heir", P0); // watcher
     let non_vamp = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(non_vamp).unwrap().summoning_sick = false;
 
@@ -246,7 +246,7 @@ fn a_self_countering_creature_gets_its_counters_on_combat_damage() {
     let reg = registry();
     for (name, expected) in SELF_COUNTER_ON_COMBAT_DAMAGE {
         let mut state = game_at_step(Step::CombatDamage, P0);
-        let creature = named_creature(&mut state, &reg, name, P0);
+        let creature = named_permanent(&mut state, &reg, name, P0);
 
         state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
             source: creature,
@@ -293,7 +293,7 @@ fn bloodcrazed_neonate_forced_to_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let neonate = named_creature(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    let neonate = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
 
     // Check that the neonate has ForceAttack via continuous effects.
     let has_force_attack = state.has_effect(neonate, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg);
@@ -308,7 +308,7 @@ fn sturmgeist_pt_equals_hand_size() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let sturmgeist = named_creature(&mut state, &reg, "Sturmgeist", P0);
+    let sturmgeist = named_permanent(&mut state, &reg, "Sturmgeist", P0);
 
     // Give P0 some cards in hand.
     for _ in 0..4 {
@@ -331,7 +331,7 @@ fn balefire_dragon_sweeps_opponent_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let dragon = named_creature(&mut state, &reg, "Balefire Dragon", P0);
+    let dragon = named_permanent(&mut state, &reg, "Balefire Dragon", P0);
     let opp_creature1 = ready_creature(&mut state, P1, 3, 4);
     let opp_creature2 = ready_creature(&mut state, P1, 2, 2);
     let own_creature = ready_creature(&mut state, P0, 1, 1); // should NOT be damaged

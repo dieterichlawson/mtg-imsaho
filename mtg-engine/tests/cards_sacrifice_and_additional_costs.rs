@@ -29,7 +29,7 @@ fn selfless_cathar_pump_all_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cathar = named_creature(&mut state, &reg, "Selfless Cathar", P0);
+    let cathar = named_permanent(&mut state, &reg, "Selfless Cathar", P0);
     let bear = ready_creature(&mut state, P0, 2, 2);
 
     // Add mana for the ability: {1}{W}
@@ -54,10 +54,10 @@ fn silverchase_fox_exiles_enchantment() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let fox = named_creature(&mut state, &reg, "Silverchase Fox", P0);
+    let fox = named_permanent(&mut state, &reg, "Silverchase Fox", P0);
 
     // Create an enchantment for P1 (use Pacifism as a representative enchantment).
-    let enchantment = named_creature(&mut state, &reg, "Glorious Anthem", P1);
+    let enchantment = named_permanent(&mut state, &reg, "Glorious Anthem", P1);
 
     // Add mana for the ability: {1}{W}
     state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
@@ -84,7 +84,7 @@ fn brain_weevil_forces_discard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let weevil = named_creature(&mut state, &reg, "Brain Weevil", P0);
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
 
     // Give P1 exactly 2 cards in hand (auto-discards all when <= 2).
     let _c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
@@ -111,7 +111,7 @@ fn disciple_of_griselbrand_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let disciple = named_creature(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
     // Create a 2/5 creature to sacrifice for max life.
     let fatty = ready_creature(&mut state, P0, 2, 5);
 
@@ -298,7 +298,7 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
     // Need a creature to sacrifice (player picks the fodder, not the cultist).
     let fodder = ready_creature(&mut state, P0, 1, 1);
     let target = ready_creature(&mut state, P1, 3, 3);
@@ -320,7 +320,7 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
     let fodder = ready_creature(&mut state, P0, 1, 1);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
@@ -338,7 +338,7 @@ fn skirsdag_cultist_cannot_activate_without_creature() {
     // Cultist is the only creature. It will be sacrificed as part of the cost,
     // but we need at least one creature to sacrifice. Since the cultist itself
     // counts, the ability should still be available.
-    let _cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let _cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
@@ -351,7 +351,7 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let apprentice = named_creature(&mut state, &reg, "Stitcher's Apprentice", P0);
+    let apprentice = named_permanent(&mut state, &reg, "Stitcher's Apprentice", P0);
 
     // Add mana for the activation cost ({1}{U}).
     state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
@@ -395,7 +395,7 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let apprentice = named_creature(&mut state, &reg, "Stitcher's Apprentice", P0);
+    let apprentice = named_permanent(&mut state, &reg, "Stitcher's Apprentice", P0);
     // Add a second creature so the apprentice doesn't sacrifice the token immediately.
     let _fodder = ready_creature(&mut state, P0, 1, 1);
 

@@ -21,7 +21,7 @@ use mtg_engine::types::*;
 fn grimoire_with(counters: u32) -> (mtg_engine::state::GameState, mtg_engine::ids::ObjectId, CardRegistry) {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let grimoire = named_creature(&mut state, &reg, "Grimoire of the Dead", P0);
+    let grimoire = named_permanent(&mut state, &reg, "Grimoire of the Dead", P0);
     state.add_counters(grimoire, CounterType::Study, counters);
     (state, grimoire, reg)
 }
@@ -129,7 +129,7 @@ fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ludevic = named_creature(&mut state, &registry, "Ludevic's Test Subject", P0);
+    let ludevic = named_permanent(&mut state, &registry, "Ludevic's Test Subject", P0);
 
     let ludevic_card_id = state.get_object(ludevic).unwrap().card_id;
     let behavior = registry.get(ludevic_card_id).unwrap();

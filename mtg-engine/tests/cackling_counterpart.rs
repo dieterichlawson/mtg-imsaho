@@ -55,7 +55,7 @@ fn a_token_copy_of_a_card_takes_that_cards_colors() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place a green creature
-    let creature = named_creature(&mut state, &registry, "Grizzly Bears", P0);
+    let creature = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
 
     // Cast Cackling Counterpart targeting it
     let cc = castable_spell(&mut state, &registry, "Cackling Counterpart", P0);

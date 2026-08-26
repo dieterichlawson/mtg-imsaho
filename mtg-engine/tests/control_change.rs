@@ -44,9 +44,9 @@ fn olivia_steal_leaves_vampire_summoning_sick() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &r, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &r, "Olivia Voldaren", P0);
     // An opponent's Vampire that's been in play (ready to attack for P1).
-    let vamp = named_creature(&mut state, &r, "Bloodcrazed Neonate", P1);
+    let vamp = named_permanent(&mut state, &r, "Bloodcrazed Neonate", P1);
     state.get_object_mut(vamp).unwrap().summoning_sick = false;
 
     // Drive Olivia's steal ability (index 1) directly.

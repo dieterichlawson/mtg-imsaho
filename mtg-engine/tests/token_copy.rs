@@ -56,7 +56,7 @@ fn bug_0f_002_token_copy_of_legendary_creature_is_legendary() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let olivia = named_creature(&mut state, &registry, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &registry, "Olivia Voldaren", P0);
     assert!(
         state.get_object(olivia).unwrap().is_legendary,
         "Test setup: cast-from-hand Olivia should be flagged legendary"
@@ -157,7 +157,7 @@ fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _parallel = named_creature(&mut state, &registry, "Parallel Lives", P0);
+    let _parallel = named_permanent(&mut state, &registry, "Parallel Lives", P0);
 
     // Three creature cards in P0's graveyard so Splinterfright has
     // non-zero CDA power — avoids stillborn-SBA complications.
@@ -167,7 +167,7 @@ fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
         state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
     }
 
-    let splinter = named_creature(&mut state, &registry, "Splinterfright", P0);
+    let splinter = named_permanent(&mut state, &registry, "Splinterfright", P0);
     let splinter_card_id = state.get_object(splinter).unwrap().card_id;
 
     // Cackling Counterpart creates a token copy; Parallel Lives
@@ -219,7 +219,7 @@ fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PostcombatMain, P0);
 
-    let _parallel = named_creature(&mut state, &registry, "Parallel Lives", P0);
+    let _parallel = named_permanent(&mut state, &registry, "Parallel Lives", P0);
 
     // Resolve Army of the Damned directly via on_resolve.
     let army_card_id = registry.get_id_by_name("Army of the Damned").unwrap();
@@ -279,7 +279,7 @@ fn bug_by_geist_angel_token_defender_matches_geist() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let geist = named_creature(&mut state, &registry, "Geist of Saint Traft", P0);
+    let geist = named_permanent(&mut state, &registry, "Geist of Saint Traft", P0);
 
     // Set up combat state with Geist attacking P1.
     let mut attackers: HashMap<_, _> = HashMap::new();

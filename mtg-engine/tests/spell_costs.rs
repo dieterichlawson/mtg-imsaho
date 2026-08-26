@@ -31,7 +31,7 @@ fn a_cost_reduction_applies_to_a_creature_spell_from_hand() {
     // Skaab Ruinator is {1}{U}{U}.
     assert_eq!(mana_value(&state, &reg, "Skaab Ruinator", P0, CastMethod::Normal), 3);
 
-    named_creature(&mut state, &reg, "Heartless Summoning", P0);
+    named_permanent(&mut state, &reg, "Heartless Summoning", P0);
     // {1}{U}{U} has only {1} of generic to give up, so a {2} reduction leaves
     // {U}{U}. CR 601.2f: a reduction never eats a coloured requirement.
     assert_eq!(mana_value(&state, &reg, "Skaab Ruinator", P0, CastMethod::Normal), 2);
@@ -49,7 +49,7 @@ fn a_cost_reduction_applies_to_a_spell_cast_from_the_graveyard() {
     let printed = reg.card_data(reg.get_id_by_name("Skaab Ruinator").unwrap())
         .and_then(|d| d.cost).unwrap();
 
-    named_creature(&mut state, &reg, "Heartless Summoning", P0);
+    named_permanent(&mut state, &reg, "Heartless Summoning", P0);
     let from_gy = mana_value(&state, &reg, "Skaab Ruinator", P0,
         CastMethod::Alternative(printed.clone()));
 
@@ -63,7 +63,7 @@ fn a_cost_reduction_applies_to_a_spell_cast_from_the_graveyard() {
 fn a_reduction_only_comes_off_the_generic_portion() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_creature(&mut state, &reg, "Heartless Summoning", P0);
+    named_permanent(&mut state, &reg, "Heartless Summoning", P0);
 
     let card_id = reg.get_id_by_name("Skaab Ruinator").unwrap();
     let cost = cost_to_cast(&state, &reg, card_id, P0, &CastMethod::Normal).mana;
@@ -78,7 +78,7 @@ fn a_reduction_only_comes_off_the_generic_portion() {
 fn a_reduction_respects_its_filter() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_creature(&mut state, &reg, "Heartless Summoning", P0);
+    named_permanent(&mut state, &reg, "Heartless Summoning", P0);
 
     let before = mana_value(&state, &reg, "Brimstone Volley", P0, CastMethod::Normal);
     let printed = reg.card_data(reg.get_id_by_name("Brimstone Volley").unwrap())
@@ -94,7 +94,7 @@ fn a_reduction_stops_when_its_source_leaves() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let summoning = named_creature(&mut state, &reg, "Heartless Summoning", P0);
+    let summoning = named_permanent(&mut state, &reg, "Heartless Summoning", P0);
     assert_eq!(mana_value(&state, &reg, "Skaab Ruinator", P0, CastMethod::Normal), 2);
 
     state.move_object(summoning, Zone::Graveyard, &reg);
@@ -106,7 +106,7 @@ fn a_reduction_stops_when_its_source_leaves() {
 fn a_reduction_only_helps_the_player_who_controls_it() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_creature(&mut state, &reg, "Heartless Summoning", P1);
+    named_permanent(&mut state, &reg, "Heartless Summoning", P1);
 
     assert_eq!(mana_value(&state, &reg, "Skaab Ruinator", P0, CastMethod::Normal), 3,
         "P1's Heartless Summoning does not discount P0's creature spells");
@@ -125,7 +125,7 @@ fn a_graveyard_cast_is_offered_at_the_reduced_cost() {
     for _ in 0..3 {
         named_card_in_graveyard(&mut state, &reg, "Doomed Traveler", P0);
     }
-    named_creature(&mut state, &reg, "Heartless Summoning", P0);
+    named_permanent(&mut state, &reg, "Heartless Summoning", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
 
     let offered = |state: &mtg_engine::state::GameState| {
@@ -237,7 +237,7 @@ fn bug_rooftop_storm_not_offered_from_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Rooftop Storm
-    let _storm = named_creature(&mut state, &registry, "Rooftop Storm", P0);
+    let _storm = named_permanent(&mut state, &registry, "Rooftop Storm", P0);
 
     // Put a Zombie creature (Walking Corpse {1}{B}) in P0's graveyard
     // with can_cast_from_graveyard (e.g., via Skaab Ruinator-like ability)

@@ -22,7 +22,7 @@ fn fight_damage_respects_prevent_damage_remove_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
     state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
     let bear = ready_creature(&mut state, P1, 2, 2);
 

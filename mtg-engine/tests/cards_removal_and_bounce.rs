@@ -122,7 +122,7 @@ enum Candidate {
 fn place(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry, c: &Candidate) -> ObjectId {
     match *c {
         Candidate::Creature(p, t) => ready_creature(state, P1, p, t),
-        Candidate::Named(name) => named_creature(state, reg, name, P1),
+        Candidate::Named(name) => named_permanent(state, reg, name, P1),
         Candidate::Land => {
             let id = reg.get_id_by_name("Forest").unwrap();
             let land = state.create_object(id, P1, Zone::Battlefield, None, None);

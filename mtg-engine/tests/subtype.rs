@@ -119,7 +119,7 @@ fn test_built_and_game_built_objects_agree_on_characteristics() {
         .expect("pilgrim should exist");
 
     let mut test_state = game_at_step(Step::PrecombatMain, P0);
-    let test_obj = named_creature(&mut test_state, &reg, "Avacyn's Pilgrim", P0);
+    let test_obj = named_permanent(&mut test_state, &reg, "Avacyn's Pilgrim", P0);
 
     assert_eq!(
         game_state.subtypes_of(game_obj.id, &reg),
@@ -217,7 +217,7 @@ fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
     )[0];
     assert!(state.has_subtype(token, "Vampire", &registry), "test precondition");
 
-    let slayer = named_creature(&mut state, &registry, "Slayer of the Wicked", P0);
+    let slayer = named_permanent(&mut state, &registry, "Slayer of the Wicked", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: slayer,
         controller: P0,
@@ -256,10 +256,10 @@ fn bug_ay_olivia_vampire_steal_can_target_registry_vampire() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Olivia is on P0's side, ready to activate.
-    let olivia = named_creature(&mut state, &registry, "Olivia Voldaren", P0);
+    let olivia = named_permanent(&mut state, &registry, "Olivia Voldaren", P0);
 
     // Stromkirk Noble (a registry-subtype Vampire) on P1's side.
-    let noble = named_creature(&mut state, &registry, "Stromkirk Noble", P1);
+    let noble = named_permanent(&mut state, &registry, "Stromkirk Noble", P1);
     assert!(
         state.get_object(noble).unwrap().subtypes.is_empty(),
         "Test setup: cast-from-hand Vampires have obj.subtypes == [] (Bug BD)"
@@ -369,7 +369,7 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
 
     // Gatstaf Shepherd is Human Werewolf on its front face — exactly
     // the kind of creature Moonmist should transform.
-    let shepherd = named_creature(&mut state, &registry, "Gatstaf Shepherd", P1);
+    let shepherd = named_permanent(&mut state, &registry, "Gatstaf Shepherd", P1);
     assert!(
         !state.get_object(shepherd).unwrap().is_transformed,
         "Test setup: Gatstaf Shepherd should start on its front (Human) face"
@@ -500,7 +500,7 @@ fn bug_31_002_avacynian_priest_can_tap_transformed_werewolf() {
     // Tormented Pariah is Human Warrior Werewolf on its front face.
     // Transforming it gives the Rampaging Werewolf back face, which is
     // a plain Werewolf (no Human).
-    let pariah = named_creature(&mut state, &registry, "Tormented Pariah", P1);
+    let pariah = named_permanent(&mut state, &registry, "Tormented Pariah", P1);
     mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
     assert!(
         state.get_object(pariah).unwrap().is_transformed,
@@ -559,8 +559,8 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
     // P0 has Elder Cathar (about to die) and a single transformed
     // Tormented Pariah (their only other creature, so Elder Cathar's
     // single-target auto-resolve path is the one that fires).
-    let cathar = named_creature(&mut state, &registry, "Elder Cathar", P0);
-    let pariah = named_creature(&mut state, &registry, "Tormented Pariah", P0);
+    let cathar = named_permanent(&mut state, &registry, "Elder Cathar", P0);
+    let pariah = named_permanent(&mut state, &registry, "Tormented Pariah", P0);
     mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
     assert!(
         state.get_object(pariah).unwrap().is_transformed,
@@ -653,7 +653,7 @@ fn bug_99_002_delver_transform_updates_obj_subtypes() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
+    let delver = named_permanent(&mut state, &registry, "Delver of Secrets", P0);
 
     // Put an instant on top of P0's library so the reveal triggers a transform.
     let bolt_card_id = registry.get_id_by_name("Lightning Bolt").unwrap();
@@ -712,7 +712,7 @@ fn bug_ao_get_subtypes_excludes_dropped_front_face_subtype() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Cloistered Youth → transform → Unholy Fiend (Horror, no Human).
-    let youth = named_creature(&mut state, &registry, "Cloistered Youth", P0);
+    let youth = named_permanent(&mut state, &registry, "Cloistered Youth", P0);
     mtg_engine::cards::helpers::apply_transform(&mut state, youth, &registry);
     assert!(
         state.get_object(youth).unwrap().is_transformed,

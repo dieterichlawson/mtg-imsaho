@@ -19,7 +19,7 @@ fn trigger_fires_on_combat_damage_to_creature() {
     let mut state = game_at_step(Step::CombatDamage, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
-    let doll = named_creature(&mut state, &reg, "Creepy Doll", P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
 
     // Set up combat: doll attacks, target blocks.
@@ -48,7 +48,7 @@ fn trigger_does_not_fire_on_combat_damage_to_player() {
     let mut state = game_at_step(Step::CombatDamage, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
-    let doll = named_creature(&mut state, &reg, "Creepy Doll", P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
     state.combat.as_mut().unwrap().attackers.insert(doll, P1);
 
     // Emit combat damage event (doll deals 1 damage to player).
@@ -73,7 +73,7 @@ fn on_deals_combat_damage_to_creature_calls_destroy() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let doll = named_creature(&mut state, &reg, "Creepy Doll", P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
 
     // Call the hook directly many times to verify it can destroy.
@@ -109,7 +109,7 @@ fn bug_creepy_doll_trigger_with_lethal_damage() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let doll = named_creature(&mut state, &registry, "Creepy Doll", P0);
+    let doll = named_permanent(&mut state, &registry, "Creepy Doll", P0);
     let target = ready_creature(&mut state, P1, 2, 1); // 1 toughness, will take lethal from 1 dmg
 
     // Simulate combat damage: Doll deals 1 to target (lethal for 1 toughness)

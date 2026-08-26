@@ -125,7 +125,7 @@ fn mulch_emits_creature_card_milled() {
 fn cellar_door_emits_creature_card_milled() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let door = named_creature(&mut state, &reg, "Cellar Door", P0);
+    let door = named_permanent(&mut state, &reg, "Cellar Door", P0);
     card_in_library(&mut state, &reg, "Walking Corpse", P1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
 

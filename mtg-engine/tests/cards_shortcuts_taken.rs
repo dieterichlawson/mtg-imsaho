@@ -32,7 +32,7 @@ fn charmbreaker_devils_no_pump_on_creature_spell() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
 
     // Create a creature spell on the stack (simulate casting a creature).
     let creature_card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
@@ -58,7 +58,7 @@ fn charmbreaker_devils_does_pump_on_instant_spell() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+    let devils = named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
 
     // Create an instant spell on the stack.
     let instant_card_id = reg.get_id_by_name("Think Twice").unwrap();
@@ -88,7 +88,7 @@ fn snapcaster_targets_card_with_printed_flashback() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let snapcaster = named_creature(&mut state, &reg, "Snapcaster Mage", P0);
+    let snapcaster = named_permanent(&mut state, &reg, "Snapcaster Mage", P0);
 
     // Put Think Twice in graveyard -- it has printed flashback {2}{U}.
     let think_twice_card_id = reg.get_id_by_name("Think Twice").unwrap();
@@ -125,7 +125,7 @@ fn trepanation_blade_stops_on_land() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     // Set up equipment on a creature attacking P1.
-    let blade = named_creature(&mut state, &reg, "Trepanation Blade", P0);
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().is_equipment = true;
 
     let attacker = ready_creature(&mut state, P0, 2, 2);
@@ -336,7 +336,7 @@ fn slayer_of_the_wicked_sees_instance_vampire() {
     }
     assert!(state.has_subtype(target, "Vampire", &reg), "test precondition");
 
-    let slayer = named_creature(&mut state, &reg, "Slayer of the Wicked", P0);
+    let slayer = named_permanent(&mut state, &reg, "Slayer of the Wicked", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
         object: slayer,
         controller: P0,
@@ -464,7 +464,7 @@ fn civilized_scholar_detects_creature_via_registry() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
 
     // Create a creature card in hand that has power=None on the object
     // (simulating a card that wasn't fully initialized but IS a creature

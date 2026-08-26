@@ -206,7 +206,7 @@ fn death_watch_triggers_fire_on_creature_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place an Unruly Mob (gains +1/+1 counter when another creature you control dies).
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
 
     // Place a creature that will die.
     let victim = ready_creature(&mut state, P0, 1, 1);

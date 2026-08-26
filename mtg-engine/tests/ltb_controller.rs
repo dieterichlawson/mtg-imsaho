@@ -22,7 +22,7 @@ fn fiend_hunter_ltb_trigger_has_correct_controller() {
     // Its LTB trigger's controller must be p0, not PlayerId(255).
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hunter = named_creature(&mut state, &registry, "Fiend Hunter", P0);
+    let hunter = named_permanent(&mut state, &registry, "Fiend Hunter", P0);
 
     state.move_object(hunter, Zone::Graveyard, &registry);
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
@@ -43,7 +43,7 @@ fn fiend_hunter_ltb_trigger_has_correct_controller() {
 fn fiend_hunter_controlled_by_p1_has_p1_controller() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hunter = named_creature(&mut state, &registry, "Fiend Hunter", P1);
+    let hunter = named_permanent(&mut state, &registry, "Fiend Hunter", P1);
 
     state.move_object(hunter, Zone::Graveyard, &registry);
     mtg_engine::triggers::collect_triggers(&mut state, &registry);

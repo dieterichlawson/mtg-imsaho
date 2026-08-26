@@ -58,10 +58,10 @@ fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
 
     // Lumberknot is a Treefolk with Hexproof in P1's hand. Put it in
     // play under P1.
-    let lumberknot = named_creature(&mut state, &registry, "Lumberknot", P1);
+    let lumberknot = named_permanent(&mut state, &registry, "Lumberknot", P1);
 
     // Pitchburn Devils on P0's side. Fire its death trigger directly.
-    let pd = named_creature(&mut state, &registry, "Pitchburn Devils", P0);
+    let pd = named_permanent(&mut state, &registry, "Pitchburn Devils", P0);
     let pd_card_id = state.get_object(pd).unwrap().card_id;
     let behavior = registry.get(pd_card_id).unwrap();
     behavior.on_dies(&mut state, pd, &[], &registry);
@@ -102,12 +102,12 @@ fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let lumberknot = named_creature(&mut state, &registry, "Lumberknot", P1);
+    let lumberknot = named_permanent(&mut state, &registry, "Lumberknot", P1);
     // A second non-hexproof target so present_target_choice doesn't
     // auto-resolve the single mandatory target.
     let _bears = ready_creature(&mut state, P1, 2, 2);
 
-    let cv = named_creature(&mut state, &registry, "Crossway Vampire", P0);
+    let cv = named_permanent(&mut state, &registry, "Crossway Vampire", P0);
     let cv_card_id = state.get_object(cv).unwrap().card_id;
     let behavior = registry.get(cv_card_id).unwrap();
     behavior.on_enter_battlefield(&mut state, cv, &[], &registry);
@@ -140,10 +140,10 @@ fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let lumberknot = named_creature(&mut state, &registry, "Lumberknot", P1);
+    let lumberknot = named_permanent(&mut state, &registry, "Lumberknot", P1);
     let _bears = ready_creature(&mut state, P1, 2, 2);
 
-    let fh = named_creature(&mut state, &registry, "Fiend Hunter", P0);
+    let fh = named_permanent(&mut state, &registry, "Fiend Hunter", P0);
     let fh_card_id = state.get_object(fh).unwrap().card_id;
     let behavior = registry.get(fh_card_id).unwrap();
     behavior.on_enter_battlefield(&mut state, fh, &[], &registry);
@@ -184,8 +184,8 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
-    let lumberknot = named_creature(&mut state, &registry, "Lumberknot", P1);
+    let grimgrin = named_permanent(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+    let lumberknot = named_permanent(&mut state, &registry, "Lumberknot", P1);
     // Add a second non-hexproof creature on P1's side so the trigger has
     // multiple potential targets — otherwise present_target_choice's
     // single-mandatory-target shortcut auto-applies the effect and never
@@ -249,10 +249,10 @@ fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P1 has Witchbane Orb in play, so P1 has player-hexproof.
-    let _orb = named_creature(&mut state, &registry, "Witchbane Orb", P1);
+    let _orb = named_permanent(&mut state, &registry, "Witchbane Orb", P1);
 
     // Falkenrath Noble on P0's side. Fire its self-death trigger.
-    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
     let noble_card_id = state.get_object(noble).unwrap().card_id;
     let behavior = registry.get(noble_card_id).unwrap();
     behavior.on_dies(&mut state, noble, &[], &registry);
@@ -535,7 +535,7 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Witchbane Orb for P1 (grants hexproof to P1)
-    let _orb = named_creature(&mut state, &registry, "Witchbane Orb", P1);
+    let _orb = named_permanent(&mut state, &registry, "Witchbane Orb", P1);
 
     // Place a Curse in P0's library
     let curse_id = registry.get_id_by_name("Curse of the Pierced Heart").unwrap();
@@ -544,7 +544,7 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
     state.get_player_mut(P0).library_order.push(curse);
 
     // Place and kill Bitterheart Witch
-    let witch = named_creature(&mut state, &registry, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &registry, "Bitterheart Witch", P0);
     mtg_engine::destruction::sacrifice(&mut state, witch, &registry);
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
     mtg_engine::triggers::process_triggers(&mut state, &registry);
@@ -593,7 +593,7 @@ fn an_etb_trigger_does_not_offer_an_opponents_hexproof_creature() {
         // test would pass just as well for a card that targets nothing.
         for hexproof in [false, true] {
             let mut state = game_at_step(Step::PrecombatMain, P0);
-            let victim = named_creature(&mut state, &reg, victim_name, P1);
+            let victim = named_permanent(&mut state, &reg, victim_name, P1);
             if let Some(kw) = needs {
                 assert!(state.has_keyword(victim, *kw, &reg),
                     "test precondition: {victim_name} has {kw:?}");
@@ -607,7 +607,7 @@ fn an_etb_trigger_does_not_offer_an_opponents_hexproof_creature() {
                 );
             }
 
-            let source = named_creature(&mut state, &reg, source_name, P0);
+            let source = named_permanent(&mut state, &reg, source_name, P0);
             state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
                 object: source,
                 controller: P0,

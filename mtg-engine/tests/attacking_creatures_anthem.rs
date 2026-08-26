@@ -27,9 +27,9 @@ fn attacking_creatures_you_control_get_the_bonus() {
     let reg = registry();
     for (transformed, bonus, base) in [(false, 1, 2), (true, 3, 5)] {
         let mut state = game_at_step(Step::DeclareAttackers, P0);
-        let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+        let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
         state.get_object_mut(gang).unwrap().is_transformed = transformed;
-        let ally = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let ally = named_permanent(&mut state, &reg, "Walking Corpse", P0);
         let ally_base = state.effective_power(ally, &reg).unwrap();
 
         assert_eq!(state.effective_power(gang, &reg).unwrap(), base,
@@ -51,9 +51,9 @@ fn only_attacking_creatures_you_control_get_the_bonus() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
-    let home = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let enemy = named_creature(&mut state, &reg, "Walking Corpse", P1);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
+    let home = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let enemy = named_permanent(&mut state, &reg, "Walking Corpse", P1);
     let home_base = state.effective_power(home, &reg).unwrap();
     let enemy_base = state.effective_power(enemy, &reg).unwrap();
 
@@ -73,8 +73,8 @@ fn the_bonus_ends_with_combat_not_with_the_turn() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
-    let ally = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
+    let ally = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let ally_base = state.effective_power(ally, &reg).unwrap();
 
     submit_declare_attackers(&mut state, &[(gang, P1), (ally, P1)], &reg);
@@ -96,12 +96,12 @@ fn a_creature_put_onto_the_battlefield_attacking_gets_the_bonus() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
     submit_declare_attackers(&mut state, &[(gang, P1)], &reg);
 
     // Geist of Saint Traft's Angel, Hanweir Militia Captain's tokens — a
     // creature that arrives already in combat, with no AttackersDeclared for it.
-    let latecomer = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let latecomer = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let base = state.effective_power(latecomer, &reg).unwrap();
     state.combat.as_mut().unwrap().attackers.insert(latecomer, P1);
 
@@ -117,13 +117,13 @@ fn a_gang_that_arrives_mid_combat_buffs_the_creatures_already_attacking() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let ally = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let ally = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let base = state.effective_power(ally, &reg).unwrap();
     submit_declare_attackers(&mut state, &[(ally, P1)], &reg);
     assert_eq!(state.effective_power(ally, &reg).unwrap(), base,
         "no Gang yet");
 
-    named_creature(&mut state, &reg, "Instigator Gang", P0);
+    named_permanent(&mut state, &reg, "Instigator Gang", P0);
 
     assert_eq!(state.effective_power(ally, &reg).unwrap(), base + 1,
         "the Gang's static ability applies to attackers that were already \
@@ -136,8 +136,8 @@ fn the_bonus_stops_when_the_gang_leaves_the_battlefield() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
-    let ally = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
+    let ally = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let base = state.effective_power(ally, &reg).unwrap();
 
     submit_declare_attackers(&mut state, &[(gang, P1), (ally, P1)], &reg);

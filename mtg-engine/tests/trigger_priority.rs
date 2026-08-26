@@ -19,7 +19,7 @@ fn triggers_placed_on_stack_not_immediately_resolved() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Unruly Mob: "Whenever another creature you control dies, put a +1/+1 counter on ~."
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     let victim = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;
     state.events.clear();
@@ -54,7 +54,7 @@ fn resolve_top_of_stack_handles_single_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
 
     // Two creatures will die — two death watch triggers for the mob
     let v1 = ready_creature(&mut state, P0, 1, 1);
@@ -94,7 +94,7 @@ fn auto_pass_resolves_triggers_without_callback() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     let victim = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;
 
@@ -134,7 +134,7 @@ fn priority_with_trigger_shows_respond_context() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     let victim = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;
 
@@ -177,7 +177,7 @@ fn cast_instant_in_response_to_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     let victim = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;
 
@@ -225,7 +225,7 @@ fn multiple_triggers_resolve_individually_with_priority() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
 
     // Two creatures controlled by P0 die simultaneously
     let v1 = ready_creature(&mut state, P0, 1, 1);
@@ -282,7 +282,7 @@ fn spell_resolves_before_trigger_on_stack() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Unruly Mob will get a counter from the death trigger
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     let victim = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(victim).unwrap().damage_marked = 2;
 

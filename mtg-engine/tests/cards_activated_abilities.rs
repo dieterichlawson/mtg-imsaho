@@ -25,7 +25,7 @@ fn elder_of_laurels_pumps_by_creature_count() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let elder = named_creature(&mut state, &reg, "Elder of Laurels", P0);
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
     let target = ready_creature(&mut state, P0, 2, 2);
     let _extra = ready_creature(&mut state, P0, 1, 1);
     // P0 controls 3 creatures: elder, target, extra. So X = 3.
@@ -59,7 +59,7 @@ fn mindshrieker_mills_and_pumps() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shrieker = named_creature(&mut state, &reg, "Mindshrieker", P0);
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
 
     // Put a known card on top of P1's library: Kindercatch (mana value 6).
     let kindercatch_id = reg.get_id_by_name("Kindercatch").unwrap();
@@ -93,7 +93,7 @@ fn mindshrieker_mills_land_no_pump() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let shrieker = named_creature(&mut state, &reg, "Mindshrieker", P0);
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
 
     // Put a Forest on top of P1's library (mana value 0).
     let forest_id = reg.get_id_by_name("Forest").unwrap();
@@ -127,7 +127,7 @@ fn skirsdag_high_priest_creates_demon_with_morbid() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
 
-    let priest = named_creature(&mut state, &reg, "Skirsdag High Priest", P0);
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
     let _helper1 = ready_creature(&mut state, P0, 1, 1);
     let _helper2 = ready_creature(&mut state, P0, 1, 1);
 
@@ -154,7 +154,7 @@ fn skirsdag_high_priest_no_morbid() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     // creature_died_this_turn is false by default.
 
-    let priest = named_creature(&mut state, &reg, "Skirsdag High Priest", P0);
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
     let _helper1 = ready_creature(&mut state, P0, 1, 1);
     let _helper2 = ready_creature(&mut state, P0, 1, 1);
 
@@ -172,7 +172,7 @@ fn skirsdag_high_priest_needs_two_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
 
-    let priest = named_creature(&mut state, &reg, "Skirsdag High Priest", P0);
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
     let _helper1 = ready_creature(&mut state, P0, 1, 1);
     // Only 1 other untapped creature.
 

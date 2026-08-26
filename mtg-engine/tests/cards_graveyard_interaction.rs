@@ -197,7 +197,7 @@ fn grasp_of_phantoms_puts_creature_on_top_of_library() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let target_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
+    let target_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
 
     let grasp = castable_spell(&mut state, &reg, "Grasp of Phantoms", P0);
     let new_state = cast_and_resolve(&state, &reg, grasp, vec![Target::Object(target_creature)]);

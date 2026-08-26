@@ -183,7 +183,7 @@ fn bug_y_screeching_bat_transform_offered_with_untapped_lands() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &registry, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &registry, "Screeching Bat", P0);
 
     // Four untapped Swamps — {2}{B}{B} should be autotap-reachable.
     let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();

@@ -26,8 +26,8 @@ fn curiosity_only_triggers_for_its_own_creature_damaging_an_opponent() {
 
     // The enchanted creature damaging an opponent: triggers.
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let bear = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let curiosity = named_creature(&mut state, &reg, "Curiosity", P0);
+    let bear = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let curiosity = named_permanent(&mut state, &reg, "Curiosity", P0);
     state.get_object_mut(curiosity).unwrap().attached_to = Some(bear);
     state.events.push(mtg_engine::events::GameEvent::NonCombatDamageDealt {
         source: bear,
@@ -40,9 +40,9 @@ fn curiosity_only_triggers_for_its_own_creature_damaging_an_opponent() {
 
     // A DIFFERENT creature damaging an opponent: must not trigger.
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let bear = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let other = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let curiosity = named_creature(&mut state, &reg, "Curiosity", P0);
+    let bear = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let other = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let curiosity = named_permanent(&mut state, &reg, "Curiosity", P0);
     state.get_object_mut(curiosity).unwrap().attached_to = Some(bear);
     state.events.push(mtg_engine::events::GameEvent::NonCombatDamageDealt {
         source: other,
@@ -56,8 +56,8 @@ fn curiosity_only_triggers_for_its_own_creature_damaging_an_opponent() {
 
     // The enchanted creature damaging its OWN controller: must not trigger.
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let bear = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let curiosity = named_creature(&mut state, &reg, "Curiosity", P0);
+    let bear = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let curiosity = named_permanent(&mut state, &reg, "Curiosity", P0);
     state.get_object_mut(curiosity).unwrap().attached_to = Some(bear);
     state.events.push(mtg_engine::events::GameEvent::NonCombatDamageDealt {
         source: bear,
@@ -76,8 +76,8 @@ fn reapers_end_step_trigger_resolves_after_the_reaper_dies() {
     let mut state = game_at_step(Step::EndStep, P0);
     state.creature_died_this_turn = true; // morbid satisfied
 
-    let reaper = named_creature(&mut state, &reg, "Reaper from the Abyss", P0);
-    let victim = named_creature(&mut state, &reg, "Walking Corpse", P1);
+    let reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
+    let victim = named_permanent(&mut state, &reg, "Walking Corpse", P1);
 
     // The trigger resolves with the Reaper already destroyed.
     let behavior = reg.get(state.get_object(reaper).unwrap().card_id).unwrap();
@@ -99,8 +99,8 @@ fn a_non_creature_watcher_destroyed_simultaneously_still_triggers() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
-    let creature = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    let creature = named_permanent(&mut state, &reg, "Walking Corpse", P0);
 
     // Both destroyed in the same batch.
     mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
@@ -124,7 +124,7 @@ fn counters_are_not_added_to_a_permanent_that_has_left_the_battlefield() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
     state.move_object(grime, Zone::Graveyard, &reg);
 
     state.add_counters(grime, CounterType::Slime, 1);

@@ -91,7 +91,7 @@ fn mentor_of_the_meek_draws_when_small_creature_enters() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mentor = named_creature(&mut state, &reg, "Mentor of the Meek", P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
 
     // Give P0 mana to pay {1}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
@@ -133,7 +133,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let cage = named_creature(&mut state, &reg, "Kessig Cagebreakers", P0);
+    let cage = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
 
     // Set up combat: Kessig Cagebreakers is attacking P1.
     state.combat = Some(mtg_engine::state::CombatState {
@@ -170,7 +170,7 @@ fn galvanic_juggernaut_untaps_when_creature_dies() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let jug = named_creature(&mut state, &reg, "Galvanic Juggernaut", P0);
+    let jug = named_permanent(&mut state, &reg, "Galvanic Juggernaut", P0);
     // Tap it.
     state.get_object_mut(jug).unwrap().tapped = true;
 
@@ -191,7 +191,7 @@ fn bitterheart_witch_finds_curse_on_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
 
     // Put a curse in the library.
     let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
@@ -232,7 +232,7 @@ fn bitterheart_witch_can_attach_curse_to_self() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
 
     // Put a curse in the library.
     let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
@@ -267,7 +267,7 @@ fn bitterheart_witch_decline_search() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
 
     // Put a curse in the library.
     let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
@@ -299,7 +299,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
     // A nontoken creature we control dies.
     let dead = ready_creature(&mut state, P0, 2, 2);
@@ -322,7 +322,7 @@ fn heretics_punishment_mills_then_deals_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
 
     // Put cards in library. Use a known card so mana value is deterministic.
     // Kalonian Tusker costs {G}{G} = MV 2.
@@ -356,7 +356,7 @@ fn heretics_punishment_tracks_damaged_by_on_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
 
     // Put cards in library.
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
@@ -381,7 +381,7 @@ fn heretics_punishment_fizzles_when_target_illegal() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
 
     // Put cards in library.
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
@@ -410,7 +410,7 @@ fn undead_alchemist_mills_instead_of_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let _alchemist = named_creature(&mut state, &reg, "Undead Alchemist", P0);
+    let _alchemist = named_permanent(&mut state, &reg, "Undead Alchemist", P0);
 
     // Create a Zombie that dealt damage.
     let zombie = state.create_token_with_subtypes(
@@ -601,7 +601,7 @@ fn cellar_door_creates_zombie_when_milling_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let door = named_creature(&mut state, &reg, "Cellar Door", P0);
+    let door = named_permanent(&mut state, &reg, "Cellar Door", P0);
 
     // Put a creature card on top of P1's library.
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
@@ -714,7 +714,7 @@ fn manor_gargoyle_loses_defender_and_gains_flying() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let gargoyle = named_creature(&mut state, &reg, "Manor Gargoyle", P0);
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P0);
 
     // Should start with Defender.
     assert!(state.has_keyword(gargoyle, Keyword::Defender, &reg),
@@ -743,7 +743,7 @@ fn tree_of_redemption_swaps_life_and_toughness() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let tree = named_creature(&mut state, &reg, "Tree of Redemption", P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     // P0 starts at 20 life, Tree base toughness is 13.
 
     let behavior = reg.get(state.get_object(tree).unwrap().card_id).unwrap();
@@ -794,7 +794,7 @@ fn back_from_the_brink_creates_token_copy() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
 
     // Put a creature in graveyard.
     let dead = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
@@ -820,7 +820,7 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
 
     // Put two different creatures in the graveyard.
     let _tusker = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
@@ -852,7 +852,7 @@ fn back_from_the_brink_no_abilities_without_creatures_in_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, enchant, &reg);
@@ -865,7 +865,7 @@ fn back_from_the_brink_uses_creature_mana_cost() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
 
     // Savannah Lions costs {W}.
     let lions = named_card_in_graveyard(&mut state, &reg, "Savannah Lions", P0);
@@ -898,7 +898,7 @@ fn delver_transforms_when_player_reveals_instant() {
     let mut state = game_at_step(Step::Upkeep, P0);
 
     // Put Delver on the battlefield.
-    let delver = named_creature(&mut state, &reg, "Delver of Secrets", P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
     assert_eq!(state.get_object(delver).unwrap().power, Some(1));
 
     // Put a Lightning Bolt (instant) on top of library.
@@ -936,7 +936,7 @@ fn delver_does_not_transform_when_player_declines_reveal() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let delver = named_creature(&mut state, &reg, "Delver of Secrets", P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
 
     // Put a Lightning Bolt (instant) on top of library.
     let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
@@ -969,7 +969,7 @@ fn delver_does_not_transform_when_top_card_is_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let delver = named_creature(&mut state, &reg, "Delver of Secrets", P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
 
     // Put a creature on top of library.
     let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
@@ -1003,7 +1003,7 @@ fn cloistered_youth_presents_transform_choice_at_upkeep() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
+    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
 
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, youth, &[], &reg);
@@ -1030,7 +1030,7 @@ fn cloistered_youth_can_decline_transform() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
+    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
 
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, youth, &[], &reg);
@@ -1055,7 +1055,7 @@ fn unholy_fiend_drains_life_at_end_step() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
 
-    let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
+    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
     // Pre-transform.
     state.get_object_mut(youth).unwrap().is_transformed = true;
     state.get_object_mut(youth).unwrap().name = "Unholy Fiend".into();
@@ -1074,7 +1074,7 @@ fn screeching_bat_transforms_at_upkeep_when_player_pays() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
     assert!(!state.get_object(bat).unwrap().is_transformed);
 
     // Add mana for the upkeep transform cost: {2}{B}{B}.
@@ -1109,7 +1109,7 @@ fn screeching_bat_does_not_transform_when_player_declines() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
     assert!(!state.get_object(bat).unwrap().is_transformed);
 
     // Add mana for the upkeep transform cost: {2}{B}{B}.
@@ -1141,7 +1141,7 @@ fn screeching_bat_no_choice_without_mana() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
 
     // No mana in pool — choice should not be presented.
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
@@ -1156,7 +1156,7 @@ fn stalking_vampire_transforms_back_when_player_pays() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
 
     // Transform to Stalking Vampire first.
     if let Some(obj) = state.get_object_mut(bat) {
@@ -1191,7 +1191,7 @@ fn stalking_vampire_does_not_have_flying() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
 
     // (No hand-seeding of obj.keywords: printed keywords live on the card's
     // active face, so `has_keyword` reads them straight from the registry.)
@@ -1223,7 +1223,7 @@ fn screeching_bat_regains_flying_on_transform_back() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
 
     // Start already on the back face. Flipping `is_transformed` is the whole
     // of it — the characteristics accessors read the active face.
@@ -1256,7 +1256,7 @@ fn screeching_bat_transform_updates_subtypes() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
 
     // Front face is a Bat, per the registry — nothing to seed.
     assert!(state.has_subtype(bat, "Bat", &reg));
@@ -1287,7 +1287,7 @@ fn ludevics_test_subject_transforms_at_five_counters() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let subject = named_creature(&mut state, &reg, "Ludevic's Test Subject", P0);
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
     assert_eq!(state.get_object(subject).unwrap().power, Some(0));
 
     let behavior = reg.get(state.get_object(subject).unwrap().card_id).unwrap();
@@ -1318,7 +1318,7 @@ fn thraben_sentry_transforms_when_creature_dies() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let sentry = named_creature(&mut state, &reg, "Thraben Sentry", P0);
+    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
     let other = ready_creature(&mut state, P0, 1, 1);
 
     assert!(!state.get_object(sentry).unwrap().is_transformed);
@@ -1347,7 +1347,7 @@ fn thraben_sentry_does_not_transform_when_opponent_creature_dies() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let sentry = named_creature(&mut state, &reg, "Thraben Sentry", P0);
+    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
     let opp_creature = ready_creature(&mut state, P1, 1, 1);
 
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
@@ -1364,7 +1364,7 @@ fn bloodline_keeper_creates_vampire_token() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let keeper = named_creature(&mut state, &reg, "Bloodline Keeper", P0);
+    let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
 
     let behavior = reg.get(state.get_object(keeper).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, keeper, 0, &[], &reg);
@@ -1402,7 +1402,7 @@ fn mikaeus_distributes_counters() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mikaeus = named_creature(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
     // Give Mikaeus 2 +1/+1 counters.
     state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 2);
 
@@ -1443,7 +1443,7 @@ fn grimgrin_sacrifice_untaps_and_counters() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     state.get_object_mut(grimgrin).unwrap().tapped = true;
 
     let zombie = ready_creature(&mut state, P0, 2, 2);
@@ -1464,7 +1464,7 @@ fn grimgrin_sacrifice_not_available_without_other_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     state.get_object_mut(grimgrin).unwrap().tapped = true;
 
     // No other creatures — sacrifice ability should NOT be available.
@@ -1480,7 +1480,7 @@ fn grimgrin_attack_trigger_destroys_and_adds_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     let defender_creature = ready_creature(&mut state, P1, 3, 3);
 
     // Set up combat state with Grimgrin attacking P1.
@@ -1511,7 +1511,7 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     let creature_a = ready_creature(&mut state, P1, 2, 2);
     let creature_b = ready_creature(&mut state, P1, 3, 3);
 
@@ -1559,7 +1559,7 @@ fn grimgrin_attack_no_targets_no_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     // Defender has NO creatures.
 
     state.combat = Some(mtg_engine::state::CombatState {
@@ -1585,7 +1585,7 @@ fn grimgrin_attack_indestructible_target_still_gets_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     let indestructible = ready_creature(&mut state, P1, 4, 4);
     // Make the creature indestructible by adding the keyword.
     if let Some(obj) = state.get_object_mut(indestructible) {
@@ -1619,7 +1619,7 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
     // Defender has a creature.
     let defender_creature = ready_creature(&mut state, P1, 2, 2);
     // Controller also has another creature (should NOT be targetable).
@@ -1653,7 +1653,7 @@ fn geist_angel_exiled_at_end_of_combat() {
     let mut state = game_at_step(Step::EndCombat, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
-    let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
     state.combat.as_mut().unwrap().attackers.insert(geist, P1);
 
     // Attack to create the angel.
@@ -1674,8 +1674,8 @@ fn evil_twin_copies_creature_on_etb() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let opponent_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
+    let opponent_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
 
     let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
     behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
@@ -1707,11 +1707,11 @@ fn evil_twin_copying_legendary_triggers_legend_rule() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 controls a legendary creature with fixed P/T.
-    let original = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    let original = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
     assert!(state.get_object(original).unwrap().is_legendary);
 
     // Evil Twin (also P0) enters and copies it.
-    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
     behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
     state.awaiting_action = None;
@@ -1741,7 +1741,7 @@ fn moldgraf_monstrosity_returns_creatures_on_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let monstrosity = named_creature(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
 
     // Put two creatures in P0's graveyard.
     let gy1 = ready_creature(&mut state, P0, 3, 3);
@@ -1793,7 +1793,7 @@ fn liliana_plus_one_each_player_discards_with_choice() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     // Give both players multiple cards so they must choose.
@@ -1855,7 +1855,7 @@ fn liliana_plus_one_single_card_auto_discards() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     // Give P0 one card and P1 one card.
@@ -1878,7 +1878,7 @@ fn liliana_plus_one_empty_hand_skipped() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     // P0 has no cards, P1 has one card.
@@ -1898,7 +1898,7 @@ fn liliana_plus_one_both_empty_hands() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
@@ -1916,7 +1916,7 @@ fn liliana_minus_two_target_player_sacrifices_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let creature_a = ready_creature(&mut state, P1, 3, 3);
@@ -1950,7 +1950,7 @@ fn liliana_minus_two_single_creature_auto_sacrifices() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let creature = ready_creature(&mut state, P1, 3, 3);
@@ -1968,7 +1968,7 @@ fn liliana_minus_two_no_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
@@ -1984,7 +1984,7 @@ fn liliana_minus_two_can_target_self() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
     let own_creature = ready_creature(&mut state, P0, 2, 2);
@@ -2004,7 +2004,7 @@ fn liliana_minus_six_pile_division_and_choice() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
 
     // Give P1 three permanents.
@@ -2057,7 +2057,7 @@ fn liliana_minus_six_empty_pile_allowed() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
 
     let c1 = ready_creature(&mut state, P1, 3, 3);
@@ -2085,7 +2085,7 @@ fn liliana_minus_six_all_in_one_pile() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
 
     let c1 = ready_creature(&mut state, P1, 3, 3);
@@ -2114,7 +2114,7 @@ fn liliana_minus_six_no_permanents() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
@@ -2131,7 +2131,7 @@ fn liliana_minus_six_can_target_self() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
 
     // P0 has a creature (besides Liliana herself, which is also a permanent).
@@ -2159,7 +2159,7 @@ fn garruk_creates_wolf_token() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
@@ -2175,7 +2175,7 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 2); // Only 2 loyalty.
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
@@ -2197,7 +2197,7 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 2);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
@@ -2221,7 +2221,7 @@ fn garruk_back_face_sacrifice_to_tutor() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
@@ -2259,7 +2259,7 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 4);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
@@ -2306,7 +2306,7 @@ fn garruk_back_face_tutor_shuffles_library() {
 
     let run = || {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+        let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
         state.add_counters(garruk, CounterType::Loyalty, 4);
         if let Some(obj) = state.get_object_mut(garruk) {
             obj.is_transformed = true;
@@ -2353,7 +2353,7 @@ fn garruk_back_face_overrun() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 4);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
@@ -2392,7 +2392,7 @@ fn garruk_back_face_loyalty_abilities_shown_when_transformed() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
     if let Some(obj) = state.get_object_mut(garruk) {
         obj.is_transformed = true;
@@ -2479,7 +2479,7 @@ fn mirror_mad_phantasm_mills_to_find_itself() {
     let mut saw_a_mill = false;
     for _ in 0..20 {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let phantasm = named_creature(&mut state, &reg, "Mirror-Mad Phantasm", P0);
+        let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
 
         let library: Vec<_> = ["Grizzly Bears", "Lightning Bolt", "Doom Blade", "Divination"]
             .iter()
@@ -2717,7 +2717,7 @@ fn civilized_scholar_discard_creature_transforms() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
 
     // Put a card in the library (will be drawn).
     let lib_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
@@ -2763,7 +2763,7 @@ fn civilized_scholar_discard_noncreature_no_transform() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
 
     // Put a card in the library (will be drawn).
     let lib_card = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
