@@ -69,11 +69,11 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `transform_dfc.rs` | 236 | 4 |
 | x | `harness_display.rs` | 235 | 4 |
 | x | `apnap.rs` | 234 | 3 |
-|   | `mana_tap_bug.rs` | 234 | 5 |
+| x | `mana_tap_bug.rs` | 234 | 5 |
 | x | `continuous_effects.rs` | 230 | 7 |
 | x | `combat_rules.rs` | 227 | 4 |
 | x | `ability_target_protection.rs` | 226 | 5 |
-|   | `equipment_human_conditional.rs` | 224 | 5 |
+| x | `equipment_human_conditional.rs` | 224 | 5 |
 |   | `kruin_outlaw.rs` | 222 | 6 |
 |   | `enchantments.rs` | 219 | 9 |
 |   | `engine_regressions_2.rs` | 218 | 4 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**110/126 files read; 3189 lines remaining.**
+**112/126 files read; 2731 lines remaining.**

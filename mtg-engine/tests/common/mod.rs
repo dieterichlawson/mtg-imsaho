@@ -219,6 +219,22 @@ pub fn offered_targets(state: &GameState, registry: &CardRegistry, spell: Object
         .collect()
 }
 
+/// Tap the first untapped permanent named `name` for mana, through
+/// `legal_actions` so the engine's own offer is what gets used.
+pub fn tap_for_mana(state: &GameState, registry: &CardRegistry, name: &str) -> GameState {
+    let legal = mtg_engine::engine::legal_actions(state, registry);
+    let action = legal.actions.iter()
+        .find(|a| match a {
+            Action::ActivateManaAbility { object_id, .. } => state
+                .get_object(*object_id)
+                .and_then(|o| registry.card_data(o.card_id))
+                .is_some_and(|d| d.name == name),
+            _ => false,
+        })
+        .unwrap_or_else(|| panic!("no mana ability offered for an untapped {name}"));
+    mtg_engine::engine::submit_action(state, action, registry)
+}
+
 /// Activate `object_id`'s `ability_index`-th ability at `targets`.
 ///
 /// The `ActivateAbility` literal has seven fields and appeared 116 times; at

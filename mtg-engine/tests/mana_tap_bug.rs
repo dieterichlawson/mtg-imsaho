@@ -1,234 +1,94 @@
-//! Test to reproduce mana tapping bug:
-//! User had Falkenrath Marauders {3}{R}{R} in hand.
-//! Tapped a Swamp and Stensia Bloodhall but mana did not appear in pool.
-//! Then tapped two more Swamps and mana DID appear.
+//! Tapping lands for mana, one at a time.
 //!
-//! Board state from Turn 19:
-//! - P0 (player): 4x Swamp, 4x Mountain (2 tapped), 1x Stensia Bloodhall
-//!   Creatures: Vampire Interloper, Falkenrath Marauders [summoning sick]
-//!   Enchantment: Curse of Stalked Prey (attached to opponent)
-//!   Hand: empty (drew Falkenrath Marauders which was just cast)
-//!   Graveyard: 4 cards
-//!
-//! The issue was after playing the land and casting Falkenrath Marauders.
-//! Let's reproduce the state right at precombat main with the spell in hand.
+//! Reported from a real game: with four Swamps and a Stensia Bloodhall out,
+//! tapping a Swamp and the Bloodhall appeared to produce nothing, and only
+//! tapping two more Swamps made mana show up. The cause was that mana
+//! abilities were being deduplicated by their *description* — every Swamp
+//! offers the same "{T}: Add {B}" — so the four Swamps collapsed to one
+//! offer and the rest were unreachable.
 
 mod common;
 use common::*;
 
-use mtg_engine::actions::Action;
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
-use mtg_engine::ids::PlayerId;
-use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
-const P0: PlayerId = PlayerId(0);
-const P1: PlayerId = PlayerId(1);
-
-fn setup_turn19_state() -> (GameState, CardRegistry) {
-    let registry = CardRegistry::with_all_cards();
+/// A board with several lands of one type plus one that produces something
+/// else, which is the shape the report was about.
+fn lands_out() -> (mtg_engine::state::GameState, mtg_engine::cards::CardRegistry) {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // P0's lands: 4x Swamp (untapped), 2x Mountain (untapped), 2x Mountain (tapped), 1x Stensia Bloodhall (untapped)
-    let swamp_id = registry.get_id_by_name("Swamp").unwrap();
-    let mountain_id = registry.get_id_by_name("Mountain").unwrap();
-    let bloodhall_id = registry.get_id_by_name("Stensia Bloodhall").unwrap();
-
-    let mut swamps = Vec::new();
     for _ in 0..4 {
-        let id = state.create_object(swamp_id, P0, Zone::Battlefield, None, None);
-        swamps.push(id);
+        named_permanent(&mut state, &reg, "Swamp", P0);
     }
     for _ in 0..2 {
-        state.create_object(mountain_id, P0, Zone::Battlefield, None, None);
+        named_permanent(&mut state, &reg, "Mountain", P0);
     }
-    for _ in 0..2 {
-        let id = state.create_object(mountain_id, P0, Zone::Battlefield, None, None);
-        state.get_object_mut(id).unwrap().tapped = true;
+    named_permanent(&mut state, &reg, "Stensia Bloodhall", P0);
+    (state, reg)
+}
+
+/// Each land adds its own mana, and the pool accumulates across taps of
+/// different lands.
+#[test]
+fn tapping_lands_of_different_types_accumulates_their_mana() {
+    let (state, reg) = lands_out();
+
+    let state = tap_for_mana(&state, &reg, "Swamp");
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Black), 1, "the Swamp's {{B}}");
+
+    let state = tap_for_mana(&state, &reg, "Stensia Bloodhall");
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Black), 1, "still there");
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Colorless), 1,
+        "and the Bloodhall's {{C}} beside it");
+}
+
+/// Four Swamps are four mana abilities, not one. They print the same text, and
+/// deduplicating the *offers* by that text made three of them unreachable.
+#[test]
+fn every_copy_of_a_land_can_be_tapped_in_turn() {
+    let (mut state, reg) = lands_out();
+
+    for n in 1..=4 {
+        state = tap_for_mana(&state, &reg, "Swamp");
+        assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Black), n,
+            "after tapping {n} Swamp(s)");
     }
-    let _bloodhall = state.create_object(bloodhall_id, P0, Zone::Battlefield, None, None);
 
-    // P0's creatures
-    let _vi = named_permanent(&mut state, &registry, "Vampire Interloper", P0);
+    assert!(!offers_mana_ability_for(&state, &reg, "Swamp"),
+        "and once all four are tapped there is nothing left to offer");
+}
 
-    // Falkenrath Marauders in hand
-    let fm_id = registry.get_id_by_name("Falkenrath Marauders").unwrap();
-    let fm = state.create_object(fm_id, P0, Zone::Hand, Some(2), Some(2));
-    state.get_object_mut(fm).unwrap().name = "Falkenrath Marauders".into();
+/// Mana accumulated across several taps pays for a spell that no single land
+/// could. The report's symptom was really this: the spell stayed uncastable
+/// however much the player tapped.
+#[test]
+fn a_spell_becomes_castable_as_the_taps_accumulate() {
+    let (mut state, reg) = lands_out();
+    // Falkenrath Marauders is {3}{R}{R}: two red and three of anything.
+    let marauders = spell_in_hand(&mut state, &reg, "Falkenrath Marauders", P0);
 
-    // P1's lands
-    let plains_id = registry.get_id_by_name("Plains").unwrap();
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let township_id = registry.get_id_by_name("Gavony Township").unwrap();
-    for _ in 0..3 {
-        let id = state.create_object(plains_id, P1, Zone::Battlefield, None, None);
-        state.get_object_mut(id).unwrap().tapped = true;
+    assert!(can_cast(&state, &reg, marauders),
+        "with seven untapped lands the engine can autotap for it from the start");
+
+    for _ in 0..4 {
+        state = tap_for_mana(&state, &reg, "Swamp");
     }
-    let _forest = state.create_object(forest_id, P1, Zone::Battlefield, None, None);
-    state.get_object_mut(_forest).unwrap().tapped = true;
-    state.create_object(township_id, P1, Zone::Battlefield, None, None);
-
-    // P1's creatures
-    let _hamlet = named_permanent(&mut state, &registry, "Hamlet Captain", P1);
-    let _champ = named_permanent(&mut state, &registry, "Champion of the Parish", P1);
-
-    state.players[0].life = 9;
-    state.players[1].life = 6;
-
-    (state, registry)
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Black), 4);
+    assert!(can_cast(&state, &reg, marauders),
+        "four {{B}} floating plus two untapped Mountains still covers {{3}}{{R}}{{R}}");
 }
 
-/// Test: Tapping a Swamp should add {B} to the mana pool.
-#[test]
-fn tapping_swamp_adds_black_mana() {
-    let (state, registry) = setup_turn19_state();
-
-    // Find the legal actions
-    let legal = engine::legal_actions(&state, &registry);
-
-    // Find a "Tap Swamp for mana" action
-    let tap_swamp = legal.actions.iter().find(|a| matches!(a,
-        Action::ActivateManaAbility { .. }
-    ) && {
-        if let Action::ActivateManaAbility { object_id, .. } = a {
-            state.get_object(*object_id)
-                .is_some_and(|o| o.name == "Swamp" || registry.card_data(o.card_id).is_some_and(|d| d.name == "Swamp"))
-        } else { false }
-    });
-    assert!(tap_swamp.is_some(), "Should have a Tap Swamp action available");
-
-    // Tap the Swamp
-    let new_state = engine::submit_action(&state, tap_swamp.unwrap(), &registry);
-
-    // Check that black mana was added
-    let pool = &new_state.get_player(P0).mana_pool;
-    let black = pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
-    assert_eq!(black, 1, "Tapping Swamp should add 1 Black mana, pool: {:?}", pool.mana);
-}
-
-/// Test: Tapping Stensia Bloodhall should add {C} to the mana pool.
-#[test]
-fn tapping_stensia_bloodhall_adds_colorless() {
-    let (state, registry) = setup_turn19_state();
-
-    let legal = engine::legal_actions(&state, &registry);
-
-    let tap_bloodhall = legal.actions.iter().find(|a| {
-        if let Action::ActivateManaAbility { object_id, .. } = a {
-            state.get_object(*object_id)
-                .is_some_and(|o| registry.card_data(o.card_id).is_some_and(|d| d.name == "Stensia Bloodhall"))
-        } else { false }
-    });
-    assert!(tap_bloodhall.is_some(), "Should have a Tap Stensia Bloodhall action available");
-
-    let new_state = engine::submit_action(&state, tap_bloodhall.unwrap(), &registry);
-
-    let pool = &new_state.get_player(P0).mana_pool;
-    let colorless = pool.mana.get(&ManaType::Colorless).copied().unwrap_or(0);
-    assert_eq!(colorless, 1, "Tapping Stensia Bloodhall should add 1 Colorless mana, pool: {:?}", pool.mana);
-}
-
-/// Test: Tapping Swamp then Stensia Bloodhall should accumulate mana.
-#[test]
-fn sequential_taps_accumulate_mana() {
-    let (state, registry) = setup_turn19_state();
-
-    // Tap Swamp first
-    let legal = engine::legal_actions(&state, &registry);
-    let tap_swamp = legal.actions.iter().find(|a| {
-        if let Action::ActivateManaAbility { object_id, .. } = a {
-            state.get_object(*object_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .is_some_and(|d| d.name == "Swamp")
-        } else { false }
-    }).expect("Should have Tap Swamp");
-
-    let state2 = engine::submit_action(&state, tap_swamp, &registry);
-
-    // Verify mana pool after first tap
-    let black1 = state2.get_player(P0).mana_pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
-    assert_eq!(black1, 1, "After first Swamp tap: expected 1 Black, got {black1}");
-
-    // Now tap Stensia Bloodhall
-    let legal2 = engine::legal_actions(&state2, &registry);
-    let tap_bloodhall = legal2.actions.iter().find(|a| {
-        if let Action::ActivateManaAbility { object_id, .. } = a {
-            state2.get_object(*object_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .is_some_and(|d| d.name == "Stensia Bloodhall")
-        } else { false }
-    }).expect("Should have Tap Stensia Bloodhall");
-
-    let state3 = engine::submit_action(&state2, tap_bloodhall, &registry);
-
-    // Verify both mana types present
-    let black2 = state3.get_player(P0).mana_pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
-    let colorless = state3.get_player(P0).mana_pool.mana.get(&ManaType::Colorless).copied().unwrap_or(0);
-    assert_eq!(black2, 1, "After Bloodhall tap: expected 1 Black, got {black2}");
-    assert_eq!(colorless, 1, "After Bloodhall tap: expected 1 Colorless, got {colorless}");
-}
-
-/// Test: The deduplication of mana abilities should not prevent tapping
-/// multiple copies of the same land type.
-#[test]
-fn can_tap_multiple_swamps_sequentially() {
-    let (state, registry) = setup_turn19_state();
-
-    let mut current = state;
-    for i in 0..4 {
-        let legal = engine::legal_actions(&current, &registry);
-        let tap_swamp = legal.actions.iter().find(|a| {
-            if let Action::ActivateManaAbility { object_id, .. } = a {
-                current.get_object(*object_id)
-                    .and_then(|o| registry.card_data(o.card_id))
-                    .is_some_and(|d| d.name == "Swamp")
-            } else { false }
-        });
-
-        assert!(tap_swamp.is_some(),
-            "Should be able to tap Swamp #{} (already tapped {})", i + 1, i);
-
-        current = engine::submit_action(&current, tap_swamp.unwrap(), &registry);
-
-        let black = current.get_player(P0).mana_pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
-        assert_eq!(black, u32::try_from(i + 1).unwrap_or(0),
-            "After tapping {} Swamps, expected {} Black mana, got {}",
-            i + 1, i + 1, black);
-    }
-}
-
-/// Test: After tapping mana, `has_meaningful_action` should still be true
-/// if we can cast something with the accumulated mana.
-#[test]
-fn meaningful_action_detected_after_partial_taps() {
-    let (state, registry) = setup_turn19_state();
-
-    // Tap one Swamp
-    let legal = engine::legal_actions(&state, &registry);
-    let tap_swamp = legal.actions.iter().find(|a| {
-        if let Action::ActivateManaAbility { object_id, .. } = a {
-            state.get_object(*object_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .is_some_and(|d| d.name == "Swamp")
-        } else { false }
-    }).expect("Should have Tap Swamp");
-
-    let state2 = engine::submit_action(&state, tap_swamp, &registry);
-
-    // After tapping one Swamp, the engine should still see meaningful actions
-    // (more mana abilities to tap + Falkenrath Marauders castable with potential mana)
-    let legal2 = engine::legal_actions(&state2, &registry);
-    let _has_non_pass = legal2.actions.iter().any(|a| !matches!(a,
-        Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
-    ));
-    let has_mana_ability = legal2.actions.iter().any(|a| matches!(a, Action::ActivateManaAbility { .. }));
-
-    // We should at least have mana abilities to keep tapping
-    assert!(has_mana_ability, "Should still have mana abilities after one tap");
-
-    // With potential mana from remaining lands + {B} in pool,
-    // Falkenrath Marauders ({3}{R}{R}) should be castable
-    // Pool: {B}, Potential: 3 more Swamp ({B}), 2 Mountain ({R}), 1 Bloodhall ({C})
-    // Total potential: 4{B} + 2{R} + 1{C} = enough for {3}{R}{R}
+/// Whether the engine currently offers a mana ability for an untapped `name`.
+fn offers_mana_ability_for(
+    state: &mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    name: &str,
+) -> bool {
+    mtg_engine::engine::legal_actions(state, reg).actions.iter().any(|a| match a {
+        mtg_engine::actions::Action::ActivateManaAbility { object_id, .. } => state
+            .get_object(*object_id)
+            .and_then(|o| reg.card_data(o.card_id))
+            .is_some_and(|d| d.name == name),
+        _ => false,
+    })
 }
