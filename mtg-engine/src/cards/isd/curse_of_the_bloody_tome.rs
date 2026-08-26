@@ -52,10 +52,13 @@ impl CardBehavior for CurseOfTheBloodyTome {
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 113.7a: destroying the Curse in response does not counter its
         // trigger, and `attached_player` still knows whom it cursed.
+        //
+        // Whose upkeep this is was settled when the trigger was collected —
+        // `TriggerScope::AttachedPlayer` in `triggers/collect/timing.rs`
+        // implements CR 603.2 for every Curse at once. Re-checking it here
+        // would also be wrong: once the ability is on the stack it resolves
+        // whatever the turn has done since.
         let Some(cursed_player) = state.attached_player(self_id) else { return };
-        if state.active_player != cursed_player {
-            return;
-        }
         crate::engine::mill_cards(state, cursed_player, 2, registry);
         state.log(crate::state::LogLevel::Event,
             format!("Curse of the Bloody Tome: p{} milled 2 cards", cursed_player.0));

@@ -39,7 +39,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `intervening_if.rs` | 336 | 11 |
 | x | `state_based_actions.rs` | 334 | 10 |
 | x | `x_cost_funding_flow.rs` | 331 | 8 |
-|   | `cards_upkeep_triggers_and_curses.rs` | 330 | 13 |
+| x | `cards_upkeep_triggers_and_curses.rs` | 330 | 13 |
 |   | `simultaneous_events.rs` | 327 | 9 |
 |   | `resolution_time_checks.rs` | 324 | 9 |
 | x | `characteristics_card_sweep.rs` | 319 | 9 |
@@ -132,4 +132,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**83/127 files read; 11362 lines remaining.**
+**84/127 files read; 11032 lines remaining.**

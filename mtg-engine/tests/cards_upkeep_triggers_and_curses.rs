@@ -1,7 +1,7 @@
 //! Cards that trigger at the beginning of an upkeep, including the Curses whose
 //! upkeep is the enchanted player's rather than their controller's (CR 603.2).
 //!
-//! Cards covered (7), so this is greppable by name as well as by rule:
+//! Cards covered (11), so this is greppable by name as well as by rule:
 //!
 //! - Angel of Flight Alabaster
 //! - Bloodgift Demon
@@ -9,12 +9,18 @@
 //! - Charmbreaker Devils
 //! - Curse of Death's Hold
 //! - Curse of Oblivion
+//! - Curse of the Bloody Tome
+//! - Curse of the Nightly Hunt
+//! - Curse of the Pierced Heart
+//! - Endless Ranks of the Dead
 //! - Splinterfright
+//!
+//! Reaper from the Abyss's morbid end-step trigger is in `intervening_if.rs`,
+//! with the rest of CR 603.4.
 
 mod common;
 
 use common::*;
-use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 // ── Boneyard Wurm ─────────────────────────────────────────────────
@@ -51,11 +57,7 @@ fn splinterfright_mills_on_upkeep() {
 
     let _splinter = named_permanent(&mut state, &reg, "Splinterfright", P0);
 
-    // Put cards in library.
-    for _ in 0..4 {
-        let c = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
-        state.get_player_mut(P0).library_order.push(c);
-    }
+    stock_library(&mut state, &reg, P0, 4);
 
     // Fire upkeep trigger.
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
@@ -77,9 +79,7 @@ fn bloodgift_demon_draws_and_loses_life() {
 
     let _demon = named_permanent(&mut state, &reg, "Bloodgift Demon", P0);
 
-    // Library card to draw.
-    let lib = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
-    state.get_player_mut(P0).library_order.push(lib);
+    stock_library(&mut state, &reg, P0, 1);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
@@ -131,47 +131,6 @@ fn endless_ranks_creates_zombie_tokens() {
         .filter(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Zombie"))
         .count();
     assert_eq!(zombie_count, 7, "Should create 2 Zombie tokens (5/2 = 2)");
-}
-
-// ── Reaper from the Abyss ─────────────────────────────────────────
-
-/// Morbid end step: destroys a non-Demon creature if a creature died this turn.
-#[test]
-fn reaper_destroys_non_demon_on_morbid_end_step() {
-    let reg = registry();
-    let mut state = game_at_step(Step::EndStep, P0);
-
-    let _reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
-    let target = ready_creature(&mut state, P1, 3, 3);
-
-    // Set morbid.
-    state.creature_died_this_turn = true;
-
-    fire_step_trigger(&mut state, Step::EndStep, &reg);
-
-    // SBAs to move destroyed creature to graveyard.
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(target).unwrap().zone, Zone::Graveyard,
-        "Reaper should destroy a non-Demon creature");
-}
-
-/// Reaper does NOT trigger without morbid.
-#[test]
-fn reaper_no_trigger_without_morbid() {
-    let reg = registry();
-    let mut state = game_at_step(Step::EndStep, P0);
-
-    let _reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
-    let target = ready_creature(&mut state, P1, 3, 3);
-
-    // No morbid.
-    state.creature_died_this_turn = false;
-
-    fire_step_trigger(&mut state, Step::EndStep, &reg);
-
-    assert_eq!(state.get_object(target).unwrap().zone, Zone::Battlefield,
-        "Reaper should NOT trigger without morbid");
 }
 
 // ── Curse of the Pierced Heart ────────────────────────────────────
@@ -270,11 +229,7 @@ fn curse_of_bloody_tome_mills_on_upkeep() {
 
     let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Bloody Tome", P0, P1);
 
-    // Put cards in P1's library.
-    for _ in 0..4 {
-        let c = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Library, None, None);
-        state.get_player_mut(P1).library_order.push(c);
-    }
+    stock_library(&mut state, &reg, P1, 4);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
@@ -295,8 +250,8 @@ fn curse_of_oblivion_exiles_from_graveyard() {
     let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
 
     // Put 2 cards in P1's graveyard (auto-exiles when ≤2).
-    let g1 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
-    let g2 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
+    let g1 = state.create_object(CardId(9999), P1, Zone::Graveyard, None, None);
+    let g2 = state.create_object(CardId(9999), P1, Zone::Graveyard, None, None);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
@@ -327,4 +282,47 @@ fn curse_of_nightly_hunt_forces_attack() {
     let own_forced = state.has_effect(own_creature,
         &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg);
     assert!(!own_forced, "P0's creature should NOT be forced to attack");
+}
+
+// ── Whose upkeep a Curse watches (CR 603.2) ───────────────────────
+
+/// "At the beginning of enchanted player's upkeep" — not the controller's.
+/// Each of these Curses is controlled by P0 and attached to P1, so P0's own
+/// upkeep must do nothing at all.
+///
+/// The per-Curse tests above all fire on the enchanted player's upkeep and so
+/// would pass equally for a Curse that triggered on *every* upkeep. This is
+/// the half that separates them.
+#[test]
+fn a_curse_does_nothing_on_its_controllers_upkeep() {
+    const CURSES: &[&str] = &[
+        "Curse of the Pierced Heart",
+        "Curse of the Bloody Tome",
+        "Curse of Oblivion",
+    ];
+
+    for name in CURSES {
+        let reg = registry();
+        // P0's upkeep — the Curse's controller, not the enchanted player.
+        let mut state = game_at_step(Step::Upkeep, P0);
+        attach_curse_to_player(&mut state, &reg, name, P0, P1);
+
+        stock_library(&mut state, &reg, P1, 4);
+        let graveyard = [
+            state.create_object(CardId(9999), P1, Zone::Graveyard, None, None),
+            state.create_object(CardId(9999), P1, Zone::Graveyard, None, None),
+        ];
+        let library_before = state.get_player(P1).library_order.len();
+
+        fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+        assert_eq!(state.get_player(P1).life, 20,
+            "{name}: no damage on its controller's upkeep");
+        assert_eq!(state.get_player(P1).library_order.len(), library_before,
+            "{name}: no mill on its controller's upkeep");
+        for id in graveyard {
+            assert_eq!(state.get_object(id).unwrap().zone, Zone::Graveyard,
+                "{name}: nothing exiled on its controller's upkeep");
+        }
+    }
 }
