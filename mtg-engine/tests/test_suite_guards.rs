@@ -659,3 +659,120 @@ fn no_test_assembles_combat_state_by_hand() {
          does (CR 509.2):\n  {}",
         offenders.join("\n  "));
 }
+
+/// Pull the `//! - Card Name` bullets out of a module doc, ignoring the
+/// wrapped continuation lines that a long bullet produces.
+fn module_doc_cards(text: &str) -> Vec<String> {
+    let mut cards = Vec::new();
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix("//! - ") else {
+            if line.starts_with("//!") || line.trim().is_empty() {
+                continue;
+            }
+            break; // past the module doc
+        };
+        // Wrapped continuation lines are `//!   ...`, so they never match the
+        // `//! - ` prefix and are already excluded.
+        cards.push(rest.trim().to_string());
+    }
+    cards
+}
+
+/// A `cards_*.rs` module doc lists the cards it covers, and that list is the
+/// index for anyone looking for a card's acceptance tests. Nothing checked it,
+/// and it had drifted three ways at once: `cards_vanilla_and_keywords.rs`
+/// claimed twelve cards its body never mentions, `cards_complex_creatures.rs`
+/// carried a `── Creepy Doll ──` header with no tests under it, and nineteen
+/// cards were claimed by two or three files apiece.
+#[test]
+fn a_cards_file_covers_exactly_the_cards_its_module_doc_lists() {
+    let mut problems = Vec::new();
+    for path in test_files() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if !name.starts_with("cards_") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let listed = module_doc_cards(&text);
+        let body = text.split("\nmod common;").nth(1).unwrap_or(&text);
+
+        for card in &listed {
+            if !body.contains(card.as_str()) {
+                problems.push(format!("{name}: lists {card:?}, which the file never mentions"));
+            }
+        }
+        // The stated count has to be the real one.
+        if let Some(start) = text.find("Cards covered (") {
+            let n: usize = text[start + 15..].split(')').next().unwrap_or("")
+                .parse().unwrap_or(usize::MAX);
+            if n != listed.len() {
+                problems.push(format!(
+                    "{name}: says \"Cards covered ({n})\" but lists {}", listed.len()));
+            }
+        }
+        // A section header with no test under it is a claim with nothing behind it.
+        let mut sections: Vec<(&str, usize)> = Vec::new();
+        for (i, line) in text.lines().enumerate() {
+            if let Some(rest) = line.strip_prefix("// ── ") {
+                sections.push((rest.trim_end_matches(['─', ' ']), i));
+            }
+        }
+        let lines: Vec<&str> = text.lines().collect();
+        for (idx, &(title, at)) in sections.iter().enumerate() {
+            let end = sections.get(idx + 1).map_or(lines.len(), |&(_, n)| n);
+            if !lines[at..end].iter().any(|l| l.trim() == "#[test]") {
+                problems.push(format!("{name}: section \"{title}\" has no tests under it"));
+            }
+        }
+    }
+    assert!(problems.is_empty(),
+        "a cards_*.rs module doc is the index for its cards; keep it true:\n  {}",
+        problems.join("\n  "));
+}
+
+/// `docs/TESTING.md` says where a test goes. It can only do that if it names
+/// the files — and it had fallen 32 rule-files behind, while still pointing at
+/// three (`audit_bugs.rs`, `tier15_cards.rs`, `state.rs`) that no longer exist.
+///
+/// `cards_*.rs` files are exempt in both directions: the doc describes them as
+/// a class, and each one's own module doc lists its cards.
+#[test]
+fn the_testing_guide_names_every_rule_test_file() {
+    let doc_path = repo_root().join("docs/TESTING.md");
+    let doc = fs::read_to_string(&doc_path).expect("docs/TESTING.md exists");
+
+    // Only the tables and the guard list are the map. The opening paragraph
+    // names files that were deliberately renamed away, and saying so is the
+    // point of that paragraph.
+    let mapped: String = doc.lines()
+        .filter(|l| l.starts_with('|') || l.starts_with("- `"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let named: BTreeSet<String> = mapped.match_indices('`')
+        .filter_map(|(i, _)| {
+            let rest = &mapped[i + 1..];
+            let end = rest.find('`')?;
+            let word = &rest[..end];
+            word.ends_with(".rs").then(|| word.split("::").next().unwrap().to_string())
+        })
+        .collect();
+
+    // `test_files()` skips this file; the guide names it, and should.
+    let mut on_disk: BTreeSet<String> = test_files().iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+        .filter(|n| n != "mod.rs")
+        .collect();
+    on_disk.insert("test_suite_guards.rs".into());
+
+    let missing: Vec<&String> = on_disk.difference(&named).collect();
+    // A guard bullet may name the `src/` file whose invariant it protects.
+    let sources = source_file_names();
+    let stale: Vec<&String> = named.difference(&on_disk)
+        .filter(|n| !sources.contains(n.as_str()))
+        .collect();
+
+    assert!(missing.is_empty() && stale.is_empty(),
+        "docs/TESTING.md is the map of this suite.\n  \
+         not in the guide: {missing:?}\n  \
+         named but gone:  {stale:?}");
+}

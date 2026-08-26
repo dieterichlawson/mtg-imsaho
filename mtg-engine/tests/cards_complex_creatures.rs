@@ -1,14 +1,11 @@
 //! Creatures with several interacting abilities — transform, a trigger and an
 //! activated ability at once. The largest of the per-card files.
 //!
-//! Cards covered (26), so this is greppable by name as well as by rule:
+//! Cards covered (20), so this is greppable by name as well as by rule:
 //!
 //! - Back from the Brink
 //! - Bitterheart Witch
-//! - Bloodline Keeper
 //! - Cellar Door
-//! - Civilized Scholar
-//! - Cloistered Youth
 //! - Creeping Renaissance
 //! - Creepy Doll
 //! - Curse of Stalked Prey
@@ -18,14 +15,11 @@
 //! - Gutter Grime
 //! - Heretic's Punishment
 //! - Kessig Cagebreakers
-//! - Ludevic's Test Subject
 //! - Manor Gargoyle
 //! - Mentor of the Meek
 //! - Mirror-Mad Phantasm
 //! - Moldgraf Monstrosity
-//! - Screeching Bat
 //! - Skaab Ruinator
-//! - Thraben Sentry
 //! - Tree of Redemption
 //! - Unbreathing Horde
 //! - Undead Alchemist
@@ -41,6 +35,9 @@ use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 
 use mtg_engine::types::*;
+use mtg_engine::cards::CardRegistry;
+use mtg_engine::events::{DamageTarget, GameEvent};
+use mtg_engine::state::StackEntry;
 // ── Curse of Stalked Prey ────────────────────────────────────────
 
 #[test]
@@ -177,8 +174,6 @@ fn galvanic_juggernaut_untaps_when_creature_dies() {
 
     assert!(!state.get_object(jug).unwrap().tapped, "Galvanic Juggernaut should untap when a creature dies");
 }
-
-// ── Creepy Doll ──────────────────────────────────────────────────
 
 // ── Bitterheart Witch ────────────────────────────────────────────
 
@@ -886,536 +881,6 @@ fn back_from_the_brink_uses_creature_mana_cost() {
         "Should have created a token copy of Savannah Lions");
 }
 
-// ── Delver of Secrets ──────────────────────────────────────────
-
-#[test]
-fn delver_transforms_when_player_reveals_instant() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    // Put Delver on the battlefield.
-    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
-    assert_eq!(state.get_object(delver).unwrap().power, Some(1));
-
-    // Put a Lightning Bolt (instant) on top of library.
-    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Library, &reg);
-    state.players[0].library_order.insert(0, bolt);
-
-    // Trigger upkeep — should present a YesNo choice.
-    let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &[], &reg);
-
-    // Should NOT be transformed yet — awaiting player choice.
-    assert!(!state.get_object(delver).unwrap().is_transformed);
-    assert!(state.awaiting_action.is_some(), "Should be awaiting reveal choice");
-
-    // Player chooses to reveal.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Now should be transformed.
-    assert!(state.get_object(delver).unwrap().is_transformed);
-    assert_eq!(state.get_object(delver).unwrap().name, "Insectile Aberration");
-    // Dynamic P/T should be 3/2.
-    assert_eq!(behavior.dynamic_pt(&state, delver, &reg), Some((3, 2)));
-
-    // The card should still be on top of the library (per ruling).
-    assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
-}
-
-#[test]
-fn delver_does_not_transform_when_player_declines_reveal() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
-
-    // Put a Lightning Bolt (instant) on top of library.
-    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Library, &reg);
-    state.players[0].library_order.insert(0, bolt);
-
-    // Trigger upkeep — should present a YesNo choice.
-    let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &[], &reg);
-
-    assert!(state.awaiting_action.is_some(), "Should be awaiting reveal choice");
-
-    // Player declines to reveal.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
-        &reg,
-    );
-
-    // Should NOT be transformed.
-    assert!(!state.get_object(delver).unwrap().is_transformed);
-    assert_eq!(state.get_object(delver).unwrap().name, "Delver of Secrets");
-
-    // The card should still be on top of the library.
-    assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
-}
-
-#[test]
-fn delver_does_not_transform_when_top_card_is_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
-
-    // Put a creature on top of library.
-    let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(creature, Zone::Library, &reg);
-    state.players[0].library_order.insert(0, creature);
-
-    let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &[], &reg);
-
-    // Per oracle ruling: "You may reveal the card even if it's not an instant or sorcery."
-    // A choice should be presented. If the player reveals, Delver does NOT transform
-    // (since it's a creature, not an instant or sorcery).
-    assert!(state.awaiting_action.is_some(), "Should present 'you may reveal' choice");
-
-    // Player chooses to reveal.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Should NOT transform (top card is a creature).
-    assert!(!state.get_object(delver).unwrap().is_transformed);
-    assert_eq!(state.get_object(delver).unwrap().name, "Delver of Secrets");
-}
-
-// ── Cloistered Youth ──────────────────────────────────────────
-
-#[test]
-fn cloistered_youth_presents_transform_choice_at_upkeep() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
-
-    let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, youth, &[], &reg);
-
-    // Should NOT be transformed yet — awaiting player choice.
-    assert!(!state.get_object(youth).unwrap().is_transformed);
-    assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
-
-    // Player chooses yes to transform.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Now should be transformed.
-    assert!(state.get_object(youth).unwrap().is_transformed);
-    assert_eq!(state.get_object(youth).unwrap().name, "Unholy Fiend");
-    assert_eq!(behavior.dynamic_pt(&state, youth, &reg), Some((3, 3)));
-}
-
-#[test]
-fn cloistered_youth_can_decline_transform() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
-
-    let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, youth, &[], &reg);
-
-    // Should be awaiting player choice.
-    assert!(state.awaiting_action.is_some());
-
-    // Player declines to transform.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
-        &reg,
-    );
-
-    // Should NOT be transformed.
-    assert!(!state.get_object(youth).unwrap().is_transformed);
-    assert_eq!(state.get_object(youth).unwrap().name, "Cloistered Youth");
-}
-
-#[test]
-fn unholy_fiend_drains_life_at_end_step() {
-    let reg = registry();
-    let mut state = game_at_step(Step::EndStep, P0);
-
-    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
-    // Pre-transform.
-    state.get_object_mut(youth).unwrap().is_transformed = true;
-    state.get_object_mut(youth).unwrap().name = "Unholy Fiend".into();
-
-    let life_before = state.players[0].life;
-    let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_end_step(&mut state, youth, &[], &reg);
-
-    assert_eq!(state.players[0].life, life_before - 1);
-}
-
-// ── Screeching Bat ──────────────────────────────────────────
-
-#[test]
-fn screeching_bat_transforms_at_upkeep_when_player_pays() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-
-    // Add mana for the upkeep transform cost: {2}{B}{B}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
-
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-
-    // Should NOT be transformed yet — awaiting player choice.
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-    assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
-
-    // Player chooses to pay.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Now should be transformed.
-    assert!(state.get_object(bat).unwrap().is_transformed);
-    assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
-    assert_eq!(behavior.dynamic_pt(&state, bat, &reg), Some((5, 5)));
-
-    // Mana should have been spent.
-    assert_eq!(state.get_player(P0).mana_pool.total(), 0);
-}
-
-#[test]
-fn screeching_bat_does_not_transform_when_player_declines() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-
-    // Add mana for the upkeep transform cost: {2}{B}{B}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
-
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-
-    assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
-
-    // Player declines to pay.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
-        &reg,
-    );
-
-    // Should NOT be transformed.
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-    assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
-
-    // Mana should NOT have been spent.
-    assert_eq!(state.get_player(P0).mana_pool.total(), 4);
-}
-
-#[test]
-fn screeching_bat_no_choice_without_mana() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-
-    // No mana in pool — choice should not be presented.
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-    assert!(state.awaiting_action.is_none(), "No choice should be presented without mana");
-}
-
-#[test]
-fn stalking_vampire_transforms_back_when_player_pays() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-
-    // Transform to Stalking Vampire first.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.is_transformed = true;
-        obj.name = "Stalking Vampire".into();
-    }
-
-    // Add mana for the upkeep transform cost: {2}{B}{B}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
-
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-
-    // Should be awaiting choice.
-    assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
-
-    // Player chooses to pay.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Should transform back to Screeching Bat.
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-    assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
-}
-
-#[test]
-fn stalking_vampire_does_not_have_flying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-
-    // (No hand-seeding of obj.keywords: printed keywords live on the card's
-    // active face, so `has_keyword` reads them straight from the registry.)
-
-    // Verify front face has Flying.
-    assert!(state.has_keyword(bat, Keyword::Flying, &reg));
-
-    // Add mana and transform.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
-
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Now Stalking Vampire — should NOT have Flying.
-    assert!(state.get_object(bat).unwrap().is_transformed);
-    assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
-    assert!(!state.has_keyword(bat, Keyword::Flying, &reg),
-        "Stalking Vampire should not have Flying");
-}
-
-#[test]
-fn screeching_bat_regains_flying_on_transform_back() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-
-    // Start already on the back face. Flipping `is_transformed` is the whole
-    // of it — the characteristics accessors read the active face.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.is_transformed = true;
-        obj.name = "Stalking Vampire".into();
-    }
-
-    // Add mana and transform back.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
-
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Should be back to Screeching Bat with Flying restored.
-    assert!(!state.get_object(bat).unwrap().is_transformed);
-    assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
-    assert!(state.has_keyword(bat, Keyword::Flying, &reg),
-        "Screeching Bat should have Flying after transforming back");
-}
-
-#[test]
-fn screeching_bat_transform_updates_subtypes() {
-    let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
-
-    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
-
-    // Front face is a Bat, per the registry — nothing to seed.
-    assert!(state.has_subtype(bat, "Bat", &reg));
-
-    // Add mana and transform.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
-
-    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &[], &reg);
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Stalking Vampire should have "Vampire" subtype, not "Bat".
-    assert!(state.has_subtype(bat, "Vampire", &reg),
-        "Stalking Vampire should have Vampire subtype");
-    assert!(!state.has_subtype(bat, "Bat", &reg),
-        "Stalking Vampire should not have Bat subtype");
-}
-
-// ── Ludevic's Test Subject ──────────────────────────────────────────
-
-#[test]
-fn ludevics_test_subject_transforms_at_five_counters() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
-    assert_eq!(state.get_object(subject).unwrap().power, Some(0));
-
-    let behavior = reg.get(state.get_object(subject).unwrap().card_id).unwrap();
-
-    // Activate 4 times — should not transform yet.
-    for _ in 0..4 {
-        behavior.on_activate_ability(&mut state, subject, 0, &[], &reg);
-    }
-    assert!(!state.get_object(subject).unwrap().is_transformed);
-
-    // 5th activation — should transform.
-    behavior.on_activate_ability(&mut state, subject, 0, &[], &reg);
-    let obj = state.get_object(subject).unwrap();
-    assert!(obj.is_transformed);
-    assert_eq!(obj.name, "Ludevic's Abomination");
-    assert_eq!(behavior.dynamic_pt(&state, subject, &reg), Some((13, 13)));
-    // The back face's keywords and subtypes come from the active face.
-    assert!(state.has_keyword(subject, Keyword::Trample, &reg), "back face should have Trample");
-    assert!(!state.has_keyword(subject, Keyword::Defender, &reg), "back face should not have Defender");
-    assert!(state.has_subtype(subject, "Lizard", &reg));
-    assert!(state.has_subtype(subject, "Horror", &reg));
-}
-
-// ── Thraben Sentry ──────────────────────────────────────────
-
-#[test]
-fn thraben_sentry_transforms_when_creature_dies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
-    let other = ready_creature(&mut state, P0, 1, 1);
-
-    assert!(!state.get_object(sentry).unwrap().is_transformed);
-
-    // Simulate another creature dying — presents "you may transform" choice.
-    let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, false, &[], &reg);
-
-    // Oracle: "you may transform" — choice should be presented.
-    assert!(state.awaiting_action.is_some(), "Should present 'you may transform' choice");
-
-    // Player chooses yes.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    assert!(state.get_object(sentry).unwrap().is_transformed);
-    assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");
-    assert_eq!(behavior.dynamic_pt(&state, sentry, &reg), Some((5, 4)));
-}
-
-#[test]
-fn thraben_sentry_does_not_transform_when_opponent_creature_dies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
-    let opp_creature = ready_creature(&mut state, P1, 1, 1);
-
-    let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, sentry, opp_creature, P1, &[], 1, false, &[], &reg);
-
-    // Should NOT transform.
-    assert!(!state.get_object(sentry).unwrap().is_transformed);
-}
-
-// ── Bloodline Keeper ──────────────────────────────────────────
-
-#[test]
-fn bloodline_keeper_creates_vampire_token() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
-
-    let behavior = reg.get(state.get_object(keeper).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, keeper, 0, &[], &reg);
-
-    // Should have a Vampire token.
-    assert_eq!(count_tokens_named(&state, "Vampire"), 1);
-    let token = find_token_named(&state, "Vampire").unwrap();
-    let obj = state.get_object(token).unwrap();
-    assert_eq!(obj.power, Some(2));
-    assert_eq!(obj.toughness, Some(2));
-}
-
-// ── Mikaeus, the Lunarch ──────────────────────────────────────────
-
-#[test]
-fn mikaeus_enters_with_x_counters() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Create Mikaeus with x_value = 3.
-    let card_id = reg.get_id_by_name("Mikaeus, the Lunarch").unwrap();
-    let id = state.create_object(card_id, P0, Zone::Stack, Some(0), Some(0));
-    state.get_object_mut(id).unwrap().name = "Mikaeus, the Lunarch".into();
-    state.get_object_mut(id).unwrap().x_value = Some(3);
-
-    let behavior = reg.get(card_id).unwrap();
-    behavior.on_resolve(&mut state, id, &[], &reg);
-
-    assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield);
-    assert_eq!(state.get_counter_count(id, CounterType::PlusOnePlusOne), 3);
-}
-
-#[test]
-fn mikaeus_distributes_counters() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
-    // Give Mikaeus 2 +1/+1 counters.
-    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 2);
-
-    let other1 = ready_creature(&mut state, P0, 2, 2);
-    let other2 = ready_creature(&mut state, P0, 1, 1);
-
-    // Use ability 1: remove a counter, give +1/+1 to each other creature.
-    let behavior = reg.get(state.get_object(mikaeus).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, mikaeus, 1, &[], &reg);
-
-    // Mikaeus should have lost a counter.
-    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 1);
-    // Other creatures should each have a counter.
-    assert_eq!(state.get_counter_count(other1, CounterType::PlusOnePlusOne), 1);
-    assert_eq!(state.get_counter_count(other2, CounterType::PlusOnePlusOne), 1);
-}
-
 // ── Grimgrin, Corpse-Born ──────────────────────────────────────────
 
 #[test]
@@ -2116,266 +1581,6 @@ fn liliana_minus_six_can_target_self() {
     }
 }
 
-// ── Garruk Relentless ──────────────────────────────────────────
-
-#[test]
-fn garruk_creates_wolf_token() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 3);
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
-
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1);
-    let wolf = find_token_named(&state, "Wolf").unwrap();
-    assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
-}
-
-#[test]
-fn garruk_transforms_at_two_or_fewer_loyalty() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 2);
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    // Use the wolf token ability (costs 0 loyalty).
-    behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
-
-    // Transform is now a state-triggered ability: SBA detects the condition and
-    // queues a trigger, which then goes on the stack and resolves.
-    check_state_based_actions(&mut state, &reg);
-    mtg_engine::triggers::process_triggers(&mut state, &reg);
-
-    // Should have transformed.
-    assert!(state.get_object(garruk).unwrap().is_transformed);
-    assert_eq!(state.get_object(garruk).unwrap().name, "Garruk, the Veil-Cursed");
-}
-
-#[test]
-fn garruk_back_face_creates_deathtouch_wolf() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 2);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
-    behavior.on_loyalty_ability(&mut state, garruk, 10, &[], &reg);
-
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Should create a Wolf token");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
-    let obj = state.get_object(wolf).unwrap();
-    assert_eq!(obj.power, Some(1), "Wolf should be 1/1");
-    assert_eq!(obj.toughness, Some(1), "Wolf should be 1/1");
-    assert!(obj.keywords.contains(&Keyword::Deathtouch), "Wolf should have deathtouch");
-}
-
-#[test]
-fn garruk_back_face_sacrifice_to_tutor() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 3);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
-
-    // Put a creature on the battlefield to sacrifice.
-    let sac_target = ready_creature(&mut state, P0, 1, 1);
-    state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
-
-    // Put a creature card in the library.
-    let lib_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(lib_creature, Zone::Library, &reg);
-    state.get_player_mut(P0).library_order.push(lib_creature);
-    if let Some(obj) = state.get_object_mut(lib_creature) {
-        obj.card_types = vec![CardType::Creature];
-    }
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    // -1: Sacrifice a creature, search for a creature card (ability_index 11).
-    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
-
-    // Sac target should be in graveyard.
-    assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
-        "Sacrificed creature should be in graveyard");
-
-    // Library creature should now be in hand.
-    assert_eq!(state.get_object(lib_creature).unwrap().zone, Zone::Hand,
-        "Tutored creature should be in hand");
-}
-
-#[test]
-fn garruk_back_face_tutor_presents_sacrifice_choice() {
-    // With multiple creatures, the -1 ability should present a sacrifice choice.
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 4);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
-
-    // Two creatures to choose from.
-    let creature1 = ready_creature(&mut state, P0, 1, 1);
-    state.get_object_mut(creature1).unwrap().card_types = vec![CardType::Creature];
-    let creature2 = ready_creature(&mut state, P0, 3, 3);
-    state.get_object_mut(creature2).unwrap().card_types = vec![CardType::Creature];
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
-
-    // Should be awaiting a sacrifice choice (not auto-selected).
-    assert!(state.awaiting_action.is_some(),
-        "Should present sacrifice choice when multiple creatures available");
-
-    // Resolve with the specific creature we want to sacrifice.
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice {
-            choice: ResolvedChoice::ChosenTarget(Some(mtg_engine::actions::Target::Object(creature1))),
-        },
-        &reg,
-    );
-
-    // creature1 should be sacrificed (in graveyard).
-    assert_eq!(new_state.get_object(creature1).unwrap().zone, Zone::Graveyard,
-        "Chosen creature should be sacrificed");
-    // creature2 should still be on the battlefield.
-    assert_eq!(new_state.get_object(creature2).unwrap().zone, Zone::Battlefield,
-        "Non-chosen creature should remain on battlefield");
-}
-
-/// Garruk, the Veil-Cursed's -1: "Search your library for a creature card, reveal
-/// it, put it into your hand, then shuffle." The shuffle is the part that is easy
-/// to leave out, so assert it: over repeated runs the remaining library must come
-/// back in more than one order. A single run cannot tell a shuffle from a no-op.
-#[test]
-fn garruk_back_face_tutor_shuffles_library() {
-    let reg = registry();
-
-    let run = || {
-        let mut state = game_at_step(Step::PrecombatMain, P0);
-        let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-        set_loyalty(&mut state, garruk, 4);
-        if let Some(obj) = state.get_object_mut(garruk) {
-            obj.is_transformed = true;
-            obj.name = "Garruk, the Veil-Cursed".into();
-        }
-
-        let sac_target = ready_creature(&mut state, P0, 1, 1);
-        state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
-
-        let mut lib_ids = Vec::new();
-        for name in &["Grizzly Bears", "Doom Blade", "Giant Growth", "Divination", "Lightning Bolt"] {
-            let id = spell_in_hand(&mut state, &reg, name, P0);
-            state.move_object(id, Zone::Library, &reg);
-            state.get_player_mut(P0).library_order.push(id);
-            if *name == "Grizzly Bears" {
-                state.get_object_mut(id).unwrap().card_types = vec![CardType::Creature];
-            }
-            lib_ids.push(id);
-        }
-        let before = state.get_player(P0).library_order.clone();
-
-        let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-        behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
-
-        let after = state.get_player(P0).library_order.clone();
-        assert!(!after.contains(&lib_ids[0]),
-            "the tutored creature is in hand, not still in the library");
-        assert_eq!(after.len(), before.len() - 1,
-            "exactly one card left the library");
-        assert_eq!(state.get_object(lib_ids[0]).unwrap().zone, Zone::Hand,
-            "the tutored creature ends up in hand");
-        after
-    };
-
-    let first = run();
-    // Four cards remain, so an unshuffled library repeats the same order every
-    // time. Twenty runs that all agree would be a 1-in-24^19 coincidence.
-    let shuffled = (0..20).any(|_| run() != first);
-    assert!(shuffled, "the library came back in the same order 20 times — it was never shuffled");
-}
-
-#[test]
-fn garruk_back_face_overrun() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 4);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
-
-    // Put 2 creature cards in graveyard.
-    for _ in 0..2 {
-        let c = ready_creature(&mut state, P0, 1, 1);
-        state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-        state.move_object(c, Zone::Graveyard, &reg);
-    }
-
-    // Put a creature on the battlefield.
-    let creature = ready_creature(&mut state, P0, 3, 3);
-    state.get_object_mut(creature).unwrap().card_types = vec![CardType::Creature];
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    // -3: Creatures get +X/+X and trample (ability_index 12).
-    behavior.on_loyalty_ability(&mut state, garruk, 12, &[], &reg);
-
-    // X should be 2 (2 creature cards in graveyard).
-    // Creature should have +2/+2 until end of turn.
-    let has_buff = state.until_end_of_turn.iter()
-        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::ModifyPT { target, power_mod, toughness_mod } if *target == creature && *power_mod == 2 && *toughness_mod == 2));
-    assert!(has_buff, "Creature should have +2/+2 until end of turn");
-
-    // Should have trample.
-    let has_trample = state.until_end_of_turn.iter()
-        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == creature && *keyword == Keyword::Trample));
-    assert!(has_trample, "Creature should have trample until end of turn");
-}
-
-#[test]
-fn garruk_back_face_loyalty_abilities_shown_when_transformed() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
-    set_loyalty(&mut state, garruk, 3);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
-
-    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    let abilities = behavior.loyalty_abilities(&state, garruk);
-
-    // Back face should have 3 abilities with indices 10, 11, 12.
-    assert_eq!(abilities.len(), 3, "Back face should have 3 loyalty abilities");
-    assert_eq!(abilities[0].ability_index, 10);
-    assert_eq!(abilities[0].loyalty_change, 1); // +1
-    assert_eq!(abilities[1].ability_index, 11);
-    assert_eq!(abilities[1].loyalty_change, -1); // -1
-    assert_eq!(abilities[2].ability_index, 12);
-    assert_eq!(abilities[2].loyalty_change, -3); // -3
-}
-
 // ── Essence of the Wild ──────────────────────────────────────────
 
 #[test]
@@ -2676,98 +1881,401 @@ fn grimoire_ability_1_not_available_without_3_counters() {
 
 // ── Civilized Scholar ──────────────────────────────────────────
 
+// -------------------------------------------------------------------------
+// Creepy Doll
+// -------------------------------------------------------------------------
+
+/// The trigger should fire when `CombatDamageDealt` event targets a creature.
 #[test]
-fn civilized_scholar_discard_creature_transforms() {
+fn trigger_fires_on_combat_damage_to_creature() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
 
-    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
+    // Emit combat damage event (doll deals 1 damage to target creature).
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(target),
+        amount: 1,
+    });
 
-    // Put a card in the library (will be drawn).
-    let lib_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(lib_card, Zone::Library, &reg);
-    state.players[0].library_order = vec![lib_card];
+    // Collect triggers.
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
 
-    // Put a non-creature in hand (so we have a choice after drawing).
-    let _hand_spell = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
-
-    // Activate the ability — draws a card, then prompts for discard.
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
-    );
-
-    // Should be awaiting a discard choice now.
-    assert!(new_state.awaiting_action.is_some(),
-        "Should be awaiting discard choice");
-
-    // Choose to discard the creature (Grizzly Bears we drew).
-    let new_state = engine::submit_action(
-        &new_state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(lib_card) },
-        &reg,
-    );
-
-    // Should have transformed (discarded a creature).
-    assert!(new_state.get_object(scholar).unwrap().is_transformed,
-        "Should transform after discarding a creature");
-    assert_eq!(new_state.get_object(scholar).unwrap().name, "Homicidal Brute");
-    assert!(!new_state.get_object(scholar).unwrap().tapped,
-        "Should be untapped after transform");
+    // Should have a trigger on the stack for Creepy Doll's ability.
+    let has_trigger = state.stack.iter().any(|entry| matches!(entry, StackEntry::Trigger(_)));
+    assert!(has_trigger,
+        "Should have a trigger on the stack for Creepy Doll's combat damage to creature");
 }
 
+/// The trigger should NOT fire when `CombatDamageDealt` targets a player.
 #[test]
-fn civilized_scholar_discard_noncreature_no_transform() {
+fn trigger_does_not_fire_on_combat_damage_to_player() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    attacks_unblocked(&mut state, doll, P1);
+
+    // Emit combat damage event (doll deals 1 damage to player).
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Player(P1),
+        amount: 1,
+    });
+
+    // Collect triggers.
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    // Should NOT have a trigger on the stack (Creepy Doll doesn't have CombatDamageToPlayer).
+    let has_trigger = state.stack.iter().any(|entry| matches!(entry, StackEntry::Trigger(_)));
+    assert!(!has_trigger,
+        "Should NOT trigger on combat damage to player");
+}
+
+/// The `on_deals_combat_damage_to_creature` hook calls `try_destroy` on win.
+#[test]
+fn on_deals_combat_damage_to_creature_calls_destroy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+
+    // Call the hook directly many times to verify it can destroy.
+    // (Due to randomness, we call it many times and check that at least one destroys.)
+    let card_id = state.get_object(doll).unwrap().card_id;
+    let behavior = reg.get(card_id).unwrap();
+
+    let mut any_destroyed = false;
+    for _ in 0..50 {
+        let mut test_state = state.clone();
+        behavior.on_deals_combat_damage_to_creature(&mut test_state, doll, target, 1, &reg);
+        if test_state.get_object(target).is_some_and(|o| o.zone != Zone::Battlefield) {
+            any_destroyed = true;
+            break;
+        }
+    }
+    assert!(any_destroyed, "Creepy Doll should eventually destroy the target creature");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug: When Creepy Doll deals lethal combat damage to a creature
+/// AND wins the coin flip, the creature should be destroyed by the
+/// triggered ability even if it could regenerate from the lethal damage.
+/// The ruling says these are separate events.
+/// Note: This is hard to test deterministically due to the coin flip.
+/// We test the simpler case: Creepy Doll's trigger fires even when
+/// the creature already has lethal damage.
+#[test]
+fn bug_creepy_doll_trigger_with_lethal_damage() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let doll = named_permanent(&mut state, &registry, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 2, 1); // 1 toughness, will take lethal from 1 dmg
+
+    // Simulate combat damage: Doll deals 1 to target (lethal for 1 toughness)
+    if let Some(obj) = state.get_object_mut(target) {
+        obj.damage_marked = 1;
+        obj.damaged_by.push(doll);
+    }
+
+    // Give target a regeneration shield (to survive lethal damage)
+    if let Some(obj) = state.get_object_mut(target) {
+        obj.regeneration_shields = 1;
+    }
+
+    // The trigger should still fire (it's a separate "destroy" effect)
+    let behavior = registry.get(state.get_object(doll).unwrap().card_id).unwrap();
+    behavior.on_deals_combat_damage_to_creature(&mut state, doll, target, 1, &registry);
+
+    // After the trigger (which calls try_destroy on a coin flip win),
+    // the creature may survive (regeneration absorbs the destroy) or die.
+    // The key question is whether the trigger FIRES at all — it should.
+    // We can't control the coin flip, but we can verify the trigger ran
+    // by checking if try_destroy was called (regeneration shield consumed).
+    let _shields_after = state.get_object(target).unwrap().regeneration_shields;
+
+    // If the coin flip was won AND try_destroy was called, the shield is consumed.
+    // If the coin flip was lost, shields remain at 1.
+    // Either way, the trigger should have fired. We verify by running SBAs
+    // and checking the creature survived via regeneration.
+    // Run the trigger multiple times to get at least one coin flip win.
+    // If try_destroy is called on a win, the regeneration shield is consumed.
+    // We reset and retry until we get a win (statistically guaranteed in ~10 tries).
+    let mut won_at_least_once = false;
+    for _ in 0..20 {
+        // Reset target state
+        if let Some(obj) = state.get_object_mut(target) {
+            obj.regeneration_shields = 1;
+            obj.damage_marked = 1;
+            obj.zone = Zone::Battlefield;
+        }
+
+        behavior.on_deals_combat_damage_to_creature(&mut state, doll, target, 1, &registry);
+
+        let shields = state.get_object(target).unwrap().regeneration_shields;
+        if shields == 0 {
+            // Coin flip was won, try_destroy was called, regeneration was consumed
+            won_at_least_once = true;
+            break;
+        }
+    }
+
+    assert!(won_at_least_once,
+        "After 20 attempts, Creepy Doll should have won at least one coin flip and called try_destroy");
+}
+
+// -------------------------------------------------------------------------
+// Gutter Grime — the rest
+// -------------------------------------------------------------------------
+
+/// A slime counter and an Ooze per nontoken creature death, and the Oozes are
+/// sized by the *current* counter count — so an Ooze made when the count was 1
+/// is a 2/2 once the count reaches 2. That is what "power and toughness are
+/// each equal to the number of slime counters on Gutter Grime" means: a
+/// characteristic-defining ability, recomputed, not a size fixed at creation.
+#[test]
+fn every_ooze_is_sized_by_the_current_slime_count() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
 
-    // Put a card in the library (will be drawn).
-    let lib_card = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
-    state.move_object(lib_card, Zone::Library, &reg);
-    state.players[0].library_order = vec![lib_card];
+    for expected in 1..=2 {
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        kill_by_damage(&mut state, &reg, creature);
+        triggers::process_triggers(&mut state, &reg);
 
-    // Put a creature in hand.
-    let hand_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+        assert_eq!(counters_of(&state, grime, CounterType::Slime), expected,
+            "one slime counter per nontoken creature death");
+        assert_eq!(count_tokens_named(&state, "Ooze"), expected as usize,
+            "and one Ooze per death");
 
-    // Activate the ability.
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
+        // Every Ooze, including the ones made earlier, is the current size.
+        let oozes: Vec<_> = state.objects.values()
+            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze")
+            .map(|o| o.id)
+            .collect();
+        for ooze in oozes {
+            assert_eq!(state.effective_power(ooze, &reg), Some(expected as i32),
+                "with {expected} slime counter(s), every Ooze is {expected}/{expected}");
+            assert_eq!(state.effective_toughness(ooze, &reg), Some(expected as i32));
+        }
+    }
+}
+
+/// "Whenever a **nontoken** creature **you control** dies" — two conditions,
+/// and both need a row, since a Gutter Grime that ignored the condition
+/// entirely would satisfy either one alone.
+#[test]
+fn gutter_grime_counts_only_your_own_nontoken_creatures() {
+    // (whose creature, is it a token, does the slime counter arrive?)
+    const CASES: &[(PlayerId, bool, bool)] = &[
+        (P0, false, true),
+        (P0, true, false),
+        (P1, false, false),
+    ];
+
+    for &(controller, is_token, counts) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+
+        let creature = if is_token {
+            let id = state.create_token("Spirit", controller, 1, 1,
+                vec![Color::White], vec![CardType::Creature], vec![], &reg)[0];
+            state.get_object_mut(id).unwrap().summoning_sick = false;
+            id
+        } else {
+            ready_creature(&mut state, controller, 2, 2)
+        };
+
+        // Killed for real, so a dying token is removed from `state.objects` by
+        // SBA 704.5d before the trigger resolves — the case where reading
+        // `is_token` back off the dead object answers `false` and the "nontoken"
+        // clause silently stops applying.
+        kill_by_damage(&mut state, &reg, creature);
+        triggers::process_triggers(&mut state, &reg);
+
+        assert_eq!(counters_of(&state, grime, CounterType::Slime), u32::from(counts),
+            "controller=p{}, is_token={is_token}", controller.0);
+        assert_eq!(count_tokens_named(&state, "Ooze"), usize::from(counts),
+            "controller=p{}, is_token={is_token}", controller.0);
+    }
+}
+
+/// The Oozes' size is read off Gutter Grime, so losing Gutter Grime makes them
+/// 0/0 — and state-based actions then bury them (CR 704.5a).
+#[test]
+fn the_oozes_die_when_gutter_grime_leaves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    kill_by_damage(&mut state, &reg, creature);
+    triggers::process_triggers(&mut state, &reg);
+
+    let ooze = find_token_named(&state, "Ooze").expect("an Ooze was made");
+    assert_eq!(state.effective_power(ooze, &reg), Some(1), "test precondition: a 1/1");
+
+    state.move_object(grime, Zone::Graveyard, &reg);
+
+    assert_eq!(state.effective_power(ooze, &reg), Some(0),
+        "with no Gutter Grime there are no slime counters to count");
+    assert_eq!(state.effective_toughness(ooze, &reg), Some(0));
+
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert!(state.get_object(ooze).is_none(),
+        "a 0-toughness token dies and, being a token, ceases to exist");
+}
+
+// -------------------------------------------------------------------------
+// Unbreathing Horde — the rest
+// -------------------------------------------------------------------------
+
+/// Combat damage is prevented and a counter is removed.
+#[test]
+fn prevents_combat_damage_removes_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
+    // Give it 3 +1/+1 counters.
+    state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
+
+    // Attacker attacks, Horde blocks.
+    let attacker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P0, &[horde]);
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    // The Horde should have taken no damage but lost a counter.
+    assert_eq!(state.get_object(horde).unwrap().damage_marked, 0,
+        "Damage should be prevented");
+    let counters = state.get_object(horde).unwrap().counters
+        .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    assert_eq!(counters, 2, "Should have lost one +1/+1 counter");
+}
+
+/// When Unbreathing Horde deals damage as attacker, the other creature still takes damage.
+#[test]
+fn still_deals_damage_to_others() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
+    state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
+
+    let blocker = ready_creature(&mut state, P1, 2, 5);
+    // Horde attacks, blocker blocks.
+    attacks_blocked_by(&mut state, horde, P1, &[blocker]);
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    // The blocker should have taken damage from Horde (0 base + 3 counters = 3 power).
+    assert!(state.get_object(blocker).unwrap().damage_marked > 0,
+        "Blocker should take damage from Unbreathing Horde");
+    // The Horde should have taken no damage (prevented).
+    assert_eq!(state.get_object(horde).unwrap().damage_marked, 0,
+        "Horde damage should be prevented");
+}
+
+/// ETB counter count is correct with zombies on battlefield and graveyard.
+#[test]
+fn enters_with_correct_counter_count() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put 2 zombies on battlefield.
+    let _z1 = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let _z2 = named_permanent(&mut state, &reg, "Diregraf Ghoul", P0);
+
+    // Put 1 zombie in graveyard.
+    let _z3 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    // Cast Unbreathing Horde — on_resolve counts graveyard before moving to battlefield.
+    let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
+    state = cast_and_resolve(&state, &reg, horde, vec![]);
+
+    let counters = state.get_object(horde).unwrap().counters
+        .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    // 2 battlefield zombies + 1 graveyard zombie = 3 counters.
+    assert_eq!(counters, 3, "Should have 3 +1/+1 counters (2 bf + 1 gy zombies)");
+}
+
+// -------------------------------------------------------------------------
+// From the bug-audit files, re-filed by the rule each one exercises.
+// -------------------------------------------------------------------------
+
+/// Bug AC (`audits/AUDIT_BUGS.md)`: Unbreathing Horde under-counts when
+/// reanimated from a graveyard. Per Scryfall ruling: "If Unbreathing
+/// Horde enters from a graveyard, it counts itself for its enter-with-
+/// counters ability."
+///
+/// Oracle (Unbreathing Horde): "This creature enters with a +1/+1
+/// counter on it for each other Zombie you control and each Zombie
+/// card in your graveyard."
+///
+/// "Enters with X counters" is a CR 614.1c replacement effect, so the
+/// count is computed at entry timing — at which point the Horde is
+/// still in the graveyard zone (it hasn't fully entered yet) and the
+/// "Zombie cards in your graveyard" count includes the Horde itself.
+///
+/// Failure mode: `unbreathing_horde.rs` runs the
+/// `add_zombie_counters` helper from the `on_enter_battlefield`
+/// handler — i.e. AFTER the move to battlefield. By that point,
+/// `count_zombies_in_graveyard` no longer sees the Horde (it's on
+/// the battlefield), so the reanimated Horde misses one counter
+/// compared to the cast path.
+///
+/// We put two other Zombies in P0's graveyard alongside the Horde,
+/// then move the Horde to the battlefield (mirroring Unburial Rites
+/// reanimation), then fire the ETB handler. The fix should give the
+/// Horde three +1/+1 counters (2 other Zombies + the Horde itself);
+/// the bug gives it only two.
+#[test]
+fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two other Zombie creature cards in P0's graveyard.
+    let walking_corpse_id = registry.get_id_by_name("Walking Corpse").unwrap();
+    let z1 = state.create_object(walking_corpse_id, P0, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(z1).unwrap().name = "Walking Corpse (a)".into();
+    let z2 = state.create_object(walking_corpse_id, P0, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(z2).unwrap().name = "Walking Corpse (b)".into();
+
+    // Unbreathing Horde sitting in P0's graveyard, ready to be reanimated.
+    let horde_card_id = registry.get_id_by_name("Unbreathing Horde").unwrap();
+    let horde = state.create_object(horde_card_id, P0, Zone::Graveyard, Some(0), Some(0));
+    state.get_object_mut(horde).unwrap().name = "Unbreathing Horde".into();
+
+    // Reanimate: move the Horde to the battlefield and fire its ETB
+    // handler (this mirrors what Unburial Rites does).
+    state.move_object(horde, Zone::Battlefield, &registry);
+    let behavior = registry.get(horde_card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, horde, &[], &registry);
+
+    let counters = state
+        .get_object(horde)
+        .unwrap()
+        .counters
+        .get(&CounterType::PlusOnePlusOne)
+        .copied()
+        .unwrap_or(0);
+
+    assert!(
+        counters >= 3,
+        "Reanimated Unbreathing Horde should enter with at least 3 \
+         +1/+1 counters (2 other Zombies in graveyard + the Horde \
+         counts itself per the Scryfall ruling). Bug AC: \
+         on_enter_battlefield runs after the move, so the helper sees \
+         only the 2 other Zombies in the graveyard and adds 2 counters. \
+         Got: {counters}",
     );
-
-    // Should be awaiting a discard choice.
-    assert!(new_state.awaiting_action.is_some());
-
-    // Choose to discard the non-creature (Doom Blade we drew), keeping the creature.
-    let new_state = engine::submit_action(
-        &new_state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(lib_card) },
-        &reg,
-    );
-
-    // Should NOT transform (discarded a non-creature).
-    assert!(!new_state.get_object(scholar).unwrap().is_transformed,
-        "Should NOT transform after discarding a non-creature");
-    assert_eq!(new_state.get_object(scholar).unwrap().name, "Civilized Scholar");
-    // Should still be tapped (no untap since no transform).
-    assert!(new_state.get_object(scholar).unwrap().tapped,
-        "Should remain tapped when no transform");
-
-    // The creature should still be in hand.
-    assert_eq!(new_state.get_object(hand_creature).unwrap().zone, Zone::Hand,
-        "Player chose to keep the creature in hand");
 }

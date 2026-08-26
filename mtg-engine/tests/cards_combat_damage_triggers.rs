@@ -320,8 +320,6 @@ fn sturmgeist_pt_equals_hand_size() {
     assert_eq!(toughness, 4, "Sturmgeist toughness should equal hand size");
 }
 
-// ── Falkenrath Marauders ──────────────────────────────────────────
-
 // ── Balefire Dragon ───────────────────────────────────────────────
 
 /// Balefire Dragon deals combat damage amount to all opponent's creatures.

@@ -1,36 +1,24 @@
 //! Tests for Innistrad Tier 0-1 cards: vanilla creatures, keyword creatures,
 //! combat instants, and aura enchantments.
 //!
-//! Cards covered (28), so this is greppable by name as well as by rule:
+//! Cards covered (16), so this is greppable by name as well as by rule:
 //!
-//! - Abbey Griffin
-//! - Ambush Viper
 //! - Bonds of Faith
 //! - Claustrophobia
 //! - Dead Weight
 //! - Diregraf Ghoul
-//! - Fortress Crab
 //! - Furor of the Bitten
 //! - Ghostly Possession
 //! - Gruesome Deformity
 //! - Hysterical Blindness
-//! - Invisible Stalker
-//! - Kindercatch
 //! - Markov Patrician
 //! - Rally the Peasants
 //! - Ranger's Guile
-//! - Riot Devils
-//! - Rotting Fensnake
 //! - Sensory Deprivation
 //! - Skeletal Grimace
-//! - Somberwald Spider
 //! - Spectral Flight
-//! - Spectral Rider
 //! - Spidery Grasp
-//! - Thraben Purebloods
-//! - Typhoid Rats
 //! - Vampiric Fury
-//! - Voiceless Spirit
 
 mod common;
 
@@ -39,10 +27,6 @@ use mtg_engine::actions::Target;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 use mtg_engine::triggers;
-// ── Tier 0: Vanilla creatures exist and have correct stats ──────────
-
-// ── Tier 1: Keyword creatures have correct keywords ─────────────────
-
 // ── Diregraf Ghoul enters tapped ────────────────────────────────────
 
 #[test]
