@@ -3,9 +3,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
+use mtg_engine::actions::Target;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
@@ -13,7 +11,7 @@ use mtg_engine::types::*;
 /// Lightning Bolt deals 3 damage to a creature, killing a 3-toughness creature.
 #[test]
 fn lightning_bolt_kills_creature() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has a Lightning Bolt in hand and {R} in pool.
@@ -46,7 +44,7 @@ fn lightning_bolt_kills_creature() {
 /// have their own tests.
 #[test]
 fn direct_damage_spells_drain_player_life() {
-    let reg = CardRegistry::with_all_cards();
+    let reg = registry();
     for (name, damage) in [
         ("Lightning Bolt",    3u32),
         ("Lava Axe",          5),
@@ -61,82 +59,76 @@ fn direct_damage_spells_drain_player_life() {
     }
 }
 
-/// Lightning Bolt can be cast at instant speed (during opponent's turn).
+/// CR 307.1: a sorcery may be cast only during its controller's main phase,
+/// with an empty stack. An instant has no such restriction.
+///
+/// Every row asks the same question of `legal_actions`, scoped to the spell in
+/// hand — asking whether *any* `CastSpell` is offered, as these used to, is a
+/// different question once the hand holds more than one card.
 #[test]
-fn instant_can_be_cast_during_opponent_turn() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P1); // P1's turn
-    state.priority_player = Some(P0); // but P0 has priority
+fn sorcery_timing_restricts_sorceries_and_leaves_instants_alone() {
+    /// The board the spell is being cast into.
+    enum When {
+        /// The caster's own main phase, empty stack — always legal.
+        OwnMainPhase,
+        /// The opponent's main phase.
+        OpponentsTurn,
+        /// Mid-combat, on the caster's own turn.
+        DuringCombat,
+        /// The caster's main phase, but something is already on the stack.
+        StackNotEmpty,
+    }
 
-    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
-    add_mana_for(&mut state, &registry, "Lightning Bolt", P0);
+    // (spell, when, castable?)
+    let cases = [
+        ("Lightning Bolt", When::OwnMainPhase, true),
+        ("Lightning Bolt", When::OpponentsTurn, true),
+        ("Lightning Bolt", When::DuringCombat, true),
+        ("Lightning Bolt", When::StackNotEmpty, true),
+        ("Divination", When::OwnMainPhase, true),
+        ("Divination", When::OpponentsTurn, false),
+        ("Divination", When::DuringCombat, false),
+        ("Divination", When::StackNotEmpty, false),
+    ];
 
-    let legal = engine::legal_actions(&state, &registry);
-    let has_bolt = legal.actions.iter().any(|a| matches!(a, Action::CastSpell { .. }));
-    assert!(has_bolt, "Should be able to cast Lightning Bolt during opponent's turn");
-}
+    for (name, when, castable) in cases {
+        let reg = registry();
+        let (step, active) = match when {
+            When::OpponentsTurn => (Step::PrecombatMain, P1),
+            When::DuringCombat => (Step::DeclareBlockers, P0),
+            _ => (Step::PrecombatMain, P0),
+        };
+        let mut state = game_at_step(step, active);
+        state.priority_player = Some(P0);
 
-/// Lightning Bolt can be cast during combat.
-#[test]
-fn instant_can_be_cast_during_combat() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-    state.priority_player = Some(P0);
+        // Something for the Bolt to point at, so it is never held back for
+        // want of a target.
+        ready_creature(&mut state, P1, 2, 2);
+        if matches!(when, When::StackNotEmpty) {
+            let dummy = state.create_object(CardId(99), P0, Zone::Stack, None, None);
+            state.stack.push(mtg_engine::state::StackEntry::Spell(dummy));
+        }
 
-    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
-    add_mana_for(&mut state, &registry, "Lightning Bolt", P0);
+        let spell = spell_in_hand(&mut state, &reg, name, P0);
+        add_mana_for(&mut state, &reg, name, P0);
 
-    // Need a creature to target.
-    ready_creature(&mut state, P1, 2, 2);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let has_bolt = legal.actions.iter().any(|a| matches!(a, Action::CastSpell { .. }));
-    assert!(has_bolt, "Should be able to cast Lightning Bolt during combat");
-}
-
-/// Sorceries can NOT be cast during opponent's turn.
-#[test]
-fn sorcery_cannot_be_cast_during_opponent_turn() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P1); // P1's turn
-    state.priority_player = Some(P0);
-
-    spell_in_hand(&mut state, &registry, "Divination", P0);
-    add_mana_for(&mut state, &registry, "Divination", P0);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let has_div = legal.actions.iter().any(|a| matches!(a, Action::CastSpell { .. }));
-    assert!(!has_div, "Should not be able to cast sorcery during opponent's turn");
-}
-
-/// Sorceries can NOT be cast with a non-empty stack.
-#[test]
-fn sorcery_cannot_be_cast_with_nonempty_stack() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    spell_in_hand(&mut state, &registry, "Divination", P0);
-    add_mana_for(&mut state, &registry, "Divination", P0);
-
-    // Put something on the stack.
-    let dummy = state.create_object(CardId(99), P0, Zone::Stack, None, None);
-    state.stack.push(mtg_engine::state::StackEntry::Spell(dummy));
-
-    let legal = engine::legal_actions(&state, &registry);
-    let has_div = legal.actions.iter().any(|a| matches!(a, Action::CastSpell { .. }));
-    assert!(!has_div, "Should not be able to cast sorcery with non-empty stack");
+        let situation = match when {
+            When::OwnMainPhase => "own main phase, empty stack",
+            When::OpponentsTurn => "the opponent's turn",
+            When::DuringCombat => "during combat",
+            When::StackNotEmpty => "with a spell already on the stack",
+        };
+        assert_eq!(can_cast(&state, &reg, spell), castable, "{name} in {situation}");
+    }
 }
 
 /// Divination draws two cards.
 #[test]
 fn divination_draws_two() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Give P0 a library.
-    let c1 = state.create_object(CardId(1), P0, Zone::Library, None, None);
-    let c2 = state.create_object(CardId(1), P0, Zone::Library, None, None);
-    state.get_player_mut(P0).library_order = vec![c1, c2];
+    stock_library(&mut state, &registry, P0, 2);
 
     let div = castable_spell(&mut state, &registry, "Divination", P0);
 
@@ -151,7 +143,7 @@ fn divination_draws_two() {
 /// Swords to Plowshares exiles and gains life.
 #[test]
 fn swords_exiles_and_gains_life() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let swords = castable_spell(&mut state, &registry, "Swords to Plowshares", P0);
@@ -172,7 +164,7 @@ fn swords_exiles_and_gains_life() {
 /// Doom Blade destroys a creature.
 #[test]
 fn doom_blade_destroys() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let doom = castable_spell(&mut state, &registry, "Doom Blade", P0);
@@ -187,28 +179,22 @@ fn doom_blade_destroys() {
 /// Targeted spells need valid targets — can't cast Lightning Bolt with no creatures or players.
 #[test]
 fn targeted_spell_needs_valid_target() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Doom Blade targets creatures — if none exist, can't cast.
-    let doom_id = registry.get_id_by_name("Doom Blade").unwrap();
-    spell_in_hand(&mut state, &registry, "Doom Blade", P0);
+    // Doom Blade targets creatures — with none on the battlefield there is no
+    // legal target, so the cast is not offered (CR 601.2c).
+    let doom = spell_in_hand(&mut state, &registry, "Doom Blade", P0);
     add_mana_for(&mut state, &registry, "Doom Blade", P0);
 
-    let legal = engine::legal_actions(&state, &registry);
-    let has_doom = legal.actions.iter().any(|a| match a {
-        Action::CastSpell { object_id, .. } => {
-            state.get_object(*object_id).map(|o| o.card_id) == Some(doom_id)
-        }
-        _ => false,
-    });
-    assert!(!has_doom, "Should not be able to cast Doom Blade with no creatures on battlefield");
+    assert!(!can_cast(&state, &registry, doom),
+        "Doom Blade needs a creature to point at");
 }
 
 /// Counterspell counters a spell, preventing it from resolving.
 #[test]
 fn counterspell_counters_spell() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 casts Lightning Bolt targeting P1.
@@ -230,49 +216,25 @@ fn counterspell_counters_spell() {
     assert_eq!(state.get_object(counter).unwrap().zone, Zone::Graveyard);
 }
 
-/// Counterspell appears as a legal action when there's a spell on the stack.
+/// "Counter target spell" needs a spell on the stack to point at, so the cast
+/// is offered exactly when there is one (CR 601.2c). Both arms: with only the
+/// negative, an engine that never offered Counterspell would pass.
 #[test]
-fn counterspell_legal_when_spell_on_stack() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn counterspell_is_offered_exactly_when_a_spell_is_on_the_stack() {
+    let reg = registry();
 
-    // Put a spell on the stack.
-    let bolt_id = registry.get_id_by_name("Lightning Bolt").unwrap();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P1);
+    let counter = spell_in_hand(&mut state, &reg, "Counterspell", P1);
+    add_mana_for(&mut state, &reg, "Counterspell", P1);
+    assert!(!can_cast(&state, &reg, counter), "nothing on the stack to counter");
+
+    let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
     let bolt = state.create_object(bolt_id, P0, Zone::Stack, None, None);
     state.stack.push(mtg_engine::state::StackEntry::Spell(bolt));
 
-    // P1 has Counterspell and mana.
-    state.priority_player = Some(P1);
-    spell_in_hand(&mut state, &registry, "Counterspell", P1);
-    add_mana_for(&mut state, &registry, "Counterspell", P1);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let has_counter = legal.actions.iter().any(|a| match a {
-        Action::CastSpell { targets, .. } => {
-            targets.iter().any(|t| matches!(t, Target::Object(id) if *id == bolt))
-        }
-        _ => false,
-    });
-    assert!(has_counter, "Should be able to cast Counterspell targeting spell on stack");
-}
-
-/// Counterspell is NOT a legal action when the stack is empty.
-#[test]
-fn counterspell_illegal_with_empty_stack() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    state.priority_player = Some(P0);
-
-    let counter_id = registry.get_id_by_name("Counterspell").unwrap();
-    spell_in_hand(&mut state, &registry, "Counterspell", P0);
-    add_mana_for(&mut state, &registry, "Counterspell", P0);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let has_counter = legal.actions.iter().any(|a| match a {
-        Action::CastSpell { object_id, .. } => {
-            state.get_object(*object_id).map(|o| o.card_id) == Some(counter_id)
-        }
-        _ => false,
-    });
-    assert!(!has_counter, "Should not be able to cast Counterspell with empty stack");
+    let offered = offered_targets(&state, &reg, counter);
+    assert!(offered.contains(&Target::Object(bolt)),
+        "with a spell on the stack, Counterspell is offered pointing at it; \
+         offered {offered:?}");
 }

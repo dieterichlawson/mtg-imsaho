@@ -14,41 +14,41 @@ use mtg_engine::types::*;
 // Token creation
 // ══════════════════════════════════════════════════════════════════
 
-/// Basic token creation puts a creature on the battlefield.
+/// What `create_token` has to set up, since a token is built from arguments
+/// rather than from a card: it is on the battlefield, under its creator's
+/// control, with the characteristics it was given, summoning sick, and marked
+/// as a token with the sentinel card id that means "no registry entry".
 #[test]
-fn token_created_on_battlefield() {
+fn a_created_token_has_everything_it_was_given() {
     let reg = registry();
     let mut state = GameState::new(2);
+
     let token = state.create_token(
-        "Spirit", P0, 1, 1,
-        vec![Color::White],
-        vec![CardType::Creature],
-        vec![Keyword::Flying],
-        &reg,
-    )[0];
-
+        "Spirit", P1, 1, 1,
+        vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], &reg)[0];
     let obj = state.get_object(token).unwrap();
+
     assert_eq!(obj.zone, Zone::Battlefield);
+    assert_eq!((obj.owner, obj.controller), (P1, P1), "owned and controlled by its creator");
     assert_eq!(obj.name, "Spirit");
-    assert_eq!(obj.power, Some(1));
-    assert_eq!(obj.toughness, Some(1));
-    assert!(obj.is_token);
-    assert!(obj.keywords.contains(&Keyword::Flying));
+    assert_eq!((obj.power, obj.toughness), (Some(1), Some(1)));
     assert!(obj.card_types.contains(&CardType::Creature));
-    assert!(obj.summoning_sick, "Token should have summoning sickness");
-    assert_eq!(obj.card_id, CardId(0), "Token should have sentinel CardId(0)");
-}
+    assert!(obj.keywords.contains(&Keyword::Flying));
+    assert!(obj.is_token);
+    assert!(obj.summoning_sick, "a token has summoning sickness like anything else");
+    assert_eq!(obj.card_id, CardId(0), "the sentinel id meaning 'no registry entry'");
 
-/// Token has correct controller/owner.
-#[test]
-fn token_owned_by_creator() {
-    let reg = registry();
-    let mut state = GameState::new(2);
-    let token = state.create_token("Zombie", P1, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], &reg)[0];
+    // The keywords it was given are visible through the accessor, not just on
+    // the object — a token has no card face for `has_keyword` to fall back to.
+    assert!(state.has_keyword(token, Keyword::Flying, &reg));
+    assert!(!state.has_keyword(token, Keyword::Trample, &reg));
 
-    let obj = state.get_object(token).unwrap();
-    assert_eq!(obj.owner, P1);
-    assert_eq!(obj.controller, P1);
+    // A second token is a separate object.
+    let other = state.create_token(
+        "Spirit", P1, 1, 1,
+        vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], &reg)[0];
+    assert_ne!(token, other, "each token is its own object");
+    assert_eq!(state.objects_in_zone(Zone::Battlefield, P1).len(), 2);
 }
 
 /// Tokens ceases to exist when moved off the battlefield (SBA).
@@ -117,18 +117,6 @@ fn token_keyword_check_works() {
     assert!(state.has_keyword(token, Keyword::Flying, &reg),
         "Token with flying keyword should be detected by has_keyword");
     assert!(!state.has_keyword(token, Keyword::Trample, &reg));
-}
-
-/// Token emits `EnteredBattlefield` event.
-#[test]
-fn token_creation_emits_etb_event() {
-    let reg = registry();
-    let mut state = GameState::new(2);
-    state.events.clear();
-    let _token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![], &reg);
-
-    let has_etb = state.events.iter().any(|e| matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { .. }));
-    assert!(has_etb, "Token creation should emit EnteredBattlefield event");
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -217,41 +205,40 @@ fn counters_stack_with_auras() {
 // Note: These test the trigger system infrastructure directly.
 // Card-specific trigger tests are in the card test files.
 
-/// `EnteredBattlefield` events are emitted when objects move to the battlefield.
+/// `EnteredBattlefield` is emitted for arriving on the battlefield and for
+/// nothing else — including for a token, which arrives without moving from
+/// anywhere. Both arms, because "the event fired" alone is also true of an
+/// engine that fires it on every move.
 #[test]
-fn etb_event_emitted_on_zone_change() {
+fn entering_the_battlefield_is_announced_and_other_moves_are_not() {
     let reg = registry();
     let mut state = GameState::new(2);
-    let id = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
+
+    let entered = |state: &GameState, id: ObjectId| state.events.iter().any(|e|
+        matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { object, .. } if *object == id));
+
+    let card = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
     state.events.clear();
+    state.move_object(card, Zone::Battlefield, &reg);
+    assert!(entered(&state, card), "a card arriving on the battlefield");
 
-    state.move_object(id, Zone::Battlefield, &reg);
+    let other = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
+    state.events.clear();
+    state.move_object(other, Zone::Graveyard, &reg);
+    assert!(!entered(&state, other), "hand to graveyard is not entering the battlefield");
 
-    let has_etb = state.events.iter().any(|e|
-        matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { object, .. } if *object == id)
-    );
-    assert!(has_etb, "Moving to battlefield should emit EnteredBattlefield");
+    state.events.clear();
+    let token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![], &reg)[0];
+    assert!(entered(&state, token),
+        "a token arrives on the battlefield without moving from anywhere, and \
+         still has to be announced — watchers see it like any other arrival");
 }
 
-/// ETB is NOT emitted when moving between non-battlefield zones.
+/// A death event naming an object that does not exist must not panic. This
+/// asserts nothing beyond that — it is a robustness check on the dispatch
+/// loop's lookups, not a statement about any rule.
 #[test]
-fn no_etb_for_non_battlefield_moves() {
-    let reg = registry();
-    let mut state = GameState::new(2);
-    let id = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
-    state.events.clear();
-
-    state.move_object(id, Zone::Graveyard, &reg);
-
-    let has_etb = state.events.iter().any(|e|
-        matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { .. })
-    );
-    assert!(!has_etb, "Moving to graveyard should not emit ETB");
-}
-
-/// `CreatureDied` events trigger `process_triggers` (smoke test with no cards).
-#[test]
-fn trigger_processing_doesnt_crash_without_cards() {
+fn trigger_processing_survives_an_event_about_a_missing_object() {
     let reg = registry();
     let mut state = GameState::new(2);
     state.events.push(mtg_engine::events::GameEvent::CreatureDied {
@@ -272,8 +259,6 @@ fn trigger_processing_doesnt_crash_without_cards() {
 fn dying_token_emits_creature_died() {
     let reg = registry();
     let mut state = GameState::new(2);
-    state.players[0].life = 20;
-    state.players[1].life = 20;
     let token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![], &reg)[0];
     state.get_object_mut(token).unwrap().damage_marked = 1;
 
