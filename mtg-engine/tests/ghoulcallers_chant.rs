@@ -1,254 +1,118 @@
-//! Tests for Ghoulcaller's Chant.
+//! Ghoulcaller's Chant — {B} Sorcery.
 //!
-//! Oracle: {B} Sorcery
-//! Choose one —
-//! • Return target creature card from your graveyard to your hand.
-//! • Return two target Zombie creature cards from your graveyard to your hand.
+//! "Choose one —
+//!  • Return target creature card from your graveyard to your hand.
+//!  • Return two target Zombie creature cards from your graveyard to your hand."
+//!
+//! A modal spell whose two modes have different target requirements: one
+//! target of one kind, or two of a narrower kind. What the engine offers is
+//! therefore a *set* of target sets, and that shape is what these check —
+//! `legal_actions` has to produce every legal combination of every mode and
+//! nothing else (CR 601.2b/601.2c).
 
 mod common;
 use common::*;
-use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
+use mtg_engine::actions::Target;
 use mtg_engine::types::*;
 
-/// Mode 1: Return a single creature card from your graveyard.
-#[test]
-fn mode1_returns_one_creature_from_graveyard() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
-
-    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-    let new_state = cast_and_resolve(&state, &reg, chant, vec![Target::Object(creature)]);
-
-    assert_eq!(new_state.get_object(creature).unwrap().zone, Zone::Hand,
-        "Mode 1 should return creature to hand");
+/// The offered target sets, split by arity: (mode-1 singles, mode-2 pairs).
+fn modes(
+    state: &mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    chant: ObjectId,
+) -> (Vec<Target>, Vec<Vec<Target>>) {
+    let sets = offered_target_sets(state, reg, chant);
+    let singles = sets.iter().filter(|t| t.len() == 1).map(|t| t[0].clone()).collect();
+    let pairs = sets.into_iter().filter(|t| t.len() == 2).collect();
+    (singles, pairs)
 }
 
-/// Mode 2: Return two Zombie creature cards from your graveyard.
+/// Which cards each mode may name, for every shape of graveyard that matters.
+///
+/// The negative half of each row is as important as the positive: mode 2 needs
+/// *two* Zombies, so one Zombie beside a Bear offers no pair, and two Bears
+/// offer no pair either — an engine that ignored the Zombie restriction would
+/// pass a test that only looked at the all-Zombie case.
 #[test]
-fn mode2_returns_two_zombies_from_graveyard() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn each_mode_offers_exactly_the_cards_it_may_name() {
+    // (cards in your graveyard, cards in the opponent's, mode-1 count, mode-2 count)
+    const CASES: &[(&[&str], &[&str], usize, usize, &str)] = &[
+        (&["Grizzly Bears"], &[], 1, 0,
+         "one non-Zombie: mode 1 only"),
+        (&["Walking Corpse", "Diregraf Ghoul"], &[], 2, 1,
+         "two Zombies: either one alone, or both together"),
+        (&["Grizzly Bears", "Savannah Lions"], &[], 2, 0,
+         "two non-Zombies: no pair, because mode 2 names Zombies"),
+        (&["Walking Corpse", "Grizzly Bears"], &[], 2, 0,
+         "one Zombie and one not: still no pair"),
+        (&["Grizzly Bears", "Walking Corpse", "Diregraf Ghoul"], &[], 3, 1,
+         "three cards, two of them Zombies: three singles and the one pair"),
+        (&[], &["Grizzly Bears"], 0, 0,
+         "'your graveyard' — an opponent's creature card is not a legal target"),
+    ];
 
-    let zombie1 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
-    let zombie2 = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    for &(mine, theirs, singles_expected, pairs_expected, why) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-    let new_state = cast_and_resolve(&state, &reg, chant, vec![
-        Target::Object(zombie1),
-        Target::Object(zombie2),
-    ]);
+        let ids: Vec<ObjectId> = mine.iter()
+            .map(|n| named_card_in_graveyard(&mut state, &reg, n, P0))
+            .collect();
+        for n in theirs {
+            named_card_in_graveyard(&mut state, &reg, n, P1);
+        }
 
-    assert_eq!(new_state.get_object(zombie1).unwrap().zone, Zone::Hand,
-        "Mode 2 should return first Zombie to hand");
-    assert_eq!(new_state.get_object(zombie2).unwrap().zone, Zone::Hand,
-        "Mode 2 should return second Zombie to hand");
+        let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+        let (singles, pairs) = modes(&state, &reg, chant);
+
+        assert_eq!(singles.len(), singles_expected, "{why}: mode 1 count");
+        assert_eq!(pairs.len(), pairs_expected, "{why}: mode 2 count");
+
+        // Every card offered is one of yours, and every one of yours is offered.
+        for id in &ids {
+            assert!(singles.contains(&Target::Object(*id)),
+                "{why}: every creature card in your graveyard is a mode-1 target");
+        }
+        for pair in &pairs {
+            for t in pair {
+                let Target::Object(id) = t else { panic!("{why}: mode 2 names cards") };
+                assert!(state.has_subtype(*id, "Zombie", &reg),
+                    "{why}: mode 2 names Zombies only");
+            }
+        }
+    }
 }
 
-/// Legal actions should include single-creature targets (mode 1).
+/// Mode 1 resolving: the named card comes back.
 #[test]
-fn legal_actions_include_mode1_single_creature() {
+fn mode_one_returns_the_creature_card_it_named() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Put a non-Zombie creature in graveyard.
     let bear = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let bystander = named_card_in_graveyard(&mut state, &reg, "Savannah Lions", P0);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let state = cast_and_resolve(&state, &reg, chant, vec![Target::Object(bear)]);
 
-    let actions = engine::legal_actions(&state, &reg);
-    let cast_actions: Vec<_> = actions.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if object_id == &chant)
-    }).collect();
-
-    // Should have at least one action targeting the bear (mode 1).
-    let has_bear_target = cast_actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            targets.len() == 1 && targets[0] == Target::Object(bear)
-        } else {
-            false
-        }
-    });
-    assert!(has_bear_target, "Legal actions should include mode 1 targeting the non-Zombie creature");
+    assert_eq!(state.get_object(bear).unwrap().zone, Zone::Hand);
+    assert_eq!(state.get_object(bystander).unwrap().zone, Zone::Graveyard,
+        "only the card it named");
 }
 
-/// Legal actions should include two-Zombie targets (mode 2).
+/// Mode 2 resolving: both named Zombies come back.
 #[test]
-fn legal_actions_include_mode2_two_zombies() {
+fn mode_two_returns_both_zombies_it_named() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let zombie1 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
-    let zombie2 = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let a = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let b = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let state = cast_and_resolve(&state, &reg, chant,
+        vec![Target::Object(a), Target::Object(b)]);
 
-    let actions = engine::legal_actions(&state, &reg);
-    let cast_actions: Vec<_> = actions.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if object_id == &chant)
-    }).collect();
-
-    // Should have a 2-target action with both Zombies.
-    let has_two_zombie = cast_actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            targets.len() == 2
-                && targets.iter().all(|t| matches!(t, Target::Object(id) if *id == zombie1 || *id == zombie2))
-        } else {
-            false
-        }
-    });
-    assert!(has_two_zombie, "Legal actions should include mode 2 targeting two Zombies");
-}
-
-/// Mode 2 should NOT be available for non-Zombie creatures.
-#[test]
-fn legal_actions_no_mode2_for_non_zombies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Two non-Zombie creatures in graveyard.
-    let _bear1 = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
-    let _bear2 = named_card_in_graveyard(&mut state, &reg, "Savannah Lions", P0);
-
-    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-
-    let actions = engine::legal_actions(&state, &reg);
-    let cast_actions: Vec<_> = actions.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if object_id == &chant)
-    }).collect();
-
-    // Should NOT have any 2-target actions (no Zombies).
-    let has_two_target = cast_actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            targets.len() == 2
-        } else {
-            false
-        }
-    });
-    assert!(!has_two_target,
-        "Legal actions should not include mode 2 when no Zombies are in graveyard");
-
-    // But should still have mode 1 actions.
-    let has_one_target = cast_actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            targets.len() == 1
-        } else {
-            false
-        }
-    });
-    assert!(has_one_target,
-        "Legal actions should still include mode 1 for non-Zombie creatures");
-}
-
-/// Cannot target opponent's graveyard creatures.
-#[test]
-fn cannot_target_opponents_graveyard() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put creature in opponent's graveyard only.
-    let _enemy_creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
-
-    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-
-    let actions = engine::legal_actions(&state, &reg);
-    let cast_actions: Vec<_> = actions.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if object_id == &chant)
-    }).collect();
-
-    // Should have no cast actions (no valid targets in P0's graveyard).
-    assert!(cast_actions.is_empty(),
-        "Should not be able to target opponent's graveyard creatures");
-}
-
-/// Mixed graveyard: mode 1 for any creature, mode 2 only for Zombies.
-#[test]
-fn mixed_graveyard_correct_modes() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // One Zombie and one non-Zombie.
-    let zombie = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
-    let bear = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
-
-    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-
-    let actions = engine::legal_actions(&state, &reg);
-    let cast_actions: Vec<_> = actions.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if object_id == &chant)
-    }).collect();
-
-    // Mode 1 actions: should have both bear and zombie as single targets.
-    let single_targets: Vec<_> = cast_actions.iter().filter_map(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            if targets.len() == 1 { Some(targets[0].clone()) } else { None }
-        } else {
-            None
-        }
-    }).collect();
-    assert!(single_targets.contains(&Target::Object(bear)), "Mode 1 should include bear");
-    assert!(single_targets.contains(&Target::Object(zombie)), "Mode 1 should include zombie");
-
-    // Mode 2: should NOT have 2-target actions (only 1 Zombie available).
-    let has_two_target = cast_actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            targets.len() == 2
-        } else {
-            false
-        }
-    });
-    assert!(!has_two_target,
-        "Mode 2 should not be available with only 1 Zombie in graveyard");
-}
-
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// Bug: Ghoulcaller's Chant is modal with two modes. The engine's
-/// `build_cast_target_spec` may not handle modal spells containing
-/// `TwoTargets` correctly, causing incorrect action generation.
-#[test]
-fn bug_ghoulcallers_chant_modal_targeting() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put a creature and two Zombies in P0's graveyard
-    let _bear = {
-        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
-        id
-    };
-    let _zombie1 = {
-        let card_id = registry.get_id_by_name("Walking Corpse").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
-        id
-    };
-    let _zombie2 = {
-        let card_id = registry.get_id_by_name("Diregraf Ghoul").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Diregraf Ghoul".into();
-        id
-    };
-
-    // Cast Ghoulcaller's Chant
-    let chant = castable_spell(&mut state, &registry, "Ghoulcaller's Chant", P0);
-
-    // Get legal actions — should have actions for BOTH modes
-    let legal = engine::legal_actions(&state, &registry);
-    let chant_actions: Vec<_> = legal.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == chant)
-    }).collect();
-
-    // Should have at least mode 1 (return any creature: bear, zombie1, zombie2 = 3 actions)
-    // plus mode 2 (return two Zombies: zombie1+zombie2 = 1 action)
-    // BUG: Modal targeting spec may not generate actions for both modes
-    assert!(chant_actions.len() >= 4,
-        "Should have actions for both modes (3 creature + 1 two-zombie). Got: {}",
-        chant_actions.len());
+    assert_eq!(state.get_object(a).unwrap().zone, Zone::Hand);
+    assert_eq!(state.get_object(b).unwrap().zone, Zone::Hand);
 }

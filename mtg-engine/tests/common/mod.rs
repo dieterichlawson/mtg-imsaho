@@ -190,6 +190,20 @@ pub fn pending_choice_options(state: &GameState) -> Vec<Target> {
     }
 }
 
+/// Every *set* of targets the engine offers for casting `spell`, grouped as
+/// each cast action names them.
+///
+/// [`offered_targets`] flattens these, which loses the shape — for a modal or
+/// multi-target spell the grouping is the thing under test.
+pub fn offered_target_sets(state: &GameState, registry: &CardRegistry, spell: ObjectId) -> Vec<Vec<Target>> {
+    mtg_engine::engine::legal_actions(state, registry).actions.iter()
+        .filter_map(|a| match a {
+            Action::CastSpell { object_id, targets, .. } if *object_id == spell => Some(targets.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Every target the engine currently offers for casting `spell`.
 ///
 /// Scoped to `spell`: the hand-rolled version of this asked whether *any*

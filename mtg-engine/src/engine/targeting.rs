@@ -84,6 +84,32 @@ pub(crate) fn target_combinations(targets: &[crate::actions::Target], k: usize) 
     }
     result
 }
+/// Whether two target requirements ask for the same thing, so a pair drawn
+/// from them is a set rather than an ordered pair.
+///
+/// Compared by shape rather than by `PartialEq`, which `TargetRequirement`
+/// does not derive: what matters is that both slots draw from one candidate
+/// pool under one restriction.
+fn same_requirement(a: &crate::cards::TargetRequirement, b: &crate::cards::TargetRequirement) -> bool {
+    format!("{a:?}") == format!("{b:?}")
+}
+
+/// Drop cast actions whose target *sets* have already been produced.
+fn dedup_by_target_set(actions: &mut Vec<Action>) {
+    let mut seen: Vec<Vec<String>> = Vec::new();
+    actions.retain(|a| {
+        let Action::CastSpell { targets, .. } = a else { return true };
+        let mut key: Vec<String> = targets.iter().map(|t| format!("{t:?}")).collect();
+        key.sort();
+        if seen.contains(&key) {
+            false
+        } else {
+            seen.push(key);
+            true
+        }
+    });
+}
+
 pub(crate) fn generate_cast_actions_with_targets(
     state: &GameState,
     caster: PlayerId,
@@ -145,6 +171,18 @@ pub(crate) fn generate_cast_actions_with_targets(
                         });
                     }
                 }
+            }
+            // When both slots want the same thing — Ghoulcaller's Chant's
+            // "return two target Zombie creature cards" — the pair is a set,
+            // and pairing every candidate with every other produced each set
+            // twice, once in each order. That is not a second choice; it just
+            // doubles the branching factor for whoever is picking.
+            //
+            // Where the slots differ (Prey Upon's "creature you control fights
+            // creature you don't", Memory's Journey's player-then-their-cards)
+            // the order carries meaning and both orderings are real.
+            if same_requirement(req1, req2) {
+                dedup_by_target_set(&mut actions);
             }
             actions
         }
