@@ -283,19 +283,19 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
         "Should mill 2 (replacement applies once, not per Alchemist). Milled: {milled}");
 }
 
-/// Bug: Essence of the Wild's replacement effect (creatures you control
-/// enter as copies) only works through `on_resolve`. Creatures entering
-/// via other means (reanimation, token creation) skip the replacement.
+/// Essence of the Wild: "Creatures you control enter as copies of this
+/// creature." CR 614.1d — a replacement effect, so it applies however the
+/// creature arrives. It used to run out of `on_resolve`, which meant only
+/// creatures cast from hand were affected; a token created by an ability, or a
+/// creature reanimated, walked straight past it.
 #[test]
-fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
+fn essence_of_the_wild_applies_to_a_token_it_did_not_resolve() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Essence of the Wild (6/6 Avatar) and fire its ETB to set up
-    // the entering_copy_source flag (which makes other creatures enter as copies).
-    let eotw = named_creature(&mut state, &registry, "Essence of the Wild", P0);
-    let behavior = registry.get(state.get_object(eotw).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, eotw, &[], &registry);
+    // Just being on the battlefield is enough — no hook is fired here on
+    // purpose, because a replacement effect is not a trigger.
+    let _eotw = named_creature(&mut state, &registry, "Essence of the Wild", P0);
 
     // Create a token — it should enter as a copy of Essence of the Wild
     let token = state.create_token_with_subtypes(
