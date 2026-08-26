@@ -4,7 +4,6 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
@@ -12,7 +11,7 @@ use mtg_engine::view::GameView;
 /// Holy Strength attaches to a creature and gives +1/+2.
 #[test]
 fn holy_strength_buffs_creature() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
@@ -33,7 +32,7 @@ fn holy_strength_buffs_creature() {
 /// Aura falls off when enchanted creature dies.
 #[test]
 fn aura_falls_off_when_creature_dies() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
@@ -53,7 +52,7 @@ fn aura_falls_off_when_creature_dies() {
 /// Pacifism prevents a creature from attacking.
 #[test]
 fn pacifism_prevents_attacking() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
@@ -75,7 +74,7 @@ fn pacifism_prevents_attacking() {
 /// Glorious Anthem gives +1/+1 to all your creatures.
 #[test]
 fn glorious_anthem_buffs_all_creatures() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let c1 = ready_creature(&mut state, P0, 2, 2);
@@ -102,7 +101,7 @@ fn glorious_anthem_buffs_all_creatures() {
 /// Giant Growth gives +3/+3 until end of turn, then wears off.
 #[test]
 fn giant_growth_until_end_of_turn() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
@@ -127,7 +126,7 @@ fn giant_growth_until_end_of_turn() {
 /// kill its base toughness, when checked with the registry.
 #[test]
 fn aura_toughness_bonus_prevents_death() {
-    let registry = CardRegistry::with_all_cards();
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // 2/2 creature with Holy Strength = effective 3/4.
@@ -150,59 +149,37 @@ fn aura_toughness_bonus_prevents_death() {
         "3/4 creature with 4 damage should die");
 }
 
-/// `GameView` should show effective P/T for creatures with auras.
+/// The view carries both numbers: the printed P/T and the effective one. A
+/// player needs the second to decide combat and the first to know what happens
+/// if the aura or anthem goes away — so a view that showed only one of them
+/// would be missing something either way.
 #[test]
-fn view_shows_effective_pt_with_aura() {
-    let registry = CardRegistry::with_all_cards();
+fn the_view_shows_printed_and_effective_power_side_by_side() {
+    let registry = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = ready_creature(&mut state, P0, 2, 1);
+    // One creature under an Aura, one under an anthem, so both routes into
+    // `effective_power` are covered.
+    let enchanted = ready_creature(&mut state, P0, 2, 1);
     let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
+    let mut state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(enchanted)]);
 
-    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
-
-    let view = GameView::for_player(&state, P0, &registry);
-    let perm = view.battlefield.iter().find(|p| p.object_id == creature).unwrap();
-
-    assert_eq!(perm.power, Some(2), "Raw power should be 2");
-    assert_eq!(perm.toughness, Some(1), "Raw toughness should be 1");
-    assert_eq!(perm.effective_power, Some(3), "Effective power should be 3 with Holy Strength");
-    assert_eq!(perm.effective_toughness, Some(3), "Effective toughness should be 3 with Holy Strength");
-}
-
-/// `GameView` should show aura attachment on the `PermanentView`.
-#[test]
-fn view_shows_aura_attached_to_creature() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
-
-    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
-
-    let view = GameView::for_player(&state, P0, &registry);
-    let aura = view.battlefield.iter().find(|p| p.object_id == hs).unwrap();
-
-    assert_eq!(aura.attached_to, Some(creature),
-        "Aura should show as attached to the creature in the view");
-}
-
-/// `GameView` shows effective P/T with Glorious Anthem.
-#[test]
-fn view_shows_effective_pt_with_anthem() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
+    let under_anthem = ready_creature(&mut state, P0, 2, 2);
     let anthem = castable_spell(&mut state, &registry, "Glorious Anthem", P0);
-
-    state = cast_and_resolve(&state, &registry, anthem, vec![]);
+    let state = cast_and_resolve(&state, &registry, anthem, vec![]);
 
     let view = GameView::for_player(&state, P0, &registry);
-    let perm = view.battlefield.iter().find(|p| p.object_id == creature).unwrap();
+    let find = |id| view.battlefield.iter().find(|p| p.object_id == id).expect("on the battlefield");
 
-    assert_eq!(perm.effective_power, Some(3), "Effective power should be 3 with Anthem");
-    assert_eq!(perm.effective_toughness, Some(3), "Effective toughness should be 3 with Anthem");
+    let e = find(enchanted);
+    assert_eq!((e.power, e.toughness), (Some(2), Some(1)), "its printed size");
+    assert_eq!((e.effective_power, e.effective_toughness), (Some(4), Some(4)),
+        "2/1 plus Holy Strength's +1/+2 plus the anthem's +1/+1");
+
+    let a = find(under_anthem);
+    assert_eq!((a.effective_power, a.effective_toughness), (Some(3), Some(3)),
+        "2/2 under the anthem alone");
+
+    assert_eq!(find(hs).attached_to, Some(enchanted),
+        "and the Aura shows what it is attached to, so the player can see why");
 }

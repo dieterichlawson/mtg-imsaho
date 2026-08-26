@@ -5,7 +5,6 @@
 
 mod common;
 use common::*;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -53,14 +52,13 @@ fn real_etb_trigger_still_fires() {
 
     let had_triggers = triggers::collect_triggers(&mut state, &reg);
     assert!(had_triggers, "Crossway Vampire has an ETB trigger");
-    // CR 603.3d: with two valid creature targets (Crossway itself and
-    // Vampire Interloper), the trigger pauses for a target-choice prompt
-    // before going on the stack.
-    assert!(
-        state.awaiting_action.is_some()
-            || state.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_))),
-        "ETB trigger should be on the stack or awaiting a target choice"
-    );
+    // CR 603.3d: targets are chosen as the trigger goes on the stack, and with
+    // two legal creatures to choose between the dispatch stops to ask. Asserted
+    // as one thing rather than "prompt OR stack entry" — an OR is satisfied by
+    // whichever half happens to hold, so it cannot tell the two apart.
+    assert!(state.awaiting_action.is_some(),
+        "with two legal targets the trigger pauses for a choice; awaiting = {:?}",
+        state.awaiting_action);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +136,7 @@ fn dearly_departed_in_graveyard_adds_counter() {
     state.get_object_mut(human).unwrap().name = "Unruly Mob".into();
     state.move_object(human, Zone::Battlefield, &reg);
 
-    assert_eq!(counters_of(&state, human, mtg_engine::types::CounterType::PlusOnePlusOne), 1,
+    assert_eq!(counters_of(&state, human, CounterType::PlusOnePlusOne), 1,
         "Human entering with Dearly Departed in graveyard should get +1/+1 counter");
 }
 
@@ -163,47 +161,30 @@ fn dearly_departed_on_battlefield_does_not_trigger() {
     );
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A death caused mid-resolution is still a death everything can see
+// ---------------------------------------------------------------------------
 
-/// Bug: When Stitcher's Apprentice creates a token and the controller
-/// must sacrifice a creature, the `trigger_event_index` gets desynced,
-/// causing ETB watchers (like Champion of the Parish) to miss the
-/// token's `CreatureDied` event from the sacrifice.
-/// This is a complex engine timing issue — testing by checking if
-/// Champion gets a +1/+1 counter from a Human token entering AND
-/// triggers properly when the sacrificed creature dies.
+/// Stitcher's Apprentice creates a token and then sacrifices a creature, both
+/// inside one activation. The sacrifice is a death like any other, so a
+/// death-watcher has to see it — the trigger cursor used to be left pointing
+/// past the event, and Falkenrath Noble missed it.
 #[test]
-fn bug_stitchers_apprentice_trigger_desync() {
-    let registry = CardRegistry::with_all_cards();
+fn a_sacrifice_made_during_an_activation_is_seen_by_death_watchers() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Stitcher's Apprentice
-    let apprentice = named_permanent(&mut state, &registry, "Stitcher's Apprentice", P0);
+    let apprentice = named_permanent(&mut state, &reg, "Stitcher's Apprentice", P0);
+    named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
+    ready_creature(&mut state, P0, 1, 1); // the creature to sacrifice
 
-    // Place Falkenrath Noble (triggers on any creature death)
-    let _noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Colorless, 1)]);
+    reg.get(state.get_object(apprentice).unwrap().card_id).unwrap()
+        .on_activate_ability(&mut state, apprentice, 0, &[], &reg);
 
-    // Place a creature to sacrifice
-    let _victim = ready_creature(&mut state, P0, 1, 1);
+    process_triggers_auto_target_opponent(&mut state, &reg);
 
-    let p1_life_before = state.get_player(P1).life;
-
-    // Activate Stitcher's Apprentice ability (creates Homunculus token, then sacrifice)
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-
-    let behavior = registry.get(state.get_object(apprentice).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, apprentice, 0, &[], &registry);
-
-    // Process triggers from the sacrifice (Noble presents target choice)
-    process_triggers_auto_target_opponent(&mut state, &registry);
-
-    // Falkenrath Noble should have triggered from the sacrifice death
-    let p1_life_after = state.get_player(P1).life;
-
-    // BUG: trigger_event_index desync may cause Noble to miss the death
-    assert!(p1_life_after < p1_life_before,
-        "Falkenrath Noble should trigger from sacrifice. P1 life: {p1_life_before} -> {p1_life_after}");
+    assert_eq!(state.get_player(P1).life, 19,
+        "the Noble's 'whenever another creature dies' saw the sacrifice");
+    assert_eq!(state.get_player(P0).life, 21, "and its controller gained the life");
 }

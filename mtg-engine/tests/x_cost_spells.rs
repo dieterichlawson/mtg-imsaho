@@ -6,50 +6,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Resolve a pending `ChooseXFunding` prompt by maxing out every available
-/// source and draining the entire pool. Returns the state after resolution.
-/// No-op if there is no pending resolution prompt.
-fn resolve_max_x_funding(
-    state: &mtg_engine::state::GameState,
-    registry: &CardRegistry,
-) -> mtg_engine::state::GameState {
-    use mtg_engine::actions::{Action, ResolvedChoice};
-    use mtg_engine::funding::FundingResponse;
-    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
-
-    let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) =
-        state.awaiting_action.clone()
-    else {
-        return state.clone();
-    };
-    let mut response = FundingResponse::default();
-    for (mt, amt) in &options.pool {
-        response.pool.insert(*mt, *amt);
-    }
-    for g in &options.groups {
-        response.taps.insert(g.name.clone(), g.max_contribution());
-    }
-    let action = Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
-    engine::submit_action(state, &action, registry)
-}
-
-/// Place a named land on the battlefield, untapped.
-fn land_on_battlefield(
-    state: &mut mtg_engine::state::GameState,
-    registry: &CardRegistry,
-    name: &str,
-    owner: mtg_engine::ids::PlayerId,
-) -> mtg_engine::ids::ObjectId {
-    let card_id = registry
-        .get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {name}"));
-    let id = state.create_object(card_id, owner, mtg_engine::types::Zone::Battlefield, None, None);
-    let obj = state.get_object_mut(id).unwrap();
-    obj.name = name.into();
-    obj.summoning_sick = false;
-    id
-}
-
 /// Regression test: casting an X-cost spell (Devil's Play) with untapped lands
 /// but no mana in pool should autotap the lands, not panic.
 #[test]
@@ -61,9 +17,9 @@ fn test_x_cost_spell_autotap_does_not_panic() {
     let devils_play = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
 
     // Put 3 Mountains on the battlefield (enough for X=2 with {R} colored cost)
-    land_on_battlefield(&mut state, &registry, "Mountain", P0);
-    land_on_battlefield(&mut state, &registry, "Mountain", P0);
-    land_on_battlefield(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
 
     // Put a target creature for the opponent
     let _target_creature = ready_creature(&mut state, P1, 2, 2);
@@ -84,7 +40,7 @@ fn test_x_cost_spell_autotap_does_not_panic() {
 
     // Rules-strict X-cost casting: the spell stays in hand until the
     // ChooseXFunding prompt is resolved. After that, it's on the stack.
-    let new_state = resolve_max_x_funding(&new_state, &registry);
+    let new_state = resolve_funding_max(&new_state, &registry);
     assert!(
         new_state
             .objects_in_zone(Zone::Stack, P0)
@@ -104,7 +60,7 @@ fn test_x_cost_spell_correct_x_value() {
 
     // 5 Mountains: {R} for colored cost + 4 remaining = X=4
     for _ in 0..5 {
-        land_on_battlefield(&mut state, &registry, "Mountain", P0);
+        named_permanent(&mut state, &registry, "Mountain", P0);
     }
 
     let target_creature = ready_creature(&mut state, P1, 5, 5);
@@ -120,7 +76,7 @@ fn test_x_cost_spell_correct_x_value() {
 
     // After casting, the engine should present a ChooseXFunding prompt.
     // Submit a max-X response: tap all 4 remaining Mountains.
-    new_state = resolve_max_x_funding(&new_state, &registry);
+    new_state = resolve_funding_max(&new_state, &registry);
 
     // Check X value on the spell
     let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
@@ -171,7 +127,7 @@ fn test_x_cost_spell_with_mana_in_pool() {
     let mut new_state = engine::submit_action(&state, cast_action, &registry);
 
     // Resolve the ChooseXFunding prompt by funding X to the max.
-    new_state = resolve_max_x_funding(&new_state, &registry);
+    new_state = resolve_funding_max(&new_state, &registry);
 
     let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
     let spell = stack_objs
@@ -193,7 +149,7 @@ fn test_mikaeus_x_cost_autotap() {
 
     // 4 Plains: {W} for colored cost + 3 remaining = X=3
     for _ in 0..4 {
-        land_on_battlefield(&mut state, &registry, "Plains", P0);
+        named_permanent(&mut state, &registry, "Plains", P0);
     }
 
     let legal = engine::legal_actions(&state, &registry);

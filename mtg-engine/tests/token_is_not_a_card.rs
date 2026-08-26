@@ -30,8 +30,8 @@ fn creature_token_in_graveyard(
     reg: &CardRegistry,
     name: &str,
     subtypes: Vec<String>,
-    owner: mtg_engine::ids::PlayerId,
-) -> mtg_engine::ids::ObjectId {
+    owner: PlayerId,
+) -> ObjectId {
     let token = *state.create_token_with_subtypes(
         name, owner, 2, 2, vec![Color::Black], vec![CardType::Creature],
         vec![], subtypes, reg)
