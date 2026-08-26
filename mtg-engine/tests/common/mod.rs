@@ -136,6 +136,27 @@ pub fn activate_only_offered_ability(state: &GameState, registry: &CardRegistry)
     mtg_engine::engine::submit_action(state, offered[0], registry)
 }
 
+/// Activate the ability the engine offers for `object_id`, at `target` if given.
+///
+/// Asserts one is offered: the hand-rolled form — find it in `legal_actions`,
+/// `assert!(x.is_some())`, `submit_action(x.unwrap())` — appeared a dozen times
+/// and says the same thing in four lines.
+pub fn activate_offered(
+    state: &GameState,
+    registry: &CardRegistry,
+    object_id: ObjectId,
+    target: Option<Target>,
+) -> GameState {
+    let legal = mtg_engine::engine::legal_actions(state, registry);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id: o, targets, .. }
+            if *o == object_id && target.as_ref().is_none_or(|t| targets.contains(t))))
+        .unwrap_or_else(|| panic!(
+            "no activated ability offered for {object_id:?} at {target:?}; offered {:?}",
+            legal.actions.iter().filter(|a| matches!(a, Action::ActivateAbility { .. })).collect::<Vec<_>>()));
+    mtg_engine::engine::submit_action(state, action, registry)
+}
+
 /// Whether the engine currently offers any activated ability of `object_id`.
 pub fn offers_ability_of(state: &GameState, registry: &CardRegistry, object_id: ObjectId) -> bool {
     mtg_engine::engine::legal_actions(state, registry).actions.iter()

@@ -1,9 +1,19 @@
+//! CR 602.2a: activating an ability puts it on the stack. It does not happen
+//! yet — every player gets priority first, and the ability can be responded to,
+//! countered, or made to fizzle before any of its effect lands.
+//!
+//! Costs are the exception: they are paid during activation (CR 601.2h), so a
+//! creature tapped to pay stays tapped even if the ability never resolves.
+//!
+//! Each test checks the effect has *not* happened, then resolves the stack
+//! entry and checks it does. On its own, "not yet" passes for an ability that
+//! is simply broken; it means something only next to "and now".
+
 mod common;
 use common::*;
 
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::ids::{CardId, ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
@@ -27,25 +37,20 @@ fn resolve_the_ability(state: &mut GameState, reg: &CardRegistry) {
     mtg_engine::stack::resolve_top_of_stack(state, reg);
 }
 
-fn add_library_cards(state: &mut GameState, player: PlayerId, count: usize) {
-    let idx = player.0 as usize;
-    for _ in 0..count {
-        let id = state.create_object(CardId(9999), player, Zone::Library, None, None);
-        state.players[idx].library_order.push(id);
-    }
-}
-
 // CR 602.2a: activating Back from the Brink's ability should place it on the
 // stack. The token copy is created only when the ability resolves, giving
 // opponents a window to respond.
 #[test]
-fn test_back_from_the_brink_can_be_responded_to() {
+fn back_from_the_brink_makes_its_token_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let brink = named_permanent(&mut state, &reg, "Back from the Brink", P0);
     let gy_creature = named_card_in_graveyard(&mut state, &reg, "Unbreathing Horde", P0);
 
+    // Back from the Brink's ability names a card in the graveyard to exile, so
+    // it encodes the chosen card's id in the ability index rather than using a
+    // target.
     let behavior = reg.get(state.get_object(brink).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, brink, gy_creature.0 as usize, &[], &reg);
 
@@ -65,7 +70,7 @@ fn test_back_from_the_brink_can_be_responded_to() {
 // the +X/+0 and trample are granted. An opponent can respond by removing
 // the target creature.
 #[test]
-fn test_kessig_wolf_run_pump_can_be_responded_to() {
+fn kessig_wolf_run_pumps_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -95,12 +100,12 @@ fn test_kessig_wolf_run_pump_can_be_responded_to() {
 // CR 602.2a: Nephalia Drownyard's mill ability should go on the stack.
 // The target player gets priority to respond before any cards are milled.
 #[test]
-fn test_nephalia_drownyard_mill_can_be_responded_to() {
+fn nephalia_drownyard_mills_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let drownyard = named_permanent(&mut state, &reg, "Nephalia Drownyard", P0);
-    add_library_cards(&mut state, P1, 5);
+    stock_library(&mut state, &reg, P1, 5);
 
     let lib_before = state.players[1].library_order.len();
 
@@ -123,15 +128,15 @@ fn test_nephalia_drownyard_mill_can_be_responded_to() {
 // Opponents can destroy the Tree in response, causing the exchange to fail
 // because the Tree's toughness no longer exists as a value to exchange.
 #[test]
-fn test_tree_of_redemption_exchange_can_be_responded_to() {
+fn tree_of_redemption_exchanges_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     let life_before = state.players[0].life;
 
-    let behavior = reg.get(state.get_object(_tree).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, _tree, 0, &[], &reg);
+    let behavior = reg.get(state.get_object(tree).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, tree, 0, &[], &reg);
 
     assert_eq!(
         state.players[0].life, life_before,
@@ -149,7 +154,7 @@ fn test_tree_of_redemption_exchange_can_be_responded_to() {
 // the stack. Opponents receive priority to respond (e.g., exile a Werewolf)
 // before regeneration shields are applied.
 #[test]
-fn full_moons_rise_regenerate_can_be_responded_to() {
+fn full_moons_rise_shields_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -180,15 +185,18 @@ fn mirror_mad_phantasm_opponent_can_respond() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
-    add_library_cards(&mut state, P0, 10);
+    stock_library(&mut state, &reg, P0, 10);
 
     let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, phantasm, 0, &[], &reg);
 
-    assert_eq!(
-        state.stack.is_empty(), false,
-        "CR 602.2a: Mirror-Mad Phantasm's activated ability should be on the stack"
-    );
+    assert_eq!(state.players[0].library_order.len(), 10,
+        "CR 602.2a: nothing has been shuffled or milled yet");
+
+    resolve_the_ability(&mut state, &reg);
+    assert!(state.players[0].library_order.len() < 10,
+        "and once it resolves the Phantasm is shuffled in and cards are revealed \
+         until its copy turns up, so the library is smaller");
 }
 
 // Per Scryfall ruling on Mirror-Mad Phantasm: if the creature is no longer on
@@ -201,7 +209,7 @@ fn mirror_mad_phantasm_source_removed_before_resolution() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
-    add_library_cards(&mut state, P0, 10);
+    stock_library(&mut state, &reg, P0, 10);
 
     let lib_before = state.players[0].library_order.len();
 
@@ -221,7 +229,7 @@ fn mirror_mad_phantasm_source_removed_before_resolution() {
 // activation. The Demon token is created only when the ability resolves,
 // giving the opponent a window to respond.
 #[test]
-fn skirsdag_ability_should_use_stack() {
+fn skirsdag_high_priest_makes_its_demon_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -248,7 +256,7 @@ fn skirsdag_ability_should_use_stack() {
 // ability resolves. If the ability were countered, the creatures would remain
 // tapped and no token would exist.
 #[test]
-fn skirsdag_tap_cost_paid_before_stack() {
+fn skirsdag_high_priests_tap_cost_is_paid_at_activation() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
