@@ -224,39 +224,41 @@ fn spell_costs_are_determined_in_one_place() {
         offenders.join("\n"));
 }
 
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// CR 601.2f — an alternative cost, wherever the spell is cast from
+// ---------------------------------------------------------------------------
 
-/// Bug: Rooftop Storm's alternative cost ({0} for Zombie spells) isn't
-/// offered when casting Zombie creatures from the graveyard via flashback
-/// or `can_cast_from_graveyard`.
+/// "You may pay {0} rather than pay the mana cost for Zombie creature spells
+/// you cast" (Rooftop Storm). Skaab Ruinator is a Zombie that may be cast from
+/// the graveyard, so it is the case where the two meet: the alternative cost
+/// has to reach the graveyard cast, not only the cast from hand.
+///
+/// This replaces a test named `..._not_offered_from_graveyard` whose body
+/// talked itself out of the graveyard case ("Actually there are no Zombie
+/// creatures with flashback in ISD... The simplest test: verify Rooftop Storm
+/// works from hand first") and then tested casting from hand, which
+/// `cards_rule_modifiers.rs` already covers.
 #[test]
-fn bug_rooftop_storm_not_offered_from_graveyard() {
-    let registry = CardRegistry::with_all_cards();
+fn rooftop_storms_free_cast_reaches_a_zombie_cast_from_the_graveyard() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Rooftop Storm
-    let _storm = named_permanent(&mut state, &registry, "Rooftop Storm", P0);
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+    // Its additional cost: exile three creature cards from your graveyard.
+    for _ in 0..3 {
+        named_card_in_graveyard(&mut state, &reg, "Doomed Traveler", P0);
+    }
+    assert!(state.has_subtype(ruinator, "Zombie", &reg),
+        "test precondition: the Ruinator is a Zombie, which is what Rooftop \
+         Storm's filter names");
 
-    // Put a Zombie creature (Walking Corpse {1}{B}) in P0's graveyard
-    // with can_cast_from_graveyard (e.g., via Skaab Ruinator-like ability)
-    // Actually, Walking Corpse doesn't have can_cast_from_graveyard.
-    // Use Unburial Rites to reanimate — but that's a spell, not a creature cast.
+    // Not a drop of mana anywhere.
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0);
+    assert!(!can_cast(&state, &reg, ruinator),
+        "without Rooftop Storm, {{1}}{{U}}{{U}} is unaffordable");
 
-    // Simpler: put a Zombie in hand, verify the free cast works from hand.
-    // Then put one in graveyard via flashback (if any Zombie has flashback).
-    // Actually there are no Zombie creatures with flashback in ISD.
-
-    // The simplest test: verify Rooftop Storm works from hand first.
-    let zombie = spell_in_hand(&mut state, &registry, "Walking Corpse", P0);
-    // Don't add mana — if Rooftop Storm works, it should be castable for free
-
-    let can_cast_zombie = can_cast(&state, &registry, zombie);
-
-    // If this passes, Rooftop Storm works from hand. The graveyard bug
-    // requires a more complex setup that we can't easily do here.
-    // Mark this as a partial test — verifies hand casting works.
-    assert!(can_cast_zombie,
-        "Rooftop Storm should allow casting Walking Corpse for free");
+    named_permanent(&mut state, &reg, "Rooftop Storm", P0);
+    assert!(can_cast(&state, &reg, ruinator),
+        "CR 601.2f: the alternative cost applies to the graveyard cast too, so \
+         the Ruinator is castable for {{0}}");
 }

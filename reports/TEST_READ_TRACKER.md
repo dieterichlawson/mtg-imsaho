@@ -56,7 +56,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `gutter_grime.rs` | 278 | 6 |
 | x | `trigger_snapshots.rs` | 275 | 8 |
 | x | `cards_regressions.rs` | 273 | 7 |
-|   | `spell_costs.rs` | 267 | 10 |
+| x | `spell_costs.rs` | 267 | 10 |
 |   | `ghoulcallers_chant.rs` | 265 | 8 |
 |   | `tap_cost_legality.rs` | 261 | 9 |
 |   | `combat_regressions.rs` | 255 | 9 |
@@ -131,4 +131,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**99/126 files read; 5912 lines remaining.**
+**100/126 files read; 5645 lines remaining.**
