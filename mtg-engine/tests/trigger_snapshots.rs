@@ -8,11 +8,13 @@
 //!
 //! Also here: the werewolf transform condition, which twelve cards each
 //! carried a private copy of, and every copy had invented the same clause.
+//!
+//! Triggers whose *source* has left are in `trigger_source_independence.rs`;
+//! this file is about the rest of the board having moved.
 
 mod common;
 
 use common::*;
-use mtg_engine::actions::Target;
 use mtg_engine::cards::{AttackInfo, CardRegistry};
 use mtg_engine::types::*;
 // ---------------------------------------------------------------------------
@@ -25,7 +27,7 @@ use mtg_engine::types::*;
 
 /// Stack a library for the defending player: three non-lands then a land, so
 /// a full reveal mills four.
-fn stack_library(state: &mut mtg_engine::state::GameState, reg: &CardRegistry, player: mtg_engine::ids::PlayerId) {
+fn stack_library(state: &mut mtg_engine::state::GameState, reg: &CardRegistry, player: PlayerId) {
     for name in ["Chapel Geist", "Walking Corpse", "Avacyn's Pilgrim", "Forest"] {
         let id = state.create_object(reg.get_id_by_name(name).unwrap(), player, Zone::Library, None, None);
         state.get_player_mut(player).library_order.push(id);
@@ -110,80 +112,6 @@ fn trepanation_blade_mills_the_defending_player() {
     assert_eq!(state.get_player(P1).library_order.len(), 0, "milled to the land");
     assert_eq!(state.effective_power(attacker, &reg).unwrap(), before + 4,
         "+1/+0 for each of the four cards put into the graveyard");
-}
-
-// ---------------------------------------------------------------------------
-// Death triggers whose effect happens somewhere else.
-// ---------------------------------------------------------------------------
-
-/// Selhoff Occultist's "whenever another creature dies, target player mills a
-/// card" fires even when the Occultist died in the same event. Requiring it
-/// to still be on the battlefield made it a no-op in exactly the board-wipe
-/// case the trigger exists for.
-#[test]
-fn selhoff_occultist_mills_even_when_it_died_in_the_same_wipe() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let occultist = named_permanent(&mut state, &reg, "Selhoff Occultist", P0);
-    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
-    for name in ["Chapel Geist", "Forest"] {
-        let id = state.create_object(reg.get_id_by_name(name).unwrap(), P1, Zone::Library, None, None);
-        state.get_player_mut(P1).library_order.push(id);
-    }
-
-    mtg_engine::destruction::try_destroy_all(&mut state, &[occultist, other], &reg);
-    assert_eq!(state.get_object(occultist).unwrap().zone, Zone::Graveyard,
-        "test precondition: the Occultist died too");
-
-    reg.get(state.get_object(occultist).unwrap().card_id).unwrap()
-        .on_any_creature_dies(&mut state, occultist, other, P0, &[], 2, false,
-            &[Target::Player(P1)], &reg);
-
-    assert_eq!(state.get_player(P1).library_order.len(), 1,
-        "the mill happens — the trigger was created while the Occultist was on \
-         the battlefield and resolves regardless of where it is now");
-}
-
-/// Rage Thrower's damage likewise. CR 608.2h: a source that has left the
-/// battlefield still deals its damage, from last known information.
-#[test]
-fn rage_thrower_deals_damage_even_when_it_died_in_the_same_wipe() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
-    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
-    let life_before = state.get_player(P1).life;
-
-    mtg_engine::destruction::try_destroy_all(&mut state, &[thrower, other], &reg);
-
-    reg.get(state.get_object(thrower).unwrap().card_id).unwrap()
-        .on_any_creature_dies(&mut state, thrower, other, P0, &[], 2, false,
-            &[Target::Player(P1)], &reg);
-
-    assert_eq!(state.get_player(P1).life, life_before - 2,
-        "2 damage is dealt even though the Thrower died in the same event");
-}
-
-/// The other side of the rule: a trigger that puts a counter on ITS OWN
-/// permanent does nothing when that permanent is gone (CR 121.1). Lumberknot
-/// is right to check.
-#[test]
-fn a_trigger_that_counters_itself_does_nothing_once_it_has_left() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let knot = named_permanent(&mut state, &reg, "Lumberknot", P0);
-    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
-
-    mtg_engine::destruction::try_destroy_all(&mut state, &[knot, other], &reg);
-
-    reg.get(state.get_object(knot).unwrap().card_id).unwrap()
-        .on_any_creature_dies(&mut state, knot, other, P0, &[], 2, false, &[], &reg);
-
-    assert_eq!(counters_of(&state, knot, CounterType::PlusOnePlusOne), 0,
-        "a permanent in the graveyard cannot receive counters");
 }
 
 // ---------------------------------------------------------------------------

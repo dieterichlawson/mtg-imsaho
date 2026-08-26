@@ -502,6 +502,75 @@ fn murder_of_crows_offers_its_draw_after_dying_alongside_the_creature() {
         "CR 603.10: the draw choice is offered even though the Crows died too");
 }
 
+// Selhoff Occultist: "Whenever this creature or another creature dies, target
+// player mills a card." A board wipe is the case the trigger exists for, and
+// requiring the Occultist to still be around made it a no-op in exactly that
+// case.
+#[test]
+fn selhoff_occultist_mills_after_dying_alongside_the_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let occultist = named_permanent(&mut state, &reg, "Selhoff Occultist", P0);
+    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    stock_library(&mut state, &reg, P1, 2);
+    state.move_object(other, Zone::Graveyard, &reg);
+
+    resolve_after_source_dies_targeting(&mut state, &reg, occultist,
+        TriggerEvent::CreatureDied {
+            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+        },
+        vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_player(P1).library_order.len(), 1,
+        "CR 603.10/113.7a: the mill happens even though the Occultist died in \
+         the same event");
+}
+
+// Rage Thrower: "Whenever another creature dies, this creature deals 2 damage
+// to target player." CR 608.2h: a source that has left the battlefield still
+// deals its damage, from last known information.
+#[test]
+fn rage_thrower_deals_its_damage_after_dying_alongside_the_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    state.move_object(other, Zone::Graveyard, &reg);
+
+    resolve_after_source_dies_targeting(&mut state, &reg, thrower,
+        TriggerEvent::CreatureDied {
+            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+        },
+        vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_player(P1).life, 18,
+        "2 damage is dealt even though the Thrower died in the same event");
+}
+
+// The other side of the rule. Lumberknot's "put a +1/+1 counter on this
+// creature" needs the creature: a permanent in the graveyard is a different
+// object (CR 400.7) and cannot receive counters, so this ability really does
+// do nothing — which is not the same as the ability being countered.
+#[test]
+fn a_trigger_that_counters_its_own_permanent_does_nothing_once_it_has_died() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let knot = named_permanent(&mut state, &reg, "Lumberknot", P0);
+    let other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    state.move_object(other, Zone::Graveyard, &reg);
+
+    resolve_after_source_dies(&mut state, &reg, knot, TriggerEvent::CreatureDied {
+        dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+    });
+
+    assert_eq!(counters_of(&state, knot, CounterType::PlusOnePlusOne), 0,
+        "the ability resolves, and finds nothing on the battlefield to put a \
+         counter on");
+}
+
 // ---------------------------------------------------------------------------
 // The whole path, not just dispatch
 // ---------------------------------------------------------------------------
