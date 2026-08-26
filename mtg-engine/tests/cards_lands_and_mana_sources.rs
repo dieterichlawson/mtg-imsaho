@@ -440,12 +440,6 @@ fn stony_silence_blocks_artifact_mana_abilities() {
 
     // Put Sol Ring on the battlefield (artifact with mana ability).
     let sol_ring = named_creature(&mut state, &reg, "Sol Ring", P0);
-    // Sol Ring isn't a creature — fix the card types.
-    if let Some(obj) = state.get_object_mut(sol_ring) {
-        obj.card_types = vec![CardType::Artifact];
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Without Stony Silence: Sol Ring's mana ability should be available.
     let actions_before = engine::legal_actions(&state, &reg);
@@ -470,11 +464,6 @@ fn stony_silence_does_not_block_non_artifact_mana() {
 
     // Put a Forest on the battlefield.
     let forest = named_creature(&mut state, &reg, "Forest", P0);
-    if let Some(obj) = state.get_object_mut(forest) {
-        obj.card_types = vec![CardType::Land];
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put Stony Silence on the battlefield.
     let _stony = named_creature(&mut state, &reg, "Stony Silence", P0);

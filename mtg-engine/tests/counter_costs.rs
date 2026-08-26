@@ -22,8 +22,6 @@ fn grimoire_with(counters: u32) -> (mtg_engine::state::GameState, mtg_engine::id
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let grimoire = named_creature(&mut state, &reg, "Grimoire of the Dead", P0);
-    state.get_object_mut(grimoire).unwrap().power = None;
-    state.get_object_mut(grimoire).unwrap().toughness = None;
     state.add_counters(grimoire, CounterType::Study, counters);
     (state, grimoire, reg)
 }

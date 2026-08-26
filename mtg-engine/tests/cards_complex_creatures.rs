@@ -312,11 +312,6 @@ fn gutter_grime_creates_ooze_on_creature_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let grime = named_creature(&mut state, &reg, "Gutter Grime", P0);
-    // Fix: Gutter Grime is an enchantment, not a creature. Clear creature stats.
-    if let Some(obj) = state.get_object_mut(grime) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // A nontoken creature we control dies.
     let dead = ready_creature(&mut state, P0, 2, 2);
@@ -340,10 +335,6 @@ fn heretics_punishment_mills_then_deals_damage() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
-    if let Some(obj) = state.get_object_mut(hp) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put cards in library. Use a known card so mana value is deterministic.
     // Kalonian Tusker costs {G}{G} = MV 2.
@@ -378,10 +369,6 @@ fn heretics_punishment_tracks_damaged_by_on_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
-    if let Some(obj) = state.get_object_mut(hp) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put cards in library.
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
@@ -407,10 +394,6 @@ fn heretics_punishment_fizzles_when_target_illegal() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
-    if let Some(obj) = state.get_object_mut(hp) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put cards in library.
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
@@ -639,10 +622,6 @@ fn cellar_door_creates_zombie_when_milling_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let door = named_creature(&mut state, &reg, "Cellar Door", P0);
-    if let Some(obj) = state.get_object_mut(door) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put a creature card on top of P1's library.
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
@@ -848,10 +827,6 @@ fn back_from_the_brink_creates_token_copy() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
-    if let Some(obj) = state.get_object_mut(enchant) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put a creature in graveyard.
     let dead = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
@@ -878,10 +853,6 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
-    if let Some(obj) = state.get_object_mut(enchant) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Put two different creatures in the graveyard.
     let _tusker = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
@@ -914,10 +885,6 @@ fn back_from_the_brink_no_abilities_without_creatures_in_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
-    if let Some(obj) = state.get_object_mut(enchant) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, enchant, &reg);
@@ -931,10 +898,6 @@ fn back_from_the_brink_uses_creature_mana_cost() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
-    if let Some(obj) = state.get_object_mut(enchant) {
-        obj.power = None;
-        obj.toughness = None;
-    }
 
     // Savannah Lions costs {W}.
     let lions = named_card_in_graveyard(&mut state, &reg, "Savannah Lions", P0);
@@ -1876,9 +1839,6 @@ fn liliana_plus_one_each_player_discards_with_choice() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     // Give both players multiple cards so they must choose.
     let p0_card_a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
@@ -1941,9 +1901,6 @@ fn liliana_plus_one_single_card_auto_discards() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     // Give P0 one card and P1 one card.
     let p0_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
@@ -1967,9 +1924,6 @@ fn liliana_plus_one_empty_hand_skipped() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     // P0 has no cards, P1 has one card.
     let p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
@@ -1990,9 +1944,6 @@ fn liliana_plus_one_both_empty_hands() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
@@ -2011,9 +1962,6 @@ fn liliana_minus_two_target_player_sacrifices_creature() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let creature_a = ready_creature(&mut state, P1, 3, 3);
     let creature_b = ready_creature(&mut state, P1, 2, 2);
@@ -2048,9 +1996,6 @@ fn liliana_minus_two_single_creature_auto_sacrifices() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
@@ -2069,9 +2014,6 @@ fn liliana_minus_two_no_creatures() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P1)], &reg);
@@ -2088,9 +2030,6 @@ fn liliana_minus_two_can_target_self() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let own_creature = ready_creature(&mut state, P0, 2, 2);
 
@@ -2111,9 +2050,6 @@ fn liliana_minus_six_pile_division_and_choice() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     // Give P1 three permanents.
     let c1 = ready_creature(&mut state, P1, 3, 3);
@@ -2167,9 +2103,6 @@ fn liliana_minus_six_empty_pile_allowed() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let c1 = ready_creature(&mut state, P1, 3, 3);
 
@@ -2198,9 +2131,6 @@ fn liliana_minus_six_all_in_one_pile() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let c1 = ready_creature(&mut state, P1, 3, 3);
     let c2 = ready_creature(&mut state, P1, 2, 2);
@@ -2230,9 +2160,6 @@ fn liliana_minus_six_no_permanents() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
@@ -2250,9 +2177,6 @@ fn liliana_minus_six_can_target_self() {
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
     state.add_counters(liliana, CounterType::Loyalty, 9);
-    if let Some(obj) = state.get_object_mut(liliana) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     // P0 has a creature (besides Liliana herself, which is also a permanent).
     let _c1 = ready_creature(&mut state, P0, 2, 2);
@@ -2281,9 +2205,6 @@ fn garruk_creates_wolf_token() {
 
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
@@ -2300,9 +2221,6 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
 
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 2); // Only 2 loyalty.
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
-    }
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // Use the wolf token ability (costs 0 loyalty).
@@ -2326,7 +2244,6 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 2);
     if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
     }
@@ -2351,7 +2268,6 @@ fn garruk_back_face_sacrifice_to_tutor() {
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
     if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
     }
@@ -2390,7 +2306,6 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 4);
     if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
     }
@@ -2438,7 +2353,6 @@ fn garruk_back_face_tutor_shuffles_library() {
         let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
         state.add_counters(garruk, CounterType::Loyalty, 4);
         if let Some(obj) = state.get_object_mut(garruk) {
-            obj.card_types = vec![CardType::Planeswalker];
             obj.is_transformed = true;
             obj.name = "Garruk, the Veil-Cursed".into();
         }
@@ -2486,7 +2400,6 @@ fn garruk_back_face_overrun() {
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 4);
     if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
     }
@@ -2526,7 +2439,6 @@ fn garruk_back_face_loyalty_abilities_shown_when_transformed() {
     let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
     state.add_counters(garruk, CounterType::Loyalty, 3);
     if let Some(obj) = state.get_object_mut(garruk) {
-        obj.card_types = vec![CardType::Planeswalker];
         obj.is_transformed = true;
         obj.name = "Garruk, the Veil-Cursed".into();
     }

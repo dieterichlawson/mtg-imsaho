@@ -126,8 +126,6 @@ fn trepanation_blade_stops_on_land() {
     // Set up equipment on a creature attacking P1.
     let blade = named_creature(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().is_equipment = true;
-    state.get_object_mut(blade).unwrap().power = None;
-    state.get_object_mut(blade).unwrap().toughness = None;
 
     let attacker = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
