@@ -1,237 +1,144 @@
-//! Regressions for bugs documented in `audits/AUDIT_BUGS.md`. Each of these
-//! failed when it was written and passes now; they stay to protect against
-//! the bug coming back.
+//! "Creatures you control get +N/+N until end of turn" is continuous.
 //!
-//! This file covers the "Snapshot anthems — until-end-of-turn effects
-//! baked at resolution" family. The pattern is: an instant says
-//! "Creatures you control get +N/+N until end of turn" but the
-//! implementation walks the battlefield at resolution time and
-//! pushes one per-target `ModifyPT` effect, missing creatures that
-//! enter the battlefield after the anthem resolves.
+//! A creature that arrives after the anthem resolved is still a creature you
+//! control, so it gets the bonus too. The tempting implementation — walk the
+//! battlefield at resolution and push one per-creature effect — silently makes
+//! the anthem a snapshot instead, and nothing about the board at the moment it
+//! resolved is what the card says.
 //!
-//! Bugs covered in this file:
-//! - Bug AP: Rally the Peasants (and similar) snapshots its anthem at
-//!   resolution. A creature entering after the anthem resolves doesn't
-//!   get +2/+0.
-//! - Bug AZ: Spare from Evil's "creatures you control gain protection
-//!   from non-Human creatures" is snapshotted at resolution (Bug AP
-//!   sibling for `GrantProtection`).
-//! - Bug BK: Instigator Gang's static "attacking creatures you control
-//!   get +1/+0" is implemented as an `AnyCreatureAttacks` trigger that
-//!   pushes a per-attacker `ModifyPT` into `until_end_of_turn`. The buff
-//!   then persists after Instigator Gang dies, contrary to its static
-//!   nature.
+//! Also here: the other direction, a *static* anthem, which turns off the
+//! moment its source leaves rather than lasting the turn.
 
 mod common;
 use common::*;
 
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
-/// Bug AP (`audits/AUDIT_BUGS.md)`: Rally the Peasants' "+2/+0 until end
-/// of turn" anthem snapshots the controller's creatures at resolution
-/// time. A creature entering the battlefield after Rally resolves
-/// doesn't get the buff, contrary to the continuous wording of the
-/// oracle.
-///
-/// Oracle (Rally the Peasants): "Creatures you control get +2/+0 until
-/// end of turn. Flashback {2}{R}."
-///
-/// Failure mode: `rally_the_peasants.rs` collects creature ids
-/// at resolution, then pushes one `TemporaryEffect::ModifyPT` per
-/// existing target into `state.until_end_of_turn`. The `effective_power`
-/// machinery only walks `until_end_of_turn` for matches against the
-/// queried object's id, so a creature entering after Rally resolved
-/// has no matching `ModifyPT` and doesn't get the +2/+0.
-#[test]
-fn bug_ap_rally_the_peasants_buffs_creatures_entering_later() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Resolve Rally the Peasants directly. No creatures are in play
-    // yet, so there are no targets to snapshot at resolution time.
-    let rally_card_id = registry.get_id_by_name("Rally the Peasants").unwrap();
-    let rally = state.create_object(rally_card_id, P0, Zone::Stack, None, None);
-    state.get_object_mut(rally).unwrap().name = "Rally the Peasants".into();
-    let behavior = registry.get(rally_card_id).unwrap();
-    behavior.on_resolve(&mut state, rally, &[], &registry);
-
-    // Now a creature enters the battlefield. Per the continuous
-    // wording of the anthem, it should be +2/+0.
-    let bears = ready_creature(&mut state, P0, 2, 2);
-    state
-        .get_object_mut(bears)
-        .unwrap()
-        .card_types = vec![CardType::Creature];
-
-    let eff_p = state.effective_power(bears, &registry).unwrap_or(0);
-    assert_eq!(
-        eff_p, 4,
-        "A creature entering the battlefield after Rally the Peasants \
-         resolved should still get the +2/+0 anthem (the wording is \
-         'Creatures you control get +2/+0 until end of turn'). \
-         Bug AP: Rally snapshots its targets at resolution time and \
-         pushes per-creature ModifyPT effects, so newcomers are missed. \
-         Got effective_power = {eff_p}, expected 4 (2 base + 2 anthem).",
-    );
+/// Resolve `name` as a spell with nothing on the battlefield to snapshot.
+fn resolve_anthem(state: &mut GameState, reg: &CardRegistry, name: &str) {
+    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
+    let spell = state.create_object(card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(spell).unwrap().name = name.into();
+    reg.get(card_id).unwrap().on_resolve(state, spell, &[], reg);
 }
 
-/// Bug AP — Vampiric Fury subtype-filtered aspect (`audits/AUDIT_BUGS.md)`:
-/// Vampiric Fury combines the snapshot-anthem defect (Bug AP) with a
-/// subtype filter. A Bloodline Keeper Vampire TOKEN entering after
-/// Vampiric Fury resolves should get +2/+0 but doesn't — the token
-/// was absent from the snapshot AND the registry-only Vampire filter
-/// (Bug AT) compounds the issue for tokens.
-///
-/// Oracle (Vampiric Fury): "Vampire creatures you control get +2/+0
-/// and gain first strike until end of turn."
+/// Every "until end of turn" anthem in the set, each resolved onto an empty
+/// battlefield — so anything it does to a creature that arrives afterwards is
+/// the continuous behaviour and not a snapshot.
 #[test]
-fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn an_until_end_of_turn_anthem_reaches_creatures_that_arrive_later() {
+    // (anthem, a creature it should reach and that creature's printed power,
+    //  the power it should have under the anthem)
+    const CASES: &[(&str, &str, i32, i32)] = &[
+        ("Rally the Peasants", "Grizzly Bears", 2, 4),
+        ("Vampiric Fury", "Stromkirk Noble", 1, 3),
+    ];
 
-    // Resolve Vampiric Fury while P0 has NO Vampires in play.
-    let fury_card_id = registry.get_id_by_name("Vampiric Fury").unwrap();
-    let fury = state.create_object(fury_card_id, P0, Zone::Stack, None, None);
-    state.get_object_mut(fury).unwrap().name = "Vampiric Fury".into();
-    let behavior = registry.get(fury_card_id).unwrap();
-    behavior.on_resolve(&mut state, fury, &[], &registry);
+    for &(anthem, creature, printed, buffed) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // A Vampire enters AFTER the anthem resolved. Per oracle it
-    // should still get +2/+0 this turn.
-    let vamp = named_permanent(&mut state, &registry, "Stromkirk Noble", P0);
+        resolve_anthem(&mut state, &reg, anthem);
 
-    let eff_p = state.effective_power(vamp, &registry).unwrap_or(0);
-    assert_eq!(
-        eff_p, 3,
-        "A Vampire entering after Vampiric Fury resolves should still \
-         get +2/+0 (1 base + 2 anthem = 3). Bug AP: the snapshot \
-         walks the battlefield at resolution time and pushes per-target \
-         ModifyPT, so newcomers are missed. effective_power = {eff_p}",
-    );
+        let id = named_permanent(&mut state, &reg, creature, P0);
+        assert_eq!(state.effective_power(id, &reg), Some(buffed),
+            "{anthem} reaches {creature}, which entered after it resolved \
+             (printed {printed})");
+    }
 }
 
-/// Bug BK (`audits/AUDIT_BUGS.md)`: Instigator Gang's "Attacking
-/// creatures you control get +1/+0" is modeled as an
-/// `AnyCreatureAttacks` triggered ability that pushes a per-attacker
-/// `TemporaryEffect::ModifyPT` into `until_end_of_turn`. Once
-/// Instigator Gang dies, the buff stays in `until_end_of_turn` until
-/// end of turn — but per the oracle the static ability turns OFF the
-/// moment its source leaves the battlefield.
-///
-/// Oracle (Instigator Gang front face): "Attacking creatures you
-/// control get +1/+0."
-///
-/// Failure mode: `instigator_gang.rs` runs in
-/// `on_any_creature_attacks` and writes a `ModifyPT { target,
-/// power_mod: 1, ... }` into `until_end_of_turn`. The effect is keyed
-/// to the attacker (not the source Instigator Gang), so the
-/// `effective_power` machinery keeps reporting +1 power for the attacker
-/// even after Instigator Gang has been removed from the battlefield.
-///
-/// We simulate the trigger firing by manually pushing the same
-/// `ModifyPT` effect into `until_end_of_turn` (matching what
-/// `on_any_creature_attacks` does), then move Instigator Gang to the
-/// graveyard. The bug means the attacker still reports the +1
-/// power; the fix should make the static ability evaluate live, so
-/// the bonus disappears once Instigator Gang is gone.
+/// The filtered anthem reaches only what it names.
 #[test]
-fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
+fn vampiric_fury_reaches_vampires_and_nothing_else() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    resolve_anthem(&mut state, &reg, "Vampiric Fury");
+
+    let vampire = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
+    let not_a_vampire = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let their_vampire = named_permanent(&mut state, &reg, "Stromkirk Noble", P1);
+
+    assert_eq!(state.effective_power(vampire, &reg), Some(3), "your Vampire");
+    assert!(state.has_keyword(vampire, Keyword::FirstStrike, &reg),
+        "and it gains first strike too");
+    assert_eq!(state.effective_power(not_a_vampire, &reg), Some(2), "a non-Vampire");
+    assert_eq!(state.effective_power(their_vampire, &reg), Some(1),
+        "an opponent's Vampire");
+}
+
+/// "Creatures you control gain protection from non-Human creatures until end of
+/// turn" — the same rule for a granted keyword rather than a P/T change.
+#[test]
+fn spare_from_evil_protects_creatures_that_arrive_later() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    resolve_anthem(&mut state, &reg, "Spare from Evil");
+
+    let newcomer = ready_creature(&mut state, P0, 2, 2);
+    let non_human = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let human = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P1);
+
+    assert!(state.has_protection_from(newcomer, non_human, &reg),
+        "a creature entering after Spare from Evil resolved still gains the \
+         protection — the wording is continuous");
+    assert!(!state.has_protection_from(newcomer, human, &reg),
+        "protection from *non-Human* creatures, so a Human is not covered");
+}
+
+/// Selfless Cathar's anthem comes from an activated ability that sacrifices it
+/// ("{1}{W}, Sacrifice this creature: Creatures you control get +1/+1 until end
+/// of turn"), so it is applied from the graveyard — but it is the same
+/// continuous wording, and reaches creatures that arrive afterwards.
+#[test]
+fn selfless_cathars_anthem_reaches_creatures_that_arrive_later() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let cathar = named_permanent(&mut state, &reg, "Selfless Cathar", P0);
+    let already_there = ready_creature(&mut state, P0, 2, 2);
+
+    // The engine sacrifices the Cathar before the ability's handler runs.
+    state.move_object(cathar, Zone::Graveyard, &reg);
+    reg.get(state.get_object(cathar).unwrap().card_id).unwrap()
+        .on_activate_ability(&mut state, cathar, 0, &[], &reg);
+
+    assert_eq!(state.effective_power(already_there, &reg), Some(3),
+        "the creature that was already out gets +1/+1");
+
+    let newcomer = ready_creature(&mut state, P0, 2, 2);
+    assert_eq!(state.effective_power(newcomer, &reg), Some(3),
+        "and so does one that arrives afterwards");
+}
+
+/// The other direction. Instigator Gang's "Attacking creatures you control get
+/// +1/+0" is a *static* ability, so it stops the moment the Gang leaves — it is
+/// not an until-end-of-turn effect that outlives its source.
+#[test]
+fn a_static_anthem_stops_when_its_source_leaves() {
     use mtg_engine::state::TemporaryEffect;
 
-    let registry = CardRegistry::with_all_cards();
+    let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let gang = named_permanent(&mut state, &registry, "Instigator Gang", P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
     let attacker = ready_creature(&mut state, P0, 2, 2);
-    state
-        .get_object_mut(attacker)
-        .unwrap()
-        .card_types = vec![CardType::Creature];
 
-    // Mirror what instigator_gang.rs's on_any_creature_attacks does:
-    // push a ModifyPTWhileSourceInPlay keyed to the attacker and gang.
     state.until_end_of_turn.push(TemporaryEffect::ModifyPTWhileSourceInPlay {
         target: attacker,
         source: gang,
         power_mod: 1,
         toughness_mod: 0,
     });
-    let buffed_p = state.effective_power(attacker, &registry).unwrap_or(0);
-    assert_eq!(
-        buffed_p, 3,
-        "Test setup: with Instigator Gang in play and the trigger fired, \
-         the attacker should be 3/2"
-    );
+    assert_eq!(state.effective_power(attacker, &reg), Some(3),
+        "test precondition: with the Gang out, the attacker is 3/2");
 
-    // Now Instigator Gang dies (mid-combat removal, e.g. Brimstone Volley
-    // resolved on it before the damage step). Per oracle, the static
-    // ability turns off the moment Instigator Gang leaves the battlefield.
-    state.move_object(gang, Zone::Graveyard, &registry);
+    state.move_object(gang, Zone::Graveyard, &reg);
 
-    let after_p = state.effective_power(attacker, &registry).unwrap_or(0);
-    assert_eq!(
-        after_p, 2,
-        "Once Instigator Gang dies, the attacker should drop back to its \
-         base 2/2 — the +1/+0 was a static ability that should turn off \
-         when its source leaves the battlefield. Bug BK: the buff is \
-         baked into until_end_of_turn at trigger time and stays there \
-         past Instigator Gang's death. Got effective_power = {after_p}, \
-         expected 2.",
-    );
-}
-
-/// Bug AZ (`audits/AUDIT_BUGS.md)`: Spare from Evil's protection anthem
-/// is snapshotted at resolution time: the implementation iterates the
-/// controller's creatures at resolution and pushes one
-/// `TemporaryEffect::GrantProtection` per creature. Creatures that
-/// enter the battlefield after Spare from Evil resolves don't get the
-/// protection, contrary to the continuous wording.
-///
-/// Oracle (Spare from Evil): "Creatures you control gain protection
-/// from non-Human creatures until end of turn."
-///
-/// Failure mode: `spare_from_evil.rs` does the same
-/// snapshot-at-resolution shape as Rally the Peasants — collect
-/// creature ids, push one `GrantProtection` effect per target. A
-/// Mausoleum Guard death-trigger spirit that enters after Spare
-/// resolves has no `GrantProtection` entry, so `has_protection_from`
-/// returns false for a non-Human attacker targeting the spirit.
-#[test]
-fn bug_az_spare_from_evil_protects_creatures_entering_later() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Resolve Spare from Evil while P0 controls NO creatures.
-    let spare_card_id = registry.get_id_by_name("Spare from Evil").unwrap();
-    let spare = state.create_object(spare_card_id, P0, Zone::Stack, None, None);
-    state.get_object_mut(spare).unwrap().name = "Spare from Evil".into();
-    let behavior = registry.get(spare_card_id).unwrap();
-    behavior.on_resolve(&mut state, spare, &[], &registry);
-
-    // P0 now puts a fresh creature into play. It should inherit the
-    // "protection from non-Human" anthem.
-    let new_creature = ready_creature(&mut state, P0, 2, 2);
-    state
-        .get_object_mut(new_creature)
-        .unwrap()
-        .card_types = vec![CardType::Creature];
-
-    // A non-Human attacker from P1 — Grizzly Bears is a Bear, not a
-    // Human, so Spare from Evil should make the new P0 creature
-    // untargetable by it.
-    let bears_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-    let bears = state.create_object(bears_card_id, P1, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
-
-    let has_protection = state.has_protection_from(new_creature, bears, &registry);
-    assert!(
-        has_protection,
-        "A creature entering the battlefield after Spare from Evil \
-         resolves should still gain protection from non-Human creatures \
-         — the wording is continuous until end of turn. Bug AZ: \
-         Spare from Evil snapshots its targets at resolution time and \
-         pushes per-creature GrantProtection effects, so newcomers are \
-         missed."
-    );
+    assert_eq!(state.effective_power(attacker, &reg), Some(2),
+        "the Gang is gone, so its static ability is gone — the +1/+0 must not \
+         linger to end of turn the way a spell's anthem would");
 }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, ActivatedAbilityDef, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Selfless Cathar — {W} 1/1 Human Soldier.
 /// {1}{W}, Sacrifice Selfless Cathar: Creatures you control get +1/+1 until end of turn.
@@ -43,23 +43,17 @@ impl CardBehavior for SelflessCathar {
         // Use the controller from the object (even though it's in the graveyard now).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
-        let creature_ids: Vec<ObjectId> = state.objects.values()
-            .filter(|obj| {
-                obj.zone == Zone::Battlefield
-                    && obj.controller == controller
-                    && obj.power.is_some()
-            })
-            .map(|obj| obj.id)
-            .collect();
-
-        for id in creature_ids {
-            state.until_end_of_turn.push(
-                crate::state::TemporaryEffect::ModifyPT {
-                    target: id,
-                    power_mod: 1,
-                    toughness_mod: 1,
-                }
-            );
-        }
+        // "Creatures you control get +1/+1 until end of turn" is continuous:
+        // a creature that arrives later this turn gets it too. Walking the
+        // battlefield here and pushing one `ModifyPT` per creature would make
+        // it a snapshot of the board at activation instead.
+        state.until_end_of_turn.push(
+            crate::state::TemporaryEffect::ModifyPTAll {
+                controller,
+                filter: None,
+                power_mod: 1,
+                toughness_mod: 1,
+            }
+        );
     }
 }
