@@ -30,9 +30,9 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `sacrifice_choice.rs` | 406 | 12 |
 | x | `cards_graveyard_interaction.rs` | 396 | 17 |
 |   | `cards_removal_and_bounce.rs` | 386 | 15 |
-|   | `mulligan.rs` | 369 | 9 |
-|   | `trigger_priority.rs` | 350 | 7 |
-|   | `inline_damage.rs` | 341 | 11 |
+| x | `mulligan.rs` | 369 | 9 |
+| x | `trigger_priority.rs` | 350 | 7 |
+| x | `inline_damage.rs` | 341 | 11 |
 | x | `card_data_invariants.rs` | 340 | 12 |
 | x | `combat.rs` | 337 | 16 |
 |   | `activated_abilities.rs` | 336 | 12 |
@@ -132,4 +132,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**77/127 files read; 13425 lines remaining.**
+**80/127 files read; 12365 lines remaining.**

@@ -182,16 +182,12 @@ fn cast_instant_in_response_to_trigger() {
     state.get_object_mut(victim).unwrap().damage_marked = 2;
 
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P1);
-    let bolt_id = bolt;
 
     let mut bolt_cast = false;
     let mut actions = 0;
 
     engine::run_game_loop(&mut state, &reg, |gs, player, _legal| {
         actions += 1;
-        if actions > 100 {
-            return Action::Concede;
-        }
 
         // P1 casts Lightning Bolt targeting P0 when a trigger is on the stack
         if player == P1
@@ -199,15 +195,7 @@ fn cast_instant_in_response_to_trigger() {
             && gs.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_)))
         {
             bolt_cast = true;
-            return Action::CastSpell {
-                object_id: bolt_id,
-                targets: vec![Target::Player(P0)],
-                sacrifice: None,
-                exile_count: None,
-                exile_ids: vec![],
-                alternative_cost: None,
-                tap_plan: vec![],
-            };
+            return cast_action(bolt, vec![Target::Player(P0)]);
         }
 
         if actions > 30 {
@@ -253,9 +241,6 @@ fn multiple_triggers_resolve_individually_with_priority() {
 
     engine::run_game_loop(&mut state, &reg, |gs, _player, _legal| {
         actions += 1;
-        if actions > 100 {
-            return Action::Concede;
-        }
 
         // Record counter value when we see a trigger on the stack
         if gs.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_))) {
@@ -305,16 +290,12 @@ fn spell_resolves_before_trigger_on_stack() {
     // If Bolt resolves first (correct LIFO), the mob dies before the trigger
     // resolves, so the counter is placed on a dead mob (graveyard).
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P1);
-    let bolt_id = bolt;
 
     let mut bolt_cast = false;
     let mut actions = 0;
 
     engine::run_game_loop(&mut state, &reg, |gs, player, _legal| {
         actions += 1;
-        if actions > 100 {
-            return Action::Concede;
-        }
 
         // P1 bolts the Unruly Mob when trigger is on the stack
         if player == P1
@@ -322,15 +303,7 @@ fn spell_resolves_before_trigger_on_stack() {
             && gs.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_)))
         {
             bolt_cast = true;
-            return Action::CastSpell {
-                object_id: bolt_id,
-                targets: vec![Target::Object(mob)],
-                sacrifice: None,
-                exile_count: None,
-                exile_ids: vec![],
-                alternative_cost: None,
-                tap_plan: vec![],
-            };
+            return cast_action(bolt, vec![Target::Object(mob)]);
         }
 
         if actions > 40 {

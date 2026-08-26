@@ -101,6 +101,18 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 /// the max (taps every offered source + drains pool). Tests wanting a
 /// specific X value should construct the `FundingResponse` themselves
 /// instead of calling this helper.
+/// The `CastSpell` action for `object_id` at `targets`, unsubmitted.
+///
+/// For the `run_game_loop` tests, whose callbacks return an action rather than
+/// applying one, so [`cast_onto_stack`] does not fit.
+pub fn cast_action(object_id: ObjectId, targets: Vec<Target>) -> Action {
+    Action::CastSpell {
+        object_id, targets,
+        sacrifice: None, exile_count: None, exile_ids: vec![],
+        alternative_cost: None, tap_plan: vec![],
+    }
+}
+
 /// Every target the engine currently offers for casting `spell`.
 ///
 /// Scoped to `spell`: the hand-rolled version of this asked whether *any*

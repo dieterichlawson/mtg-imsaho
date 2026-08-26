@@ -476,3 +476,95 @@ fn no_test_ends_the_turn_by_hand() {
          (use common::advance_to_cleanup / advance_to_next_turn):\n  {}",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// Every source file in the crate, with its path relative to `src/`.
+fn crate_sources() -> Vec<(String, String)> {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    walk(&src, &mut files);
+    files.sort();
+    files.iter()
+        .filter_map(|p| {
+            let rel = p.strip_prefix(&src).ok()?.to_string_lossy().replace('\\', "/");
+            Some((rel, fs::read_to_string(p).ok()?))
+        })
+        .collect()
+}
+
+/// Nothing outside `damage.rs` marks damage on a permanent.
+///
+/// `damage.rs`'s own module doc has said so since the pipeline was unified —
+/// "Engine and card code must never write `damage_marked` directly: every
+/// hand-rolled copy of this logic has historically missed at least one check" —
+/// and nothing enforced it. Eleven tests in `inline_damage.rs` each named one
+/// card that had missed one: Balefire Dragon skipped protection, Blasphemous
+/// Act skipped Unbreathing Horde's replacement, Devil's Play wrote
+/// `damage_marked` on a planeswalker instead of removing loyalty.
+///
+/// A card that writes the field itself gets none of `deal_damage`'s work:
+/// combat-damage prevention, protection (CR 702.16e), prevent-and-remove-a-
+/// counter (CR 614.1a), damage multipliers, planeswalker loyalty (CR 120.3c),
+/// deathtouch, `damaged_by` tracking, lifelink, or the damage event. Setting it
+/// to zero is a different act — clearing marked damage at cleanup, on
+/// destruction, on a zone change — and stays allowed.
+#[test]
+fn only_the_damage_pipeline_marks_damage() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if rel == "damage.rs" {
+            continue;
+        }
+        // Unit tests inside a module set up damaged creatures on purpose.
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            let writes = l.contains("damage_marked +=")
+                || l.contains("damage_marked -=")
+                || (l.contains("damage_marked =") && !l.contains("damage_marked = 0"));
+            if writes {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "damage must go through `damage::deal_damage`, which applies protection, \
+         prevention, multipliers, loyalty removal, deathtouch and lifelink; \
+         writing `damage_marked` gets none of it:\n  {}",
+        offenders.join("\n  "));
+}
+
+/// Nothing outside the loyalty-cost machinery takes loyalty counters off a
+/// planeswalker.
+///
+/// CR 120.3c: damage dealt to a planeswalker removes that many loyalty
+/// counters. That is `deal_damage`'s job — Stensia Bloodhall used to decrement
+/// loyalty itself and so skipped the protection and prevention checks that a
+/// planeswalker is entitled to like anything else.
+#[test]
+fn only_the_damage_pipeline_removes_loyalty_for_damage() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        // `damage.rs` implements CR 120.3c; `cards/mod.rs` and the planeswalker
+        // cards pay and add loyalty as an activation cost (CR 606.3).
+        if rel == "damage.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || !l.contains("CounterType::Loyalty") {
+                continue;
+            }
+            if l.contains("remove_counters") && !l.contains("cost") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "damage to a planeswalker removes loyalty through `damage::deal_damage` \
+         (CR 120.3c), so that protection and prevention still apply:\n  {}",
+        offenders.join("\n  "));
+}

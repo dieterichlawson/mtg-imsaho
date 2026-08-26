@@ -37,11 +37,11 @@ fn fresh_game() -> (GameState, CardRegistry) {
     (state, registry)
 }
 
-fn hand_ids(state: &GameState, player: mtg_engine::ids::PlayerId) -> Vec<mtg_engine::ids::ObjectId> {
+fn hand_ids(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
     state.objects_in_zone(Zone::Hand, player).iter().map(|o| o.id).collect()
 }
 
-fn library_len(state: &GameState, player: mtg_engine::ids::PlayerId) -> usize {
+fn library_len(state: &GameState, player: PlayerId) -> usize {
     state.get_player(player).library_order.len()
 }
 
@@ -248,7 +248,7 @@ fn per_player_mulligan_counts_are_independent() {
 fn keep_mull_decisions_alternate_round_by_round() {
     let (mut state, reg) = fresh_game();
     // Record the (round, player) sequence in the order asked.
-    let mut decisions: Vec<(u32, mtg_engine::ids::PlayerId)> = Vec::new();
+    let mut decisions: Vec<(u32, PlayerId)> = Vec::new();
     let mut p0_mulls = 0;
     let mut p1_mulls = 0;
 
@@ -332,10 +332,6 @@ fn library_and_hand_contain_all_dealt_cards() {
             "hand and library should not share objects");
         let total = hand.len() + lib.len();
         assert_eq!(total, 40, "p{} should own 40 cards total", pid.0);
-        // All distinct.
-        assert_eq!(hand.len() + lib.len(),
-            hand.union(&lib).count(),
-            "p{} cards should be distinct", pid.0);
     }
 }
 
