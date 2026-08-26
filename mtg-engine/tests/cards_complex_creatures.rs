@@ -675,10 +675,7 @@ fn skaab_ruinator_cast_from_graveyard() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
     // Should be castable from graveyard.
-    let actions = engine::legal_actions(&state, &reg);
-    let can_cast = actions.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == ruinator)
-    });
+    let can_cast = can_cast(&state, &reg, ruinator);
     assert!(can_cast, "Skaab Ruinator should be castable from graveyard");
 
     // Cast it — the engine sets up a ChooseExileFromGraveyard prompt
@@ -720,10 +717,7 @@ fn skaab_ruinator_not_castable_without_enough_creatures() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    let actions = engine::legal_actions(&state, &reg);
-    let can_cast = actions.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == ruinator)
-    });
+    let can_cast = can_cast(&state, &reg, ruinator);
     assert!(!can_cast, "Should NOT be castable with only 2 creature cards in graveyard");
 }
 

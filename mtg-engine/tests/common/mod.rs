@@ -7,7 +7,9 @@
 
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::ids::{CardId, ObjectId, PlayerId};
+// Re-exported: `use common::*` is already how tests reach P0/P1 and the
+// helpers below, so the id types come with them.
+pub use mtg_engine::ids::{CardId, ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
@@ -403,7 +405,6 @@ pub fn plan_entering(
 /// A test that clears the list by hand — or, worse, replays the cleanup step's
 /// body inline — asserts that its own copy of the rule works. Deleting the
 /// engine's cleanup step entirely would leave such a test passing.
-#[allow(dead_code)]
 pub fn advance_to_cleanup(state: &mut GameState, registry: &CardRegistry) {
     advance_to_step(state, registry, Step::Cleanup);
 }
@@ -415,7 +416,6 @@ pub fn advance_to_cleanup(state: &mut GameState, registry: &CardRegistry) {
 /// parks an `AwaitingAction` at each of them, and a state still holding one has
 /// no legal actions at all, so a later assertion about what a player may do
 /// would be reading a stalled game.
-#[allow(dead_code)]
 pub fn advance_to_step(state: &mut GameState, registry: &CardRegistry, step: Step) {
     for _ in 0..80 {
         match state.awaiting_action {
@@ -438,7 +438,6 @@ pub fn advance_to_step(state: &mut GameState, registry: &CardRegistry, step: Ste
 
 /// Advance into the next player's turn, so once-per-turn state resets the way
 /// the game resets it. Same reasoning as [`advance_to_cleanup`].
-#[allow(dead_code)]
 pub fn advance_to_next_turn(state: &mut GameState, registry: &CardRegistry) {
     let turn = state.turn_number;
     for _ in 0..80 {
@@ -467,7 +466,6 @@ pub fn advance_to_next_turn(state: &mut GameState, registry: &CardRegistry) {
 /// to stock one or the player decks out and the game ends underneath the test.
 /// Use this for tests that just need cards to be there; when the identity of
 /// the card matters, build it yourself.
-#[allow(dead_code)]
 pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: PlayerId, n: usize) -> Vec<ObjectId> {
     let card_id = registry.get_id_by_name("Forest").expect("Forest is in the registry");
     let ids: Vec<ObjectId> = (0..n)
@@ -483,7 +481,6 @@ pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: Pla
 ///
 /// Queued events are cleared first, so a `process_triggers` after this sees
 /// this death and nothing the setup happened to leave behind.
-#[allow(dead_code)]
 pub fn kill_by_damage(state: &mut GameState, registry: &CardRegistry, id: ObjectId) {
     let lethal = state.effective_toughness(id, registry).unwrap_or(1).max(1) as u32;
     state.get_object_mut(id).expect("creature to kill").damage_marked = lethal;
@@ -491,4 +488,15 @@ pub fn kill_by_damage(state: &mut GameState, registry: &CardRegistry, id: Object
     mtg_engine::sba::check_state_based_actions(state, registry);
     assert_eq!(state.get_object(id).map(|o| o.zone), Some(Zone::Graveyard),
         "kill_by_damage: {lethal} damage should have been lethal");
+}
+
+/// Whether the engine currently offers `id` as a spell its controller may cast.
+///
+/// The `CastSpell` action names only the object, so this answers "is a cast
+/// offered at all", not which cost it would be paid at — see
+/// `flashback.rs::a_flashback_card_in_hand_is_cast_normally` for why that
+/// distinction matters when a card can be cast two ways.
+pub fn can_cast(state: &GameState, registry: &CardRegistry, id: ObjectId) -> bool {
+    mtg_engine::engine::legal_actions(state, registry).actions.iter()
+        .any(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == id))
 }

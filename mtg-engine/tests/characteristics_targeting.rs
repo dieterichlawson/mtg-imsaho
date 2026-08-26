@@ -150,10 +150,7 @@ fn bug_unburial_rites_castable_with_no_targets() {
     let rites = castable_spell(&mut state, &registry, "Unburial Rites", P0);
 
     // Check if Unburial Rites can be cast
-    let legal = engine::legal_actions(&state, &registry);
-    let can_cast = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == rites)
-    });
+    let can_cast = can_cast(&state, &registry, rites);
 
     // BUG: Can cast with no legal targets because target_requirement is None
     assert!(!can_cast,

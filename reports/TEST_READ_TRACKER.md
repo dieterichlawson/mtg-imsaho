@@ -16,7 +16,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 |   | `cards_spells_and_enchantments.rs` | 608 | 23 |
 | x | `flashback.rs` | 604 | 21 |
 | x | `cards_death_triggers_and_tokens.rs` | 552 | 17 |
-|   | `cards_rule_modifiers.rs` | 545 | 21 |
+| x | `cards_rule_modifiers.rs` | 545 | 21 |
 | x | `engine_edge_cases.rs` | 544 | 18 |
 |   | `fizzle.rs` | 543 | 15 |
 | x | `equipment_autotap.rs` | 498 | 11 |
@@ -132,4 +132,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**73/127 files read; 15364 lines remaining.**
+**74/127 files read; 14819 lines remaining.**

@@ -413,8 +413,7 @@ fn blasphemous_act_castable_with_cost_reduction() {
     let spell = spell_in_hand(&mut state, &reg, "Blasphemous Act", P0);
 
     // Should be able to cast with just {R}.
-    let legal = mtg_engine::engine::legal_actions(&state, &reg);
-    let has_cast = legal.actions.iter().any(|a| matches!(a, mtg_engine::actions::Action::CastSpell { object_id, .. } if *object_id == spell));
+    let has_cast = can_cast(&state, &reg, spell);
     assert!(has_cast, "Blasphemous Act should be castable for {{R}} with 8 creatures on the battlefield");
 }
 

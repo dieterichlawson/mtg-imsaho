@@ -26,10 +26,7 @@ fn flashback_offered_from_graveyard() {
     // Geistflame flashback cost is {3}{R}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 4);
 
-    let legal = engine::legal_actions(&state, &reg);
-    let has_flashback_cast = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == card)
-    });
+    let has_flashback_cast = can_cast(&state, &reg, card);
     assert!(has_flashback_cast,
         "legal_actions should offer CastSpell for a flashback card in the graveyard");
 }
@@ -70,10 +67,7 @@ fn flashback_not_offered_without_mana() {
     // Only {R} — not enough for flashback cost {3}{R}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let legal = engine::legal_actions(&state, &reg);
-    let has_flashback_cast = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == card)
-    });
+    let has_flashback_cast = can_cast(&state, &reg, card);
     assert!(!has_flashback_cast,
         "Flashback should not be offered with insufficient mana");
 }

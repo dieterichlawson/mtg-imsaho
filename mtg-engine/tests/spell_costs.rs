@@ -8,10 +8,8 @@
 
 mod common;
 use common::*;
-use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{CastMethod, cost_to_cast};
-use mtg_engine::engine;
 use mtg_engine::types::*;
 
 fn mana_value(state: &mtg_engine::state::GameState, reg: &CardRegistry,
@@ -254,10 +252,7 @@ fn bug_rooftop_storm_not_offered_from_graveyard() {
     let zombie = spell_in_hand(&mut state, &registry, "Walking Corpse", P0);
     // Don't add mana — if Rooftop Storm works, it should be castable for free
 
-    let legal = engine::legal_actions(&state, &registry);
-    let can_cast_zombie = legal.actions.iter().any(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if *object_id == zombie)
-    });
+    let can_cast_zombie = can_cast(&state, &registry, zombie);
 
     // If this passes, Rooftop Storm works from hand. The graveyard bug
     // requires a more complex setup that we can't easily do here.
