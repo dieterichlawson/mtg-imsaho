@@ -1,5 +1,6 @@
-//! Cards whose implementation takes a documented shortcut. Each test states
-//! what the card really does and what the engine does instead.
+//! Cards that used to cut a corner, and the corner each one cut. Every test
+//! here failed when it was written and passes now; they stay as regressions
+//! against the shortcut coming back.
 //!
 //! Cards covered (9), so this is greppable by name as well as by rule:
 //!
@@ -197,17 +198,9 @@ fn caravan_vigil_presents_choice_among_basics() {
     let behavior = reg.get(vigil_card_id).unwrap();
     behavior.on_resolve(&mut state, vigil, &[], &reg);
 
-    // The player should be presented with a choice of which land to get.
-    // If the card is correctly implemented, it should present a choice UI
-    // (awaiting_action) when there are multiple basic lands available.
-    // Instead, the current implementation just grabs the first one.
-    //
-    // We test this by checking that either awaiting_action is set (choice
-    // presented) OR we verify the player got the ability to pick. Since the
-    // current implementation auto-picks the first, we check that both lands
-    // were available as choices.
+    // With two basics to pick between, the player is asked; the shortcut this
+    // guards against is taking the first match from library order.
     let awaiting = state.awaiting_action.is_some();
-    // In a correct implementation with multiple basics, the player should choose.
     assert!(awaiting,
         "Caravan Vigil should present a choice when multiple basic lands are available in library");
 }
@@ -321,9 +314,6 @@ fn rolling_temblor_records_damage_source() {
 // 8. Slayer of the Wicked -- should check instance subtypes
 // ────────────────────────────────────────────────────────────────────────────
 
-/// A creature made into a Vampire by Olivia (instance subtype only) should
-/// be a valid target for Slayer of the Wicked's ETB.
-/// Oracle: "you may destroy target Vampire, Werewolf, or Zombie"
 /// Slayer of the Wicked targets "Vampire, Werewolf, or Zombie". A creature that
 /// is one of those only because an effect granted it the subtype at runtime
 /// (Olivia Voldaren's first ability) is just as legal a target as one that
@@ -360,23 +350,6 @@ fn slayer_of_the_wicked_sees_instance_vampire() {
     assert!(locked,
         "a creature that is a Vampire by runtime grant should be a legal target");
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// 9. Nevermore -- "As enters" should not be respondable (replacement effect)
-// ────────────────────────────────────────────────────────────────────────────
-// This is hard to test mechanically since the engine's trigger model doesn't
-// differentiate "As" vs "When". Documenting but skipping a mechanical test.
-
-// ────────────────────────────────────────────────────────────────────────────
-// 11. Nevermore -- should allow naming any nonland card, not just implemented
-// ────────────────────────────────────────────────────────────────────────────
-// This is an engine limitation (the player must choose from a finite list).
-// A mechanical test would need free-text input. Documenting but skipping.
-
-// ────────────────────────────────────────────────────────────────────────────
-// 12. Forbidden Alchemy -- doc comment says "simplified" but code is correct
-// ────────────────────────────────────────────────────────────────────────────
-// No failing test needed -- this was a stale comment, not a code issue.
 
 // ────────────────────────────────────────────────────────────────────────────
 // 13. Festerhide Boar -- Mentor of the Meek interaction

@@ -77,24 +77,6 @@ fn sick_creature_cant_attack_but_can_block() {
         "Sick creature should be able to block");
 }
 
-/// Lands should NOT get summoning sickness when entering battlefield.
-#[test]
-fn lands_never_have_summoning_sickness() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let land = state.create_object(CardId(1), P0, Zone::Hand, None, None);
-
-    state.move_object(land, Zone::Battlefield, &registry);
-    // Lands do get the flag set by move_object, but it doesn't matter
-    // since they can't attack and their mana abilities don't use the tap symbol
-    // in the summoning sickness sense. The engine handles this by
-    // clearing it in PlayLand.
-
-    // What matters: mana abilities work on summoning sick permanents
-    // because summoning sickness only restricts attack and {T}/{Q} costs,
-    // and our mana ability check doesn't gate on summoning_sick.
-}
-
 /// Summoning sickness is cleared when leaving the battlefield.
 #[test]
 fn leaving_battlefield_clears_sickness() {

@@ -58,17 +58,22 @@ fn lands_should_not_trigger_on_creature_death() {
             "Swamp should not have a triggered ability on creature death, but found: {name}");
     }
 
-    // Falkenrath Noble's trigger should have fired — either still on the stack
-    // or already resolving (awaiting target choice).
-    let has_noble = stack_names.iter().any(|n| n.contains("Falkenrath Noble"))
-        || state.awaiting_action.is_some();
-    assert!(has_noble,
+    // The Noble's trigger targets a player (CR 603.3d), so with two players to
+    // choose between it is waiting on that choice rather than sitting on the
+    // stack. Accept either, but require it to be the Noble's — "something is
+    // pending" would be satisfied by any card at all.
+    let noble_on_stack = stack_names.iter().any(|n| n.contains("Falkenrath Noble"));
+    let noble_asking = matches!(&state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { source, .. })
+            if state.get_object(*source).is_some_and(|o| o.name == "Falkenrath Noble"));
+    assert!(noble_on_stack || noble_asking,
         "Falkenrath Noble should have a death trigger, stack: {:?}, awaiting: {:?}",
         stack_names, state.awaiting_action);
 }
 
-/// When a creature dies from combat damage, the death should be logged
-/// exactly once, not twice.
+/// A creature's death is logged once per creature. The two creatures here
+/// trade, so two entries is right; the regression was each death being logged
+/// twice, giving four.
 #[test]
 fn creature_death_logged_once() {
     let registry = CardRegistry::with_all_cards();
