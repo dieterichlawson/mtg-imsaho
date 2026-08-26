@@ -129,92 +129,61 @@ fn legend_rule_ignores_non_legendary() {
 // ════════════════════════════════════════════════════════════════════
 
 /// Equal numbers of +1/+1 and -1/-1 counters: all removed.
+/// CR 704.5q: if a permanent has both +1/+1 and -1/-1 counters, N of each are
+/// removed, where N is the smaller of the two counts. Five one-case tests used
+/// to walk this; the interesting part is the arithmetic at the boundary, so it
+/// reads better as the table it always was.
 #[test]
-fn counter_annihilation_equal_counts() {
+fn plus_and_minus_counters_annihilate_in_pairs() {
+    // (base size, start +1/+1, start -1/-1, left +1/+1, left -1/-1)
+    // Each creature is big enough to survive its own case, so the counter
+    // arithmetic is what is under test rather than the toughness check.
+    const CASES: &[(i32, u32, u32, u32, u32)] = &[
+        (2, 3, 3, 0, 0),   // equal counts cancel out entirely
+        (2, 5, 2, 3, 0),   // more plus: the surplus stays
+        (5, 1, 4, 0, 3),   // more minus: 5/5 down to 2/2, still alive
+        (2, 3, 0, 3, 0),   // only one kind — nothing to annihilate
+    ];
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
+    for &(base, plus, minus, left_plus, left_minus) in CASES {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let creature = ready_creature(&mut state, P0, base, base);
+        state.add_counters(creature, CounterType::PlusOnePlusOne, plus);
+        state.add_counters(creature, CounterType::MinusOneMinusOne, minus);
 
-    state.add_counters(creature, CounterType::PlusOnePlusOne, 3);
-    state.add_counters(creature, CounterType::MinusOneMinusOne, 3);
+        check_state_based_actions(&mut state, &reg);
 
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 0,
-        "Counter annihilation: equal +1/+1 and -1/-1 should cancel out (CR 704.5q)");
-    assert_eq!(state.get_counter_count(creature, CounterType::MinusOneMinusOne), 0);
+        assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), left_plus,
+            "{plus} +1/+1 and {minus} -1/-1 should leave {left_plus} +1/+1");
+        assert_eq!(state.get_counter_count(creature, CounterType::MinusOneMinusOne), left_minus,
+            "{plus} +1/+1 and {minus} -1/-1 should leave {left_minus} -1/-1");
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+            "a {base}/{base} survives {left_minus} net -1/-1 counters");
+    }
 }
 
-/// More +1/+1 than -1/-1: some +1/+1 remain.
+/// Annihilation happens before the toughness check, so it can still leave a
+/// creature dead: a 1/1 with one +1/+1 and two -1/-1 annihilates down to a
+/// single -1/-1 and is a 0/0.
 #[test]
-fn counter_annihilation_more_plus() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    state.add_counters(creature, CounterType::PlusOnePlusOne, 5);
-    state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 3,
-        "Counter annihilation: 5 plus - 2 minus = 3 plus remaining");
-    assert_eq!(state.get_counter_count(creature, CounterType::MinusOneMinusOne), 0);
-}
-
-/// More -1/-1 than +1/+1: some -1/-1 remain (creature may die from reduced toughness).
-#[test]
-fn counter_annihilation_more_minus() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 5, 5);
-
-    state.add_counters(creature, CounterType::PlusOnePlusOne, 1);
-    state.add_counters(creature, CounterType::MinusOneMinusOne, 4);
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 0,
-        "Counter annihilation: 1 plus - 4 minus = 0 plus, 3 minus remaining");
-    assert_eq!(state.get_counter_count(creature, CounterType::MinusOneMinusOne), 3);
-    // Creature is 5/5 - 3/-3 = 2/2, should survive.
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
-}
-
-/// Counter annihilation killing a creature: 1/1 with 2 -1/-1 counters
-/// gets annihilated down to 1 -1/-1, making it 0/0 — it dies.
-#[test]
-fn counter_annihilation_can_kill() {
+fn annihilation_can_still_leave_a_creature_dead() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 1, 1);
-
     state.add_counters(creature, CounterType::PlusOnePlusOne, 1);
     state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
 
-    // Need registry so effective_toughness accounts for counters.
     check_state_based_actions(&mut state, &reg);
 
-    // After annihilation: 0 plus, 1 minus. Creature is 0/0 — dies.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
-        "1/1 creature with net -1/-1 from counters should die");
+        "one -1/-1 survives the annihilation and makes the 1/1 a 0/0");
 }
 
+/// More +1/+1 than -1/-1: some +1/+1 remain.
+/// More -1/-1 than +1/+1: some -1/-1 remain (creature may die from reduced toughness).
+/// Counter annihilation killing a creature: 1/1 with 2 -1/-1 counters
+/// gets annihilated down to 1 -1/-1, making it 0/0 — it dies.
 /// No annihilation needed when only one type of counter exists.
-#[test]
-fn counter_annihilation_noop_single_type() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
-
-    state.add_counters(creature, CounterType::PlusOnePlusOne, 3);
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 3,
-        "No annihilation when only +1/+1 counters exist");
-}
-
 // ════════════════════════════════════════════════════════════════════
 // Bug #3: Spell Fizzle (CR 608.2b)
 //

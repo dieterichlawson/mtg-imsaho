@@ -68,25 +68,6 @@ fn cobbled_wings_enters_as_equipment() {
 }
 
 #[test]
-fn cobbled_wings_grants_flying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
-    let wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
-
-    // Creature should not have flying initially.
-    assert!(!state.has_keyword(creature, Keyword::Flying, &reg));
-
-    // Add mana for equip cost {1} and equip.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, wings, creature);
-
-    // Creature should now have flying.
-    assert!(state.has_keyword(creature, Keyword::Flying, &reg));
-}
-
-#[test]
 fn cobbled_wings_equip_only_your_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -106,160 +87,59 @@ fn cobbled_wings_equip_only_your_creatures() {
     assert!(equip_actions.is_empty(), "Should not be able to equip opponent's creature");
 }
 
+// ── What equipping grants ────────────────────────────────────────
+
+/// Equipping grants the printed static bonus. Nine tests used to walk this one
+/// equipment at a time — three for the unconditional bonuses, six for the three
+/// human-conditional ones in both directions. The conditional half lives in
+/// `equipment_human_conditional.rs`, which already tables it and also covers
+/// the bonus updating live when the creature stops being a Human; the
+/// unconditional half is here.
+const UNCONDITIONAL_GRANTS: &[(&str, u32, i32, i32, &[Keyword])] = &[
+    // (equipment, equip cost, +power, +toughness, keywords granted)
+    ("Cobbled Wings",   1, 0, 0, &[Keyword::Flying]),
+    ("Mask of Avacyn",  3, 1, 2, &[Keyword::Hexproof]),
+    ("Wooden Stake",    1, 1, 0, &[]),
+    ("Butcher's Cleaver", 3, 3, 0, &[]),
+    ("Silver-Inlaid Dagger", 2, 2, 0, &[]),
+];
+
+#[test]
+fn equipping_grants_the_printed_bonus() {
+    let reg = registry();
+    for (name, cost, dp, dt, keywords) in UNCONDITIONAL_GRANTS {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        // Grizzly Bears is a 2/2 Bear — deliberately not a Human, so only the
+        // unconditional half of a conditional equipment applies.
+        let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
+        let equipment = equipment_on_battlefield(&mut state, &reg, name, P0);
+
+        for keyword in *keywords {
+            assert!(!state.has_keyword(creature, *keyword, &reg),
+                "test precondition: the Bear does not already have {keyword:?}");
+        }
+
+        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, *cost);
+        state = equip(&state, &reg, equipment, creature);
+
+        assert_eq!(state.effective_power(creature, &reg), Some(2 + dp),
+            "{name} should give +{dp} power");
+        assert_eq!(state.effective_toughness(creature, &reg), Some(2 + dt),
+            "{name} should give +{dt} toughness");
+        for keyword in *keywords {
+            assert!(state.has_keyword(creature, *keyword, &reg),
+                "{name} should grant {keyword:?}");
+        }
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Mask of Avacyn — {2} Equipment. +1/+2 and hexproof. Equip {3}.
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn mask_of_avacyn_grants_pt_and_hexproof() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2
-    let mask = equipment_on_battlefield(&mut state, &reg, "Mask of Avacyn", P0);
-
-    // Add mana for equip cost {3}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
-    state = equip(&state, &reg, mask, creature);
-
-    // Should be 3/4 with hexproof.
-    assert_eq!(state.effective_power(creature, &reg), Some(3));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(4));
-    assert!(state.has_keyword(creature, Keyword::Hexproof, &reg));
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Silver-Inlaid Dagger — {1} Equipment. +2/+0, or +3/+0 if Human. Equip {2}.
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn silver_inlaid_dagger_non_human_gets_plus_2() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2, Bear
-    let dagger = equipment_on_battlefield(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state = equip(&state, &reg, dagger, creature);
-
-    // Non-Human: +2/+0 -> 4/2.
-    assert_eq!(state.effective_power(creature, &reg), Some(4));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
-}
-
-#[test]
-fn silver_inlaid_dagger_human_gets_plus_3() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Champion of the Parish is a Human.
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0); // 1/1 Human
-    let dagger = equipment_on_battlefield(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state = equip(&state, &reg, dagger, human);
-
-    // Human: +3/+0 -> 4/1.
-    assert_eq!(state.effective_power(human, &reg), Some(4));
-    assert_eq!(state.effective_toughness(human, &reg), Some(1));
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Sharpened Pitchfork — {2} Equipment. First strike; +1/+1 if Human. Equip {1}.
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn sharpened_pitchfork_non_human_gets_first_strike_only() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2, Bear
-    let fork = equipment_on_battlefield(&mut state, &reg, "Sharpened Pitchfork", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, fork, creature);
-
-    // Non-Human: first strike but no P/T bonus.
-    assert!(state.has_keyword(creature, Keyword::FirstStrike, &reg));
-    assert_eq!(state.effective_power(creature, &reg), Some(2));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
-}
-
-#[test]
-fn sharpened_pitchfork_human_gets_first_strike_and_bonus() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0); // 1/1 Human
-    let fork = equipment_on_battlefield(&mut state, &reg, "Sharpened Pitchfork", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, fork, human);
-
-    // Human: first strike + +1/+1 -> 2/2.
-    assert!(state.has_keyword(human, Keyword::FirstStrike, &reg));
-    assert_eq!(state.effective_power(human, &reg), Some(2));
-    assert_eq!(state.effective_toughness(human, &reg), Some(2));
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Butcher's Cleaver — {3} Equipment. +3/+0; lifelink if Human. Equip {3}.
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn butchers_cleaver_non_human_gets_power_no_lifelink() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2, Bear
-    let cleaver = equipment_on_battlefield(&mut state, &reg, "Butcher's Cleaver", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
-    state = equip(&state, &reg, cleaver, creature);
-
-    // Non-Human: +3/+0 -> 5/2, no lifelink.
-    assert_eq!(state.effective_power(creature, &reg), Some(5));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
-    assert!(!state.has_keyword(creature, Keyword::Lifelink, &reg));
-}
-
-#[test]
-fn butchers_cleaver_human_gets_power_and_lifelink() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0); // 1/1 Human
-    let cleaver = equipment_on_battlefield(&mut state, &reg, "Butcher's Cleaver", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
-    state = equip(&state, &reg, cleaver, human);
-
-    // Human: +3/+0 -> 4/1, with lifelink.
-    assert_eq!(state.effective_power(human, &reg), Some(4));
-    assert_eq!(state.effective_toughness(human, &reg), Some(1));
-    assert!(state.has_keyword(human, Keyword::Lifelink, &reg));
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Wooden Stake — {2} Equipment. +1/+0; destroy Vampires on block. Equip {1}.
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn wooden_stake_grants_power() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2
-    let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, stake_obj, creature);
-
-    // +1/+0 -> 3/2.
-    assert_eq!(state.effective_power(creature, &reg), Some(3));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
-}
 
 #[test]
 fn wooden_stake_destroys_vampire_on_block() {

@@ -153,25 +153,6 @@ fn champion_of_the_parish_no_counter_on_opponent_human() {
 // ── Stromkirk Noble ───────────────────────────────────────────────
 
 /// Stromkirk Noble gets +1/+1 counter on combat damage to player.
-#[test]
-fn stromkirk_noble_counter_on_combat_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-
-    let noble = named_creature(&mut state, &reg, "Stromkirk Noble", P0);
-
-    // Simulate combat damage to player.
-    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
-        source: noble,
-        target: mtg_engine::events::DamageTarget::Player(P1),
-        amount: 1,
-    });
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(counters_of(&state, noble, CounterType::PlusOnePlusOne), 1,
-        "Stromkirk Noble should get a +1/+1 counter");
-}
-
 /// Stromkirk Noble can't be blocked by Humans.
 #[test]
 fn stromkirk_noble_cant_be_blocked_by_humans() {
@@ -198,25 +179,6 @@ fn stromkirk_noble_cant_be_blocked_by_humans() {
 }
 
 // ── Rakish Heir ───────────────────────────────────────────────────
-
-/// Rakish Heir gives +1/+1 to itself when it deals combat damage.
-#[test]
-fn rakish_heir_self_counter_on_combat_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-
-    let heir = named_creature(&mut state, &reg, "Rakish Heir", P0);
-
-    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
-        source: heir,
-        target: mtg_engine::events::DamageTarget::Player(P1),
-        amount: 2,
-    });
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(counters_of(&state, heir, CounterType::PlusOnePlusOne), 1,
-        "Rakish Heir should get a +1/+1 counter on itself");
-}
 
 /// Rakish Heir gives +1/+1 to other Vampires you control when they deal combat damage.
 #[test]
@@ -260,6 +222,69 @@ fn rakish_heir_no_counter_on_non_vampire() {
         "Non-Vampire should NOT get a counter from Rakish Heir");
 }
 
+// ── "Whenever this deals combat damage to a player, put a +1/+1 counter on it" ──
+
+/// Four cards in the set share this ability verbatim apart from how many
+/// counters they get. They had four tests that differed only in a name and a
+/// number; the shape is the point, so it is one table.
+///
+/// The table is checked against the registry: a new card with a
+/// combat-damage-to-player trigger that counters itself has to be added here,
+/// or the coverage assertion below fails.
+const SELF_COUNTER_ON_COMBAT_DAMAGE: &[(&str, u32)] = &[
+    ("Stromkirk Noble", 1),
+    ("Stromkirk Patrol", 1),
+    ("Rakish Heir", 1),
+    ("Falkenrath Marauders", 2),
+    // Found by the coverage check below — the four hand-written tests this
+    // table replaced never covered the Neonate's counter at all.
+    ("Bloodcrazed Neonate", 1),
+];
+
+#[test]
+fn a_self_countering_creature_gets_its_counters_on_combat_damage() {
+    let reg = registry();
+    for (name, expected) in SELF_COUNTER_ON_COMBAT_DAMAGE {
+        let mut state = game_at_step(Step::CombatDamage, P0);
+        let creature = named_creature(&mut state, &reg, name, P0);
+
+        state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+            source: creature,
+            target: mtg_engine::events::DamageTarget::Player(P1),
+            amount: 2,
+        });
+        triggers::process_triggers(&mut state, &reg);
+
+        assert_eq!(counters_of(&state, creature, CounterType::PlusOnePlusOne), *expected,
+            "{name} should get {expected} +1/+1 counter(s) for damaging a player");
+    }
+}
+
+/// The table above must not drift out of date. Every card whose
+/// combat-damage-to-player trigger says it counters itself has to be in it.
+#[test]
+fn the_self_counter_table_covers_every_such_card() {
+    let reg = registry();
+    let listed: std::collections::BTreeSet<&str> =
+        SELF_COUNTER_ON_COMBAT_DAMAGE.iter().map(|(n, _)| *n).collect();
+
+    let mut missing = Vec::new();
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        let counters_itself = data.triggered_abilities.iter().any(|a| {
+            matches!(a.kind, mtg_engine::cards::TriggerKind::CombatDamageToPlayer)
+                && a.description.contains("+1/+1 counter")
+                && !a.description.contains("that creature")
+        });
+        if counters_itself && !listed.contains(name) {
+            missing.push((*name).to_string());
+        }
+    }
+    assert!(missing.is_empty(),
+        "these cards counter themselves on combat damage but are not in the table: {missing:?}");
+}
+
 // ── Bloodcrazed Neonate ───────────────────────────────────────────
 
 /// Bloodcrazed Neonate must attack each combat (`ForceAttack`).
@@ -297,25 +322,6 @@ fn sturmgeist_pt_equals_hand_size() {
 }
 
 // ── Falkenrath Marauders ──────────────────────────────────────────
-
-/// Falkenrath Marauders gets TWO +1/+1 counters on combat damage.
-#[test]
-fn falkenrath_marauders_two_counters_on_combat_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-
-    let marauders = named_creature(&mut state, &reg, "Falkenrath Marauders", P0);
-
-    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
-        source: marauders,
-        target: mtg_engine::events::DamageTarget::Player(P1),
-        amount: 2,
-    });
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(counters_of(&state, marauders, CounterType::PlusOnePlusOne), 2,
-        "Falkenrath Marauders should get TWO +1/+1 counters");
-}
 
 // ── Balefire Dragon ───────────────────────────────────────────────
 
@@ -441,25 +447,4 @@ fn curiosity_decline_draw() {
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)
         .count();
     assert_eq!(hand_after, hand_before, "Should NOT have drawn a card when declining");
-}
-
-// ── Stromkirk Patrol ──────────────────────────────────────────────
-
-/// Stromkirk Patrol gets +1/+1 counter on combat damage.
-#[test]
-fn stromkirk_patrol_counter_on_combat_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
-
-    let patrol = named_creature(&mut state, &reg, "Stromkirk Patrol", P0);
-
-    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
-        source: patrol,
-        target: mtg_engine::events::DamageTarget::Player(P1),
-        amount: 4,
-    });
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(counters_of(&state, patrol, CounterType::PlusOnePlusOne), 1,
-        "Stromkirk Patrol should get a +1/+1 counter");
 }

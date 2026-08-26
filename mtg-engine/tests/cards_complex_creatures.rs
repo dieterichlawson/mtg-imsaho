@@ -2851,8 +2851,3 @@ source_card_id: None,
     assert_eq!(new_state.get_object(hand_creature).unwrap().zone, Zone::Hand,
         "Player chose to keep the creature in hand");
 }
-
-// ── Planeswalker SBA ──────────────────────────────────────────
-
-// ── Loyalty ability engine integration ──────────────────────────────────────────
-

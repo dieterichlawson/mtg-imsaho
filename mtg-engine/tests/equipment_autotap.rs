@@ -129,26 +129,6 @@ fn silver_inlaid_dagger_equip_offered_when_only_lands_untapped() {
 }
 
 #[test]
-fn silver_inlaid_dagger_equip_grants_static_buff_to_human() {
-    // After equip, Avacyn's Pilgrim (1/1 Human) should be 4/1.
-    // Base dagger: +2/+0. Human bonus: +1/+0. So 1+3 = 4 power, 1 toughness.
-    // Pilgrim has a {T}: Add {W} mana ability, but since we provide enough Forests
-    // for the equip cost, the auto-tap should not need it.
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-    // Three Forests so the auto-tap can tap two and the test isn't sensitive to
-    // whether the planner prefers lands or the creature mana ability.
-    let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 3);
-
-    let action = find_equip_action(&state, &reg, dagger, pilgrim);
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.effective_power(pilgrim, &reg), Some(4), "pilgrim should be 4 power after equip");
-    assert_eq!(new_state.effective_toughness(pilgrim, &reg), Some(1), "pilgrim should be 1 toughness after equip");
-}
-
-#[test]
 fn silver_inlaid_dagger_not_offered_with_insufficient_lands() {
     // 1 Forest is not enough mana for {2}; the equip action must NOT appear.
     // We use Grizzly Bears (no mana ability) as the target creature so the
@@ -183,111 +163,25 @@ fn silver_inlaid_dagger_offered_with_floating_mana_too() {
 // Butcher's Cleaver — Equip {3}
 // ════════════════════════════════════════════════════════════════════
 
-#[test]
-fn butchers_cleaver_equip_offered_with_three_untapped_lands() {
-    let reg = registry();
-    let (state, cleaver, bears, _) = setup_with_lands(&reg, "Butcher's Cleaver", "Grizzly Bears", 3);
-    let action = find_equip_action(&state, &reg, cleaver, bears);
-    if let Action::ActivateAbility { tap_plan, .. } = &action {
-        assert_eq!(tap_plan.len(), 3, "Equip {{3}} should tap 3 lands");
-    }
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(cleaver).unwrap().attached_to, Some(bears));
-    // Bears 2/2 + cleaver +3/+0 (non-Human, no Human bonus) = 5/2.
-    // Oracle: "Equipped creature gets +3/+0. As long as equipped creature is a
-    // Human, it has lifelink."
-    assert_eq!(new_state.effective_power(bears, &reg), Some(5));
-    assert_eq!(new_state.effective_toughness(bears, &reg), Some(2));
-}
-
-#[test]
-fn butchers_cleaver_not_offered_with_two_lands() {
-    let reg = registry();
-    let (state, cleaver, _, _) = setup_with_lands(&reg, "Butcher's Cleaver", "Grizzly Bears", 2);
-    let legal = engine::legal_actions(&state, &reg);
-    let any = legal.actions.iter().any(|a| matches!(a,
-        Action::ActivateAbility { object_id, .. } if *object_id == cleaver));
-    assert!(!any, "Equip {{3}} should not be offered with only 2 lands");
-}
-
 // ════════════════════════════════════════════════════════════════════
 // Cobbled Wings — Equip {1}
 // ════════════════════════════════════════════════════════════════════
-
-#[test]
-fn cobbled_wings_equip_offered_with_one_untapped_land() {
-    let reg = registry();
-    let (state, wings, bears, _) = setup_with_lands(&reg, "Cobbled Wings", "Grizzly Bears", 1);
-    let action = find_equip_action(&state, &reg, wings, bears);
-    if let Action::ActivateAbility { tap_plan, .. } = &action {
-        assert_eq!(tap_plan.len(), 1);
-    }
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(wings).unwrap().attached_to, Some(bears));
-    assert!(new_state.has_keyword(bears, Keyword::Flying, &reg), "Bears should now have flying");
-}
 
 // ════════════════════════════════════════════════════════════════════
 // Blazing Torch — Equip {1}
 // ════════════════════════════════════════════════════════════════════
 
-#[test]
-fn blazing_torch_equip_offered_with_one_untapped_land() {
-    let reg = registry();
-    let (state, torch, bears, _) = setup_with_lands(&reg, "Blazing Torch", "Grizzly Bears", 1);
-    let action = find_equip_action(&state, &reg, torch, bears);
-    if let Action::ActivateAbility { tap_plan, .. } = &action {
-        assert_eq!(tap_plan.len(), 1);
-    }
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(torch).unwrap().attached_to, Some(bears));
-}
-
 // ════════════════════════════════════════════════════════════════════
 // Sharpened Pitchfork — Equip {1}
 // ════════════════════════════════════════════════════════════════════
-
-#[test]
-fn sharpened_pitchfork_equip_offered_with_one_untapped_land() {
-    let reg = registry();
-    let (state, fork, bears, _) = setup_with_lands(&reg, "Sharpened Pitchfork", "Grizzly Bears", 1);
-    let action = find_equip_action(&state, &reg, fork, bears);
-    if let Action::ActivateAbility { tap_plan, .. } = &action {
-        assert_eq!(tap_plan.len(), 1, "Equip {{1}} should tap 1 land");
-    }
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(fork).unwrap().attached_to, Some(bears));
-}
 
 // ════════════════════════════════════════════════════════════════════
 // Wooden Stake — Equip {1}
 // ════════════════════════════════════════════════════════════════════
 
-#[test]
-fn wooden_stake_equip_offered_with_one_untapped_land() {
-    let reg = registry();
-    let (state, equip, bears, _) = setup_with_lands(&reg, "Wooden Stake", "Grizzly Bears", 1);
-    let action = find_equip_action(&state, &reg, equip, bears);
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(equip).unwrap().attached_to, Some(bears));
-}
-
 // ════════════════════════════════════════════════════════════════════
 // Mask of Avacyn — Equip {3}
 // ════════════════════════════════════════════════════════════════════
-
-#[test]
-fn mask_of_avacyn_equip_offered_with_three_untapped_lands() {
-    let reg = registry();
-    let (state, mask, bears, _) = setup_with_lands(&reg, "Mask of Avacyn", "Grizzly Bears", 3);
-    let action = find_equip_action(&state, &reg, mask, bears);
-    if let Action::ActivateAbility { tap_plan, .. } = &action {
-        assert_eq!(tap_plan.len(), 3);
-    }
-    let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(mask).unwrap().attached_to, Some(bears));
-    assert!(new_state.has_keyword(bears, Keyword::Hexproof, &reg));
-}
 
 // ════════════════════════════════════════════════════════════════════
 // Cross-cutting: every ISD equipment with a mana equip cost gets tested.
