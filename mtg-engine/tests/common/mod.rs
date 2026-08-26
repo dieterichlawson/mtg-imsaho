@@ -101,6 +101,35 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 /// the max (taps every offered source + drains pool). Tests wanting a
 /// specific X value should construct the `FundingResponse` themselves
 /// instead of calling this helper.
+/// Add mana of each listed kind to `player`'s pool.
+pub fn add_mana(state: &mut GameState, player: PlayerId, mana: &[(ManaType, u32)]) {
+    for &(kind, n) in mana {
+        state.get_player_mut(player).mana_pool.add(kind, n);
+    }
+}
+
+/// Activate the one activated ability the engine currently offers.
+///
+/// Asserts there is exactly one, which is the point: "find the first
+/// `ActivateAbility` in `legal_actions`" — the hand-rolled form, in a dozen
+/// tests — silently picks an arbitrary ability once a second one is offered,
+/// and the assertion that follows then measures the wrong thing.
+pub fn activate_only_offered_ability(state: &GameState, registry: &CardRegistry) -> GameState {
+    let legal = mtg_engine::engine::legal_actions(state, registry);
+    let offered: Vec<&Action> = legal.actions.iter()
+        .filter(|a| matches!(a, Action::ActivateAbility { .. }))
+        .collect();
+    assert_eq!(offered.len(), 1,
+        "expected exactly one activated ability on offer, got {offered:?}");
+    mtg_engine::engine::submit_action(state, offered[0], registry)
+}
+
+/// Whether the engine currently offers any activated ability of `object_id`.
+pub fn offers_ability_of(state: &GameState, registry: &CardRegistry, object_id: ObjectId) -> bool {
+    mtg_engine::engine::legal_actions(state, registry).actions.iter()
+        .any(|a| matches!(a, Action::ActivateAbility { object_id: o, .. } if *o == object_id))
+}
+
 /// The `CastSpell` action for `object_id` at `targets`, unsubmitted.
 ///
 /// For the `run_game_loop` tests, whose callbacks return an action rather than

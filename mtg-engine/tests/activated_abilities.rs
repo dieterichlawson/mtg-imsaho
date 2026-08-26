@@ -1,342 +1,193 @@
-//! Tests for Innistrad Tier 10 cards with activated abilities:
-//! Manor Skeleton, Kessig Wolf, Feral Ridgewolf, Darkthicket Wolf,
-//! Lantern Spirit, Avacynian Priest.
+//! Activated abilities on creatures: what activating one does, and the
+//! restrictions on activating it again (CR 602.2a).
+//!
+//! Cards covered (6), so this is greppable by name as well as by rule:
+//!
+//! - Avacynian Priest
+//! - Darkthicket Wolf
+//! - Feral Ridgewolf
+//! - Kessig Wolf
+//! - Lantern Spirit
+//! - Manor Skeleton
 
 mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 // ══════════════════════════════════════════════════════════════════
-// Manor Skeleton — {1}{B} 1/1 Skeleton, Haste, {1}{B}: Regenerate
+// What one activation does
 // ══════════════════════════════════════════════════════════════════
 
+/// A pump ability changes the creature's characteristics until end of turn.
+/// Each row states the cost, the printed size, and what the creature looks
+/// like afterwards — a keyword grant is the same shape as a P/T grant.
 #[test]
-fn manor_skeleton_regenerate_ability() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn a_pump_ability_changes_the_creature_it_is_activated_on() {
+    // (card, mana to pay, printed p/t, p/t after one activation, keyword gained)
+    const CARDS: &[(&str, &[(ManaType, u32)], (i32, i32), (i32, i32), Option<Keyword>)] = &[
+        ("Kessig Wolf", &[(ManaType::Colorless, 1), (ManaType::Red, 1)],
+         (3, 1), (3, 1), Some(Keyword::FirstStrike)),
+        ("Feral Ridgewolf", &[(ManaType::Colorless, 1), (ManaType::Red, 1)],
+         (1, 2), (3, 2), None),
+        ("Darkthicket Wolf", &[(ManaType::Colorless, 2), (ManaType::Green, 1)],
+         (2, 2), (4, 4), None),
+    ];
 
-    let skeleton = named_creature(&mut state, &reg, "Manor Skeleton", P0);
+    for &(name, mana, printed, after, keyword) in CARDS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Add mana to pay {1}{B} for regenerate.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+        let creature = named_creature(&mut state, &reg, name, P0);
+        assert_eq!(
+            (state.effective_power(creature, &reg), state.effective_toughness(creature, &reg)),
+            (Some(printed.0), Some(printed.1)), "{name} starts at its printed size");
+        if let Some(kw) = keyword {
+            assert!(!state.has_keyword(creature, kw, &reg),
+                "{name} does not have {kw:?} before the ability is activated");
+        }
 
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. }));
-    assert!(activate.is_some(), "Should be able to activate regenerate ability");
+        add_mana(&mut state, P0, mana);
+        state = activate_only_offered_ability(&state, &reg);
 
-    state = engine::submit_action(&state, activate.unwrap(), &reg);
-    assert_eq!(state.get_object(skeleton).unwrap().regeneration_shields, 1,
-        "Activating should add a regeneration shield");
-}
-
-#[test]
-fn manor_skeleton_regeneration_saves_from_lethal() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let skeleton = named_creature(&mut state, &reg, "Manor Skeleton", P0);
-
-    // Activate regenerate.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
-
-    // Deal lethal damage.
-    state.get_object_mut(skeleton).unwrap().damage_marked = 1;
-    check_state_based_actions(&mut state, &reg);
-
-    // Should survive via regeneration.
-    assert_eq!(state.get_object(skeleton).unwrap().zone, Zone::Battlefield,
-        "Manor Skeleton should survive via regeneration");
-    assert_eq!(state.get_object(skeleton).unwrap().damage_marked, 0,
-        "Damage should be cleared after regeneration");
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Kessig Wolf — {2}{R} 3/1 Wolf, {1}{R}: gains first strike EOT
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn kessig_wolf_gains_first_strike() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let wolf = named_creature(&mut state, &reg, "Kessig Wolf", P0);
-
-    // Should not have first strike initially.
-    assert!(!state.has_keyword(wolf, Keyword::FirstStrike, &reg),
-        "Kessig Wolf should not have first strike initially");
-
-    // Activate ability: pay {1}{R}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
-
-    // Should now have first strike.
-    assert!(state.has_keyword(wolf, Keyword::FirstStrike, &reg),
-        "Kessig Wolf should have first strike after activation");
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Feral Ridgewolf — {2}{R} 1/2 Wolf, Trample, {1}{R}: +2/+0 EOT
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn feral_ridgewolf_gets_plus_2_plus_0() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let wolf = named_creature(&mut state, &reg, "Feral Ridgewolf", P0);
-
-    assert_eq!(state.effective_power(wolf, &reg), Some(1));
-    assert_eq!(state.effective_toughness(wolf, &reg), Some(2));
-
-    // Activate: pay {1}{R}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
-
-    assert_eq!(state.effective_power(wolf, &reg), Some(3),
-        "Feral Ridgewolf should be 3 power after +2/+0");
-    assert_eq!(state.effective_toughness(wolf, &reg), Some(2),
-        "Feral Ridgewolf toughness should be unchanged");
-}
-
-#[test]
-fn feral_ridgewolf_can_activate_multiple_times() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let wolf = named_creature(&mut state, &reg, "Feral Ridgewolf", P0);
-
-    // Activate twice.
-    for _ in 0..2 {
-        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-        state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-        let legal = engine::legal_actions(&state, &reg);
-        let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-        state = engine::submit_action(&state, &activate, &reg);
+        assert_eq!(
+            (state.effective_power(creature, &reg), state.effective_toughness(creature, &reg)),
+            (Some(after.0), Some(after.1)), "{name} after one activation");
+        if let Some(kw) = keyword {
+            assert!(state.has_keyword(creature, kw, &reg), "{name} gained {kw:?}");
+        }
     }
-
-    assert_eq!(state.effective_power(wolf, &reg), Some(5),
-        "Feral Ridgewolf should be 5 power after two activations (+2+2)");
 }
 
-// ══════════════════════════════════════════════════════════════════
-// Darkthicket Wolf — {1}{G} 2/2 Wolf, {2}{G}: +2/+2 EOT (once/turn)
-// ══════════════════════════════════════════════════════════════════
-
+/// Lantern Spirit's "{U}: Return Lantern Spirit to its owner's hand" — the
+/// ability moves the permanent that has it, so it is gone by the time the
+/// activation finishes.
 #[test]
-fn darkthicket_wolf_gets_plus_2_plus_2() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
-
-    // Activate: pay {2}{G}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
-
-    assert_eq!(state.effective_power(wolf, &reg), Some(4),
-        "Darkthicket Wolf should be 4/4 after +2/+2");
-    assert_eq!(state.effective_toughness(wolf, &reg), Some(4));
-}
-
-#[test]
-fn darkthicket_wolf_once_per_turn() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let _wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
-
-    // First activation should work.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
-
-    // Second activation should not be available.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-    let legal = engine::legal_actions(&state, &reg);
-    let has_activate = legal.actions.iter().any(|a| matches!(a, Action::ActivateAbility { .. }));
-    assert!(!has_activate,
-        "Darkthicket Wolf should not be able to activate a second time in the same turn");
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Lantern Spirit — {2}{U} 2/1 Spirit, Flying, {U}: return to hand
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn lantern_spirit_returns_to_hand() {
+fn lantern_spirit_returns_itself_to_hand() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let spirit = named_creature(&mut state, &reg, "Lantern Spirit", P0);
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1)]);
+    state = activate_only_offered_ability(&state, &reg);
 
-    // Should be on battlefield.
-    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Hand);
+}
 
-    // Activate: pay {U}.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
+/// Manor Skeleton's "{1}{B}: Regenerate Manor Skeleton" — the shield is placed
+/// on activation and spent by the next lethal state-based check (CR 701.15),
+/// clearing the damage rather than the creature.
+#[test]
+fn manor_skeleton_regenerates_out_of_lethal_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Should now be in hand.
-    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Hand,
-        "Lantern Spirit should be returned to hand after activation");
+    let skeleton = named_creature(&mut state, &reg, "Manor Skeleton", P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Black, 1)]);
+    state = activate_only_offered_ability(&state, &reg);
+    assert_eq!(state.get_object(skeleton).unwrap().regeneration_shields, 1,
+        "activating places a regeneration shield");
+
+    state.get_object_mut(skeleton).unwrap().damage_marked = 1; // lethal for a 1/1
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(skeleton).unwrap().zone, Zone::Battlefield,
+        "the shield is spent instead of the creature dying");
+    assert_eq!(state.get_object(skeleton).unwrap().damage_marked, 0,
+        "and regenerating removes all damage from it");
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Avacynian Priest — {1}{W} 1/2 Human Cleric, {1},{T}: Tap non-Human
+// When it can be activated again (CR 602.2a)
 // ══════════════════════════════════════════════════════════════════
 
+/// Feral Ridgewolf's ability has no restriction, so paying twice pumps twice.
+/// The contrast with Darkthicket Wolf below is the point: same shape of
+/// ability, and only one of them carries "Activate only once each turn".
 #[test]
-fn avacynian_priest_taps_non_human_creature() {
+fn an_unrestricted_pump_ability_stacks_with_itself() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wolf = named_creature(&mut state, &reg, "Feral Ridgewolf", P0);
+    for expected in [3, 5] {
+        add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Red, 1)]);
+        state = activate_only_offered_ability(&state, &reg);
+        assert_eq!(state.effective_power(wolf, &reg), Some(expected));
+    }
+}
+
+/// "Activate only once each turn" is a restriction on *this* turn: blocked for
+/// the rest of it, offered again on the next one.
+///
+/// The second half is taken by advancing real turns rather than by clearing
+/// `abilities_activated_this_turn` — the engine clears it at the turn change,
+/// and a test that cleared it itself passed even with the engine's clearing
+/// removed.
+#[test]
+fn a_once_per_turn_ability_is_blocked_this_turn_and_offered_the_next() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
+    // Real turns mean real draw steps; without libraries both players deck out
+    // and the game ends before the second activation is reached.
+    stock_library(&mut state, &reg, P0, 10);
+    stock_library(&mut state, &reg, P1, 10);
+
+    let pay = |state: &mut mtg_engine::state::GameState| {
+        add_mana(state, P0, &[(ManaType::Colorless, 2), (ManaType::Green, 1)]);
+    };
+
+    pay(&mut state);
+    assert!(offers_ability_of(&state, &reg, wolf), "offered the first time");
+    state = activate_only_offered_ability(&state, &reg);
+
+    pay(&mut state);
+    assert!(!offers_ability_of(&state, &reg, wolf),
+        "and not again this turn, however much mana is available");
+
+    // Two turn changes puts P0 back in their own precombat main with priority —
+    // the same position the first activation happened from.
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_step(&mut state, &reg, Step::PrecombatMain);
+    assert_eq!(state.active_player, P0, "test setup: back on P0's turn");
+
+    pay(&mut state);
+    assert!(offers_ability_of(&state, &reg, wolf),
+        "the restriction is per turn, so a new turn offers it again");
+}
+
+/// "{1}, {T}: Tap target non-Human creature." The tap symbol in the cost is its
+/// own restriction — a tapped permanent cannot pay it again (CR 602.2a) — and
+/// the target restriction is checked when the ability is offered (CR 601.2c).
+#[test]
+fn avacynian_priest_taps_a_non_human_and_then_cannot_be_paid_again() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
+    let wolf = named_creature(&mut state, &reg, "Kessig Wolf", P1);      // not a Human
+    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P1);   // a Human
 
-    // Create a non-Human creature (Kessig Wolf).
-    let wolf = named_creature(&mut state, &reg, "Kessig Wolf", P1);
-    assert!(!state.get_object(wolf).unwrap().tapped, "Wolf should start untapped");
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1)]);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let targeted: Vec<&Target> = legal.actions.iter()
+        .filter_map(|a| match a {
+            Action::ActivateAbility { targets, .. } => targets.first(),
+            _ => None,
+        })
+        .collect();
+    assert!(targeted.contains(&&Target::Object(wolf)), "the non-Human is a legal target");
+    assert!(!targeted.contains(&&Target::Object(cathar)), "the Human is not");
 
-    // Add mana {1} for the ability.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state = activate_only_offered_ability(&state, &reg);
+    assert!(state.get_object(wolf).unwrap().tapped, "the Wolf is tapped by the ability");
+    assert!(state.get_object(priest).unwrap().tapped, "and the Priest by its own cost");
 
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| {
-        matches!(a, Action::ActivateAbility { targets, .. } if targets.contains(&Target::Object(wolf)))
-    });
-    assert!(activate.is_some(), "Should be able to target the non-Human wolf");
-
-    state = engine::submit_action(&state, activate.unwrap(), &reg);
-
-    assert!(state.get_object(wolf).unwrap().tapped,
-        "Wolf should be tapped by Avacynian Priest");
-    assert!(state.get_object(priest).unwrap().tapped,
-        "Priest should be tapped as part of the cost");
-}
-
-#[test]
-fn avacynian_priest_cannot_target_humans() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let _priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
-
-    // Create a Human creature (Elder Cathar).
-    let human = named_creature(&mut state, &reg, "Elder Cathar", P1);
-
-    // Add mana.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-
-    let legal = engine::legal_actions(&state, &reg);
-    let targets_human = legal.actions.iter().any(|a| {
-        matches!(a, Action::ActivateAbility { targets, .. } if targets.contains(&Target::Object(human)))
-    });
-    assert!(!targets_human,
-        "Avacynian Priest should not be able to target Human creatures");
-}
-
-#[test]
-fn avacynian_priest_requires_tap() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let _priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
-
-    // Create a non-Human target.
-    let _wolf = named_creature(&mut state, &reg, "Kessig Wolf", P1);
-
-    // First activation should work.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
-
-    // Priest is now tapped, should not be able to activate again.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    let legal = engine::legal_actions(&state, &reg);
-    let has_activate = legal.actions.iter().any(|a| matches!(a, Action::ActivateAbility { .. }));
-    assert!(!has_activate,
-        "Tapped Avacynian Priest should not be able to activate again");
-}
-
-// -------------------------------------------------------------------------
-// From the bug-audit files, re-filed by the rule each one exercises.
-// -------------------------------------------------------------------------
-
-/// CR 602.2a: "Activate only once each turn" is a restriction on this turn, so
-/// the ability comes back on the next one. Darkthicket Wolf's {2}{G}: +2/+2 was
-/// permanently locked after its first use, because
-/// `abilities_activated_this_turn` was never cleared at the turn change.
-#[test]
-fn a_once_per_turn_ability_is_available_again_on_a_later_turn() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Place Darkthicket Wolf
-    let wolf = named_creature(&mut state, &registry, "Darkthicket Wolf", P0);
-
-    // Real turns mean real draw steps; without libraries both players deck out
-    // and the game ends before the second activation is reached.
-    stock_library(&mut state, &registry, P0, 10);
-    stock_library(&mut state, &registry, P1, 10);
-
-    // Add mana for {2}{G} activation cost
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-
-    // Check ability is available
-    let legal = engine::legal_actions(&state, &registry);
-    let has_ability = legal.actions.iter().any(|a|
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
-    assert!(has_ability, "Wolf should have pump ability available");
-
-    // Activate it
-    let activate_action = legal.actions.iter().find(|a|
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf)).unwrap().clone();
-    state = engine::submit_action(&state, &activate_action, &registry);
-
-    // Take the turn change for real: the engine clears
-    // `abilities_activated_this_turn` at the transition, and a test that clears
-    // it by hand would pass even if the engine stopped doing so.
-    // Two turn changes, so we are back in P0's own precombat main with P0
-    // holding priority — the same position the first activation happened from.
-    advance_to_next_turn(&mut state, &registry);
-    advance_to_next_turn(&mut state, &registry);
-    advance_to_step(&mut state, &registry, Step::PrecombatMain);
-    assert_eq!(state.active_player, P0, "test setup: back on P0's turn");
-
-    // Add mana for this turn's activation ({2}{G})
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
-
-    let legal2 = engine::legal_actions(&state, &registry);
-    let has_ability2 = legal2.actions.iter().any(|a|
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
-    assert!(has_ability2,
-        "Once-per-turn ability should be available again on a new turn");
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1)]);
+    assert!(!offers_ability_of(&state, &reg, priest),
+        "a tapped Priest cannot pay {{T}} again");
 }

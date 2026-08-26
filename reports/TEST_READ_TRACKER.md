@@ -35,7 +35,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `inline_damage.rs` | 341 | 11 |
 | x | `card_data_invariants.rs` | 340 | 12 |
 | x | `combat.rs` | 337 | 16 |
-|   | `activated_abilities.rs` | 336 | 12 |
+| x | `activated_abilities.rs` | 336 | 12 |
 |   | `intervening_if.rs` | 336 | 11 |
 | x | `state_based_actions.rs` | 334 | 10 |
 |   | `x_cost_funding_flow.rs` | 331 | 8 |
@@ -132,4 +132,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**80/127 files read; 12365 lines remaining.**
+**81/127 files read; 12029 lines remaining.**
