@@ -251,3 +251,84 @@ fn bug_angelic_overseer_sba_ordering() {
     assert!(death_events.contains(&human), "Human should have a CreatureDied event");
     assert!(death_events.contains(&overseer), "Overseer should have a CreatureDied event");
 }
+
+/// CR 702.12b: indestructible means "destroy" effects and lethal damage do not
+/// destroy this permanent. It is not general immunity — 0 toughness (CR 704.5f)
+/// still kills, and sacrificing is not destruction at all (CR 701.17b).
+///
+/// Seven tests used to cover these four claims, split across two files, and the
+/// only thing that distinguished the two halves was whether indestructible was
+/// printed on the object or granted by a continuous effect. That distinction is
+/// worth exactly one axis of a table, not a second copy of every case.
+#[test]
+fn indestructible_stops_destruction_and_lethal_damage_but_nothing_else() {
+    #[derive(Clone, Copy)]
+    enum Grant { Printed, Granted }
+
+    let reg = registry();
+    for grant in [Grant::Printed, Grant::Granted] {
+        // Build a 4/4 that is indestructible one way or the other.
+        let setup = |toughness: i32| {
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            // CardId(9999) has no registry entry, so `obj.keywords` is where a
+            // printed keyword lives for it (a card with a registry face reads
+            // its keywords from that face instead).
+            let creature = ready_creature(&mut state, P0, 4, toughness);
+            match grant {
+                Grant::Printed => {
+                    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
+                }
+                Grant::Granted => state.until_end_of_turn.push(
+                    mtg_engine::state::TemporaryEffect::GrantKeyword {
+                        target: creature,
+                        keyword: Keyword::Indestructible,
+                    },
+                ),
+            }
+            assert!(state.has_keyword(creature, Keyword::Indestructible, &reg),
+                "test precondition: the creature is indestructible");
+            (state, creature)
+        };
+
+        // "Destroy" does nothing.
+        let (mut state, creature) = setup(4);
+        assert_eq!(mtg_engine::destruction::try_destroy(&mut state, creature, &reg),
+            mtg_engine::destruction::DestroyResult::Indestructible);
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+            "try_destroy must not move an indestructible permanent");
+
+        // Lethal damage does not destroy it, and the damage stays marked
+        // (CR 704.5g checks it every time SBAs run).
+        let (mut state, creature) = setup(4);
+        state.get_object_mut(creature).unwrap().damage_marked = 10;
+        check_state_based_actions(&mut state, &reg);
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+            "lethal damage does not destroy an indestructible creature");
+        assert_eq!(state.get_object(creature).unwrap().damage_marked, 10,
+            "the damage stays marked rather than being cleared");
+
+        // Deathtouch damage is still just damage (CR 704.5h destroys, and
+        // destruction is what indestructible ignores).
+        let (mut state, creature) = setup(4);
+        {
+            let obj = state.get_object_mut(creature).unwrap();
+            obj.damage_marked = 1;
+            obj.dealt_deathtouch_damage = true;
+        }
+        check_state_based_actions(&mut state, &reg);
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+            "deathtouch destroys, so indestructible survives it");
+
+        // 0 toughness is not destruction — it dies (CR 704.5f).
+        let (mut state, creature) = setup(0);
+        check_state_based_actions(&mut state, &reg);
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+            "indestructible does not save a creature from 0 toughness");
+
+        // Neither is sacrificing (CR 701.17b).
+        let (mut state, creature) = setup(4);
+        assert!(mtg_engine::destruction::sacrifice(&mut state, creature, &reg),
+            "sacrifice succeeds on an indestructible creature");
+        assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+    }
+}

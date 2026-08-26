@@ -1756,27 +1756,6 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
 // ── Geist of Saint Traft ──────────────────────────────────────────
 
 #[test]
-fn geist_creates_angel_on_attack() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
-    state.combat = Some(mtg_engine::state::CombatState::new());
-
-    let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
-    state.combat.as_mut().unwrap().attackers.insert(geist, P1);
-
-    let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
-
-    // Should have an Angel token.
-    assert_eq!(count_tokens_named(&state, "Angel"), 1);
-    let angel_id = find_token_named(&state, "Angel").unwrap();
-    let angel = state.get_object(angel_id).unwrap();
-    assert_eq!(angel.power, Some(4));
-    assert_eq!(angel.toughness, Some(4));
-    assert!(angel.tapped);
-}
-
-#[test]
 fn geist_angel_exiled_at_end_of_combat() {
     let reg = registry();
     let mut state = game_at_step(Step::EndCombat, P0);

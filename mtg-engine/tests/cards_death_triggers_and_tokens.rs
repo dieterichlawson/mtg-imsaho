@@ -550,31 +550,3 @@ fn token_has_summoning_sickness() {
     assert!(obj.summoning_sick,
         "Token should have summoning sickness on the turn it was created");
 }
-
-/// Tokens cease to exist (are removed from the game) when killed.
-#[test]
-fn tokens_cease_to_exist_when_killed() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Create a Spirit token.
-    let token = state.create_token(
-        "Spirit", P0, 1, 1,
-        vec![Color::White],
-        vec![CardType::Creature],
-        vec![Keyword::Flying],
-        &reg,
-    )[0];
-
-    // Kill it by casting Lightning Bolt on it.
-    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
-
-    state = cast_and_resolve(&state, &reg, bolt, vec![Target::Object(token)]);
-
-    // Bolt deals 3 damage to the 1/1 token. Run SBAs to kill it.
-    check_state_based_actions(&mut state, &reg);
-
-    // Token should be completely gone (not in graveyard, not anywhere).
-    assert!(state.get_object(token).is_none(),
-        "Token should cease to exist after dying — removed from the game entirely");
-}

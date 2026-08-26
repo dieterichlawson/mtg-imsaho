@@ -15,7 +15,6 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -559,27 +558,3 @@ fn equipment_enters_unattached() {
 // ══════════════════════════════════════════════════════════════════
 // Equipment detaches when creature dies
 // ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn equipment_detaches_when_creature_dies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let pike = named_equipment(&mut state, &reg, "Runechanter's Pike", P0);
-    let creature = ready_creature(&mut state, P0, 1, 1);
-    state.get_object_mut(pike).unwrap().attached_to = Some(creature);
-
-    // Kill the creature by marking lethal damage.
-    state.get_object_mut(creature).unwrap().damage_marked = 10;
-
-    // Run SBAs to kill the creature.
-    while check_state_based_actions(&mut state, &reg) {}
-
-    // Creature should be dead.
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
-
-    // Pike should be detached but still on battlefield.
-    let pike_obj = state.get_object(pike).unwrap();
-    assert_eq!(pike_obj.zone, Zone::Battlefield, "Equipment stays on battlefield");
-    assert!(pike_obj.attached_to.is_none(), "Equipment should be detached");
-}

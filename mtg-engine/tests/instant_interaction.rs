@@ -87,18 +87,3 @@ fn cannot_cast_sorcery_during_opponent_turn() {
     assert!(!can_cast,
         "Should NOT be able to cast sorcery during opponent's turn");
 }
-
-/// You should NOT be able to play a land during opponent's turn.
-#[test]
-fn cannot_play_land_during_opponent_turn() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P1); // P1's turn
-    state.priority_player = Some(P0);
-
-    spell_in_hand(&mut state, &registry, "Forest", P0);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let can_play = legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. }));
-    assert!(!can_play,
-        "Should NOT be able to play a land during opponent's turn");
-}

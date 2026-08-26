@@ -12,7 +12,7 @@ use mtg_engine::types::*;
 /// A tapped creature can't be declared as a blocker (CR 509.1a). The
 /// validating gate must drop it, leaving the attacker unblocked.
 #[test]
-fn tapped_creature_cannot_block() {
+fn an_illegal_block_by_a_tapped_creature_does_not_absorb_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
     let attacker = ready_creature(&mut state, P0, 2, 2);

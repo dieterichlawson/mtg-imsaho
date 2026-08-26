@@ -253,11 +253,11 @@ fn claiming_to_pay_without_the_mana_does_not_save_the_spell() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: A spell targeting a creature that gains hexproof in response
-/// should fizzle, but the engine doesn't re-check hexproof at resolution.
-/// (Already documented in `spell_fizzle.rs` but confirming here.)
+/// CR 608.2b: a spell whose only target has become illegal is countered on
+/// resolution. Gaining hexproof in response makes an opponent's creature an
+/// illegal target, so the spell does nothing.
 #[test]
-fn bug_hexproof_not_rechecked_at_resolution() {
+fn a_target_that_gains_hexproof_in_response_makes_the_spell_fizzle() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -276,15 +276,13 @@ fn bug_hexproof_not_rechecked_at_resolution() {
         &registry,
     );
 
-    // Before resolution, give the creature hexproof
+    // Before resolution, give the creature hexproof.
     if let Some(obj) = state.get_object_mut(creature) {
         obj.keywords.push(Keyword::Hexproof);
     }
 
-    // Resolve — should fizzle because target now has hexproof
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
-    // BUG: Creature is destroyed despite having hexproof
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Creature with hexproof should not be destroyed — spell should fizzle");
 }

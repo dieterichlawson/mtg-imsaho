@@ -52,37 +52,47 @@ fn token_owned_by_creator() {
 }
 
 /// Tokens ceases to exist when moved off the battlefield (SBA).
+/// CR 111.7 / 704.5d: a token that leaves the battlefield ceases to exist. It
+/// touches the destination zone first — long enough for leaves-the-battlefield
+/// and dies triggers to see it — and is then removed from the game by the next
+/// SBA check, whichever zone it went to.
 #[test]
-fn token_ceases_to_exist_when_killed() {
+fn a_token_that_leaves_the_battlefield_ceases_to_exist() {
     let reg = registry();
-    let mut state = GameState::new(2);
-    state.players[0].life = 20;
-    state.players[1].life = 20;
-    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg)[0];
+    for dest in [Zone::Graveyard, Zone::Hand, Zone::Exile, Zone::Library] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let token = state.create_token(
+            "Spirit", P0, 1, 1,
+            vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], &reg,
+        )[0];
 
-    // Kill the token (move to graveyard).
-    state.move_object(token, Zone::Graveyard, &reg);
+        state.move_object(token, dest, &reg);
+        assert!(state.get_object(token).is_some(),
+            "the token is still around in {dest:?} until SBAs run, so triggers can see it");
 
-    // SBA should remove it entirely from the game.
-    check_state_based_actions(&mut state, &reg);
-    assert!(state.get_object(token).is_none(),
-        "Token should cease to exist after leaving the battlefield");
+        check_state_based_actions(&mut state, &reg);
+        assert!(state.get_object(token).is_none(),
+            "a token that went to {dest:?} should have ceased to exist");
+    }
 }
 
-/// Token that is bounced (returned to hand) ceases to exist.
+/// The same rule reached the ordinary way — lethal damage rather than a direct
+/// `move_object` — so the SBA that kills it and the SBA that removes it are
+/// exercised in one pass.
 #[test]
-fn token_ceases_to_exist_when_bounced() {
+fn a_token_killed_by_damage_ceases_to_exist() {
     let reg = registry();
-    let mut state = GameState::new(2);
-    state.players[0].life = 20;
-    state.players[1].life = 20;
-    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg)[0];
-
-    state.move_object(token, Zone::Hand, &reg);
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let token = state.create_token(
+        "Zombie", P0, 2, 2, vec![], vec![CardType::Creature], vec![], &reg,
+    )[0];
+    state.get_object_mut(token).unwrap().summoning_sick = false;
+    state.get_object_mut(token).unwrap().damage_marked = 3;
 
     check_state_based_actions(&mut state, &reg);
+
     assert!(state.get_object(token).is_none(),
-        "Token should cease to exist when bounced to hand");
+        "a token killed by damage is gone, not sitting in the graveyard");
 }
 
 /// Multiple tokens can be created at once.

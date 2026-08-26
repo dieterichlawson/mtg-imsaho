@@ -357,3 +357,187 @@ fn bug_prey_upon_doesnt_fizzle_with_one_illegal_target() {
     assert_eq!(my_damage_after, my_damage_before,
         "No fight should occur when one target is illegal — my creature should be undamaged");
 }
+
+// ── Targets that stop being legal before resolution (CR 608.2b) ───
+//
+// Merged here from spell_fizzle.rs and engine_regressions.rs, which each
+// carried their own copy of this rule.
+
+#[test]
+fn giant_growth_target_dies_before_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+
+    let growth = castable_spell(&mut state, &reg, "Giant Growth", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: growth, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &reg,
+    );
+
+    // Creature dies before Giant Growth resolves.
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Creature should still be in graveyard, not buffed on battlefield.
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+    assert_eq!(
+        state.get_object(growth).unwrap().zone,
+        Zone::Graveyard,
+        "Giant Growth should go to graveyard after resolving with no legal target"
+    );
+}
+
+#[test]
+fn aura_target_dies_before_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+
+    let pacifism = castable_spell(&mut state, &reg, "Pacifism", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: pacifism, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &reg,
+    );
+
+    // Creature dies before Pacifism resolves.
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Pacifism should NOT be on the battlefield (no legal target to enchant).
+    assert_eq!(
+        state.get_object(pacifism).unwrap().zone,
+        Zone::Graveyard,
+        "Aura with no legal target on resolution should go to graveyard"
+    );
+}
+
+#[test]
+fn multi_target_spell_with_one_target_dying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature_a = ready_creature(&mut state, P1, 3, 3);
+    let creature_b = ready_creature(&mut state, P1, 2, 2);
+
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: dread,
+            targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
+            sacrifice: None,
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &reg,
+    );
+
+    // Creature A dies before resolution.
+    state.move_object(creature_a, Zone::Graveyard, &reg);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Creature B should still be tapped (partial resolution).
+    assert!(
+        state.get_object(creature_b).unwrap().tapped,
+        "Feeling of Dread should still tap creature B even if creature A died (rule 608.2b)"
+    );
+}
+
+#[test]
+fn multi_target_spell_with_all_targets_dying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature_a = ready_creature(&mut state, P1, 3, 3);
+    let creature_b = ready_creature(&mut state, P1, 2, 2);
+
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: dread,
+            targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
+            sacrifice: None,
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &reg,
+    );
+
+    // Both creatures die before resolution.
+    state.move_object(creature_a, Zone::Graveyard, &reg);
+    state.move_object(creature_b, Zone::Graveyard, &reg);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // With all targets illegal, the spell should fizzle (no effect).
+    // Feeling of Dread just goes to graveyard.
+    assert_eq!(
+        state.get_object(dread).unwrap().zone,
+        Zone::Graveyard,
+        "Spell with all targets dead should go to graveyard"
+    );
+}
+
+#[test]
+fn spell_fizzles_when_single_target_illegal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+
+    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &reg,
+    );
+
+    // Creature dies before bolt resolves.
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    // Clear events so we can check what the resolution generates.
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Bolt should be in graveyard.
+    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Graveyard);
+
+    // The spell should NOT have resolved — no damage events.
+    let has_damage_event = state.events.iter().any(|e| matches!(e, GameEvent::CombatDamageDealt { .. }));
+    assert!(!has_damage_event,
+        "Spell with illegal target should fizzle, not deal damage (CR 608.2b)");
+
+    // P1 should still be at 20 life (bolt didn't redirect to player).
+    assert_eq!(state.get_player(P1).life, 20);
+}
+
+#[test]
+fn destroy_spell_fizzles_when_target_gone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let doom = castable_spell(&mut state, &reg, "Doom Blade", P0);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: doom, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
+        &reg,
+    );
+
+    // Creature exiled before resolution.
+    state.move_object(creature, Zone::Exile, &reg);
+
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Doom Blade should have fizzled — went to graveyard without resolving.
+    assert_eq!(state.get_object(doom).unwrap().zone, Zone::Graveyard);
+    // Creature is still in exile (wasn't destroyed because spell fizzled).
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile);
+}

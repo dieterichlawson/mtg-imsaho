@@ -5,7 +5,6 @@ mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
-use mtg_engine::destruction;
 use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
@@ -13,105 +12,6 @@ use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 // ── Indestructible + zero toughness ────────────────────────────────
-
-/// Rule 704.5f: A creature with 0 toughness dies even if indestructible.
-/// Indestructible only prevents destruction (rule 702.12b), and the
-/// 0-toughness SBA is not destruction.
-#[test]
-fn indestructible_creature_with_zero_toughness_still_dies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = state.create_object(CardId(99), P0, Zone::Battlefield, Some(5), Some(0));
-    state.get_object_mut(creature).unwrap().summoning_sick = false;
-    // Grant indestructible via keyword.
-    state.until_end_of_turn.push(
-        mtg_engine::state::TemporaryEffect::GrantKeyword {
-            target: creature,
-            keyword: Keyword::Indestructible,
-        },
-    );
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(
-        state.get_object(creature).unwrap().zone,
-        Zone::Graveyard,
-        "Indestructible creature with 0 toughness should still die (rule 704.5f)"
-    );
-}
-
-/// Indestructible creature survives lethal damage — the SBA for lethal
-/// damage uses `try_destroy`, which is blocked by indestructible.
-#[test]
-fn indestructible_creature_survives_lethal_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 3, 3);
-    state.get_object_mut(creature).unwrap().damage_marked = 10;
-    state.until_end_of_turn.push(
-        mtg_engine::state::TemporaryEffect::GrantKeyword {
-            target: creature,
-            keyword: Keyword::Indestructible,
-        },
-    );
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(
-        state.get_object(creature).unwrap().zone,
-        Zone::Battlefield,
-        "Indestructible creature should survive lethal damage"
-    );
-}
-
-/// Sacrifice bypasses indestructible — sacrifice is not destruction.
-#[test]
-fn sacrifice_bypasses_indestructible() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 5, 5);
-    state.until_end_of_turn.push(
-        mtg_engine::state::TemporaryEffect::GrantKeyword {
-            target: creature,
-            keyword: Keyword::Indestructible,
-        },
-    );
-    assert!(state.has_keyword(creature, Keyword::Indestructible, &reg));
-
-    let result = destruction::sacrifice(&mut state, creature, &reg);
-    assert!(result, "Sacrifice should succeed even on indestructible creature");
-    assert_eq!(
-        state.get_object(creature).unwrap().zone,
-        Zone::Graveyard,
-        "Sacrificed indestructible creature should be in graveyard"
-    );
-}
-
-/// `try_destroy` does NOT destroy an indestructible creature.
-#[test]
-fn try_destroy_blocked_by_indestructible() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 5, 5);
-    state.until_end_of_turn.push(
-        mtg_engine::state::TemporaryEffect::GrantKeyword {
-            target: creature,
-            keyword: Keyword::Indestructible,
-        },
-    );
-
-    let result = destruction::try_destroy(&mut state, creature, &reg);
-    assert_eq!(result, destruction::DestroyResult::Indestructible);
-    assert_eq!(
-        state.get_object(creature).unwrap().zone,
-        Zone::Battlefield,
-        "try_destroy should not move indestructible creature"
-    );
-}
 
 // ── Simultaneous death in combat ───────────────────────────────────
 
@@ -197,30 +97,6 @@ fn aura_stays_while_creature_alive() {
 }
 
 // ── Token death triggers ───────────────────────────────────────────
-
-/// Tokens go to the graveyard when they die (triggering "dies" events),
-/// then cease to exist as a separate SBA.
-#[test]
-fn token_dies_goes_to_graveyard_then_ceases_to_exist() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Create a token creature.
-    let token = state.create_token("Zombie", P0, 2, 2, vec![], vec![CardType::Creature], vec![], &reg)[0];
-    state.get_object_mut(token).unwrap().summoning_sick = false;
-
-    // Deal lethal damage.
-    state.get_object_mut(token).unwrap().damage_marked = 3;
-
-    // SBA should: 1) kill the token (move to graveyard), 2) cease to exist (remove from objects).
-    check_state_based_actions(&mut state, &reg);
-
-    // Token should be completely gone — removed from the objects map.
-    assert!(
-        state.get_object(token).is_none(),
-        "Token should cease to exist after dying and being cleaned up by SBAs"
-    );
-}
 
 // ── Damage does not reduce toughness ───────────────────────────────
 

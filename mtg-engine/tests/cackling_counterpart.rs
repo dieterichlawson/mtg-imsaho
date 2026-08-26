@@ -64,10 +64,11 @@ fn cackling_counterpart_copy_of_zombie_token_preserves_color() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: Cackling Counterpart creates a token copy but doesn't copy
-/// the original creature's colors. Token is created with empty colors.
+/// CR 707.2: a token copy has the copiable characteristics of the original,
+/// colour included. The test above covers copying a *token*, whose colours live
+/// on the object; this one copies a real card, whose colours come from its face.
 #[test]
-fn bug_cackling_counterpart_colors_not_copied() {
+fn a_token_copy_of_a_card_takes_that_cards_colors() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -83,7 +84,7 @@ fn bug_cackling_counterpart_colors_not_copied() {
         .expect("Token copy should exist");
     let token_colors = &state.get_object(token_id).unwrap().colors;
 
-    // BUG: Token has no colors (empty vec) instead of copying the original's green
-    assert!(!token_colors.is_empty(),
-        "Token copy should have colors copied from original. Got: {token_colors:?}");
+    assert_eq!(token_colors, &vec![Color::Green],
+        "the copy of a green Bear is green — an empty colour list is the bug this \
+         catches, and so is the wrong colour");
 }

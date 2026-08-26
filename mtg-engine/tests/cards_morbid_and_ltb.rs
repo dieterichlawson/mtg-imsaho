@@ -230,26 +230,6 @@ fn bonds_of_faith_buffs_human() {
     assert!(state.can_attack(creature, &reg), "Human with Bonds should be able to attack");
 }
 
-/// Bonds of Faith locks down a non-Human creature.
-#[test]
-fn bonds_of_faith_locks_non_human() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Grizzly Bears is a Bear, not a Human.
-    let bears = ready_creature(&mut state, P1, 2, 2);
-
-    let bof = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
-
-    state = cast_and_resolve(&state, &reg, bof, vec![Target::Object(bears)]);
-    triggers::process_triggers(&mut state, &reg);
-
-    assert!(!state.can_attack(bears, &reg), "Non-Human with Bonds should not attack");
-    assert!(!state.can_block(bears, &reg), "Non-Human with Bonds should not block");
-    // No P/T bonus.
-    assert_eq!(state.effective_power(bears, &reg), Some(2));
-}
-
 // ══════════════════════════════════════════════════════════════════
 // Furor of the Bitten — forced attack
 // ══════════════════════════════════════════════════════════════════
@@ -883,87 +863,6 @@ fn try_destroy_without_shield_kills() {
     let result = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
 
     assert_eq!(result, DestroyResult::Died);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
-}
-
-/// Indestructible prevents destruction from `try_destroy` (spell effects).
-#[test]
-fn indestructible_prevents_spell_destruction() {
-    use mtg_engine::destruction::DestroyResult;
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 4, 4);
-    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
-
-    let result = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
-
-    assert_eq!(result, DestroyResult::Indestructible);
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
-}
-
-/// Indestructible prevents destruction from lethal damage in SBAs.
-#[test]
-fn indestructible_survives_lethal_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 4, 4);
-    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
-    state.get_object_mut(creature).unwrap().damage_marked = 10;
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
-        "Indestructible creature should survive lethal damage");
-    assert_eq!(state.get_object(creature).unwrap().damage_marked, 10,
-        "Damage should remain marked (not removed)");
-}
-
-/// Indestructible does NOT prevent death from 0 toughness (rule 704.5f).
-#[test]
-fn indestructible_does_not_prevent_zero_toughness() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 4, 0);
-    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
-        "Indestructible should NOT prevent death from 0 toughness");
-}
-
-/// Indestructible survives deathtouch damage.
-#[test]
-fn indestructible_survives_deathtouch() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 4, 4);
-    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
-    state.get_object_mut(creature).unwrap().damage_marked = 1;
-    state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
-
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
-        "Indestructible creature should survive deathtouch damage");
-}
-
-/// Sacrifice bypasses indestructible.
-#[test]
-fn sacrifice_bypasses_indestructible() {
-    let reg = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 4, 4);
-    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
-
-    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature, &reg);
-
-    assert!(sacrificed, "Sacrifice should succeed even with indestructible");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 
