@@ -476,3 +476,19 @@ pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: Pla
     state.get_player_mut(player).library_order.extend(&ids);
     ids
 }
+
+/// Kill `id` by marking lethal damage and running state-based actions, so it
+/// dies the way the game kills it (CR 704.5g) and its death trigger fires off a
+/// real death event.
+///
+/// Queued events are cleared first, so a `process_triggers` after this sees
+/// this death and nothing the setup happened to leave behind.
+#[allow(dead_code)]
+pub fn kill_by_damage(state: &mut GameState, registry: &CardRegistry, id: ObjectId) {
+    let lethal = state.effective_toughness(id, registry).unwrap_or(1).max(1) as u32;
+    state.get_object_mut(id).expect("creature to kill").damage_marked = lethal;
+    state.events.clear();
+    mtg_engine::sba::check_state_based_actions(state, registry);
+    assert_eq!(state.get_object(id).map(|o| o.zone), Some(Zone::Graveyard),
+        "kill_by_damage: {lethal} damage should have been lethal");
+}

@@ -14,8 +14,8 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `trigger_source_independence.rs` | 642 | 20 |
 | x | `hexproof_filter.rs` | 635 | 11 |
 |   | `cards_spells_and_enchantments.rs` | 608 | 23 |
-|   | `flashback.rs` | 604 | 21 |
-|   | `cards_death_triggers_and_tokens.rs` | 552 | 17 |
+| x | `flashback.rs` | 604 | 21 |
+| x | `cards_death_triggers_and_tokens.rs` | 552 | 17 |
 |   | `cards_rule_modifiers.rs` | 545 | 21 |
 | x | `engine_edge_cases.rs` | 544 | 18 |
 |   | `fizzle.rs` | 543 | 15 |
@@ -34,7 +34,7 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 |   | `trigger_priority.rs` | 350 | 7 |
 |   | `inline_damage.rs` | 341 | 11 |
 | x | `card_data_invariants.rs` | 340 | 12 |
-|   | `combat.rs` | 337 | 16 |
+| x | `combat.rs` | 337 | 16 |
 |   | `activated_abilities.rs` | 336 | 12 |
 |   | `intervening_if.rs` | 336 | 11 |
 | x | `state_based_actions.rs` | 334 | 10 |
@@ -132,4 +132,4 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `until_eot_object_identity.rs` | 63 | 2 |
 | x | `ltb_controller.rs` | 57 | 2 |
 
-**71/127 files read; 16857 lines remaining.**
+**73/127 files read; 15364 lines remaining.**

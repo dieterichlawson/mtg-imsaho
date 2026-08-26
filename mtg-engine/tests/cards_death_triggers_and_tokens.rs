@@ -1,6 +1,6 @@
 //! Cards whose behaviour is a death trigger, a token, or an anthem over them.
 //!
-//! Cards covered (14), so this is greppable by name as well as by rule:
+//! Cards covered (15), so this is greppable by name as well as by rule:
 //!
 //! - Doomed Traveler
 //! - Elder Cathar
@@ -10,6 +10,7 @@
 //! - Lumberknot
 //! - Mausoleum Guard
 //! - Midnight Haunting
+//! - Moan of the Unhallowed
 //! - Pitchburn Devils
 //! - Rage Thrower
 //! - Slayer of the Wicked
@@ -22,6 +23,7 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::engine;
+use mtg_engine::ids::PlayerId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -29,46 +31,36 @@ use mtg_engine::types::*;
 // Token-generating spells
 // ══════════════════════════════════════════════════════════════════
 
-/// Midnight Haunting creates two 1/1 Spirit tokens with flying.
+/// Spells that make two identical creature tokens. One shape, so the cards'
+/// differences — what the token is and what it has — are the only thing the
+/// table has to state.
 #[test]
-fn midnight_haunting_creates_two_spirits() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn token_making_spells_make_the_tokens_they_print() {
+    // (spell, token name, power, toughness, keywords)
+    const SPELLS: &[(&str, &str, i32, i32, &[Keyword])] = &[
+        ("Midnight Haunting", "Spirit", 1, 1, &[Keyword::Flying]),
+        ("Moan of the Unhallowed", "Zombie", 2, 2, &[]),
+    ];
 
-    let card = castable_spell(&mut state, &reg, "Midnight Haunting", P0);
+    for &(spell_name, token_name, power, toughness, keywords) in SPELLS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    state = cast_and_resolve(&state, &reg, card, vec![]);
+        let card = castable_spell(&mut state, &reg, spell_name, P0);
+        state = cast_and_resolve(&state, &reg, card, vec![]);
 
-    // Spell goes to graveyard.
-    assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard);
+        assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard,
+            "{spell_name} is a sorcery; it goes to the graveyard");
+        assert_eq!(count_tokens_named(&state, token_name), 2,
+            "{spell_name} should make two {token_name} tokens");
 
-    // Two Spirit tokens on the battlefield.
-    assert_eq!(count_tokens_named(&state, "Spirit"), 2, "Should have two Spirit tokens");
-
-    for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
-        assert_eq!(o.power, Some(1));
-        assert_eq!(o.toughness, Some(1));
-        assert!(o.keywords.contains(&Keyword::Flying), "Spirit tokens should have flying");
-    }
-}
-
-/// Moan of the Unhallowed creates two 2/2 Zombie tokens.
-#[test]
-fn moan_creates_two_zombies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let card = castable_spell(&mut state, &reg, "Moan of the Unhallowed", P0);
-
-    state = cast_and_resolve(&state, &reg, card, vec![]);
-
-    assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard);
-
-    assert_eq!(count_tokens_named(&state, "Zombie"), 2, "Should have two Zombie tokens");
-
-    for o in state.objects.values().filter(|o| o.is_token && o.name == "Zombie") {
-        assert_eq!(o.power, Some(2));
-        assert_eq!(o.toughness, Some(2));
+        for o in state.objects.values().filter(|o| o.is_token && o.name == token_name) {
+            assert_eq!((o.power, o.toughness), (Some(power), Some(toughness)),
+                "{spell_name}'s tokens are {power}/{toughness}");
+            for kw in keywords {
+                assert!(o.keywords.contains(kw), "{spell_name}'s tokens have {kw:?}");
+            }
+        }
     }
 }
 
@@ -76,57 +68,30 @@ fn moan_creates_two_zombies() {
 // Dies triggers — token creators
 // ══════════════════════════════════════════════════════════════════
 
-/// Doomed Traveler creates a 1/1 Spirit token with flying when it dies.
+/// "When this creature dies, create N 1/1 white Spirit creature tokens with
+/// flying." Same rule, same token, different count.
 #[test]
-fn doomed_traveler_creates_spirit_on_death() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn creatures_that_leave_spirits_behind_leave_the_right_number() {
+    // (card, how many Spirits it leaves)
+    const CARDS: &[(&str, usize)] = &[
+        ("Doomed Traveler", 1),
+        ("Mausoleum Guard", 2),
+    ];
 
-    let dt = named_creature(&mut state, &reg, "Doomed Traveler", P0);
+    for &(name, count) in CARDS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Kill it with lethal damage.
-    state.get_object_mut(dt).unwrap().damage_marked = 1;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
+        let creature = named_creature(&mut state, &reg, name, P0);
+        kill_by_damage(&mut state, &reg, creature);
+        triggers::process_triggers(&mut state, &reg);
 
-    assert_eq!(state.get_object(dt).unwrap().zone, Zone::Graveyard,
-        "Doomed Traveler should be dead");
-
-    // Fire death triggers.
-    triggers::process_triggers(&mut state, &reg);
-
-    // Should have a Spirit token.
-    assert_eq!(count_tokens_named(&state, "Spirit"), 1, "Should create one Spirit token");
-    let spirit = find_token_named(&state, "Spirit").unwrap();
-    let obj = state.get_object(spirit).unwrap();
-    assert_eq!(obj.power, Some(1));
-    assert_eq!(obj.toughness, Some(1));
-    assert!(obj.keywords.contains(&Keyword::Flying));
-}
-
-/// Mausoleum Guard creates two 1/1 Spirit tokens with flying when it dies.
-#[test]
-fn mausoleum_guard_creates_two_spirits_on_death() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let mg = named_creature(&mut state, &reg, "Mausoleum Guard", P0);
-
-    // Kill it with lethal damage.
-    state.get_object_mut(mg).unwrap().damage_marked = 2;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(mg).unwrap().zone, Zone::Graveyard);
-
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(count_tokens_named(&state, "Spirit"), 2, "Should create two Spirit tokens");
-
-    for s in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
-        assert_eq!(s.power, Some(1));
-        assert_eq!(s.toughness, Some(1));
-        assert!(s.keywords.contains(&Keyword::Flying));
+        assert_eq!(count_tokens_named(&state, "Spirit"), count,
+            "{name} should leave {count} Spirit token(s) behind");
+        for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
+            assert_eq!((o.power, o.toughness), (Some(1), Some(1)), "{name}'s Spirits are 1/1");
+            assert!(o.keywords.contains(&Keyword::Flying), "{name}'s Spirits fly");
+        }
     }
 }
 
@@ -181,20 +146,19 @@ fn slayer_of_the_wicked_destroys_zombie() {
 
     state = cast_and_resolve(&state, &reg, slayer, vec![]);
 
-    // Process ETB triggers — Slayer presents an optional choice.
     triggers::process_triggers(&mut state, &reg);
 
-    // Choose to destroy the Walking Corpse.
-    if state.awaiting_action.is_some() {
-        state = engine::submit_action(
-            &state,
-            &Action::ResolveChoice {
-                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(wc))),
-            },
-            &reg,
-        );
-        check_state_based_actions(&mut state, &reg);
-    }
+    // The prompt has to be there: with the choice inside an `if let`, a Slayer
+    // that never asked would assert nothing and pass.
+    assert!(state.awaiting_action.is_some(), "Slayer should ask what to destroy");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(wc))),
+        },
+        &reg,
+    );
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(slayer).unwrap().zone, Zone::Battlefield,
         "Slayer should be on the battlefield");
@@ -217,19 +181,16 @@ fn fiend_hunter_exiles_on_etb() {
 
     state = cast_and_resolve(&state, &reg, fh, vec![]);
 
-    // Process ETB triggers — Fiend Hunter presents a choice.
     triggers::process_triggers(&mut state, &reg);
 
-    // Choose to exile the victim.
-    if state.awaiting_action.is_some() {
-        state = engine::submit_action(
-            &state,
-            &Action::ResolveChoice {
-                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
-            },
-            &reg,
-        );
-    }
+    assert!(state.awaiting_action.is_some(), "Fiend Hunter should ask what to exile");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
+        },
+        &reg,
+    );
 
     assert_eq!(state.get_object(fh).unwrap().zone, Zone::Battlefield,
         "Fiend Hunter should be on the battlefield");
@@ -251,12 +212,7 @@ fn pitchburn_devils_deals_3_on_death() {
 
     let pd = named_creature(&mut state, &reg, "Pitchburn Devils", P0);
 
-    // Kill it with lethal damage.
-    state.get_object_mut(pd).unwrap().damage_marked = 3;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(pd).unwrap().zone, Zone::Graveyard);
+    kill_by_damage(&mut state, &reg, pd);
 
     triggers::process_triggers(&mut state, &reg);
 
@@ -290,12 +246,7 @@ fn falkenrath_noble_drains_on_any_death() {
     // A creature on P0's side to kill (Noble triggers on any creature dying).
     let victim = ready_creature(&mut state, P0, 1, 1);
 
-    // Kill the victim.
-    state.get_object_mut(victim).unwrap().damage_marked = 1;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
+    kill_by_damage(&mut state, &reg, victim);
 
     process_triggers_auto_target_opponent(&mut state, &reg);
 
@@ -317,12 +268,7 @@ fn rage_thrower_deals_2_on_death() {
     // A creature on P1's side to kill.
     let victim = ready_creature(&mut state, P1, 1, 1);
 
-    // Kill the victim.
-    state.get_object_mut(victim).unwrap().damage_marked = 1;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
+    kill_by_damage(&mut state, &reg, victim);
 
     triggers::process_triggers(&mut state, &reg);
 
@@ -347,58 +293,43 @@ fn rage_thrower_deals_2_on_death() {
 // Dies triggers — +1/+1 counters
 // ══════════════════════════════════════════════════════════════════
 
-/// Unruly Mob gains a +1/+1 counter when another creature you control dies.
+/// "Whenever <a creature> dies, put a +1/+1 counter on <this creature>." One
+/// rule, three cards, and the only thing that separates them is which death
+/// counts — so that is the only thing the table says.
+///
+/// The Village Cannibals rows are a matched pair: the same setup, one death
+/// that qualifies and one that does not. Without the second row the test would
+/// pass for a card that counted every death.
 #[test]
-fn unruly_mob_gains_counter_when_ally_dies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn a_death_watcher_counts_the_deaths_its_text_names() {
+    // (watcher, victim — a named card or a vanilla 1/1, victim's controller,
+    //  counters expected, what the row is testing)
+    const CASES: &[(&str, Option<&str>, PlayerId, u32, &str)] = &[
+        ("Unruly Mob", None, P0, 1, "another creature you control dying"),
+        ("Lumberknot", None, P1, 1, "any creature dying, an opponent's included"),
+        ("Village Cannibals", Some("Doomed Traveler"), P1, 1, "a Human dying"),
+        ("Village Cannibals", Some("Walking Corpse"), P1, 0, "a Zombie dying is not a Human dying"),
+    ];
 
-    // Unruly Mob on P0's side.
-    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+    for &(watcher_name, victim_name, victim_controller, expected, why) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Another creature on P0's side to sacrifice.
-    let ally = ready_creature(&mut state, P0, 1, 1);
+        let watcher = named_creature(&mut state, &reg, watcher_name, P0);
+        let base = state.effective_power(watcher, &reg).expect("watcher is a creature");
+        let victim = match victim_name {
+            Some(n) => named_creature(&mut state, &reg, n, victim_controller),
+            None => ready_creature(&mut state, victim_controller, 1, 1),
+        };
 
-    // Kill the ally.
-    state.get_object_mut(ally).unwrap().damage_marked = 1;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
+        kill_by_damage(&mut state, &reg, victim);
+        triggers::process_triggers(&mut state, &reg);
 
-    assert_eq!(state.get_object(ally).unwrap().zone, Zone::Graveyard);
-
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(mob, CounterType::PlusOnePlusOne), 1,
-        "Unruly Mob should have 1 +1/+1 counter");
-    assert_eq!(state.effective_power(mob, &reg), Some(2));
-    assert_eq!(state.effective_toughness(mob, &reg), Some(2));
-}
-
-/// Lumberknot gains a +1/+1 counter when any creature dies.
-#[test]
-fn lumberknot_gains_counter_on_any_death() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Lumberknot on P0's side.
-    let knot = named_creature(&mut state, &reg, "Lumberknot", P0);
-
-    // A creature on P1's side to kill.
-    let victim = ready_creature(&mut state, P1, 1, 1);
-
-    // Kill the victim.
-    state.get_object_mut(victim).unwrap().damage_marked = 1;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
-
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(knot, CounterType::PlusOnePlusOne), 1,
-        "Lumberknot should have 1 +1/+1 counter");
-    assert_eq!(state.effective_power(knot, &reg), Some(2));
-    assert_eq!(state.effective_toughness(knot, &reg), Some(2));
+        assert_eq!(state.get_counter_count(watcher, CounterType::PlusOnePlusOne), expected,
+            "{watcher_name} on {why}");
+        assert_eq!(state.effective_power(watcher, &reg), Some(base + expected as i32),
+            "and the counter shows up in {watcher_name}'s power");
+    }
 }
 
 /// Elder Cathar grants a +1/+1 counter to another creature you control when it dies.
@@ -413,72 +344,13 @@ fn elder_cathar_grants_counter_on_death() {
     // Another creature on P0's side to receive the counter.
     let buddy = ready_creature(&mut state, P0, 2, 2);
 
-    // Kill Elder Cathar.
-    state.get_object_mut(cathar).unwrap().damage_marked = 2;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(cathar).unwrap().zone, Zone::Graveyard);
-
+    kill_by_damage(&mut state, &reg, cathar);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(buddy, CounterType::PlusOnePlusOne), 1,
         "Buddy creature should have received a +1/+1 counter from Elder Cathar");
     assert_eq!(state.effective_power(buddy, &reg), Some(3));
     assert_eq!(state.effective_toughness(buddy, &reg), Some(3));
-}
-
-/// Village Cannibals gains a +1/+1 counter when a Human dies, but not non-Humans.
-#[test]
-fn village_cannibals_gains_counter_on_human_death() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Village Cannibals on P0's side.
-    let cannibals = named_creature(&mut state, &reg, "Village Cannibals", P0);
-
-    // A Human creature on P1's side (Doomed Traveler is Human).
-    let human = named_creature(&mut state, &reg, "Doomed Traveler", P1);
-
-    // Kill the Human.
-    state.get_object_mut(human).unwrap().damage_marked = 1;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(human).unwrap().zone, Zone::Graveyard);
-
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(cannibals, CounterType::PlusOnePlusOne), 1,
-        "Village Cannibals should gain a counter when a Human dies");
-    assert_eq!(state.effective_power(cannibals, &reg), Some(3));
-    assert_eq!(state.effective_toughness(cannibals, &reg), Some(3));
-}
-
-/// Village Cannibals does NOT gain a counter when a non-Human dies.
-#[test]
-fn village_cannibals_ignores_non_human_death() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Village Cannibals on P0's side.
-    let cannibals = named_creature(&mut state, &reg, "Village Cannibals", P0);
-
-    // A non-Human creature (Walking Corpse is a Zombie, not Human).
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P1);
-
-    // Kill the Zombie.
-    state.get_object_mut(zombie).unwrap().damage_marked = 2;
-    state.events.clear();
-    check_state_based_actions(&mut state, &reg);
-
-    assert_eq!(state.get_object(zombie).unwrap().zone, Zone::Graveyard);
-
-    triggers::process_triggers(&mut state, &reg);
-
-    assert_eq!(state.get_counter_count(cannibals, CounterType::PlusOnePlusOne), 0,
-        "Village Cannibals should NOT gain a counter when a non-Human dies");
-    assert_eq!(state.effective_power(cannibals, &reg), Some(2));
 }
 
 // ══════════════════════════════════════════════════════════════════
