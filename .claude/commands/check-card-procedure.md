@@ -108,7 +108,7 @@ Read the card's implementation file. Verify:
 - [ ] Life gain/loss emits LifeChanged event
 - [ ] Non-combat damage emits NonCombatDamageDealt (NOT CombatDamageDealt)
 - [ ] Non-combat damage tracks damaged_by on target creatures
-- [ ] Spell cleanup uses `move_spell_after_resolve()` (not `move_object(Zone::Graveyard)`)
+- [ ] Card code does NOT clean up its own spell at all — no `move_object(id, Zone::Graveyard)` and no `move_spell_after_resolve(id)`. The engine owns it (`stack::resolve_spell`, and `engine::finish_spell_resolution_if_idle` once a choice chain completes); a card that moves itself and then presents another choice has left the stack mid-resolution, against CR 608.2m. Countering a *different* spell uses `move_countered_spell` (CR 701.5a).
 - [ ] Dynamic P/T uses `dynamic_pt` trait method
 - [ ] Token creation includes correct subtypes via `create_token_with_subtypes`
 - [ ] triggered_abilities TriggerKind entries match EVERY implemented hook (on_blocks needs Blocks, on_upkeep needs Upkeep, etc.)
@@ -136,7 +136,7 @@ Search for tests in `mtg-engine/tests/`. Check:
 Often implementations have been found to take shortcuts and not implement things correctly. All implementations should 'do the right thing' and implement the MTG rules exactly. There should be no kludges or simplifications.
 
 **Known anti-patterns:**
-- `move_object(id, Zone::Graveyard)` instead of `move_spell_after_resolve(id)`
+- Any self-cleanup in card code: `move_object(id, Zone::Graveyard)` OR `move_spell_after_resolve(id)` — both are the engine's job, and `test_suite_guards.rs::no_card_moves_a_spell_off_the_stack_itself` fails the build on the latter
 - `CombatDamageDealt` for non-combat damage (should be `NonCombatDamageDealt`)
 - `obj.power` instead of `state.effective_power(id, registry)`
 - `EffectScope::Global` when `GlobalOther` is needed (or vice versa)
