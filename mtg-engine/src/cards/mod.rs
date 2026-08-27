@@ -395,6 +395,16 @@ pub trait CardBehavior: Send + Sync {
     /// Not a replacement effect, despite living next to them before: it
     /// guards the printed 0/0 from state-based actions while the choice is
     /// pending, rather than changing how anything enters.
+    /// CR 614.12: "**As** [this] enters, choose ..." is a replacement effect,
+    /// not a triggered ability. The choice is made as the permanent enters,
+    /// before anyone receives priority — there is no window in which the
+    /// permanent is on the battlefield with the choice not yet made.
+    ///
+    /// A card that returns true has `on_enter_battlefield` called from the
+    /// entering path itself rather than from a trigger on the stack, and must
+    /// NOT also declare an `EntersBattlefield` triggered ability.
+    fn chooses_as_it_enters(&self) -> bool { false }
+
     fn enters_with_pending_copy_choice(&self) -> bool { false }
 
     /// Zones this card's replacement effects apply from.

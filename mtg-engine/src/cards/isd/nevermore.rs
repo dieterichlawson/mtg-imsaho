@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
@@ -24,18 +24,14 @@ impl CardBehavior for Nevermore {
             ])),
             card_types: vec![CardType::Enchantment],
             oracle_text: "As this enchantment enters, choose a nonland card name.\nSpells with the chosen name can't be cast.".into(),
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EntersBattlefield,
-                    description: "choose a nonland card name".into(),
-                target_requirement: None,
-                },
-            ],
             ..Default::default()
         }
     }
 
-    fn has_etb_handler(&self) -> bool { true }
+    /// CR 614.12: the name is chosen **as** Nevermore enters, not from a
+    /// trigger. `has_etb_handler` stays false so no `EntersBattlefield` trigger
+    /// is created for it.
+    fn chooses_as_it_enters(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);

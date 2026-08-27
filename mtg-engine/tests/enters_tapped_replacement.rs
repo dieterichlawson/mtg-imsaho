@@ -171,3 +171,37 @@ fn a_creature_that_enters_tapped_does_so_however_it_arrives() {
         "a reanimated Diregraf Ghoul still enters tapped — the replacement \
          applies to the entering event, not to being cast (CR 614.1c)");
 }
+
+/// CR 614.12: "**As** [this] enters, choose ..." is a replacement effect. The
+/// choice is made as the permanent enters — there is no moment where it is on
+/// the battlefield with the choice not yet made, and nothing goes on the stack
+/// for anyone to respond to.
+///
+/// Nevermore ("As this enchantment enters, choose a nonland card name. Spells
+/// with the chosen name can't be cast.") declared an `EntersBattlefield`
+/// triggered ability instead. It resolved onto the battlefield with no name
+/// chosen and the choice sitting on the stack — a window in which an opponent
+/// could cast the very card it was about to name, which is the entire point of
+/// the card.
+#[test]
+fn a_name_chosen_as_a_permanent_enters_is_chosen_before_anyone_has_priority() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    stock_library(&mut state, &reg, P0, 4);
+
+    let nevermore = castable_spell(&mut state, &reg, "Nevermore", P0);
+    let state = cast_onto_stack(&state, &reg, nevermore, vec![]);
+    let mut state = state;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(nevermore).unwrap().zone, Zone::Battlefield,
+        "test premise: it resolved onto the battlefield");
+    assert!(state.awaiting_action.is_some(),
+        "the name is chosen AS it enters (CR 614.12), so the choice is already \
+         pending the moment it arrives");
+
+    triggers::collect_triggers(&mut state, &reg);
+    assert!(state.stack.is_empty(),
+        "and nothing is on the stack — a replacement effect is not a triggered \
+         ability, so no priority window opens before the name exists");
+}

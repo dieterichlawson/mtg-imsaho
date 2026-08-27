@@ -778,6 +778,21 @@ impl GameState {
             }
         }
 
+        // CR 614.12: "As [this] enters, choose ..." happens as it enters, so
+        // the choice is made here rather than from a trigger on the stack.
+        // Nevermore used to declare an `EntersBattlefield` trigger, which left
+        // it on the battlefield with no name chosen while the choice sat on
+        // the stack — long enough for an opponent to cast the very card it was
+        // about to name.
+        if to == Zone::Battlefield && from != Some(Zone::Battlefield) {
+            let card_id = self.objects.get(&id).map_or(CardId(0), |o| o.card_id);
+            if registry.get(card_id).is_some_and(super::cards::CardBehavior::chooses_as_it_enters) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_enter_battlefield(self, id, &[], registry);
+                }
+            }
+        }
+
         // CR 400.7: when a permanent leaves the battlefield it becomes a new
         // object. End any until-end-of-turn effect attached to it, so a
         // same-turn return reusing this ObjectId is a clean object rather than
