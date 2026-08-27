@@ -10,6 +10,17 @@ use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope
 /// Equip {1}.
 pub struct WoodenStake;
 
+impl WoodenStake {
+    /// "destroy that creature. It can't be regenerated." — `that creature` is
+    /// the Vampire, the nearest noun, which the ruling confirms ("The Vampire
+    /// is destroyed before any combat damage is dealt").
+    fn stake(&self, state: &mut GameState, vampire: ObjectId, registry: &CardRegistry) {
+        state.log(crate::state::LogLevel::Event,
+            format!("Wooden Stake destroys {} (Vampire)", state.obj_name(vampire)));
+        crate::destruction::try_destroy_no_regen(state, vampire, registry);
+    }
+}
+
 impl CardBehavior for WoodenStake {
     fn card_data(&self) -> CardData {
         CardData {
@@ -38,7 +49,9 @@ impl CardBehavior for WoodenStake {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        // Gate on power.is_none() — see Cobbled Wings for Bug AJ explanation.
+        // CR 301.5c: an Equipment that is also a creature can't equip. The
+        // comment here used to point at Cobbled Wings for the reasoning, which
+        // no longer explains it.
         if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -76,8 +89,16 @@ impl CardBehavior for WoodenStake {
 
 
     // "Whenever equipped creature blocks or becomes blocked by a Vampire" —
-    // the Vampire condition is part of the trigger itself (CR 603.2), so it
-    // gates dispatch; the resolution handlers re-check for defense in depth.
+    // the Vampire condition is part of the trigger event (CR 603.2), so it is
+    // asked here, once, when the ability would trigger.
+    //
+    // It is deliberately NOT re-asked on resolution. CR 603.4 re-checks only an
+    // intervening-if clause ("..., if ..."), and this ability has none: once it
+    // has triggered, "destroy that creature" is unconditional. The resolution
+    // handlers used to re-test the subtype, which would have spared a creature
+    // that stopped being a Vampire in response — nothing in this pool does
+    // that, but the check was a rules error wearing a "defense in depth"
+    // comment.
     fn should_trigger_on_blocks(&self, state: &GameState, _self_id: ObjectId, blocked_attacker: ObjectId, registry: &CardRegistry) -> bool {
         state.has_subtype(blocked_attacker, "Vampire", registry)
     }
@@ -87,16 +108,10 @@ impl CardBehavior for WoodenStake {
     }
 
     fn on_blocks(&self, state: &mut GameState, _self_id: ObjectId, other_creature: ObjectId, registry: &CardRegistry) {
-        if state.has_subtype(other_creature, "Vampire", registry) {
-            state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", state.obj_name(other_creature)));
-            crate::destruction::try_destroy_no_regen(state, other_creature, registry);
-        }
+        self.stake(state, other_creature, registry);
     }
 
     fn on_becomes_blocked(&self, state: &mut GameState, _self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
-        if state.has_subtype(blocker_id, "Vampire", registry) {
-            state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", state.obj_name(blocker_id)));
-            crate::destruction::try_destroy_no_regen(state, blocker_id, registry);
-        }
+        self.stake(state, blocker_id, registry);
     }
 }

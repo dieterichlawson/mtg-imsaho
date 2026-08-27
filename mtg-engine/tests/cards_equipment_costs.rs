@@ -297,3 +297,102 @@ fn an_equipment_that_did_not_resolve_as_a_spell_still_detaches_rather_than_dying
             "{name} detaches");
     }
 }
+
+/// Ruling: "The Vampire is destroyed before any combat damage is dealt."
+///
+/// The trigger fires on blockers being declared, so it resolves during the
+/// declare blockers step — a step before combat damage. The equipped creature
+/// takes nothing from the Vampire it staked.
+#[test]
+fn wooden_stakes_vampire_dies_before_it_can_deal_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0); // 2/2
+    let stake_obj = named_permanent(&mut state, &reg, "Wooden Stake", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state = equip(&state, &reg, stake_obj, creature);
+
+    // Markov Patrician is a 3/1 Vampire — enough to kill a 2/2 Bears (3/2 with
+    // the Stake) if it ever got to deal damage.
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+
+    state.step = Step::DeclareBlockers;
+    state.active_player = P1;
+    attacks_blocked_by(&mut state, vampire, P0, &[]);
+    submit_declare_blockers(&mut state, P0, &[(creature, vampire)], &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(vampire).unwrap().zone, Zone::Graveyard);
+
+    // Now let combat damage happen. There is no Vampire left to deal any.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "the blocker survives — the Vampire was destroyed before damage");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0,
+        "and took no damage at all");
+}
+
+/// "destroy that creature. **It can't be regenerated.**" — a regeneration
+/// shield does not save the Vampire, which is why this goes through
+/// `try_destroy_no_regen` rather than `try_destroy`.
+#[test]
+fn wooden_stakes_vampire_cannot_regenerate() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let stake_obj = named_permanent(&mut state, &reg, "Wooden Stake", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state = equip(&state, &reg, stake_obj, creature);
+
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+    // The Vampire's controller has already paid for a regeneration shield.
+    state.get_object_mut(vampire).unwrap().regeneration_shields = 1;
+
+    // First establish the shield is live: an ordinary destroy is replaced by
+    // regeneration (CR 701.15), so "it died anyway" below means something.
+    {
+        let mut probe = state.clone();
+        let result = mtg_engine::destruction::try_destroy(&mut probe, vampire, &reg);
+        assert_eq!(result, mtg_engine::destruction::DestroyResult::Regenerated,
+            "the shield saves it from ordinary destruction");
+        assert_eq!(probe.get_object(vampire).unwrap().zone, Zone::Battlefield);
+    }
+
+    state.step = Step::DeclareBlockers;
+    state.active_player = P1;
+    attacks_blocked_by(&mut state, vampire, P0, &[]);
+    submit_declare_blockers(&mut state, P0, &[(creature, vampire)], &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(vampire).unwrap().zone, Zone::Graveyard,
+        "the same shield does not save it from the Stake — it can't be regenerated");
+}
+
+/// The other half of "blocks **or becomes blocked by** a Vampire": the equipped
+/// creature attacks and a Vampire blocks it.
+#[test]
+fn wooden_stake_destroys_a_vampire_that_blocks_the_equipped_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let stake_obj = named_permanent(&mut state, &reg, "Wooden Stake", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state = equip(&state, &reg, stake_obj, creature);
+
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+
+    // This time P0's equipped creature is the attacker.
+    state.step = Step::DeclareBlockers;
+    state.active_player = P0;
+    attacks_blocked_by(&mut state, creature, P1, &[]);
+    submit_declare_blockers(&mut state, P1, &[(vampire, creature)], &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(vampire).unwrap().zone, Zone::Graveyard,
+        "a Vampire that blocks the equipped creature is staked too");
+}
