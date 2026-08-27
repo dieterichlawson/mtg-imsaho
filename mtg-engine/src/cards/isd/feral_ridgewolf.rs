@@ -46,7 +46,7 @@ impl CardBehavior for FeralRidgewolf {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         state.until_end_of_turn.push(TemporaryEffect::ModifyPT {
             target: object_id,
             power_mod: 2,

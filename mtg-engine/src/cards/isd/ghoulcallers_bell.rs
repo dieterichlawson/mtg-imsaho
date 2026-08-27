@@ -40,7 +40,7 @@ impl CardBehavior for GhoulcallersBell {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let player_ids: Vec<crate::ids::PlayerId> = state.players.iter().map(|p| p.id).collect();
         for pid in player_ids {
             crate::engine::mill_cards(state, pid, 1, registry);

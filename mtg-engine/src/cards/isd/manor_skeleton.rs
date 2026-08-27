@@ -46,7 +46,7 @@ impl CardBehavior for ManorSkeleton {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.regeneration_shields += 1;
         }

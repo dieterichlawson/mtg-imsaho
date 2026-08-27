@@ -40,7 +40,7 @@ impl CardBehavior for BrainWeevil {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(target_player)) = targets.first() {
             let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()

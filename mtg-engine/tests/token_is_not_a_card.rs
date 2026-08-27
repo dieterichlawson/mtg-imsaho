@@ -199,9 +199,9 @@ fn mindshrieker_milled_creature_triggers_undead_alchemist() {
     let zombies_before = state.objects_in_zone(Zone::Battlefield, P0).iter()
         .filter(|o| o.is_token).count();
 
-    reg.get(state.get_object(shrieker).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, shrieker, 0,
-            &[mtg_engine::actions::Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, shrieker, 0,
+        &[mtg_engine::actions::Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_object(top).unwrap().zone, Zone::Exile,

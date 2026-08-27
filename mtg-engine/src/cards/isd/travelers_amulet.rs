@@ -41,7 +41,7 @@ impl CardBehavior for TravelersAmulet {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
 
         // The artifact was already sacrificed by the engine.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();

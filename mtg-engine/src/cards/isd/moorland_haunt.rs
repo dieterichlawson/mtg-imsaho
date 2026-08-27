@@ -64,50 +64,55 @@ impl CardBehavior for MoorlandHaunt {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    /// "{1}{W}, {T}, Exile a creature card from your graveyard:" — everything
+    /// before the colon is a cost, paid on activation (CR 601.2h via 602.2b).
+    /// The token it buys is the effect and waits for resolution.
+    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
-        // Exile a creature card from graveyard — player chooses which one.
+        // CR 109.1: "a creature CARD in your graveyard", so a token there is
+        // not one of them.
         let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| state.is_creature(o.id, registry) && !o.is_token)
             .map(|o| o.id)
             .collect();
 
-        if creatures_in_gy.len() == 1 {
-            let exile_id = creatures_in_gy[0];
-            let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(exile_id, Zone::Exile, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Moorland Haunt exiled {name} from graveyard"));
-            state.create_token_with_subtypes(
-                "Spirit Token", controller, 1, 1,
-                vec![Color::White], vec![CardType::Creature],
-                vec![Keyword::Flying], vec!["Spirit".into()], registry,
-            );
-            state.log(crate::state::LogLevel::Event,
-                "Moorland Haunt created a 1/1 white Spirit token with flying".into());
-        } else if creatures_in_gy.len() > 1 {
-            let targets: Vec<Target> = creatures_in_gy.iter().map(|&id| Target::Object(id)).collect();
-            crate::cards::helpers::present_target_choice(
-                state, object_id, controller, targets,
-                crate::state::PendingEffect::CardEffect { source_id: object_id, key: String::new() },
-                "Moorland Haunt: choose a creature card from your graveyard to exile",
-                false,
-            );
+        match creatures_in_gy.len() {
+            0 => {}
+            1 => {
+                exile_for_cost(state, creatures_in_gy[0], registry);
+            }
+            _ => {
+                // Which card to exile is the player's choice; `resolve_card_effect`
+                // pays it and then puts the ability on the stack.
+                let options: Vec<Target> = creatures_in_gy.iter().map(|&id| Target::Object(id)).collect();
+                crate::cards::helpers::present_target_choice(
+                    state, object_id, controller, options,
+                    crate::state::PendingEffect::CardEffect {
+                        source_id: object_id,
+                        key: String::new(),
+                    },
+                    "Moorland Haunt: choose a creature card from your graveyard to exile",
+                    false,
+                );
+            }
         }
     }
 
-    /// "...exile a creature card from your graveyard: Create a 1/1 white
-    /// Spirit creature token with flying." The token's characteristics are
-    /// this card's text, not the engine's business.
-    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+    /// The tail of the cost payment. CR 602.2b sends activation through the
+    /// casting steps, where the ability is on the stack (CR 602.2a) before
+    /// costs are paid (CR 601.2h) — so the engine has already pushed it and
+    /// this only finishes paying.
+    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        let controller = crate::cards::helpers::controller_of(state, source_id);
-        let name = state.obj_name(*id);
-        state.move_object(*id, Zone::Exile, registry);
-        state.log(crate::state::LogLevel::Event,
-            format!("Moorland Haunt exiled {name} from graveyard"));
+        exile_for_cost(state, *id, registry);
+    }
+
+    /// "Create a 1/1 white Spirit creature token with flying." The token's
+    /// characteristics are this card's text, not the engine's business.
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         state.create_token_with_subtypes(
             "Spirit Token", controller, 1, 1,
             vec![Color::White], vec![CardType::Creature],
@@ -116,4 +121,12 @@ impl CardBehavior for MoorlandHaunt {
         state.log(crate::state::LogLevel::Event,
             "Moorland Haunt created a 1/1 white Spirit token with flying".into());
     }
+}
+
+/// Exile one creature card from a graveyard to pay Moorland Haunt's cost.
+fn exile_for_cost(state: &mut GameState, id: ObjectId, registry: &CardRegistry) {
+    let name = state.obj_name(id);
+    state.move_object(id, Zone::Exile, registry);
+    state.log(crate::state::LogLevel::Event,
+        format!("Moorland Haunt exiled {name} from graveyard (cost)"));
 }

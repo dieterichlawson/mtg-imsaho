@@ -48,7 +48,7 @@ impl CardBehavior for Mindshrieker {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
             // Mill one card from target player, remembering which so the
             // mana value can be read afterwards. Routed through `mill_one` so

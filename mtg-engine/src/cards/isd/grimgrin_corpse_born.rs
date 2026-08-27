@@ -102,7 +102,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // The engine already sacrificed another creature as part of paying the cost.
         // Now untap Grimgrin and add a +1/+1 counter.
         if let Some(obj) = state.get_object_mut(object_id) {

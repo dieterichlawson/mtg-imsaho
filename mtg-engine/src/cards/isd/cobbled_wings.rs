@@ -29,7 +29,7 @@ impl CardBehavior for CobbledWings {
         // The legal_actions attached-iteration loop calls activated_abilities on every
         // attached object with the *creature's* object_id; without this filter, the
         // equip ability would be duplicated and the duplicate variant would misroute
-        // on_activate_ability to mutate the creature's attached_to field.
+        // the equip ability to mutate the creature's attached_to field.
         if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -58,7 +58,7 @@ impl CardBehavior for CobbledWings {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.attached_to = Some(*creature_id);

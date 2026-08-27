@@ -791,7 +791,7 @@ fn skeletal_grimace_grants_regenerate_ability() {
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. }));
     assert!(activate.is_some(), "Should be able to activate {{B}}: Regenerate");
 
-    state = engine::submit_action(&state, activate.unwrap(), &reg);
+    state = resolve_activated(engine::submit_action(&state, activate.unwrap(), &reg), &reg);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1,
         "Activating should add a regeneration shield");
 }
@@ -811,7 +811,7 @@ fn skeletal_grimace_regeneration_saves_from_lethal() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
     let legal = engine::legal_actions(&state, &reg);
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
+    state = resolve_activated(engine::submit_action(&state, &activate, &reg), &reg);
 
     // Verify shield is active before dealing damage.
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1,
@@ -852,7 +852,7 @@ fn skeletal_grimace_regeneration_vs_doom_blade() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
     let legal = engine::legal_actions(&state, &reg);
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
+    state = resolve_activated(engine::submit_action(&state, &activate, &reg), &reg);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1);
 
     // P1 casts Doom Blade targeting the creature.
@@ -888,7 +888,7 @@ fn skeletal_grimace_regeneration_vs_deathtouch() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
     let legal = engine::legal_actions(&state, &reg);
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
-    state = engine::submit_action(&state, &activate, &reg);
+    state = resolve_activated(engine::submit_action(&state, &activate, &reg), &reg);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1);
 
     // Simulate deathtouch damage (even 1 damage from deathtouch is lethal).

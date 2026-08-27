@@ -80,7 +80,9 @@ impl CardBehavior for BlazingTorch {
                 description: "{T}, Sacrifice Blazing Torch: Deal 2 damage to any target".into(),
                 cost: ManaCost::free(),
                 requires_tap: true,
-                sacrifice_cost: SacrificeCost::None, // Torch sacrifice handled manually in on_activate_ability.
+                // The Torch is not the object the ability is activated on, so
+                // `SacrificeCost` cannot say it; `pay_activation_cost` does.
+                sacrifice_cost: SacrificeCost::None,
                 target_requirement: Some(TargetRequirement::AnyTarget),
                 once_per_turn: false,
                 sorcery_speed_only: false,
@@ -89,7 +91,18 @@ impl CardBehavior for BlazingTorch {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    /// "{T}, Sacrifice Blazing Torch:" — the sacrifice is a cost, so it is paid
+    /// on activation (CR 601.2h via 602.2b) and an opponent responding to the
+    /// ability already sees the Torch in the graveyard.
+    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        if ability_index == 1 {
+            if let Some(torch) = attached_torch(state, object_id, registry) {
+                crate::destruction::sacrifice(state, torch, registry);
+            }
+        }
+    }
+
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if ability_index == 0 {
             // Equip: attach to target creature.
             if let Some(Target::Object(creature_id)) = targets.first() {
@@ -98,27 +111,14 @@ impl CardBehavior for BlazingTorch {
                 }
             }
         } else if ability_index == 1 {
-            // Damage ability: object_id is the creature. Find the attached Blazing Torch.
-            let torch_card_id = registry.get_id_by_name("Blazing Torch");
-            let torch_id = state.objects.values()
-                .find(|o| {
-                    o.zone == Zone::Battlefield
-                        && o.is_equipment
-                        && o.attached_to == Some(object_id)
-                        && torch_card_id.is_some_and(|tc| o.card_id == tc)
-                })
-                .map(|o| o.id);
+            // Per ruling: "The source of the damage is Blazing Torch, not the
+            // equipped creature." The Torch was sacrificed to pay the cost, so
+            // it is found by the `last_attached_to` the engine records on every
+            // zone change — last known information, CR 608.2g.
+            let damage_source = sacrificed_torch(state, object_id, registry).unwrap_or(object_id);
 
-            // Sacrifice the torch, but keep its ID for damage source attribution.
-            // Per ruling: "The source of the damage is Blazing Torch, not the equipped creature."
-            let damage_source = torch_id.unwrap_or(object_id);
-            if let Some(torch) = torch_id {
-                crate::destruction::sacrifice(state, torch, registry);
-            }
-
-            // Deal 2 damage to the target. Source is the torch, not the creature.
             if let Some(target) = targets.first() {
-            let damage_target = match target {
+                let damage_target = match target {
                     Target::Object(target_id) => DamageTarget::Object(*target_id),
                     Target::Player(player_id) => DamageTarget::Player(*player_id),
                     // CR 608.2b: a target that is no longer legal is not
@@ -130,4 +130,25 @@ impl CardBehavior for BlazingTorch {
             }
         }
     }
+}
+
+/// The Blazing Torch attached to `creature_id` on the battlefield.
+fn attached_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Option<ObjectId> {
+    let torch_card_id = registry.get_id_by_name("Blazing Torch")?;
+    state.objects.values()
+        .find(|o| o.zone == Zone::Battlefield
+            && o.is_equipment
+            && o.attached_to == Some(creature_id)
+            && o.card_id == torch_card_id)
+        .map(|o| o.id)
+}
+
+/// The Blazing Torch that was attached to `creature_id` before it was
+/// sacrificed to pay this ability's cost.
+fn sacrificed_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Option<ObjectId> {
+    let torch_card_id = registry.get_id_by_name("Blazing Torch")?;
+    state.objects.values()
+        .find(|o| o.card_id == torch_card_id
+            && o.card_state.get("last_attached_to") == Some(&creature_id))
+        .map(|o| o.id)
 }

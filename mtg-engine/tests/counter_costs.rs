@@ -81,7 +81,7 @@ fn activating_pays_the_counter_cost_then_sacrifices() {
     let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
         .find(|a| matches!(a, Action::ActivateAbility { object_id, ability_index: 1, .. } if *object_id == grimoire))
         .expect("the ability should be offered with four counters");
-    state = mtg_engine::engine::submit_action(&state, &action, &reg);
+    state = resolve_activated(mtg_engine::engine::submit_action(&state, &action, &reg), &reg);
 
     assert_eq!(state.get_object(grimoire).unwrap().zone, Zone::Graveyard,
         "the Grimoire sacrificed itself");
@@ -131,9 +131,8 @@ fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
 
     let ludevic = named_permanent(&mut state, &registry, "Ludevic's Test Subject", P0);
 
-    let ludevic_card_id = state.get_object(ludevic).unwrap().card_id;
-    let behavior = registry.get(ludevic_card_id).unwrap();
-    behavior.on_activate_ability(&mut state, ludevic, 0, &[], &registry);
+    activate_via_hooks(&mut state, &registry, ludevic, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     let obj = state.get_object(ludevic).unwrap();
     assert!(

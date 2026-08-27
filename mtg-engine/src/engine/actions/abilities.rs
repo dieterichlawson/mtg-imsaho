@@ -15,6 +15,31 @@ pub(crate) fn activate_mana_ability(state: &mut GameState, object_id: ObjectId, 
     Applied::Continue
 }
 
+/// Pay whatever cost the `ActivatedAbilityDef` could not express, then put the
+/// ability on the stack (CR 602.2a).
+///
+/// The push is the engine's, not the card's. When cards owned it — as the
+/// default body of an `on_activate_ability` hook they were free to override —
+/// 46 of the set's 53 activated abilities overrode it to do their effect
+/// instead, so the effect happened at announcement and no opponent ever got
+/// the priority CR 117.3b owes them. A card also cannot know
+/// `behavior_card_id`: an ability granted by an attached Aura or Equipment is
+/// activated on the *creature*, so the object's own card id is the wrong
+/// behavior to dispatch to on resolution.
+pub(crate) fn put_ability_on_stack(
+    state: &mut GameState,
+    object_id: ObjectId,
+    ability_index: usize,
+    behavior_card_id: crate::ids::CardId,
+    targets: &[Target],
+    registry: &CardRegistry,
+) {
+    if let Some(behavior) = registry.get(behavior_card_id) {
+        behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
+    }
+    crate::cards::push_ability(state, object_id, ability_index, behavior_card_id, targets);
+}
+
 pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], tap_plan: &[(ObjectId, usize)], sacrifice: Option<ObjectId>, source_card_id: Option<crate::ids::CardId>, registry: &CardRegistry) -> Applied {
         let player = state.priority_player.expect("ActivateAbility requires priority");
 
@@ -142,7 +167,7 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             }
 
             if has_x_cost {
-                // Defer on_activate_ability and the activation log until
+                // Defer the stack push and the activation log until
                 // funding completes — the ability's effect reads
                 // `last_activated_x_value`, which isn't set until then.
                 // See the ChooseXFunding handler for the continuation.
@@ -170,27 +195,23 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                         activator: player,
                     });
                 } else {
-                    // No mana available; force X = 0 and fire the effect.
+                    // No mana available; force X = 0.
                     state.last_activated_x_value = Some(0);
-                    if let Some(behavior) = registry.get(behavior_card_id) {
-                        behavior.on_activate_ability(&mut *state, object_id, ability_index, targets, registry);
-                    }
-                    if state.stack.last().is_some_and(|e| matches!(e, crate::state::StackEntry::Ability { .. })) {
-                        crate::stack::resolve_top_of_stack(&mut *state, registry);
-                    }
+                    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, registry);
                     let name = card_name(&state, registry, object_id);
                     state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
                 }
             } else {
-                if let Some(behavior) = registry.get(behavior_card_id) {
-                    behavior.on_activate_ability(&mut *state, object_id, ability_index, targets, registry);
-                }
-                if state.stack.last().is_some_and(|e| matches!(e, crate::state::StackEntry::Ability { .. })) {
-                    crate::stack::resolve_top_of_stack(&mut *state, registry);
-                }
+                put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, registry);
                 let name = card_name(&state, registry, object_id);
                 state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
             }
+            // CR 117.3b: taking an action means every player gets priority
+            // again before anything resolves. This used to be moot — the
+            // ability was resolved on the spot — but now it waits on the
+            // stack like any other object, and a stale pass count would
+            // resolve it without the opponent ever seeing it.
+            state.consecutive_passes = 0;
         }
     Applied::Continue
 }

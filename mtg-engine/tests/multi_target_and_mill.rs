@@ -130,8 +130,8 @@ fn cellar_door_emits_creature_card_milled() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
 
     state.events.clear();
-    let behavior = reg.get(state.get_object(door).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, door, 0, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, door, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert!(milled_creature_events(&state) > 0,
         "Cellar Door milled a creature card from the bottom of a library; \
@@ -153,8 +153,8 @@ fn heretics_punishment_emits_creature_card_milled() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 4);
 
     state.events.clear();
-    let behavior = reg.get(state.get_object(punishment).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, punishment, 0, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, punishment, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(milled_creature_events(&state), 3,
         "three creature cards went from library to graveyard, so three \

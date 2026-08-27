@@ -198,9 +198,8 @@ fn ghost_quarter_search(reg: &mtg_engine::cards::CardRegistry) -> Vec<usize> {
     // activation, and `on_activate_ability` only puts the ability on the stack.
     // The effect belongs to `resolve_top_of_stack`, so calling the activation
     // hook alone destroys nothing.
-    let behavior = reg.get(state.get_object(gq).unwrap().card_id).unwrap();
     state.move_object(gq, Zone::Graveyard, reg);
-    behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(victim)], reg);
+    activate_via_hooks(&mut state, reg, gq, 1, &[Target::Object(victim)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, reg);
 
     let options = pending_choice_options(&state);

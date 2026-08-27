@@ -62,7 +62,7 @@ impl CardBehavior for AvacynianPriest {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(target_id) = target {
                 if let Some(obj) = state.get_object_mut(*target_id) {

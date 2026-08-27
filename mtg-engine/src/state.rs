@@ -160,7 +160,7 @@ pub struct GameState {
     pub num_spells_cast_last_turn: HashMap<PlayerId, u32>,
 
     /// X value chosen for the most recently activated X-cost ability.
-    /// Set by the engine before calling `on_activate_ability`; cards read this.
+    /// Set by the engine before the ability goes on the stack; cards read this.
     #[serde(default)]
     pub last_activated_x_value: Option<u32>,
 

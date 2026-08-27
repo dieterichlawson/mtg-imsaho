@@ -133,7 +133,60 @@ pub fn activate_only_offered_ability(state: &GameState, registry: &CardRegistry)
         .collect();
     assert_eq!(offered.len(), 1,
         "expected exactly one activated ability on offer, got {offered:?}");
-    mtg_engine::engine::submit_action(state, offered[0], registry)
+    let after = mtg_engine::engine::submit_action(state, offered[0], registry);
+    resolve_activated(after, registry)
+}
+
+/// Activate the ability the engine offers for `object_id` and stop at the
+/// stack, without resolving it (CR 602.2a).
+///
+/// [`activate_offered`] is the usual helper; this one is for tests that need
+/// the window in between — respond to the ability, or make a target illegal
+/// (CR 608.2b).
+pub fn activate_onto_stack(
+    state: &GameState,
+    registry: &CardRegistry,
+    object_id: ObjectId,
+    target: Option<Target>,
+) -> GameState {
+    let legal = mtg_engine::engine::legal_actions(state, registry);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id: o, targets, .. }
+            if *o == object_id && target.as_ref().is_none_or(|t| targets.contains(t))))
+        .unwrap_or_else(|| panic!("no activated ability offered for {object_id:?} at {target:?}"));
+    mtg_engine::engine::submit_action(state, action, registry)
+}
+
+/// Activate `object_id`'s `ability_index`-th ability without going through
+/// `legal_actions` — pay whatever cost the card declares beyond its
+/// `ActivatedAbilityDef`, then put the ability on the stack (CR 602.2a).
+///
+/// This is the pair of hooks the engine drives; use it where a test needs to
+/// set up a board `legal_actions` would not offer the ability from, and
+/// [`activate`] everywhere else. Stops at the stack: the caller resolves.
+pub fn activate_via_hooks(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    object_id: ObjectId,
+    ability_index: usize,
+    targets: &[Target],
+) {
+    let Some(card_id) = state.get_object(object_id).map(|o| o.card_id) else { return };
+    if let Some(behavior) = registry.get(card_id) {
+        behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
+    }
+    mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets);
+}
+
+/// Activating an ability only puts it on the stack (CR 602.2a); it resolves
+/// when every player has passed. A test that wants the ability's *effect*
+/// wants both halves, so the activate helpers do both — a test about the
+/// response window in between activates through `submit_action` directly.
+pub fn resolve_activated(mut state: GameState, registry: &CardRegistry) -> GameState {
+    if matches!(state.stack.last(), Some(mtg_engine::state::StackEntry::Ability { .. })) {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, registry);
+    }
+    state
 }
 
 /// Activate the ability the engine offers for `object_id`, at `target` if given.
@@ -154,7 +207,8 @@ pub fn activate_offered(
         .unwrap_or_else(|| panic!(
             "no activated ability offered for {object_id:?} at {target:?}; offered {:?}",
             legal.actions.iter().filter(|a| matches!(a, Action::ActivateAbility { .. })).collect::<Vec<_>>()));
-    mtg_engine::engine::submit_action(state, action, registry)
+    let after = mtg_engine::engine::submit_action(state, action, registry);
+    resolve_activated(after, registry)
 }
 
 /// Whether the engine currently offers any activated ability of `object_id`.
@@ -247,14 +301,15 @@ pub fn activate(
     ability_index: usize,
     targets: Vec<Target>,
 ) -> GameState {
-    mtg_engine::engine::submit_action(
+    let after = mtg_engine::engine::submit_action(
         state,
         &Action::ActivateAbility {
             object_id, ability_index, targets,
             tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
         },
         registry,
-    )
+    );
+    resolve_activated(after, registry)
 }
 
 /// [`activate`], for an ability whose cost includes sacrificing `sacrifice`
@@ -267,14 +322,15 @@ pub fn activate_sacrificing(
     targets: Vec<Target>,
     sacrifice: ObjectId,
 ) -> GameState {
-    mtg_engine::engine::submit_action(
+    let after = mtg_engine::engine::submit_action(
         state,
         &Action::ActivateAbility {
             object_id, ability_index, targets,
             tap_plan: vec![], sacrifice: Some(sacrifice), x_value: None, source_card_id: None,
         },
         registry,
-    )
+    );
+    resolve_activated(after, registry)
 }
 
 /// Put `spell_id` on the stack with `targets` chosen, and stop there.
@@ -370,7 +426,11 @@ pub fn resolve_funding_max(state: &GameState, registry: &CardRegistry) -> GameSt
         response.taps.insert(g.name.clone(), g.max_contribution());
     }
     let action = Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
-    mtg_engine::engine::submit_action(state, &action, registry)
+    // Funding an X-cost *ability* is the last step of activating it, so the
+    // ability lands on the stack here (CR 602.2a). A spell's funding leaves a
+    // spell there instead, which `resolve_activated` leaves alone.
+    let after = mtg_engine::engine::submit_action(state, &action, registry);
+    resolve_activated(after, registry)
 }
 
 /// Put a named card from the registry onto the battlefield, untapped and not

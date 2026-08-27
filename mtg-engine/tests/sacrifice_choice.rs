@@ -103,7 +103,7 @@ fn hauberk_explicit_sacrifice_attaches_correctly() {
         x_value: None,
         source_card_id: None,
     };
-    let new_state = engine::submit_action(&state, &action, &reg);
+    let new_state = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
 
     // creature_a sacrificed, creature_b equipped, hauberk attached.
     assert_eq!(new_state.get_object(creature_a).unwrap().zone, Zone::Graveyard);
@@ -196,7 +196,7 @@ fn disciple_of_griselbrand_player_picks_highest_toughness_sacrifice() {
     let big_action = activates.iter().find(|a| matches!(a,
         Action::ActivateAbility { sacrifice: Some(s), .. } if *s == big)).unwrap();
     let life_before = state.get_player(P0).life;
-    let new_state = engine::submit_action(&state, big_action, &reg);
+    let new_state = resolve_activated(engine::submit_action(&state, big_action, &reg), &reg);
     let gained = new_state.get_player(P0).life - life_before;
     assert_eq!(gained, 6, "should gain 6 life (big creature's toughness)");
     assert_eq!(new_state.get_object(big).unwrap().zone, Zone::Graveyard);
@@ -221,7 +221,7 @@ fn disciple_of_griselbrand_can_sacrifice_itself() {
     assert!(self_sac_action.is_some(),
         "disciple should be allowed to sacrifice itself for the cost");
 
-    let new_state = engine::submit_action(&state, &self_sac_action.unwrap(), &reg);
+    let new_state = resolve_activated(engine::submit_action(&state, &self_sac_action.unwrap(), &reg), &reg);
     // Disciple in graveyard, gained 1 life.
     assert_eq!(new_state.get_object(disciple).unwrap().zone, Zone::Graveyard);
     assert_eq!(new_state.get_player(P0).life, 21);
@@ -251,7 +251,7 @@ fn skirsdag_cultist_explicit_sacrifice() {
         x_value: None,
         source_card_id: None,
     };
-    let new_state = engine::submit_action(&state, &action, &reg);
+    let new_state = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
     assert_eq!(new_state.get_object(target).unwrap().damage_marked, 2);
     assert_eq!(new_state.get_object(fodder).unwrap().zone, Zone::Graveyard);
     assert_eq!(new_state.get_object(cultist).unwrap().zone, Zone::Battlefield,

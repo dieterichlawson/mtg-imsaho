@@ -8,6 +8,11 @@
 //! Each test checks the effect has *not* happened, then resolves the stack
 //! entry and checks it does. On its own, "not yet" passes for an ability that
 //! is simply broken; it means something only next to "and now".
+//!
+//! Most of these drive the two hooks by hand. The last test drives the real
+//! action instead — `submit_action(ActivateAbility)` — because the engine used
+//! to resolve the ability on the spot, immediately after pushing it, so every
+//! test in this file was checking a seam the game never went through.
 
 mod common;
 use common::*;
@@ -51,8 +56,7 @@ fn back_from_the_brink_makes_its_token_on_resolution() {
     // Back from the Brink's ability names a card in the graveyard to exile, so
     // it encodes the chosen card's id in the ability index rather than using a
     // target.
-    let behavior = reg.get(state.get_object(brink).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, brink, gy_creature.0 as usize, &[], &reg);
+    activate_via_hooks(&mut state, &reg, brink, gy_creature.0 as usize, &[]);
 
     assert_eq!(
         count_tokens_named(&state, "Unbreathing Horde"), 0,
@@ -80,8 +84,7 @@ fn kessig_wolf_run_pumps_on_resolution() {
     state.last_activated_x_value = Some(3);
     let base_power = state.effective_power(target, &reg).unwrap();
 
-    let behavior = reg.get(state.get_object(wolf_run).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, wolf_run, 1, &[Target::Object(target)], &reg);
+    activate_via_hooks(&mut state, &reg, wolf_run, 1, &[Target::Object(target)]);
 
     assert_eq!(
         state.effective_power(target, &reg).unwrap(), base_power,
@@ -109,8 +112,7 @@ fn nephalia_drownyard_mills_on_resolution() {
 
     let lib_before = state.players[1].library_order.len();
 
-    let behavior = reg.get(state.get_object(drownyard).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, drownyard, 1, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, drownyard, 1, &[Target::Player(P1)]);
 
     assert_eq!(
         state.players[1].library_order.len(), lib_before,
@@ -135,8 +137,7 @@ fn tree_of_redemption_exchanges_on_resolution() {
     let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     let life_before = state.players[0].life;
 
-    let behavior = reg.get(state.get_object(tree).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, tree, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, tree, 0, &[]);
 
     assert_eq!(
         state.players[0].life, life_before,
@@ -161,8 +162,7 @@ fn full_moons_rise_shields_on_resolution() {
     let full_moon = named_permanent(&mut state, &reg, "Full Moon's Rise", P0);
     let werewolf = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
 
-    let behavior = reg.get(state.get_object(full_moon).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, full_moon, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, full_moon, 0, &[]);
 
     assert_eq!(
         state.get_object(werewolf).unwrap().regeneration_shields, 0,
@@ -188,8 +188,7 @@ fn mirror_mad_phantasm_shuffles_and_digs_itself_back_out_on_resolution() {
     let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
     stock_library(&mut state, &reg, P0, 10);
 
-    let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, phantasm, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, phantasm, 0, &[]);
 
     assert_eq!(state.players[0].library_order.len(), 10,
         "CR 602.2a: with the ability on the stack, nothing has been shuffled or \
@@ -225,8 +224,7 @@ fn mirror_mad_phantasm_source_removed_before_resolution() {
     // Opponent exiles Mirror-Mad Phantasm before the ability resolves.
     state.move_object(phantasm, Zone::Exile, &reg);
 
-    let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, phantasm, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, phantasm, 0, &[]);
 
     assert_eq!(
         state.players[0].library_order.len(), lib_before,
@@ -244,8 +242,7 @@ fn skirsdag_high_priest_makes_its_demon_on_resolution() {
 
     let (priest, _c1, _c2) = setup_skirsdag(&mut state, &reg);
 
-    let behavior = reg.get(state.get_object(priest).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, priest, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, priest, 0, &[]);
 
     assert_eq!(
         count_tokens_named(&state, "Demon"), 0,
@@ -271,8 +268,7 @@ fn skirsdag_high_priests_tap_cost_is_paid_at_activation() {
 
     let (priest, creature1, creature2) = setup_skirsdag(&mut state, &reg);
 
-    let behavior = reg.get(state.get_object(priest).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, priest, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, priest, 0, &[]);
 
     assert!(
         state.get_object(creature1).unwrap().tapped,
@@ -309,8 +305,7 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
     let creature_sick = sick_creature(&mut state, P0, 2, 2);
     state.creature_died_this_turn = true;
 
-    let behavior = reg.get(state.get_object(priest).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, priest, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, priest, 0, &[]);
 
     assert!(
         state.get_object(creature_sick).unwrap().tapped,
@@ -324,4 +319,46 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
     resolve_the_ability(&mut state, &reg);
     assert_eq!(count_tokens_named(&state, "Demon"), 1,
         "and the Demon does arrive once the ability resolves");
+}
+
+// ══════════════════════════════════════════════════════════════════
+// The real path
+// ══════════════════════════════════════════════════════════════════
+
+/// Every test above calls the two hooks itself. This one takes the action a
+/// player takes.
+///
+/// The engine's `ActivateAbility` handler used to call `on_activate_ability`
+/// and then `resolve_top_of_stack` in the same breath, so an ability was
+/// pushed and resolved without priority ever passing: CR 602.2a's stack entry
+/// existed for the length of one function call, and no opponent could respond
+/// to anything. The whole file was testing a seam the game did not use.
+#[test]
+fn activating_through_the_engine_leaves_the_ability_on_the_stack() {
+    use mtg_engine::actions::Action;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wolf = named_permanent(&mut state, &reg, "Darkthicket Wolf", P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2), (ManaType::Green, 1)]);
+    assert_eq!(state.effective_power(wolf, &reg), Some(2), "test premise: a 2/2");
+
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf))
+        .expect("the pump ability is offered");
+    let state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    assert!(matches!(state.stack.last(), Some(mtg_engine::state::StackEntry::Ability { .. })),
+        "CR 602.2a: activating puts the ability on the stack; got {:?}", state.stack);
+    assert_eq!(state.effective_power(wolf, &reg), Some(2),
+        "the +2/+2 has not happened yet — an opponent still has priority");
+    assert_eq!(state.consecutive_passes, 0,
+        "CR 117.3b: taking an action resets the pass count, or the ability \
+         resolves without the opponent ever seeing it");
+
+    let mut state = state;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.effective_power(wolf, &reg), Some(4),
+        "and it lands when the ability resolves");
 }

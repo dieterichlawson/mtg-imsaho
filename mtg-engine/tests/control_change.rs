@@ -50,8 +50,8 @@ fn olivia_steal_leaves_vampire_summoning_sick() {
     state.get_object_mut(vamp).unwrap().summoning_sick = false;
 
     // Drive Olivia's steal ability (index 1) directly.
-    let behavior = r.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, olivia, 1, &[mtg_engine::actions::Target::Object(vamp)], &r);
+    activate_via_hooks(&mut state, &r, olivia, 1, &[mtg_engine::actions::Target::Object(vamp)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &r);
 
     assert_eq!(state.get_object(vamp).unwrap().controller, P0, "steal should succeed");
     assert!(state.get_object(vamp).unwrap().summoning_sick,

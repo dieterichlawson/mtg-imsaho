@@ -235,18 +235,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.last_activated_x_value = Some(x);
                         let pending = state.pending_ability_effect.take()
                             .expect("pending_ability_effect must be set for X-cost ability funding");
-                        if let Some(behavior) = registry.get(pending.behavior_card_id) {
-                            behavior.on_activate_ability(
-                                &mut *state,
-                                pending.source_id,
-                                pending.ability_index,
-                                &pending.targets,
-                                registry,
-                            );
-                        }
-                        if state.stack.last().is_some_and(|e| matches!(e, crate::state::StackEntry::Ability { .. })) {
-                            crate::stack::resolve_top_of_stack(&mut *state, registry);
-                        }
+                        super::abilities::put_ability_on_stack(
+                            &mut *state,
+                            pending.source_id,
+                            pending.ability_index,
+                            pending.behavior_card_id,
+                            &pending.targets,
+                            registry,
+                        );
                         let name = card_name(&state, registry, pending.source_id);
                         state.log(
                             LogLevel::Event,

@@ -80,7 +80,7 @@ impl CardBehavior for SkirsdagHighPriest {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -112,16 +112,6 @@ impl CardBehavior for SkirsdagHighPriest {
             if let Some(obj) = state.get_object_mut(c2) { obj.tapped = true; }
         }
 
-        // Push ability to stack (CR 602.2a).
-        let card_id = state.get_object(object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
-        state.stack.push(crate::state::StackEntry::Ability {
-            source_id: object_id,
-            ability_index,
-            behavior_card_id: card_id,
-            targets: targets.to_vec(),
-            activator: controller,
-            x_value: state.last_activated_x_value,
-        });
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {

@@ -68,7 +68,7 @@ impl CardBehavior for SharpenedPitchfork {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.attached_to = Some(*creature_id);

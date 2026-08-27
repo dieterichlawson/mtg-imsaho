@@ -53,7 +53,7 @@ impl CardBehavior for ManorGargoyle {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // Gain flying until end of turn.
         state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
             target: object_id,

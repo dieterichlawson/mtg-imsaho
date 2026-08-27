@@ -53,7 +53,7 @@ impl CardBehavior for StensiaBloodhall {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(target) = targets.first() {
             let effect = crate::state::PendingEffect::DealDamage {
                 amount: 2,

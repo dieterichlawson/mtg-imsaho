@@ -113,7 +113,7 @@ fn silver_inlaid_dagger_equip_offered_when_only_lands_untapped() {
         panic!("expected ActivateAbility");
     }
 
-    let new_state = engine::submit_action(&state, &action, &reg);
+    let new_state = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
 
     // After submit: equipment should be attached, both forests should be tapped,
     // mana pool should be empty (mana was spent on the equip cost).
@@ -154,7 +154,7 @@ fn silver_inlaid_dagger_offered_with_floating_mana_too() {
         // Cost is already paid from the pool — tap_plan should be empty.
         assert!(tap_plan.is_empty(), "tap_plan should be empty when mana pool already has the cost");
     }
-    let new_state = engine::submit_action(&state, &action, &reg);
+    let new_state = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
     assert_eq!(new_state.get_object(dagger).unwrap().attached_to, Some(pilgrim));
     assert!(new_state.get_player(P0).mana_pool.is_empty());
 }
@@ -254,7 +254,7 @@ fn every_mana_cost_equipment_in_isd_can_be_equipped_via_autotap() {
                 "[{}] tap_plan should tap exactly {} land(s), got {}", name, equip_cost, tap_plan.len());
         }
 
-        let new_state = engine::submit_action(&state, &action, &reg);
+        let new_state = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
         assert_eq!(
             new_state.get_object(eq).unwrap().attached_to,
             Some(bears),
@@ -370,7 +370,7 @@ fn equip_can_reattach_via_autotap() {
 
     // First equip → bears_a
     let action_a = find_equip_action(&state, &reg, dagger, bears_a);
-    let state = engine::submit_action(&state, &action_a, &reg);
+    let state = resolve_activated(engine::submit_action(&state, &action_a, &reg), &reg);
     assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(bears_a));
 
     // Second equip → bears_b. This should require a fresh tap_plan (the first
@@ -384,7 +384,7 @@ fn equip_can_reattach_via_autotap() {
                 "second equip should pick from untapped lands only");
         }
     }
-    let state = engine::submit_action(&state, &action_b, &reg);
+    let state = resolve_activated(engine::submit_action(&state, &action_b, &reg), &reg);
     assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(bears_b));
     assert_ne!(state.get_object(dagger).unwrap().attached_to, Some(bears_a));
 }
@@ -410,7 +410,7 @@ fn assert_equip_ability_unique_after_attach(reg: &CardRegistry, equip_name: &str
 
     // Attach to bears_a first.
     let action_a = find_equip_action(&state, reg, eq, bears_a);
-    let state = engine::submit_action(&state, &action_a, reg);
+    let state = resolve_activated(engine::submit_action(&state, &action_a, reg), &reg);
     assert_eq!(state.get_object(eq).unwrap().attached_to, Some(bears_a));
 
     // Now look at the actions targeting bears_b. The equip ability belongs to

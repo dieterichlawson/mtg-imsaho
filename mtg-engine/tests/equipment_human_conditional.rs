@@ -42,7 +42,7 @@ fn equip(state: &GameState, reg: &CardRegistry, equipment_id: ObjectId, creature
             if *object_id == equipment_id && targets == &[Target::Object(creature_id)]))
         .cloned()
         .expect("equip action should be available");
-    engine::submit_action(&s, &action, reg)
+    resolve_activated(engine::submit_action(&s, &action, reg), &reg)
 }
 
 // ════════════════════════════════════════════════════════════════════

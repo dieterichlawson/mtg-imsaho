@@ -325,8 +325,8 @@ fn heretics_punishment_mills_then_deals_damage() {
     }
 
     let initial_life = state.get_player(P1).life;
-    let behavior = reg.get(state.get_object(hp).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, hp, 0, &[mtg_engine::actions::Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, hp, 0, &[mtg_engine::actions::Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have dealt 2 damage (MV of Kalonian Tusker).
     let new_life = state.get_player(P1).life;
@@ -359,8 +359,8 @@ fn heretics_punishment_tracks_damaged_by_on_creature() {
 
     let target_creature = ready_creature(&mut state, P1, 5, 5);
 
-    let behavior = reg.get(state.get_object(hp).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, hp, 0, &[Target::Object(target_creature)], &reg);
+    activate_via_hooks(&mut state, &reg, hp, 0, &[Target::Object(target_creature)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     let obj = state.get_object(target_creature).unwrap();
     assert_eq!(obj.damage_marked, 2, "Creature should have 2 damage marked");
@@ -386,8 +386,8 @@ fn heretics_punishment_fizzles_when_target_illegal() {
     let target_creature = ready_creature(&mut state, P1, 3, 3);
     state.move_object(target_creature, Zone::Graveyard, &reg);
 
-    let behavior = reg.get(state.get_object(hp).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, hp, 0, &[Target::Object(target_creature)], &reg);
+    activate_via_hooks(&mut state, &reg, hp, 0, &[Target::Object(target_creature)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Entire ability should fizzle: no cards milled.
     let lib_count = state.get_player(P0).library_order.len();
@@ -600,8 +600,8 @@ fn cellar_door_creates_zombie_when_milling_creature() {
     state.get_object_mut(card).unwrap().name = "Kalonian Tusker".into();
     state.get_player_mut(P1).library_order.insert(0, card);
 
-    let behavior = reg.get(state.get_object(door).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, door, 0, &[mtg_engine::actions::Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have created a Zombie token (since a creature was milled).
     assert_eq!(count_tokens_named(&state, "Zombie"), 1,
@@ -712,8 +712,8 @@ fn manor_gargoyle_loses_defender_and_gains_flying() {
         "Manor Gargoyle should start with Defender");
 
     // Activate ability.
-    let behavior = reg.get(state.get_object(gargoyle).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, gargoyle, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, gargoyle, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have lost Defender. Asked through the accessor: `obj.keywords`
     // holds only runtime grants and is empty for every registry card, so
@@ -737,8 +737,7 @@ fn tree_of_redemption_swaps_life_and_toughness() {
     let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
     // P0 starts at 20 life, Tree base toughness is 13.
 
-    let behavior = reg.get(state.get_object(tree).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, tree, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, tree, 0, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Life should now be 13 (Tree's toughness).
@@ -790,11 +789,10 @@ fn back_from_the_brink_creates_token_copy() {
     // Put a creature in graveyard.
     let dead = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
 
-    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
 
     // The ability_index encodes the creature's ObjectId.
     let ability_index = usize::try_from(dead.0).unwrap();
-    behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
+    activate_via_hooks(&mut state, &reg, enchant, ability_index, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // The creature should be exiled.
@@ -872,7 +870,7 @@ fn back_from_the_brink_uses_creature_mana_cost() {
 
     // Activate the ability — use the creature's ObjectId as the ability index.
     let ability_index = usize::try_from(lions.0).unwrap();
-    behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
+    activate_via_hooks(&mut state, &reg, enchant, ability_index, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_object(lions).unwrap().zone, Zone::Exile,
@@ -1684,16 +1682,7 @@ fn grimoire_discard_presents_choice_and_adds_study_counter() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
     // Activate ability 0 via the engine.
-    state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
-    );
+    state = activate(&state, &reg, grimoire, 0, vec![]);
 
     // Should be awaiting a discard choice.
     assert!(state.awaiting_action.is_some(), "Should be awaiting discard choice");
@@ -1729,16 +1718,7 @@ fn grimoire_single_card_in_hand_auto_discards() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
     // Activate ability 0 via the engine.
-    state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
-    );
+    state = activate(&state, &reg, grimoire, 0, vec![]);
 
     // With only one card, discard should be automatic (no choice needed).
     assert!(state.awaiting_action.is_none(), "Should not be awaiting a choice with one card");
@@ -1771,16 +1751,7 @@ fn grimoire_accumulates_three_study_counters() {
             state.get_object_mut(grimoire).unwrap().tapped = false;
         }
 
-        state = engine::submit_action(
-            &state,
-            &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-            &reg,
-        );
+        state = activate(&state, &reg, grimoire, 0, vec![]);
 
         // For the last card in hand, auto-discard happens.
         if state.awaiting_action.is_some() {
@@ -1817,16 +1788,7 @@ fn grimoire_reanimates_all_graveyard_creatures() {
     state.move_object(gy2, Zone::Graveyard, &reg);
 
     // Activate ability 1 via the engine (tap + sacrifice + remove counters).
-    state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: grimoire, ability_index: 1, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
-    );
+    state = activate(&state, &reg, grimoire, 1, vec![]);
 
     // Both creatures should be on the battlefield under P0's control.
     assert_eq!(state.get_object(gy1).unwrap().zone, Zone::Battlefield);

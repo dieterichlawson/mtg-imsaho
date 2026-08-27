@@ -25,8 +25,8 @@ fn olivia_with_a_stolen_vampire() -> (mtg_engine::state::GameState, mtg_engine::
     let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
     assert!(state.has_subtype(vampire, "Vampire", &reg), "test precondition");
 
-    reg.get(state.get_object(olivia).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, olivia, 1, &[Target::Object(vampire)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(vampire)]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert_eq!(state.get_object(vampire).unwrap().controller, P0,
         "test precondition: Olivia took the Vampire");
 
@@ -85,9 +85,10 @@ fn every_stolen_creature_goes_back_at_once() {
     let a = named_permanent(&mut state, &reg, "Markov Patrician", P1);
     let b = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
 
-    let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(a)], &reg);
-    behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(b)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(a)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(b)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert_eq!(state.control_effects.len(), 2, "two control effects in force");
 
     mtg_engine::destruction::try_destroy(&mut state, olivia, &reg);

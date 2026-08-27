@@ -104,7 +104,7 @@ impl CardBehavior for DaybreakRanger {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let is_transformed = state.get_object(object_id).is_some_and(|o| o.is_transformed);
         if let Some(Target::Object(target_id)) = targets.first() {
             if is_transformed {

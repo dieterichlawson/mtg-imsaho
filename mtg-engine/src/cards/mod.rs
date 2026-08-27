@@ -32,6 +32,32 @@ use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, CardType, Supertype, Keyword, ContinuousEffect, ManaType, Zone};
 
+/// Put an activated ability on the stack (CR 602.2a).
+///
+/// `behavior_card_id` is the card whose behavior contributes the ability, which
+/// is not always the card the ability is activated on: Skeletal Grimace grants
+/// "{B}: Regenerate this creature" to the creature it enchants, and Blazing
+/// Torch grants its damage ability to the creature it equips. The engine
+/// resolves that (native → copy-grantor → attached auras and Equipment) before
+/// pushing; a card cannot, which is why cards do not own this call.
+pub fn push_ability(
+    state: &mut GameState,
+    object_id: ObjectId,
+    ability_index: usize,
+    behavior_card_id: CardId,
+    targets: &[Target],
+) {
+    let Some(activator) = state.get_object(object_id).map(|o| o.controller) else { return };
+    state.stack.push(crate::state::StackEntry::Ability {
+        source_id: object_id,
+        ability_index,
+        behavior_card_id,
+        targets: targets.to_vec(),
+        activator,
+        x_value: state.last_activated_x_value,
+    });
+}
+
 /// Static card data — the printed card.
 ///
 /// Every field is `Default`, so a card states only what it actually has and
@@ -656,23 +682,20 @@ pub trait CardBehavior: Send + Sync {
         vec![]
     }
 
-    /// Called when a non-mana activated ability is activated (CR 602.2a).
-    /// Default pushes the ability onto the stack. Override to add card-specific
-    /// cost payment (e.g. tapping creatures) before the stack push.
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
-        let (card_id, activator) = match state.get_object(object_id) {
-            Some(o) => (o.card_id, o.controller),
-            None => return,
-        };
-        state.stack.push(crate::state::StackEntry::Ability {
-            source_id: object_id,
-            ability_index,
-            behavior_card_id: card_id,
-            targets: targets.to_vec(),
-            activator,
-            x_value: state.last_activated_x_value,
-        });
-    }
+    /// Pay a cost of this activated ability that the `ActivatedAbilityDef`
+    /// cannot express — Moorland Haunt exiling a creature card from a
+    /// graveyard, Blazing Torch sacrificing the Equipment attached to the
+    /// creature the ability was activated on.
+    ///
+    /// Mana, {T}, sacrifice and counter costs are declared on the
+    /// `ActivatedAbilityDef` and paid by the engine; this hook is only for what
+    /// that shape cannot say. Almost no card needs it.
+    ///
+    /// It is *not* where the ability's effect goes. CR 602.2a puts the ability
+    /// on the stack; the effect happens when it resolves, in
+    /// [`resolve_activated_ability`]. The engine owns the stack push either
+    /// way, so a card can no longer delete it by accident.
+    fn pay_activation_cost(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called when an activated ability resolves from the stack.
     /// Override to implement the ability's effect.

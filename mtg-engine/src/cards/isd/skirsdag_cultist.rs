@@ -45,7 +45,7 @@ impl CardBehavior for SkirsdagCultist {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         // Deal 2 damage to the chosen target.
         if let Some(target) = targets.first() {
             let damage_target = match target {

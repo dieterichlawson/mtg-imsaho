@@ -53,10 +53,11 @@ impl CardBehavior for GhostQuarter {
     }
 
     /// CR 602.2a: activating an ability puts it on the stack; the effect
-    /// happens when it resolves. Implementing it in `on_activate_ability`
-    /// overrides the trait default *whose whole job is that stack push*, so the
-    /// land was destroyed the instant the ability was activated, with nothing
-    /// for an opponent to respond to.
+    /// happens when it resolves. Its ruling is the plain statement of the
+    /// CR 608.2b half: "If the targeted land is an illegal target by the time
+    /// Ghost Quarter's ability resolves, it won't resolve and none of its
+    /// effects will happen. The land's controller won't get to search for a
+    /// basic land card." 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             let (target_controller, target_name) = match state.get_object(*target_id) {

@@ -76,7 +76,7 @@ impl CardBehavior for LudevicsTestSubject {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         // If already transformed, this ability shouldn't do anything (back face has no activated abilities).
         if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             return;

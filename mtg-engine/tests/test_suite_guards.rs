@@ -816,3 +816,94 @@ fn no_card_uses_obj_power_as_a_creature_test() {
          permanent that is a creature by type grant:\n  {}",
         offenders.join("\n  "));
 }
+
+/// An activated ability's effect belongs in `resolve_activated_ability`.
+///
+/// CR 602.2a: "the player announces their intentions ... the ability goes on
+/// the stack." The effect happens later, when it resolves. `CardBehavior` used
+/// to have an `on_activate_ability` hook whose *default body was that stack
+/// push*, so overriding it to do the effect deleted the push: 46 of the set's
+/// 53 activated abilities did, and Ghost Quarter destroyed a land the instant
+/// it was activated, Elder of Laurels counted creatures at announcement rather
+/// than at resolution, and no opponent ever got the priority CR 117.3b owes
+/// them.
+///
+/// The hook is gone. `engine::actions::abilities::put_ability_on_stack` owns
+/// the push, and cards get `pay_activation_cost` for a cost the
+/// `ActivatedAbilityDef` cannot express (Moorland Haunt exiling a creature card
+/// from a graveyard, Blazing Torch sacrificing the Equipment attached to the
+/// creature the ability was activated on — CR 601.2h). This guard keeps the
+/// name from coming back, in cards or in tests that would drive it.
+#[test]
+fn no_card_or_test_names_the_removed_activation_hook() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            if l.contains("on_activate_ability") && !l.contains("on_activate_mana_ability") {
+                offenders.push(format!("src/{rel}:{}", n + 1));
+            }
+        }
+    }
+    for path in test_files() {
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        if path.file_name().is_some_and(|f| f == "test_suite_guards.rs") {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            if l.contains("on_activate_ability") && !l.contains("on_activate_mana_ability") {
+                offenders.push(format!("{}:{}", path.display(), n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "`on_activate_ability` is gone: the engine puts an activated ability on \
+         the stack (CR 602.2a), a card's effect goes in \
+         `resolve_activated_ability`, and a cost the `ActivatedAbilityDef` \
+         cannot express goes in `pay_activation_cost`. Tests drive both halves \
+         with `common::activate_via_hooks`:\n  {}",
+        offenders.join("\n  "));
+}
+
+/// Nothing outside the engine puts an ability on the stack.
+///
+/// `push_ability` needs `behavior_card_id`, which is not always the activated
+/// object's own card: Skeletal Grimace grants "{B}: Regenerate this creature"
+/// to what it enchants, and Blazing Torch grants its damage ability to what it
+/// equips. Only `activate_ability` has done the native → copy-grantor →
+/// attached-permanent walk that resolves it, so only it may push.
+#[test]
+fn only_the_engine_puts_an_ability_on_the_stack() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if rel == "cards/mod.rs" || rel == "engine/actions/abilities.rs" {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            // Constructing one, not matching on one: `stack.push(` on the
+            // same line, or `push_ability` by name.
+            let constructs = l.contains("push_ability")
+                || (l.contains("StackEntry::Ability") && l.contains(".push("));
+            if constructs {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "putting an activated ability on the stack is \
+         `engine::actions::abilities::put_ability_on_stack`'s job — it is the \
+         only caller that knows which card's behavior contributes the \
+         ability:\n  {}",
+        offenders.join("\n  "));
+}

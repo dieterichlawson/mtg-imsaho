@@ -134,8 +134,8 @@ fn selfless_cathars_anthem_is_fixed_at_resolution() {
 
     // The engine sacrifices the Cathar before the ability's handler runs.
     state.move_object(cathar, Zone::Graveyard, &reg);
-    reg.get(state.get_object(cathar).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, cathar, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, cathar, 0, &[]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.effective_power(already_there, &reg), Some(3),
         "the creature that was already out gets +1/+1");

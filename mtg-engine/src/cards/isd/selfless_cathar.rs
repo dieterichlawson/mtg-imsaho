@@ -38,7 +38,7 @@ impl CardBehavior for SelflessCathar {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         // The creature was already sacrificed by the engine before this is called.
         // Use the controller from the object (even though it's in the graveyard now).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();

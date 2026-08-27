@@ -179,8 +179,8 @@ fn a_sacrifice_made_during_an_activation_is_seen_by_death_watchers() {
     ready_creature(&mut state, P0, 1, 1); // the creature to sacrifice
 
     add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Colorless, 1)]);
-    reg.get(state.get_object(apprentice).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, apprentice, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, apprentice, 0, &[]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     process_triggers_auto_target_opponent(&mut state, &reg);
 

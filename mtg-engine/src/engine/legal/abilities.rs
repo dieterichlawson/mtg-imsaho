@@ -46,8 +46,8 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
         for attached in state.objects.values() {
             // Only offer abilities granted by attachments the acting player
             // controls. Every granted activated ability in the set includes
-            // sacrificing the attached source as a cost (often paid manually
-            // in on_activate_ability, e.g. Blazing Torch), and a player can
+            // sacrificing the attached source as a cost (paid in
+            // `pay_activation_cost`, e.g. Blazing Torch), and a player can
             // only sacrifice permanents they control (CR 601.2g/701.13) — so
             // an opponent-controlled attachment's granted ability is
             // unpayable.

@@ -11,7 +11,7 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// Implementation: generates one activated ability per creature card in the
 /// controller's graveyard. Each ability's mana cost matches the creature's
 /// mana cost, and the `ability_index` encodes the creature's `ObjectId` so that
-/// `on_activate_ability` can identify which creature to exile.
+/// `pay_activation_cost` can identify which creature to exile.
 pub struct BackFromTheBrink;
 
 impl CardBehavior for BackFromTheBrink {
@@ -60,7 +60,7 @@ impl CardBehavior for BackFromTheBrink {
                 .without_x();
 
             // Use the creature's ObjectId as the ability_index so we can
-            // identify which creature to exile in on_activate_ability.
+            // identify which creature to exile when the cost is paid.
             let ability_index = usize::try_from(creature.id.0).unwrap_or(usize::MAX);
 
             ActivatedAbilityDef {
@@ -80,7 +80,7 @@ impl CardBehavior for BackFromTheBrink {
         }).collect()
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -97,16 +97,6 @@ impl CardBehavior for BackFromTheBrink {
         // Exile the creature card (cost — before the colon in oracle text).
         state.move_object(creature_id, Zone::Exile, _registry);
 
-        // Push ability to stack (CR 602.2a).
-        let card_id = state.get_object(object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
-        state.stack.push(crate::state::StackEntry::Ability {
-            source_id: object_id,
-            ability_index,
-            behavior_card_id: card_id,
-            targets: targets.to_vec(),
-            activator: controller,
-            x_value: state.last_activated_x_value,
-        });
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {

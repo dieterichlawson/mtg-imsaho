@@ -294,25 +294,19 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
          — the spell is not countered while one target remains (CR 608.2b)");
 }
 
-/// CR 608.2b applies to activated abilities too. The check is now in
-/// `stack.rs`'s `StackEntry::Ability` arm, which previously had none at all.
+/// CR 608.2b applies to activated abilities too, and `stack.rs`'s
+/// `StackEntry::Ability` arm had no legality check at all — an ability
+/// resolved against whatever it had targeted however the board had changed.
 ///
-/// **Ignored**: it cannot pass yet, and the reason is a larger finding recorded
-/// in `audits/ghost_quarter.md`. `engine::actions::abilities` resolves an
-/// activated ability *immediately after pushing it* —
+/// Ghost Quarter's ruling is the plain statement of it: "If the targeted land
+/// is an illegal target by the time Ghost Quarter's ability resolves, it won't
+/// resolve and none of its effects will happen. The land's controller won't get
+/// to search for a basic land card."
 ///
-/// ```ignore
-/// behavior.on_activate_ability(state, object_id, ability_index, targets, registry);
-/// if state.stack.last().is_some_and(|e| matches!(e, StackEntry::Ability { .. })) {
-///     crate::stack::resolve_top_of_stack(state, registry);
-/// }
-/// ```
-///
-/// so no activated ability in the engine ever waits for priority, and nothing
-/// can be done in response to one. Until that is fixed there is no window in
-/// which to make a target illegal.
+/// This needs a window between activation and resolution, which the engine did
+/// not have: it resolved an activated ability immediately after pushing it, so
+/// nothing could ever be done in response to one.
 #[test]
-#[ignore = "blocked on activated abilities resolving immediately instead of waiting for priority (CR 602.2a) — see audits/ghost_quarter.md"]
 fn an_activated_abilitys_targets_are_rechecked_when_it_resolves() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -324,7 +318,7 @@ fn an_activated_abilitys_targets_are_rechecked_when_it_resolves() {
         reg.get_id_by_name("Island").unwrap(), P1, Zone::Library, None, None);
     state.get_player_mut(P1).library_order.push(library_basic);
 
-    let state = activate_offered(&state, &reg, quarter, Some(Target::Object(victim)));
+    let state = activate_onto_stack(&state, &reg, quarter, Some(Target::Object(victim)));
     let mut state = state;
 
     // Between activation and resolution the land becomes untargetable.

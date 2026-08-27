@@ -1,114 +1,100 @@
-# Activated abilities never wait on the stack (CR 602.2a)
+# Activated abilities never waited on the stack (CR 602.2a)
 
-Found while auditing Ghost Quarter. This is the largest single-rule gap the
-Innistrad audit has turned up, it spans three layers, and it is recorded here
-rather than fixed because the fix is a change to the priority loop, not to any
-card.
+Found while auditing Ghost Quarter, and the largest single-rule gap the
+Innistrad audit has turned up. It spanned three layers; all three are fixed.
 
 ## The rule
 
 CR 602.2a: activating an ability puts it on the stack. It does not happen yet.
-Every player receives priority first, and the ability can be responded to,
-countered, or made to fizzle before any of its effect lands.
+Every player receives priority first (CR 117.3b), and the ability can be
+responded to, countered, or made to fizzle before any of its effect lands.
 
-`mtg-engine/tests/activated_no_stack.rs` already states this in its module doc,
-so the intended design is not in question.
+CR 602.2b sends the rest of activation through the spell-casting steps, so
+costs (CR 601.2h) are paid with the ability already on the stack.
 
-## Layer 1 — the engine resolves the ability immediately
+Ghost Quarter's ruling is the plain statement of the consequence:
 
-`mtg-engine/src/engine/actions/abilities.rs`, in both the X-cost and ordinary
-branches:
+> If the targeted land is an illegal target by the time Ghost Quarter's ability
+> resolves, it won't resolve and none of its effects will happen. The land's
+> controller won't get to search for a basic land card.
+
+## Layer 1 — the engine resolved the ability immediately
+
+`engine/actions/abilities.rs`, in both the X-cost and ordinary branches, did:
 
 ```rust
-if let Some(behavior) = registry.get(behavior_card_id) {
-    behavior.on_activate_ability(&mut *state, object_id, ability_index, targets, registry);
-}
+behavior.on_activate_ability(&mut *state, object_id, ability_index, targets, registry);
 if state.stack.last().is_some_and(|e| matches!(e, StackEntry::Ability { .. })) {
     crate::stack::resolve_top_of_stack(&mut *state, registry);
 }
 ```
 
-The push and the resolution are adjacent. No player receives priority between
-them, so **no activated ability in the engine can be responded to** — not by a
-removal spell on the source, not by a protection effect on the target, not by
-anything.
+Push and resolve in the same breath, so the stack entry existed for the length
+of one function call and no opponent could ever respond to an activated ability.
 
-Measured on Ghost Quarter through the real `submit_action` path: after
-activating its "destroy target land" ability, `state.stack.len() == 0` and the
-land is already in the graveyard.
+**Fixed** by deleting both immediate-resolve calls (and the third in
+`choices.rs`'s X-funding continuation). The priority loop in `engine.rs` already
+resolves the top of the stack when every player has passed — abilities now go
+through it exactly as spells do. `ActivateAbility` also resets
+`consecutive_passes` (CR 117.3b), which it did not need to when the resolution
+was immediate.
 
-## Layer 2 — 46 of 53 cards bypass even the push
+## Layer 2 — 46 of 53 cards deleted the push
 
-The trait's default `on_activate_ability` exists to do the stack push, and its
-doc says so ("Called when a non-mana activated ability is activated (CR 602.2a).
-Default pushes the ability onto the stack."). A card that overrides it and puts
-its *effect* there instead has opted out.
+`CardBehavior::on_activate_ability`'s *default body was the stack push*. Cards
+were told to override it "to add card-specific cost payment before the stack
+push", but 46 of the set's 53 activated abilities overrode it to do their
+**effect**, silently removing the push. So:
 
-Overriding is correct only for bespoke cost payment, and those cards implement
-`resolve_activated_ability` as well — Skirsdag High Priest and Back from the
-Brink do exactly that, and they are among the seven that are right.
+- Ghost Quarter destroyed the land the instant the ability was activated.
+- Elder of Laurels counted creatures at announcement, not at resolution —
+  against its ruling, "the number of creatures you control is counted as the
+  ability resolves."
+- Heretic's Punishment and Olivia Voldaren hand-rolled their own target-legality
+  checks inside the activation hook, because the engine's could never run.
 
-The other 46 put the effect in `on_activate_ability` and implement no
-`resolve_activated_ability`:
+**Fixed** by removing the hook entirely. `engine::actions::abilities::
+put_ability_on_stack` owns the push; effects live in
+`resolve_activated_ability`; a cost the `ActivatedAbilityDef` cannot express
+goes in the new `pay_activation_cost` hook, which only Moorland Haunt (exile a
+creature card from a graveyard) and Blazing Torch (sacrifice the Equipment
+attached to the creature the ability was activated on) need.
 
-Avacynian Priest, Blazing Torch, Bloodline Keeper, Brain Weevil, Butcher's
-Cleaver, Cellar Door, Civilized Scholar, Cobbled Wings, Darkthicket Wolf,
-Daybreak Ranger, Demonmail Hauberk, Disciple of Griselbrand, Elder of Laurels,
-Evil Twin, Feral Ridgewolf, Gavony Township, Ghoulcaller's Bell, Graveyard
-Shovel, Grimgrin Corpse-Born, Grimoire of the Dead, Heretic's Punishment,
-Inquisitor's Flail, Kessig Wolf, Lantern Spirit, Ludevic's Test Subject, Manor
-Gargoyle, Manor Skeleton, Mask of Avacyn, Mikaeus the Lunarch, Mindshrieker,
-Moorland Haunt, Olivia Voldaren, Runechanter's Pike, Selfless Cathar, Sharpened
-Pitchfork, Silver-Inlaid Dagger, Silverchase Fox, Skeletal Grimace, Skirsdag
-Cultist, Stensia Bloodhall, Stitcher's Apprentice, Traveler's Amulet,
-Trepanation Blade, Ulvenwald Mystics, Wooden Stake.
+Moving the push into the engine also fixed a bug the card-owned version could
+not avoid: `behavior_card_id` is not always the activated object's own card.
+Skeletal Grimace grants "{B}: Regenerate this creature" to what it enchants and
+Blazing Torch grants its damage ability to what it equips, so resolution has to
+dispatch to the *granting* card. Only `activate_ability` has done the
+native → copy-grantor → attached-permanent walk that resolves it.
 
-(Ghost Quarter was the 46th and has been converted to `resolve_activated_ability`
-as a worked example. It behaves identically today, because layer 1 resolves it
-at once either way — the conversion is a step toward the fix, not the fix.)
+## Layer 3 — CR 608.2b was not checked for abilities at all
 
-## Layer 3 — the tests pass without covering the real path
+`stack.rs`'s `StackEntry::Ability` arm had no target-legality check, so an
+ability resolved against whatever it had targeted however the board had changed.
 
-`activated_no_stack.rs` calls the behaviour directly:
+**Fixed**: the arm now substitutes `Target::Illegal` for a target that can no
+longer be targeted and fizzles when every target is illegal, matching what
+`resolve_spell` already did.
 
-```rust
-behavior.on_activate_ability(&mut state, wolf_run, 1, &[Target::Object(target)], &reg);
-assert_eq!(state.effective_power(target, &reg).unwrap(), base_power,
-    "CR 602.2a: ... should not apply until ability resolves from stack");
-```
+## Guards
 
-That exercises the trait default's push in isolation and never goes through
-`engine::submit_action`, so it passes while the path a player actually takes
-resolves the ability one line after pushing it. The file's assertions are about
-the right rule; they are aimed at a seam the real game does not use.
+Two build-failing scanners in `test_suite_guards.rs`:
 
-## Rulings this makes unreachable
+- `no_card_or_test_names_the_removed_activation_hook` — the name cannot come
+  back, in cards or in tests.
+- `only_the_engine_puts_an_ability_on_the_stack` — nothing outside
+  `put_ability_on_stack` constructs a `StackEntry::Ability`.
 
-Several ISD cards have rulings that only mean something if an ability can be
-responded to:
+## Tests
 
-- **Ghost Quarter** — "If the targeted land is an illegal target by the time
-  Ghost Quarter's ability resolves, it won't resolve and none of its effects
-  will happen. The land's controller won't get to search for a basic land card."
-- **Olivia Voldaren** — "If you activate Olivia Voldaren's last ability, and
-  before that ability resolves you lose control of Olivia Voldaren, the ability
-  will resolve with no effect."
-- **Heretic's Punishment** — "If the targeted permanent or player is an illegal
-  target by the time the ability resolves, the entire ability won't resolve."
-
-None of these can currently be reached.
-
-## What a fix looks like
-
-1. Stop resolving the ability in `submit_action`; let the normal priority loop
-   resolve the top of the stack, as it already does for spells.
-2. Convert the 46 cards: move the effect from `on_activate_ability` to
-   `resolve_activated_ability` and let the default push run. Mechanical for all
-   of them, since the engine pays declared costs (`requires_tap`,
-   `sacrifice_cost`) itself.
-3. Re-point `activated_no_stack.rs` at `engine::submit_action` so it covers the
-   real path, and un-ignore
-   `fizzle.rs::an_activated_abilitys_targets_are_rechecked_when_it_resolves`.
-
-Step 1 is the one with real blast radius: every test that activates an ability
-currently assumes the effect has already happened when `submit_action` returns.
+- `activated_no_stack.rs::activating_through_the_engine_leaves_the_ability_on_the_stack`
+  drives the real action (`submit_action(ActivateAbility)`) rather than the
+  hooks, and asserts the ability is on the stack, the effect has not happened,
+  and the pass count was reset. Every other test in that file drove a seam the
+  game did not go through.
+- `fizzle.rs::an_activated_abilitys_targets_are_rechecked_when_it_resolves` was
+  `#[ignore]`d on this finding — there was no window in which to make a target
+  illegal. It now runs and passes.
+- `common::activate_via_hooks` drives both halves for tests that set up a board
+  `legal_actions` would not offer the ability from; `common::activate_onto_stack`
+  stops at the stack for tests that need the window in between.

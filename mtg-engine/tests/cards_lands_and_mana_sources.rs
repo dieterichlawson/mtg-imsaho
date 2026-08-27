@@ -187,7 +187,7 @@ fn moorland_haunt_creates_spirit_token() {
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == mh));
     assert!(activate.is_some(), "Should be able to activate Moorland Haunt");
 
-    state = engine::submit_action(&state, activate.unwrap(), &reg);
+    state = resolve_activated(engine::submit_action(&state, activate.unwrap(), &reg), &reg);
 
     // Check a Spirit Token was created (Moorland Haunt creates a "Spirit Token" token).
     assert_eq!(count_tokens_named(&state, "Spirit Token"), 1, "Should create one Spirit token");
@@ -286,7 +286,7 @@ fn ghoulcallers_bell_mills_both_players() {
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == bell));
     assert!(activate.is_some(), "Should be able to activate Ghoulcaller's Bell");
 
-    state = engine::submit_action(&state, activate.unwrap(), &reg);
+    state = resolve_activated(engine::submit_action(&state, activate.unwrap(), &reg), &reg);
 
     // Both players should have had a card milled.
     assert_eq!(state.get_object(p0_card).unwrap().zone, Zone::Graveyard);
@@ -314,7 +314,7 @@ fn graveyard_shovel_exiles_and_gains_life() {
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == shovel));
     assert!(activate.is_some(), "Should be able to activate Graveyard Shovel");
 
-    state = engine::submit_action(&state, activate.unwrap(), &reg);
+    state = resolve_activated(engine::submit_action(&state, activate.unwrap(), &reg), &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile);
     assert_eq!(state.get_player(P0).life, 22, "Should gain 2 life for exiling a creature");
@@ -623,7 +623,7 @@ fn x_equals_3_gives_plus_3() {
         source_card_id: None,
     };
 
-    state = mtg_engine::engine::submit_action(&state, &action, &reg);
+    state = resolve_activated(mtg_engine::engine::submit_action(&state, &action, &reg), &reg);
     state = resolve_funding_max(&state, &reg);
 
     // Check +3/+0 effect.
@@ -664,7 +664,7 @@ fn x_equals_0_gives_trample_only() {
         source_card_id: None,
     };
 
-    state = mtg_engine::engine::submit_action(&state, &action, &reg);
+    state = resolve_activated(mtg_engine::engine::submit_action(&state, &action, &reg), &reg);
 
     // Power should remain 2 (X=0 gives +0/+0).
     let power = state.effective_power(creature, &reg).unwrap_or(0);

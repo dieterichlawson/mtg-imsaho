@@ -447,12 +447,14 @@ fn ludevics_test_subject_transforms_at_five_counters() {
 
     // Activate 4 times — should not transform yet.
     for _ in 0..4 {
-        behavior.on_activate_ability(&mut state, subject, 0, &[], &reg);
+        activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     }
     assert!(!state.get_object(subject).unwrap().is_transformed);
 
     // 5th activation — should transform.
-    behavior.on_activate_ability(&mut state, subject, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     let obj = state.get_object(subject).unwrap();
     assert!(obj.is_transformed);
     assert_eq!(obj.name, "Ludevic's Abomination");
@@ -523,8 +525,8 @@ fn bloodline_keeper_creates_vampire_token() {
 
     let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
 
-    let behavior = reg.get(state.get_object(keeper).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, keeper, 0, &[], &reg);
+    activate_via_hooks(&mut state, &reg, keeper, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have a Vampire token.
     assert_eq!(count_tokens_named(&state, "Vampire"), 1);
@@ -569,8 +571,8 @@ fn mikaeus_distributes_counters() {
     let other2 = ready_creature(&mut state, P0, 1, 1);
 
     // Use ability 1: remove a counter, give +1/+1 to each other creature.
-    let behavior = reg.get(state.get_object(mikaeus).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, mikaeus, 1, &[], &reg);
+    activate_via_hooks(&mut state, &reg, mikaeus, 1, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Mikaeus should have lost a counter.
     assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 1);
@@ -861,16 +863,7 @@ fn civilized_scholar_discard_creature_transforms() {
     let _hand_spell = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
 
     // Activate the ability — draws a card, then prompts for discard.
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
-    );
+    let new_state = activate(&state, &reg, scholar, 0, vec![]);
 
     // Should be awaiting a discard choice now.
     assert!(new_state.awaiting_action.is_some(),
@@ -907,16 +900,7 @@ fn civilized_scholar_discard_noncreature_no_transform() {
     let hand_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
 
     // Activate the ability.
-    let new_state = engine::submit_action(
-        &state,
-        &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
-tap_plan: vec![],
-sacrifice: None,
-x_value: None,
-source_card_id: None,
-},
-        &reg,
-    );
+    let new_state = activate(&state, &reg, scholar, 0, vec![]);
 
     // Should be awaiting a discard choice.
     assert!(new_state.awaiting_action.is_some());

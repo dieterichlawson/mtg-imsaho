@@ -115,8 +115,8 @@ fn moorland_haunt_offers_every_graveyard_creature_to_exile() {
         .collect();
 
     let haunt = named_permanent(&mut state, &registry, "Moorland Haunt", P0);
-    let behavior = registry.get(state.get_object(haunt).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, haunt, 1, &[], &registry);
+    activate_via_hooks(&mut state, &registry, haunt, 1, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     let (chooser, options) = pending_object_choices(&state, "Moorland Haunt");
     assert_eq!(chooser, P0, "the Haunt's controller chooses which card to exile");
@@ -283,8 +283,8 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
         .collect();
 
     let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
-    let behavior = registry.get(state.get_object(amulet).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
+    activate_via_hooks(&mut state, &registry, amulet, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     let (chooser, options) = pending_object_choices(&state, "Traveler's Amulet");
     assert_eq!(chooser, P0, "the Amulet's controller chooses");
@@ -567,7 +567,7 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
         .expect("Kessig Wolf Run ability should be available");
 
     // Activate it — the engine should present a followup ChooseXFunding prompt.
-    let new_state = engine::submit_action(&state, kessig_action, &registry);
+    let new_state = resolve_activated(engine::submit_action(&state, kessig_action, &registry), &registry);
 
     // After activation, a ChooseXFunding prompt should be pending with max_x >= 2.
     let has_x_prompt = match &new_state.awaiting_action {
@@ -630,9 +630,8 @@ fn bug_bf_travelers_amulet_shuffles_library_after_search() {
 
     // Traveler's Amulet on the battlefield. Fire activation directly.
     let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
-    let amulet_card_id = state.get_object(amulet).unwrap().card_id;
-    let behavior = registry.get(amulet_card_id).unwrap();
-    behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
+    activate_via_hooks(&mut state, &registry, amulet, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     // Forest should have moved to hand.
     assert_eq!(
@@ -941,9 +940,9 @@ fn bug_brain_weevil_incomplete_discard() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    let behavior = registry.get(state.get_object(weevil).unwrap().card_id).unwrap();
     mtg_engine::destruction::sacrifice(&mut state, weevil, &registry);
-    behavior.on_activate_ability(&mut state, weevil, 0, &[Target::Player(P1)], &registry);
+    activate_via_hooks(&mut state, &registry, weevil, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     // Resolve any pending choices (first discard)
     while state.awaiting_action.is_some() {

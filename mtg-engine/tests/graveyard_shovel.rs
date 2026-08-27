@@ -50,8 +50,8 @@ fn auto_exiles_single_card() {
     // Put one creature in P1's graveyard.
     let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
 
-    let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Creature should be exiled.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile,
@@ -72,8 +72,8 @@ fn no_life_gain_for_non_creature() {
     // Put a non-creature in P1's graveyard.
     let noncreature = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
-    let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_object(noncreature).unwrap().zone, Zone::Exile,
         "Non-creature should be exiled");
@@ -93,8 +93,8 @@ fn multiple_cards_creates_resolution_choice() {
     let _creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
     let _instant = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
-    let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have set up a resolution choice for P1 (the targeted player chooses).
     assert!(state.awaiting_action.is_some(), "Should set up a resolution choice");
@@ -119,8 +119,8 @@ fn resolution_choice_exiles_and_gains_life() {
     let instant = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
 
     // Activate ability targeting P1.
-    let behavior = reg.get(state.get_object(shovel).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, shovel, 0, &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Now resolve the choice — player chooses the creature.
     let new_state = engine::submit_action(

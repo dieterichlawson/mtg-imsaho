@@ -46,7 +46,7 @@ fn equip(
         matches!(a, Action::ActivateAbility { object_id, targets, .. }
             if *object_id == equipment_id && targets == &[Target::Object(creature_id)])
     }).expect("should be able to equip the creature");
-    engine::submit_action(state, equip_action, registry)
+    resolve_activated(engine::submit_action(state, equip_action, registry), registry)
 }
 
 // ══════════════════════════════════════════════════════════════════

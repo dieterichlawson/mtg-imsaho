@@ -159,8 +159,8 @@ fn bug_grimoire_legend_rule_not_applied() {
 
     // Simulate Grimoire's ability 1 (return all creatures as Zombies)
     let grimoire = named_permanent(&mut state, &registry, "Grimoire of the Dead", P0);
-    let behavior = registry.get(state.get_object(grimoire).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, grimoire, 1, &[], &registry);
+    activate_via_hooks(&mut state, &registry, grimoire, 1, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     // After returning, we should have two legendary Grimgrins controlled by P0.
     let grimgrins: Vec<_> = state.objects.values()

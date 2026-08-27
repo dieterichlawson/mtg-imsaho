@@ -20,8 +20,8 @@ fn olivia_ability_0_deals_damage_and_makes_vampire() {
     state.get_object_mut(target).unwrap().subtypes = vec!["Human".into()];
 
     // Activate ability 0.
-    let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, olivia, 0, &[Target::Object(target)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 0, &[Target::Object(target)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Target should have 1 damage and be a Vampire now.
     let target_obj = state.get_object(target).unwrap();
@@ -44,8 +44,8 @@ fn olivia_ability_0_cannot_target_self() {
 
     let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
 
-    let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, olivia, 0, &[Target::Object(olivia)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 0, &[Target::Object(olivia)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Olivia should have no +1/+1 counter (ability should be a no-op for self-target).
     assert_eq!(counters_of(&state, olivia, CounterType::PlusOnePlusOne), 0,
@@ -62,8 +62,8 @@ fn olivia_ability_1_steals_vampire() {
     let target = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(target).unwrap().subtypes = vec!["Vampire".into()];
 
-    let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(target)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(target)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Target should now be controlled by P0.
     assert_eq!(state.get_object(target).unwrap().controller, P0,
@@ -80,8 +80,8 @@ fn olivia_ability_1_rejects_non_vampire() {
     let target = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(target).unwrap().subtypes = vec!["Human".into()];
 
-    let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(target)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(target)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Target should still be controlled by P1 (not a Vampire).
     assert_eq!(state.get_object(target).unwrap().controller, P1,
@@ -100,10 +100,11 @@ fn olivia_stolen_creatures_return_when_olivia_leaves() {
     let target2 = ready_creature(&mut state, P1, 3, 3);
     state.get_object_mut(target2).unwrap().subtypes = vec!["Vampire".into()];
 
-    let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
     // Steal both creatures.
-    behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(target1)], &reg);
-    behavior.on_activate_ability(&mut state, olivia, 1, &[Target::Object(target2)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(target1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(target2)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_object(target1).unwrap().controller, P0);
     assert_eq!(state.get_object(target2).unwrap().controller, P0);

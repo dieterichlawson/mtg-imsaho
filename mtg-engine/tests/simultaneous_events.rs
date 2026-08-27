@@ -212,9 +212,8 @@ fn a_single_player_discard_still_applies_immediately() {
     spell_in_hand(&mut state, &reg, "Chapel Geist", P1);
     spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P1);
 
-    reg.get(state.get_object(weevil).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, weevil, 0,
-            &[Target::Player(P1)], &reg);
+    activate_via_hooks(&mut state, &reg, weevil, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
         choice: ResolvedChoice::ChosenCard(a),
