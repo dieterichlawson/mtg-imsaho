@@ -132,7 +132,7 @@ impl CardBehavior for GrimoireOfTheDead {
                 let creatures: Vec<ObjectId> = state.objects.values()
                     .filter(|o| o.zone == Zone::Graveyard && o.id != object_id)
                     .filter(|o| {
-                        o.power.is_some() || o.card_types.contains(&CardType::Creature)
+                        state.is_creature(o.id, registry)
                     })
                     .map(|o| o.id)
                     .collect();

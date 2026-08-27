@@ -25,11 +25,11 @@ impl CardBehavior for Rebuke {
         TargetRequirement::CreatureWithFilter(TargetFilter::Attacking)
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 let Some(obj) = state.get_object(*id) else { return false; };
-                if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
+                if obj.zone != Zone::Battlefield || !state.is_creature(obj.id, registry) { return false; }
                 let is_attacking = state.combat.as_ref()
                     .is_some_and(|c| c.attackers.contains_key(id));
                 is_attacking

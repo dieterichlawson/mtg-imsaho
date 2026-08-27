@@ -52,7 +52,7 @@ impl CardBehavior for AvacynianPriest {
                     .is_some_and(|o| {
                         let is_human = state.has_subtype(o.id, "Human", registry);
                         o.zone == Zone::Battlefield
-                            && o.power.is_some()
+                            && state.is_creature(o.id, registry)
                             && !is_human
                     })
             }

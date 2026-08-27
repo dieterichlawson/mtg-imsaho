@@ -29,7 +29,7 @@ impl CardBehavior for SmiteTheMonstrous {
         match target {
             Target::Object(id) => {
                 let obj = match state.get_object(*id) {
-                    Some(o) if o.zone == Zone::Battlefield && o.power.is_some() => o,
+                    Some(o) if o.zone == Zone::Battlefield && state.is_creature(o.id, registry) => o,
                     _ => return false,
                 };
                 // Use effective power (accounts for buffs/debuffs/counters).

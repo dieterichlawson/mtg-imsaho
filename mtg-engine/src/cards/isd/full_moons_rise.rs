@@ -66,7 +66,7 @@ impl CardBehavior for FullMoonsRise {
             .iter()
             // `registry.card_data` reads the front face only; `has_subtype`
             // reads the active one and unions in runtime-granted subtypes.
-            .filter(|o| o.power.is_some() && state.has_subtype(o.id, "Werewolf", registry))
+            .filter(|o| state.is_creature(o.id, registry) && state.has_subtype(o.id, "Werewolf", registry))
             .map(|o| o.id)
             .collect();
 

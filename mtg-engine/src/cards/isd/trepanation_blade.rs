@@ -40,11 +40,11 @@ impl CardBehavior for TrepanationBlade {
         }
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster)
             }
             Target::Player(_) => false,
         }
@@ -115,9 +115,9 @@ impl CardBehavior for TrepanationBlade {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && obj.power.is_none() {
+        if obj.zone == Zone::Battlefield && !state.is_creature(obj.id, registry) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "Equip {2}".into(),

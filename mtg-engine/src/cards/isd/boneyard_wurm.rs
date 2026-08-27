@@ -25,11 +25,11 @@ impl CardBehavior for BoneyardWurm {
         }
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<(i32, i32)> {
         let controller = state.get_object(object_id)?.controller;
         let creature_cards_in_gy = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| o.power.is_some())
+            .filter(|o| state.is_creature(o.id, registry))
             .count()).unwrap_or(i32::MAX);
         Some((creature_cards_in_gy, creature_cards_in_gy))
     }

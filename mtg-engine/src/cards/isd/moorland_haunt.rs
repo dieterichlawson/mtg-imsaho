@@ -31,7 +31,7 @@ impl CardBehavior for MoorlandHaunt {
         }]
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone != Zone::Battlefield || obj.tapped {
             return vec![];
@@ -42,7 +42,7 @@ impl CardBehavior for MoorlandHaunt {
         // Check if there's a creature card in the graveyard to exile.
         let has_creature_in_graveyard = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .any(|o| o.power.is_some() && !o.is_token);
+            .any(|o| state.is_creature(o.id, registry) && !o.is_token);
 
         if has_creature_in_graveyard {
             vec![ActivatedAbilityDef {
@@ -70,7 +70,7 @@ impl CardBehavior for MoorlandHaunt {
         // Exile a creature card from graveyard — player chooses which one.
         let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| o.power.is_some() && !o.is_token)
+            .filter(|o| state.is_creature(o.id, registry) && !o.is_token)
             .map(|o| o.id)
             .collect();
 

@@ -53,11 +53,11 @@ impl CardBehavior for GavonyTownship {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| o.power.is_some())
+            .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
         for cid in creatures {

@@ -60,7 +60,7 @@ impl CardBehavior for StitchersApprentice {
 
         // Then sacrifice a creature you control.
         // The controller chooses which creature to sacrifice.
-        let creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, controller);
+        let creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, controller, registry);
 
         if creatures.is_empty() {
             state.log(LogLevel::Event, "Stitcher's Apprentice: no creatures to sacrifice".into());

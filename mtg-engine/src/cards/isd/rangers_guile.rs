@@ -24,11 +24,11 @@ impl CardBehavior for RangersGuile {
         TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster)
             }
             Target::Player(_) => false,
         }

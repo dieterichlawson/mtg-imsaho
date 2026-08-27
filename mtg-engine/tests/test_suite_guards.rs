@@ -776,3 +776,43 @@ fn the_testing_guide_names_every_rule_test_file() {
          not in the guide: {missing:?}\n  \
          named but gone:  {stale:?}");
 }
+
+/// No card decides "is this a creature" by looking at `obj.power`.
+///
+/// `GameState::is_creature` is the accessor, and it is
+/// `has_card_type(Creature) || obj.power.is_some()` — card types *plus* the
+/// object-level P/T sentinel that tokens and `*/*` creatures carry. Sixty-six
+/// sites across fifty-two ISD cards inlined one half or the other, and two
+/// open-coded the whole union by hand.
+///
+/// Today the two agree everywhere the card pool can reach: verified by probe
+/// that a registry creature, a token, a creature card in hand or graveyard,
+/// and a DFC front face all set `obj.power`, and that nothing in the pool
+/// grants the Creature type to something without P/T. The one case where they
+/// diverge is exactly that — a permanent animated by an effect, which reads
+/// `power: None` and `is_creature: true`. So this guard is about the trap, not
+/// a live bug: the first animation card added to the pool would otherwise be
+/// invisible to every one of those sites at once.
+#[test]
+fn no_card_uses_obj_power_as_a_creature_test() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            if l.contains(".power.is_some()") || l.contains(".power.is_none()") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "ask `state.is_creature(id, registry)`; `obj.power` alone misses a \
+         permanent that is a creature by type grant:\n  {}",
+        offenders.join("\n  "));
+}

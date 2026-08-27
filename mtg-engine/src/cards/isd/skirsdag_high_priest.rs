@@ -26,7 +26,7 @@ impl CardBehavior for SkirsdagHighPriest {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // The {T} part of the cost — untapped, and past summoning sickness
         // unless hasty (CR 302.6) — is the engine's to check. Spelling it out
@@ -45,7 +45,7 @@ impl CardBehavior for SkirsdagHighPriest {
         // ID for a stable, deterministic ordering.
         let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
+            .filter(|o| o.id != object_id && state.is_creature(o.id, registry) && !o.tapped)
             .map(|o| o.id)
             .collect();
         candidates.sort_by_key(|id| id.0);
@@ -80,7 +80,7 @@ impl CardBehavior for SkirsdagHighPriest {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -89,7 +89,7 @@ impl CardBehavior for SkirsdagHighPriest {
         // Tap the two chosen creatures (cost payment — happens before stack push).
         let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
+            .filter(|o| o.id != object_id && state.is_creature(o.id, registry) && !o.tapped)
             .map(|o| o.id)
             .collect();
         candidates.sort_by_key(|id| id.0);

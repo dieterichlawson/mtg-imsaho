@@ -35,7 +35,7 @@ impl CardBehavior for EssenceOfTheWild {
         state: &mut GameState,
         self_id: ObjectId,
         event: &crate::replacement::ReplaceableEvent,
-        _registry: &CardRegistry,
+        registry: &CardRegistry,
     ) -> Option<crate::replacement::Replacement> {
         use crate::replacement::{ReplaceableEvent, Replacement};
         let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
@@ -44,7 +44,7 @@ impl CardBehavior for EssenceOfTheWild {
             Some(o) => (o.controller, o.card_id),
             None => return None,
         };
-        let is_creature = state.get_object(e.object).is_some_and(|o| o.power.is_some());
+        let is_creature = state.is_creature(e.object, registry);
         if e.object == self_id || !is_creature || e.controller != controller || e.copy_of.is_some() {
             return None;
         }

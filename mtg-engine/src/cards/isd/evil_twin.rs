@@ -99,14 +99,14 @@ impl CardBehavior for EvilTwin {
         }]
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         // Basic validation: target must be a creature on the battlefield.
         // The SameNameAsSource filter in matches_ability_target_filter handles
         // the name-matching restriction for the activated ability.
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                    .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
             }
             Target::Player(_) => false,
         }

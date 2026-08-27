@@ -78,11 +78,11 @@ impl CardBehavior for OliviaVoldaren {
         ]
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 let obj = state.get_object(*id);
-                obj.is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                obj.is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
             }
             Target::Player(_) => false,
         }

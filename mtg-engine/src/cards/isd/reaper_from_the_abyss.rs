@@ -61,7 +61,7 @@ impl CardBehavior for ReaperFromTheAbyss {
         let Some(obj) = state.get_object(*id) else { return false; };
         // `is_creature` is the accessor for this: card types, plus the
         // object-level P/T sentinel that tokens and `*/*` creatures carry.
-        // This used to inline half of it as `obj.power.is_none()`.
+        // This used to inline half of it as `!state.is_creature(obj.id, registry)`.
         if obj.zone != Zone::Battlefield || !state.is_creature(*id, registry) {
             return false;
         }

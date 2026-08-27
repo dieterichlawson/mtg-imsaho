@@ -142,7 +142,7 @@ pub fn present_optional_target_choice(
 #[must_use]
 pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+        .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
         .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
         .collect()
@@ -152,7 +152,7 @@ pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: Play
 #[must_use]
 pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != exclude)
+        .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.id != exclude)
         .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
         .collect()
@@ -181,7 +181,7 @@ pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId,
     let mut targets = creature_targets(state, source_id, controller, registry);
     // Add planeswalkers (which have power = None, so creature_targets misses them)
     for o in state.objects.values() {
-        if o.zone == Zone::Battlefield && o.power.is_none()
+        if o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)
             && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
             && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
         {
@@ -202,7 +202,7 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
     let mut targets = creature_targets_except(state, exclude, source_id, controller, registry);
     // Add planeswalkers (which have power = None, so creature_targets misses them)
     for o in state.objects.values() {
-        if o.zone == Zone::Battlefield && o.power.is_none() && o.id != exclude
+        if o.zone == Zone::Battlefield && !state.is_creature(o.id, registry) && o.id != exclude
             && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
             && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
         {
@@ -219,9 +219,9 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
 
 /// All creatures controlled by a specific player.
 #[must_use]
-pub fn creatures_controlled_by(state: &GameState, player: PlayerId) -> Vec<Target> {
+pub fn creatures_controlled_by(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == player)
+        .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == player)
         .map(|o| Target::Object(o.id))
         .collect()
 }

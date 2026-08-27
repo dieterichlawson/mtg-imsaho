@@ -59,7 +59,7 @@ impl HamletCaptain {
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && o.controller == controller
-                    && o.power.is_some()
+                    && state.is_creature(o.id, registry)
                     && o.id != self_id
             })
             // `registry.card_data` always returns FRONT-face data, so a

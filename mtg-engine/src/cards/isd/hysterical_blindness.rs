@@ -21,7 +21,7 @@ impl CardBehavior for HystericalBlindness {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Collect creature IDs controlled by opponents.
@@ -29,7 +29,7 @@ impl CardBehavior for HystericalBlindness {
             .filter(|obj| {
                 obj.zone == Zone::Battlefield
                     && obj.controller != controller
-                    && obj.power.is_some() // is a creature
+                    && state.is_creature(obj.id, registry) // is a creature
             })
             .map(|obj| obj.id)
             .collect();

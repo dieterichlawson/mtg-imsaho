@@ -183,7 +183,7 @@ impl CardBehavior for GarrukRelentless {
                 let creatures: Vec<Target> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
                     .filter(|o| state.has_card_type(o.id, CardType::Creature, registry)
-                        || o.power.is_some()) // creatures include tokens
+                        || state.is_creature(o.id, registry)) // creatures include tokens
                     .map(|o| Target::Object(o.id))
                     .collect();
 

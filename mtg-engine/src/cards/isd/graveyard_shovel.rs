@@ -74,7 +74,7 @@ impl CardBehavior for GraveyardShovel {
                     let is_creature = state.get_object(*card_id)
                         .is_some_and(|o| {
                             state.face_data(o.id, registry)
-                                .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                                .map_or(state.is_creature(o.id, registry), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
                         });
                     let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
                     state.move_object(*card_id, Zone::Exile, registry);

@@ -62,10 +62,10 @@ impl CardBehavior for GrimgrinCorpseBorn {
     /// `caster` is the controller of the ability (Grimgrin's controller).
     /// The defending player is whoever Grimgrin is attacking — read from
     /// combat state and fall back to the opponent of `caster`.
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         let Target::Object(id) = target else { return false; };
         let Some(obj) = state.get_object(*id) else { return false; };
-        if obj.zone != Zone::Battlefield || obj.power.is_none() {
+        if obj.zone != Zone::Battlefield || !state.is_creature(obj.id, registry) {
             return false;
         }
         // Determine the defending player: any of the caster's attackers

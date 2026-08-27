@@ -110,7 +110,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     _ => return,
                 };
 
-                let creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, target_player);
+                let creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, target_player, registry);
 
                 if creatures.is_empty() {
                     state.log(crate::state::LogLevel::Event,

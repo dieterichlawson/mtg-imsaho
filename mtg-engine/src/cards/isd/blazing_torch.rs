@@ -50,14 +50,14 @@ impl CardBehavior for BlazingTorch {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
 
         if obj.zone != Zone::Battlefield {
             return vec![];
         }
 
-        if obj.power.is_none() {
+        if !state.is_creature(obj.id, registry) {
             // Called with the equipment's own ID — return the equip ability.
             vec![ActivatedAbilityDef {
                 ability_index: 0,

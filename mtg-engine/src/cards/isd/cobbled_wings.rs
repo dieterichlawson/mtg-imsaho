@@ -23,14 +23,14 @@ impl CardBehavior for CobbledWings {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // Gate on `power.is_none()` so the equip ability is only returned when the
         // engine queries the equipment itself, not the creature it's attached to.
         // The legal_actions attached-iteration loop calls activated_abilities on every
         // attached object with the *creature's* object_id; without this filter, the
         // equip ability would be duplicated and the duplicate variant would misroute
         // on_activate_ability to mutate the creature's attached_to field.
-        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_none()) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "Equip {1}".into(),
@@ -48,10 +48,10 @@ impl CardBehavior for CobbledWings {
     }
 
     /// Equip targets only creatures you control.
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)
-                .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster),
+                .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster),
             Target::Player(_) => false,
         }
     }

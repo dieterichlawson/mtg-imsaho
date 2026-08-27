@@ -29,7 +29,7 @@ impl CardBehavior for VictimOfNight {
         match target {
             Target::Object(id) => {
                 let Some(obj) = state.get_object(*id) else { return false; };
-                if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
+                if obj.zone != Zone::Battlefield || !state.is_creature(obj.id, registry) { return false; }
                 !["Vampire", "Werewolf", "Zombie"].iter()
                     .any(|st| state.has_subtype(obj.id, st, registry))
             }

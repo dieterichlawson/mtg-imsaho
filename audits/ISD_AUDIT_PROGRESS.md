@@ -12,7 +12,41 @@ Score = lines + 40/behaviour-hook + 30/declared-trigger + 80 if double-faced.
 - **C — light** (58): one hook, or continuous effects only.
 - **D — vanilla/keyword** (62): card data and keyword completeness; step 3 skipped per the procedure.
 
-**2/249 audited.**
+**2/249 fully audited** (Civilized Scholar, Reaper from the Abyss).
+
+## Sweep results applying to all 249
+
+These are procedure steps run exhaustively across the whole set rather than
+card by card. Each card's own entry still needs steps 3, 5, 7, 8 and the
+behavioural half of step 6.
+
+**Step 6, card data — 249/249 exact, 0 discrepancies.** Mana cost, card types,
+subtypes, supertypes, power/toughness and oracle text compared verbatim against
+the Scryfall-sourced cache (`data/oracle_cache.json`). Every mismatch the first
+pass reported was a bug in the comparator, not the cards: `unicode_escape`
+mangling UTF-8 em-dashes (12 cards), and a subtype list read from a targeting
+filter instead of the `CardData` literal (1 card).
+
+**Step 9, anti-patterns — scanned all 249.** Candidates raised and resolved:
+
+| pattern | raised | real | outcome |
+|---|---|---|---|
+| intervening-if not checked at dispatch (CR 603.4) | 17 | 1 | Reaper from the Abyss — fixed |
+| `obj.power` as a creature test | 66 sites / 52 cards | 0 today | latent trap — converted to `state.is_creature`, guarded |
+| hook implemented with no matching `TriggerKind` | 8 | 0 | all declared `SelfDies`; scanner mapped the wrong kind |
+| card cleans up its own spell | 3 | 0 | all three move a *milled* card, which is what milling is |
+| `CombatDamageDealt` for non-combat damage | 1 | 0 | substring match inside `NonCombatDamageDealt` |
+| menace granted without oracle support | 1 | 0 | Terror of Kruin Pass really does say menace — errata; scanner read only the front face |
+| subtype read from face data only | 2 | 0 | both read graveyard cards, where printed subtypes are correct |
+| controller check duplicating `TriggerScope::Your` | 8 | pending | minor duplication, handled per card |
+
+The `obj.power` row is the one worth restating: it is **not** 52 broken cards.
+Probed directly — a registry creature, a token, a creature card in hand or in a
+graveyard, and a DFC front face all set `obj.power`, and nothing in the pool
+grants the Creature type to something without P/T. The two spellings agree
+everywhere the pool can reach. They diverge on exactly one case, an animated
+permanent, which is why the sites were converted and guarded rather than left.
+
 
 ## Tier A — complex (38)
 

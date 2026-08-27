@@ -34,7 +34,7 @@ impl CardBehavior for TributeToHunger {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
             .map_or(PlayerId(0), |o| o.controller);
 
@@ -45,7 +45,7 @@ impl CardBehavior for TributeToHunger {
         };
 
         // Get opponent's creatures.
-        let opp_creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, opponent);
+        let opp_creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, opponent, registry);
 
         if opp_creatures.is_empty() {
             // No creatures to sacrifice.

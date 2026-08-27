@@ -42,7 +42,7 @@ impl CardBehavior for BackFromTheBrink {
             .filter(|o| {
                 // A creature card: check the object's power (set for creature cards)
                 // or fall back to the registry card data.
-                o.power.is_some()
+                state.is_creature(o.id, registry)
                     || state.face_data(o.id, registry)
                         .is_some_and(|d| d.card_types.contains(&CardType::Creature))
             })

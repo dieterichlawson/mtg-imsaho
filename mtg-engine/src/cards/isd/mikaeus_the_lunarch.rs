@@ -85,7 +85,7 @@ impl CardBehavior for MikaeusTheLunarch {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -109,7 +109,7 @@ impl CardBehavior for MikaeusTheLunarch {
                 // Put a +1/+1 counter on each other creature you control.
                 let other_creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
-                    .filter(|o| o.id != object_id && o.power.is_some())
+                    .filter(|o| o.id != object_id && state.is_creature(o.id, registry))
                     .map(|o| o.id)
                     .collect();
                 for cid in &other_creatures {

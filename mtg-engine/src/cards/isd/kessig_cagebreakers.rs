@@ -43,7 +43,7 @@ impl CardBehavior for KessigCagebreakers {
             .iter()
             .filter(|o| {
                 state.face_data(o.id, registry)
-                    .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                    .map_or(state.is_creature(o.id, registry), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
             })
             .count();
         if creature_count == 0 {

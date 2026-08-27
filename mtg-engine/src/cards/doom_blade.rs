@@ -31,7 +31,7 @@ impl CardBehavior for DoomBlade {
                 state.get_object(*id)
                     .is_some_and(|o| {
                         o.zone == Zone::Battlefield
-                            && o.power.is_some()
+                            && state.is_creature(o.id, registry)
                             && !state.colors_of(o.id, registry).contains(&Color::Black)
                     })
             }
