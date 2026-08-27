@@ -73,9 +73,8 @@ impl CardBehavior for CloisteredYouth {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
         };
-        if state.active_player != controller {
-            return;
-        }
+        // `step_trigger_scope` already gates this to the controller's own
+        // step; re-deriving it here is duplication, not defence.
         if !is_transformed {
             // "You may transform Cloistered Youth" — present choice to the player.
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -107,9 +106,8 @@ impl CardBehavior for CloisteredYouth {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
         };
-        if state.active_player != controller {
-            return;
-        }
+        // `step_trigger_scope` already gates this to the controller's own
+        // step; re-deriving it here is duplication, not defence.
         if is_transformed {
             // Unholy Fiend: lose 1 life at end step.
             let old = state.get_player(controller).life;

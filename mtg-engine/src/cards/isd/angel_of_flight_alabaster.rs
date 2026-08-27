@@ -53,13 +53,10 @@ impl CardBehavior for AngelOfFlightAlabaster {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
-        if state.active_player != controller {
-            return;
-        }
+        // `step_trigger_scope` gates this to the controller's own step, and
+        // CR 113.7a means the ability resolves whether or not the Angel is
+        // still around — so neither the controller nor the source is needed.
+        let _ = self_id;
         // CR 603.3d: target was chosen when the trigger went on the stack.
         let Some(target) = chosen_targets.first() else { return };
         let effect = PendingEffect::ReturnToHand {

@@ -79,7 +79,7 @@ impl CardBehavior for DelverOfSecrets {
             _ => return,
         };
         // Only trigger on the front face, during controller's upkeep.
-        if is_transformed || state.active_player != controller {
+        if is_transformed {
             return;
         }
         // Look at the top card of the library.

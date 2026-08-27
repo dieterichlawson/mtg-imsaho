@@ -123,7 +123,7 @@ impl CardBehavior for MayorOfAvabruck {
             _ => return,
         };
         // Only create Wolf tokens on the back face (Howlpack Alpha) during controller's end step.
-        if !is_transformed || state.active_player != controller {
+        if !is_transformed {
             return;
         }
         state.create_token_with_subtypes(

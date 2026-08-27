@@ -43,9 +43,8 @@ impl CardBehavior for EndlessRanksOfTheDead {
             Some(o) => o.controller,
             _ => return,
         };
-        if state.active_player != controller {
-            return;
-        }
+        // `step_trigger_scope` already gates this to the controller's own
+        // step; re-deriving it here is duplication, not defence.
         // Count Zombies you control.
         let zombie_count = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()

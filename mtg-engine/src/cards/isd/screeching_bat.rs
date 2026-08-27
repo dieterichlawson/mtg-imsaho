@@ -83,9 +83,8 @@ impl CardBehavior for ScreechingBat {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        if state.active_player != controller {
-            return;
-        }
+        // `step_trigger_scope` already gates this to the controller's own
+        // step; re-deriving it here is duplication, not defence.
         // "You may pay {2}{B}{B}. If you do, transform."
         //
         // Check autotap reachability, not pool-floating. Per CR 106.4 mana

@@ -54,9 +54,8 @@ impl CardBehavior for CharmbreakerDevils {
             Some(o) => o.controller,
             None => return,
         };
-        if state.active_player != controller {
-            return;
-        }
+        // `step_trigger_scope` already gates this to the controller's own
+        // step; re-deriving it here is duplication, not defence.
         // Find instant or sorcery cards in graveyard.
         let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
