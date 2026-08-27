@@ -1,8 +1,5 @@
-use crate::actions::Target;
-use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
-use crate::ids::ObjectId;
-use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::cards::{AdditionalCost, CardBehavior, CardData};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Skaab Goliath — {5}{U} 6/9 Zombie Giant with Trample.
 /// As an additional cost to cast this spell, exile two creature cards from your graveyard. Trample.
@@ -27,8 +24,4 @@ impl CardBehavior for SkaabGoliath {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // Additional cost (exile 2 creatures from graveyard) is handled at cast time by the engine.
-        state.move_object(object_id, Zone::Battlefield, registry);
-    }
 }

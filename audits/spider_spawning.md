@@ -32,3 +32,23 @@ covered Splinterfright, which is why Splinterfright alone had the guard.
 `token_is_not_a_card.rs::a_token_in_a_graveyard_is_not_a_creature_card` —
 **added by this audit**, covers Boneyard Wurm and Splinterfright together and
 fails against the unfixed code.
+## Audit — 2026-08-27 (Tier C)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/203/spider-spawning?utm_source=api
+**Type line**: `Sorcery` — {4}{G}
+**Oracle text**:
+```
+Create a 1/2 green Spider creature token with reach for each creature card in your graveyard.
+Flashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+```
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Covered by the CR 109.1 entry above; token subtypes are set.
+
+### What else was checked
+Card data verified exact set-wide (cost, types, subtypes, supertypes, P/T,
+oracle text, keywords, flashback cost, trigger kinds) — see
+`ISD_AUDIT_PROGRESS.md`. Step 9 anti-patterns: clean.

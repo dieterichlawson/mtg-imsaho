@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**53/249 audited.**
+**83/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -59,7 +59,7 @@ inherits these; its own entry covers the rest.
 |   | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 |   | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 10/155
+## Tier B — moderate (triggered or activated abilities) — 11/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
@@ -167,7 +167,7 @@ inherits these; its own entry covers the rest.
 |   | Disciple of Griselbrand | `disciple_of_griselbrand.rs` | 66 | 2 | 0 |  |
 |   | Rage Thrower | `rage_thrower.rs` | 58 | 1 | 2 |  |
 |   | Deranged Assistant | `deranged_assistant.rs` | 60 | 2 | 0 |  |
-|   | Selfless Cathar | `selfless_cathar.rs` | 60 | 2 | 0 |  |
+| x | Selfless Cathar | `selfless_cathar.rs` | 60 | 2 | 0 |  |
 |   | Skirsdag Cultist | `skirsdag_cultist.rs` | 60 | 2 | 0 |  |
 |   | Traitorous Blood | `traitorous_blood.rs` | 60 | 2 | 0 |  |
 |   | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 54 | 1 | 2 |  |
@@ -219,48 +219,48 @@ inherits these; its own entry covers the rest.
 |   | Dream Twist | `dream_twist.rs` | 34 | 2 | 0 |  |
 |   | Geistflame | `geistflame.rs` | 32 | 2 | 0 |  |
 
-## Tier C — light (one behaviour hook) — 9/38
+## Tier C — light (one behaviour hook) — 38/38
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
-|   | Moonmist | `moonmist.rs` | 98 | 1 | 0 |  |
+| x | Moonmist | `moonmist.rs` | 98 | 1 | 0 |  |
 | x | Unbreathing Horde | `unbreathing_horde.rs` | 90 | 1 | 0 |  |
-|   | Past in Flames | `past_in_flames.rs` | 73 | 1 | 0 |  |
-|   | Mulch | `mulch.rs` | 71 | 1 | 0 |  |
-|   | Paraselene | `paraselene.rs` | 66 | 1 | 0 |  |
-|   | Blasphemous Act | `blasphemous_act.rs` | 60 | 1 | 0 |  |
-|   | Forbidden Alchemy | `forbidden_alchemy.rs` | 59 | 1 | 0 |  |
-|   | Shimmering Grotto | `shimmering_grotto.rs` | 59 | 1 | 0 |  |
+| x | Past in Flames | `past_in_flames.rs` | 73 | 1 | 0 |  |
+| x | Mulch | `mulch.rs` | 71 | 1 | 0 |  |
+| x | Paraselene | `paraselene.rs` | 66 | 1 | 0 |  |
+| x | Blasphemous Act | `blasphemous_act.rs` | 60 | 1 | 0 |  |
+| x | Forbidden Alchemy | `forbidden_alchemy.rs` | 59 | 1 | 0 |  |
+| x | Shimmering Grotto | `shimmering_grotto.rs` | 59 | 1 | 0 |  |
 | x | Dearly Departed | `dearly_departed.rs` | 58 | 1 | 0 |  |
-|   | Army of the Damned | `army_of_the_damned.rs` | 56 | 1 | 0 |  |
+| x | Army of the Damned | `army_of_the_damned.rs` | 56 | 1 | 0 |  |
 | x | Essence of the Wild | `essence_of_the_wild.rs` | 56 | 1 | 0 |  |
-|   | Make a Wish | `make_a_wish.rs` | 56 | 1 | 0 |  |
-|   | Creeping Renaissance | `creeping_renaissance.rs` | 55 | 1 | 0 |  |
+| x | Make a Wish | `make_a_wish.rs` | 56 | 1 | 0 |  |
+| x | Creeping Renaissance | `creeping_renaissance.rs` | 55 | 1 | 0 |  |
 | x | Laboratory Maniac | `laboratory_maniac.rs` | 55 | 1 | 0 |  |
-|   | Hysterical Blindness | `hysterical_blindness.rs` | 49 | 1 | 0 |  |
-|   | Vampiric Fury | `vampiric_fury.rs` | 49 | 1 | 0 |  |
+| x | Hysterical Blindness | `hysterical_blindness.rs` | 49 | 1 | 0 |  |
+| x | Vampiric Fury | `vampiric_fury.rs` | 49 | 1 | 0 |  |
 | x | Festerhide Boar | `festerhide_boar.rs` | 47 | 1 | 0 |  |
-|   | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 45 | 1 | 0 |  |
+| x | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 45 | 1 | 0 |  |
 | x | Somberwald Spider | `somberwald_spider.rs` | 44 | 1 | 0 |  |
 | x | Parallel Lives | `parallel_lives.rs` | 43 | 1 | 0 |  |
 | x | Spider Spawning | `spider_spawning.rs` | 43 | 1 | 0 |  |
-|   | Spare from Evil | `spare_from_evil.rs` | 42 | 1 | 0 |  |
-|   | Desperate Ravings | `desperate_ravings.rs` | 41 | 1 | 0 |  |
-|   | Skaab Ruinator | `skaab_ruinator.rs` | 40 | 1 | 0 |  |
-|   | Rally the Peasants | `rally_the_peasants.rs` | 39 | 1 | 0 |  |
-|   | Rolling Temblor | `rolling_temblor.rs` | 39 | 1 | 0 |  |
-|   | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 38 | 1 | 0 |  |
-|   | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 37 | 1 | 0 |  |
+| x | Spare from Evil | `spare_from_evil.rs` | 42 | 1 | 0 |  |
+| x | Desperate Ravings | `desperate_ravings.rs` | 41 | 1 | 0 |  |
+| x | Skaab Ruinator | `skaab_ruinator.rs` | 40 | 1 | 0 |  |
+| x | Rally the Peasants | `rally_the_peasants.rs` | 39 | 1 | 0 |  |
+| x | Rolling Temblor | `rolling_temblor.rs` | 39 | 1 | 0 |  |
+| x | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 38 | 1 | 0 |  |
+| x | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 37 | 1 | 0 |  |
 | x | Boneyard Wurm | `boneyard_wurm.rs` | 37 | 1 | 0 |  |
-|   | Stitched Drake | `stitched_drake.rs` | 37 | 1 | 0 |  |
-|   | Altar's Reap | `altars_reap.rs` | 36 | 1 | 0 |  |
-|   | Infernal Plunge | `infernal_plunge.rs` | 35 | 1 | 0 |  |
-|   | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 35 | 1 | 0 |  |
-|   | Skaab Goliath | `skaab_goliath.rs` | 35 | 1 | 0 |  |
-|   | Diregraf Ghoul | `diregraf_ghoul.rs` | 34 | 1 | 0 |  |
-|   | Makeshift Mauler | `makeshift_mauler.rs` | 34 | 1 | 0 |  |
-|   | Midnight Haunting | `midnight_haunting.rs` | 33 | 1 | 0 |  |
-|   | Think Twice | `think_twice.rs` | 30 | 1 | 0 |  |
+| x | Stitched Drake | `stitched_drake.rs` | 37 | 1 | 0 |  |
+| x | Altar's Reap | `altars_reap.rs` | 36 | 1 | 0 |  |
+| x | Infernal Plunge | `infernal_plunge.rs` | 35 | 1 | 0 |  |
+| x | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 35 | 1 | 0 |  |
+| x | Skaab Goliath | `skaab_goliath.rs` | 35 | 1 | 0 |  |
+| x | Diregraf Ghoul | `diregraf_ghoul.rs` | 34 | 1 | 0 |  |
+| x | Makeshift Mauler | `makeshift_mauler.rs` | 34 | 1 | 0 |  |
+| x | Midnight Haunting | `midnight_haunting.rs` | 33 | 1 | 0 |  |
+| x | Think Twice | `think_twice.rs` | 30 | 1 | 0 |  |
 
 ## Tier D — card data and static abilities only — 28/28
 

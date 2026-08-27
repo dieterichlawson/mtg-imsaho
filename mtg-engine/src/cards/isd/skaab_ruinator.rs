@@ -1,8 +1,5 @@
-use crate::actions::Target;
-use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
-use crate::ids::ObjectId;
-use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::cards::{AdditionalCost, CardBehavior, CardData};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Skaab Ruinator — {1}{U}{U} 5/6 Zombie Horror with Flying.
 /// As an additional cost to cast, exile three creature cards from your graveyard.
@@ -31,9 +28,4 @@ impl CardBehavior for SkaabRuinator {
 
     fn can_cast_from_graveyard(&self) -> bool { true }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // The exile of 3 creature cards happens at cast time (additional cost),
-        // handled by the engine. On resolve, just enter the battlefield.
-        state.move_object(object_id, Zone::Battlefield, registry);
-    }
 }

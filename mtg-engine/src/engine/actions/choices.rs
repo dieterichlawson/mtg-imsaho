@@ -123,7 +123,9 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let to_return: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, *controller)
                         .iter()
                         .map(|o| o.id)
-                        .filter(|id| state.has_card_type(*id, card_type, registry))
+                        // "Return all **cards** of the chosen type" — CR 109.1,
+                        // so a token in the graveyard is not one of them.
+                        .filter(|id| state.is_card(*id) && state.has_card_type(*id, card_type, registry))
                         .collect();
                     let count = to_return.len();
                     for id in to_return {

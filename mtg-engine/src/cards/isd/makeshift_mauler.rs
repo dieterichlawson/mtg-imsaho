@@ -1,8 +1,5 @@
-use crate::actions::Target;
-use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
-use crate::ids::ObjectId;
-use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::cards::{AdditionalCost, CardBehavior, CardData};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Makeshift Mauler — {3}{U} 4/5 Zombie.
 /// As an additional cost to cast this spell, exile a creature card from your graveyard.
@@ -26,8 +23,4 @@ impl CardBehavior for MakeshiftMauler {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // Additional cost (exile creature from graveyard) is handled at cast time by the engine.
-        state.move_object(object_id, Zone::Battlefield, registry);
-    }
 }
