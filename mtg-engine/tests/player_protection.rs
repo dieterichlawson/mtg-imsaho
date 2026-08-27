@@ -14,10 +14,10 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{ResolvedChoice, Target};
+use mtg_engine::actions::Target;
 use mtg_engine::cards::{CardBehavior, CardData, CardRegistry};
 use mtg_engine::ids::CardId;
-use mtg_engine::state::{AwaitingAction, GameState, ResolutionChoiceKind};
+use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
 /// "You have protection from red." Stands in for a Leyline of Sanctity-style
@@ -92,94 +92,79 @@ fn a_player_with_protection_cannot_be_enchanted_by_that_color() {
         "and the unprotected player is fine either way");
 }
 
-/// Bitterheart Witch offers only players the chosen Curse could legally
-/// enchant.
+/// A red Curse can't be put onto the battlefield attached to a player with
+/// protection from red (CR 303.4h), so it stays in the library.
+///
+/// This used to be tested as a *choice filter*: the player was picked after the
+/// search, so the list could be narrowed to players the found Curse could
+/// enchant. That is not the order the card plays in. "Put it onto the
+/// battlefield attached to **target player**" is targeted, so the player is
+/// chosen when the trigger goes on the stack (CR 603.3d) — before anyone knows
+/// which Curse the search will find. The legality check is the one the ruling
+/// describes, applied on resolution: "The Curse must be legally able to enchant
+/// the player. For example, if the player has protection from red, you couldn't
+/// put a red Curse onto the battlefield this way."
 #[test]
-fn bitterheart_witch_does_not_offer_a_protected_player() {
+fn bitterheart_witch_cannot_attach_a_red_curse_to_a_player_protected_from_red() {
     let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     give_ward(&mut state, ward, P1);
-    curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
+    let curse = curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
 
     let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
     mtg_engine::destruction::try_destroy(&mut state, witch, &reg);
 
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &[], &reg);
-    // "You may search" — yes.
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
     behavior.on_yes_no_choice(&mut state, witch, true, &reg);
 
-    let options = match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, .. }) => options.clone(),
-        other => panic!("expected a player choice, got {other:?}"),
-    };
-    assert!(options.contains(&Target::Player(P0)),
-        "the Witch's controller is still a legal choice; got {options:?}");
-    assert!(!options.contains(&Target::Player(P1)),
-        "a player with protection from red can't be enchanted by a red Curse, \
-         so they are not a legal choice; got {options:?}");
+    assert_eq!(state.get_object(curse).unwrap().zone, Zone::Library,
+        "a red Curse can't enchant a player with protection from red, so it \
+         never enters the battlefield (CR 303.4h)");
+    assert_eq!(state.get_object(curse).unwrap().attached_to_player, None);
 }
 
-/// A black Curse is unaffected by protection from red — the filter is per
-/// Curse, not per player.
+/// A black Curse is unaffected by protection from red — the check is per Curse,
+/// not per player.
 #[test]
-fn bitterheart_witch_still_offers_the_player_for_a_curse_of_another_color() {
+fn bitterheart_witch_attaches_a_curse_of_another_color_to_the_same_player() {
     let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     give_ward(&mut state, ward, P1);
-    curse_in_library(&mut state, &reg, "Curse of Death's Hold", P0);
+    let curse = curse_in_library(&mut state, &reg, "Curse of Death's Hold", P0);
 
     let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
     mtg_engine::destruction::try_destroy(&mut state, witch, &reg);
 
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &[], &reg);
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
     behavior.on_yes_no_choice(&mut state, witch, true, &reg);
 
-    let options = match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, .. }) => options.clone(),
-        other => panic!("expected a player choice, got {other:?}"),
-    };
-    assert!(options.contains(&Target::Player(P1)),
-        "protection from red says nothing about a black Curse; got {options:?}");
+    assert_eq!(state.get_object(curse).unwrap().zone, Zone::Battlefield,
+        "protection from red says nothing about a black Curse");
+    assert_eq!(state.get_object(curse).unwrap().attached_to_player, Some(P1));
 }
 
-/// CR 303.4h: even if the choice were somehow made, the Curse does not enter
-/// the battlefield attached to a player it can't enchant.
+/// CR 303.4h is checked when the Curse would enter, not when the player was
+/// targeted: the ward can arrive in between.
 #[test]
 fn a_curse_does_not_enter_attached_to_a_player_it_cannot_enchant() {
     let (reg, ward) = registry_with_ward();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let ward_id = give_ward(&mut state, ward, P1);
     let curse = curse_in_library(&mut state, &reg, "Curse of the Pierced Heart", P0);
 
     let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
     mtg_engine::destruction::try_destroy(&mut state, witch, &reg);
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
 
-    // Choose the Curse, then answer the player choice with the protected
-    // player — the state the re-check exists for (the ward could have arrived
-    // after the choice was offered).
-    state.move_object(ward_id, Zone::Graveyard, &reg);
-    behavior.on_dies(&mut state, witch, &[], &reg);
+    // P1 is targeted while unprotected...
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
+    // ...and the ward arrives before the trigger resolves.
+    give_ward(&mut state, ward, P1);
     behavior.on_yes_no_choice(&mut state, witch, true, &reg);
-    let options = match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, .. }) => options.clone(),
-        other => panic!("expected a player choice, got {other:?}"),
-    };
-    assert!(options.contains(&Target::Player(P1)),
-        "with the ward gone P1 is offered; got {options:?}");
-
-    // The ward comes back before the choice is answered.
-    state.move_object(ward_id, Zone::Battlefield, &reg);
-    state = mtg_engine::engine::submit_action(&state, &mtg_engine::actions::Action::ResolveChoice {
-        choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))),
-    }, &reg);
 
     assert_eq!(state.get_object(curse).unwrap().zone, Zone::Library,
-        "the Curse can't legally enchant P1, so it never enters the battlefield");
+        "the Curse can't legally enchant P1 by the time it would enter, so it \
+         never enters the battlefield");
     assert_eq!(state.get_object(curse).unwrap().attached_to_player, None);
 }

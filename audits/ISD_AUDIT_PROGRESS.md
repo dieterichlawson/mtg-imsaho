@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**172/249 audited.**
+**187/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -59,22 +59,22 @@ inherits these; its own entry covers the rest.
 | x | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 | x | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 78/155
+## Tier B — moderate (triggered or activated abilities) — 93/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
 | x | Charmbreaker Devils | `charmbreaker_devils.rs` | 119 | 4 | 3 |  |
-|   | Bitterheart Witch | `bitterheart_witch.rs` | 176 | 3 | 2 |  |
+| x | Bitterheart Witch | `bitterheart_witch.rs` | 176 | 3 | 2 | targeted trigger declared untargeted (CR 603.3d) — fixed |
 | x | Grimoire of the Dead | `grimoire_of_the_dead.rs` | 176 | 4 | 0 |  |
 |   | Fiend Hunter | `fiend_hunter.rs` | 92 | 4 | 3 |  |
-|   | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 110 | 4 | 2 |  |
+| x | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 110 | 4 | 2 | hand-written life change bypassed the damage pipeline — fixed |
 | x | Olivia Voldaren | `olivia_voldaren.rs` | 151 | 3 | 2 |  |
 | x | Graveyard Shovel | `graveyard_shovel.rs` | 132 | 4 | 0 | counted tokens as cards (CR 109.1) — fixed |
 | x | Blazing Torch | `blazing_torch.rs` | 129 | 4 | 0 | sacrifice is a cost — `pay_activation_cost` |
 |   | Moorland Haunt | `moorland_haunt.rs` | 120 | 4 | 0 |  |
-|   | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 67 | 4 | 2 |  |
+| x | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 67 | 4 | 2 |  |
 |   | Morkrut Banshee | `morkrut_banshee.rs` | 67 | 4 | 2 |  |
-|   | Claustrophobia | `claustrophobia.rs` | 57 | 4 | 2 |  |
+| x | Claustrophobia | `claustrophobia.rs` | 57 | 4 | 2 |  |
 |   | Mentor of the Meek | `mentor_of_the_meek.rs` | 102 | 3 | 2 |  |
 |   | Skirsdag High Priest | `skirsdag_high_priest.rs` | 148 | 3 | 0 |  |
 | x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 89 | 3 | 2 |  |
@@ -100,7 +100,7 @@ inherits these; its own entry covers the rest.
 |   | Witchbane Orb | `witchbane_orb.rs` | 61 | 3 | 2 |  |
 |   | Skeletal Grimace | `skeletal_grimace.rs` | 65 | 4 | 0 |  |
 |   | Geist-Honored Monk | `geist_honored_monk.rs` | 57 | 3 | 2 |  |
-|   | Curse of Stalked Prey | `curse_of_stalked_prey.rs` | 56 | 3 | 2 |  |
+| x | Curse of Stalked Prey | `curse_of_stalked_prey.rs` | 56 | 3 | 2 |  |
 |   | Divine Reckoning | `divine_reckoning.rs` | 147 | 2 | 0 |  |
 | x | Falkenrath Noble | `falkenrath_noble.rs` | 72 | 2 | 3 |  |
 | x | Selhoff Occultist | `selhoff_occultist.rs` | 71 | 2 | 3 |  |
@@ -181,7 +181,7 @@ inherits these; its own entry covers the rest.
 |   | Kessig Wolf | `kessig_wolf.rs` | 55 | 2 | 0 |  |
 |   | Manor Skeleton | `manor_skeleton.rs` | 55 | 2 | 0 |  |
 |   | Silverchase Fox | `silverchase_fox.rs` | 54 | 2 | 0 |  |
-|   | Bonds of Faith | `bonds_of_faith.rs` | 52 | 2 | 0 |  |
+| x | Bonds of Faith | `bonds_of_faith.rs` | 52 | 2 | 0 |  |
 | x | Devil's Play | `devils_play.rs` | 52 | 2 | 0 |  |
 |   | Lantern Spirit | `lantern_spirit.rs` | 52 | 2 | 0 |  |
 |   | Spidery Grasp | `spidery_grasp.rs` | 52 | 2 | 0 |  |
@@ -201,20 +201,20 @@ inherits these; its own entry covers the rest.
 |   | Corpse Lunge | `corpse_lunge.rs` | 45 | 2 | 0 |  |
 | x | Doomed Traveler | `doomed_traveler.rs` | 40 | 1 | 2 |  |
 | x | Stromkirk Patrol | `stromkirk_patrol.rs` | 40 | 1 | 2 |  |
-|   | Curse of Death's Hold | `curse_of_deaths_hold.rs` | 44 | 2 | 0 |  |
-|   | Curse of the Nightly Hunt | `curse_of_the_nightly_hunt.rs` | 41 | 2 | 0 |  |
+| x | Curse of Death's Hold | `curse_of_deaths_hold.rs` | 44 | 2 | 0 |  |
+| x | Curse of the Nightly Hunt | `curse_of_the_nightly_hunt.rs` | 41 | 2 | 0 |  |
 |   | Feeling of Dread | `feeling_of_dread.rs` | 41 | 2 | 0 |  |
 |   | Nightbird's Clutches | `nightbirds_clutches.rs` | 40 | 2 | 0 |  |
 |   | Unburial Rites | `unburial_rites.rs` | 40 | 2 | 0 |  |
 |   | Purify the Grave | `purify_the_grave.rs` | 39 | 2 | 0 |  |
-|   | Travel Preparations | `travel_preparations.rs` | 39 | 2 | 0 |  |
-|   | Ghostly Possession | `ghostly_possession.rs` | 38 | 2 | 0 |  |
-|   | Spectral Flight | `spectral_flight.rs` | 37 | 2 | 0 |  |
-|   | Furor of the Bitten | `furor_of_the_bitten.rs` | 36 | 2 | 0 |  |
+| x | Travel Preparations | `travel_preparations.rs` | 39 | 2 | 0 |  |
+| x | Ghostly Possession | `ghostly_possession.rs` | 38 | 2 | 0 |  |
+| x | Spectral Flight | `spectral_flight.rs` | 37 | 2 | 0 |  |
+| x | Furor of the Bitten | `furor_of_the_bitten.rs` | 36 | 2 | 0 |  |
 |   | Silent Departure | `silent_departure.rs` | 36 | 2 | 0 |  |
-|   | Dead Weight | `dead_weight.rs` | 35 | 2 | 0 |  |
-|   | Gruesome Deformity | `gruesome_deformity.rs` | 35 | 2 | 0 |  |
-|   | Sensory Deprivation | `sensory_deprivation.rs` | 35 | 2 | 0 |  |
+| x | Dead Weight | `dead_weight.rs` | 35 | 2 | 0 |  |
+| x | Gruesome Deformity | `gruesome_deformity.rs` | 35 | 2 | 0 |  |
+| x | Sensory Deprivation | `sensory_deprivation.rs` | 35 | 2 | 0 |  |
 |   | Brimstone Volley | `brimstone_volley.rs` | 34 | 2 | 0 |  |
 |   | Dream Twist | `dream_twist.rs` | 34 | 2 | 0 |  |
 |   | Geistflame | `geistflame.rs` | 32 | 2 | 0 |  |

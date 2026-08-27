@@ -190,25 +190,17 @@ fn bitterheart_witch_finds_curse_on_death() {
     state.get_object_mut(curse_obj).unwrap().name = "Curse of the Pierced Heart".into();
     state.get_player_mut(P0).library_order.push(curse_obj);
 
-    // Trigger death — should present a YesNo choice ("you may").
+    // CR 603.3d: "attached to target player" is targeted, so the player was
+    // chosen when the trigger went on the stack — before the search.
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &[], &reg);
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
     assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
 
-    // Player chooses yes to search.
+    // Player chooses yes to search. One Curse in the library, so there is
+    // nothing left to choose and it attaches straight away.
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Should now be awaiting a player target choice.
-    assert!(state.awaiting_action.is_some(), "Should be awaiting player target choice");
-
-    // Choose opponent (P1) as the target player.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))) },
         &reg,
     );
 
@@ -231,19 +223,13 @@ fn bitterheart_witch_can_attach_curse_to_self() {
     state.get_object_mut(curse_obj).unwrap().name = "Curse of the Pierced Heart".into();
     state.get_player_mut(P0).library_order.push(curse_obj);
 
-    // Trigger death and accept search.
+    // Targeting yourself is legal — the card says "target player", not
+    // "target opponent".
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &[], &reg);
+    behavior.on_dies(&mut state, witch, &[Target::Player(P0)], &reg);
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
-        &reg,
-    );
-
-    // Choose self (P0) as the target player.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P0))) },
         &reg,
     );
 
@@ -268,7 +254,7 @@ fn bitterheart_witch_decline_search() {
 
     // Trigger death.
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &[], &reg);
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
     assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
 
     // Player declines to search.
@@ -2227,4 +2213,39 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
          only the 2 other Zombies in the graveyard and adds 2 counters. \
          Got: {counters}",
     );
+}
+
+/// "…put it onto the battlefield attached to **target player**" is a targeted
+/// triggered ability, so the player is chosen as the trigger goes on the stack
+/// (CR 603.3d) — not part-way through its resolution.
+///
+/// It used to be asked for at resolution, after the search: the trigger was
+/// declared `target_requirement: None` and the card built its own player list.
+/// An opponent responding to the trigger could not know whom it would hit, and
+/// CR 608.2b never re-checked the choice. It also meant hexproof had to be
+/// filtered by hand in the card rather than once, in the engine, for everything
+/// that targets a player.
+#[test]
+fn bitterheart_witch_targets_its_player_when_the_trigger_goes_on_the_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
+    let data = reg.card_data(state.get_object(witch).unwrap().card_id).unwrap();
+    let trigger = data.triggered_abilities.first().expect("the death trigger");
+    assert!(trigger.target_requirement.is_some(),
+        "the trigger must declare its target so the engine chooses it at \
+         CR 603.3d time; got {:?}", trigger.target_requirement);
+
+    // With no target handed to it, the trigger does nothing rather than
+    // inventing one mid-resolution.
+    let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
+    let curse = state.create_object(curse_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(curse).unwrap().name = "Curse of the Pierced Heart".into();
+    state.get_player_mut(P0).library_order.push(curse);
+
+    let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, witch, &[], &reg);
+    assert!(state.awaiting_action.is_none(),
+        "no target, no ability — it must not fall back to asking at resolution");
 }

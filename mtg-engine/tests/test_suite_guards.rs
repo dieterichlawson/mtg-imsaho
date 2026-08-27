@@ -533,6 +533,18 @@ fn only_the_damage_pipeline_marks_damage() {
             if writes {
                 offenders.push(format!("{rel}:{}: {l}", n + 1));
             }
+            // The same rule for a player's life. `damage_marked` only catches
+            // damage to a creature; Curse of the Pierced Heart wrote a life
+            // total by hand and pushed its own NonCombatDamageDealt beside it,
+            // so the common case of the card skipped the pipeline entirely.
+            // Life *loss* and life *gain* are not damage and are fine; a
+            // hand-written life change next to a damage event is not.
+            let damage_by_hand = window(&text[..test_mod], n, 8)
+                .contains("NonCombatDamageDealt")
+                && (l.contains(".life = ") || l.contains(".life -=") || l.contains(".life +="));
+            if damage_by_hand {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
         }
     }
     assert!(offenders.is_empty(),
@@ -999,4 +1011,9 @@ fn no_dfc_restates_its_back_faces_power_and_toughness() {
          `back_face_data` already declares and `effective_power` already \
          reads. Delete the override:\n  {}",
         offenders.join("\n  "));
+}
+
+/// The `n`th line of `text` plus the `k` lines around it, joined.
+fn window(text: &str, n: usize, k: usize) -> String {
+    text.lines().skip(n.saturating_sub(k)).take(2 * k).collect::<Vec<_>>().join(" ")
 }

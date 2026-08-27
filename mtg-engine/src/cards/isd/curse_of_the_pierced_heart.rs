@@ -73,23 +73,27 @@ impl CardBehavior for CurseOfThePiercedHeart {
             .map(Target::Object)
             .collect();
 
-        if planeswalkers.is_empty() {
-            // No planeswalkers — deal damage directly to the player.
-            let old = state.get_player(cursed_player).life;
-            let new_life = old - 1;
-            state.get_player_mut(cursed_player).life = new_life;
-            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                source: self_id,
-                target: crate::events::DamageTarget::Player(cursed_player),
-                amount: 1,
-            });
-            state.events.push(crate::events::GameEvent::LifeChanged { player: cursed_player, old, new_life });
-            state.log(crate::state::LogLevel::Event,
-                format!("Curse of the Pierced Heart dealt 1 damage to p{}", cursed_player.0));
+        // "…deals 1 damage to that player **or** a planeswalker that player
+        // controls." One effect either way; only the number of options differs.
+        //
+        // The no-planeswalker branch used to write the life total by hand —
+        // `state.get_player_mut(cursed_player).life = new_life` plus its own
+        // NonCombatDamageDealt and LifeChanged events — so the ordinary case,
+        // the one that happens every game, skipped `damage::deal_damage` and
+        // everything it applies: protection, prevention, damage multipliers,
+        // and the lifelink and damage watchers that key on the pipeline.
+        let effect = PendingEffect::DealDamage {
+            amount: 1,
+            source_id: self_id,
+            source_name: "Curse of the Pierced Heart".into(),
+        };
+        let mut options = vec![Target::Player(cursed_player)];
+        options.extend(planeswalkers);
+
+        if options.len() == 1 {
+            crate::engine::apply_pending_effect(state, &options[0], &effect, registry);
         } else {
-            // Planeswalkers present — Curse controller chooses target.
-            let mut options = vec![Target::Player(cursed_player)];
-            options.extend(planeswalkers);
+            // The *Curse's* controller chooses, not the cursed player.
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: controller,
                 source: self_id,
@@ -97,11 +101,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
                     description: "Curse of the Pierced Heart: deal 1 damage to player or a planeswalker they control".into(),
                     options,
                     optional: false,
-                    effect: PendingEffect::DealDamage {
-                        amount: 1,
-                        source_id: self_id,
-                        source_name: "Curse of the Pierced Heart".into(),
-                    },
+                    effect,
                 },
             });
         }
