@@ -644,10 +644,7 @@ fn garruk_back_face_creates_deathtouch_wolf() {
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     set_loyalty(&mut state, garruk, 2);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
+    helpers::apply_transform(&mut state, garruk, &reg);
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
@@ -668,10 +665,7 @@ fn garruk_back_face_sacrifice_to_tutor() {
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     set_loyalty(&mut state, garruk, 3);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
+    helpers::apply_transform(&mut state, garruk, &reg);
 
     // Put a creature on the battlefield to sacrifice.
     let sac_target = ready_creature(&mut state, P0, 1, 1);
@@ -706,10 +700,7 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     set_loyalty(&mut state, garruk, 4);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
+    helpers::apply_transform(&mut state, garruk, &reg);
 
     // Two creatures to choose from.
     let creature1 = ready_creature(&mut state, P0, 1, 1);
@@ -753,10 +744,7 @@ fn garruk_back_face_tutor_shuffles_library() {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
         set_loyalty(&mut state, garruk, 4);
-        if let Some(obj) = state.get_object_mut(garruk) {
-            obj.is_transformed = true;
-            obj.name = "Garruk, the Veil-Cursed".into();
-        }
+        helpers::apply_transform(&mut state, garruk, &reg);
 
         let sac_target = ready_creature(&mut state, P0, 1, 1);
         state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
@@ -800,10 +788,7 @@ fn garruk_back_face_overrun() {
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     set_loyalty(&mut state, garruk, 4);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
+    helpers::apply_transform(&mut state, garruk, &reg);
 
     // Put 2 creature cards in graveyard.
     for _ in 0..2 {
@@ -839,10 +824,7 @@ fn garruk_back_face_loyalty_abilities_shown_when_transformed() {
 
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
     set_loyalty(&mut state, garruk, 3);
-    if let Some(obj) = state.get_object_mut(garruk) {
-        obj.is_transformed = true;
-        obj.name = "Garruk, the Veil-Cursed".into();
-    }
+    helpers::apply_transform(&mut state, garruk, &reg);
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     let abilities = behavior.loyalty_abilities(&state, garruk);
@@ -1073,43 +1055,83 @@ fn back_face_homicidal_brute_has_end_step_trigger() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Homicidal Brute's end step trigger is "if it didn't attack this turn, tap it
-/// and transform it back". CR 711.5: transforming does NOT make a new object,
-/// so a permanent that attacked as Civilized Scholar and then transformed HAS
-/// attacked this turn, and stays transformed.
+/// Ruling: "If Civilized Scholar attacks, and later in the turn (but before the
+/// beginning of your end step), it transforms, Homicidal Brute's last ability
+/// won't trigger. This is because the creature attacked that turn, even if it
+/// had its other face up at the time."
 ///
-/// (An audit ticket claimed the opposite — that the Brute is a new entity and
-/// the attack marker is stale. It isn't; the marker is stamped with the turn it
-/// happened on, which is what distinguishes it from one left over from an
-/// earlier turn.)
+/// CR 712.8: transforming does not make a new object, so the attack follows the
+/// permanent across the flip. Attacks are declared through the engine here
+/// rather than by poking a marker, because the point of the test is that the
+/// engine records the attack at all.
 #[test]
 fn an_attack_before_transforming_still_counts_for_the_back_face() {
     let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::EndStep, P0);
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
     state.active_player = P0;
 
-    // Place Civilized Scholar, already transformed to Homicidal Brute
-    let turn = state.turn_number;
-    let brute = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
-    if let Some(obj) = state.get_object_mut(brute) {
-        obj.is_transformed = true;
-        obj.name = "Homicidal Brute".into();
-        // It attacked earlier THIS turn, as Civilized Scholar. The marker is
-        // stamped with the turn it happened on — a bare "has attacked" marker
-        // could never be told apart from one left over from a previous turn.
-        obj.card_state.insert("attacked_on_turn".into(),
-            mtg_engine::ids::ObjectId(u64::from(turn)));
-    }
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    state.get_object_mut(scholar).unwrap().summoning_sick = false;
 
-    // Fire end step trigger — Brute should tap and transform back because
-    // IT (Homicidal Brute) didn't attack this turn. The attack marker is from
-    // before the transform (when it was Scholar).
-    let behavior = registry.get(state.get_object(brute).unwrap().card_id).unwrap();
-    behavior.on_end_step(&mut state, brute, &[], &registry);
+    // It attacks with its front face up.
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &registry);
+    assert!(state.attacked_this_turn(scholar),
+        "declaring it as an attacker is what makes it have attacked");
 
-    let is_still_transformed = state.get_object(brute).unwrap().is_transformed;
-    assert!(is_still_transformed,
-        "Homicidal Brute should stay transformed — the permanent attacked this turn (as Scholar)");
+    // Then transforms, later in the same turn.
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.get_object(scholar).unwrap().name, "Homicidal Brute");
+    assert!(state.attacked_this_turn(scholar),
+        "CR 712.8: the flip does not make a new object, so the attack still counts");
+
+    // End step: the Brute's ability does not trigger, so it stays flipped.
+    state.step = Step::EndStep;
+    let behavior = registry.get(state.get_object(scholar).unwrap().card_id).unwrap();
+    behavior.on_end_step(&mut state, scholar, &[], &registry);
+    assert!(state.get_object(scholar).unwrap().is_transformed,
+        "it attacked this turn, so it does not transform back");
+}
+
+/// Civilized Scholar has exactly one ability: the activated draw-and-discard.
+/// It used to declare an `Attacks` triggered ability on each face whose only
+/// job was to record that it had attacked — and triggers go on the stack, so
+/// attacking put a visible, respondable ability on the stack that the card does
+/// not have. The attack is a fact the engine records now.
+#[test]
+fn civilized_scholar_attacking_puts_nothing_on_the_stack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    state.active_player = P0;
+
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    state.get_object_mut(scholar).unwrap().summoning_sick = false;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &registry);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+
+    assert!(state.stack.is_empty(),
+        "Civilized Scholar has no attack trigger; nothing belongs on the stack");
+    assert!(state.attacked_this_turn(scholar),
+        "and the attack is recorded regardless");
+}
+
+/// A creature that leaves the battlefield and comes back is a new object
+/// (CR 400.7) — it has not attacked, even in the same turn.
+#[test]
+fn returning_to_the_battlefield_clears_the_attack(){
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    state.active_player = P0;
+
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    state.get_object_mut(scholar).unwrap().summoning_sick = false;
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &registry);
+    assert!(state.attacked_this_turn(scholar));
+
+    state.move_object(scholar, Zone::Graveyard, &registry);
+    state.move_object(scholar, Zone::Battlefield, &registry);
+    assert!(!state.attacked_this_turn(scholar),
+        "what came back has not attacked");
 }
 
 /// CR 603.4: "At the beginning of your end step, **if** this creature didn't
@@ -1129,8 +1151,7 @@ fn homicidal_brute_that_attacked_this_turn_puts_no_trigger_on_the_stack() {
     let brute = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
     helpers::apply_transform(&mut state, brute, &registry);
     let turn = state.turn_number;
-    state.get_object_mut(brute).unwrap().card_state
-        .insert("attacked_on_turn".into(), mtg_engine::ids::ObjectId(u64::from(turn)));
+    state.get_object_mut(brute).unwrap().attacked_on_turn = Some(turn);
 
     state.events.push(GameEvent::StepStarted { step: Step::EndStep });
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
@@ -1217,4 +1238,29 @@ fn every_transformed_dfc_is_its_back_faces_printed_size() {
     }
     assert!(checked >= 15,
         "only {checked} double-faced creatures checked — the sweep stopped covering the set");
+}
+
+/// A transformed Garruk is named Garruk, the Veil-Cursed, and his oracle text is
+/// the back face's. `state.name_of` is the authoritative accessor — `obj.name`
+/// is a display cache, per the doc comment on `name_of` itself — so a DFC that
+/// does not declare its back face reports the front face's name and rules text
+/// forever, whatever a hand-written `obj.name` says. That reaches the legend
+/// rule (CR 704.5j) and anything matching on names.
+#[test]
+fn a_transformed_garruk_reports_his_back_face() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    assert_eq!(state.name_of(garruk, &reg), "Garruk Relentless");
+
+    helpers::apply_transform(&mut state, garruk, &reg);
+
+    assert_eq!(state.name_of(garruk, &reg), "Garruk, the Veil-Cursed",
+        "the active face names him");
+    let text = state.face_data(garruk, &reg).unwrap().oracle_text;
+    assert!(text.contains("deathtouch"),
+        "the active face carries the back face's rules text, got: {text}");
+    assert!(!text.contains("two or fewer loyalty counters"),
+        "and not the front face's, got: {text}");
 }

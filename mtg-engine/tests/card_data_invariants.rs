@@ -388,3 +388,68 @@ fn a_triggers_declared_kind_matches_what_its_text_watches() {
     assert_covers(matched, 25, "have text naming one of these trigger events");
     assert_none(&offenders, "declare a trigger kind that does not match their text");
 }
+
+/// Every card that has a back face declares it.
+///
+/// `data/oracle_cache.json` is the independent source here — it is fetched from
+/// Scryfall, not written alongside the card — so this is a real cross-check
+/// rather than a restatement.
+///
+/// A card that skips `back_face_data()` and models its second face by branching
+/// on `is_transformed` still *behaves* like the back face, which is why this is
+/// easy to miss: what breaks is every characteristics read. `face_data` falls
+/// through to the front face, so `name_of` gives the front face's name and the
+/// oracle text stays the front face's — reaching the legend rule (CR 704.5j),
+/// the log, and anything matching on names. Garruk Relentless was written that
+/// way, with the back face's name hand-written into `obj.name` on transform,
+/// which covered the displays that read the cache and nothing that read the
+/// card.
+#[test]
+fn every_card_with_a_back_face_declares_it() {
+    let raw = std::fs::read_to_string("../data/oracle_cache.json")
+        .expect("oracle cache is checked in at data/oracle_cache.json");
+
+    // Cards are keyed at four-space indent; a back face is a six-space
+    // `"back_face": {` whose first entry is that face's name.
+    let mut expected: Vec<(String, String)> = Vec::new();
+    let mut current: Option<String> = None;
+    let mut lines = raw.lines().peekable();
+    while let Some(line) = lines.next() {
+        if let Some(rest) = line.strip_prefix("    \"") {
+            if let Some(end) = rest.find("\": {") {
+                current = Some(rest[..end].to_string());
+            }
+        }
+        if line.trim_start().starts_with("\"back_face\": {") {
+            if let (Some(front), Some(name_line)) = (current.clone(), lines.peek()) {
+                let t = name_line.trim();
+                if let Some(rest) = t.strip_prefix("\"name\": \"") {
+                    if let Some(end) = rest.find('"') {
+                        expected.push((front, rest[..end].to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for (front, back_name) in &expected {
+        let Some(behavior) = reg.get_id_by_name(front).and_then(|id| reg.get(id)) else {
+            continue; // not implemented in this pool
+        };
+        checked += 1;
+        match behavior.back_face_data() {
+            None => offenders.push(format!(
+                "{front}: Scryfall gives it a back face ({back_name}) but the card \
+                 declares no back_face_data()")),
+            Some(back) if back.name != *back_name => offenders.push(format!(
+                "{front}: declares back face {:?}, Scryfall says {back_name:?}", back.name)),
+            Some(_) => {}
+        }
+    }
+
+    assert_covers(checked, 15, "have a back face in the oracle cache");
+    assert_none(&offenders, "declare the back face the oracle cache gives them");
+}

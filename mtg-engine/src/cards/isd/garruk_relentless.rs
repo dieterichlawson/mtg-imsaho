@@ -21,30 +21,6 @@ use crate::types::{CardType, Zone, ManaCost, ManaSymbol, Color, Supertype, Count
 ///       number of creature cards in your graveyard.
 pub struct GarrukRelentless;
 
-impl GarrukRelentless {
-    /// Sacrifice a creature and then search library for a creature card.
-    /// Used when there's only one creature to sacrifice (no choice needed).
-    fn sacrifice_and_tutor(state: &mut GameState, garruk_id: ObjectId, sac_id: ObjectId, controller: crate::ids::PlayerId, registry: &CardRegistry) {
-
-        let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
-        crate::destruction::sacrifice(state, sac_id, registry);
-        state.log(crate::state::LogLevel::Event,
-            format!("Garruk, the Veil-Cursed: sacrificed {sac_name}"));
-
-        // Find all creature cards in library for the player to choose from.
-        let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-            .copied()
-            .filter(|&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
-            .collect();
-        crate::cards::helpers::search_library(
-            state, garruk_id, controller, creature_options,
-            Zone::Hand, false, false,
-            "Garruk, the Veil-Cursed: choose a creature card from your library",
-            registry,
-        );
-    }
-}
-
 impl CardBehavior for GarrukRelentless {
     fn card_data(&self) -> CardData {
         CardData {
@@ -59,6 +35,25 @@ impl CardBehavior for GarrukRelentless {
             oracle_text: "When Garruk has two or fewer loyalty counters on him, transform him.\n0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.\n0: Create a 2/2 green Wolf creature token.".into(),
             ..Default::default()
         }
+    }
+
+    /// Garruk, the Veil-Cursed. He has no triggered abilities and no P/T; what
+    /// the back face carries that matters is his *name* and his rules text, and
+    /// those are what `face_data` hands to `name_of`, the log, and the legend
+    /// rule. Declaring the face is the only way to say so — this card used to
+    /// model its back face purely by branching on `is_transformed` in
+    /// `loyalty_abilities`, and wrote the name into `obj.name` by hand on
+    /// transform, so every authoritative read still answered "Garruk
+    /// Relentless" with the front face's oracle text.
+    fn back_face_data(&self) -> Option<CardData> {
+        Some(CardData {
+            name: "Garruk, the Veil-Cursed".into(),
+            card_types: vec![CardType::Planeswalker],
+            supertypes: vec![Supertype::Legendary],
+            subtypes: vec!["Garruk".into()],
+            oracle_text: "+1: Create a 1/1 black Wolf creature token with deathtouch.\n−1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.\n−3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.".into(),
+            ..Default::default()
+        })
     }
 
     fn starting_loyalty(&self) -> Option<u32> {
@@ -190,10 +185,12 @@ impl CardBehavior for GarrukRelentless {
                     state.log(crate::state::LogLevel::Event,
                         "Garruk, the Veil-Cursed: no creature to sacrifice".into());
                 } else if creatures.len() == 1 {
-                    // Only one creature — auto-sacrifice and tutor.
-                    if let Target::Object(sac_id) = creatures[0] {
-                        Self::sacrifice_and_tutor(state, self_id, sac_id, controller, registry);
-                    }
+                    // One creature and the sacrifice is mandatory, so there is
+                    // nothing to choose — but it is the same effect, through
+                    // the same code. This branch used to carry its own copy,
+                    // and the two had already drifted apart on how they read
+                    // the sacrificed creature's name.
+                    self.resolve_card_effect(state, self_id, "", &creatures[0], registry);
                 } else {
                     // Multiple creatures — present choice to player.
                     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -259,17 +256,21 @@ impl CardBehavior for GarrukRelentless {
         "When Garruk Relentless has two or fewer loyalty counters on him, transform him".into()
     }
 
-    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         // State-triggered ability (CR 603.8): transform Garruk Relentless into
         // Garruk, the Veil-Cursed when he has 2 or fewer loyalty counters.
-        if let Some(obj) = state.get_object_mut(self_id) {
-            if !obj.is_transformed {
-                obj.is_transformed = true;
-                obj.name = "Garruk, the Veil-Cursed".into();
-                state.log(crate::state::LogLevel::Event,
-                    "Garruk Relentless transforms into Garruk, the Veil-Cursed".into());
-            }
+        //
+        // Through the shared helper, not by flipping the flag and writing the
+        // name by hand — the name comes from the face now, so there is one
+        // definition of what transforming does. Ruling (2011-09-22): no loyalty
+        // counters are added or removed by the transform, and the helper
+        // touches none.
+        if state.get_object(self_id).is_some_and(|o| o.is_transformed) {
+            return;
         }
+        crate::cards::helpers::apply_transform(state, self_id, registry);
+        state.log(crate::state::LogLevel::Event,
+            "Garruk Relentless transforms into Garruk, the Veil-Cursed".into());
     }
 
     /// Garruk, the Veil-Cursed -1: "Sacrifice a creature. Search your library
