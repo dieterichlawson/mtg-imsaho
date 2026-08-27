@@ -48,3 +48,43 @@ had no other users; they are removed, so the shape cannot come back by copying.
 - `snapshot_anthems.rs::spare_from_evil_protects_only_what_was_there`
 - `snapshot_anthems.rs::selfless_cathars_anthem_is_fixed_at_resolution`
 - `snapshot_anthems.rs::a_static_anthem_stops_when_its_source_leaves` — the other side of the distinction, and correct all along
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/34/spare-from-evil?utm_source=api
+**Type line**: `Instant` — {1}{W}
+**Oracle text**:
+```
+Creatures you control gain protection from non-Human creatures until end of turn.
+```
+
+**Status**: ISSUE (fixed)
+
+### Code issues
+See below.
+
+- Oracle text says: `Creatures you control gain protection from non-Human creatures until end of turn.`
+  - Code did: `CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into())))`
+  - The filter is matched against the damage/target *source*, and sources are
+    not all creatures. Brimstone Volley is not a Human, so it satisfied
+    `Not(HasSubtype("Human"))` — the protected creature could not be targeted
+    or damaged by any instant, sorcery, artifact or land.
+
+Root cause: `CreatureFilter` had no way to say "is a creature". Added
+`CreatureFilter::HasCardType(CardType)` and wrote the filter as
+`And([HasCardType(Creature), Not(HasSubtype("Human"))])`.
+
+That exposed a second split: `has_card_type(Creature)` and `is_creature`
+disagreed, because `is_creature` carried a `|| o.power.is_some()` fallback the
+type accessor did not. Every production site that stamps a runtime `power` also
+stamps `card_types`, so the fallback was only ever covering objects built
+without types. Moved it into `card_types_of` (CR 205.1b — an object with a
+power and toughness is a creature) and reduced `is_creature` to
+`has_card_type(Creature)`, so the two now answer about the same board.
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+`cards_spells_and_enchantments.rs::spare_from_evil_does_not_protect_against_a_noncreature_source` — a Brimstone Volley's damage lands, a non-Human creature is still stopped. `cards_spells_and_enchantments.rs::spare_from_evil_grants_protection` — blocking.

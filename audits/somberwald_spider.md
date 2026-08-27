@@ -23,3 +23,28 @@ where the oracle says "instead".
 
 ### Test coverage
 `intervening_if.rs::morbid_enters_with_counters_only_when_a_creature_died`, both arms
+## Audit — 2026-08-27 (Tier C)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/202/somberwald-spider?utm_source=api
+**Type line**: `Creature — Spider` — {4}{G}, 2/4
+**Oracle text**:
+```
+Reach (This creature can block creatures with flying.)
+Morbid — This creature enters with two +1/+1 counters on it if a creature died this turn.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Same morbid replacement effect as Festerhide Boar, through the shared helper.
+Reach on the printed keywords, 2/4 base.
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+`cards_morbid_and_ltb.rs` — the shared morbid tests cover both.

@@ -48,3 +48,30 @@ had no other users; they are removed, so the shape cannot come back by copying.
 - `snapshot_anthems.rs::spare_from_evil_protects_only_what_was_there`
 - `snapshot_anthems.rs::selfless_cathars_anthem_is_fixed_at_resolution`
 - `snapshot_anthems.rs::a_static_anthem_stops_when_its_source_leaves` — the other side of the distinction, and correct all along
+## Audit — 2026-08-27 (Tier C)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/167/vampiric-fury?utm_source=api
+**Type line**: `Instant` — {1}{R}
+**Oracle text**:
+```
+Vampire creatures you control get +2/+0 and gain first strike until end of turn. (They deal combat damage before creatures without first strike.)
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Ruling: "Only Vampires you control when Vampiric Fury resolves will receive
+the bonus. Creatures that ... become Vampires later in the turn won't be
+affected." `on_resolve` takes `creatures_controlled_snapshot` and filters for
+the Vampire subtype at that moment, pushing per-object `ModifyPT` and
+`GrantKeyword(FirstStrike)` — CR 611.2c, a fixed set, not a live filter.
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+`snapshot_anthems.rs` — a creature entering after resolution gets nothing.

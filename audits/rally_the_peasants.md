@@ -49,3 +49,30 @@ had no other users; they are removed, so the shape cannot come back by copying.
 - `snapshot_anthems.rs::spare_from_evil_protects_only_what_was_there`
 - `snapshot_anthems.rs::selfless_cathars_anthem_is_fixed_at_resolution`
 - `snapshot_anthems.rs::a_static_anthem_stops_when_its_source_leaves` — the other side of the distinction, and correct all along
+## Audit — 2026-08-27 (Tier C)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/28/rally-the-peasants?utm_source=api
+**Type line**: `Instant` — {2}{W}
+**Oracle text**:
+```
+Creatures you control get +2/+0 until end of turn.
+Flashback {2}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Ruling: "Only creatures you control when Rally the Peasants resolves will be
+affected." `creatures_controlled_snapshot` at resolution (CR 611.2c). Flashback
+{2}{R} — a different colour from the {2}{W} face cost, and correctly carried in
+`flashback_cost` rather than derived.
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+`snapshot_anthems.rs`, `flashback.rs` — the fixed set, and the off-colour flashback cast.

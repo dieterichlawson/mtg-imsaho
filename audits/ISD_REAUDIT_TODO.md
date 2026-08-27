@@ -61,53 +61,74 @@ Ordered most complex first, so the complex cards get the most time.
 | x | Dearly Departed | `dearly_departed.rs` | 57 | 3 | 0 |
 | x | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
 | x | Harvest Pyre | `harvest_pyre.rs` | 54 | 3 | 0 |
-|   | Moonmist | `moonmist.rs` | 97 | 2 | 0 |
-|   | Devil's Play | `devils_play.rs` | 51 | 3 | 0 |
-|   | Prey Upon | `prey_upon.rs` | 49 | 3 | 0 |
-|   | Balefire Dragon | `balefire_dragon.rs` | 65 | 2 | 1 |
-|   | Abattoir Ghoul | `abattoir_ghoul.rs` | 57 | 2 | 1 |
-|   | Rage Thrower | `rage_thrower.rs` | 57 | 2 | 1 |
-|   | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 53 | 2 | 1 |
-|   | Past in Flames | `past_in_flames.rs` | 72 | 2 | 0 |
-|   | Mulch | `mulch.rs` | 70 | 2 | 0 |
-|   | Pitchburn Devils | `pitchburn_devils.rs` | 45 | 2 | 1 |
-|   | Stromkirk Noble | `stromkirk_noble.rs` | 45 | 2 | 1 |
-|   | Unruly Mob | `unruly_mob.rs` | 44 | 2 | 1 |
-|   | Bloodcrazed Neonate | `bloodcrazed_neonate.rs` | 43 | 2 | 1 |
-|   | Mausoleum Guard | `mausoleum_guard.rs` | 43 | 2 | 1 |
-|   | Village Cannibals | `village_cannibals.rs` | 43 | 2 | 1 |
-|   | Lumberknot | `lumberknot.rs` | 42 | 2 | 1 |
-|   | Falkenrath Marauders | `falkenrath_marauders.rs` | 41 | 2 | 1 |
-|   | Doomed Traveler | `doomed_traveler.rs` | 39 | 2 | 1 |
-|   | Stromkirk Patrol | `stromkirk_patrol.rs` | 39 | 2 | 1 |
-|   | Forbidden Alchemy | `forbidden_alchemy.rs` | 58 | 2 | 0 |
-|   | Paraselene | `paraselene.rs` | 58 | 2 | 0 |
-|   | Shimmering Grotto | `shimmering_grotto.rs` | 58 | 2 | 0 |
-|   | Army of the Damned | `army_of_the_damned.rs` | 55 | 2 | 0 |
-|   | Essence of the Wild | `essence_of_the_wild.rs` | 55 | 2 | 0 |
-|   | Make a Wish | `make_a_wish.rs` | 55 | 2 | 0 |
-|   | Creeping Renaissance | `creeping_renaissance.rs` | 54 | 2 | 0 |
-|   | Laboratory Maniac | `laboratory_maniac.rs` | 54 | 2 | 0 |
-|   | Vampiric Fury | `vampiric_fury.rs` | 50 | 2 | 0 |
-|   | Hysterical Blindness | `hysterical_blindness.rs` | 48 | 2 | 0 |
-|   | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |
-|   | Spare from Evil | `spare_from_evil.rs` | 46 | 2 | 0 |
-|   | Somberwald Spider | `somberwald_spider.rs` | 43 | 2 | 0 |
-|   | Parallel Lives | `parallel_lives.rs` | 42 | 2 | 0 |
-|   | Spider Spawning | `spider_spawning.rs` | 42 | 2 | 0 |
-|   | Rally the Peasants | `rally_the_peasants.rs` | 41 | 2 | 0 |
-|   | Desperate Ravings | `desperate_ravings.rs` | 40 | 2 | 0 |
-|   | Rolling Temblor | `rolling_temblor.rs` | 38 | 2 | 0 |
-|   | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 37 | 2 | 0 |
-|   | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 36 | 2 | 0 |
-|   | Boneyard Wurm | `boneyard_wurm.rs` | 36 | 2 | 0 |
-|   | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 36 | 2 | 0 |
-|   | Altar's Reap | `altars_reap.rs` | 35 | 2 | 0 |
-|   | Infernal Plunge | `infernal_plunge.rs` | 34 | 2 | 0 |
-|   | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 34 | 2 | 0 |
-|   | Midnight Haunting | `midnight_haunting.rs` | 32 | 2 | 0 |
-|   | Skaab Ruinator | `skaab_ruinator.rs` | 31 | 2 | 0 |
-|   | Think Twice | `think_twice.rs` | 29 | 2 | 0 |
-|   | Stitched Drake | `stitched_drake.rs` | 28 | 1 | 0 |
-|   | Skaab Goliath | `skaab_goliath.rs` | 27 | 1 | 0 |
-|   | Makeshift Mauler | `makeshift_mauler.rs` | 26 | 1 | 0 |
+| x | Moonmist | `moonmist.rs` | 97 | 2 | 0 |
+| x | Devil's Play | `devils_play.rs` | 51 | 3 | 0 |
+| x | Prey Upon | `prey_upon.rs` | 49 | 3 | 0 |
+| x | Balefire Dragon | `balefire_dragon.rs` | 65 | 2 | 1 |
+| x | Abattoir Ghoul | `abattoir_ghoul.rs` | 57 | 2 | 1 |
+| x | Rage Thrower | `rage_thrower.rs` | 57 | 2 | 1 |
+| x | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 53 | 2 | 1 |
+| x | Past in Flames | `past_in_flames.rs` | 72 | 2 | 0 |
+| x | Mulch | `mulch.rs` | 70 | 2 | 0 |
+| x | Pitchburn Devils | `pitchburn_devils.rs` | 45 | 2 | 1 |
+| x | Stromkirk Noble | `stromkirk_noble.rs` | 45 | 2 | 1 |
+| x | Unruly Mob | `unruly_mob.rs` | 44 | 2 | 1 |
+| x | Bloodcrazed Neonate | `bloodcrazed_neonate.rs` | 43 | 2 | 1 |
+| x | Mausoleum Guard | `mausoleum_guard.rs` | 43 | 2 | 1 |
+| x | Village Cannibals | `village_cannibals.rs` | 43 | 2 | 1 |
+| x | Lumberknot | `lumberknot.rs` | 42 | 2 | 1 |
+| x | Falkenrath Marauders | `falkenrath_marauders.rs` | 41 | 2 | 1 |
+| x | Doomed Traveler | `doomed_traveler.rs` | 39 | 2 | 1 |
+| x | Stromkirk Patrol | `stromkirk_patrol.rs` | 39 | 2 | 1 |
+| x | Forbidden Alchemy | `forbidden_alchemy.rs` | 58 | 2 | 0 |
+| x | Paraselene | `paraselene.rs` | 58 | 2 | 0 |
+| x | Shimmering Grotto | `shimmering_grotto.rs` | 58 | 2 | 0 |
+| x | Army of the Damned | `army_of_the_damned.rs` | 55 | 2 | 0 |
+| x | Essence of the Wild | `essence_of_the_wild.rs` | 55 | 2 | 0 |
+| x | Make a Wish | `make_a_wish.rs` | 55 | 2 | 0 |
+| x | Creeping Renaissance | `creeping_renaissance.rs` | 54 | 2 | 0 |
+| x | Laboratory Maniac | `laboratory_maniac.rs` | 54 | 2 | 0 |
+| x | Vampiric Fury | `vampiric_fury.rs` | 50 | 2 | 0 |
+| x | Hysterical Blindness | `hysterical_blindness.rs` | 48 | 2 | 0 |
+| x | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |
+| x | Spare from Evil | `spare_from_evil.rs` | 46 | 2 | 0 |
+| x | Somberwald Spider | `somberwald_spider.rs` | 43 | 2 | 0 |
+| x | Parallel Lives | `parallel_lives.rs` | 42 | 2 | 0 |
+| x | Spider Spawning | `spider_spawning.rs` | 42 | 2 | 0 |
+| x | Rally the Peasants | `rally_the_peasants.rs` | 41 | 2 | 0 |
+| x | Desperate Ravings | `desperate_ravings.rs` | 40 | 2 | 0 |
+| x | Rolling Temblor | `rolling_temblor.rs` | 38 | 2 | 0 |
+| x | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 37 | 2 | 0 |
+| x | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 36 | 2 | 0 |
+| x | Boneyard Wurm | `boneyard_wurm.rs` | 36 | 2 | 0 |
+| x | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 36 | 2 | 0 |
+| x | Altar's Reap | `altars_reap.rs` | 35 | 2 | 0 |
+| x | Infernal Plunge | `infernal_plunge.rs` | 34 | 2 | 0 |
+| x | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 34 | 2 | 0 |
+| x | Midnight Haunting | `midnight_haunting.rs` | 32 | 2 | 0 |
+| x | Skaab Ruinator | `skaab_ruinator.rs` | 31 | 2 | 0 |
+| x | Think Twice | `think_twice.rs` | 29 | 2 | 0 |
+| x | Stitched Drake | `stitched_drake.rs` | 28 | 1 | 0 |
+| x | Skaab Goliath | `skaab_goliath.rs` | 27 | 1 | 0 |
+| x | Makeshift Mauler | `makeshift_mauler.rs` | 26 | 1 | 0 |
+
+## Done — 100/100
+
+Every card on this list has now been through `/check-card-procedure` with its
+own fetched oracle text and rulings.
+
+### What the re-audit found that the sweeps had not
+
+| card | rule | what the sweeps missed |
+|---|---|---|
+| Spare from Evil | CR 702.16b | its protection filter could not say "creature", so it caught every non-creature source too |
+| Boneyard Wurm | CR 108.4 | a card leaving the battlefield kept the controller of the permanent it had been |
+| Scourge of Geier Reach | — | "your opponents" written as one named opponent |
+| Bitterheart Witch | CR 603.3d | a targeted trigger declared untargeted (earlier batch) |
+| Grimgrin / Mikaeus | CR 614.1c | entry work done after the permanent had already entered (earlier batch) |
+
+All three of the last batch's findings were rules the sweeps had no way to
+reach: they compared card *data* set-wide and scanned for known anti-patterns,
+and none of these is either. They came out of step 2 (fetch the rulings) and
+step 5 (think about the interactions) — the two steps a sweep has no equivalent
+for.
