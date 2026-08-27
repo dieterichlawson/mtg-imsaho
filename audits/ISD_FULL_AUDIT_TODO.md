@@ -21,7 +21,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Delver of Secrets | `delver_of_secrets.rs` | 135 | 7 | 2 |
 | x | Grimgrin, Corpse-Born | `grimgrin_corpse_born.rs` | 148 | 7 | 1 |
 | x | Ulvenwald Mystics | `ulvenwald_mystics.rs` | 105 | 7 | 2 |
-|   | Evil Twin | `evil_twin.rs` | 125 | 7 | 1 |
+| x | Evil Twin | `evil_twin.rs` | 125 | 7 | 1 |
 |   | Bitterheart Witch | `bitterheart_witch.rs` | 167 | 6 | 1 |
 |   | Curse of Oblivion | `curse_of_oblivion.rs` | 140 | 6 | 2 |
 |   | Charmbreaker Devils | `charmbreaker_devils.rs` | 119 | 5 | 3 |

@@ -2119,6 +2119,58 @@ impl GameState {
         self.get_object(id).map(|o| o.keywords.clone()).unwrap_or_default()
     }
 
+    /// Card types as printed on the active face, ignoring anything granted at
+    /// runtime. The copy counterpart of `card_types_of`.
+    #[must_use]
+    pub fn printed_card_types_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::CardType> {
+        if let Some(data) = self.face_data(id, registry) {
+            return data.card_types;
+        }
+        self.get_object(id).map(|o| o.card_types.clone()).unwrap_or_default()
+    }
+
+    /// Subtypes as printed on the active face, ignoring anything granted at
+    /// runtime — Olivia Voldaren's "Vampire", Grimoire of the Dead's "Zombie".
+    /// The copy counterpart of `subtypes_of`.
+    #[must_use]
+    pub fn printed_subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
+        if let Some(data) = self.face_data(id, registry) {
+            return data.subtypes;
+        }
+        self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default()
+    }
+
+    /// Colors as printed — derived from the active face's mana cost — ignoring
+    /// anything granted at runtime (Grimoire of the Dead's black). The copy
+    /// counterpart of `colors_of`.
+    #[must_use]
+    pub fn printed_colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
+        if let Some(data) = self.face_data(id, registry) {
+            let mut cols = Vec::new();
+            if let Some(cost) = data.cost {
+                for sym in &cost.symbols {
+                    if let crate::types::ManaSymbol::Colored(c) = sym {
+                        if !cols.contains(c) {
+                            cols.push(*c);
+                        }
+                    }
+                }
+            }
+            return cols;
+        }
+        self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default()
+    }
+
+    /// Power and toughness as printed on the active face, ignoring runtime
+    /// grants. The copy counterpart of `effective_power`/`effective_toughness`.
+    #[must_use]
+    pub fn printed_pt_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> (Option<i32>, Option<i32>) {
+        if let Some(data) = self.face_data(id, registry) {
+            return (data.power, data.toughness);
+        }
+        self.get_object(id).map_or((None, None), |o| (o.power, o.toughness))
+    }
+
     /// Colors of the object: the union of any granted at runtime (Grimoire of
     /// the Dead's black) and those derived from the active face's mana cost.
     /// (Color indicators are not modeled.)

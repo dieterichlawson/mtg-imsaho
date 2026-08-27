@@ -143,18 +143,33 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary) =
                 match state.get_object(*target_id) {
                     Some(o) => {
-                        // A generic token has no registry face, so its
-                        // printed keywords live on the object. Reading only the
-                        // face dropped them — a copy of a 1/1 Spirit token lost
-                        // its flying.
+                        // CR 707.2: only *copiable* values are copied — what is
+                        // printed on the card (as modified by other copy
+                        // effects), not what non-copy effects have since done to
+                        // it. The Evil Twin ruling spells this out: "It doesn't
+                        // copy ... any non-copy effects that have changed its
+                        // power, toughness, types, color, or so on."
+                        //
+                        // That distinction is exactly the object-vector /
+                        // face-data split: `obj.subtypes` and `obj.colors` hold
+                        // runtime grants for a real card — Olivia Voldaren's
+                        // "Vampire", Grimoire of the Dead's "Zombie" and black —
+                        // and only stand in for printed values on a token, which
+                        // has no registry face. Reading the object vectors
+                        // directly copied those grants; the `printed_*`
+                        // accessors take the face when there is one and fall
+                        // back to the object only for a faceless token.
                         let kw = state.printed_keywords_of(o.id, registry);
+                        let (power, toughness) = state.printed_pt_of(o.id, registry);
                         // Legendary is copiable (CR 707.2); read the object flag
                         // or fall back to the printed supertype.
                         let legendary = o.is_legendary
                             || state.face_data(o.id, registry)
                                 .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
-                        (o.name.clone(), o.power, o.toughness, o.card_id,
-                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), legendary)
+                        (state.name_of(o.id, registry), power, toughness, o.card_id,
+                         state.printed_card_types_of(o.id, registry),
+                         state.printed_subtypes_of(o.id, registry),
+                         kw, state.printed_colors_of(o.id, registry), legendary)
                     }
                     None => return,
                 };

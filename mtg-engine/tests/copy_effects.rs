@@ -286,3 +286,81 @@ fn evil_twin_survives_state_based_actions_while_its_copy_choice_is_pending() {
     assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield),
         "the printed 0/0 must not be swept away before the copy applies");
 }
+
+// ── CR 707.2: copiable values only ───────────────────────────────
+
+/// Evil Twin's ruling: "Evil Twin copies exactly what was printed on the
+/// original creature ... It doesn't copy ... any non-copy effects that have
+/// changed its power, toughness, types, color, or so on."
+///
+/// Olivia Voldaren's "That creature becomes a Vampire in addition to its other
+/// types" is exactly such an effect, and it is implemented by writing
+/// `obj.subtypes` — the same object vector that stands in for *printed*
+/// subtypes on a token. The copy used to read that vector directly, so it
+/// picked up the granted Vampire type along with the real ones.
+#[test]
+fn a_copy_does_not_pick_up_a_subtype_granted_by_a_non_copy_effect() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // A real card with a registry face, so `printed_subtypes_of` has a face to
+    // read. Ambush Viper is a Snake.
+    let victim = named_permanent(&mut state, &reg, "Ambush Viper", P1);
+    assert!(state.has_subtype(victim, "Snake", &reg), "printed subtype");
+
+    // Olivia grants the Vampire type by writing the object vector.
+    state.get_object_mut(victim).unwrap().subtypes.push("Vampire".into());
+    assert!(state.has_subtype(victim, "Vampire", &reg), "granted subtype is live");
+
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    copy_onto(&mut state, &reg, twin, victim);
+
+    assert!(state.has_subtype(twin, "Snake", &reg),
+        "the copy has the printed subtypes");
+    assert!(!state.has_subtype(twin, "Vampire", &reg),
+        "but not one a non-copy effect granted to the original");
+}
+
+/// The same rule for colors. Grimoire of the Dead's "becomes black" is a
+/// non-copy effect written into `obj.colors`.
+#[test]
+fn a_copy_does_not_pick_up_a_color_granted_by_a_non_copy_effect() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Ambush Viper is green ({1}{G}).
+    let victim = named_permanent(&mut state, &reg, "Ambush Viper", P1);
+    state.get_object_mut(victim).unwrap().colors.push(Color::Black);
+    assert!(state.colors_of(victim, &reg).contains(&Color::Black),
+        "granted colour is live");
+
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    copy_onto(&mut state, &reg, twin, victim);
+
+    assert!(state.colors_of(twin, &reg).contains(&Color::Green),
+        "the copy is the printed colour");
+    assert!(!state.colors_of(twin, &reg).contains(&Color::Black),
+        "but not one a non-copy effect granted to the original");
+}
+
+/// The token case the object vectors exist for must keep working: a token has
+/// no registry face, so its object vectors ARE its printed characteristics.
+#[test]
+fn a_copy_of_a_token_still_takes_the_tokens_printed_characteristics() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ids = state.create_token_with_subtypes(
+        "Spirit", P1, 1, 1, vec![Color::White], vec![CardType::Creature],
+        vec![Keyword::Flying], vec!["Spirit".into()], &reg);
+    let token = ids[0];
+
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    copy_onto(&mut state, &reg, twin, token);
+
+    assert!(state.has_subtype(twin, "Spirit", &reg), "token subtypes still copied");
+    assert!(state.has_keyword(twin, Keyword::Flying, &reg), "and its keywords");
+    assert_eq!(state.effective_power(twin, &reg), Some(1));
+    assert!(!state.get_object(twin).unwrap().is_token,
+        "copying a token does not make Evil Twin a token");
+}
