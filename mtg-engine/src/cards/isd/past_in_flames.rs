@@ -31,10 +31,11 @@ impl CardBehavior for PastInFlames {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
-        // Move Past in Flames itself to graveyard/exile first, so it's in the graveyard
-        // and can also get flashback if we want (but it already has flashback printed).
-
-        // Grant flashback to each instant and sorcery in the graveyard.
+        // "Each instant and sorcery card in your graveyard gains flashback until
+        // end of turn." Read at resolution — a card put into the graveyard later
+        // in the turn does not gain it. Past in Flames itself is still on the
+        // stack here, and the engine moves it afterwards, so it is not in its
+        // own list.
         let targets: Vec<(ObjectId, ManaCost)> = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_card(o.id) && o.id != object_id)
             .filter_map(|o| {
