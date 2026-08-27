@@ -132,3 +132,11 @@ One row per integration-test file. `[x]` = read line by line and acted on.
 | x | `ltb_controller.rs` | 57 | 2 |
 
 **126/126 files read; 0 lines remaining — every test file in the suite has been read line by line.**
+
+The file list above is the suite *as it stood during the read pass*. The
+reorganization that followed dissolved the six files named after the process
+that produced them, folded thirteen thin single-card files into the
+`cards_*.rs` group they belonged to, and split `cards_transforming_permanents.rs`
+out of `cards_complex_creatures.rs` — 126 binaries down to 108. See
+`docs/TESTING.md` for the current map; two guards in `test_suite_guards.rs`
+keep it accurate.
