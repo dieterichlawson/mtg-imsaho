@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**39/249 audited.**
+**53/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -59,13 +59,13 @@ inherits these; its own entry covers the rest.
 |   | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 |   | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 5/155
+## Tier B — moderate (triggered or activated abilities) — 10/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
 | x | Charmbreaker Devils | `charmbreaker_devils.rs` | 119 | 4 | 3 |  |
 |   | Bitterheart Witch | `bitterheart_witch.rs` | 176 | 3 | 2 |  |
-|   | Grimoire of the Dead | `grimoire_of_the_dead.rs` | 176 | 4 | 0 |  |
+| x | Grimoire of the Dead | `grimoire_of_the_dead.rs` | 176 | 4 | 0 |  |
 |   | Fiend Hunter | `fiend_hunter.rs` | 92 | 4 | 3 |  |
 |   | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 110 | 4 | 2 |  |
 |   | Olivia Voldaren | `olivia_voldaren.rs` | 151 | 3 | 2 |  |
@@ -86,7 +86,7 @@ inherits these; its own entry covers the rest.
 |   | Butcher's Cleaver | `butchers_cleaver.rs` | 85 | 4 | 0 |  |
 |   | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 84 | 4 | 0 |  |
 |   | Woodland Sleuth | `woodland_sleuth.rs` | 79 | 3 | 2 |  |
-|   | Back from the Brink | `back_from_the_brink.rs` | 127 | 3 | 0 |  |
+| x | Back from the Brink | `back_from_the_brink.rs` | 127 | 3 | 0 |  |
 |   | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 125 | 3 | 0 |  |
 | x | Splinterfright | `splinterfright.rs` | 72 | 3 | 2 |  |
 |   | Inquisitor's Flail | `inquisitors_flail.rs` | 75 | 4 | 0 |  |
@@ -127,7 +127,7 @@ inherits these; its own entry covers the rest.
 |   | Geistcatcher's Rig | `geistcatchers_rig.rs` | 59 | 2 | 2 |  |
 |   | Heretic's Punishment | `heretics_punishment.rs` | 109 | 2 | 0 |  |
 |   | Mirror-Mad Phantasm | `mirror_mad_phantasm.rs` | 109 | 2 | 0 |  |
-|   | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 63 | 3 | 0 |  |
+| x | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 63 | 3 | 0 |  |
 |   | Nephalia Drownyard | `nephalia_drownyard.rs` | 62 | 3 | 0 |  |
 |   | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 57 | 2 | 2 |  |
 |   | Sturmgeist | `sturmgeist.rs` | 54 | 2 | 2 |  |
@@ -147,8 +147,8 @@ inherits these; its own entry covers the rest.
 |   | Mindshrieker | `mindshrieker.rs` | 89 | 2 | 0 |  |
 |   | Victim of Night | `victim_of_night.rs` | 44 | 3 | 0 |  |
 |   | Moldgraf Monstrosity | `moldgraf_monstrosity.rs` | 82 | 1 | 2 |  |
-|   | Wreath of Geists | `wreath_of_geists.rs` | 42 | 3 | 0 |  |
-|   | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 81 | 1 | 2 |  |
+| x | Wreath of Geists | `wreath_of_geists.rs` | 42 | 3 | 0 |  |
+| x | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 81 | 1 | 2 |  |
 |   | Cellar Door | `cellar_door.rs` | 85 | 2 | 0 |  |
 |   | Gutter Grime | `gutter_grime.rs` | 80 | 1 | 2 |  |
 |   | Stitcher's Apprentice | `stitchers_apprentice.rs` | 83 | 2 | 0 |  |
@@ -219,31 +219,31 @@ inherits these; its own entry covers the rest.
 |   | Dream Twist | `dream_twist.rs` | 34 | 2 | 0 |  |
 |   | Geistflame | `geistflame.rs` | 32 | 2 | 0 |  |
 
-## Tier C — light (one behaviour hook) — 0/38
+## Tier C — light (one behaviour hook) — 9/38
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
 |   | Moonmist | `moonmist.rs` | 98 | 1 | 0 |  |
-|   | Unbreathing Horde | `unbreathing_horde.rs` | 90 | 1 | 0 |  |
+| x | Unbreathing Horde | `unbreathing_horde.rs` | 90 | 1 | 0 |  |
 |   | Past in Flames | `past_in_flames.rs` | 73 | 1 | 0 |  |
 |   | Mulch | `mulch.rs` | 71 | 1 | 0 |  |
 |   | Paraselene | `paraselene.rs` | 66 | 1 | 0 |  |
 |   | Blasphemous Act | `blasphemous_act.rs` | 60 | 1 | 0 |  |
 |   | Forbidden Alchemy | `forbidden_alchemy.rs` | 59 | 1 | 0 |  |
 |   | Shimmering Grotto | `shimmering_grotto.rs` | 59 | 1 | 0 |  |
-|   | Dearly Departed | `dearly_departed.rs` | 58 | 1 | 0 |  |
+| x | Dearly Departed | `dearly_departed.rs` | 58 | 1 | 0 |  |
 |   | Army of the Damned | `army_of_the_damned.rs` | 56 | 1 | 0 |  |
-|   | Essence of the Wild | `essence_of_the_wild.rs` | 56 | 1 | 0 |  |
+| x | Essence of the Wild | `essence_of_the_wild.rs` | 56 | 1 | 0 |  |
 |   | Make a Wish | `make_a_wish.rs` | 56 | 1 | 0 |  |
 |   | Creeping Renaissance | `creeping_renaissance.rs` | 55 | 1 | 0 |  |
-|   | Laboratory Maniac | `laboratory_maniac.rs` | 55 | 1 | 0 |  |
+| x | Laboratory Maniac | `laboratory_maniac.rs` | 55 | 1 | 0 |  |
 |   | Hysterical Blindness | `hysterical_blindness.rs` | 49 | 1 | 0 |  |
 |   | Vampiric Fury | `vampiric_fury.rs` | 49 | 1 | 0 |  |
-|   | Festerhide Boar | `festerhide_boar.rs` | 47 | 1 | 0 |  |
+| x | Festerhide Boar | `festerhide_boar.rs` | 47 | 1 | 0 |  |
 |   | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 45 | 1 | 0 |  |
-|   | Somberwald Spider | `somberwald_spider.rs` | 44 | 1 | 0 |  |
-|   | Parallel Lives | `parallel_lives.rs` | 43 | 1 | 0 |  |
-|   | Spider Spawning | `spider_spawning.rs` | 43 | 1 | 0 |  |
+| x | Somberwald Spider | `somberwald_spider.rs` | 44 | 1 | 0 |  |
+| x | Parallel Lives | `parallel_lives.rs` | 43 | 1 | 0 |  |
+| x | Spider Spawning | `spider_spawning.rs` | 43 | 1 | 0 |  |
 |   | Spare from Evil | `spare_from_evil.rs` | 42 | 1 | 0 |  |
 |   | Desperate Ravings | `desperate_ravings.rs` | 41 | 1 | 0 |  |
 |   | Skaab Ruinator | `skaab_ruinator.rs` | 40 | 1 | 0 |  |
@@ -251,7 +251,7 @@ inherits these; its own entry covers the rest.
 |   | Rolling Temblor | `rolling_temblor.rs` | 39 | 1 | 0 |  |
 |   | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 38 | 1 | 0 |  |
 |   | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 37 | 1 | 0 |  |
-|   | Boneyard Wurm | `boneyard_wurm.rs` | 37 | 1 | 0 |  |
+| x | Boneyard Wurm | `boneyard_wurm.rs` | 37 | 1 | 0 |  |
 |   | Stitched Drake | `stitched_drake.rs` | 37 | 1 | 0 |  |
 |   | Altar's Reap | `altars_reap.rs` | 36 | 1 | 0 |  |
 |   | Infernal Plunge | `infernal_plunge.rs` | 35 | 1 | 0 |  |
