@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**229/249 audited.**
+**249/249 audited.** Complete.
 
 ## Verified across all 249 at once
 
@@ -25,6 +25,34 @@ inherits these; its own entry covers the rest.
 | flashback costs | 249/249 exact |
 | trigger kinds vs. oracle phrasing | 249/249 consistent |
 | step 9 anti-pattern scan | 96 candidates raised, 3 real, all fixed |
+
+## What the audit changed
+
+Card-level bugs were the smaller half. The pattern that kept recurring was a
+*derived fact restated per card*, or a *pipeline the cards were free to
+bypass* — so most fixes are one engine change plus a build-failing guard,
+replacing N card-level repetitions.
+
+| root cause | cards affected | rule |
+|---|---|---|
+| activated abilities never reached the stack | 46 of 53 | CR 602.2a |
+| CR 608.2b never re-checked an ability's targets | all abilities | CR 608.2b |
+| `is_equipment` set by hand in a dead `on_resolve` | 11 | CR 301.5 / 704.5n |
+| back-face P/T restated in `dynamic_pt` | 19 | CR 712.8 |
+| library-to-graveyard moves that skipped the mill event | 4 | CR 701.13a |
+| graveyard readers that counted tokens as cards | 9 + engine targeting | CR 109.1 |
+| life totals written by hand instead of `change_life` | 12 + the damage pipeline | CR 118.3 |
+| entry work done after the permanent entered | 2 | CR 614.1c |
+| a targeted trigger declared untargeted | 1 | CR 603.3d |
+
+Guards added to `test_suite_guards.rs`, each failing the build on the shape it
+names: `no_card_or_test_names_the_removed_activation_hook`,
+`only_the_engine_puts_an_ability_on_the_stack`,
+`a_card_enumerating_a_graveyard_excludes_tokens`,
+`no_dfc_restates_its_back_faces_power_and_toughness`,
+`only_change_life_writes_a_life_total`,
+`no_permanent_moves_itself_onto_the_battlefield`, and an extension of
+`only_the_damage_pipeline_marks_damage` to hand-written player life changes.
 
 ## Tier A — complex (DFCs, planeswalkers, 5+ hooks) — 28/28
 
@@ -59,7 +87,7 @@ inherits these; its own entry covers the rest.
 | x | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 | x | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 135/155
+## Tier B — moderate (triggered or activated abilities) — 155/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
@@ -71,16 +99,16 @@ inherits these; its own entry covers the rest.
 | x | Olivia Voldaren | `olivia_voldaren.rs` | 151 | 3 | 2 |  |
 | x | Graveyard Shovel | `graveyard_shovel.rs` | 132 | 4 | 0 | counted tokens as cards (CR 109.1) — fixed |
 | x | Blazing Torch | `blazing_torch.rs` | 129 | 4 | 0 | sacrifice is a cost — `pay_activation_cost` |
-|   | Moorland Haunt | `moorland_haunt.rs` | 120 | 4 | 0 |  |
+| x | Moorland Haunt | `moorland_haunt.rs` | 120 | 4 | 0 | cost and effect both at activation (CR 602.2a) — fixed |
 | x | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 67 | 4 | 2 |  |
 | x | Morkrut Banshee | `morkrut_banshee.rs` | 67 | 4 | 2 |  |
 | x | Claustrophobia | `claustrophobia.rs` | 57 | 4 | 2 |  |
 | x | Mentor of the Meek | `mentor_of_the_meek.rs` | 102 | 3 | 2 |  |
 | x | Skirsdag High Priest | `skirsdag_high_priest.rs` | 148 | 3 | 0 |  |
 | x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 89 | 3 | 2 |  |
-|   | Caravan Vigil | `caravan_vigil.rs` | 137 | 3 | 0 |  |
+| x | Caravan Vigil | `caravan_vigil.rs` | 137 | 3 | 0 |  |
 | x | Tribute to Hunger | `tribute_to_hunger.rs` | 91 | 4 | 0 |  |
-|   | Brain Weevil | `brain_weevil.rs` | 132 | 3 | 0 |  |
+| x | Brain Weevil | `brain_weevil.rs` | 132 | 3 | 0 |  |
 | x | Demonmail Hauberk | `demonmail_hauberk.rs` | 87 | 4 | 0 | deviation recorded: a legal fizzling equip is not offered |
 | x | Silver-Inlaid Dagger | `silver_inlaid_dagger.rs` | 86 | 4 | 0 |  |
 | x | Butcher's Cleaver | `butchers_cleaver.rs` | 85 | 4 | 0 |  |
@@ -97,11 +125,11 @@ inherits these; its own entry covers the rest.
 | x | Bloodgift Demon | `bloodgift_demon.rs` | 67 | 3 | 2 |  |
 | x | Mask of Avacyn | `mask_of_avacyn.rs` | 69 | 4 | 0 |  |
 | x | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 61 | 3 | 2 |  |
-|   | Witchbane Orb | `witchbane_orb.rs` | 61 | 3 | 2 |  |
-|   | Skeletal Grimace | `skeletal_grimace.rs` | 65 | 4 | 0 |  |
+| x | Witchbane Orb | `witchbane_orb.rs` | 61 | 3 | 2 |  |
+| x | Skeletal Grimace | `skeletal_grimace.rs` | 65 | 4 | 0 |  |
 | x | Geist-Honored Monk | `geist_honored_monk.rs` | 57 | 3 | 2 |  |
 | x | Curse of Stalked Prey | `curse_of_stalked_prey.rs` | 56 | 3 | 2 |  |
-|   | Divine Reckoning | `divine_reckoning.rs` | 147 | 2 | 0 |  |
+| x | Divine Reckoning | `divine_reckoning.rs` | 147 | 2 | 0 |  |
 | x | Falkenrath Noble | `falkenrath_noble.rs` | 72 | 2 | 3 |  |
 | x | Selhoff Occultist | `selhoff_occultist.rs` | 71 | 2 | 3 |  |
 | x | Geist of Saint Traft | `geist_of_saint_traft.rs` | 94 | 2 | 2 | dead `on_resolve` override — deleted |
@@ -110,32 +138,32 @@ inherits these; its own entry covers the rest.
 | x | Ashmouth Hound | `ashmouth_hound.rs` | 56 | 2 | 3 |  |
 | x | Undead Alchemist | `undead_alchemist.rs` | 102 | 2 | 1 |  |
 | x | Elder Cathar | `elder_cathar.rs` | 76 | 2 | 2 |  |
-|   | Burning Vengeance | `burning_vengeance.rs` | 75 | 2 | 2 |  |
+| x | Burning Vengeance | `burning_vengeance.rs` | 75 | 2 | 2 |  |
 | x | Manor Gargoyle | `manor_gargoyle.rs` | 80 | 3 | 0 |  |
 | x | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 79 | 3 | 0 |  |
 | x | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 73 | 2 | 2 |  |
-|   | Kessig Wolf Run | `kessig_wolf_run.rs` | 76 | 3 | 0 |  |
+| x | Kessig Wolf Run | `kessig_wolf_run.rs` | 76 | 3 | 0 |  |
 | x | Night Terrors | `night_terrors.rs` | 76 | 3 | 0 |  |
 | x | Avacynian Priest | `avacynian_priest.rs` | 73 | 3 | 0 | CR 608.2b for a card's own targeting restriction — fixed |
 | x | Ghoulraiser | `ghoulraiser.rs` | 68 | 2 | 2 |  |
-|   | Maw of the Mire | `maw_of_the_mire.rs` | 73 | 3 | 0 |  |
+| x | Maw of the Mire | `maw_of_the_mire.rs` | 73 | 3 | 0 | hand-written life change — collapsed onto `change_life` |
 | x | Nevermore | `nevermore.rs` | 68 | 2 | 2 |  |
 | x | Gavony Township | `gavony_township.rs` | 70 | 3 | 0 |  |
 | x | Lost in the Mist | `lost_in_the_mist.rs` | 67 | 3 | 0 |  |
 | x | Stensia Bloodhall | `stensia_bloodhall.rs` | 67 | 3 | 0 |  |
-|   | Frightful Delusion | `frightful_delusion.rs` | 66 | 3 | 0 |  |
+| x | Frightful Delusion | `frightful_delusion.rs` | 66 | 3 | 0 |  |
 | x | Geistcatcher's Rig | `geistcatchers_rig.rs` | 59 | 2 | 2 |  |
 | x | Heretic's Punishment | `heretics_punishment.rs` | 109 | 2 | 0 | mill bypassed `mill_one` — fixed; CR 602.2a |
-|   | Mirror-Mad Phantasm | `mirror_mad_phantasm.rs` | 109 | 2 | 0 |  |
+| x | Mirror-Mad Phantasm | `mirror_mad_phantasm.rs` | 109 | 2 | 0 |  |
 | x | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 63 | 3 | 0 |  |
-|   | Nephalia Drownyard | `nephalia_drownyard.rs` | 62 | 3 | 0 |  |
+| x | Nephalia Drownyard | `nephalia_drownyard.rs` | 62 | 3 | 0 |  |
 | x | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 57 | 2 | 2 |  |
 | x | Sturmgeist | `sturmgeist.rs` | 54 | 2 | 2 |  |
 | x | Ranger's Guile | `rangers_guile.rs` | 57 | 3 | 0 |  |
 | x | Crossway Vampire | `crossway_vampire.rs` | 48 | 2 | 2 |  |
 | x | Village Bell-Ringer | `village_bell_ringer.rs` | 48 | 2 | 2 |  |
 | x | Dissipate | `dissipate.rs` | 52 | 3 | 0 |  |
-|   | Runic Repetition | `runic_repetition.rs` | 52 | 3 | 0 |  |
+| x | Runic Repetition | `runic_repetition.rs` | 52 | 3 | 0 |  |
 | x | Bump in the Night | `bump_in_the_night.rs` | 50 | 3 | 0 | hand-written life change — collapsed onto `change_life` |
 | x | Armored Skaab | `armored_skaab.rs` | 44 | 2 | 2 |  |
 | x | Bramblecrush | `bramblecrush.rs` | 49 | 3 | 0 |  |
@@ -152,9 +180,9 @@ inherits these; its own entry covers the rest.
 | x | Cellar Door | `cellar_door.rs` | 85 | 2 | 0 |  |
 | x | Gutter Grime | `gutter_grime.rs` | 80 | 1 | 2 |  |
 | x | Stitcher's Apprentice | `stitchers_apprentice.rs` | 83 | 2 | 0 |  |
-|   | Full Moon's Rise | `full_moons_rise.rs` | 82 | 2 | 0 |  |
-|   | Memory's Journey | `memorys_journey.rs` | 78 | 2 | 0 |  |
-|   | Tree of Redemption | `tree_of_redemption.rs` | 76 | 2 | 0 |  |
+| x | Full Moon's Rise | `full_moons_rise.rs` | 82 | 2 | 0 |  |
+| x | Memory's Journey | `memorys_journey.rs` | 78 | 2 | 0 |  |
+| x | Tree of Redemption | `tree_of_redemption.rs` | 76 | 2 | 0 |  |
 | x | Clifftop Retreat | `clifftop_retreat.rs` | 74 | 2 | 0 |  |
 | x | Hinterland Harbor | `hinterland_harbor.rs` | 74 | 2 | 0 |  |
 | x | Isolated Chapel | `isolated_chapel.rs` | 74 | 2 | 0 |  |
@@ -169,7 +197,7 @@ inherits these; its own entry covers the rest.
 | x | Deranged Assistant | `deranged_assistant.rs` | 60 | 2 | 0 |  |
 | x | Selfless Cathar | `selfless_cathar.rs` | 60 | 2 | 0 |  |
 | x | Skirsdag Cultist | `skirsdag_cultist.rs` | 60 | 2 | 0 |  |
-|   | Traitorous Blood | `traitorous_blood.rs` | 60 | 2 | 0 |  |
+| x | Traitorous Blood | `traitorous_blood.rs` | 60 | 2 | 0 |  |
 | x | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 54 | 1 | 2 |  |
 | x | Rakish Heir | `rakish_heir.rs` | 54 | 1 | 2 |  |
 | x | Creepy Doll | `creepy_doll.rs` | 52 | 1 | 2 |  |
@@ -183,7 +211,7 @@ inherits these; its own entry covers the rest.
 | x | Silverchase Fox | `silverchase_fox.rs` | 54 | 2 | 0 |  |
 | x | Bonds of Faith | `bonds_of_faith.rs` | 52 | 2 | 0 |  |
 | x | Devil's Play | `devils_play.rs` | 52 | 2 | 0 |  |
-|   | Lantern Spirit | `lantern_spirit.rs` | 52 | 2 | 0 |  |
+| x | Lantern Spirit | `lantern_spirit.rs` | 52 | 2 | 0 |  |
 | x | Spidery Grasp | `spidery_grasp.rs` | 52 | 2 | 0 |  |
 | x | Pitchburn Devils | `pitchburn_devils.rs` | 46 | 1 | 2 |  |
 | x | Stromkirk Noble | `stromkirk_noble.rs` | 46 | 1 | 2 |  |
@@ -197,7 +225,7 @@ inherits these; its own entry covers the rest.
 | x | Lumberknot | `lumberknot.rs` | 43 | 1 | 2 |  |
 | x | Moment of Heroism | `moment_of_heroism.rs` | 48 | 2 | 0 |  |
 | x | Falkenrath Marauders | `falkenrath_marauders.rs` | 42 | 1 | 2 |  |
-|   | Grasp of Phantoms | `grasp_of_phantoms.rs` | 47 | 2 | 0 |  |
+| x | Grasp of Phantoms | `grasp_of_phantoms.rs` | 47 | 2 | 0 |  |
 | x | Corpse Lunge | `corpse_lunge.rs` | 45 | 2 | 0 |  |
 | x | Doomed Traveler | `doomed_traveler.rs` | 40 | 1 | 2 |  |
 | x | Stromkirk Patrol | `stromkirk_patrol.rs` | 40 | 1 | 2 |  |
@@ -205,7 +233,7 @@ inherits these; its own entry covers the rest.
 | x | Curse of the Nightly Hunt | `curse_of_the_nightly_hunt.rs` | 41 | 2 | 0 |  |
 | x | Feeling of Dread | `feeling_of_dread.rs` | 41 | 2 | 0 |  |
 | x | Nightbird's Clutches | `nightbirds_clutches.rs` | 40 | 2 | 0 |  |
-|   | Unburial Rites | `unburial_rites.rs` | 40 | 2 | 0 |  |
+| x | Unburial Rites | `unburial_rites.rs` | 40 | 2 | 0 |  |
 | x | Purify the Grave | `purify_the_grave.rs` | 39 | 2 | 0 | graveyard targeting offered tokens (CR 109.1) — fixed engine-side |
 | x | Travel Preparations | `travel_preparations.rs` | 39 | 2 | 0 |  |
 | x | Ghostly Possession | `ghostly_possession.rs` | 38 | 2 | 0 |  |
