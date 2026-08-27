@@ -30,7 +30,7 @@ impl CardBehavior for WreathOfGeists {
         // The controller of the aura determines whose graveyard to count.
         let controller = state.get_object(object_id)?.controller;
         let creature_count = i32::try_from(state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_creature(o.id, registry))
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_card(o.id) && state.is_creature(o.id, registry))
             .count()).unwrap_or(i32::MAX);
         Some((creature_count, creature_count))
     }

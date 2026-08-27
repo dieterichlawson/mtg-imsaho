@@ -40,9 +40,9 @@ impl CardBehavior for BackFromTheBrink {
         let creatures: Vec<_> = state.objects_in_zone(Zone::Graveyard, controller)
             .into_iter()
             .filter(|o| {
-                // A creature card: check the object's power (set for creature cards)
-                // or fall back to the registry card data.
-                state.is_creature(o.id, registry)
+                // "exile a creature **card**" — CR 109.1: a token in a graveyard
+                // is not a card, and is only there until the next SBA check.
+                state.is_card(o.id) && state.is_creature(o.id, registry)
                     || state.face_data(o.id, registry)
                         .is_some_and(|d| d.card_types.contains(&CardType::Creature))
             })

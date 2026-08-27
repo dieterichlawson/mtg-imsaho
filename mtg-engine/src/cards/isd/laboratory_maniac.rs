@@ -43,7 +43,7 @@ impl CardBehavior for LaboratoryManiac {
         state.players[opponent.0 as usize].lost = true;
         state.events.push(crate::events::GameEvent::PlayerLost {
             player: opponent,
-            reason: crate::events::LossReason::LifeReachedZero,
+            reason: crate::events::LossReason::OpponentWon,
         });
         state.result = Some(crate::state::GameResult::Winner(*player));
         let name = state.obj_name(self_id);

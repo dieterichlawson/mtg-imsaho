@@ -58,3 +58,38 @@ When Garruk has two or fewer loyalty counters on him, transform him.
 - Ruling 5 (X fixed on resolution, not re-read later): NOT TESTED
 - Ruling 6 (creature entering after resolution gets no bonus): NOT TESTED
 - Ruling 1 (cannot retrigger while the transform trigger is on the stack): NOT TESTED
+## Audit — 2026-08-27 — CR 109.1: a token in a graveyard is not a card
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed?utm_source=api
+**Oracle text**:
+```
+When Garruk has two or fewer loyalty counters on him, transform him.
+0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.
+0: Create a 2/2 green Wolf creature token.
+```
+**Status**: ISSUE (fixed)
+
+### Code issue
+- Oracle text says: a **card** in a graveyard (`see above`)
+- Code did: filtered the graveyard by creature-ness alone, with no card/token distinction.
+- CR 109.1: a token is not a card. CR 111.7 removes a token from a graveyard as
+  a state-based action, so between the moment it dies and the next SBA check it
+  really is sitting there — the same window a dies-trigger sees. Measured
+  directly on Boneyard Wurm: 2/2 with one creature card and one just-died token
+  in the yard, 1/1 the instant SBAs ran. The oracle's answer is 1/1 throughout.
+- Fixed: the graveyard filter now goes through `state.is_card`.
+
+### How this was found
+A sweep for cards whose oracle says "cards in a graveyard" against code that
+never distinguishes tokens. Thirteen cards matched; five already guarded
+(Gnaw to the Bone, Moorland Haunt, Past in Flames, Runechanter's Pike,
+Splinterfright) and eight did not.
+
+Splinterfright and Boneyard Wurm are the instructive pair — near-identical
+text, adjacent in the set. `token_is_not_a_card.rs::cda_does_not_count_tokens_in_graveyard`
+covered Splinterfright, which is why Splinterfright alone had the guard.
+
+### Test coverage
+`token_is_not_a_card.rs::a_token_in_a_graveyard_is_not_a_creature_card` —
+**added by this audit**, covers Boneyard Wurm and Splinterfright together and
+fails against the unfixed code.

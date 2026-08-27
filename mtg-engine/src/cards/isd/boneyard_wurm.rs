@@ -29,7 +29,7 @@ impl CardBehavior for BoneyardWurm {
         let controller = state.get_object(object_id)?.controller;
         let creature_cards_in_gy = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| state.is_creature(o.id, registry))
+            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry))
             .count()).unwrap_or(i32::MAX);
         Some((creature_cards_in_gy, creature_cards_in_gy))
     }

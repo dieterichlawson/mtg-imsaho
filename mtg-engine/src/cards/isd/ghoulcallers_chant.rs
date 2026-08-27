@@ -39,7 +39,8 @@ impl CardBehavior for GhoulcallersChant {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Graveyard && o.owner == caster)
+                    .is_some_and(|o| o.zone == Zone::Graveyard && o.owner == caster
+                        && state.is_card(o.id))
             }
             Target::Player(_) => false,
         }

@@ -53,4 +53,8 @@ pub enum LossReason {
     LifeReachedZero,
     DrewFromEmptyLibrary,
     Conceded,
+    /// CR 104.2a: in a two-player game, a player loses when their opponent
+    /// wins. Nothing happened to *them* — Laboratory Maniac used to report
+    /// this as `LifeReachedZero`, which is simply untrue of a player on 20.
+    OpponentWon,
 }

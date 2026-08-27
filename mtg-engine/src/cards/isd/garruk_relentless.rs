@@ -213,7 +213,9 @@ impl CardBehavior for GarrukRelentless {
                 // where X is the number of creature cards in your graveyard.
                 let x = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
                     .iter()
-                    .filter(|o| state.has_card_type(o.id, CardType::Creature, registry))
+                    // "the number of creature **cards** in your graveyard" —
+                    // CR 109.1, so a token that has just died does not count.
+                    .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry))
                     .count()).unwrap_or(i32::MAX);
 
                 // `obj.card_types` is empty for every non-token permanent, so

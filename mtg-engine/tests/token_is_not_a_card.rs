@@ -211,3 +211,42 @@ fn mindshrieker_milled_creature_triggers_undead_alchemist() {
     assert_eq!(zombies_after, zombies_before + 1,
         "and creates a 2/2 Zombie token");
 }
+
+/// CR 109.1: a token is not a card. Every ISD card whose text counts or picks
+/// "creature **cards** in your graveyard" has to skip a token sitting there.
+///
+/// A token in a graveyard is not a hypothetical state — CR 111.7 removes it as
+/// a state-based action, so between the moment it dies and the next SBA check
+/// it really is in the graveyard, which is exactly the window a dies-trigger
+/// sees. Boneyard Wurm read 2/2 in that window with one creature card and one
+/// dead token in the yard, and 1/1 the instant SBAs ran.
+///
+/// Unbreathing Horde was the one card that already got this right, and its
+/// comment says why: its own text says "each other **Zombie** you control"
+/// (tokens count) and "each Zombie **card** in your graveyard" (they do not).
+#[test]
+fn a_token_in_a_graveyard_is_not_a_creature_card() {
+    let reg = registry();
+    // (card, how to read its "creature cards in your graveyard" count)
+    let mut checked = 0;
+    for name in ["Boneyard Wurm", "Splinterfright"] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pt_source = named_permanent(&mut state, &reg, name, P0);
+        named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+        let before = state.effective_power(pt_source, &reg);
+
+        // A creature token dies and lands in the graveyard. It is still there
+        // until the next state-based action check.
+        let token = state.create_token(
+            "Zombie", P0, 2, 2, vec![], vec![CardType::Creature], vec![], &reg)[0];
+        state.move_object(token, Zone::Graveyard, &reg);
+        assert!(state.get_object(token).is_some(),
+            "{name}: test premise — the token is in the graveyard until SBAs run");
+
+        assert_eq!(state.effective_power(pt_source, &reg), before,
+            "{name}: a token in the graveyard is not a creature card (CR 109.1), \
+             so the count must not move");
+        checked += 1;
+    }
+    assert!(checked >= 2, "only {checked} cards checked — the sweep stopped covering anything");
+}

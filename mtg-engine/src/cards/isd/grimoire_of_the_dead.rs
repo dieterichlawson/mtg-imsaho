@@ -130,7 +130,7 @@ impl CardBehavior for GrimoireOfTheDead {
                 // for Creature in addition to checking power (which is the heuristic
                 // for creatures created by the engine).
                 let creatures: Vec<ObjectId> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Graveyard && o.id != object_id)
+                    .filter(|o| o.zone == Zone::Graveyard && o.id != object_id && state.is_card(o.id))
                     .filter(|o| {
                         state.is_creature(o.id, registry)
                     })
