@@ -29,20 +29,27 @@ impl CardBehavior for MikaeusTheLunarch {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // Move to battlefield.
-        state.move_object(object_id, Zone::Battlefield, registry);
-        // Enter with X +1/+1 counters.
-        let x = state.get_object(object_id).and_then(|o| o.x_value).unwrap_or(0);
-        if x > 0 {
-            state.add_counters(object_id, CounterType::PlusOnePlusOne, x);
-            state.log(crate::state::LogLevel::Event,
-                format!("Mikaeus, the Lunarch enters with {x} +1/+1 counters"));
-        }
-        // Set legendary flag.
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_legendary = true;
-        }
+    /// "Mikaeus enters with X +1/+1 counters on it" is a replacement effect
+    /// (CR 614.1c), not something to do to it after it has arrived.
+    ///
+    /// This used to override `on_resolve` to `move_object` and then
+    /// `add_counters`. `move_object` emits `EnteredBattlefield` as part of the
+    /// move, so every ETB watcher saw a 0/0 Mikaeus and the counters landed
+    /// afterwards — and a 0/0 creature is one state-based-action check away
+    /// from the graveyard (CR 704.5f). The same override also re-did the trait
+    /// default's "move a permanent to the battlefield" and its `is_legendary`
+    /// stamping.
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        let x = state.get_object(self_id).and_then(|o| o.x_value).unwrap_or(0);
+        crate::cards::helpers::enters_with_counters(self_id, event, || {
+            if x > 0 { vec![(CounterType::PlusOnePlusOne, x)] } else { vec![] }
+        })
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {

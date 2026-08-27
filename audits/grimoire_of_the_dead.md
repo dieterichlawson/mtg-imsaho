@@ -67,3 +67,32 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 - The discard/counter loop and the reanimation: `cards_complex_creatures.rs:grimoire_discard_presents_choice_and_adds_study_counter`, `:grimoire_accumulates_three_study_counters`, `:grimoire_reanimates_all_graveyard_creatures`, `:grimoire_single_card_in_hand_auto_discards`
+## Audit — 2026-08-27 (Tier A)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/226/grimoire-of-the-dead?utm_source=api
+**Type line**: `Legendary Artifact` — {4}
+**Oracle text**:
+```
+{1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
+{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.
+```
+
+**Status**: ISSUE
+
+### Code issues
+See below.
+
+
+- Same dead `on_resolve` override as Geist of Saint Traft — move plus
+  `is_legendary`, both the trait default's job. Deleted.
+
+### Tricky interactions checked
+- Covered in full in the previous entry; nothing else changed.
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The discard/counter loop and the reanimation: `cards_complex_creatures.rs`

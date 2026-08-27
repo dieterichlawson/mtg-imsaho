@@ -1,7 +1,7 @@
 use crate::cards::{AttackInfo, CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, Keyword};
 use crate::actions::Target;
 
 /// Geist of Saint Traft {1}{W}{U} 2/2 Legendary Spirit Cleric with Hexproof.
@@ -33,13 +33,6 @@ impl CardBehavior for GeistOfSaintTraft {
                 },
             ],
             ..Default::default()
-        }
-    }
-
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[crate::actions::Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_legendary = true;
         }
     }
 

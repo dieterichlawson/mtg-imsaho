@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**207/249 audited.**
+**229/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -59,24 +59,24 @@ inherits these; its own entry covers the rest.
 | x | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 | x | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 113/155
+## Tier B — moderate (triggered or activated abilities) — 135/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
 | x | Charmbreaker Devils | `charmbreaker_devils.rs` | 119 | 4 | 3 |  |
 | x | Bitterheart Witch | `bitterheart_witch.rs` | 176 | 3 | 2 | targeted trigger declared untargeted (CR 603.3d) — fixed |
 | x | Grimoire of the Dead | `grimoire_of_the_dead.rs` | 176 | 4 | 0 |  |
-|   | Fiend Hunter | `fiend_hunter.rs` | 92 | 4 | 3 |  |
+| x | Fiend Hunter | `fiend_hunter.rs` | 92 | 4 | 3 |  |
 | x | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 110 | 4 | 2 | hand-written life change bypassed the damage pipeline — fixed |
 | x | Olivia Voldaren | `olivia_voldaren.rs` | 151 | 3 | 2 |  |
 | x | Graveyard Shovel | `graveyard_shovel.rs` | 132 | 4 | 0 | counted tokens as cards (CR 109.1) — fixed |
 | x | Blazing Torch | `blazing_torch.rs` | 129 | 4 | 0 | sacrifice is a cost — `pay_activation_cost` |
 |   | Moorland Haunt | `moorland_haunt.rs` | 120 | 4 | 0 |  |
 | x | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 67 | 4 | 2 |  |
-|   | Morkrut Banshee | `morkrut_banshee.rs` | 67 | 4 | 2 |  |
+| x | Morkrut Banshee | `morkrut_banshee.rs` | 67 | 4 | 2 |  |
 | x | Claustrophobia | `claustrophobia.rs` | 57 | 4 | 2 |  |
-|   | Mentor of the Meek | `mentor_of_the_meek.rs` | 102 | 3 | 2 |  |
-|   | Skirsdag High Priest | `skirsdag_high_priest.rs` | 148 | 3 | 0 |  |
+| x | Mentor of the Meek | `mentor_of_the_meek.rs` | 102 | 3 | 2 |  |
+| x | Skirsdag High Priest | `skirsdag_high_priest.rs` | 148 | 3 | 0 |  |
 | x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 89 | 3 | 2 |  |
 |   | Caravan Vigil | `caravan_vigil.rs` | 137 | 3 | 0 |  |
 | x | Tribute to Hunger | `tribute_to_hunger.rs` | 91 | 4 | 0 |  |
@@ -87,29 +87,29 @@ inherits these; its own entry covers the rest.
 | x | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 84 | 4 | 0 |  |
 | x | Woodland Sleuth | `woodland_sleuth.rs` | 79 | 3 | 2 |  |
 | x | Back from the Brink | `back_from_the_brink.rs` | 127 | 3 | 0 |  |
-|   | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 125 | 3 | 0 |  |
+| x | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 125 | 3 | 0 | entered as a 0/0, counters after (CR 614.1c) — fixed |
 | x | Splinterfright | `splinterfright.rs` | 72 | 3 | 2 |  |
 | x | Inquisitor's Flail | `inquisitors_flail.rs` | 75 | 4 | 0 |  |
 | x | Cobbled Wings | `cobbled_wings.rs` | 74 | 4 | 0 |  |
-|   | Hamlet Captain | `hamlet_captain.rs` | 89 | 2 | 3 |  |
-|   | Snapcaster Mage | `snapcaster_mage.rs` | 69 | 3 | 2 |  |
+| x | Hamlet Captain | `hamlet_captain.rs` | 89 | 2 | 3 |  |
+| x | Snapcaster Mage | `snapcaster_mage.rs` | 69 | 3 | 2 |  |
 | x | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 68 | 3 | 2 |  |
-|   | Bloodgift Demon | `bloodgift_demon.rs` | 67 | 3 | 2 |  |
+| x | Bloodgift Demon | `bloodgift_demon.rs` | 67 | 3 | 2 |  |
 | x | Mask of Avacyn | `mask_of_avacyn.rs` | 69 | 4 | 0 |  |
 | x | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 61 | 3 | 2 |  |
 |   | Witchbane Orb | `witchbane_orb.rs` | 61 | 3 | 2 |  |
 |   | Skeletal Grimace | `skeletal_grimace.rs` | 65 | 4 | 0 |  |
-|   | Geist-Honored Monk | `geist_honored_monk.rs` | 57 | 3 | 2 |  |
+| x | Geist-Honored Monk | `geist_honored_monk.rs` | 57 | 3 | 2 |  |
 | x | Curse of Stalked Prey | `curse_of_stalked_prey.rs` | 56 | 3 | 2 |  |
 |   | Divine Reckoning | `divine_reckoning.rs` | 147 | 2 | 0 |  |
 | x | Falkenrath Noble | `falkenrath_noble.rs` | 72 | 2 | 3 |  |
 | x | Selhoff Occultist | `selhoff_occultist.rs` | 71 | 2 | 3 |  |
-|   | Geist of Saint Traft | `geist_of_saint_traft.rs` | 94 | 2 | 2 |  |
+| x | Geist of Saint Traft | `geist_of_saint_traft.rs` | 94 | 2 | 2 | dead `on_resolve` override — deleted |
 | x | Ghost Quarter | `ghost_quarter.rs` | 99 | 3 | 0 | CR 602.2a + CR 608.2b for abilities — fixed |
-|   | Murder of Crows | `murder_of_crows.rs` | 89 | 2 | 2 |  |
-|   | Ashmouth Hound | `ashmouth_hound.rs` | 56 | 2 | 3 |  |
-|   | Undead Alchemist | `undead_alchemist.rs` | 102 | 2 | 1 |  |
-|   | Elder Cathar | `elder_cathar.rs` | 76 | 2 | 2 |  |
+| x | Murder of Crows | `murder_of_crows.rs` | 89 | 2 | 2 |  |
+| x | Ashmouth Hound | `ashmouth_hound.rs` | 56 | 2 | 3 |  |
+| x | Undead Alchemist | `undead_alchemist.rs` | 102 | 2 | 1 |  |
+| x | Elder Cathar | `elder_cathar.rs` | 76 | 2 | 2 |  |
 |   | Burning Vengeance | `burning_vengeance.rs` | 75 | 2 | 2 |  |
 | x | Manor Gargoyle | `manor_gargoyle.rs` | 80 | 3 | 0 |  |
 | x | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 79 | 3 | 0 |  |
@@ -130,7 +130,7 @@ inherits these; its own entry covers the rest.
 | x | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 63 | 3 | 0 |  |
 |   | Nephalia Drownyard | `nephalia_drownyard.rs` | 62 | 3 | 0 |  |
 | x | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 57 | 2 | 2 |  |
-|   | Sturmgeist | `sturmgeist.rs` | 54 | 2 | 2 |  |
+| x | Sturmgeist | `sturmgeist.rs` | 54 | 2 | 2 |  |
 | x | Ranger's Guile | `rangers_guile.rs` | 57 | 3 | 0 |  |
 | x | Crossway Vampire | `crossway_vampire.rs` | 48 | 2 | 2 |  |
 | x | Village Bell-Ringer | `village_bell_ringer.rs` | 48 | 2 | 2 |  |
@@ -166,21 +166,21 @@ inherits these; its own entry covers the rest.
 | x | Abattoir Ghoul | `abattoir_ghoul.rs` | 61 | 1 | 2 |  |
 | x | Disciple of Griselbrand | `disciple_of_griselbrand.rs` | 66 | 2 | 0 |  |
 | x | Rage Thrower | `rage_thrower.rs` | 58 | 1 | 2 |  |
-|   | Deranged Assistant | `deranged_assistant.rs` | 60 | 2 | 0 |  |
+| x | Deranged Assistant | `deranged_assistant.rs` | 60 | 2 | 0 |  |
 | x | Selfless Cathar | `selfless_cathar.rs` | 60 | 2 | 0 |  |
 | x | Skirsdag Cultist | `skirsdag_cultist.rs` | 60 | 2 | 0 |  |
 |   | Traitorous Blood | `traitorous_blood.rs` | 60 | 2 | 0 |  |
 | x | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 54 | 1 | 2 |  |
-|   | Rakish Heir | `rakish_heir.rs` | 54 | 1 | 2 |  |
-|   | Creepy Doll | `creepy_doll.rs` | 52 | 1 | 2 |  |
+| x | Rakish Heir | `rakish_heir.rs` | 54 | 1 | 2 |  |
+| x | Creepy Doll | `creepy_doll.rs` | 52 | 1 | 2 |  |
 | x | Darkthicket Wolf | `darkthicket_wolf.rs` | 57 | 2 | 0 |  |
 | x | Feral Ridgewolf | `feral_ridgewolf.rs` | 57 | 2 | 0 |  |
 | x | Sever the Bloodline | `sever_the_bloodline.rs` | 57 | 2 | 0 |  |
-|   | Champion of the Parish | `champion_of_the_parish.rs` | 50 | 1 | 2 |  |
+| x | Champion of the Parish | `champion_of_the_parish.rs` | 50 | 1 | 2 |  |
 | x | Harvest Pyre | `harvest_pyre.rs` | 55 | 2 | 0 |  |
-|   | Kessig Wolf | `kessig_wolf.rs` | 55 | 2 | 0 |  |
-|   | Manor Skeleton | `manor_skeleton.rs` | 55 | 2 | 0 |  |
-|   | Silverchase Fox | `silverchase_fox.rs` | 54 | 2 | 0 |  |
+| x | Kessig Wolf | `kessig_wolf.rs` | 55 | 2 | 0 |  |
+| x | Manor Skeleton | `manor_skeleton.rs` | 55 | 2 | 0 |  |
+| x | Silverchase Fox | `silverchase_fox.rs` | 54 | 2 | 0 |  |
 | x | Bonds of Faith | `bonds_of_faith.rs` | 52 | 2 | 0 |  |
 | x | Devil's Play | `devils_play.rs` | 52 | 2 | 0 |  |
 |   | Lantern Spirit | `lantern_spirit.rs` | 52 | 2 | 0 |  |

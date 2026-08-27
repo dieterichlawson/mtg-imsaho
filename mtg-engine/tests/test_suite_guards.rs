@@ -1057,3 +1057,44 @@ fn only_change_life_writes_a_life_total() {
          `lose_life`), which emits LifeChanged for every watcher:\n  {}",
         offenders.join("\n  "));
 }
+
+/// A permanent does not put itself onto the battlefield.
+///
+/// The trait default for `on_resolve` already does it — and stamps
+/// `is_legendary` and a planeswalker's starting loyalty while it is there.
+/// Sixteen cards overrode it anyway: eleven Equipment to set a flag that is now
+/// derived from the Equipment subtype, and five more to do *entry work* after
+/// the move.
+///
+/// That ordering is the bug the rule is about. `move_object` emits
+/// `EnteredBattlefield` as part of the move, so anything done afterwards
+/// happens where every ETB watcher has already looked. Grimgrin arrived
+/// untapped and was tapped after; Mikaeus arrived as a 0/0 — one state-based
+/// action check from the graveyard (CR 704.5f) — and got its counters after.
+/// Both belong in `replace_event` (CR 614.1c), which the engine applies
+/// *before* the permanent enters.
+#[test]
+fn no_permanent_moves_itself_onto_the_battlefield() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") || rel == "cards/mod.rs" {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            if l.contains("move_object(object_id, Zone::Battlefield")
+                || l.contains("move_object(self_id, Zone::Battlefield") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "the trait default for `on_resolve` puts a permanent onto the \
+         battlefield; entering tapped or with counters is a replacement effect \
+         (CR 614.1c) and goes in `replace_event`, which applies before the \
+         permanent enters rather than after:\n  {}",
+        offenders.join("\n  "));
+}
