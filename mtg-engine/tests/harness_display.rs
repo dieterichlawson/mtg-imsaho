@@ -73,8 +73,10 @@ fn a_transformed_cards_trigger_label_names_the_face_that_is_showing() {
     };
     let label = trigger.display_name_with_state(&reg, Some(&state));
 
+    assert!(label.contains("Rampaging Werewolf"),
+        "the label names the face that is on the battlefield; label = {label:?}");
     assert!(!label.contains("Tormented Pariah"),
-        "the front-face name names a permanent that is not on the battlefield; \
+        "and not the front face, which names a permanent that is not there; \
          label = {label:?}");
 }
 

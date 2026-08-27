@@ -1,164 +1,108 @@
+//! Casting an {X} spell: the autotap planner, the funding prompt, and the X
+//! the spell ends up with.
+//!
+//! CR 601.2b — X is chosen as the spell is put on the stack, and the cost is
+//! then the announced X plus the printed remainder. The engine asks: the spell
+//! stays in hand through a `ChooseXFunding` prompt and only reaches the stack
+//! once the player has said which sources pay for it. That prompt is the whole
+//! point, so a test that submits the cast and stops has not tested casting.
+//!
+//! These four cases used to be four near-identical tests, one of which ended
+//! at `let _new_state = submit_action(...)` under the comment "should not
+//! panic" — it would have passed with X computed as anything at all.
+
 mod common;
 
 use common::*;
 use mtg_engine::actions::Action;
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Regression test: casting an X-cost spell (Devil's Play) with untapped lands
-/// but no mana in pool should autotap the lands, not panic.
-#[test]
-fn test_x_cost_spell_autotap_does_not_panic() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put Devil's Play ({X}{R}) in hand
-    let devils_play = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
-
-    // Put 3 Mountains on the battlefield (enough for X=2 with {R} colored cost)
-    named_permanent(&mut state, &registry, "Mountain", P0);
-    named_permanent(&mut state, &registry, "Mountain", P0);
-    named_permanent(&mut state, &registry, "Mountain", P0);
-
-    // Put a target creature for the opponent
-    let _target_creature = ready_creature(&mut state, P1, 2, 2);
-
-    // Get legal actions — Devil's Play should be castable
-    let legal = engine::legal_actions(&state, &registry);
-
-    // Find the CastSpell action for Devil's Play
-    let cast_action = legal
-        .actions
-        .iter()
-        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == devils_play))
-        .expect("Devil's Play should be castable with 3 untapped Mountains");
-
-    // This should NOT panic — it previously panicked with "InsufficientMana"
-    // because the tap_plan was empty for X-cost spells.
-    let new_state = engine::submit_action(&state, cast_action, &registry);
-
-    // Rules-strict X-cost casting: the spell stays in hand until the
-    // ChooseXFunding prompt is resolved. After that, it's on the stack.
-    let new_state = resolve_funding_max(&new_state, &registry);
-    assert!(
-        new_state
-            .objects_in_zone(Zone::Stack, P0)
-            .iter()
-            .any(|o| o.name == "Devil's Play"),
-        "Devil's Play should be on the stack after funding completes"
-    );
+/// How the mana for the cast is available.
+enum Mana {
+    /// This many untapped lands of the given name — the autotap planner has
+    /// to find them, which is what used to panic with "InsufficientMana"
+    /// because an X spell's tap plan came back empty.
+    Lands(&'static str, usize),
+    /// Already floating, so nothing is tapped.
+    Pool(ManaType, u32),
 }
 
-/// Test that X-cost spell computes the correct X value when autotapping.
-#[test]
-fn test_x_cost_spell_correct_x_value() {
-    let registry = CardRegistry::with_all_cards();
+/// Cast `name` for the most X the board can fund, and return the resulting
+/// state with the spell on the stack.
+fn cast_for_max_x(
+    reg: &mtg_engine::cards::CardRegistry,
+    name: &str,
+    mana: &Mana,
+) -> (GameState, ObjectId) {
     let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let devils_play = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
-
-    // 5 Mountains: {R} for colored cost + 4 remaining = X=4
-    for _ in 0..5 {
-        named_permanent(&mut state, &registry, "Mountain", P0);
+    let spell = spell_in_hand(&mut state, reg, name, P0);
+    match *mana {
+        Mana::Lands(land, n) => for _ in 0..n { named_permanent(&mut state, reg, land, P0); },
+        Mana::Pool(kind, n) => state.get_player_mut(P0).mana_pool.add(kind, n),
     }
+    // Something to point at, so nothing is held back for want of a target.
+    ready_creature(&mut state, P1, 5, 5);
 
-    let target_creature = ready_creature(&mut state, P1, 5, 5);
+    let legal = engine::legal_actions(&state, reg);
+    let cast = legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))
+        .unwrap_or_else(|| panic!("{name} should be castable"));
 
-    let legal = engine::legal_actions(&state, &registry);
-    let cast_action = legal
-        .actions
-        .iter()
-        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == devils_play))
-        .expect("Devil's Play should be castable");
+    let state = engine::submit_action(&state, cast, reg);
+    assert!(matches!(&state.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
+        "{name}: casting an X spell asks how X is funded before it reaches the \
+         stack (CR 601.2b); got {:?}", state.awaiting_action);
 
-    let mut new_state = engine::submit_action(&state, cast_action, &registry);
-
-    // After casting, the engine should present a ChooseXFunding prompt.
-    // Submit a max-X response: tap all 4 remaining Mountains.
-    new_state = resolve_funding_max(&new_state, &registry);
-
-    // Check X value on the spell
-    let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
-    let spell_obj = stack_objs
-        .iter()
-        .find(|o| o.name == "Devil's Play")
-        .expect("Devil's Play should be on the stack");
-    let x_val = spell_obj.x_value;
-
-    // X should be total mana (5) minus non-X cost (1 for {R}) = 4
-    assert_eq!(
-        x_val,
-        Some(4),
-        "X value should be 4 (5 mountains - 1 for {{R}})"
-    );
-
-    // Resolve and check damage
-    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &registry);
-    let target = new_state.get_object(target_creature);
-    // 5/5 creature took 4 damage, should be at 1 toughness (5 - 4)
-    assert!(target.is_some(), "Creature should still exist (4 damage to 5 toughness)");
+    (resolve_funding_max(&state, reg), spell)
 }
 
-/// Test that X-cost spell works when mana is already in pool (no tapping needed).
+/// X is everything the board can pay beyond the printed part of the cost, and
+/// the spell reaches the stack carrying it.
 #[test]
-fn test_x_cost_spell_with_mana_in_pool() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn x_is_what_is_left_after_the_printed_cost_is_paid() {
+    let reg = registry();
+    // (spell, how the mana is available, expected X)
+    let cases: &[(&str, Mana, u32)] = &[
+        // {X}{R}: three Mountains pay {R} and leave two.
+        ("Devil's Play", Mana::Lands("Mountain", 3), 2),
+        ("Devil's Play", Mana::Lands("Mountain", 5), 4),
+        // Already floating: nothing to tap, same arithmetic.
+        ("Devil's Play", Mana::Pool(ManaType::Red, 3), 2),
+        // {X}{W} on a creature rather than a sorcery.
+        ("Mikaeus, the Lunarch", Mana::Lands("Plains", 4), 3),
+    ];
 
-    let devils_play = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
-
-    // Add 3 red mana directly to pool
-    state
-        .get_player_mut(P0)
-        .mana_pool
-        .add(ManaType::Red, 3);
-
-    let _target_creature = ready_creature(&mut state, P1, 2, 2);
-
-    let legal = engine::legal_actions(&state, &registry);
-    let cast_action = legal
-        .actions
-        .iter()
-        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == devils_play))
-        .expect("Devil's Play should be castable with 3R in pool");
-
-    // Should not panic
-    let mut new_state = engine::submit_action(&state, cast_action, &registry);
-
-    // Resolve the ChooseXFunding prompt by funding X to the max.
-    new_state = resolve_funding_max(&new_state, &registry);
-
-    let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
-    let spell = stack_objs
-        .iter()
-        .find(|o| o.name == "Devil's Play")
-        .expect("Should be on stack");
-
-    // X = 3 total - 1 for {R} = 2
-    assert_eq!(spell.x_value, Some(2));
-}
-
-/// Test Mikaeus the Lunarch ({X}{W}) with autotap.
-#[test]
-fn test_mikaeus_x_cost_autotap() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let mikaeus = spell_in_hand(&mut state, &registry, "Mikaeus, the Lunarch", P0);
-
-    // 4 Plains: {W} for colored cost + 3 remaining = X=3
-    for _ in 0..4 {
-        named_permanent(&mut state, &registry, "Plains", P0);
+    for (name, mana, expected_x) in cases {
+        let (state, spell) = cast_for_max_x(&reg, name, mana);
+        let obj = state.get_object(spell).expect("the spell still exists");
+        assert_eq!(obj.zone, Zone::Stack,
+            "{name}: the spell is on the stack once funding is settled");
+        assert_eq!(obj.x_value, Some(*expected_x),
+            "{name}: X is the mana available beyond the printed cost");
     }
+}
 
-    let legal = engine::legal_actions(&state, &registry);
-    let cast_action = legal
-        .actions
-        .iter()
-        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == mikaeus))
-        .expect("Mikaeus should be castable with 4 Plains");
+/// The X a spell was cast for is the X its effect uses. Devil's Play deals
+/// that much damage; Mikaeus arrives with that many +1/+1 counters
+/// (CR 107.3e — X in a resolving spell's text is the value chosen for it).
+#[test]
+fn the_announced_x_is_the_x_the_spell_resolves_with() {
+    let reg = registry();
 
-    // Should not panic
-    let _new_state = engine::submit_action(&state, cast_action, &registry);
+    let (mut state, spell) = cast_for_max_x(&reg, "Devil's Play", &Mana::Lands("Mountain", 5));
+    let target = state.objects_in_zone(Zone::Battlefield, P1)[0].id;
+    // The cast locked its target; resolving deals X to it.
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 4,
+        "Devil's Play cast for X=4 deals 4, not its printed 0");
+
+    let (mut state, mikaeus) = cast_for_max_x(&reg, "Mikaeus, the Lunarch", &Mana::Lands("Plains", 4));
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let obj = state.get_object(mikaeus).unwrap();
+    assert_eq!(obj.zone, Zone::Battlefield);
+    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 3,
+        "Mikaeus enters with X +1/+1 counters, and X was 3");
 }
