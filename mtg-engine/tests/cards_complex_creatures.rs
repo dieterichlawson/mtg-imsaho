@@ -919,6 +919,33 @@ fn grimgrin_enters_tapped() {
     assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield);
 }
 
+/// "Grimgrin enters tapped **and doesn't untap during your untap step**." The
+/// second half is the whole reason the sacrifice ability exists — without it
+/// Grimgrin would simply untap for free every turn — and it had no test.
+///
+/// Another tapped creature untaps in the same step, so this shows the untap
+/// step really ran rather than being skipped.
+#[test]
+fn grimgrin_does_not_untap_during_his_controllers_untap_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let other = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(grimgrin).unwrap().tapped = true;
+    state.get_object_mut(other).unwrap().tapped = true;
+
+    // Round the table back to P0's untap step.
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_next_turn(&mut state, &reg);
+    assert_eq!(state.active_player, P0, "back to Grimgrin's controller's turn");
+
+    assert!(!state.get_object(other).unwrap().tapped,
+        "an ordinary creature untapped, so the untap step ran");
+    assert!(state.get_object(grimgrin).unwrap().tapped,
+        "Grimgrin does not untap during his controller's untap step");
+}
+
 #[test]
 fn grimgrin_sacrifice_untaps_and_counters() {
     let reg = registry();
