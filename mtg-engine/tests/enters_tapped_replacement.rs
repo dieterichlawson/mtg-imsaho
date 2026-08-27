@@ -146,3 +146,28 @@ fn check_lands_do_not_satisfy_each_other() {
         "Sulfur Falls is not a Mountain or a Plains, so Clifftop Retreat \
          enters tapped");
 }
+
+/// "This creature enters tapped" holds however it enters — cast, reanimated,
+/// or put onto the battlefield by anything else (CR 614.1c).
+///
+/// Diregraf Ghoul used to tap itself inside `on_resolve`, which only runs when
+/// the card is *cast*. Innistrad has several ways to put a creature card from a
+/// graveyard onto the battlefield — Unburial Rites, Grimoire of the Dead, Back
+/// from the Brink — and down every one of those paths the Ghoul arrived
+/// untapped. Its own comment said "'enters tapped' is a static/replacement
+/// ability, NOT a triggered ability", and the code did not follow it.
+#[test]
+fn a_creature_that_enters_tapped_does_so_however_it_arrives() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Not cast: reanimated straight from the graveyard onto the battlefield.
+    let ghoul = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    assert!(!state.get_object(ghoul).unwrap().tapped, "test premise: not tapped in the yard");
+
+    state.move_object(ghoul, Zone::Battlefield, &reg);
+
+    assert!(state.get_object(ghoul).unwrap().tapped,
+        "a reanimated Diregraf Ghoul still enters tapped — the replacement \
+         applies to the entering event, not to being cast (CR 614.1c)");
+}

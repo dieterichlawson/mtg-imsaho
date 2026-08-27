@@ -1,8 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
-use crate::actions::Target;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Diregraf Ghoul — 2/2 for {B}. Enters the battlefield tapped.
 /// Note: "enters tapped" is a static/replacement ability, NOT a triggered ability.
@@ -24,10 +23,19 @@ impl CardBehavior for DiregrafGhoul {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.tapped = true;
-        }
+    /// CR 614.1c: "enters tapped" is a replacement effect — the permanent never
+    /// enters untapped and is then turned. Moving it to the battlefield and
+    /// setting `tapped` afterwards, as this used to, fires `EnteredBattlefield`
+    /// with an untapped Ghoul for every watcher to see, and does the engine's
+    /// resolution work besides. The same helper the ISD dual lands use, with no
+    /// condition — this one is always tapped.
+    fn replace_event(
+        &self,
+        _state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        crate::cards::helpers::enters_tapped_unless(self_id, event, || false)
     }
 }
