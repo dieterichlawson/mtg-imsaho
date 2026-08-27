@@ -25,3 +25,33 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `fizzle.rs` (CR 608.2b, including the new hexproof-in-response case), `cards_removal_and_bounce.rs`, `multi_target_and_mill.rs`.
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/172/bramblecrush?utm_source=api
+**Type line**: `Sorcery` — {2}{G}{G}
+**Oracle text**:
+```
+Destroy target noncreature permanent.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- "target **noncreature** permanent" — lands, artifacts, enchantments and
+  planeswalkers are all legal; a creature is not, and an artifact *creature* is
+  not either: PASS
+- The restriction is re-checked on resolution, so a permanent that became a
+  creature in response makes it fizzle (CR 608.2b): PASS
+- `try_destroy`, so indestructible survives: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The noncreature filter: `cards_removal.rs`, `fizzle.rs`

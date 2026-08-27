@@ -30,3 +30,41 @@ At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, wher
 ### Test coverage
 `your_upkeep_scope.rs::a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses`
 covers this card by registry sweep, in both directions.
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/99/endless-ranks-of-the-dead?utm_source=api
+**Type line**: `Enchantment` — {2}{B}{B}
+**Oracle text**:
+```
+At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- Ruling: "If you control **fewer than two** Zombies, you won't get any tokens."
+  Integer division — `zombie_count / 2` — rounds down, so one Zombie makes none:
+  PASS
+- "**rounded down**": PASS
+- Ruling: "The number of Zombies you control is counted **when the ability
+  resolves**. If you control multiple Endless Ranks of the Dead, the tokens you
+  get when the first ability resolves will count for the subsequent abilities."
+  The count is taken inside the trigger handler, so a second copy resolving
+  afterwards sees the first copy's tokens: PASS
+- Zombie *tokens* count toward the number — the text says "Zombies you control",
+  not "Zombie cards": PASS
+- The tokens carry colour and the Zombie subtype, so they feed the next upkeep:
+  PASS
+- "At the beginning of **your** upkeep": PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The halving and the token subtype: `cards_complex_creatures.rs`, `subtype.rs`

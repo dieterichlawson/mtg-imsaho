@@ -27,3 +27,36 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `cards_death_triggers_and_tokens.rs`, `trigger_targets_declared.rs` (targets locked at trigger time), `intervening_if.rs` (the morbid pair), `auto_pick.rs` (choices the engine must not make for a player).
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/102/ghoulraiser?utm_source=api
+**Type line**: `Creature — Zombie` — {1}{B}{B}, 2/2
+**Oracle text**:
+```
+When this creature enters, return a Zombie card at random from your graveyard to your hand.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- "return a Zombie card **at random**" — the choice is made at resolution, not
+  by the player: PASS
+- CR 109.1: "a Zombie **card**", so a Zombie token in the graveyard is not a
+  candidate. The filter relied on `face_data` being None for a token; it now
+  says `state.is_card` outright: PASS
+- Ghoulraiser is itself a Zombie, so it can return itself if it is in the
+  graveyard when the trigger resolves — no self-exclusion, and the card says
+  "a Zombie card", not "another": PASS
+- An empty graveyard returns nothing: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The random return and the token exclusion: `cards_complex_creatures.rs`, `token_is_not_a_card.rs`

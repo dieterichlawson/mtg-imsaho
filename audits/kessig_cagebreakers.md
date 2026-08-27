@@ -31,3 +31,41 @@ covered Splinterfright, which is why Splinterfright alone had the guard.
 `token_is_not_a_card.rs::a_token_in_a_graveyard_is_not_a_creature_card` —
 **added by this audit**, covers Boneyard Wurm and Splinterfright together and
 fails against the unfixed code.
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/189/kessig-cagebreakers?utm_source=api
+**Type line**: `Creature — Human Rogue` — {4}{G}, 3/4
+**Oracle text**:
+```
+Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- Ruling: "You count the number of creature cards in your graveyard **when the
+  triggered ability resolves**": PASS
+- Ruling: "Although the tokens are attacking, they were **never declared as
+  attacking creatures** (for purposes of abilities that trigger whenever a
+  creature attacks)." The tokens are inserted straight into `combat.attackers`
+  rather than going through `declare_attackers`, so no Attacks trigger fires for
+  them — including the Cagebreakers' own: PASS
+- Ruling: "You declare which player or planeswalker each token is attacking as
+  you put it onto the battlefield. It doesn't have to be the same player" — the
+  defending player is read from combat state: PASS
+- CR 109.1: "for each creature **card** in your graveyard", so tokens there are
+  not counted: PASS
+- The tokens enter tapped and are not summoning sick, so they deal combat damage
+  this turn: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The token count and the attacking tokens: `cards_complex_creatures.rs`, `combat_rules.rs`

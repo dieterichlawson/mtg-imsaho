@@ -48,3 +48,35 @@ had no other users; they are removed, so the shape cannot come back by copying.
 - `snapshot_anthems.rs::spare_from_evil_protects_only_what_was_there`
 - `snapshot_anthems.rs::selfless_cathars_anthem_is_fixed_at_resolution`
 - `snapshot_anthems.rs::a_static_anthem_stops_when_its_source_leaves` — the other side of the distinction, and correct all along
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/30/selfless-cathar?utm_source=api
+**Type line**: `Creature — Human Cleric` — {W}, 1/1
+**Oracle text**:
+```
+{1}{W}, Sacrifice this creature: Creatures you control get +1/+1 until end of turn.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- "{1}{W}, **Sacrifice this creature**: Creatures you control get +1/+1 until
+  end of turn" — the sacrifice is a cost, so the Cathar is in the graveyard
+  while the ability is on the stack and the anthem is applied from there: PASS
+- CR 611.2c: the set of creatures is fixed **when the ability resolves**, so a
+  creature that arrives afterwards gets nothing. This is the rule a live
+  `ModifyPTAll` filter got wrong — the pump is now applied per creature at
+  resolution: PASS
+- The Cathar itself is gone by resolution, so it does not pump itself: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The snapshot at resolution: `snapshot_anthems.rs:selfless_cathars_anthem_is_fixed_at_resolution`

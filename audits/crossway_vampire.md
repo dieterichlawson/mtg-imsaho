@@ -21,3 +21,30 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `cards_death_triggers_and_tokens.rs`, `trigger_targets_declared.rs` (targets locked at trigger time), `intervening_if.rs` (the morbid pair), `auto_pick.rs` (choices the engine must not make for a player).
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/135/crossway-vampire?utm_source=api
+**Type line**: `Creature — Vampire` — {1}{R}{R}, 3/2
+**Oracle text**:
+```
+When this creature enters, target creature can't block this turn.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- "When this creature enters, target creature **can't block this turn**" — a
+  blocking restriction until end of turn, not a tap: PASS
+- Targeted at CR 603.3d time: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The block restriction: `combat_rules.rs`, `cards_complex_creatures.rs`

@@ -31,36 +31,36 @@ Ordered most complex first, so the complex cards get the most time.
 | x | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 67 | 4 | 1 |
 | x | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 80 | 4 | 0 |
 | x | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 52 | 4 | 1 |
-|   | Falkenrath Noble | `falkenrath_noble.rs` | 71 | 3 | 2 |
-|   | Selhoff Occultist | `selhoff_occultist.rs` | 70 | 3 | 2 |
-|   | Clifftop Retreat | `clifftop_retreat.rs` | 73 | 4 | 0 |
-|   | Hinterland Harbor | `hinterland_harbor.rs` | 73 | 4 | 0 |
-|   | Isolated Chapel | `isolated_chapel.rs` | 73 | 4 | 0 |
-|   | Sulfur Falls | `sulfur_falls.rs` | 73 | 4 | 0 |
-|   | Woodland Cemetery | `woodland_cemetery.rs` | 73 | 4 | 0 |
-|   | Lost in the Mist | `lost_in_the_mist.rs` | 68 | 4 | 0 |
-|   | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 65 | 4 | 0 |
-|   | Dissipate | `dissipate.rs` | 53 | 4 | 0 |
-|   | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 72 | 3 | 1 |
-|   | Bramblecrush | `bramblecrush.rs` | 50 | 4 | 0 |
-|   | Ancient Grudge | `ancient_grudge.rs` | 48 | 4 | 0 |
-|   | Ghoulraiser | `ghoulraiser.rs` | 67 | 3 | 1 |
-|   | Unbreathing Horde | `unbreathing_horde.rs` | 89 | 3 | 0 |
-|   | Wreath of Geists | `wreath_of_geists.rs` | 41 | 4 | 0 |
-|   | Geistcatcher's Rig | `geistcatchers_rig.rs` | 58 | 3 | 1 |
-|   | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 56 | 3 | 1 |
-|   | Crossway Vampire | `crossway_vampire.rs` | 47 | 3 | 1 |
-|   | Village Bell-Ringer | `village_bell_ringer.rs` | 47 | 3 | 1 |
-|   | Armored Skaab | `armored_skaab.rs` | 43 | 3 | 1 |
-|   | Moldgraf Monstrosity | `moldgraf_monstrosity.rs` | 84 | 2 | 1 |
-|   | Nevermore | `nevermore.rs` | 63 | 3 | 0 |
-|   | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 80 | 2 | 1 |
-|   | Blasphemous Act | `blasphemous_act.rs` | 59 | 3 | 0 |
-|   | Gutter Grime | `gutter_grime.rs` | 79 | 2 | 1 |
-|   | Selfless Cathar | `selfless_cathar.rs` | 58 | 3 | 0 |
-|   | Dearly Departed | `dearly_departed.rs` | 57 | 3 | 0 |
-|   | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
-|   | Harvest Pyre | `harvest_pyre.rs` | 54 | 3 | 0 |
+| x | Falkenrath Noble | `falkenrath_noble.rs` | 71 | 3 | 2 |
+| x | Selhoff Occultist | `selhoff_occultist.rs` | 70 | 3 | 2 |
+| x | Clifftop Retreat | `clifftop_retreat.rs` | 73 | 4 | 0 |
+| x | Hinterland Harbor | `hinterland_harbor.rs` | 73 | 4 | 0 |
+| x | Isolated Chapel | `isolated_chapel.rs` | 73 | 4 | 0 |
+| x | Sulfur Falls | `sulfur_falls.rs` | 73 | 4 | 0 |
+| x | Woodland Cemetery | `woodland_cemetery.rs` | 73 | 4 | 0 |
+| x | Lost in the Mist | `lost_in_the_mist.rs` | 68 | 4 | 0 |
+| x | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 65 | 4 | 0 |
+| x | Dissipate | `dissipate.rs` | 53 | 4 | 0 |
+| x | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 72 | 3 | 1 |
+| x | Bramblecrush | `bramblecrush.rs` | 50 | 4 | 0 |
+| x | Ancient Grudge | `ancient_grudge.rs` | 48 | 4 | 0 |
+| x | Ghoulraiser | `ghoulraiser.rs` | 67 | 3 | 1 |
+| x | Unbreathing Horde | `unbreathing_horde.rs` | 89 | 3 | 0 |
+| x | Wreath of Geists | `wreath_of_geists.rs` | 41 | 4 | 0 |
+| x | Geistcatcher's Rig | `geistcatchers_rig.rs` | 58 | 3 | 1 |
+| x | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 56 | 3 | 1 |
+| x | Crossway Vampire | `crossway_vampire.rs` | 47 | 3 | 1 |
+| x | Village Bell-Ringer | `village_bell_ringer.rs` | 47 | 3 | 1 |
+| x | Armored Skaab | `armored_skaab.rs` | 43 | 3 | 1 |
+| x | Moldgraf Monstrosity | `moldgraf_monstrosity.rs` | 84 | 2 | 1 |
+| x | Nevermore | `nevermore.rs` | 63 | 3 | 0 |
+| x | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 80 | 2 | 1 |
+| x | Blasphemous Act | `blasphemous_act.rs` | 59 | 3 | 0 |
+| x | Gutter Grime | `gutter_grime.rs` | 79 | 2 | 1 |
+| x | Selfless Cathar | `selfless_cathar.rs` | 58 | 3 | 0 |
+| x | Dearly Departed | `dearly_departed.rs` | 57 | 3 | 0 |
+| x | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
+| x | Harvest Pyre | `harvest_pyre.rs` | 54 | 3 | 0 |
 |   | Moonmist | `moonmist.rs` | 97 | 2 | 0 |
 |   | Devil's Play | `devils_play.rs` | 51 | 3 | 0 |
 |   | Prey Upon | `prey_upon.rs` | 49 | 3 | 0 |

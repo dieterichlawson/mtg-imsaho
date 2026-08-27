@@ -26,3 +26,36 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `cards_death_triggers_and_tokens.rs`, `trigger_targets_declared.rs` (targets locked at trigger time), `intervening_if.rs` (the morbid pair), `auto_pick.rs` (choices the engine must not make for a player).
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/223/geistcatchers-rig?utm_source=api
+**Type line**: `Artifact Creature — Construct` — {6}, 4/5
+**Oracle text**:
+```
+When this creature enters, you may have it deal 4 damage to target creature with flying.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- "When this artifact enters, you **may** have it deal 4 damage to target
+  creature with flying" — optional, and targeted at CR 603.3d time so the
+  target is chosen as the trigger goes on the stack: PASS
+- The trigger declares a `target_requirement`, which routes the enumeration
+  through the engine — where hexproof is filtered once for every card, rather
+  than by this card walking the battlefield itself: PASS
+- "with **flying**" — the filter is re-checked on resolution, so a creature that
+  lost flying makes it fizzle: PASS
+- Damage through `deal_damage`: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- Targeting only fliers, and hexproof: `hexproof_filter.rs:an_etb_trigger_does_not_offer_an_opponents_hexproof_creature`
