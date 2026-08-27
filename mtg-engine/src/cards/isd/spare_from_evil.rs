@@ -32,7 +32,14 @@ impl CardBehavior for SpareFromEvil {
         // permanent's static ability, which picks up newcomers) and a pump
         // spell (which does not) — so the creatures are snapshotted here rather
         // than matched by a live filter every time P/T is computed.
-        let filter = CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into())));
+        // "protection from non-Human *creatures*" — both halves matter. Written
+        // as bare `Not(HasSubtype("Human"))` this also matched every instant,
+        // sorcery, artifact and land, so a Brimstone Volley could not target
+        // the creature at all.
+        let filter = CreatureFilter::And(vec![
+            CreatureFilter::HasCardType(CardType::Creature),
+            CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into()))),
+        ]);
         for id in state.creatures_controlled_snapshot(controller, registry) {
             state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantProtection {
                 target: id, filter: filter.clone(),

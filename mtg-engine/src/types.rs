@@ -365,6 +365,12 @@ pub enum CreatureFilter {
     ControlledByYouToken,
     /// Creatures matching a subtype (e.g., "Human", "Zombie").
     HasSubtype(String),
+    /// Objects of a card type. A `CreatureFilter` is also used to describe the
+    /// *sources* an effect cares about (protection), and those are not all
+    /// creatures — without this, Spare from Evil's "non-Human creatures"
+    /// could only be written as `Not(HasSubtype("Human"))`, which a Brimstone
+    /// Volley also satisfies.
+    HasCardType(CardType),
     /// Creatures with a specific keyword.
     HasKeyword(Keyword),
     /// Intersection: all conditions must match.

@@ -246,6 +246,41 @@ fn spare_from_evil_grants_protection() {
         "Human creature should still be able to block (protection only from non-Humans)");
 }
 
+/// "protection from non-Human **creatures**" — the creature half of that is not
+/// decoration. Written as a bare "isn't a Human" filter it also matched every
+/// instant, sorcery, artifact and land, so a burn spell could not touch the
+/// protected creature at all.
+#[test]
+fn spare_from_evil_does_not_protect_against_a_noncreature_source() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let human = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(human).unwrap().subtypes = vec!["Human".into()];
+
+    let spell = castable_spell(&mut state, &reg, "Spare from Evil", P0);
+    let mut state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    // Brimstone Volley is a red instant. It is not a Human — and it is also
+    // not a creature, so the protection says nothing about it.
+    let volley = state.create_object(
+        reg.get_id_by_name("Brimstone Volley").unwrap(), P1, Zone::Stack, None, None);
+    assert!(!state.has_protection_from(human, volley, &reg),
+        "an instant is not a non-Human creature");
+
+    mtg_engine::damage::deal_damage(&mut state, volley,
+        mtg_engine::events::DamageTarget::Object(human), 3,
+        mtg_engine::damage::DamageKind::NonCombat, &reg);
+    assert_eq!(state.get_object(human).unwrap().damage_marked, 3,
+        "the burn spell's damage lands");
+
+    // A non-Human creature source is still stopped.
+    let zombie = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(zombie).unwrap().subtypes = vec!["Zombie".into()];
+    assert!(state.has_protection_from(human, zombie, &reg),
+        "a non-Human creature is exactly what it protects from");
+}
+
 // ── Burning Vengeance ───────────────────────────────────────────
 
 /// Burning Vengeance deals 2 damage when you cast a flashback spell.

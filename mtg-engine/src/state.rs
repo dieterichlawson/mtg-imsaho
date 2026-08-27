@@ -1044,6 +1044,7 @@ impl GameState {
             CreatureFilter::ControlledByOpponent => creature.controller != source_controller,
             CreatureFilter::ControlledByYouToken => creature.controller == source_controller && creature.is_token,
             CreatureFilter::HasSubtype(subtype) => self.has_subtype(creature_id, subtype, registry),
+            CreatureFilter::HasCardType(ct) => self.has_card_type(creature_id, *ct, registry),
             CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
@@ -1912,6 +1913,19 @@ impl GameState {
                 }
             }
         }
+        // CR 205.1b: power and toughness belong to creatures, so an object
+        // carrying a runtime P/T is one — that is what "becomes a 3/3" means.
+        //
+        // This lived in `is_creature` alone, as `|| o.power.is_some()`, which
+        // left `has_card_type(Creature)` answering "no" about objects the rest
+        // of the engine treated as creatures. Spare from Evil is where the
+        // split showed: its "non-Human *creature*" filter has to ask about
+        // card types, and got a different board than `is_creature` sees.
+        if !types.contains(&crate::types::CardType::Creature)
+            && self.get_object(id).is_some_and(|o| o.power.is_some())
+        {
+            types.push(crate::types::CardType::Creature);
+        }
         types
     }
 
@@ -1958,7 +1972,6 @@ impl GameState {
     #[must_use]
     pub fn is_creature(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         self.has_card_type(id, crate::types::CardType::Creature, registry)
-            || self.get_object(id).is_some_and(|o| o.power.is_some())
     }
 
     /// Subtypes of the object: the union of object-level subtypes and the
