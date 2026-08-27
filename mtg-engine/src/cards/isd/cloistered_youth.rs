@@ -95,18 +95,21 @@ impl CardBehavior for CloisteredYouth {
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
-            _ => return,
-        };
-        // `step_trigger_scope` already gates this to the controller's own
-        // step; re-deriving it here is duplication, not defence.
-        if is_transformed {
-            // Unholy Fiend: lose 1 life at end step.
-            state.change_life(controller, -1);
-            state.log(LogLevel::Event,
-                format!("Unholy Fiend: p{} loses 1 life", controller.0));
-        }
+        // CR 113.7a: "you lose 1 life" says nothing about the Unholy Fiend, so
+        // the ability resolves whether or not the Fiend is still there —
+        // killing it in response to its own end-step trigger does not save the
+        // life. This used to require the source on the battlefield *and* still
+        // transformed, and leaving the battlefield clears `is_transformed`, so
+        // a dead Fiend failed both and the life loss silently vanished.
+        //
+        // Nothing needs re-checking: step triggers are picked by face when they
+        // are collected, and the front face declares no end-step ability, so
+        // this is only reached for a permanent that was an Unholy Fiend when
+        // the end step began.
+        let controller = state.last_known_controller(self_id);
+        state.change_life(controller, -1);
+        state.log(LogLevel::Event,
+            format!("Unholy Fiend: p{} loses 1 life", controller.0));
     }
 
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {

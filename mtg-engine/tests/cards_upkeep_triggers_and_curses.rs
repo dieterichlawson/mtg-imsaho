@@ -71,6 +71,43 @@ fn splinterfright_mills_on_upkeep() {
 
 // ── Bloodgift Demon ───────────────────────────────────────────────
 
+/// CR 113.7a: "target player draws a card and loses 1 life" is entirely about
+/// the target — the Demon is not mentioned — so killing the Demon in response
+/// to its own upkeep trigger does not stop the draw. The handler used to return
+/// early once the source had left the battlefield.
+#[test]
+fn bloodgift_demons_trigger_resolves_even_if_the_demon_dies_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let demon = named_permanent(&mut state, &reg, "Bloodgift Demon", P0);
+    stock_library(&mut state, &reg, P0, 1);
+
+    // The trigger goes on the stack and its target is chosen (CR 603.3b).
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    triggers::collect_triggers(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(), "the target is chosen on the way to the stack");
+    let mut state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(mtg_engine::actions::Target::Player(P0))),
+        },
+        &reg,
+    );
+
+    // The Demon is killed in response.
+    state.move_object(demon, Zone::Graveyard, &reg);
+
+    triggers::resolve_next_trigger(&mut state, &reg);
+
+    let hand = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0)
+        .count();
+    assert_eq!(hand, 1, "the card is drawn even though the Demon is gone");
+    assert_eq!(state.get_player(P0).life, 19, "and the life is still lost");
+}
+
 /// Bloodgift Demon draws a card and loses 1 life on upkeep.
 #[test]
 fn bloodgift_demon_draws_and_loses_life() {

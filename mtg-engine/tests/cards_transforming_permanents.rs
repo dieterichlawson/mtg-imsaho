@@ -1264,3 +1264,34 @@ fn a_transformed_garruk_reports_his_back_face() {
     assert!(!text.contains("two or fewer loyalty counters"),
         "and not the front face's, got: {text}");
 }
+
+/// CR 113.7a: "At the beginning of your end step, you lose 1 life" names
+/// nothing about the Unholy Fiend, so killing it in response to its own trigger
+/// does not save the life.
+///
+/// The handler used to require the source on the battlefield *and* still
+/// transformed — and leaving the battlefield clears `is_transformed`, so a dead
+/// Fiend failed both checks and the life loss silently vanished.
+#[test]
+fn unholy_fiends_life_loss_happens_even_if_it_dies_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::EndStep, P0);
+
+    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
+    helpers::apply_transform(&mut state, youth, &reg);
+    assert_eq!(state.name_of(youth, &reg), "Unholy Fiend");
+    let before = state.get_player(P0).life;
+
+    // The trigger goes on the stack...
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the end-step trigger is on the stack");
+
+    // ...and the Fiend is killed in response.
+    state.move_object(youth, Zone::Graveyard, &reg);
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, before - 1,
+        "the life is lost even though the source is gone");
+}

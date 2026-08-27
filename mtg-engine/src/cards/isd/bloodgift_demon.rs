@@ -2,7 +2,7 @@ use crate::cards::{TargetRequirement, CardBehavior, CardData, CardRegistry, Trig
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::actions::Target;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Bloodgift Demon — {3}{B}{B} 5/4 flying Demon.
 /// At the beginning of your upkeep, target player draws a card and loses 1 life.
@@ -47,9 +47,11 @@ impl CardBehavior for BloodgiftDemon {
     /// CR 603.3b: the target arrived with the trigger. `step_trigger_scope`
     /// already restricted this to the controller's own upkeep.
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
-        }
+        // CR 113.7a: "target player draws a card and loses 1 life" is entirely
+        // about the target — the Demon is not mentioned. So the ability
+        // resolves whether or not the Demon is still on the battlefield, and
+        // killing it in response to its own upkeep trigger does not stop the
+        // draw. This used to return early when the source had gone.
         let Some(target) = chosen_targets.first() else { return };
         self.resolve_card_effect(state, self_id, "", target, registry);
     }
