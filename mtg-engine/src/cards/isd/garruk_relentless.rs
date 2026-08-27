@@ -182,8 +182,7 @@ impl CardBehavior for GarrukRelentless {
                 // you must sacrifice a creature if you control one."
                 let creatures: Vec<Target> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
-                    .filter(|o| state.has_card_type(o.id, CardType::Creature, registry)
-                        || state.is_creature(o.id, registry)) // creatures include tokens
+                    .filter(|o| state.is_creature(o.id, registry))
                     .map(|o| Target::Object(o.id))
                     .collect();
 
@@ -271,16 +270,6 @@ impl CardBehavior for GarrukRelentless {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[crate::actions::Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        state.add_counters(object_id, CounterType::Loyalty, 3);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.card_types = vec![CardType::Planeswalker];
-            obj.is_legendary = true;
-        }
-        state.log(crate::state::LogLevel::Event,
-            "Garruk Relentless enters with 3 loyalty".into());
-    }
     /// Garruk, the Veil-Cursed -1: "Sacrifice a creature. Search your library
     /// for a creature card, reveal it, put it into your hand, then shuffle."
     /// The sacrifice, the search and the shuffle are all this card's text.

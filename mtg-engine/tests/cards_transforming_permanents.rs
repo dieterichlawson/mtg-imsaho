@@ -1144,3 +1144,41 @@ fn homicidal_brute_that_attacked_this_turn_puts_no_trigger_on_the_stack() {
         "it attacked this turn, so the intervening-if is false and the ability \
          never triggers (CR 603.4)");
 }
+
+/// Scryfall ruling (2011-09-22): "You can't activate a loyalty ability of
+/// Garruk Relentless and later that turn after he transforms activate a
+/// loyalty ability of Garruk, the Veil-Cursed."
+///
+/// CR 606.3 limits a *permanent* to one loyalty ability a turn, and CR 711.5
+/// says transforming does not make a new object — so the front face's
+/// activation still counts against the back face. The two faces number their
+/// abilities differently (0/1 and 10/11/12), so a per-index limit would let
+/// both through; the engine tracks a per-permanent sentinel instead.
+#[test]
+fn garruk_cannot_activate_a_loyalty_ability_on_each_face_in_one_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 5);
+
+    let loyalty_actions = |s: &mtg_engine::state::GameState| {
+        mtg_engine::engine::legal_actions(s, &reg).actions.iter()
+            .filter(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, .. } if *object_id == garruk))
+            .count()
+    };
+    assert!(loyalty_actions(&state) > 0, "setup: the front face offers loyalty abilities");
+
+    // Use the front face's "create a 2/2 Wolf" (index 1, no target).
+    let state = mtg_engine::engine::submit_action(&state,
+        &Action::ActivateLoyaltyAbility { object_id: garruk, ability_index: 1, targets: vec![] }, &reg);
+    assert_eq!(loyalty_actions(&state), 0, "one loyalty ability per turn (CR 606.3)");
+
+    // Now transform him. The activation must survive the flip.
+    let mut state = state;
+    helpers::apply_transform(&mut state, garruk, &reg);
+    assert!(state.get_object(garruk).unwrap().is_transformed, "setup: transformed");
+
+    assert_eq!(loyalty_actions(&state), 0,
+        "the back face's abilities are numbered differently, but it is the same \
+         permanent — it already used a loyalty ability this turn");
+}

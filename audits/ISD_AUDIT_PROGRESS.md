@@ -12,7 +12,7 @@ Score = lines + 40/behaviour-hook + 30/declared-trigger + 80 if double-faced.
 - **C — light** (58): one hook, or continuous effects only.
 - **D — vanilla/keyword** (62): card data and keyword completeness; step 3 skipped per the procedure.
 
-**2/249 fully audited** (Civilized Scholar, Reaper from the Abyss).
+**11/249 fully audited** (Civilized Scholar, Reaper from the Abyss).
 
 ## Sweep results applying to all 249
 
@@ -53,19 +53,19 @@ permanent, which is why the sites were converted and guarded rather than left.
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
 | x | Civilized Scholar | `civilized_scholar.rs` | 220 | 6 | 4 | yes |
-|   | Garruk Relentless | `garruk_relentless.rs` | 311 | 4 | 0 | yes |
+| x | Garruk Relentless | `garruk_relentless.rs` | 311 | 4 | 0 | yes |
 |   | Daybreak Ranger | `daybreak_ranger.rs` | 143 | 4 | 3 | yes |
-|   | Mayor of Avabruck | `mayor_of_avabruck.rs` | 143 | 3 | 4 | yes |
-|   | Cloistered Youth | `cloistered_youth.rs` | 128 | 4 | 3 | yes |
-|   | Screeching Bat | `screeching_bat.rs` | 154 | 3 | 3 | yes |
+| x | Mayor of Avabruck | `mayor_of_avabruck.rs` | 143 | 3 | 4 | yes |
+| x | Cloistered Youth | `cloistered_youth.rs` | 128 | 4 | 3 | yes |
+| x | Screeching Bat | `screeching_bat.rs` | 154 | 3 | 3 | yes |
 |   | Ulvenwald Mystics | `ulvenwald_mystics.rs` | 113 | 4 | 3 | yes |
 |   | Grimgrin, Corpse-Born | `grimgrin_corpse_born.rs` | 141 | 6 | 2 |  |
 |   | Wooden Stake | `wooden_stake.rs` | 107 | 6 | 3 |  |
 |   | Curse of Oblivion | `curse_of_oblivion.rs` | 135 | 4 | 2 | yes |
 |   | Trepanation Blade | `trepanation_blade.rs` | 145 | 5 | 2 |  |
-|   | Delver of Secrets | `delver_of_secrets.rs` | 143 | 3 | 2 | yes |
+| x | Delver of Secrets | `delver_of_secrets.rs` | 143 | 3 | 2 | yes |
 |   | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 110 | 3 | 2 | yes |
-|   | Charmbreaker Devils | `charmbreaker_devils.rs` | 120 | 2 | 3 | yes |
+| x | Charmbreaker Devils | `charmbreaker_devils.rs` | 120 | 2 | 3 | yes |
 |   | Instigator Gang | `instigator_gang.rs` | 115 | 2 | 3 | yes |
 |   | Bloodline Keeper | `bloodline_keeper.rs` | 156 | 3 | 0 | yes |
 |   | Bitterheart Witch | `bitterheart_witch.rs` | 176 | 3 | 2 |  |
@@ -95,16 +95,16 @@ permanent, which is why the sites were converted and guarded rather than left.
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
-|   | Splinterfright | `splinterfright.rs` | 73 | 2 | 2 | yes |
+| x | Splinterfright | `splinterfright.rs` | 73 | 2 | 2 | yes |
 |   | Graveyard Shovel | `graveyard_shovel.rs` | 132 | 4 | 0 |  |
 |   | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
-|   | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 71 | 2 | 2 | yes |
+| x | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 71 | 2 | 2 | yes |
 |   | Blazing Torch | `blazing_torch.rs` | 129 | 4 | 0 |  |
 |   | Bloodgift Demon | `bloodgift_demon.rs` | 67 | 2 | 2 | yes |
 |   | Moorland Haunt | `moorland_haunt.rs` | 120 | 4 | 0 |  |
 |   | Skirsdag High Priest | `skirsdag_high_priest.rs` | 148 | 3 | 0 |  |
 |   | Caravan Vigil | `caravan_vigil.rs` | 137 | 3 | 0 |  |
-|   | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 74 | 1 | 2 | yes |
+| x | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 74 | 1 | 2 | yes |
 |   | Brain Weevil | `brain_weevil.rs` | 132 | 3 | 0 |  |
 |   | Tribute to Hunger | `tribute_to_hunger.rs` | 91 | 4 | 0 |  |
 |   | Demonmail Hauberk | `demonmail_hauberk.rs` | 87 | 4 | 0 |  |
