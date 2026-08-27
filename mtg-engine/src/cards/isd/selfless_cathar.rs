@@ -38,22 +38,21 @@ impl CardBehavior for SelflessCathar {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         // The creature was already sacrificed by the engine before this is called.
         // Use the controller from the object (even though it's in the graveyard now).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
-        // "Creatures you control get +1/+1 until end of turn" is continuous:
-        // a creature that arrives later this turn gets it too. Walking the
-        // battlefield here and pushing one `ModifyPT` per creature would make
-        // it a snapshot of the board at activation instead.
-        state.until_end_of_turn.push(
-            crate::state::TemporaryEffect::ModifyPTAll {
-                controller,
-                filter: None,
-                power_mod: 1,
-                toughness_mod: 1,
-            }
-        );
+        // CR 611.2c: a continuous effect created by a resolving spell or
+        // ability affects the set of objects that existed when it resolved, and
+        // that set never changes. This is the line between Glorious Anthem (a
+        // permanent's static ability, which picks up newcomers) and a pump
+        // spell (which does not) — so the creatures are snapshotted here rather
+        // than matched by a live filter every time P/T is computed.
+        for id in state.creatures_controlled_snapshot(controller, registry) {
+            state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
+                target: id, power_mod: 1, toughness_mod: 1,
+            });
+        }
     }
 }

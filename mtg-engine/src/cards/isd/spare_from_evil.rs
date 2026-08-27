@@ -22,17 +22,22 @@ impl CardBehavior for SpareFromEvil {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Grant protection from non-Human creatures until end of turn.
+        // CR 611.2c: a continuous effect created by a resolving spell or
+        // ability affects the set of objects that existed when it resolved, and
+        // that set never changes. This is the line between Glorious Anthem (a
+        // permanent's static ability, which picks up newcomers) and a pump
+        // spell (which does not) — so the creatures are snapshotted here rather
+        // than matched by a live filter every time P/T is computed.
         let filter = CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into())));
-        state.until_end_of_turn.push(
-            crate::state::TemporaryEffect::GrantProtectionAll {
-                controller,
-                protection_filter: filter,
-            }
-        );
+        for id in state.creatures_controlled_snapshot(controller, registry) {
+            state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantProtection {
+                target: id, filter: filter.clone(),
+            });
+        }
 
         state.log(crate::state::LogLevel::Event,
             "Spare from Evil: creatures gain protection from non-Human creatures until end of turn".into());

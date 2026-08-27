@@ -21,28 +21,30 @@ impl CardBehavior for VampiricFury {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Find the controller of this spell.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Build a registry to look up subtypes.
 
-        let vampire_filter = Some(crate::types::CreatureFilter::HasSubtype("Vampire".into()));
-        state.until_end_of_turn.push(
-            crate::state::TemporaryEffect::ModifyPTAll {
-                controller,
-                filter: vampire_filter.clone(),
-                power_mod: 2,
-                toughness_mod: 0,
-            }
-        );
-        state.until_end_of_turn.push(
-            TemporaryEffect::GrantKeywordAll {
-                controller,
-                filter: vampire_filter,
-                keyword: Keyword::FirstStrike,
-            }
-        );
+        // CR 611.2c: a continuous effect created by a resolving spell or
+        // ability affects the set of objects that existed when it resolved, and
+        // that set never changes. This is the line between Glorious Anthem (a
+        // permanent's static ability, which picks up newcomers) and a pump
+        // spell (which does not) — so the creatures are snapshotted here rather
+        // than matched by a live filter every time P/T is computed.
+        let vampires: Vec<_> = state.creatures_controlled_snapshot(controller, registry)
+            .into_iter()
+            .filter(|&id| state.has_subtype(id, "Vampire", registry))
+            .collect();
+        for id in vampires {
+            state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
+                target: id, power_mod: 2, toughness_mod: 0,
+            });
+            state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
+                target: id, keyword: Keyword::FirstStrike,
+            });
+        }
 
     }
 }

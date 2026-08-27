@@ -263,27 +263,6 @@ pub enum TemporaryEffect {
     /// damage; everything else is prevented. Moonmist supplies Wolves and
     /// Werewolves — the engine does not know that, and shouldn't.
     PreventCombatDamageExcept { filter: crate::types::CreatureFilter },
-    /// Blanket P/T modifier — applies to all creatures matching a filter.
-    /// Used by anthems like Rally the Peasants ("creatures you control get +2/+0").
-    ModifyPTAll {
-        controller: PlayerId,
-        filter: Option<crate::types::CreatureFilter>,
-        power_mod: i32,
-        toughness_mod: i32,
-    },
-    /// Blanket keyword grant — applies to all creatures matching a filter.
-    /// Used by Vampiric Fury ("Vampire creatures you control gain first strike").
-    GrantKeywordAll {
-        controller: PlayerId,
-        filter: Option<crate::types::CreatureFilter>,
-        keyword: crate::types::Keyword,
-    },
-    /// Blanket protection grant — applies to all creatures controlled by a player.
-    /// Used by Spare from Evil ("creatures you control gain protection from non-Human").
-    GrantProtectionAll {
-        controller: PlayerId,
-        protection_filter: crate::types::CreatureFilter,
-    },
     /// P/T modifier that disappears if source leaves the battlefield.
     /// Used by static abilities like Instigator Gang's "attacking creatures get +1/+0".
     ModifyPTWhileSourceInPlay {
@@ -314,9 +293,7 @@ fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
         TemporaryEffect::GrantFlashback { .. } => None,
         // Controller-scoped or global — not tied to one permanent.
         TemporaryEffect::PreventCombatDamageExcept { .. }
-        | TemporaryEffect::ModifyPTAll { .. }
-        | TemporaryEffect::GrantKeywordAll { .. }
-        | TemporaryEffect::GrantProtectionAll { .. } => None,
+        => None,
     }
 }
 
@@ -1310,15 +1287,6 @@ impl GameState {
                 TemporaryEffect::ModifyPT { target, power_mod, .. } if *target == id => {
                     power += power_mod;
                 }
-                TemporaryEffect::ModifyPTAll { controller, filter, power_mod, .. } => {
-                    if obj.controller == *controller && obj.zone == Zone::Battlefield {
-                        let matches = match filter {
-                            None => true,
-                            Some(f) => self.matches_filter(id, f, *controller, registry),
-                        };
-                        if matches { power += power_mod; }
-                    }
-                }
                 TemporaryEffect::ModifyPTWhileSourceInPlay { target, source, power_mod, .. } if *target == id => {
                     if self.get_object(*source).is_some_and(|o| o.zone == Zone::Battlefield) {
                         power += power_mod;
@@ -1373,15 +1341,6 @@ impl GameState {
             match effect {
                 TemporaryEffect::ModifyPT { target, toughness_mod, .. } if *target == id => {
                     toughness += toughness_mod;
-                }
-                TemporaryEffect::ModifyPTAll { controller, filter, toughness_mod, .. } => {
-                    if obj.controller == *controller && obj.zone == Zone::Battlefield {
-                        let matches = match filter {
-                            None => true,
-                            Some(f) => self.matches_filter(id, f, *controller, registry),
-                        };
-                        if matches { toughness += toughness_mod; }
-                    }
                 }
                 TemporaryEffect::ModifyPTWhileSourceInPlay { target, source, toughness_mod, .. } if *target == id => {
                     if self.get_object(*source).is_some_and(|o| o.zone == Zone::Battlefield) {
@@ -1496,17 +1455,6 @@ impl GameState {
                 TemporaryEffect::GrantKeyword { target, keyword: kw } if *target == creature_id && *kw == keyword => {
                     return true;
                 }
-                TemporaryEffect::GrantKeywordAll { controller, filter, keyword: kw } if *kw == keyword => {
-                    if let Some(obj) = self.get_object(creature_id) {
-                        if obj.controller == *controller && obj.zone == Zone::Battlefield {
-                            let matches = match filter {
-                                None => true,
-                                Some(f) => self.matches_filter(creature_id, f, *controller, registry),
-                            };
-                            if matches { return true; }
-                        }
-                    }
-                }
                 _ => {}
             }
         }
@@ -1565,14 +1513,6 @@ impl GameState {
                 TemporaryEffect::GrantProtection { target, filter } if *target == target_id => {
                     if self.matches_filter(source_id, filter, target_controller, registry) {
                         return true;
-                    }
-                }
-                TemporaryEffect::GrantProtectionAll { controller, protection_filter } => {
-                    if let Some(obj) = self.get_object(target_id) {
-                        if obj.controller == *controller && obj.zone == Zone::Battlefield
-                            && self.matches_filter(source_id, protection_filter, *controller, registry) {
-                            return true;
-                        }
                     }
                 }
                 _ => {}
@@ -1950,6 +1890,22 @@ impl GameState {
     pub fn attached_player(&self, id: ObjectId) -> Option<PlayerId> {
         let obj = self.get_object(id)?;
         obj.attached_to_player.or(obj.last_attached_to_player)
+    }
+
+    /// The creatures a player controls right now, as a fixed list.
+    ///
+    /// CR 611.2c: a continuous effect created by a resolving spell or ability
+    /// affects the objects that were there when it resolved, and that set never
+    /// changes afterwards. Pump spells and one-shot ability effects take their
+    /// list from here; a permanent's *static* anthem does not, because that one
+    /// really does pick up creatures as they arrive.
+    #[must_use]
+    pub fn creatures_controlled_snapshot(&self, controller: PlayerId, registry: &crate::cards::CardRegistry) -> Vec<ObjectId> {
+        self.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield && o.controller == controller)
+            .filter(|o| self.is_creature(o.id, registry))
+            .map(|o| o.id)
+            .collect()
     }
 
     /// Whether the object is a creature. Checks card types first; also
