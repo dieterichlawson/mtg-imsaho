@@ -65,12 +65,13 @@ impl CardBehavior for UlvenwaldMystics {
 
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield && o.is_transformed => o,
-            _ => return vec![],
-        };
-        let _ = obj;
-        // Ulvenwald Primordials: {G}: Regenerate
+        // The regenerate ability belongs to Ulvenwald Primordials, the back
+        // face, so it is offered only while transformed.
+        if !state.get_object(object_id)
+            .is_some_and(|o| o.zone == Zone::Battlefield && o.is_transformed)
+        {
+            return vec![];
+        }
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{G}: Regenerate".into(),

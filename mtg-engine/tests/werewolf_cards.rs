@@ -489,6 +489,61 @@ fn ulvenwald_mystics_transforms_and_gains_regenerate() {
     assert!(back_abilities[0].description.contains("Regenerate"));
 }
 
+/// Ruling: "You can regenerate Ulvenwald Primordials in response to the
+/// triggered ability that would transform it. If you do, the regeneration
+/// shield will apply to Ulvenwald Mystics that turn."
+///
+/// The shield outlives the transform because transforming does not make a new
+/// object (CR 712.8) — it is not a zone change, so none of the leave-the-
+/// battlefield cleanup runs. This is the card's only published ruling and had
+/// no test.
+#[test]
+fn a_regeneration_shield_survives_transforming_back_into_ulvenwald_mystics() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mystics = named_permanent(&mut state, &reg, "Ulvenwald Mystics", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mystics, &reg);
+    assert_eq!(state.name_of(mystics, &reg), "Ulvenwald Primordials");
+
+    // Regenerate the Primordials — this is the "in response" part of the ruling.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    let mut state = activate(&state, &reg, mystics, 0, vec![]);
+    assert_eq!(state.get_object(mystics).unwrap().regeneration_shields, 1);
+
+    // Then the transform ability resolves and it becomes Mystics again.
+    mtg_engine::cards::helpers::apply_transform(&mut state, mystics, &reg);
+    assert_eq!(state.name_of(mystics, &reg), "Ulvenwald Mystics");
+    assert_eq!(state.get_object(mystics).unwrap().regeneration_shields, 1,
+        "the shield came with it — transforming is not a zone change");
+
+    // And it still works, on the front face, which has no regenerate ability
+    // of its own.
+    let result = mtg_engine::destruction::try_destroy(&mut state, mystics, &reg);
+    assert_eq!(result, mtg_engine::destruction::DestroyResult::Regenerated,
+        "the shield applies to Ulvenwald Mystics that turn");
+    assert_eq!(state.get_object(mystics).unwrap().zone, Zone::Battlefield);
+}
+
+/// CR 701.15: a regeneration shield lasts until end of turn. An unused one does
+/// not bank into the next turn.
+#[test]
+fn an_unused_regeneration_shield_does_not_survive_the_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mystics = named_permanent(&mut state, &reg, "Ulvenwald Mystics", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mystics, &reg);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    let mut state = activate(&state, &reg, mystics, 0, vec![]);
+    assert_eq!(state.get_object(mystics).unwrap().regeneration_shields, 1);
+
+    advance_to_next_turn(&mut state, &reg);
+
+    assert_eq!(state.get_object(mystics).unwrap().regeneration_shields, 0,
+        "the shield expired at end of turn");
+}
+
 // ── Kruin Outlaw ──────────────────────────────────────────────────
 
 #[test]
