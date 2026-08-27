@@ -38,16 +38,31 @@ impl CardBehavior for ReaperFromTheAbyss {
         }
     }
 
-    /// Filter to non-Demon creatures on the battlefield. Additionally enforce
-    /// the morbid condition here: if no creature died this turn, no creature
-    /// is a legal target, so the trigger is removed from the stack per CR 603.3c.
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        if !state.creature_died_this_turn {
-            return false;
+    /// Morbid is an intervening-if clause (CR 603.4): if no creature died this
+    /// turn the ability does not trigger, so the condition belongs here, at
+    /// dispatch time, and not in `is_valid_target`.
+    ///
+    /// It used to live there, on the reasoning that "no legal target" removes
+    /// the trigger under CR 603.3c and reaches the same board state. It does —
+    /// but 603.3c puts the ability on the stack first and then removes it, and
+    /// the engine says so in the game log. A Reaper that sat through an end
+    /// step with nothing dead reported "Trigger removed: no legal targets" for
+    /// an ability that, by 603.4, never triggered at all.
+    fn should_trigger(&self, state: &GameState, _self_id: ObjectId, kind: &TriggerKind, _registry: &CardRegistry) -> bool {
+        match kind {
+            TriggerKind::EndStep => state.creature_died_this_turn,
+            _ => true,
         }
+    }
+
+    /// "target non-Demon **creature**" — a property of the target alone.
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         let Target::Object(id) = target else { return false; };
         let Some(obj) = state.get_object(*id) else { return false; };
-        if obj.zone != Zone::Battlefield || obj.power.is_none() {
+        // `is_creature` is the accessor for this: card types, plus the
+        // object-level P/T sentinel that tokens and `*/*` creatures carry.
+        // This used to inline half of it as `obj.power.is_none()`.
+        if obj.zone != Zone::Battlefield || !state.is_creature(*id, registry) {
             return false;
         }
         !state.has_subtype(obj.id, "Demon", registry)
@@ -59,8 +74,7 @@ impl CardBehavior for ReaperFromTheAbyss {
         // creature being destroyed is a different permanent and the Reaper's
         // whereabouts are irrelevant to it. This used to return early here.
         let _ = self_id;
-        // Morbid — only destroy if a creature died this turn (CR 603.4 intervening-if,
-        // also enforced at stack-time via is_valid_target).
+        // CR 603.4 checks the intervening-if a second time on resolution.
         if !state.creature_died_this_turn {
             return;
         }

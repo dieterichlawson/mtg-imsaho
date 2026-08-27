@@ -12,7 +12,7 @@ Score = lines + 40/behaviour-hook + 30/declared-trigger + 80 if double-faced.
 - **C — light** (58): one hook, or continuous effects only.
 - **D — vanilla/keyword** (62): card data and keyword completeness; step 3 skipped per the procedure.
 
-**1/249 audited.**
+**2/249 audited.**
 
 ## Tier A — complex (38)
 
@@ -93,7 +93,7 @@ Score = lines + 40/behaviour-hook + 30/declared-trigger + 80 if double-faced.
 |   | Ghost Quarter | `ghost_quarter.rs` | 99 | 3 | 0 |  |
 |   | Moonmist | `moonmist.rs` | 98 | 1 | 0 | yes |
 |   | Elder Cathar | `elder_cathar.rs` | 76 | 2 | 2 |  |
-|   | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 75 | 2 | 2 |  |
+| x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 75 | 2 | 2 |  |
 |   | Undead Alchemist | `undead_alchemist.rs` | 102 | 2 | 1 |  |
 |   | Snapcaster Mage | `snapcaster_mage.rs` | 69 | 2 | 2 |  |
 |   | Morkrut Banshee | `morkrut_banshee.rs` | 67 | 2 | 2 |  |

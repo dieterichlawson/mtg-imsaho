@@ -255,6 +255,19 @@ fn reaper_from_the_abyss_end_step_trigger_respects_its_morbid_clause() {
                 "no creature died this turn, so the ability never triggers");
             assert!(state.stack.is_empty(),
                 "and nothing sits on the stack holding a priority window open");
+            // CR 603.4 vs CR 603.3c: an unmet intervening-if means the ability
+            // never triggers, so there is no trigger to remove for want of
+            // targets — and nothing to tell the player about. Routing the
+            // morbid check through `is_valid_target` instead put the trigger
+            // on the stack and logged "Trigger removed: no legal targets" on
+            // every end step the Reaper survived without a death.
+            let removed: Vec<&str> = state.game_log.iter()
+                .filter(|e| e.message.contains("Trigger removed"))
+                .map(|e| e.message.as_str())
+                .collect();
+            assert!(removed.is_empty(),
+                "an ability that never triggered cannot be removed from the \
+                 stack, and must not be reported as though it were: {removed:?}");
         }
     }
 }
