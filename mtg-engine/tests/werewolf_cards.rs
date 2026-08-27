@@ -811,3 +811,48 @@ fn a_werewolf_trigger_keeps_its_own_faces_condition_across_a_transform() {
         "the front face's ability transformed it, so it is a Mayor again");
     assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck");
 }
+
+/// CR 701.12b: "If one or both creatures instructed to fight are no longer on
+/// the battlefield or are no longer creatures, neither of them fights or deals
+/// damage."
+///
+/// Killing Nightfall Predator in response to its own fight ability spares the
+/// target completely. The ability still resolves (CR 113.7a) — it just does
+/// nothing. `combat::fight` used to read the dead creature's printed power off
+/// its face and deal the damage anyway.
+#[test]
+fn nightfall_predators_fight_does_nothing_if_the_predator_dies_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    assert_eq!(state.name_of(ranger, &reg), "Nightfall Predator");
+
+    let victim = ready_creature(&mut state, P1, 2, 2);
+
+    // The Predator is killed while its ability is on the stack.
+    state.move_object(ranger, Zone::Graveyard, &reg);
+
+    mtg_engine::combat::fight(&mut state, ranger, victim, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 0,
+        "neither creature fights, so the target takes nothing");
+}
+
+/// The other half of the same rule: the *target* leaving does not let the
+/// fighter deal its damage into an empty seat either.
+#[test]
+fn a_fight_deals_no_damage_when_the_target_has_left_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let fighter = ready_creature(&mut state, P0, 4, 4);
+    let victim = ready_creature(&mut state, P1, 2, 2);
+    state.move_object(victim, Zone::Graveyard, &reg);
+
+    mtg_engine::combat::fight(&mut state, fighter, victim, &reg);
+
+    assert_eq!(state.get_object(fighter).unwrap().damage_marked, 0,
+        "neither of them fights, so the survivor takes nothing back");
+}

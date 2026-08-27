@@ -203,6 +203,27 @@ pub fn deal_regular_damage_pass(state: &mut GameState, registry: &CardRegistry) 
 /// effects apply; combat-only modifiers (Inquisitor's Flail, Moonmist,
 /// Ghostly Possession) do not.
 pub fn fight(state: &mut GameState, a: ObjectId, b: ObjectId, registry: &CardRegistry) {
+    // CR 701.12b: "If one or both creatures instructed to fight are no longer
+    // on the battlefield or are no longer creatures, neither of them fights or
+    // deals damage." So killing Nightfall Predator in response to its own fight
+    // ability spares the target entirely — this used to read the dead
+    // creature's printed power off its face and deal damage anyway.
+    //
+    // The ability itself still resolves (CR 113.7a); it just does nothing.
+    let fights = |id: ObjectId| {
+        state.get_object(id).is_some_and(|o| o.zone == Zone::Battlefield)
+            && state.is_creature(id, registry)
+    };
+    if !fights(a) || !fights(b) {
+        return;
+    }
+
+    // Both powers are read before either damage is dealt: a fight is one
+    // simultaneous exchange (CR 701.12a), so the second creature's damage is
+    // not reduced by the first's.
+    //
+    // A creature that fights itself deals damage to itself twice, which falls
+    // out of `a == b` here rather than needing a case.
     let power_a = u32::try_from(state.effective_power(a, registry).unwrap_or(0).max(0)).unwrap_or(0);
     let power_b = u32::try_from(state.effective_power(b, registry).unwrap_or(0).max(0)).unwrap_or(0);
 
