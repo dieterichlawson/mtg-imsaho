@@ -186,20 +186,24 @@ Alpha when the end step began.
   back. Consistent with the ruling that Moonmist transforms any double-faced
   Human, not just Werewolves. PASS.
 
-### Deviation recorded, not fixed
+### Second issue, also fixed
 
-The upkeep trigger re-checks its intervening-if against the permanent's
+The upkeep trigger re-checked its intervening-if against the permanent's
 *current* face rather than the face that triggered. Reachable by casting
 Moonmist in response to a front-face Werewolf's upkeep trigger: by the rules the
 front face's ability still resolves and transforms the permanent (its condition
 is about last turn and is unaffected), but the code re-reads the current face
 and tests the back face's condition instead.
 
-Not fixed here because the fix is a mechanism — a trigger has to carry the face
-it fired from, which `TriggerSource` does not snapshot and the resolution hooks
-cannot see — and it affects all twelve Werewolf DFCs through one shared helper.
-Worth doing once, after the other Werewolves have been read. Written up in full
-in `audits/OPEN_QUESTIONS.md`.
+The fix is a mechanism, since a trigger had to carry the face it fired from:
+`TriggerSource` now snapshots `from_back_face`, the step-trigger collector
+records it (it already had `is_transformed` in hand), and the dispatcher
+publishes it as `GameState::resolving_trigger_from_back_face` around the card's
+hook. `werewolf_should_transform` reads that when resolving and falls back to
+the current face at trigger time, which is when the two agree by definition.
+
+One mechanism, one shared helper, and it covers all twelve Werewolf DFCs at
+once.
 
 ### Test coverage
 
