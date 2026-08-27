@@ -104,11 +104,21 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             // ability resolves, it won't resolve and none of its effects will
             // happen. The land's controller won't get to search for a basic
             // land card."
+            //
+            // Two ways a target stops being legal: it can stop being targetable
+            // at all (hexproof, protection), and it can stop satisfying what the
+            // ability asks of it — Avacynian Priest's "target non-Human
+            // creature" is not a legal target once it has become a Human. The
+            // second is the card's own `is_valid_target`, and the behavior to
+            // ask is the one that *granted* the ability, which is why
+            // `behavior_card_id` rides on the stack entry.
             let controller = state.get_object(source_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+            let behavior = registry.get(behavior_card_id);
             let targets: Vec<Target> = targets.into_iter()
                 .map(|t| match t {
                     Target::Object(id)
-                        if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry) =>
+                        if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
+                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) =>
                             Target::Illegal,
                     other => other,
                 })

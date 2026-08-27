@@ -76,6 +76,20 @@ ability resolved against whatever it had targeted however the board had changed.
 longer be targeted and fizzles when every target is illegal, matching what
 `resolve_spell` already did.
 
+A target stops being legal two ways, and the first pass only caught one of
+them. It can stop being targetable at all (hexproof, protection), and it can
+stop satisfying what the ability asks of it — Avacynian Priest's "target
+non-Human creature" is not a legal target once it has become a Human. The
+second is the card's own `is_valid_target`, and the behavior to ask is the one
+that *granted* the ability, which is why `behavior_card_id` rides on the stack
+entry.
+
+`damage_helper.rs::damage_from_an_activated_ability_takes_a_planeswalkers_loyalty`
+was the one test this broke, and it was wrong: it pointed Olivia Voldaren's
+"another target **creature**" ability at a planeswalker, and passed only because
+nothing re-checked the restriction. Rewritten against Stensia Bloodhall
+("target player or planeswalker"), with the illegal case pinned separately.
+
 ## Guards
 
 Two build-failing scanners in `test_suite_guards.rs`:

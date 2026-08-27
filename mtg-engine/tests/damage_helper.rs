@@ -16,7 +16,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::TargetRequirement;
 use mtg_engine::types::*;
 
@@ -103,21 +103,60 @@ fn an_ability_that_picks_any_target_on_resolution_offers_a_planeswalker() {
 /// And the damage, once pointed there, removes loyalty (CR 120.3c) — the
 /// planeswalker branch of the pipeline, reached from an activated ability
 /// rather than a spell.
+///
+/// Stensia Bloodhall, because "{3}{B}{R}, {T}: This land deals 2 damage to
+/// target player or planeswalker" is the set's one activated ability that can
+/// legally point at one. This test used Olivia Voldaren's "{1}{R}: ... deals 1
+/// damage to *another target creature*" and passed only because nothing
+/// re-checked the card's own targeting restriction when the ability resolved.
 #[test]
 fn damage_from_an_activated_ability_takes_a_planeswalkers_loyalty() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bloodhall = named_permanent(&mut state, &reg, "Stensia Bloodhall", P0);
+    let garruk = planeswalker(&mut state, &reg, P1);
+    let before = counters_of(&state, garruk, CounterType::Loyalty);
+    assert!(before > 1, "test precondition: Garruk entered with loyalty to lose");
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 3),
+                               (ManaType::Black, 1), (ManaType::Red, 1)]);
+    let state = activate(&state, &reg, bloodhall, 1, vec![Target::Object(garruk)]);
+
+    assert_eq!(counters_of(&state, garruk, CounterType::Loyalty), before - 2,
+        "Stensia Bloodhall's 2 damage removes two loyalty counters");
+    assert_eq!(state.get_object(garruk).unwrap().damage_marked, 0,
+        "and marks no damage on the permanent, which nothing would ever clear");
+}
+
+/// The other direction: an ability that says "another target **creature**"
+/// cannot resolve against a planeswalker, however it got there.
+///
+/// CR 608.2b re-checks targets on resolution, and the ability arm of
+/// `resolve_top_of_stack` used to check only whether the target could still be
+/// targeted at all — never whether it still satisfied what the card asked of
+/// it. Olivia's own guard caught this one; a card without a guard did not.
+#[test]
+fn an_ability_that_targets_a_creature_does_not_resolve_against_a_planeswalker() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let garruk = planeswalker(&mut state, &reg, P1);
     let before = counters_of(&state, garruk, CounterType::Loyalty);
-    assert!(before > 0, "test precondition: Garruk entered with loyalty");
 
     add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Red, 1)]);
-    let state = activate(&state, &reg, olivia, 0, vec![Target::Object(garruk)]);
+    let offered = mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
+        .any(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == olivia && targets.contains(&Target::Object(garruk))));
+    assert!(!offered,
+        "\"another target creature\" must not offer a planeswalker at announcement");
 
-    assert_eq!(counters_of(&state, garruk, CounterType::Loyalty), before - 1,
-        "Olivia's 1 damage removes one loyalty counter");
-    assert_eq!(state.get_object(garruk).unwrap().damage_marked, 0,
-        "and marks no damage on the permanent, which nothing would ever clear");
+    // And forced through anyway, it fizzles rather than resolving.
+    let state = activate(&state, &reg, olivia, 0, vec![Target::Object(garruk)]);
+    assert_eq!(counters_of(&state, garruk, CounterType::Loyalty), before,
+        "the planeswalker was never a legal target, so it loses no loyalty");
+    assert_eq!(counters_of(&state, olivia, CounterType::PlusOnePlusOne), 0,
+        "and none of the ability's other effects happen either — Olivia gets no \
+         +1/+1 counter (CR 608.2b)");
 }
