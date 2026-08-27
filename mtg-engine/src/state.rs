@@ -683,6 +683,14 @@ impl GameState {
             // Note: card_state is NOT cleared here — LTB triggers need it
             // (e.g., Fiend Hunter's "exiled_creature"). It's cleared on re-entry.
             if from == Zone::Battlefield && to != Zone::Battlefield {
+                // CR 108.4: a card has a controller only while it represents a
+                // permanent or a spell. Off the battlefield its owner acts as
+                // its controller, so a stolen creature that dies stops being
+                // the thief's — Boneyard Wurm reads its own controller to pick
+                // whose graveyard to count, and a card whose controller was
+                // never reset counted the wrong one. Last known information is
+                // already captured above in `pre_move_controller`.
+                obj.controller = obj.owner;
                 obj.tapped = false;
                 obj.summoning_sick = false;
                 obj.damage_marked = 0;
