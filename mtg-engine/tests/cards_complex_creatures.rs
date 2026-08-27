@@ -622,6 +622,36 @@ fn skaab_ruinator_exiles_creatures_from_graveyard() {
     assert_eq!(exiled, 3, "Should exile 3 creatures from graveyard");
 }
 
+/// "Skaab Ruinator is on the stack when you pay its costs. It can't be exiled
+/// to pay for itself." Casting it from your graveyard with only two *other*
+/// creature cards there is not a legal cast — the Ruinator does not count
+/// towards the three it has to exile.
+#[test]
+fn skaab_ruinator_cannot_be_exiled_to_pay_for_itself() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Two other creature cards in the graveyard: three creature cards in the
+    // zone, but only two the cost can reach.
+    for _ in 0..2 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+    assert!(!can_cast(&state, &reg, ruinator),
+        "two other creature cards is not three — it cannot exile itself");
+
+    // A third makes it castable.
+    let c = ready_creature(&mut state, P0, 1, 1);
+    state.move_object(c, Zone::Graveyard, &reg);
+    assert!(can_cast(&state, &reg, ruinator),
+        "three other creature cards pays the cost");
+}
+
 #[test]
 fn skaab_ruinator_cast_from_graveyard() {
     // "You may cast this card from your graveyard" — uses normal mana cost, not flashback.
