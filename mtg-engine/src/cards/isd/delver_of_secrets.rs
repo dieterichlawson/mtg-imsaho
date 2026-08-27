@@ -75,12 +75,23 @@ impl CardBehavior for DelverOfSecrets {
         if is_transformed {
             return;
         }
-        // Look at the top card of the library.
+        // "look at the top card of your library. You may reveal that card." —
+        // with an empty library there is no card to look at and nothing to
+        // reveal, so there is no choice to offer. CR 608.2: the ability does as
+        // much as it can, which here is nothing. This used to prompt "reveal
+        // nothing from the top of your library?", a decision with no meaning
+        // behind it.
+        let Some(top_card_id) = state.get_player(controller).library_order.first().copied() else {
+            state.log(LogLevel::Debug,
+                "Delver of Secrets: library is empty, nothing to look at".into());
+            return;
+        };
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
 
-        // Log what was seen (the player "looks at" the top card).
-        let top_card_id = state.get_player(controller).library_order.first().copied();
-        let top_card_name = top_card_id.map_or_else(|| "nothing".into(), |id| state.obj_name(id));
+        // Log what was seen. Debug level on purpose: the controller looks at
+        // this card, the opponent does not, and only `display_log` (Info and
+        // above) is shown to players.
+        let top_card_name = state.obj_name(top_card_id);
         state.log(LogLevel::Debug,
             format!("Delver of Secrets: top card is {top_card_name}"));
 

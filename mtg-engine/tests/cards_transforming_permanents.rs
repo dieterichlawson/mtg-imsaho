@@ -1295,3 +1295,24 @@ fn unholy_fiends_life_loss_happens_even_if_it_dies_in_response() {
     assert_eq!(state.get_player(P0).life, before - 1,
         "the life is lost even though the source is gone");
 }
+
+/// "look at the top card of your library. You may reveal that card." — with an
+/// empty library there is no card to look at and nothing to reveal, so there is
+/// no choice to offer (CR 608.2: the ability does as much as it can, which here
+/// is nothing). It used to prompt "reveal nothing from the top of your
+/// library?", a decision with nothing behind it.
+#[test]
+fn delver_offers_no_reveal_when_the_library_is_empty() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    assert!(state.get_player(P0).library_order.is_empty(), "test precondition");
+
+    let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, delver, &[], &reg);
+
+    assert!(state.awaiting_action.is_none(),
+        "no card to look at, so no reveal choice");
+    assert!(!state.get_object(delver).unwrap().is_transformed);
+}
