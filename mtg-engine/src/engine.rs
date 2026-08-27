@@ -770,16 +770,25 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::CombatDamage => {
+            // CR 510.5: this flag is what made `advance_step` come back here
+            // for the second combat damage step, so entering the step consumes
+            // it. It used to be cleared inside the `has_attackers` branch
+            // below — and when combat emptied between the two steps (an
+            // attacker regenerating, CR 701.15) the branch was skipped, the
+            // flag survived, and `advance_step` chose Step::CombatDamage
+            // again, forever. The game never reached end of combat: about one
+            // random game in twenty-five ground to a halt cycling this step.
+            let second_damage_step = std::mem::take(&mut state.combat_damage_step_pending);
+
             let has_attackers = state.combat.as_ref()
                 .is_some_and(|c| !c.attackers.is_empty());
 
             if has_attackers {
-                if state.combat_damage_step_pending {
+                if second_damage_step {
                     // Second combat damage step (CR 510.5): regular damage
                     // from creatures that didn't deal first-strike damage,
                     // plus double strikers.
                     combat::deal_regular_damage_pass(state, registry);
-                    state.combat_damage_step_pending = false;
                 } else if combat::any_first_strike_in_combat(state, registry) {
                     // First of two combat damage steps (CR 510.5): only
                     // first/double strikers deal damage now. advance_step

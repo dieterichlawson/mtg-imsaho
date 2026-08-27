@@ -558,3 +558,53 @@ fn mutually_lethal_combat_both_die() {
     // Player takes no damage — attacker was blocked.
     assert_eq!(state.get_player(P1).life, 20);
 }
+
+/// CR 510.5 / 701.15: a creature that regenerates is removed from combat. If
+/// that empties combat between the two combat damage steps, the second step
+/// still has to happen and combat still has to end.
+///
+/// `combat_damage_step_pending` is what sends `advance_step` back to
+/// Step::CombatDamage a second time, and it used to be cleared inside the
+/// "there are attackers" branch. With combat emptied, the second step found
+/// nothing to do, skipped that branch, and left the flag set — so `advance_step`
+/// chose Step::CombatDamage again, and again, and the game never reached end of
+/// combat. About one random game in twenty-five ground to a halt this way.
+///
+/// `first_strike_creates_second_combat_damage_step_with_window` above does not
+/// catch it: it moves the attacker to the graveyard by hand, which leaves the id
+/// in `combat.attackers`, so `has_attackers` stays true.
+#[test]
+fn combat_ends_when_the_attacker_leaves_combat_between_damage_steps() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // A 1/1 attacker meets a 2/2 first-striking blocker.
+    let attacker = ready_creature(&mut state, P0, 1, 1);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(blocker).unwrap().keywords.push(Keyword::FirstStrike);
+
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    // First combat damage step: only the first striker deals damage.
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(state.combat_damage_step_pending,
+        "a second combat damage step is pending (CR 510.5)");
+
+    // The attacker regenerates the lethal damage, which removes it from combat
+    // (CR 701.15). Combat is now empty on both sides.
+    mtg_engine::destruction::remove_from_combat(&mut state, attacker);
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.is_empty()));
+
+    // The second combat damage step happens with nothing to do...
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(!state.combat_damage_step_pending,
+        "entering the step consumes the flag even with no attackers left");
+
+    // ...and then combat ends, rather than the step repeating forever.
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat,
+        "combat must end; leaving the flag set looped Step::CombatDamage");
+}
