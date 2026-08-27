@@ -36,3 +36,42 @@ Here the duplicate was fused into a larger condition,
 ### Test coverage
 `your_upkeep_scope.rs::a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses`
 covers this card by registry sweep, in both directions.
+## Audit — 2026-08-27 (Tier A)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/51/delver-of-secrets-insectile-aberration?utm_source=api
+**Type line**: `Creature — Human Wizard` — {U}, 1/1
+**Oracle text**:
+```
+At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
+```
+**Back face**: Insectile Aberration — `Creature — Human Insect`, 3/2
+```
+Flying
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- Ruling: "You **may** reveal the card even if it's not an instant or sorcery.
+  Whether or not you reveal it, the card **stays on top of your library**." The
+  prompt is offered regardless of what the top card is, the card is never moved,
+  and only an instant or sorcery reveal transforms: PASS
+- The player "looks at" the top card before deciding, so the prompt names it —
+  the information is theirs by the card's own text: PASS
+- Declining leaves the card on top and does not transform: PASS
+- An empty library offers the choice and transforms nothing: PASS
+- The trigger is on the front face only; Insectile Aberration has no ability:
+  PASS
+- Flying is on the back face only: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The optional reveal and the conditional transform: `cards_transforming_permanents.rs:delver_transforms_when_player_reveals_instant`, `transform_dfc.rs`

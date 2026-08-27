@@ -46,3 +46,50 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `werewolf_cards.rs` (29 tests over the family), `intervening_if.rs` (the spell-count condition), `transform_dfc.rs` (CR 712 face characteristics).
+## Audit — 2026-08-27 (Tier A)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/145/hanweir-watchkeep-bane-of-hanweir?utm_source=api
+**Type line**: `Creature — Human Warrior Werewolf` — {2}{R}, 1/5
+**Oracle text**:
+```
+Defender
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+```
+**Back face**: Bane of Hanweir — `Creature — Werewolf`, 5/5
+```
+This creature attacks each combat if able.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- Defender is on the **front** face only, and the back face's "This creature
+  attacks each combat if able" is `ForceAttack` scoped `OnSelf` — so the two
+  never contradict each other on one face: PASS
+- CR 508.1d: a requirement cannot force an illegal attack, so a tapped or
+  summoning-sick Bane of Hanweir does not attack: PASS
+- The force is on itself, not on other creatures: PASS
+- The werewolf flip conditions are the shared `werewolf_should_trigger` /
+  `werewolf_should_transform` helpers, so "if no spells were cast last turn" and
+  "if a player cast two or more spells last turn" are one implementation rather
+  than one per card: PASS
+- CR 603.4: both are intervening-ifs, checked when the trigger would go on the
+  stack *and* again on resolution: PASS
+- "At the beginning of **each** upkeep" — `TriggerScope::Each`, so it fires on
+  the opponent's turn too: PASS
+- The active face's characteristics come from `back_face_data` when transformed
+  (CR 712.8) — P/T, keywords, subtypes, continuous effects and triggered
+  abilities all switch together: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- Defender, the flip, and the attack requirement: `werewolf_cards.rs`, `combat_requirements.rs`

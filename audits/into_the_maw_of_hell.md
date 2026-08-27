@@ -47,3 +47,41 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `fizzle.rs` (CR 608.2b, including the new hexproof-in-response case), `cards_removal_and_bounce.rs`, `multi_target_and_mill.rs`.
+## Audit — 2026-08-27 (Tier B)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/150/into-the-maw-of-hell?utm_source=api
+**Type line**: `Sorcery` — {4}{R}{R}
+**Oracle text**:
+```
+Destroy target land. Into the Maw of Hell deals 13 damage to target creature.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- Ruling: "Into the Maw of Hell targets **both** the land and the creature. You
+  can only cast it if you can choose a legal target for both": PASS
+- Ruling: "If **one** of Into the Maw of Hell's targets is illegal by the time it
+  resolves, Into the Maw of Hell will **still affect the remaining legal
+  target**. If **both** targets are illegal at this time, Into the Maw of Hell
+  won't resolve." This is the card the engine's CR 608.2b handling was written
+  against: an illegal target is *substituted* with `Target::Illegal` rather than
+  removed, so the positions hold — the land stays `targets[0]` — and the illegal
+  one simply fails to match `Target::Object(..)`. Checking only "is any target
+  legal", as the engine used to, meant a creature that gained hexproof in
+  response still took all 13 damage: PASS
+- 13 damage through `deal_damage`, so protection and prevention apply: PASS
+- `try_destroy` on the land, so an indestructible land survives while the
+  creature still takes its damage: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- One target illegal, the other still affected: `fizzle.rs:a_multi_target_spell_is_countered_only_when_every_target_is_illegal`, `:a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve`

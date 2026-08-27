@@ -35,3 +35,39 @@ and the back's end-step "you lose 1 life".
 ### Test coverage
 `your_upkeep_scope.rs::a_your_step_trigger_fires_on_its_controllers_step_and_no_one_elses`
 covers this card by registry sweep, in both directions.
+## Audit — 2026-08-27 (Tier A)
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/8/cloistered-youth-unholy-fiend?utm_source=api
+**Type line**: `Creature — Human` — {1}{W}, 1/1
+**Oracle text**:
+```
+At the beginning of your upkeep, you may transform this creature.
+```
+**Back face**: Unholy Fiend — `Creature — Horror`, 3/3
+```
+At the beginning of your end step, you lose 1 life.
+```
+
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+
+### Tricky interactions checked
+- "At the beginning of **your** upkeep, you **may** transform" —
+  `TriggerScope::Your`, and a YesNo choice rather than automatic: PASS
+- One-way: Unholy Fiend has no transform ability, and the handler only offers
+  the prompt on the front face, so it cannot flip back: PASS
+- "At the beginning of your end step, you lose 1 life" is the *back* face's
+  ability and only fires while transformed: PASS
+- Life **loss**, not damage, through `change_life`: PASS
+- Declining is recorded and costs nothing: PASS
+
+### What else was checked
+Card data verified exact set-wide — cost, card types, supertypes, subtypes, P/T,
+oracle text, keywords on both faces, flashback cost, and trigger kinds against
+the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
+
+### Test coverage
+- The optional transform and the back face's upkeep cost: `cards_transforming_permanents.rs:cloistered_youth_presents_transform_choice_at_upkeep`
