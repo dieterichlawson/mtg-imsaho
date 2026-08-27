@@ -770,3 +770,44 @@ fn howlpack_alphas_wolf_arrives_even_if_the_alpha_dies_in_response() {
     assert_eq!(state.get_object(wolf).unwrap().controller, P0,
         "under the player who controlled the Alpha when it triggered");
 }
+
+/// CR 603.4 + CR 712.8: an intervening-if re-checked on resolution is the
+/// condition of the ability that *triggered*, and that ability belongs to one
+/// face. Transforming in between does not hand the trigger the other face's
+/// condition.
+///
+/// Moonmist ("Transform all Humans") in response to a front-face Werewolf's
+/// upkeep trigger is the reachable case. Mayor of Avabruck is a Human, so
+/// Moonmist flips it to Howlpack Alpha. The trigger on the stack is still the
+/// front face's — "if no spells were cast last turn, transform this creature" —
+/// and casting Moonmist this turn does not change what was cast *last* turn, so
+/// it resolves and flips the Alpha back.
+///
+/// Reading the current face instead tested the back face's condition ("a player
+/// cast two or more spells last turn"), found it false, and did nothing.
+#[test]
+fn a_werewolf_trigger_keeps_its_own_faces_condition_across_a_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    // Nobody cast anything last turn: the front face's condition holds.
+    state.num_spells_cast_last_turn.clear();
+
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    assert!(!state.get_object(mayor).unwrap().is_transformed);
+
+    // The upkeep trigger goes on the stack, from the front face.
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the front face's transform trigger is on the stack");
+
+    // In response, Moonmist transforms it — it is a Human.
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
+
+    // The front face's ability resolves. Its condition is still true.
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert!(!state.get_object(mayor).unwrap().is_transformed,
+        "the front face's ability transformed it, so it is a Mayor again");
+    assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck");
+}

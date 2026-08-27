@@ -110,6 +110,16 @@ pub struct GameState {
     /// trigger / priority round in between) instead of moving to EndCombat.
     #[serde(default)]
     pub combat_damage_step_pending: bool,
+    /// Which face the trigger currently resolving fired from, if any.
+    ///
+    /// A double-faced card's faces carry different abilities, so an
+    /// intervening-if re-checked on resolution (CR 603.4) must test the
+    /// condition of the face that triggered — the permanent may have flipped
+    /// in between. Set by the trigger dispatcher around the card's hook and
+    /// cleared afterwards; `None` outside a trigger resolution, which is how a
+    /// trigger-time check knows to read the current face instead.
+    #[serde(default, skip)]
+    pub resolving_trigger_from_back_face: Option<bool>,
 
     /// The spell currently mid-resolution because it presented a player
     /// choice (`awaiting_action`). The ENGINE owns moving a resolved spell
@@ -318,6 +328,7 @@ impl GameState {
             end_of_combat_exiles: Vec::new(),
             awaiting_action: None,
             combat_damage_step_pending: false,
+            resolving_trigger_from_back_face: None,
             resolving_spell: None,
             result: None,
             consecutive_passes: 0,

@@ -38,12 +38,30 @@ pub struct TriggerSource {
     /// untargeted triggers.
     #[serde(default)]
     pub chosen_targets: Vec<Target>,
+    /// Whether the permanent was on its back face when this triggered.
+    ///
+    /// A double-faced card's two faces have different abilities, and the
+    /// ability that triggered belongs to one of them. It keeps belonging to
+    /// that face after the permanent flips — so an intervening-if re-checked at
+    /// resolution (CR 603.4) has to test the condition of the face that
+    /// triggered, not whatever face is up by then.
+    #[serde(default)]
+    pub from_back_face: bool,
 }
 
 impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
-        Self { id, card_id, controller, description: description.into(), chosen_targets: Vec::new() }
+        Self { id, card_id, controller, description: description.into(),
+               chosen_targets: Vec::new(), from_back_face: false }
+    }
+
+    /// Record which face this triggered from (CR 712.8 — the faces have
+    /// different abilities).
+    #[must_use]
+    pub fn from_face(mut self, is_transformed: bool) -> Self {
+        self.from_back_face = is_transformed;
+        self
     }
 }
 
@@ -511,6 +529,10 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         return true;
     };
     let self_id = source.id;
+    // CR 603.4: the ability's own condition is re-checked on resolution, and
+    // "its own" means the face it triggered from — which is not necessarily the
+    // face that is up now.
+    state.resolving_trigger_from_back_face = Some(source.from_back_face);
     match event {
         TriggerEvent::SelfEntered => {
             behavior.on_enter_battlefield(state, self_id, &targets, registry);
@@ -573,6 +595,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         }
     }
 
+
+    state.resolving_trigger_from_back_face = None;
     true
 }
 

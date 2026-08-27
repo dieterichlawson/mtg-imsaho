@@ -69,7 +69,7 @@ pub(super) fn step_started(
                         crate::cards::TriggerKind::EndStep => TriggerEvent::EndStep,
                         _ => unreachable!(),
                     };
-                    c.emit(obj_id, card_id, controller, desc, event);
+                    c.emit_from_face(obj_id, card_id, controller, desc, event, is_transformed);
                 }
             }
         }

@@ -393,7 +393,20 @@ pub fn enters_with_counters(
 }
 
 pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
-    if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
+    // Which face's condition to test. Inside a trigger resolution it is the
+    // face the ability triggered from (CR 603.4 re-checks *that* ability's
+    // condition, and CR 712.8 keeps it the same object across a flip); outside
+    // one — the trigger-time check — it is the face that is up now.
+    //
+    // These differ when the permanent transforms between the trigger and its
+    // resolution: Moonmist in response to a front-face Werewolf's upkeep
+    // trigger flips it forward, and the front face's ability must still resolve
+    // and flip it back, because "no spells were cast last turn" is unchanged by
+    // anything cast this turn. Reading the current face instead tested the back
+    // face's condition and did nothing.
+    let back_face = state.resolving_trigger_from_back_face
+        .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed));
+    if back_face {
         state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
     } else {
         state.num_spells_cast_last_turn.values().sum::<u32>() == 0

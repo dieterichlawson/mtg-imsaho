@@ -55,6 +55,26 @@ impl Collector {
         ));
     }
 
+    /// Emit a trigger, recording which face of a double-faced card it fired
+    /// from (CR 712.8 — the two faces have different abilities, and an
+    /// intervening-if re-checked on resolution belongs to the face that
+    /// triggered).
+    pub fn emit_from_face(
+        &mut self,
+        id: crate::ids::ObjectId,
+        card_id: crate::ids::CardId,
+        controller: PlayerId,
+        description: String,
+        event: crate::triggers::TriggerEvent,
+        is_transformed: bool,
+    ) {
+        self.push(PendingTrigger::new(
+            crate::triggers::TriggerSource::new(id, card_id, controller, description)
+                .from_face(is_transformed),
+            event,
+        ));
+    }
+
     pub fn is_empty(&self) -> bool {
         self.ap.is_empty() && self.nap.is_empty()
     }
