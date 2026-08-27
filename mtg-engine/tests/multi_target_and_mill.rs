@@ -137,3 +137,54 @@ fn cellar_door_emits_creature_card_milled() {
         "Cellar Door milled a creature card from the bottom of a library; \
          milling from the bottom is still milling");
 }
+
+/// "…then mill three cards." The cards leave *your* library for *your*
+/// graveyard, and an opponent's Undead Alchemist is exactly the watcher that
+/// cares — whether a watcher cares is the collector's decision (it skips
+/// watchers controlled by the milled player), not the miller's.
+#[test]
+fn heretics_punishment_emits_creature_card_milled() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let punishment = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    for _ in 0..3 {
+        card_in_library(&mut state, &reg, "Walking Corpse", P0);
+    }
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 4);
+
+    state.events.clear();
+    let behavior = reg.get(state.get_object(punishment).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, punishment, 0, &[Target::Player(P1)], &reg);
+
+    assert_eq!(milled_creature_events(&state), 3,
+        "three creature cards went from library to graveyard, so three \
+         CreatureCardMilled events");
+}
+
+/// "Look at the top four cards of your library. Put one of them into your hand
+/// and the rest into your graveyard." The rest are a library-to-graveyard move
+/// too, and the shared `ChooseFromRevealed` handler moved them by hand.
+#[test]
+fn forbidden_alchemy_emits_creature_card_milled_for_the_rest() {
+    use mtg_engine::actions::ResolvedChoice;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let library: Vec<ObjectId> = (0..4)
+        .map(|_| card_in_library(&mut state, &reg, "Walking Corpse", P0))
+        .collect();
+    let spell = castable_spell(&mut state, &reg, "Forbidden Alchemy", P0);
+
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+    let mut state = state;
+    state.events.clear();
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenCard(library[0]),
+    }, &reg);
+
+    assert_eq!(state.get_object(library[0]).unwrap().zone, Zone::Hand,
+        "test premise: the chosen card went to hand");
+    assert_eq!(milled_creature_events(&state), 3,
+        "the other three creature cards were put into the graveyard from the \
+         library, so an opponent's Undead Alchemist must see them");
+}

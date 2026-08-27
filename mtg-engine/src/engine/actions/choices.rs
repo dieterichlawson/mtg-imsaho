@@ -98,9 +98,15 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                  ResolvedChoice::ChosenCard(keep_id)) => {
                     let keep_name = state.obj_name(*keep_id);
                     state.move_object(*keep_id, Zone::Hand, registry);
+                    // "…and the rest into your graveyard" — library to
+                    // graveyard, so it goes through `mill_one` and emits
+                    // CreatureCardMilled. Moving them directly hid them from
+                    // an opponent's Undead Alchemist.
                     for &card_id in revealed {
                         if card_id != *keep_id {
-                            state.move_object(card_id, Zone::Graveyard, registry);
+                            let Some(owner) = state.get_object(card_id).map(|o| o.owner)
+                                else { continue };
+                            crate::engine::mill_one(state, owner, card_id, registry);
                         }
                     }
                     state.log(LogLevel::Event, format!("Kept {keep_name}"));

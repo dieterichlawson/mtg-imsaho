@@ -89,11 +89,16 @@ impl CardBehavior for HereticsPunishment {
             }
         }
 
-        // Move milled cards to graveyard.
+        // "…then mill three cards." Routed through `mill_one` so a creature
+        // card among them emits CreatureCardMilled — moving them directly meant
+        // an opponent's Undead Alchemist ("whenever a creature card is put into
+        // an opponent's graveyard from their library") never saw the three
+        // cards this puts into *your* graveyard from *your* library. Which
+        // watchers care is the collector's decision, not the miller's.
         let milled: Vec<ObjectId> = state.get_player_mut(controller)
             .library_order.drain(..mill_count).collect();
         for card_id in milled {
-            state.move_object(card_id, Zone::Graveyard, registry);
+            crate::engine::mill_one(state, controller, card_id, registry);
         }
 
         // Deal damage to target equal to highest mana value.
