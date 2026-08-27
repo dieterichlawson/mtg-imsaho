@@ -154,6 +154,8 @@ pub(crate) fn generate_cast_actions_with_targets(
                             crate::actions::Target::Object(id) =>
                                 state.get_object(*id).is_some_and(|o| o.owner == *pid),
                             crate::actions::Target::Player(_) => false,
+                            // CR 608.2b: a target that stopped being legal is skipped.
+                            crate::actions::Target::Illegal => false,
                         });
                     }
                 }

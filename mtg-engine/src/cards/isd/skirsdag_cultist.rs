@@ -51,6 +51,9 @@ impl CardBehavior for SkirsdagCultist {
             let damage_target = match target {
                 Target::Object(target_id) => crate::events::DamageTarget::Object(*target_id),
                 Target::Player(player_id) => crate::events::DamageTarget::Player(*player_id),
+                    // CR 608.2b: a target that is no longer legal is not
+                    // dealt damage at all.
+                    Target::Illegal => return,
             };
             crate::damage::deal_damage(state, object_id, damage_target, 2,
                 crate::damage::DamageKind::NonCombat, registry);

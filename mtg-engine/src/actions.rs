@@ -9,6 +9,18 @@ pub enum Target {
     Object(ObjectId),
     /// Target a player.
     Player(PlayerId),
+    /// A target that was legal when the spell or ability was put on the stack
+    /// and is not legal any more (CR 608.2b).
+    ///
+    /// The engine substitutes this at resolution so a multi-target card keeps
+    /// its target *positions* — "targets[0] is the land, targets[1] is the
+    /// creature" stays true — while the illegal one simply fails to match
+    /// `Target::Object(..)` and is skipped. A card whose ruling is
+    /// all-or-nothing (Prey Upon) gets that for free, because its
+    /// `(Target::Object(a), Target::Object(b))` pattern no longer matches.
+    ///
+    /// This never appears in a target list a player chooses from.
+    Illegal,
 }
 
 /// An action a player can take.

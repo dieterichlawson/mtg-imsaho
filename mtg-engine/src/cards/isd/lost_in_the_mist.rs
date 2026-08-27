@@ -37,6 +37,8 @@ impl CardBehavior for LostInTheMist {
                     .is_some_and(|o| o.zone == Zone::Stack || o.zone == Zone::Battlefield)
             }
             Target::Player(_) => false,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
         }
     }
 

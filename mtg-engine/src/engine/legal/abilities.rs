@@ -200,6 +200,8 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                         let target_obj_id = match &target {
                             crate::actions::Target::Object(id) => Some(*id),
                             crate::actions::Target::Player(_) => None,
+                            // CR 608.2b: a target that stopped being legal is skipped.
+                            crate::actions::Target::Illegal => None,
                         };
                         let sacrifices_for_target: Vec<&Option<ObjectId>> = eligible_sacrifices.iter()
                             .filter(|sac| match (sac, target_obj_id) {

@@ -72,7 +72,9 @@ impl CardBehavior for CurseOfOblivion {
         // If 2 or fewer cards, just exile them all — no choice needed.
         if gy_cards.len() <= 2 {
             let to_exile: Vec<ObjectId> = gy_cards.iter()
-                .map(|t| match t { Target::Object(id) => *id, Target::Player(_) => unreachable!() })
+                // This list was built from the graveyard a line above, so it
+                // holds only `Target::Object`.
+                .filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None })
                 .collect();
             let count = to_exile.len();
             for id in to_exile {

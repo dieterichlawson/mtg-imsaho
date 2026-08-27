@@ -60,6 +60,7 @@ fn hauberk_legal_actions_enumerate_target_sacrifice_combos() {
             let target_id = match targets.first()? {
                 Target::Object(id) => *id,
                 Target::Player(_) => return None,
+                Target::Illegal => unreachable!("Target::Illegal is substituted at resolution and never offered to a player"),
             };
             let sac_id = (*sacrifice)?;
             Some((target_id, sac_id))

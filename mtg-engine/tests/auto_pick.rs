@@ -51,6 +51,7 @@ fn pending_object_choices(
             options.iter().filter_map(|t| match t {
                 Target::Object(id) => Some(*id),
                 Target::Player(_) => None,
+                Target::Illegal => None,
             }).collect(),
         ),
         Some(AwaitingAction::ResolutionChoice {

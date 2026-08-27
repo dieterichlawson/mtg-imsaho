@@ -35,6 +35,8 @@ impl CardBehavior for Rebuke {
                 is_attacking
             }
             Target::Player(_) => false,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
         }
     }
 

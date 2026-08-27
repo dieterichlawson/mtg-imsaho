@@ -60,6 +60,8 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                 None => false,
             }
         }
+        // CR 608.2b: a target that stopped being legal is skipped.
+        Target::Illegal => false,
         Target::Player(pid) => {
             // Check player hexproof (Witchbane Orb).
             if *pid != caster && state.player_has_hexproof(*pid, registry) {
@@ -103,7 +105,7 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
 
 /// Resolve a spell from the stack.
 fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
-    let (card_id, targets, caster) = match state.get_object(object_id) {
+    let (card_id, mut targets, caster) = match state.get_object(object_id) {
         Some(obj) => (obj.card_id, obj.targets.clone(), obj.controller),
         None => return,
     };
@@ -115,7 +117,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         .map_or(crate::cards::TargetRequirement::None, super::cards::CardBehavior::target_requirement);
     if !targets.is_empty() {
         let behavior = registry.get(card_id);
-        let any_legal = targets.iter().any(|t| {
+        let legal = |t: &Target| {
             if !is_target_legal(state, t, &target_req, caster, registry) {
                 return false;
             }
@@ -125,7 +127,34 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
             } else {
                 true
             }
-        });
+        };
+        let any_legal = targets.iter().any(&legal);
+        // CR 608.2b: a target that is no longer legal is not affected, but the
+        // spell still resolves and still affects its other targets. Substitute
+        // rather than remove, so a multi-target card's positions hold — "the
+        // land is targets[0]" stays true — and the illegal one simply fails to
+        // match `Target::Object(..)`.
+        //
+        // Only checking `any_legal`, as this used to, meant a target that had
+        // become illegal *without leaving the battlefield* was still affected:
+        // Into the Maw of Hell dealt its 13 damage to a creature that had
+        // gained hexproof in response (Ranger's Guile is in this very set).
+        //
+        // Scoped to targeting restrictions — hexproof (CR 702.11b) and
+        // protection (CR 702.16b) — because those are properties of the target
+        // alone. Whether a target still satisfies its *requirement* cannot be
+        // asked per target here: `is_target_legal` unwraps only the first
+        // branch of a composite requirement, so Memory's Journey's graveyard
+        // cards would be judged against its `PlayerOnly` first slot. A target
+        // that has changed zones is already skipped by each card's own guard.
+        targets = targets.into_iter()
+            .map(|t| match t {
+                Target::Object(id)
+                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) =>
+                        Target::Illegal,
+                other => other,
+            })
+            .collect();
         if !any_legal {
             state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", state.obj_name(object_id)));
             // Move to graveyard (or exile for flashback) without resolving.

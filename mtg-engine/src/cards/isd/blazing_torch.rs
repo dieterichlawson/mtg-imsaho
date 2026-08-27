@@ -47,6 +47,8 @@ impl CardBehavior for BlazingTorch {
             Target::Object(id) => state.get_object(*id)
                 .is_some_and(|o| o.zone == Zone::Battlefield),
             Target::Player(pid) => !state.get_player(*pid).lost,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
         }
     }
 
@@ -116,9 +118,12 @@ impl CardBehavior for BlazingTorch {
 
             // Deal 2 damage to the target. Source is the torch, not the creature.
             if let Some(target) = targets.first() {
-                let damage_target = match target {
+            let damage_target = match target {
                     Target::Object(target_id) => DamageTarget::Object(*target_id),
                     Target::Player(player_id) => DamageTarget::Player(*player_id),
+                    // CR 608.2b: a target that is no longer legal is not
+                    // dealt damage at all.
+                    Target::Illegal => return,
                 };
                 crate::damage::deal_damage(state, damage_source, damage_target, 2,
                     crate::damage::DamageKind::NonCombat, registry);

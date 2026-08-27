@@ -63,6 +63,8 @@ impl CardBehavior for SharpenedPitchfork {
             Target::Object(id) => state.get_object(*id)
                 .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster),
             Target::Player(_) => false,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
         }
     }
 

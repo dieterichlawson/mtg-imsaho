@@ -250,6 +250,8 @@ impl GameView {
                             options.iter().filter_map(|t| match t {
                                 crate::actions::Target::Object(id) => Some(*id),
                                 crate::actions::Target::Player(_) => None,
+                                // CR 608.2b: a target that stopped being legal is skipped.
+                                crate::actions::Target::Illegal => None,
                             }).collect()
                         }
                         ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => cards.clone(),

@@ -30,6 +30,8 @@ impl CardBehavior for TributeToHunger {
         // "Target opponent" — can only target opponents, not self.
         match target {
             Target::Player(pid) => *pid != caster,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
             Target::Object(_) => false,
         }
     }

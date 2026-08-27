@@ -58,6 +58,8 @@ impl CardBehavior for HereticsPunishment {
                         .is_some_and(|o| o.zone == Zone::Battlefield)
                 }
                 Target::Player(_) => true,
+                // CR 608.2b: a target that stopped being legal is skipped.
+                Target::Illegal => true,
             };
             if !target_legal {
                 state.log(crate::state::LogLevel::Event,
@@ -97,6 +99,9 @@ impl CardBehavior for HereticsPunishment {
             let damage_target = match target {
                 Target::Object(target_id) => crate::events::DamageTarget::Object(*target_id),
                 Target::Player(player_id) => crate::events::DamageTarget::Player(*player_id),
+                    // CR 608.2b: a target that is no longer legal is not
+                    // dealt damage at all.
+                    Target::Illegal => return,
             };
             crate::damage::deal_damage(state, object_id, damage_target, max_mv,
                 crate::damage::DamageKind::NonCombat, registry);

@@ -338,6 +338,7 @@ impl CliPlayer {
                         mtg_engine::actions::Target::Player(pid) => {
                             if *pid == view.you { " -> you".into() } else { " -> opp".into() }
                         }
+                        mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                     };
                     let truncated: String = target_name.chars().take(left_w.saturating_sub(1)).collect();
                     let _ = execute!(out, cursor::MoveTo(1, srow),
@@ -1082,6 +1083,7 @@ impl CliPlayer {
                 match target {
                     mtg_engine::actions::Target::Object(id) => Some(id),
                     mtg_engine::actions::Target::Player(_) => None,
+                    Target::Illegal => None,
                 }
             }
         };
@@ -1104,6 +1106,7 @@ impl CliPlayer {
             mtg_engine::actions::Target::Player(pid) => {
                 if *pid == view.you { "You".into() } else { "Opponent".into() }
             }
+            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
         }).collect();
         labels.push("Cancel".into());
 
@@ -1127,6 +1130,7 @@ impl CliPlayer {
             mtg_engine::actions::Target::Player(pid) => {
                 if *pid == view.you { "You".into() } else { "Opponent".into() }
             }
+            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
         }).collect();
         labels.push("Done".into());
 
@@ -1207,6 +1211,7 @@ impl CliPlayer {
                         Target::Player(pid) => {
                             if *pid == view.you { "you".into() } else { "opponent".into() }
                         }
+                        Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                     }).collect();
                     format!("Cast {} -> {}{}", name, target_names.join(", "), tap_suffix)
                 }
@@ -1260,6 +1265,7 @@ impl CliPlayer {
                             mtg_engine::actions::Target::Player(pid) => {
                                 if *pid == view.you { "You".into() } else { "Opponent".into() }
                             }
+                            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                         }
                     }
                     ResolvedChoice::ChosenTarget(None) => "Decline (do nothing)".into(),

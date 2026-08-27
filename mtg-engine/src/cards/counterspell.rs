@@ -32,6 +32,8 @@ impl CardBehavior for Counterspell {
                     .is_some_and(|o| o.zone == Zone::Stack)
             }
             Target::Player(_) => false,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
         }
     }
 

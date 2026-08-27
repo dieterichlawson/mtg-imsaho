@@ -1379,6 +1379,7 @@ impl LlmPlayer {
                             mtg_engine::actions::Target::Player(pid) => {
                                 if *pid == view.you { "you".into() } else { "opponent".into() }
                             }
+                            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                         })
                         .collect();
                     format!(" targeting {}", target_names.join(", "))
@@ -1630,6 +1631,7 @@ impl LlmPlayer {
                             mtg_engine::actions::Target::Player(pid) => {
                                 if *pid == view.you { "You".into() } else { "Opponent".into() }
                             }
+                            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                         }
                     }
                     ResolvedChoice::ChosenTarget(None) => "Decline".into(),
@@ -1714,6 +1716,7 @@ impl LlmPlayer {
                         let desc = match t {
                             Target::Object(id) => Self::obj_name(view, *id),
                             Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                         };
                         format!("{i}:{desc}")
                     })
@@ -1829,6 +1832,7 @@ impl LlmPlayer {
                 targets.iter().map(|t| match t {
                     mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
                     mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                    mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                 }).collect::<Vec<_>>().join(", ")
             }).collect();
             let prompt = format!(
@@ -1891,6 +1895,7 @@ impl LlmPlayer {
                 let desc = match t {
                     mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
                     mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                    mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
                 };
                 format!("{i}: {desc}")
             })

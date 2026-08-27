@@ -252,3 +252,44 @@ fn counterspell_is_countered_when_its_target_has_left_the_stack() {
         "the spell it named is no longer on the stack, so it is countered by \
          game rules (CR 608.2b)");
 }
+
+/// CR 608.2b: on resolution, a spell checks each of its targets. One that is no
+/// longer legal is not affected; the spell still resolves and still affects the
+/// targets that are.
+///
+/// The engine used to compute only whether *any* target was still legal, and
+/// then hand the whole original list to the card. A target that had become
+/// illegal without leaving the battlefield — the ordinary case, a creature
+/// given hexproof in response — was still affected.
+///
+/// Into the Maw of Hell is the clean statement of it, because its two halves
+/// hit different permanents and its Scryfall ruling says so outright: "If one
+/// of Into the Maw of Hell's targets is illegal by the time it resolves, Into
+/// the Maw of Hell will still affect the remaining legal target."
+#[test]
+fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let spell = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+    let mut state = cast_onto_stack(&state, &reg, spell,
+        vec![Target::Object(land), Target::Object(creature)]);
+
+    // In response, the creature gains hexproof (Ranger's Guile is in this set).
+    // It never leaves the battlefield — only its targetability changes.
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: creature,
+        keyword: Keyword::Hexproof,
+    });
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0,
+        "the creature is no longer a legal target for an opponent's spell \
+         (CR 702.11b), so it takes none of the 13 damage");
+    assert_ne!(state.get_object(land).unwrap().zone, Zone::Battlefield,
+        "the land was still a legal target, so that half of the spell happened \
+         — the spell is not countered while one target remains (CR 608.2b)");
+}

@@ -39,6 +39,8 @@ impl CardBehavior for MawOfTheMire {
                     .is_some_and(|d| d.card_types.contains(&CardType::Land))
             }
             Target::Player(_) => false,
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
         }
     }
 

@@ -46,6 +46,8 @@ impl CardBehavior for GraveyardShovel {
 
     fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
+            // CR 608.2b: a target that stopped being legal is skipped.
+            Target::Illegal => false,
             Target::Player(pid) => {
                 // Only valid if the targeted player has at least one card in their graveyard.
                 state.objects.values().any(|o| o.zone == Zone::Graveyard && o.owner == *pid)

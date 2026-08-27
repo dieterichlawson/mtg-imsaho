@@ -33,6 +33,8 @@ pub(crate) fn finalize_spell_cast(
         let names: Vec<String> = targets.iter().map(|t| match t {
             crate::actions::Target::Object(id) => card_name(state, registry, *id),
             crate::actions::Target::Player(pid) => format!("p{}", pid.0),
+            // CR 608.2b: a target that stopped being legal is skipped.
+            crate::actions::Target::Illegal => "(no longer a legal target)".to_string(),
         }).collect();
         format!(" targeting {}", names.join(", "))
     };
