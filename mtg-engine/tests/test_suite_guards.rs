@@ -1098,3 +1098,43 @@ fn no_permanent_moves_itself_onto_the_battlefield() {
          permanent enters rather than after:\n  {}",
         offenders.join("\n  "));
 }
+
+/// Nothing in the crate builds a second `CardRegistry` at run time.
+///
+/// `CardRegistry::with_all_cards()` constructs all 249 card behaviours. Five
+/// production sites called it mid-game rather than using the registry they had
+/// been handed — three targeting helpers, `present_target_choice`'s
+/// single-target fast path, and Bloodline Keeper's Vampire count. Besides the
+/// cost of rebuilding the set inside a resolution, a caller playing with a
+/// registry of its own (the extra-card fixtures in `player_protection.rs`) had
+/// that registry silently swapped for the default one.
+///
+/// Tests may build one — that is what a fixture is.
+#[test]
+fn nothing_rebuilds_the_card_registry_at_run_time() {
+    let mut offenders = Vec::new();
+    for (path, text) in crate_sources() {
+        // Everything from the first `#[cfg(test)]` on is fixtures.
+        let production = match text.find("#[cfg(test)]") {
+            Some(i) => &text[..i],
+            None => &text[..],
+        };
+        for (i, line) in production.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            // The definition itself, obviously, is where it is built.
+            if trimmed.starts_with("pub fn with_all_cards") {
+                continue;
+            }
+            if line.contains("with_all_cards()") {
+                offenders.push(format!("{path}:{}: {}", i + 1, trimmed));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} production site(s) rebuild the card registry:\n  {}\n\n\
+         Thread the caller's `registry: &CardRegistry` through instead.",
+        offenders.len(), offenders.join("\n  "));
+}

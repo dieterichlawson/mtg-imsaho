@@ -63,7 +63,7 @@ impl CardBehavior for BloodlineKeeper {
     }
 
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return vec![],
@@ -87,7 +87,7 @@ impl CardBehavior for BloodlineKeeper {
 
         // Front face only: {B}: Transform (requires 5+ Vampires).
         if !is_transformed {
-            let vampire_count = Self::count_vampires(state, controller, &CardRegistry::with_all_cards());
+            let vampire_count = Self::count_vampires(state, controller, registry);
             if vampire_count >= 5 {
                 abilities.push(ActivatedAbilityDef {
                     ability_index: 1,

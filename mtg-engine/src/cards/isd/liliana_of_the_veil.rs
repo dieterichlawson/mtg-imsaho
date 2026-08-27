@@ -129,6 +129,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     },
                     "Liliana -2: choose a creature to sacrifice",
                     false, // mandatory
+                    registry,
                 );
             }
             2 => {

@@ -95,6 +95,7 @@ impl CardBehavior for MoorlandHaunt {
                     },
                     "Moorland Haunt: choose a creature card from your graveyard to exile",
                     false,
+                    registry,
                 );
             }
         }

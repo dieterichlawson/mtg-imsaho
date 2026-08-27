@@ -41,7 +41,7 @@ impl CardBehavior for SlayerOfTheWicked {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // CR 603.3d: the target was chosen when the trigger went on the stack
         // and its legality re-checked before resolution. Only the "you may"
@@ -51,6 +51,7 @@ impl CardBehavior for SlayerOfTheWicked {
             state, object_id, controller, vec![target],
             PendingEffect::Destroy { source_name: "Slayer of the Wicked".into() },
             "Slayer of the Wicked: you may destroy the targeted creature",
+            registry,
         );
     }
 }

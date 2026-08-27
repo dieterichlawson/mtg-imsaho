@@ -64,6 +64,7 @@ impl CardBehavior for TributeToHunger {
             PendingEffect::CardEffect { source_id: object_id, key: String::new() },
             "Tribute to Hunger: choose a creature to sacrifice",
             false, // mandatory
+            registry,
         );
     }
 

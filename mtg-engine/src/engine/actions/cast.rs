@@ -193,7 +193,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // by checking which mode's valid targets match the actual targets.
         if let Some(behavior) = registry.get(card_id) {
             if let crate::cards::TargetRequirement::ModalChoice(ref modes) = behavior.target_requirement() {
-                let chosen = detect_modal_choice_mode(&state, player, object_id, targets, modes, behavior);
+                let chosen = detect_modal_choice_mode(&state, player, object_id, targets, modes, behavior, registry);
                 if let Some(obj) = state.get_object_mut(object_id) {
                     obj.chosen_mode = Some(chosen);
                 }

@@ -41,8 +41,8 @@ pub(crate) fn detect_modal_choice_mode(
     targets: &[crate::actions::Target],
     modes: &[crate::cards::TargetRequirement],
     behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
 ) -> usize {
-    let registry = &CardRegistry::with_all_cards();
     // For non-empty targets, find the first mode whose valid targets contain all chosen targets.
     if !targets.is_empty() {
         for (i, mode_req) in modes.iter().enumerate() {
@@ -116,9 +116,9 @@ pub(crate) fn generate_cast_actions_with_targets(
     spell_id: ObjectId,
     target_req: &crate::cards::TargetRequirement,
     behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
 ) -> Vec<Action> {
     use crate::cards::TargetRequirement;
-    let registry = &CardRegistry::with_all_cards();
 
     match target_req {
         TargetRequirement::None => {
@@ -127,7 +127,7 @@ pub(crate) fn generate_cast_actions_with_targets(
         TargetRequirement::ModalChoice(ref modes) => {
             let mut actions = Vec::new();
             for mode_req in modes {
-                actions.extend(generate_cast_actions_with_targets(state, caster, spell_id, mode_req, behavior));
+                actions.extend(generate_cast_actions_with_targets(state, caster, spell_id, mode_req, behavior, registry));
             }
             actions
         }
@@ -395,10 +395,10 @@ pub(crate) fn build_cast_target_spec(
     spell_id: ObjectId,
     target_req: &crate::cards::TargetRequirement,
     behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
 ) -> crate::actions::CastTargetSpec {
     use crate::actions::CastTargetSpec;
     use crate::cards::TargetRequirement;
-    let registry = &CardRegistry::with_all_cards();
 
     match target_req {
         TargetRequirement::None => CastTargetSpec::NoTargets,

@@ -65,6 +65,7 @@ impl CardBehavior for EvilTwin {
                 targets,
                 PendingEffect::CopyCreature { source_id: object_id },
                 "Evil Twin: you may choose a creature to copy",
+                registry,
             );
         }
     }

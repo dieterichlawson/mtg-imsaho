@@ -57,6 +57,7 @@ impl CardBehavior for NightTerrors {
                     crate::state::PendingEffect::CardEffect { source_id: object_id, key: String::new() },
                     "Night Terrors: choose a nonland card to exile",
                     false,
+                    registry,
                 );
                 return; // Don't move spell yet — awaiting choice.
             }

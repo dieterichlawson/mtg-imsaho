@@ -285,6 +285,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                         },
                         &format!("Legend rule: choose which {name} to keep"),
                         false,
+                        registry,
                     );
                     // Don't set took_action — we need to break out of the SBA
                     // loop and let the engine wait for the player's choice.

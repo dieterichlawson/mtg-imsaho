@@ -77,6 +77,7 @@ impl CardBehavior for StitchersApprentice {
             },
             "Stitcher's Apprentice: choose a creature to sacrifice",
             false, // mandatory
+            registry,
         );
     }
 }

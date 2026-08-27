@@ -98,14 +98,17 @@ pub fn present_target_choice(
     effect: PendingEffect,
     description: &str,
     optional: bool,
+    registry: &CardRegistry,
 ) {
     if targets.is_empty() {
         return;
     }
     if targets.len() == 1 && !optional {
-        // Mandatory with exactly 1 target — auto-apply.
-        let reg = crate::cards::CardRegistry::with_all_cards();
-        crate::engine::apply_pending_effect(state, &targets[0], &effect, &reg);
+        // Mandatory with exactly 1 target — auto-apply. Through the caller's
+        // registry: building a fresh one here rebuilt all 249 card behaviours
+        // mid-resolution, and quietly ignored a caller that had registered an
+        // extra card in its own.
+        crate::engine::apply_pending_effect(state, &targets[0], &effect, registry);
         return;
     }
     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -128,8 +131,9 @@ pub fn present_optional_target_choice(
     targets: Vec<Target>,
     effect: PendingEffect,
     description: &str,
+    registry: &CardRegistry,
 ) {
-    present_target_choice(state, source_id, controller, targets, effect, description, true);
+    present_target_choice(state, source_id, controller, targets, effect, description, true, registry);
 }
 
 // ═══════════════════════════════════════════════════════════════════

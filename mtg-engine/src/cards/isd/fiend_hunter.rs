@@ -46,7 +46,7 @@ impl CardBehavior for FiendHunter {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // CR 603.3d: the target was chosen when the trigger went on the
         // stack; legality was re-checked before resolution. Only the "you
@@ -57,6 +57,7 @@ impl CardBehavior for FiendHunter {
             state, object_id, controller, vec![target],
             PendingEffect::CardEffect { source_id: object_id, key: String::new() },
             "Fiend Hunter: you may exile the targeted creature",
+            registry,
         );
     }
 
