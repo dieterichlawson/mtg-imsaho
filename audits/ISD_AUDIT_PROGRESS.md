@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**124/249 audited.**
+**133/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -59,7 +59,7 @@ inherits these; its own entry covers the rest.
 |   | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 |   | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 43/155
+## Tier B — moderate (triggered or activated abilities) — 52/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
@@ -112,7 +112,7 @@ inherits these; its own entry covers the rest.
 |   | Elder Cathar | `elder_cathar.rs` | 76 | 2 | 2 |  |
 |   | Burning Vengeance | `burning_vengeance.rs` | 75 | 2 | 2 |  |
 |   | Manor Gargoyle | `manor_gargoyle.rs` | 80 | 3 | 0 |  |
-|   | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 79 | 3 | 0 |  |
+| x | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 79 | 3 | 0 |  |
 | x | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 73 | 2 | 2 |  |
 |   | Kessig Wolf Run | `kessig_wolf_run.rs` | 76 | 3 | 0 |  |
 |   | Night Terrors | `night_terrors.rs` | 76 | 3 | 0 |  |
@@ -121,7 +121,7 @@ inherits these; its own entry covers the rest.
 |   | Maw of the Mire | `maw_of_the_mire.rs` | 73 | 3 | 0 |  |
 | x | Nevermore | `nevermore.rs` | 68 | 2 | 2 |  |
 |   | Gavony Township | `gavony_township.rs` | 70 | 3 | 0 |  |
-|   | Lost in the Mist | `lost_in_the_mist.rs` | 67 | 3 | 0 |  |
+| x | Lost in the Mist | `lost_in_the_mist.rs` | 67 | 3 | 0 |  |
 |   | Stensia Bloodhall | `stensia_bloodhall.rs` | 67 | 3 | 0 |  |
 |   | Frightful Delusion | `frightful_delusion.rs` | 66 | 3 | 0 |  |
 | x | Geistcatcher's Rig | `geistcatchers_rig.rs` | 59 | 2 | 2 |  |
@@ -134,12 +134,12 @@ inherits these; its own entry covers the rest.
 |   | Ranger's Guile | `rangers_guile.rs` | 57 | 3 | 0 |  |
 | x | Crossway Vampire | `crossway_vampire.rs` | 48 | 2 | 2 |  |
 | x | Village Bell-Ringer | `village_bell_ringer.rs` | 48 | 2 | 2 |  |
-|   | Dissipate | `dissipate.rs` | 52 | 3 | 0 |  |
+| x | Dissipate | `dissipate.rs` | 52 | 3 | 0 |  |
 |   | Runic Repetition | `runic_repetition.rs` | 52 | 3 | 0 |  |
 |   | Bump in the Night | `bump_in_the_night.rs` | 50 | 3 | 0 |  |
 | x | Armored Skaab | `armored_skaab.rs` | 44 | 2 | 2 |  |
-|   | Bramblecrush | `bramblecrush.rs` | 49 | 3 | 0 |  |
-|   | Ancient Grudge | `ancient_grudge.rs` | 47 | 3 | 0 |  |
+| x | Bramblecrush | `bramblecrush.rs` | 49 | 3 | 0 |  |
+| x | Ancient Grudge | `ancient_grudge.rs` | 47 | 3 | 0 |  |
 |   | Naturalize | `naturalize.rs` | 46 | 3 | 0 |  |
 |   | Smite the Monstrous | `smite_the_monstrous.rs` | 46 | 3 | 0 |  |
 |   | Urgent Exorcism | `urgent_exorcism.rs` | 46 | 3 | 0 |  |
@@ -175,20 +175,20 @@ inherits these; its own entry covers the rest.
 |   | Creepy Doll | `creepy_doll.rs` | 52 | 1 | 2 |  |
 |   | Darkthicket Wolf | `darkthicket_wolf.rs` | 57 | 2 | 0 |  |
 |   | Feral Ridgewolf | `feral_ridgewolf.rs` | 57 | 2 | 0 |  |
-|   | Sever the Bloodline | `sever_the_bloodline.rs` | 57 | 2 | 0 |  |
+| x | Sever the Bloodline | `sever_the_bloodline.rs` | 57 | 2 | 0 |  |
 |   | Champion of the Parish | `champion_of_the_parish.rs` | 50 | 1 | 2 |  |
-|   | Harvest Pyre | `harvest_pyre.rs` | 55 | 2 | 0 |  |
+| x | Harvest Pyre | `harvest_pyre.rs` | 55 | 2 | 0 |  |
 |   | Kessig Wolf | `kessig_wolf.rs` | 55 | 2 | 0 |  |
 |   | Manor Skeleton | `manor_skeleton.rs` | 55 | 2 | 0 |  |
 |   | Silverchase Fox | `silverchase_fox.rs` | 54 | 2 | 0 |  |
 |   | Bonds of Faith | `bonds_of_faith.rs` | 52 | 2 | 0 |  |
-|   | Devil's Play | `devils_play.rs` | 52 | 2 | 0 |  |
+| x | Devil's Play | `devils_play.rs` | 52 | 2 | 0 |  |
 |   | Lantern Spirit | `lantern_spirit.rs` | 52 | 2 | 0 |  |
 |   | Spidery Grasp | `spidery_grasp.rs` | 52 | 2 | 0 |  |
 | x | Pitchburn Devils | `pitchburn_devils.rs` | 46 | 1 | 2 |  |
 | x | Stromkirk Noble | `stromkirk_noble.rs` | 46 | 1 | 2 |  |
 |   | Ghoulcaller's Bell | `ghoulcallers_bell.rs` | 50 | 2 | 0 |  |
-|   | Prey Upon | `prey_upon.rs` | 50 | 2 | 0 |  |
+| x | Prey Upon | `prey_upon.rs` | 50 | 2 | 0 |  |
 | x | Unruly Mob | `unruly_mob.rs` | 45 | 1 | 2 |  |
 | x | Bloodcrazed Neonate | `bloodcrazed_neonate.rs` | 44 | 1 | 2 |  |
 | x | Mausoleum Guard | `mausoleum_guard.rs` | 44 | 1 | 2 |  |
