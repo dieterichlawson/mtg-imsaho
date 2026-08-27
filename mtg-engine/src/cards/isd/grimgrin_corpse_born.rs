@@ -45,15 +45,23 @@ impl CardBehavior for GrimgrinCorpseBorn {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        // Enters tapped.
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.tapped = true;
-            obj.is_legendary = true;
-        }
-        state.log(crate::state::LogLevel::Event,
-            "Grimgrin, Corpse-Born enters the battlefield tapped".into());
+    /// "Grimgrin enters tapped" is a replacement effect (CR 614.1c), not
+    /// something to do to it after it has arrived.
+    ///
+    /// This used to override `on_resolve` to `move_object` and then set
+    /// `tapped = true`. `move_object` emits `EnteredBattlefield` as part of the
+    /// move, so every ETB watcher saw an untapped Grimgrin and the tap happened
+    /// afterwards — the ordering CR 614.1c exists to prevent, and the same
+    /// override also re-did the trait default's "move a permanent to the
+    /// battlefield" and its `is_legendary` stamping.
+    fn replace_event(
+        &self,
+        _state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        crate::cards::helpers::enters_tapped_unless(self_id, event, || false)
     }
 
     /// Filter the attack trigger's targets to creatures the defending

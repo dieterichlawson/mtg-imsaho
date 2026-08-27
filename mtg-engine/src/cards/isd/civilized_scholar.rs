@@ -107,13 +107,6 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
-        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
-            Some((5, 1))
-        } else {
-            None
-        }
-    }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {

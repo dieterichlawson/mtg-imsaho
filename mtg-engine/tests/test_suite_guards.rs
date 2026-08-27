@@ -954,3 +954,49 @@ fn a_card_enumerating_a_graveyard_excludes_tokens() {
          a graveyard for \"cards\" must ask `state.is_card(id)`:\n  {}",
         offenders.join("\n  "));
 }
+
+/// A double-faced card does not restate its back face's P/T.
+///
+/// CR 712.8: a transformed permanent has its back face's characteristics, P/T
+/// included. That is `back_face_data`'s job, and `effective_power` reads the
+/// active face — so a `dynamic_pt` that only says "if transformed, (5, 5)" is
+/// the same fact written twice, in two places free to disagree.
+///
+/// Nineteen of the set's DFCs carried exactly that override. `dynamic_pt` is
+/// for a *characteristic-defining ability* — Boneyard Wurm, Splinterfright,
+/// Geist-Honored Monk — where the P/T is computed from the game state and
+/// there is nothing printed to read.
+#[test]
+fn no_dfc_restates_its_back_faces_power_and_toughness() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") || !text.contains("fn dynamic_pt") {
+            continue;
+        }
+        let Some(at) = text.find("fn dynamic_pt") else { continue };
+        let open = text[at..].find('{').map(|i| at + i).unwrap_or(at);
+        let mut depth = 0usize;
+        let mut end = open;
+        for (i, c) in text[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 { end = open + i; break; }
+                }
+                _ => {}
+            }
+        }
+        let body = &text[open..=end];
+        // Keys off nothing but the flip, and answers with a literal pair.
+        if body.contains("is_transformed") && !body.contains("counters")
+            && !body.contains("objects.values") && !body.contains("objects_in_zone") {
+            offenders.push(rel);
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a transformed permanent's P/T is its back face's (CR 712.8), which \
+         `back_face_data` already declares and `effective_power` already \
+         reads. Delete the override:\n  {}",
+        offenders.join("\n  "));
+}

@@ -1295,6 +1295,14 @@ impl GameState {
             if obj.power.is_some() {
                 if let Some((p, _)) = behavior.dynamic_pt(self, id, registry) {
                     p
+                } else if obj.is_transformed {
+                    // CR 712.8: a transformed permanent has its back face's
+                    // characteristics, P/T included. `obj.power` is the front
+                    // face's, stamped at creation, so nineteen DFCs each
+                    // carried a `dynamic_pt` that did nothing but repeat their
+                    // own `back_face_data` — one derived fact written twice,
+                    // in two places free to disagree.
+                    behavior.back_face_data().and_then(|d| d.power).or(obj.power)?
                 } else {
                     obj.power?
                 }
@@ -1352,6 +1360,9 @@ impl GameState {
             if obj.toughness.is_some() {
                 if let Some((_, t)) = behavior.dynamic_pt(self, id, registry) {
                     t
+                } else if obj.is_transformed {
+                    // The back face's printed toughness — see effective_power.
+                    behavior.back_face_data().and_then(|d| d.toughness).or(obj.toughness)?
                 } else {
                     obj.toughness?
                 }

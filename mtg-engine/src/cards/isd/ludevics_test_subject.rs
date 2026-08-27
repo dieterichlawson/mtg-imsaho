@@ -46,13 +46,6 @@ impl CardBehavior for LudevicsTestSubject {
         })
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
-        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
-            Some((13, 13))
-        } else {
-            None
-        }
-    }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {

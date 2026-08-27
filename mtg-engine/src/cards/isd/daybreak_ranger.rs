@@ -62,13 +62,6 @@ impl CardBehavior for DaybreakRanger {
         helpers::werewolf_should_transform(state, object_id)
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
-        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
-            Some((4, 4))
-        } else {
-            None
-        }
-    }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {

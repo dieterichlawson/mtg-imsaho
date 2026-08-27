@@ -74,13 +74,6 @@ impl CardBehavior for KruinOutlaw {
         helpers::werewolf_should_transform(state, object_id)
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
-        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
-            Some((3, 3))
-        } else {
-            None
-        }
-    }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {

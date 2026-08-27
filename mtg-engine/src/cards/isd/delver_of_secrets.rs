@@ -58,13 +58,6 @@ impl CardBehavior for DelverOfSecrets {
         })
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
-        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
-            Some((3, 2))
-        } else {
-            None
-        }
-    }
 
     fn step_trigger_scope(&self, kind: &TriggerKind, _is_back_face: bool) -> crate::cards::TriggerScope {
         match kind {

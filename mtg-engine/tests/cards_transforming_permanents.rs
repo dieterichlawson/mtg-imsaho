@@ -72,7 +72,10 @@ fn delver_transforms_when_player_reveals_instant() {
     assert!(state.get_object(delver).unwrap().is_transformed);
     assert_eq!(state.get_object(delver).unwrap().name, "Insectile Aberration");
     // Dynamic P/T should be 3/2.
-    assert_eq!(behavior.dynamic_pt(&state, delver, &reg), Some((3, 2)));
+    assert_eq!(
+        (state.effective_power(delver, &reg), state.effective_toughness(delver, &reg)),
+        (Some(3), Some(2)),
+        "the back face's printed size (CR 712.8)");
 
     // The card should still be on top of the library (per ruling).
     assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
@@ -171,7 +174,10 @@ fn cloistered_youth_presents_transform_choice_at_upkeep() {
     // Now should be transformed.
     assert!(state.get_object(youth).unwrap().is_transformed);
     assert_eq!(state.get_object(youth).unwrap().name, "Unholy Fiend");
-    assert_eq!(behavior.dynamic_pt(&state, youth, &reg), Some((3, 3)));
+    assert_eq!(
+        (state.effective_power(youth, &reg), state.effective_toughness(youth, &reg)),
+        (Some(3), Some(3)),
+        "the back face's printed size (CR 712.8)");
 }
 
 #[test]
@@ -249,7 +255,10 @@ fn screeching_bat_transforms_at_upkeep_when_player_pays() {
     // Now should be transformed.
     assert!(state.get_object(bat).unwrap().is_transformed);
     assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
-    assert_eq!(behavior.dynamic_pt(&state, bat, &reg), Some((5, 5)));
+    assert_eq!(
+        (state.effective_power(bat, &reg), state.effective_toughness(bat, &reg)),
+        (Some(5), Some(5)),
+        "the back face's printed size (CR 712.8)");
 
     // Mana should have been spent.
     assert_eq!(state.get_player(P0).mana_pool.total(), 0);
@@ -443,7 +452,6 @@ fn ludevics_test_subject_transforms_at_five_counters() {
     let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
     assert_eq!(state.get_object(subject).unwrap().power, Some(0));
 
-    let behavior = reg.get(state.get_object(subject).unwrap().card_id).unwrap();
 
     // Activate 4 times — should not transform yet.
     for _ in 0..4 {
@@ -458,7 +466,10 @@ fn ludevics_test_subject_transforms_at_five_counters() {
     let obj = state.get_object(subject).unwrap();
     assert!(obj.is_transformed);
     assert_eq!(obj.name, "Ludevic's Abomination");
-    assert_eq!(behavior.dynamic_pt(&state, subject, &reg), Some((13, 13)));
+    assert_eq!(
+        (state.effective_power(subject, &reg), state.effective_toughness(subject, &reg)),
+        (Some(13), Some(13)),
+        "the back face's printed size (CR 712.8)");
     // The back face's keywords and subtypes come from the active face.
     assert!(state.has_keyword(subject, Keyword::Trample, &reg), "back face should have Trample");
     assert!(!state.has_keyword(subject, Keyword::Defender, &reg), "back face should not have Defender");
@@ -496,7 +507,10 @@ fn thraben_sentry_transforms_when_creature_dies() {
 
     assert!(state.get_object(sentry).unwrap().is_transformed);
     assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");
-    assert_eq!(behavior.dynamic_pt(&state, sentry, &reg), Some((5, 4)));
+    assert_eq!(
+        (state.effective_power(sentry, &reg), state.effective_toughness(sentry, &reg)),
+        (Some(5), Some(4)),
+        "Thraben Militia is a 5/4 — its back face's printed size (CR 712.8)");
 }
 
 #[test]
@@ -1165,4 +1179,42 @@ fn garruk_cannot_activate_a_loyalty_ability_on_each_face_in_one_turn() {
     assert_eq!(loyalty_actions(&state), 0,
         "the back face's abilities are numbered differently, but it is the same \
          permanent — it already used a loyalty ability this turn");
+}
+
+/// Every double-faced creature in the set, flipped, is its back face's printed
+/// size (CR 712.8).
+///
+/// Derived from the registry rather than a hand-written list, and read through
+/// `effective_power`/`effective_toughness` rather than any card hook: nineteen
+/// DFCs each carried a `dynamic_pt` that only restated their own
+/// `back_face_data`, and every test that covered a flip asserted the *hook*,
+/// so the two could have disagreed without anything noticing.
+#[test]
+fn every_transformed_dfc_is_its_back_faces_printed_size() {
+    let reg = registry();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(card_id) = reg.get_id_by_name(name) else { continue };
+        let Some(behavior) = reg.get(card_id) else { continue };
+        let Some(back) = behavior.back_face_data() else { continue };
+        let (Some(bp), Some(bt)) = (back.power, back.toughness) else { continue };
+        let front = behavior.card_data();
+        let (Some(fp), Some(ft)) = (front.power, front.toughness) else { continue };
+
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
+        assert_eq!(
+            (state.effective_power(id, &reg), state.effective_toughness(id, &reg)),
+            (Some(fp), Some(ft)),
+            "{name}: front face is printed {fp}/{ft}");
+
+        state.get_object_mut(id).unwrap().is_transformed = true;
+        assert_eq!(
+            (state.effective_power(id, &reg), state.effective_toughness(id, &reg)),
+            (Some(bp), Some(bt)),
+            "{name} transformed is {}, printed {bp}/{bt}", back.name);
+        checked += 1;
+    }
+    assert!(checked >= 15,
+        "only {checked} double-faced creatures checked — the sweep stopped covering the set");
 }

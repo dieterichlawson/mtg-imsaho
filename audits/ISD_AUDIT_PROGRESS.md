@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**162/249 audited.**
+**172/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -26,37 +26,37 @@ inherits these; its own entry covers the rest.
 | trigger kinds vs. oracle phrasing | 249/249 consistent |
 | step 9 anti-pattern scan | 96 candidates raised, 3 real, all fixed |
 
-## Tier A — complex (DFCs, planeswalkers, 5+ hooks) — 18/28
+## Tier A — complex (DFCs, planeswalkers, 5+ hooks) — 28/28
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
 | x | Civilized Scholar | `civilized_scholar.rs` | 248 | 9 | 4 | yes |
 | x | Garruk Relentless | `garruk_relentless.rs` | 300 | 7 | 0 |  |
 | x | Mayor of Avabruck | `mayor_of_avabruck.rs` | 143 | 6 | 4 | yes |
-|   | Daybreak Ranger | `daybreak_ranger.rs` | 143 | 6 | 3 | yes |
+| x | Daybreak Ranger | `daybreak_ranger.rs` | 143 | 6 | 3 | back-face P/T restated per card — fixed set-wide |
 | x | Wooden Stake | `wooden_stake.rs` | 107 | 8 | 3 |  |
 | x | Cloistered Youth | `cloistered_youth.rs` | 126 | 6 | 3 | yes |
-|   | Ulvenwald Mystics | `ulvenwald_mystics.rs` | 113 | 6 | 3 | yes |
+| x | Ulvenwald Mystics | `ulvenwald_mystics.rs` | 113 | 6 | 3 | yes |
 | x | Screeching Bat | `screeching_bat.rs` | 153 | 5 | 3 | yes |
 | x | Delver of Secrets | `delver_of_secrets.rs` | 143 | 5 | 2 | yes |
-|   | Grimgrin, Corpse-Born | `grimgrin_corpse_born.rs` | 141 | 6 | 2 |  |
-|   | Liliana of the Veil | `liliana_of_the_veil.rs` | 275 | 4 | 0 |  |
+| x | Grimgrin, Corpse-Born | `grimgrin_corpse_born.rs` | 141 | 6 | 2 | tapped itself after entering (CR 614.1c) — fixed |
+| x | Liliana of the Veil | `liliana_of_the_veil.rs` | 275 | 4 | 0 |  |
 | x | Instigator Gang | `instigator_gang.rs` | 115 | 4 | 3 | yes |
 | x | Kruin Outlaw | `kruin_outlaw.rs` | 98 | 4 | 3 | yes |
 | x | Trepanation Blade | `trepanation_blade.rs` | 145 | 5 | 2 | mill bypassed the pipeline — fixed in `move_object` |
 | x | Hanweir Watchkeep | `hanweir_watchkeep.rs` | 88 | 4 | 3 | yes |
 | x | Village Ironsmith | `village_ironsmith.rs` | 86 | 4 | 3 | yes |
-|   | Curse of Oblivion | `curse_of_oblivion.rs` | 135 | 5 | 2 |  |
+| x | Curse of Oblivion | `curse_of_oblivion.rs` | 135 | 5 | 2 | counted tokens as cards (CR 109.1) — fixed |
 | x | Gatstaf Shepherd | `gatstaf_shepherd.rs` | 85 | 4 | 3 | yes |
 | x | Grizzled Outcasts | `grizzled_outcasts.rs` | 84 | 4 | 3 | yes |
 | x | Tormented Pariah | `tormented_pariah.rs` | 84 | 4 | 3 | yes |
 | x | Villagers of Estwald | `villagers_of_estwald.rs` | 84 | 4 | 3 | yes |
 | x | Reckless Waif | `reckless_waif.rs` | 83 | 4 | 3 | yes |
-|   | Bloodline Keeper | `bloodline_keeper.rs` | 156 | 4 | 0 | yes |
-|   | Evil Twin | `evil_twin.rs` | 124 | 5 | 2 |  |
-|   | Thraben Sentry | `thraben_sentry.rs` | 94 | 4 | 2 | yes |
-|   | Ludevic's Test Subject | `ludevics_test_subject.rs` | 108 | 4 | 0 | yes |
-|   | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
+| x | Bloodline Keeper | `bloodline_keeper.rs` | 156 | 4 | 0 | yes |
+| x | Evil Twin | `evil_twin.rs` | 124 | 5 | 2 |  |
+| x | Thraben Sentry | `thraben_sentry.rs` | 94 | 4 | 2 | yes |
+| x | Ludevic's Test Subject | `ludevics_test_subject.rs` | 108 | 4 | 0 | yes |
+| x | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
 | x | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
 ## Tier B — moderate (triggered or activated abilities) — 78/155

@@ -881,6 +881,11 @@ fn back_from_the_brink_uses_creature_mana_cost() {
 
 // ── Grimgrin, Corpse-Born ──────────────────────────────────────────
 
+/// "Grimgrin enters tapped" is a replacement effect (CR 614.1c), so it is
+/// tapped *as* it arrives — not moved onto the battlefield untapped and tapped
+/// afterwards, which is what an `on_resolve` override used to do. `move_object`
+/// emits `EnteredBattlefield` as part of the move, so under the old shape every
+/// ETB watcher saw an untapped Grimgrin.
 #[test]
 fn grimgrin_enters_tapped() {
     let reg = registry();
@@ -890,9 +895,10 @@ fn grimgrin_enters_tapped() {
     let id = state.create_object(card_id, P0, Zone::Stack, Some(5), Some(5));
     state.get_object_mut(id).unwrap().name = "Grimgrin, Corpse-Born".into();
 
-    let behavior = reg.get(card_id).unwrap();
-    behavior.on_resolve(&mut state, id, &[], &reg);
+    assert!(plan_entering(&mut state, &reg, id, Some(Zone::Stack)).tapped,
+        "the replacement effect taps it as part of the entry event");
 
+    state.move_object(id, Zone::Battlefield, &reg);
     assert!(state.get_object(id).unwrap().tapped);
     assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield);
 }
