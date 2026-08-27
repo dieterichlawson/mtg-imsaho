@@ -71,6 +71,14 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
                     }
                 }
             }
+            // A creature dragged into combat by a "must attack" effect attacked
+            // this turn just the same (CR 508.1).
+            let turn = state.turn_number;
+            for id in &forced_ids {
+                if let Some(obj) = state.get_object_mut(*id) {
+                    obj.attacked_on_turn = Some(turn);
+                }
+            }
             // Tap forced attackers (unless vigilance).
             for id in &forced_ids {
                 let has_vig = state.has_keyword(*id, crate::types::Keyword::Vigilance, registry);

@@ -12,7 +12,6 @@
 mod common;
 use common::*;
 use mtg_engine::actions::Target;
-use mtg_engine::cards::AttackInfo;
 use mtg_engine::state::StackEntry;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
@@ -80,7 +79,10 @@ fn an_attack_in_an_earlier_turn_does_not_keep_the_brute_transformed() {
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
 
     // It attacked on the front face this turn...
-    behavior.on_attacks(&mut state, scholar, AttackInfo::new(scholar, P1), &[], &reg);
+    state.step = Step::DeclareAttackers;
+    state.get_object_mut(scholar).unwrap().summoning_sick = false;
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &reg);
+    state.step = Step::EndStep;
     // ...then a later turn begins, and it transforms.
     state.turn_number += 1;
     mtg_engine::cards::helpers::apply_transform(&mut state, scholar, &reg);
@@ -94,7 +96,7 @@ fn an_attack_in_an_earlier_turn_does_not_keep_the_brute_transformed() {
 }
 
 /// The same-turn case still holds: an attack this turn keeps it transformed
-/// (CR 711.5 — transforming does not make a new object).
+/// (CR 712.8 — transforming does not make a new object).
 #[test]
 fn an_attack_this_turn_keeps_the_brute_transformed() {
     let reg = registry();
@@ -103,7 +105,10 @@ fn an_attack_this_turn_keeps_the_brute_transformed() {
     let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
 
-    behavior.on_attacks(&mut state, scholar, AttackInfo::new(scholar, P1), &[], &reg);
+    state.step = Step::DeclareAttackers;
+    state.get_object_mut(scholar).unwrap().summoning_sick = false;
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &reg);
+    state.step = Step::EndStep;
     mtg_engine::cards::helpers::apply_transform(&mut state, scholar, &reg);
     behavior.on_end_step(&mut state, scholar, &[], &reg);
 

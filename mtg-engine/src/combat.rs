@@ -25,6 +25,13 @@ pub fn declare_attackers(
         }
         combat.attackers.insert(attacker_id, defending_player);
         combat.blocker_assignments.insert(attacker_id, Vec::new());
+        // CR 508.1: this is the moment a creature "attacked this turn". Cards
+        // that ask the question later (Homicidal Brute) read the stamp rather
+        // than each keeping their own record.
+        let turn = state.turn_number;
+        if let Some(obj) = state.get_object_mut(attacker_id) {
+            obj.attacked_on_turn = Some(turn);
+        }
     }
 
     state.events.push(GameEvent::AttackersDeclared {

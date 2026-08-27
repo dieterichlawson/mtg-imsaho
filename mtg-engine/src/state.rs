@@ -397,6 +397,7 @@ impl GameState {
             abilities_activated_this_turn: std::collections::HashSet::new(),
             entering_copy_source: false,
             state_trigger_on_stack: false,
+            attacked_on_turn: None,
         };
         self.objects.insert(id, obj);
         id
@@ -517,6 +518,7 @@ impl GameState {
             chosen_mode: None,
             entering_copy_source: false,
             state_trigger_on_stack: false,
+            attacked_on_turn: None,
         };
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
@@ -693,6 +695,9 @@ impl GameState {
                 obj.controller = obj.owner;
                 obj.tapped = false;
                 obj.summoning_sick = false;
+                // CR 400.7: what comes back is a new object, and a new object
+                // has not attacked — even in the same turn.
+                obj.attacked_on_turn = None;
                 obj.damage_marked = 0;
                 obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
                 if let Some(att) = obj.attached_to {
@@ -1973,10 +1978,21 @@ impl GameState {
             .collect()
     }
 
-    /// Whether the object is a creature. Checks card types first; also
-    /// accepts object-level P/T as a creature sentinel (tokens, `*/*`
-    /// creatures, and anonymous test objects all set it, while equipment,
-    /// auras, and lands never do).
+    /// Whether this permanent was declared as an attacker this turn (CR 508.1).
+    ///
+    /// Homicidal Brute's "if this creature didn't attack this turn" is the
+    /// caller. Note the ruling this satisfies: an attack made while the card
+    /// was front-face-up still counts once it has transformed, because
+    /// transforming does not make a new object (CR 712.8).
+    #[must_use]
+    pub fn attacked_this_turn(&self, id: ObjectId) -> bool {
+        self.get_object(id).and_then(|o| o.attacked_on_turn) == Some(self.turn_number)
+    }
+
+    /// Whether the object is a creature. Card types are the whole answer —
+    /// `card_types_of` already counts a runtime power and toughness as
+    /// creature-ness (CR 205.1b), so this and `has_card_type(Creature)` cannot
+    /// disagree.
     #[must_use]
     pub fn is_creature(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         self.has_card_type(id, crate::types::CardType::Creature, registry)
@@ -2123,6 +2139,16 @@ pub struct GameObject {
     // Battlefield state
     pub tapped: bool,
     pub summoning_sick: bool,
+    /// The turn this permanent was last declared as an attacker, if any
+    /// (CR 508.1). "Didn't attack this turn" is a plain fact about the game,
+    /// asked by Homicidal Brute among others; it is not a triggered ability,
+    /// and a card that needs the answer should not have to fabricate one to
+    /// record it.
+    ///
+    /// Turn-stamped rather than a bare flag so it needs no per-turn sweep to
+    /// clear, and kept across a transform — CR 712.8, transforming does not
+    /// make a new object, so an attack made by one face counts for the other.
+    pub attacked_on_turn: Option<u32>,
     pub damage_marked: u32,
     /// Which creatures have dealt damage to this creature this turn.
     /// Used by Abattoir Ghoul ("when creature dealt damage by this dies").

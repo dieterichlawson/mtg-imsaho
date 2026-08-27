@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{AttackInfo, ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
@@ -11,10 +11,15 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// Homicidal Brute: At the beginning of your end step, if this creature didn't attack
 /// this turn, tap this creature, then transform it.
 ///
-/// The draw-discard is implemented as an activated ability. After drawing, the player
-/// chooses which card to discard. If the discarded card is a creature, Civilized Scholar
-/// untaps and transforms into Homicidal Brute. The end-step transform-back checks
-/// `card_state` for whether it attacked.
+/// The draw-discard is an activated ability: after drawing, the player chooses
+/// which card to discard, and a discarded creature card untaps and transforms
+/// the Scholar. The end-step transform-back asks the engine whether this
+/// permanent attacked (`GameState::attacked_this_turn`) — that is a fact about
+/// the game, not an ability of this card, and the card used to record it by
+/// declaring an `Attacks` trigger on each face whose only job was bookkeeping.
+/// Those went on the stack like any other trigger, so Civilized Scholar put a
+/// visible, respondable "mark as attacked this turn" ability on the stack every
+/// time it attacked — an ability it does not have.
 pub struct CivilizedScholar;
 
 impl CivilizedScholar {
@@ -28,20 +33,6 @@ impl CivilizedScholar {
             .is_some_and(|d| d.card_types.contains(&CardType::Creature))
     }
 
-    /// Whether this permanent attacked during the current turn.
-    ///
-    /// The marker is stamped with the turn it happened on rather than being a
-    /// bare flag: a bare marker set by a front-face attack in an earlier turn
-    /// stayed set forever, and the next transform read it as "attacked" and
-    /// refused to flip back. CR 711.5 — transforming does not make a new
-    /// object, so an attack made as Civilized Scholar counts for Homicidal
-    /// Brute in the same turn (Scryfall ruling, 2011-09-22).
-    fn attacked_this_turn(state: &GameState, self_id: ObjectId) -> bool {
-        let this_turn = crate::ids::ObjectId(u64::from(state.turn_number));
-        state.get_object(self_id)
-            .and_then(|o| o.card_state.get("attacked_on_turn").copied())
-            == Some(this_turn)
-    }
 }
 
 impl CardBehavior for CivilizedScholar {
@@ -57,19 +48,9 @@ impl CardBehavior for CivilizedScholar {
             power: Some(0),
             toughness: Some(1),
             oracle_text: "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.".into(),
-            // Front face: Attacks trigger is only here for internal state tracking
-            // (marking that the creature attacked this turn so Homicidal Brute's
-            // end-step check can see it). Per Scryfall ruling [2011-09-22] attacks
-            // count regardless of face, so we keep the Attacks trigger on the front
-            // face too. The real oracle trigger (EndStep transform-back) lives on
-            // the back face (Homicidal Brute) where it belongs.
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::Attacks,
-                    description: "mark as attacked this turn".into(),
-                target_requirement: None,
-                },
-            ],
+            // Civilized Scholar has no triggered ability. Its only ability is
+            // the activated one above; the end-step transform-back belongs to
+            // Homicidal Brute, on the back face.
             ..Default::default()
         }
     }
@@ -83,17 +64,10 @@ impl CardBehavior for CivilizedScholar {
             toughness: Some(1),
             oracle_text: "At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.".into(),
             triggered_abilities: vec![
-                // Also track attacks on the back face so Homicidal Brute's own
-                // attacks count toward the "didn't attack" check.
-                TriggeredAbilityDef {
-                    kind: TriggerKind::Attacks,
-                    description: "mark as attacked this turn".into(),
-                target_requirement: None,
-                },
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "transform back if didn't attack".into(),
-                target_requirement: None,
+                    target_requirement: None,
                 },
             ],
             ..Default::default()
@@ -113,7 +87,7 @@ impl CardBehavior for CivilizedScholar {
             Some(o) if o.zone == Zone::Battlefield && !o.is_transformed => o,
             _ => return vec![],
         };
-        if obj.tapped { return vec![]; }
+        let _ = obj;
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{T}: Draw a card, then discard a card. If creature discarded, untap and transform.".into(),
@@ -151,10 +125,12 @@ impl CardBehavior for CivilizedScholar {
             state.log(crate::state::LogLevel::Event,
                 format!("Civilized Scholar: p{} discarded {}", controller.0, discard_name));
             if is_creature {
-                crate::cards::helpers::apply_transform(state, object_id, registry);
+                // "untap this creature, **then** transform it" — in that order,
+                // with no priority in between (ruling, 2011-09-22).
                 if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.tapped = false; // Scholar untaps on transform per oracle
+                    obj.tapped = false;
                 }
+                crate::cards::helpers::apply_transform(state, object_id, registry);
                 state.log(crate::state::LogLevel::Event,
                     "Civilized Scholar transforms into Homicidal Brute".into());
             }
@@ -176,25 +152,13 @@ impl CardBehavior for CivilizedScholar {
     fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
         let is_creature = Self::is_creature_card(state, discarded_id, registry);
         if is_creature {
-            crate::cards::helpers::apply_transform(state, self_id, registry);
+            // "untap this creature, **then** transform it", in that order.
             if let Some(obj) = state.get_object_mut(self_id) {
-                obj.tapped = false; // Scholar untaps on transform per oracle
+                obj.tapped = false;
             }
+            crate::cards::helpers::apply_transform(state, self_id, registry);
             state.log(crate::state::LogLevel::Event,
                 "Civilized Scholar transforms into Homicidal Brute".into());
-        }
-    }
-
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        // Mark that we attacked this turn (so end-step doesn't transform back).
-        let turn = state.turn_number;
-        if let Some(obj) = state.get_object_mut(self_id) {
-            // Stamped with the turn number, not a bare marker. The clearing
-            // path below only runs on the BACK face's end step, so a front-face
-            // attack in an earlier turn left a bare marker set forever — and
-            // the next time this transformed, its end-step trigger read that
-            // stale marker and refused to transform back.
-            obj.card_state.insert("attacked_on_turn".into(), crate::ids::ObjectId(u64::from(turn)));
         }
     }
 
@@ -206,7 +170,7 @@ impl CardBehavior for CivilizedScholar {
     /// priority window with it.
     fn should_trigger(&self, state: &GameState, self_id: ObjectId, kind: &TriggerKind, _registry: &CardRegistry) -> bool {
         match kind {
-            TriggerKind::EndStep => !Self::attacked_this_turn(state, self_id),
+            TriggerKind::EndStep => !state.attacked_this_turn(self_id),
             _ => true,
         }
     }
@@ -222,7 +186,7 @@ impl CardBehavior for CivilizedScholar {
             return;
         }
         // The condition is checked a second time on resolution (CR 603.4).
-        if !Self::attacked_this_turn(state, self_id) {
+        if !state.attacked_this_turn(self_id) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.tapped = true; // "tap Homicidal Brute, then transform it"
             }
