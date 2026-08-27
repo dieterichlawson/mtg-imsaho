@@ -1113,3 +1113,34 @@ fn an_attack_before_transforming_still_counts_for_the_back_face() {
     assert!(is_still_transformed,
         "Homicidal Brute should stay transformed — the permanent attacked this turn (as Scholar)");
 }
+
+/// CR 603.4: "At the beginning of your end step, **if** this creature didn't
+/// attack this turn, tap this creature, then transform it" is an intervening-if
+/// clause. The condition is checked when the ability would trigger, not only
+/// when it resolves — if it is false the ability never goes on the stack, so
+/// the phantom entry and the priority window it opens must not exist.
+///
+/// `back_face_homicidal_brute_has_end_step_trigger` above covers the trigger
+/// firing when the Brute did not attack. This is the other half.
+#[test]
+fn homicidal_brute_that_attacked_this_turn_puts_no_trigger_on_the_stack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::EndStep, P0);
+    state.active_player = P0;
+
+    let brute = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, brute, &registry);
+    let turn = state.turn_number;
+    state.get_object_mut(brute).unwrap().card_state
+        .insert("attacked_on_turn".into(), mtg_engine::ids::ObjectId(u64::from(turn)));
+
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+
+    let end_step_triggers = state.stack.iter().filter(|e| matches!(e,
+        StackEntry::Trigger(PendingTrigger { event: TriggerEvent::EndStep, .. })
+    )).count();
+    assert_eq!(end_step_triggers, 0,
+        "it attacked this turn, so the intervening-if is false and the ability \
+         never triggers (CR 603.4)");
+}

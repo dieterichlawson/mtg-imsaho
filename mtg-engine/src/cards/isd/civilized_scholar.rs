@@ -17,6 +17,33 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// `card_state` for whether it attacked.
 pub struct CivilizedScholar;
 
+impl CivilizedScholar {
+    /// "If a creature **card** is discarded this way" — a question about the
+    /// card's printed type, which lives on its active face (CR 711.5), not
+    /// about `obj.power`. `obj.power` holds runtime grants only for a
+    /// registry-backed card, so testing it first meant the authoritative face
+    /// data was consulted only when the object field happened to be unset.
+    fn is_creature_card(state: &GameState, id: ObjectId, registry: &CardRegistry) -> bool {
+        state.face_data(id, registry)
+            .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+    }
+
+    /// Whether this permanent attacked during the current turn.
+    ///
+    /// The marker is stamped with the turn it happened on rather than being a
+    /// bare flag: a bare marker set by a front-face attack in an earlier turn
+    /// stayed set forever, and the next transform read it as "attacked" and
+    /// refused to flip back. CR 711.5 — transforming does not make a new
+    /// object, so an attack made as Civilized Scholar counts for Homicidal
+    /// Brute in the same turn (Scryfall ruling, 2011-09-22).
+    fn attacked_this_turn(state: &GameState, self_id: ObjectId) -> bool {
+        let this_turn = crate::ids::ObjectId(u64::from(state.turn_number));
+        state.get_object(self_id)
+            .and_then(|o| o.card_state.get("attacked_on_turn").copied())
+            == Some(this_turn)
+    }
+}
+
 impl CardBehavior for CivilizedScholar {
     fn card_data(&self) -> CardData {
         CardData {
@@ -125,11 +152,7 @@ impl CardBehavior for CivilizedScholar {
         if hand.len() == 1 {
             // Only one card — auto-discard and check creature.
             let discard_id = hand[0];
-            let is_creature = state.get_object(discard_id)
-                .is_some_and(|o| {
-                    o.power.is_some() || state.face_data(o.id, registry)
-                        .is_some_and(|d| d.card_types.contains(&CardType::Creature))
-                });
+            let is_creature = Self::is_creature_card(state, discard_id, registry);
             state.discard_card(discard_id, registry);
             let discard_name = state.get_object(discard_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,
@@ -158,12 +181,7 @@ impl CardBehavior for CivilizedScholar {
     }
 
     fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
-        // Check if the discarded card was a creature (via power or registry).
-        let is_creature = state.get_object(discarded_id)
-            .is_some_and(|o| {
-                o.power.is_some() || state.face_data(o.id, registry)
-                    .is_some_and(|d| d.card_types.contains(&CardType::Creature))
-            });
+        let is_creature = Self::is_creature_card(state, discarded_id, registry);
         if is_creature {
             crate::cards::helpers::apply_transform(state, self_id, registry);
             if let Some(obj) = state.get_object_mut(self_id) {
@@ -187,21 +205,31 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
+    /// CR 603.4: "At the beginning of your end step, **if** this creature
+    /// didn't attack this turn" is an intervening-if clause, so the condition
+    /// is checked when the ability would trigger and not only when it
+    /// resolves. Without this the trigger went on the stack even when the
+    /// Brute had attacked — a stack entry the rules say never exists, and a
+    /// priority window with it.
+    fn should_trigger(&self, state: &GameState, self_id: ObjectId, kind: &TriggerKind, _registry: &CardRegistry) -> bool {
+        match kind {
+            TriggerKind::EndStep => !Self::attacked_this_turn(state, self_id),
+            _ => true,
+        }
+    }
+
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
+        let is_transformed = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o.is_transformed,
             _ => return,
         };
-        if !is_transformed || state.active_player != controller {
+        // `step_trigger_scope` already scopes this to the controller's own end
+        // step; re-deriving that here is duplication, not defence.
+        if !is_transformed {
             return;
         }
-        // "unless it attacked this turn" — compare the stamp against the
-        // current turn rather than testing whether a marker exists at all.
-        let this_turn = crate::ids::ObjectId(u64::from(state.turn_number));
-        let attacked = state.get_object(self_id)
-            .and_then(|o| o.card_state.get("attacked_on_turn").copied())
-            == Some(this_turn);
-        if !attacked {
+        // The condition is checked a second time on resolution (CR 603.4).
+        if !Self::attacked_this_turn(state, self_id) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.tapped = true; // "tap Homicidal Brute, then transform it"
             }
