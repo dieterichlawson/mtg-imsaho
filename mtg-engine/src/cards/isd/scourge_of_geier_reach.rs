@@ -27,9 +27,10 @@ impl CardBehavior for ScourgeOfGeierReach {
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<(i32, i32)> {
         let controller = state.get_object(object_id)?.controller;
-        let opponent = state.opponent(controller);
+        // "each creature your opponents control" — everyone who isn't you, not
+        // one named opponent.
         let opponent_creatures = i32::try_from(state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == opponent && state.is_creature(o.id, registry))
+            .filter(|o| o.zone == Zone::Battlefield && o.controller != controller && state.is_creature(o.id, registry))
             .count()).unwrap_or(i32::MAX);
         // Base 3/3 + N/N where N = opponent creature count.
         Some((3 + opponent_creatures, 3 + opponent_creatures))
