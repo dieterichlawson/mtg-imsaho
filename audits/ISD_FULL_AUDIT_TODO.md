@@ -15,8 +15,8 @@ bugs but it is not this. This list is the per-card pass.
 | x | Liliana of the Veil | `liliana_of_the_veil.rs` | 274 | 9 | 0 |
 | x | Mayor of Avabruck | `mayor_of_avabruck.rs` | 135 | 7 | 4 |
 | x | Screeching Bat | `screeching_bat.rs` | 145 | 7 | 3 |
-|   | Cloistered Youth | `cloistered_youth.rs` | 115 | 7 | 4 |
-|   | Wooden Stake | `wooden_stake.rs` | 102 | 8 | 2 |
+| x | Cloistered Youth | `cloistered_youth.rs` | 115 | 7 | 4 |
+| x | Wooden Stake | `wooden_stake.rs` | 102 | 8 | 2 |
 |   | Daybreak Ranger | `daybreak_ranger.rs` | 135 | 7 | 2 |
 |   | Delver of Secrets | `delver_of_secrets.rs` | 135 | 7 | 2 |
 |   | Grimgrin, Corpse-Born | `grimgrin_corpse_born.rs` | 148 | 7 | 1 |
