@@ -89,14 +89,7 @@ impl CardBehavior for GraveyardShovel {
                         format!("Graveyard Shovel: p{} exiled {} from graveyard", target_player.0, name));
 
                     if is_creature {
-                        let old_life = state.get_player(controller).life;
-                        let new_life = old_life + 2;
-                        state.get_player_mut(controller).life = new_life;
-                        state.events.push(crate::events::GameEvent::LifeChanged {
-                            player: controller,
-                            old: old_life,
-                            new_life,
-                        });
+                        state.change_life(controller, 2);
                         state.log(crate::state::LogLevel::Event,
                             format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
                     }

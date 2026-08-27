@@ -103,10 +103,7 @@ impl CardBehavior for CloisteredYouth {
         // step; re-deriving it here is duplication, not defence.
         if is_transformed {
             // Unholy Fiend: lose 1 life at end step.
-            let old = state.get_player(controller).life;
-            let new_life = old - 1;
-            state.get_player_mut(controller).life = new_life;
-            state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old, new_life });
+            state.change_life(controller, -1);
             state.log(LogLevel::Event,
                 format!("Unholy Fiend: p{} loses 1 life", controller.0));
         }

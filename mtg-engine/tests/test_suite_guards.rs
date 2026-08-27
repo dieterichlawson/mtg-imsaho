@@ -1017,3 +1017,43 @@ fn no_dfc_restates_its_back_faces_power_and_toughness() {
 fn window(text: &str, n: usize, k: usize) -> String {
     text.lines().skip(n.saturating_sub(k)).take(2 * k).collect::<Vec<_>>().join(" ")
 }
+
+/// Life totals change through `GameState::change_life`.
+///
+/// Its own doc says why: "Every caller used to hand-roll this — read `life`,
+/// write `life`, push the event — which meant a site that forgot the event
+/// silently broke any 'whenever you gain life' watcher." The helper was added
+/// and then twelve cards went on hand-rolling it anyway, each repeating the
+/// three lines and each an opportunity to drop the event.
+///
+/// `change_life` / `gain_life` / `lose_life` (CR 118.3) are the way in. Damage
+/// is a different act again and goes through `damage::deal_damage` — see
+/// `only_the_damage_pipeline_marks_damage`.
+#[test]
+fn only_change_life_writes_a_life_total() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if rel == "state.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            // Setting starting life at game setup is not a life change and
+            // emits no event, by design.
+            if l.contains("config.starting_life") {
+                continue;
+            }
+            if l.contains(".life = ") || l.contains(".life -=") || l.contains(".life +=") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a life total changes through `state.change_life` (or `gain_life` / \
+         `lose_life`), which emits LifeChanged for every watcher:\n  {}",
+        offenders.join("\n  "));
+}

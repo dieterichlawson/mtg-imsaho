@@ -57,13 +57,10 @@ impl CardBehavior for TreeOfRedemption {
         let current_toughness = state.effective_toughness(object_id, registry).unwrap_or(13);
         let current_life = state.get_player(controller).life;
 
+        // An exchange is still a life change: through `change_life`, so the
+        // LifeChanged event is emitted the same way as everywhere else.
         let old_life = current_life;
-        state.get_player_mut(controller).life = current_toughness;
-        state.events.push(crate::events::GameEvent::LifeChanged {
-            player: controller,
-            old: old_life,
-            new_life: current_toughness,
-        });
+        state.change_life(controller, current_toughness - current_life);
 
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.toughness = Some(current_life);

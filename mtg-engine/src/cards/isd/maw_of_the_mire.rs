@@ -58,14 +58,7 @@ impl CardBehavior for MawOfTheMire {
                 format!("Maw of the Mire destroyed {name}"));
 
             // Gain 4 life (only if target was valid).
-            let old_life = state.get_player(controller).life;
-            let new_life = old_life + 4;
-            state.get_player_mut(controller).life = new_life;
-            state.events.push(crate::events::GameEvent::LifeChanged {
-                player: controller,
-                old: old_life,
-                new_life,
-            });
+            state.change_life(controller, 4);
             state.log(crate::state::LogLevel::Event,
                 format!("Maw of the Mire: p{} gained 4 life", controller.0));
         }

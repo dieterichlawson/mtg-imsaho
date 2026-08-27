@@ -49,10 +49,7 @@ impl CardBehavior for AbattoirGhoul {
         // Gain life equal to that creature's toughness (last-known information).
         let toughness = dead_toughness.max(0);
         if toughness > 0 {
-            let old = state.get_player(controller).life;
-            let new_life = old + toughness;
-            state.get_player_mut(controller).life = new_life;
-            state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old, new_life });
+            state.change_life(controller, toughness);
             state.log(crate::state::LogLevel::Event,
                 format!("Abattoir Ghoul: gained {toughness} life from creature death"));
         }

@@ -23,13 +23,19 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
             match state.get_object(*id) {
                 Some(obj) => {
                     // Check zone legality.
+                    // CR 109.1: every one of these says "card", and a token
+                    // sits in a graveyard until the next state-based action
+                    // pass — so it can be there when the target is chosen and
+                    // still be there when the spell resolves.
                     let zone_ok = match inner_req {
                         TargetRequirement::GraveyardCard
                         | TargetRequirement::GraveyardCreature
                         | TargetRequirement::GraveyardCreatureOfSubtype(_)
                         | TargetRequirement::GraveyardCardOwnedByCaster
-                        | TargetRequirement::GraveyardCardOwnedByOpponent => obj.zone == Zone::Graveyard,
-                        TargetRequirement::ExileCard => obj.zone == Zone::Exile,
+                        | TargetRequirement::GraveyardCardOwnedByOpponent =>
+                            obj.zone == Zone::Graveyard && state.is_card(*id),
+                        TargetRequirement::ExileCard =>
+                            obj.zone == Zone::Exile && state.is_card(*id),
                         _ => obj.zone == Zone::Battlefield || obj.zone == Zone::Stack,
                     };
                     if !zone_ok { return false; }

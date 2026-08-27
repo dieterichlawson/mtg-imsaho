@@ -322,3 +322,36 @@ fn woodland_sleuth_does_not_return_a_token_from_the_graveyard() {
     assert_ne!(state.get_object(token).unwrap().zone, Zone::Hand,
         "a token in the graveyard is not a creature card (CR 109.1)");
 }
+
+/// "Target **card** in a graveyard" does not offer a token, and does not
+/// resolve against one that slipped in.
+///
+/// This is the engine's own target enumeration rather than any card's: six
+/// `TargetRequirement` variants name a *card* in a graveyard or in exile, and
+/// none of them asked. Purify the Grave ("Exile target card from a graveyard")
+/// is the one to point at it, but the fix is shared by everything that uses
+/// those requirements.
+#[test]
+fn a_token_in_a_graveyard_is_not_a_targetable_card() {
+    use mtg_engine::actions::{Action, Target};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let real = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+    let token = creature_token_in_graveyard(&mut state, &reg, "Zombie", vec!["Zombie".into()], P1);
+    let spell = castable_spell(&mut state, &reg, "Purify the Grave", P0);
+
+    let offered: Vec<Target> = mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
+        .filter_map(|a| match a {
+            Action::CastSpell { object_id, targets, .. } if *object_id == spell => targets.first().cloned(),
+            _ => None,
+        })
+        .collect();
+
+    assert!(offered.contains(&Target::Object(real)),
+        "control: the actual card in the graveyard is offered; got {offered:?}");
+    assert!(!offered.contains(&Target::Object(token)),
+        "a token in a graveyard is not a card (CR 109.1), so it is not a legal \
+         target for \"exile target card from a graveyard\"; got {offered:?}");
+}

@@ -1,6 +1,5 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
-use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
@@ -31,14 +30,7 @@ impl CardBehavior for GnawToTheBone {
             .count();
         let life_gain = i32::try_from(creature_count).unwrap_or(i32::MAX) * 2;
         if life_gain > 0 {
-            let old_life = state.get_player(controller).life;
-            let new_life = old_life + life_gain;
-            state.get_player_mut(controller).life = new_life;
-            state.events.push(GameEvent::LifeChanged {
-                player: controller,
-                old: old_life,
-                new_life,
-            });
+            state.change_life(controller, life_gain);
         }
     }
 }

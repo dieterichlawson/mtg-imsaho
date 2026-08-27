@@ -1,6 +1,5 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
-use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
@@ -39,14 +38,7 @@ impl CardBehavior for SwordsToPlowshares {
 
                     // Controller gains life equal to its power.
                     if power > 0 {
-                        let old_life = state.get_player(controller).life;
-                        let new_life = old_life + power;
-                        state.get_player_mut(controller).life = new_life;
-                        state.events.push(GameEvent::LifeChanged {
-                            player: controller,
-                            old: old_life,
-                            new_life,
-                        });
+                        state.change_life(controller, power);
                     }
                 }
             }

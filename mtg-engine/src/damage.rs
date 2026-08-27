@@ -169,16 +169,19 @@ fn deal_damage_to_player(
         }
     }
 
-    let old_life = state.get_player(player).life;
-    let new_life = old_life - i32::try_from(amount).unwrap_or(i32::MAX);
-    state.get_player_mut(player).life = new_life;
+    // The life change itself is `change_life`, which emits LifeChanged; the
+    // damage events below are what make this damage rather than life loss.
+    // Both events used to be pushed here side by side, which meant this was the
+    // one place in the codebase where a LifeChanged could be emitted twice for
+    // one change if the helper were ever used alongside it.
+    state.change_life(player, -i32::try_from(amount).unwrap_or(i32::MAX));
+    let new_life = state.get_player(player).life;
 
     match kind {
         DamageKind::Combat => {
             state.events.push(GameEvent::CombatDamageDealt {
                 source, target: DamageTarget::Player(player), amount,
             });
-            state.events.push(GameEvent::LifeChanged { player, old: old_life, new_life });
             state.log(LogLevel::Event,
                 format!("p{} took {} combat damage ({}) from {}", player.0, amount, new_life, state.obj_name(source)));
         }
@@ -186,7 +189,6 @@ fn deal_damage_to_player(
             state.events.push(GameEvent::NonCombatDamageDealt {
                 source, target: DamageTarget::Player(player), amount,
             });
-            state.events.push(GameEvent::LifeChanged { player, old: old_life, new_life });
             state.log(LogLevel::Event,
                 format!("{} dealt {} damage to p{}", state.obj_name(source), amount, player.0));
         }
@@ -202,14 +204,7 @@ fn apply_lifelink(state: &mut GameState, source: ObjectId, amount: u32, registry
         return;
     }
     let Some(controller) = state.get_object(source).map(|o| o.controller) else { return };
-    let old_life = state.get_player(controller).life;
-    let new_life = old_life + i32::try_from(amount).unwrap_or(i32::MAX);
-    state.get_player_mut(controller).life = new_life;
-    state.events.push(GameEvent::LifeChanged {
-        player: controller,
-        old: old_life,
-        new_life,
-    });
+    state.gain_life(controller, i32::try_from(amount).unwrap_or(i32::MAX));
 }
 
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
