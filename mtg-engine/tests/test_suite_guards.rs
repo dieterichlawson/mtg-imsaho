@@ -299,7 +299,7 @@ fn named_objects(blob: &str) -> std::collections::BTreeMap<String, String> {
         let Some(rest) = t.strip_prefix("let ") else { continue };
         let Some((var, rhs)) = rest.split_once(" = ") else { continue };
         if !(rhs.starts_with("named_permanent(")
-            || rhs.starts_with("named_equipment(")
+            || rhs.starts_with("named_permanent(")
             || rhs.starts_with("named_card_in_graveyard("))
         {
             continue;
@@ -905,5 +905,52 @@ fn only_the_engine_puts_an_ability_on_the_stack() {
          `engine::actions::abilities::put_ability_on_stack`'s job — it is the \
          only caller that knows which card's behavior contributes the \
          ability:\n  {}",
+        offenders.join("\n  "));
+}
+
+/// A card that enumerates a graveyard asks whether each object is a *card*.
+///
+/// CR 109.1: a token is not a card. It stays in a graveyard until the next
+/// state-based-action check (CR 704.5e), so a count or a choice list taken
+/// mid-resolution can see one — and "exile a card from their graveyard",
+/// "return target creature card", "for each creature card in your graveyard"
+/// must not. Nine cards counted tokens before this was swept; Graveyard Shovel
+/// offered one as a choice, and Back from the Brink's guard was defeated by
+/// `&&` binding tighter than `||`.
+///
+/// `state.is_card(id)` is the question. This scans card files for a graveyard
+/// filter that never asks it.
+#[test]
+fn a_card_enumerating_a_graveyard_excludes_tokens() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            if !l.contains("Zone::Graveyard") {
+                continue;
+            }
+            // A filter over many objects, rather than a check on one known
+            // object ("am *I* in a graveyard?", "is my target still there?").
+            let enumerates = l.contains(".filter(") || l.contains(".any(")
+                || l.contains("objects_in_zone(Zone::Graveyard");
+            if !enumerates {
+                continue;
+            }
+            // The guard may be on this line or anywhere in the closure below.
+            let window: String = text.lines().skip(n).take(12).collect::<Vec<_>>().join(" ");
+            if !window.contains("is_card") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "CR 109.1: a token in a graveyard is not a card, so a card enumerating \
+         a graveyard for \"cards\" must ask `state.is_card(id)`:\n  {}",
         offenders.join("\n  "));
 }

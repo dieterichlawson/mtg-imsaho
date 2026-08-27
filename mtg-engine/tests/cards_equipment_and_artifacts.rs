@@ -69,7 +69,7 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put Demonmail Hauberk on the battlefield.
-    let hauberk = named_equipment(&mut state, &reg, "Demonmail Hauberk", P0);
+    let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
 
     // Two creatures: one to sacrifice (creature_a), one to equip (creature_b).
     let creature_a = ready_creature(&mut state, P0, 1, 1);
@@ -114,7 +114,7 @@ fn runechanters_pike_grants_first_strike_and_power_bonus() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put Runechanter's Pike on the battlefield and attach it.
-    let pike = named_equipment(&mut state, &reg, "Runechanter's Pike", P0);
+    let pike = named_permanent(&mut state, &reg, "Runechanter's Pike", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     // Manually attach the pike.
@@ -147,7 +147,7 @@ fn inquisitors_flail_doubles_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
     // Attach the flail.
@@ -191,7 +191,7 @@ fn trepanation_blade_reveals_through_the_first_land_and_counts_it() {
         let reg = registry();
         let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-        let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
+        let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
         let creature = ready_creature(&mut state, P0, 2, 2);
         state.get_object_mut(blade).unwrap().attached_to = Some(creature);
 
@@ -227,7 +227,7 @@ fn blazing_torch_grants_damage_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(torch).unwrap().attached_to = Some(creature);
 
@@ -245,7 +245,7 @@ fn blazing_torch_deals_damage_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(torch).unwrap().attached_to = Some(creature);
 
@@ -274,7 +274,7 @@ fn blazing_torch_deals_its_damage_as_the_torch_not_the_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(torch).unwrap().attached_to = Some(creature);
     let enemy = ready_creature(&mut state, P1, 3, 3);
@@ -297,7 +297,7 @@ fn blazing_torch_equip_only_own_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.priority_player = Some(P0);
 
-    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
     let own_creature = ready_creature(&mut state, P0, 2, 2);
     let opp_creature = ready_creature(&mut state, P1, 3, 3);
 
@@ -334,10 +334,10 @@ fn equipment_enters_unattached() {
 
     let new_state = cast_and_resolve(&state, &reg, hauberk, vec![]);
 
-    // Hauberk should be on the battlefield, unattached, with is_equipment = true.
+    // Hauberk should be on the battlefield and unattached.
     let obj = new_state.get_object(hauberk).unwrap();
     assert_eq!(obj.zone, Zone::Battlefield);
-    assert!(obj.is_equipment, "Hauberk should be equipment");
+    assert!(state.is_equipment(obj.id, &reg), "Hauberk should be equipment");
     assert!(obj.attached_to.is_none(), "Equipment should enter unattached");
 }
 
@@ -349,7 +349,7 @@ fn equipment_enters_unattached() {
 fn equipped(state: &mut GameState, reg: &mtg_engine::cards::CardRegistry,
             power: i32, toughness: i32) -> ObjectId {
     let creature = ready_creature(state, P0, power, toughness);
-    let flail = named_equipment(state, reg, "Inquisitor's Flail", P0);
+    let flail = named_permanent(state, reg, "Inquisitor's Flail", P0);
     state.get_object_mut(flail).unwrap().attached_to = Some(creature);
     creature
 }
@@ -382,7 +382,7 @@ fn the_equipped_creature_deals_double_combat_damage() {
 
     // Control: a Flail on the battlefield but equipping nothing doubles nothing.
     let mut state = game_at_step(Step::DeclareBlockers, P0);
-    named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
+    named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
     attacks_unblocked(&mut state, creature, P1);
     let before = state.get_player(P1).life;
@@ -417,7 +417,7 @@ fn two_flails_quadruple_damage() {
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     for _ in 0..2 {
-        let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
+        let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
         state.get_object_mut(flail).unwrap().attached_to = Some(creature);
     }
     attacks_unblocked(&mut state, creature, P1);

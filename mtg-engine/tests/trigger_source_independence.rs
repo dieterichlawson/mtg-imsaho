@@ -414,7 +414,7 @@ fn trepanation_blade_mills_after_the_equipment_is_destroyed() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
-    let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(creature);
 
     let filler = reg.get_id_by_name("Walking Corpse").unwrap();

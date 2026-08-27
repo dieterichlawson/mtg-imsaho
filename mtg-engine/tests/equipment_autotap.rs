@@ -25,16 +25,6 @@ use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
-/// Place an unattached equipment of the given name on the battlefield.
-fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
-    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
-    let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
-    let obj = state.get_object_mut(id).unwrap();
-    obj.name = name.into();
-    obj.is_equipment = true;
-    id
-}
-
 /// Place an untapped basic land of the given name on the battlefield.
 fn untapped_land(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
     let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown land {name}"));
@@ -80,7 +70,7 @@ fn setup_with_lands(
 ) -> (GameState, ObjectId, ObjectId, Vec<ObjectId>) {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = named_permanent(&mut state, reg, creature_name, P0);
-    let eq = equipment(&mut state, reg, equipment_name, P0);
+    let eq = named_permanent(&mut state, reg, equipment_name, P0);
     let lands = untapped_lands(&mut state, reg, "Forest", P0, n_forests);
     // Mana pool starts empty — that is the entire point of this test.
     assert!(state.get_player(P0).mana_pool.is_empty(), "mana pool must be empty for autotap test");
@@ -147,7 +137,7 @@ fn silver_inlaid_dagger_offered_with_floating_mana_too() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
     let action = find_equip_action(&state, &reg, dagger, pilgrim);
     if let Action::ActivateAbility { tap_plan, .. } = &action {
@@ -206,7 +196,7 @@ fn equipment_with_a_mana_equip_cost() -> Vec<(String, usize)> {
         if !data.subtypes.iter().any(|s| s == "Equipment") {
             continue;
         }
-        let obj = equipment(&mut state, &reg, name, P0);
+        let obj = named_permanent(&mut state, &reg, name, P0);
         let Some(ability) = reg.get(id).unwrap().activated_abilities(&state, obj, &reg)
             .into_iter()
             .find(|a| a.description.to_lowercase().contains("equip"))
@@ -235,7 +225,7 @@ fn every_mana_cost_equipment_in_isd_can_be_equipped_via_autotap() {
         let (name, equip_cost) = (name.as_str(), *equip_cost);
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-        let eq = equipment(&mut state, &reg, name, P0);
+        let eq = named_permanent(&mut state, &reg, name, P0);
         let _forests = untapped_lands(&mut state, &reg, "Forest", P0, equip_cost);
 
         let legal = engine::legal_actions(&state, &reg);
@@ -323,7 +313,7 @@ fn equip_is_not_offered_at_instant_speed() {
     let mut state = game_at_step(Step::PrecombatMain, P1);
     state.priority_player = Some(P0); // P0 has priority during opp's main phase
     let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 2);
 
     let legal = engine::legal_actions(&state, &reg);
@@ -344,7 +334,7 @@ fn equip_cannot_target_opponent_creature_via_autotap() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let opp_bears = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 2);
 
     let legal = engine::legal_actions(&state, &reg);
@@ -365,7 +355,7 @@ fn equip_can_reattach_via_autotap() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let bears_a = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let bears_b = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
     let _forests = untapped_lands(&mut state, &reg, "Forest", P0, 4); // enough for two equips
 
     // First equip → bears_a
@@ -405,7 +395,7 @@ fn assert_equip_ability_unique_after_attach(reg: &CardRegistry, equip_name: &str
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let bears_a = named_permanent(&mut state, reg, "Grizzly Bears", P0);
     let bears_b = named_permanent(&mut state, reg, "Grizzly Bears", P0);
-    let eq = equipment(&mut state, reg, equip_name, P0);
+    let eq = named_permanent(&mut state, reg, equip_name, P0);
     let _forests = untapped_lands(&mut state, reg, "Forest", P0, n_lands);
 
     // Attach to bears_a first.
@@ -459,9 +449,6 @@ fn bug_mask_of_avacyn_duplicate_equip_action() {
 
     // Place Mask of Avacyn and two creatures
     let mask = named_permanent(&mut state, &registry, "Mask of Avacyn", P0);
-    if let Some(obj) = state.get_object_mut(mask) {
-        obj.is_equipment = true;
-    }
     let c1 = ready_creature(&mut state, P0, 2, 2);
     let _c2 = ready_creature(&mut state, P0, 3, 3);
 

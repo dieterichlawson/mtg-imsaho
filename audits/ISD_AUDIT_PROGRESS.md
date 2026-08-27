@@ -11,7 +11,7 @@ Tier A regardless.
 > An earlier tiering under-counted hooks and put 48 cards with real behaviour
 > into the vanilla tier. Re-derived with the full hook set.
 
-**149/249 audited.**
+**162/249 audited.**
 
 ## Verified across all 249 at once
 
@@ -26,7 +26,7 @@ inherits these; its own entry covers the rest.
 | trigger kinds vs. oracle phrasing | 249/249 consistent |
 | step 9 anti-pattern scan | 96 candidates raised, 3 real, all fixed |
 
-## Tier A — complex (DFCs, planeswalkers, 5+ hooks) — 15/28
+## Tier A — complex (DFCs, planeswalkers, 5+ hooks) — 18/28
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
@@ -34,7 +34,7 @@ inherits these; its own entry covers the rest.
 | x | Garruk Relentless | `garruk_relentless.rs` | 300 | 7 | 0 |  |
 | x | Mayor of Avabruck | `mayor_of_avabruck.rs` | 143 | 6 | 4 | yes |
 |   | Daybreak Ranger | `daybreak_ranger.rs` | 143 | 6 | 3 | yes |
-|   | Wooden Stake | `wooden_stake.rs` | 107 | 8 | 3 |  |
+| x | Wooden Stake | `wooden_stake.rs` | 107 | 8 | 3 |  |
 | x | Cloistered Youth | `cloistered_youth.rs` | 126 | 6 | 3 | yes |
 |   | Ulvenwald Mystics | `ulvenwald_mystics.rs` | 113 | 6 | 3 | yes |
 | x | Screeching Bat | `screeching_bat.rs` | 153 | 5 | 3 | yes |
@@ -43,7 +43,7 @@ inherits these; its own entry covers the rest.
 |   | Liliana of the Veil | `liliana_of_the_veil.rs` | 275 | 4 | 0 |  |
 | x | Instigator Gang | `instigator_gang.rs` | 115 | 4 | 3 | yes |
 | x | Kruin Outlaw | `kruin_outlaw.rs` | 98 | 4 | 3 | yes |
-|   | Trepanation Blade | `trepanation_blade.rs` | 145 | 5 | 2 |  |
+| x | Trepanation Blade | `trepanation_blade.rs` | 145 | 5 | 2 | mill bypassed the pipeline — fixed in `move_object` |
 | x | Hanweir Watchkeep | `hanweir_watchkeep.rs` | 88 | 4 | 3 | yes |
 | x | Village Ironsmith | `village_ironsmith.rs` | 86 | 4 | 3 | yes |
 |   | Curse of Oblivion | `curse_of_oblivion.rs` | 135 | 5 | 2 |  |
@@ -57,9 +57,9 @@ inherits these; its own entry covers the rest.
 |   | Thraben Sentry | `thraben_sentry.rs` | 94 | 4 | 2 | yes |
 |   | Ludevic's Test Subject | `ludevics_test_subject.rs` | 108 | 4 | 0 | yes |
 |   | Curiosity | `curiosity.rs` | 80 | 5 | 2 |  |
-|   | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
+| x | Runechanter's Pike | `runechanters_pike.rs` | 91 | 5 | 0 |  |
 
-## Tier B — moderate (triggered or activated abilities) — 68/155
+## Tier B — moderate (triggered or activated abilities) — 78/155
 
 | ✓ | card | file | loc | hooks | trig | dfc |
 |---|---|---|---|---|---|---|
@@ -69,8 +69,8 @@ inherits these; its own entry covers the rest.
 |   | Fiend Hunter | `fiend_hunter.rs` | 92 | 4 | 3 |  |
 |   | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 110 | 4 | 2 |  |
 | x | Olivia Voldaren | `olivia_voldaren.rs` | 151 | 3 | 2 |  |
-|   | Graveyard Shovel | `graveyard_shovel.rs` | 132 | 4 | 0 |  |
-|   | Blazing Torch | `blazing_torch.rs` | 129 | 4 | 0 |  |
+| x | Graveyard Shovel | `graveyard_shovel.rs` | 132 | 4 | 0 | counted tokens as cards (CR 109.1) — fixed |
+| x | Blazing Torch | `blazing_torch.rs` | 129 | 4 | 0 | sacrifice is a cost — `pay_activation_cost` |
 |   | Moorland Haunt | `moorland_haunt.rs` | 120 | 4 | 0 |  |
 |   | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 67 | 4 | 2 |  |
 |   | Morkrut Banshee | `morkrut_banshee.rs` | 67 | 4 | 2 |  |
@@ -81,21 +81,21 @@ inherits these; its own entry covers the rest.
 |   | Caravan Vigil | `caravan_vigil.rs` | 137 | 3 | 0 |  |
 |   | Tribute to Hunger | `tribute_to_hunger.rs` | 91 | 4 | 0 |  |
 |   | Brain Weevil | `brain_weevil.rs` | 132 | 3 | 0 |  |
-|   | Demonmail Hauberk | `demonmail_hauberk.rs` | 87 | 4 | 0 |  |
-|   | Silver-Inlaid Dagger | `silver_inlaid_dagger.rs` | 86 | 4 | 0 |  |
-|   | Butcher's Cleaver | `butchers_cleaver.rs` | 85 | 4 | 0 |  |
-|   | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 84 | 4 | 0 |  |
+| x | Demonmail Hauberk | `demonmail_hauberk.rs` | 87 | 4 | 0 | deviation recorded: a legal fizzling equip is not offered |
+| x | Silver-Inlaid Dagger | `silver_inlaid_dagger.rs` | 86 | 4 | 0 |  |
+| x | Butcher's Cleaver | `butchers_cleaver.rs` | 85 | 4 | 0 |  |
+| x | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 84 | 4 | 0 |  |
 | x | Woodland Sleuth | `woodland_sleuth.rs` | 79 | 3 | 2 |  |
 | x | Back from the Brink | `back_from_the_brink.rs` | 127 | 3 | 0 |  |
 |   | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 125 | 3 | 0 |  |
 | x | Splinterfright | `splinterfright.rs` | 72 | 3 | 2 |  |
-|   | Inquisitor's Flail | `inquisitors_flail.rs` | 75 | 4 | 0 |  |
-|   | Cobbled Wings | `cobbled_wings.rs` | 74 | 4 | 0 |  |
+| x | Inquisitor's Flail | `inquisitors_flail.rs` | 75 | 4 | 0 |  |
+| x | Cobbled Wings | `cobbled_wings.rs` | 74 | 4 | 0 |  |
 |   | Hamlet Captain | `hamlet_captain.rs` | 89 | 2 | 3 |  |
 |   | Snapcaster Mage | `snapcaster_mage.rs` | 69 | 3 | 2 |  |
 | x | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 68 | 3 | 2 |  |
 |   | Bloodgift Demon | `bloodgift_demon.rs` | 67 | 3 | 2 |  |
-|   | Mask of Avacyn | `mask_of_avacyn.rs` | 69 | 4 | 0 |  |
+| x | Mask of Avacyn | `mask_of_avacyn.rs` | 69 | 4 | 0 |  |
 | x | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 61 | 3 | 2 |  |
 |   | Witchbane Orb | `witchbane_orb.rs` | 61 | 3 | 2 |  |
 |   | Skeletal Grimace | `skeletal_grimace.rs` | 65 | 4 | 0 |  |
@@ -187,7 +187,7 @@ inherits these; its own entry covers the rest.
 |   | Spidery Grasp | `spidery_grasp.rs` | 52 | 2 | 0 |  |
 | x | Pitchburn Devils | `pitchburn_devils.rs` | 46 | 1 | 2 |  |
 | x | Stromkirk Noble | `stromkirk_noble.rs` | 46 | 1 | 2 |  |
-|   | Ghoulcaller's Bell | `ghoulcallers_bell.rs` | 50 | 2 | 0 |  |
+| x | Ghoulcaller's Bell | `ghoulcallers_bell.rs` | 50 | 2 | 0 |  |
 | x | Prey Upon | `prey_upon.rs` | 50 | 2 | 0 |  |
 | x | Unruly Mob | `unruly_mob.rs` | 45 | 1 | 2 |  |
 | x | Bloodcrazed Neonate | `bloodcrazed_neonate.rs` | 44 | 1 | 2 |  |

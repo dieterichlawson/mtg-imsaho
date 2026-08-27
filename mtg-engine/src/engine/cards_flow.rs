@@ -68,25 +68,17 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
     drawn
 }
 /// Mill N cards from a player's library (move top N cards to graveyard).
-/// Put one card from a library into its owner's graveyard, emitting
-/// `CreatureCardMilled` if it is a creature card.
+/// Put one card from a library into its owner's graveyard — a mill
+/// (CR 701.13a), whether it comes off the top, the bottom, or out of a pile
+/// of revealed cards.
 ///
-/// Every library-to-graveyard move has to go through here. Cards that milled
-/// by hand — Mulch discarding the non-lands it revealed, Cellar Door milling
-/// from the BOTTOM, which `mill_cards` cannot express — moved the card
-/// directly and skipped the event, so Undead Alchemist's "whenever a creature
-/// card is put into an opponent's graveyard from their library" never fired
-/// for them.
+/// This exists to take the card out of `library_order` as well as moving it;
+/// `CreatureCardMilled` is `move_object`'s, emitted for any library-to-
+/// graveyard move, so a card that does the move by hand cannot lose the event
+/// the way four of them used to.
 pub fn mill_one(state: &mut GameState, player: PlayerId, obj_id: ObjectId, registry: &CardRegistry) {
-    let is_creature = state.is_creature(obj_id, registry);
     state.get_player_mut(player).library_order.retain(|&id| id != obj_id);
     state.move_object(obj_id, Zone::Graveyard, registry);
-    if is_creature {
-        state.events.push(crate::events::GameEvent::CreatureCardMilled {
-            object: obj_id,
-            milled_player: player,
-        });
-    }
 }
 pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
     let mut milled = 0;

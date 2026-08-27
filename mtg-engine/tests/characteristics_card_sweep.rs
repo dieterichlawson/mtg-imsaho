@@ -97,7 +97,7 @@ fn human_equipment_bonus_survives_gaining_another_subtype() {
     for gear_name in ["Silver-Inlaid Dagger", "Butcher's Cleaver"] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
-        let gear = named_equipment(&mut state, &reg, gear_name, P0);
+        let gear = named_permanent(&mut state, &reg, gear_name, P0);
         state.get_object_mut(gear).unwrap().attached_to = Some(pilgrim);
 
         let human_power = state.effective_power(pilgrim, &reg);

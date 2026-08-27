@@ -188,3 +188,50 @@ fn forbidden_alchemy_emits_creature_card_milled_for_the_rest() {
         "the other three creature cards were put into the graveyard from the \
          library, so an opponent's Undead Alchemist must see them");
 }
+
+/// "Whenever equipped creature attacks, defending player reveals cards from the
+/// top of their library until they reveal a land card. ... That player puts the
+/// revealed cards into their graveyard."
+///
+/// The one mill in the set that hits an *opponent's* library by default, which
+/// is exactly whose graveyard Undead Alchemist watches. It moved the cards by
+/// hand and the Alchemist saw nothing.
+#[test]
+fn trepanation_blade_emits_creature_card_milled() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
+    // Two creature cards on top, then a land to stop on.
+    card_in_library(&mut state, &reg, "Walking Corpse", P1);
+    card_in_library(&mut state, &reg, "Walking Corpse", P1);
+    card_in_library(&mut state, &reg, "Forest", P1);
+
+    state.events.clear();
+    reg.get(state.get_object(blade).unwrap().card_id).unwrap().on_attacks(
+        &mut state, blade,
+        mtg_engine::cards::AttackInfo { attacker, defending_player: P1 },
+        &[], &reg);
+
+    assert_eq!(milled_creature_events(&state), 2,
+        "two creature cards went from the defending player's library to their \
+         graveyard, so two CreatureCardMilled events");
+}
+
+/// The event belongs to the zone change, not to any one helper: anything that
+/// moves a card from a library to a graveyard is a mill (CR 701.13a).
+#[test]
+fn move_object_emits_creature_card_milled_for_any_library_to_graveyard_move() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let card = card_in_library(&mut state, &reg, "Walking Corpse", P1);
+
+    state.events.clear();
+    state.move_object(card, Zone::Graveyard, &reg);
+
+    assert_eq!(milled_creature_events(&state), 1,
+        "a bare move_object from library to graveyard is still a mill — four \
+         cards did exactly this by hand and lost the event");
+}

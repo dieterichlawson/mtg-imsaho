@@ -74,12 +74,6 @@ impl CardBehavior for WoodenStake {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_equipment = true;
-        }
-    }
 
     // "Whenever equipped creature blocks or becomes blocked by a Vampire" —
     // the Vampire condition is part of the trigger itself (CR 603.2), so it

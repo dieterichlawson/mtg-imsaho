@@ -35,12 +35,6 @@ impl CardBehavior for BlazingTorch {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_equipment = true;
-        }
-    }
 
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
@@ -137,7 +131,6 @@ fn attached_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegis
     let torch_card_id = registry.get_id_by_name("Blazing Torch")?;
     state.objects.values()
         .find(|o| o.zone == Zone::Battlefield
-            && o.is_equipment
             && o.attached_to == Some(creature_id)
             && o.card_id == torch_card_id)
         .map(|o| o.id)

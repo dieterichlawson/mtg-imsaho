@@ -28,12 +28,6 @@ impl CardBehavior for InquisitorsFlail {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_equipment = true;
-        }
-    }
 
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {

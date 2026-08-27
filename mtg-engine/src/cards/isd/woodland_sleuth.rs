@@ -58,10 +58,11 @@ impl CardBehavior for WoodlandSleuth {
         // Find creature cards in graveyard.
         let mut creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| {
-                state.face_data(o.id, registry)
-                    .map_or(state.is_creature(o.id, registry), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-            })
+            // "return a creature **card** at random from your graveyard" —
+            // CR 109.1. `face_data` is None for a token, and the `map_or`
+            // fallback here was `is_creature`, which is true of a creature
+            // token: the guard admitted exactly what it was meant to exclude.
+            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
 

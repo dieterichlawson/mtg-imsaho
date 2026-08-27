@@ -30,7 +30,7 @@ impl CardBehavior for MakeAWish {
         // Get all cards in graveyard (excluding tokens).
         let mut gy_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| !o.is_token && o.id != object_id)
+            .filter(|o| state.is_card(o.id) && o.id != object_id)
             .map(|o| o.id)
             .collect();
 

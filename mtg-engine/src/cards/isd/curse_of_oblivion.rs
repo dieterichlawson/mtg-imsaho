@@ -62,8 +62,11 @@ impl CardBehavior for CurseOfOblivion {
         let Some(cursed_player) = state.attached_player(self_id) else { return };
         // "That player exiles two cards from their graveyard."
         // The cursed player chooses which cards to exile.
+        // "exiles two **cards** from their graveyard" — CR 109.1, so a token
+        // sitting in the graveyard until the next SBA check is not one.
         let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, cursed_player)
             .iter()
+            .filter(|o| state.is_card(o.id))
             .map(|o| Target::Object(o.id))
             .collect();
         if gy_cards.is_empty() {
@@ -114,6 +117,7 @@ impl CardBehavior for CurseOfOblivion {
         }
         let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, owner)
             .iter()
+            .filter(|o| state.is_card(o.id))
             .map(|o| Target::Object(o.id))
             .collect();
         if gy_cards.is_empty() {

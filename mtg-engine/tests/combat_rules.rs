@@ -514,7 +514,7 @@ fn opponents_equipment_grants_no_activatable_ability() {
     for (torch_owner, offered) in [(P0, true), (P1, false)] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let creature = ready_creature(&mut state, P0, 2, 2);
-        let torch = named_equipment(&mut state, &reg, "Blazing Torch", torch_owner);
+        let torch = named_permanent(&mut state, &reg, "Blazing Torch", torch_owner);
         state.get_object_mut(torch).unwrap().attached_to = Some(creature);
 
         assert_eq!(offers_ability_of(&state, &reg, creature), offered,

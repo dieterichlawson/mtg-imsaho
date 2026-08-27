@@ -33,12 +33,6 @@ impl CardBehavior for TrepanationBlade {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_equipment = true;
-        }
-    }
 
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
@@ -84,10 +78,9 @@ impl CardBehavior for TrepanationBlade {
                 .and_then(|o| state.face_data(o.id, registry))
                 .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
 
-            // Remove from library and put into graveyard.
-            let player = state.get_player_mut(defending_player);
-            player.library_order.remove(0);
-            state.move_object(card_id, Zone::Graveyard, registry);
+            // "That player puts the revealed cards into their graveyard" —
+            // library to graveyard, so it is a mill.
+            crate::engine::mill_one(state, defending_player, card_id, registry);
             cards_milled += 1;
 
             if is_land {

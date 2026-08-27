@@ -18,22 +18,6 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
-/// Helper: place a named equipment on the battlefield, already set as equipment.
-fn equipment_on_battlefield(
-    state: &mut mtg_engine::state::GameState,
-    registry: &CardRegistry,
-    name: &str,
-    owner: mtg_engine::ids::PlayerId,
-) -> mtg_engine::ids::ObjectId {
-    let card_id = registry.get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {name}"));
-    let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
-    let obj = state.get_object_mut(id).unwrap();
-    obj.name = name.into();
-    obj.is_equipment = true;
-    id
-}
-
 /// Helper: equip an equipment to a creature by activating the ability.
 fn equip(
     state: &mtg_engine::state::GameState,
@@ -62,7 +46,7 @@ fn cobbled_wings_enters_as_equipment() {
     state = cast_and_resolve(&state, &reg, wings, vec![]);
     let obj = state.get_object(wings).unwrap();
     assert_eq!(obj.zone, Zone::Battlefield);
-    assert!(obj.is_equipment);
+    assert!(state.is_equipment(obj.id, &reg));
     assert!(obj.attached_to.is_none());
 }
 
@@ -72,7 +56,7 @@ fn cobbled_wings_equip_only_your_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let _opponent_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
-    let _wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
+    let _wings = named_permanent(&mut state, &reg, "Cobbled Wings", P0);
 
     // Add mana for equip cost.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
@@ -111,7 +95,7 @@ fn equipping_grants_the_printed_bonus() {
         // Grizzly Bears is a 2/2 Bear — deliberately not a Human, so only the
         // unconditional half of a conditional equipment applies.
         let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-        let equipment = equipment_on_battlefield(&mut state, &reg, name, P0);
+        let equipment = named_permanent(&mut state, &reg, name, P0);
 
         for keyword in *keywords {
             assert!(!state.has_keyword(creature, *keyword, &reg),
@@ -147,7 +131,7 @@ fn wooden_stake_destroys_vampire_on_block() {
 
     // Set up: P0 has a creature with Wooden Stake, P1 has a Vampire attacker.
     let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0); // 2/2
-    let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
+    let stake_obj = named_permanent(&mut state, &reg, "Wooden Stake", P0);
 
     // Equip.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
@@ -179,7 +163,7 @@ fn wooden_stake_does_not_destroy_non_vampire() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-    let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
+    let stake_obj = named_permanent(&mut state, &reg, "Wooden Stake", P0);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
     state = equip(&state, &reg, stake_obj, creature);
@@ -209,7 +193,7 @@ fn equipment_detaches_when_creature_dies() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0); // 2/2
-    let wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
+    let wings = named_permanent(&mut state, &reg, "Cobbled Wings", P0);
 
     // Equip.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
@@ -233,7 +217,7 @@ fn equipment_can_be_moved_to_different_creature() {
 
     let creature1 = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let creature2 = named_permanent(&mut state, &reg, "Savannah Lions", P0);
-    let wings = equipment_on_battlefield(&mut state, &reg, "Cobbled Wings", P0);
+    let wings = named_permanent(&mut state, &reg, "Cobbled Wings", P0);
 
     // Equip to first creature.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
@@ -261,7 +245,7 @@ fn equipment_cast_and_equip_full_flow() {
 
     // Equipment should be on battlefield, unattached.
     assert_eq!(state.get_object(wings).unwrap().zone, Zone::Battlefield);
-    assert!(state.get_object(wings).unwrap().is_equipment);
+    assert!(state.is_equipment(wings, &reg));
     assert!(state.get_object(wings).unwrap().attached_to.is_none());
     assert!(!state.has_keyword(creature, Keyword::Flying, &reg));
 
@@ -269,4 +253,47 @@ fn equipment_cast_and_equip_full_flow() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
     state = equip(&state, &reg, wings, creature);
     assert!(state.has_keyword(creature, Keyword::Flying, &reg));
+}
+
+/// Being an Equipment is a fact about the card's subtypes (CR 301.5), not a
+/// flag something has to remember to set.
+///
+/// It used to be `GameObject::is_equipment`, set by eleven cards in an
+/// `on_resolve` override that otherwise only repeated the trait default's
+/// "move a permanent to the battlefield". An Equipment that reached the
+/// battlefield any other way left the flag false, and `sba.rs` then read it as
+/// an unattached Aura: when the equipped creature died, the Equipment went to
+/// the graveyard (CR 704.5m) instead of detaching and staying put.
+///
+/// Every Equipment in the set, placed on the battlefield directly rather than
+/// cast, so the old flag would have been false for all of them.
+#[test]
+fn an_equipment_that_did_not_resolve_as_a_spell_still_detaches_rather_than_dying() {
+    let reg = registry();
+    let equipment: Vec<String> = reg.all_names().into_iter()
+        .filter(|name| reg.get_id_by_name(name)
+            .and_then(|id| reg.card_data(id))
+            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Equipment")))
+        .map(std::string::ToString::to_string)
+        .collect();
+    assert!(equipment.len() >= 10,
+        "test premise: the set has a pile of Equipment; found {equipment:?}");
+
+    for name in equipment {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let eq = named_permanent(&mut state, &reg, name.as_str(), P0);
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        state.get_object_mut(eq).unwrap().attached_to = Some(creature);
+        assert!(state.is_equipment(eq, &reg), "{name} is an Equipment by its subtype");
+
+        // The creature it was attached to leaves the battlefield.
+        mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
+        mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+        assert_eq!(state.get_object(eq).unwrap().zone, Zone::Battlefield,
+            "{name} stays on the battlefield when what it equipped dies — it is \
+             an Equipment, not an Aura");
+        assert_eq!(state.get_object(eq).unwrap().attached_to, None,
+            "{name} detaches");
+    }
 }

@@ -148,7 +148,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                 o.zone == Zone::Battlefield
                     && o.attached_to.is_some()
                     && o.attached_to_player.is_none() // player-attached curses are fine
-                    && !o.is_equipment // equipment stays on battlefield when unattached
+                    && !state.is_equipment(o.id, registry) // Equipment detaches instead
                     && {
                         let target_id = o.attached_to.expect("aura must have attached_to");
                         state.get_object(target_id)
@@ -162,7 +162,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         let detach_equipment: Vec<ObjectId> = state.objects.values()
             .filter(|o| {
                 o.zone == Zone::Battlefield
-                    && o.is_equipment
+                    && state.is_equipment(o.id, registry)
                     && o.attached_to.is_some()
                     && {
                         let target_id = o.attached_to.expect("equipment must have attached_to");

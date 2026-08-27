@@ -391,7 +391,6 @@ impl GameState {
             card_state: HashMap::new(),
             counters: HashMap::new(),
             regeneration_shields: 0,
-            is_equipment: false,
             is_transformed: false,
             x_value: None,
             chosen_mode: None,
@@ -512,7 +511,6 @@ impl GameState {
             card_state: HashMap::new(),
             counters: HashMap::new(),
             regeneration_shields: 0,
-            is_equipment: false,
             is_transformed: false,
             x_value: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
@@ -634,6 +632,11 @@ impl GameState {
         // triggers to be controlled by whoever controlled the permanent
         // immediately before it left the battlefield.
         let pre_move_controller = self.objects.get(&id).map(|o| o.controller);
+        // A mill emits `CreatureCardMilled`, and both facts have to be read
+        // before the move: `is_creature` consults the battlefield-shaped
+        // characteristics layer, and the library the card left is its owner's.
+        let owner_before_move = self.objects.get(&id).map_or(PlayerId(0), |o| o.owner);
+        let was_creature = self.is_creature(id, registry);
 
         // A tracked mid-resolution spell that leaves the stack (moved by a
         // pending-effect handler, or entering the battlefield as a
@@ -808,6 +811,20 @@ impl GameState {
                     object: id,
                     to,
                     last_controller: pre_move_controller.unwrap_or(PlayerId(0)),
+                });
+            }
+            // Library to graveyard is a mill (CR 701.13a), and being one is a
+            // property of the zone change, not of the caller having remembered
+            // a helper. It used to be emitted by `engine::mill_one` alone, and
+            // four cards moved library cards to the graveyard by hand —
+            // Trepanation Blade milling the *defending* player, which is
+            // exactly whose graveyard Undead Alchemist watches ("whenever a
+            // creature card is put into an opponent's graveyard from their
+            // library"). Whether a watcher cares is the collector's decision.
+            if from_zone == Zone::Library && to == Zone::Graveyard && was_creature {
+                self.events.push(crate::events::GameEvent::CreatureCardMilled {
+                    object: id,
+                    milled_player: owner_before_move,
                 });
             }
             if to == Zone::Battlefield && from_zone != Zone::Battlefield {
@@ -1956,6 +1973,21 @@ impl GameState {
                 .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
     }
 
+    /// CR 301.5: an Equipment is an artifact with the Equipment subtype.
+    ///
+    /// This was a per-object `is_equipment` bool that eleven cards each set in
+    /// an `on_resolve` override — overrides that otherwise only repeated the
+    /// trait default's "move a permanent to the battlefield". Anything that put
+    /// an Equipment onto the battlefield by another route left the flag false,
+    /// and `sba.rs` then treated it as an unattached Aura and put it into the
+    /// graveyard (CR 704.5m) instead of detaching it and leaving it there.
+    ///
+    /// Derived from the subtype, through the characteristics layer, so a
+    /// granted Equipment subtype counts too.
+    pub fn is_equipment(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.has_subtype(id, "Equipment", registry)
+    }
+
     /// CR 109.1: a "card" is a physical game object. A token is not one, so
     /// any effect whose text says "card" must exclude tokens.
     ///
@@ -2136,10 +2168,6 @@ pub struct GameObject {
     /// Number of regeneration shields (consumed instead of destruction).
     #[serde(default)]
     pub regeneration_shields: u32,
-
-    /// Whether this permanent is equipment (stays on battlefield when unattached).
-    #[serde(default)]
-    pub is_equipment: bool,
 
     /// Whether this double-faced card is on its back face.
     #[serde(default)]

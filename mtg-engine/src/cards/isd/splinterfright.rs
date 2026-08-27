@@ -45,7 +45,7 @@ impl CardBehavior for Splinterfright {
         let owner = state.get_object(object_id)?.owner;
         let creature_cards_in_gy = i32::try_from(state.objects_in_zone(Zone::Graveyard, owner)
             .iter()
-            .filter(|o| state.is_creature(o.id, registry) && !o.is_token)
+            .filter(|o| state.is_creature(o.id, registry) && state.is_card(o.id))
             .count()).unwrap_or(i32::MAX);
         Some((creature_cards_in_gy, creature_cards_in_gy))
     }

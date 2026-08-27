@@ -62,7 +62,10 @@ impl CardBehavior for MoldgrafMonstrosity {
         // Find creature cards in the graveyard (excluding the Monstrosity itself, which is now exiled).
         let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| state.is_creature(o.id, registry) && o.id != object_id)
+            // "return two creature **cards** at random from your graveyard" —
+            // CR 109.1, so a token waiting on the next SBA check is not one.
+            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry)
+                && o.id != object_id)
             .map(|o| o.id)
             .collect();
 

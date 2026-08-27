@@ -42,7 +42,7 @@ impl CardBehavior for MoorlandHaunt {
         // Check if there's a creature card in the graveyard to exile.
         let has_creature_in_graveyard = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .any(|o| state.is_creature(o.id, registry) && !o.is_token);
+            .any(|o| state.is_creature(o.id, registry) && state.is_card(o.id));
 
         if has_creature_in_graveyard {
             vec![ActivatedAbilityDef {
@@ -74,7 +74,7 @@ impl CardBehavior for MoorlandHaunt {
         // not one of them.
         let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| state.is_creature(o.id, registry) && !o.is_token)
+            .filter(|o| state.is_creature(o.id, registry) && state.is_card(o.id))
             .map(|o| o.id)
             .collect();
 

@@ -42,9 +42,13 @@ impl CardBehavior for BackFromTheBrink {
             .filter(|o| {
                 // "exile a creature **card**" — CR 109.1: a token in a graveyard
                 // is not a card, and is only there until the next SBA check.
+                //
+                // `&&` binds tighter than `||`, so the second half of this used
+                // to read `... || face_data says Creature` with no `is_card`
+                // guard at all — saying the opposite of the comment above it.
+                // It was also redundant: `is_creature` already consults the
+                // active face's card types.
                 state.is_card(o.id) && state.is_creature(o.id, registry)
-                    || state.face_data(o.id, registry)
-                        .is_some_and(|d| d.card_types.contains(&CardType::Creature))
             })
             .collect();
 

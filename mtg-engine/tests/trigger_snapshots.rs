@@ -43,7 +43,7 @@ fn mill_occurs_when_equipped_creature_dies_before_trigger_resolves() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
-    let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
     stack_library(&mut state, &reg, P1);
 
@@ -71,7 +71,7 @@ fn the_buff_goes_to_the_creature_that_attacked_not_the_current_host() {
 
     let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
     let bystander = named_permanent(&mut state, &reg, "Chapel Geist", P0);
-    let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
     stack_library(&mut state, &reg, P1);
 
@@ -101,7 +101,7 @@ fn trepanation_blade_mills_the_defending_player() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
-    let blade = named_equipment(&mut state, &reg, "Trepanation Blade", P0);
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
     state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
     stack_library(&mut state, &reg, P1);
     let before = state.effective_power(attacker, &reg).unwrap();

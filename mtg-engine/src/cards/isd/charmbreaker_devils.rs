@@ -59,10 +59,11 @@ impl CardBehavior for CharmbreakerDevils {
         // Find instant or sorcery cards in graveyard.
         let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| {
-                state.face_data(o.id, registry)
-                    .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery)))
-            })
+            // "an instant or sorcery **card**" — CR 109.1. `face_data` is
+            // already None for a token, but relying on that leaves the rule
+            // unsaid.
+            .filter(|o| state.is_card(o.id) && state.face_data(o.id, registry)
+                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery))))
             .map(|o| o.id)
             .collect();
         if !candidates.is_empty() {

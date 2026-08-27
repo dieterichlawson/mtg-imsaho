@@ -47,10 +47,10 @@ impl CardBehavior for Ghoulraiser {
         // Find Zombie cards in graveyard (not restricted to creatures).
         let mut zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| {
-                state.face_data(o.id, registry)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-            })
+            // "a Zombie **card**" — CR 109.1, said rather than left to
+            // `face_data` happening to be None for a token.
+            .filter(|o| state.is_card(o.id) && state.face_data(o.id, registry)
+                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie")))
             .map(|o| o.id)
             .collect();
 

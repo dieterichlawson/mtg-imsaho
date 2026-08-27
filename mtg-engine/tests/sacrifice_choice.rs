@@ -24,18 +24,8 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::ids::{ObjectId, PlayerId};
-use mtg_engine::state::GameState;
+use mtg_engine::ids::ObjectId;
 use mtg_engine::types::*;
-
-fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
-    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
-    let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
-    let obj = state.get_object_mut(id).unwrap();
-    obj.name = name.into();
-    obj.is_equipment = true;
-    id
-}
 
 // ════════════════════════════════════════════════════════════════════
 // Demonmail Hauberk — Equip — Sacrifice a creature
@@ -48,7 +38,7 @@ fn hauberk_legal_actions_enumerate_target_sacrifice_combos() {
     // 3 targets × 2 valid sacrifices = 6 combos.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hauberk = equipment(&mut state, &reg, "Demonmail Hauberk", P0);
+    let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
     let a = ready_creature(&mut state, P0, 1, 1);
     let b = ready_creature(&mut state, P0, 2, 2);
     let c = ready_creature(&mut state, P0, 3, 3);
@@ -90,7 +80,7 @@ fn hauberk_explicit_sacrifice_attaches_correctly() {
     // the player's explicit choice and the equip succeeds.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hauberk = equipment(&mut state, &reg, "Demonmail Hauberk", P0);
+    let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
     let creature_a = ready_creature(&mut state, P0, 1, 1);
     let creature_b = ready_creature(&mut state, P0, 2, 2);
 
@@ -121,7 +111,7 @@ fn hauberk_with_only_one_creature_offers_no_legal_actions() {
     // the ability should NOT appear in legal actions.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hauberk = equipment(&mut state, &reg, "Demonmail Hauberk", P0);
+    let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
     let _solo = ready_creature(&mut state, P0, 2, 2);
 
     let legal = engine::legal_actions(&state, &reg);
@@ -138,7 +128,7 @@ fn hauberk_does_not_offer_combo_where_target_equals_sacrifice() {
     // This is the regression case for the original bug.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hauberk = equipment(&mut state, &reg, "Demonmail Hauberk", P0);
+    let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
     let _a = ready_creature(&mut state, P0, 1, 1);
     let _b = ready_creature(&mut state, P0, 2, 2);
     let _c = ready_creature(&mut state, P0, 3, 3);
@@ -388,9 +378,6 @@ fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
 
     // Place Demonmail Hauberk (equipment)
     let hauberk = named_permanent(&mut state, &registry, "Demonmail Hauberk", P0);
-    if let Some(obj) = state.get_object_mut(hauberk) {
-        obj.is_equipment = true;
-    }
 
     // Place exactly ONE creature — the one we'd want to equip
     let _creature = ready_creature(&mut state, P0, 3, 3);

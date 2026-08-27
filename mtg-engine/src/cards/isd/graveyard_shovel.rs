@@ -26,8 +26,10 @@ impl CardBehavior for GraveyardShovel {
         if obj.zone != Zone::Battlefield || obj.tapped {
             return vec![];
         }
-        // Only available if at least one player has cards in their graveyard.
-        let any_graveyard = state.objects.values().any(|o| o.zone == Zone::Graveyard);
+        // "exiles a **card** from their graveyard" — CR 109.1, so a token
+        // sitting in a graveyard until the next SBA check is not one.
+        let any_graveyard = state.objects.values()
+            .any(|o| o.zone == Zone::Graveyard && state.is_card(o.id));
         if !any_graveyard {
             return vec![];
         }
@@ -49,8 +51,10 @@ impl CardBehavior for GraveyardShovel {
             // CR 608.2b: a target that stopped being legal is skipped.
             Target::Illegal => false,
             Target::Player(pid) => {
-                // Only valid if the targeted player has at least one card in their graveyard.
-                state.objects.values().any(|o| o.zone == Zone::Graveyard && o.owner == *pid)
+                // Only valid if the targeted player has at least one card —
+                // CR 109.1 — in their graveyard.
+                state.objects.values()
+                    .any(|o| o.zone == Zone::Graveyard && o.owner == *pid && state.is_card(o.id))
             }
             Target::Object(_) => false,
         }
@@ -62,7 +66,8 @@ impl CardBehavior for GraveyardShovel {
         if let Some(Target::Player(target_player)) = targets.first() {
             // Collect all cards in the targeted player's graveyard.
             let gy_cards: Vec<Target> = state.objects.values()
-                .filter(|o| o.zone == Zone::Graveyard && o.owner == *target_player)
+                .filter(|o| o.zone == Zone::Graveyard && o.owner == *target_player
+                    && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .collect();
 

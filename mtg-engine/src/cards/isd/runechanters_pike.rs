@@ -27,12 +27,6 @@ impl CardBehavior for RunechantersPike {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_equipment = true;
-        }
-    }
 
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
@@ -55,7 +49,7 @@ impl CardBehavior for RunechantersPike {
         }
         let controller = obj.controller;
         let count = i32::try_from(state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && !o.is_token)
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_card(o.id))
             .filter(|o| state.has_card_type(o.id, CardType::Instant, registry)
                 || state.has_card_type(o.id, CardType::Sorcery, registry))
             .count()).unwrap_or(i32::MAX);

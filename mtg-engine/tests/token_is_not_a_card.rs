@@ -250,3 +250,75 @@ fn a_token_in_a_graveyard_is_not_a_creature_card() {
     }
     assert!(checked >= 2, "only {checked} cards checked — the sweep stopped covering anything");
 }
+
+/// The other four cards that read a graveyard for "cards" and did not ask.
+///
+/// Each one presents the graveyard to a player as a list to pick from, or picks
+/// from it at random. A creature token waiting on the next SBA pass was in the
+/// list.
+#[test]
+fn a_token_in_a_graveyard_is_not_offered_as_a_card_to_choose() {
+    use mtg_engine::actions::Target;
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Graveyard Shovel, with one real card and one token in P1's graveyard.
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
+    let real = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+    let token = creature_token_in_graveyard(&mut state, &reg, "Zombie", vec!["Zombie".into()], P1);
+
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // One card and one token: only the card is a choice, so there is nothing to
+    // choose between and it is exiled outright.
+    assert!(state.awaiting_action.is_none()
+        || !matches!(&state.awaiting_action,
+            Some(AwaitingAction::ResolutionChoice {
+                choice: ResolutionChoiceKind::ChooseTarget { options, .. }, .. })
+            if options.contains(&Target::Object(token))),
+        "\"exiles a card from their graveyard\" must not offer a token (CR 109.1); \
+         got {:?}", state.awaiting_action);
+    assert_eq!(state.get_object(real).unwrap().zone, Zone::Exile,
+        "the one actual card is the one exiled");
+}
+
+/// Moldgraf Monstrosity returns "two creature **cards** at random"; a token in
+/// the graveyard must not be one of the two it can draw.
+#[test]
+fn moldgraf_does_not_return_a_token_from_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let token = creature_token_in_graveyard(&mut state, &reg, "Zombie", vec!["Zombie".into()], P0);
+    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+
+    reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap()
+        .on_dies(&mut state, monstrosity, &[], &reg);
+
+    assert_ne!(state.get_object(token).unwrap().zone, Zone::Battlefield,
+        "a token in the graveyard is not a creature card, so it cannot be \
+         returned to the battlefield (CR 109.1)");
+}
+
+/// Woodland Sleuth returns "a creature **card** at random". Its filter fell
+/// back to `is_creature` when `face_data` was None — which is exactly the token
+/// case — so the fallback admitted what the filter was written to exclude.
+#[test]
+fn woodland_sleuth_does_not_return_a_token_from_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let token = creature_token_in_graveyard(&mut state, &reg, "Zombie", vec!["Zombie".into()], P0);
+    state.creature_died_this_turn = true;
+    let sleuth = named_permanent(&mut state, &reg, "Woodland Sleuth", P0);
+
+    reg.get(state.get_object(sleuth).unwrap().card_id).unwrap()
+        .on_enter_battlefield(&mut state, sleuth, &[], &reg);
+
+    assert_ne!(state.get_object(token).unwrap().zone, Zone::Hand,
+        "a token in the graveyard is not a creature card (CR 109.1)");
+}
