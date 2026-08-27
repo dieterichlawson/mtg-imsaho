@@ -44,7 +44,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             player: controller,
                             source: *source_spell_id,
                             choice: ResolutionChoiceKind::ChooseCardFromHand {
-                                description: "Frightful Delusion: choose a card to discard".into(),
+                                description: format!("{}: choose a card to discard",
+                                    state.obj_name(*source_spell_id)),
                                 player: controller,
                                 cards: hand,
                                 discard_immediately: true,
@@ -138,7 +139,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.move_object(id, Zone::Hand, registry);
                     }
                     state.log(LogLevel::Event,
-                        format!("Creeping Renaissance: chose {chosen_type}. Returned {count} cards from graveyard to hand"));
+                        format!("{}: chose {chosen_type}. Returned {count} cards from graveyard to hand",
+                            state.obj_name(choice_source)));
                 }
                 (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
                  ResolvedChoice::ChosenSubset(pile_1_ids)) => {
@@ -158,7 +160,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         .map(|id| state.obj_name(*id))
                         .collect();
                     state.log(LogLevel::Event,
-                        format!("Liliana -6: Pile 1: [{}], Pile 2: [{}]",
+                        format!("{}: Pile 1: [{}], Pile 2: [{}]",
+                            state.obj_name(*source_id),
                             if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
                             if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }));
 
@@ -168,7 +171,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         source: *source_id,
                         choice: ResolutionChoiceKind::ChoosePile {
                             description: format!(
-                                "Liliana -6: Choose a pile to sacrifice.\nPile 1: [{}]\nPile 2: [{}]",
+                                "{}: Choose a pile to sacrifice.\nPile 1: [{}]\nPile 2: [{}]",
+                                state.obj_name(*source_id),
                                 if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
                                 if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }),
                             pile_1,
@@ -183,13 +187,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let chosen_pile = if *index == 0 { pile_1 } else { pile_2 };
                     let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
                     state.log(LogLevel::Event,
-                        format!("Liliana -6: chose to sacrifice {pile_label}"));
+                        format!("{}: chose to sacrifice {pile_label}", state.obj_name(choice_source)));
                     for &perm_id in chosen_pile {
                         let name = state.obj_name(perm_id);
                         if state.get_object(perm_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                             crate::destruction::sacrifice(&mut *state, perm_id, registry);
                             state.log(LogLevel::Event,
-                                format!("Liliana -6: sacrificed {name}"));
+                                format!("{}: sacrificed {name}", state.obj_name(choice_source)));
                         }
                     }
                 }
@@ -202,7 +206,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         obj.instance_continuous_effects = Some(vec![effect]);
                     }
                     state.log(LogLevel::Event,
-                        format!("Nevermore names \"{chosen_name}\""));
+                        format!("{} names \"{chosen_name}\"", state.obj_name(*source_id)));
                 }
                 // X-cost funding resolution: rules-strict atomic cast.
                 // For spells: the spell is still in its origin zone.
@@ -298,7 +302,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                                 behavior.target_requirement()
                             {
                                 let chosen = detect_modal_choice_mode(
-                                    &state, player, pending.object_id, &pending.targets, modes, behavior,
+                                    &state, player, pending.object_id, &pending.targets, modes, behavior, registry,
                                 );
                                 if let Some(obj) = state.get_object_mut(pending.object_id) {
                                     obj.chosen_mode = Some(chosen);

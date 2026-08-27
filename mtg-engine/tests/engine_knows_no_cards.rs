@@ -24,17 +24,35 @@
 use std::path::{Path, PathBuf};
 
 /// Engine modules — everything in `src/` that is not `src/cards/`.
+///
+/// Walked recursively. This used to read only the top level of `src/`, which
+/// left the whole of `src/engine/` unguarded — and that is where the engine
+/// actually lives now, `submit_action` and the choice handlers included.
 fn engine_sources() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&root).expect("src should be readable").flatten() {
-        let p = entry.path();
-        if p.is_file() && p.extension().is_some_and(|e| e == "rs") {
-            out.push(p);
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("src should be readable").flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if p.file_name().is_some_and(|n| n == "cards") {
+                    continue;
+                }
+                stack.push(p);
+            } else if p.extension().is_some_and(|e| e == "rs") {
+                out.push(p);
+            }
         }
     }
     out.sort();
     out
+}
+
+/// A path shown relative to `src/`, so the failure message points at a file.
+fn label(p: &Path) -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    p.strip_prefix(&root).unwrap_or(p).to_string_lossy().to_string()
 }
 
 /// Strip `#[cfg(test)]` modules — test fixtures naturally name cards, and
@@ -48,7 +66,7 @@ fn without_test_modules(text: &str) -> String {
 fn engine_does_not_look_up_cards_by_name() {
     let mut violations = Vec::new();
     for path in engine_sources() {
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let name = label(&path);
         let text = without_test_modules(&std::fs::read_to_string(&path).unwrap());
         for (i, line) in text.lines().enumerate() {
             if line.trim_start().starts_with("//") {
@@ -159,4 +177,66 @@ fn single_card_pending_effect_variants_are_justified() {
     assert!(stale.is_empty(),
         "REVIEWED_SINGLE_USER entries no longer apply (variant removed, or it \
          has other users now) — drop them: {stale:?}");
+}
+
+/// The engine must not name a card in the text it shows a player either.
+///
+/// A prompt or a log line is part of how a card presents itself. When the
+/// engine writes one, the card's name is baked into a generic handler: the
+/// pile-division handler said "Liliana -6:" in four places, so any second card
+/// that divided permanents into piles would have been logged as Liliana. The
+/// handler has the source object; the label belongs to it.
+///
+/// This is the same leak `engine_does_not_look_up_cards_by_name` catches, one
+/// step further along — the engine no longer *looked up* those cards, it just
+/// still knew their names.
+#[test]
+fn engine_does_not_name_cards_in_the_text_it_shows() {
+    let reg = mtg_engine::cards::CardRegistry::with_all_cards();
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+
+    // Legendary permanents get referred to by their short name — the engine
+    // said "Liliana -6:", never "Liliana of the Veil". The first word of a
+    // legendary name is a proper noun, so it is safe to look for on its own;
+    // for a non-legendary card it would be "Curse" or "Village" and would fire
+    // on ordinary prose.
+    let short: Vec<String> = names.iter()
+        .filter(|n| reg.get_id_by_name(n)
+            .and_then(|id| reg.card_data(id))
+            .is_some_and(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Legendary)))
+        .filter_map(|n| n.split([' ', ',']).next().map(str::to_string))
+        .filter(|w| w.len() > 3)
+        .collect();
+    names.extend(short);
+    names.sort();
+    names.dedup();
+
+    let mut violations = Vec::new();
+    for path in engine_sources() {
+        let file = label(&path);
+        let text = without_test_modules(&std::fs::read_to_string(&path).unwrap());
+        for (i, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            // Only string literals matter — a comment naming the card that
+            // motivated a rule is documentation, not a dependency.
+            if !line.contains('"') {
+                continue;
+            }
+            for n in &names {
+                if line.contains(&format!("\"{n}")) || line.contains(&format!(" {n}:"))
+                    || line.contains(&format!("\"{n} ")) || line.contains(&format!("({n} ")) {
+                    violations.push(format!("{file}:{}: names {n:?}: {}", i + 1, trimmed));
+                    break;
+                }
+            }
+        }
+    }
+    assert!(violations.is_empty(),
+        "the engine writes {} card name(s) into player-facing text:\n{}\n\n\
+         Derive the label from the source object (`state.obj_name(source_id)`), \
+         or let the card supply the description.",
+        violations.len(), violations.join("\n"));
 }
