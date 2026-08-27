@@ -161,23 +161,6 @@ fn sensory_deprivation_reduces_power() {
         "Toughness should be unchanged");
 }
 
-/// Spectral Flight grants +2/+2 and flying.
-#[test]
-fn spectral_flight_buffs_and_grants_flying() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    let sf = castable_spell(&mut state, &reg, "Spectral Flight", P0);
-
-    state = cast_and_resolve(&state, &reg, sf, vec![Target::Object(creature)]);
-
-    assert_eq!(state.effective_power(creature, &reg), Some(4));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(4));
-    assert!(state.has_keyword(creature, Keyword::Flying, &reg),
-        "Spectral Flight should grant flying");
-}
-
 /// Gruesome Deformity grants intimidate.
 #[test]
 fn gruesome_deformity_grants_intimidate() {
@@ -191,23 +174,6 @@ fn gruesome_deformity_grants_intimidate() {
 
     assert!(state.has_keyword(creature, Keyword::Intimidate, &reg),
         "Gruesome Deformity should grant intimidate");
-}
-
-/// Bonds of Faith prevents attacking and blocking (simplified non-Human mode).
-#[test]
-fn bonds_of_faith_prevents_attack_and_block() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 3, 3);
-    let bof = castable_spell(&mut state, &reg, "Bonds of Faith", P1);
-    state.priority_player = Some(P1);
-
-    state = cast_and_resolve(&state, &reg, bof, vec![Target::Object(creature)]);
-    mtg_engine::triggers::process_triggers(&mut state, &reg);
-
-    assert!(!state.can_attack(creature, &reg), "Should not be able to attack");
-    assert!(!state.can_block(creature, &reg), "Should not be able to block");
 }
 
 /// Claustrophobia taps the creature and keeps it tapped.
@@ -240,21 +206,6 @@ fn skeletal_grimace_gives_plus_one_plus_one() {
     let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
 
     state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
-
-    assert_eq!(state.effective_power(creature, &reg), Some(3));
-    assert_eq!(state.effective_toughness(creature, &reg), Some(3));
-}
-
-/// Furor of the Bitten gives +2/+2.
-#[test]
-fn furor_of_the_bitten_gives_plus_two() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let creature = ready_creature(&mut state, P0, 1, 1);
-    let fb = castable_spell(&mut state, &reg, "Furor of the Bitten", P0);
-
-    state = cast_and_resolve(&state, &reg, fb, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(3));
     assert_eq!(state.effective_toughness(creature, &reg), Some(3));

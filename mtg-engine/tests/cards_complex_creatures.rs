@@ -1086,26 +1086,6 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
         "Controller's own creature should not be targeted");
 }
 
-// ── Geist of Saint Traft ──────────────────────────────────────────
-
-#[test]
-fn geist_angel_exiled_at_end_of_combat() {
-    let reg = registry();
-    let mut state = game_at_step(Step::EndCombat, P0);
-    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
-    attacks_unblocked(&mut state, geist, P1);
-
-    // Attack to create the angel.
-    let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
-
-    let angel_id = find_token_named(&state, "Angel").unwrap();
-
-    // End of combat fires the delayed trigger; auto-resolve exiles the Angel.
-    fire_step_trigger(&mut state, Step::EndCombat, &reg);
-    assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile);
-}
-
 // ── Evil Twin ──────────────────────────────────────────
 
 #[test]
@@ -1326,22 +1306,6 @@ fn liliana_plus_one_empty_hand_skipped() {
 }
 
 #[test]
-fn liliana_plus_one_both_empty_hands() {
-    // Both players have empty hands — ability resolves with no effect.
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    set_loyalty(&mut state, liliana, 3);
-
-    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
-
-    // No awaiting_action, nothing happened.
-    assert!(state.awaiting_action.is_none());
-}
-
-#[test]
 fn liliana_minus_two_target_player_sacrifices_creature() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
     use mtg_engine::actions::ResolvedChoice;
@@ -1395,20 +1359,52 @@ fn liliana_minus_two_single_creature_auto_sacrifices() {
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 
+/// Each of Liliana's three abilities has a "nothing to work with" case, and
+/// all three used to be their own test asserting only `awaiting_action.is_none()`.
+/// A test whose one assertion is "no prompt appeared" passes with the ability's
+/// implementation deleted, so each row here is run twice — once with nothing to
+/// act on, once with something — and the second half is what makes the first
+/// mean anything.
 #[test]
-fn liliana_minus_two_no_creatures() {
-    // If the target player has no creatures, nothing happens.
+fn each_liliana_ability_with_nothing_to_act_on_asks_nothing_and_does_nothing() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // (ability index, targets, what the ability would need)
+    let cases: [(usize, &[Target], &str); 3] = [
+        (0, &[], "a card in someone's hand to discard"),
+        (1, &[Target::Player(P1)], "a creature the target player controls"),
+        (2, &[Target::Player(P1)], "a permanent the target player controls"),
+    ];
 
-    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    set_loyalty(&mut state, liliana, 3);
+    for (index, targets, needs) in cases {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+        set_loyalty(&mut state, liliana, 9);
+        let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+        behavior.on_loyalty_ability(&mut state, liliana, index, targets, &reg);
 
-    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P1)], &reg);
+        assert!(state.awaiting_action.is_none(),
+            "ability {index} with no {needs} must not stop for a choice");
 
-    // No creatures, no effect.
-    assert!(state.awaiting_action.is_none());
+        // The control: give it something, and the same call does ask.
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+        set_loyalty(&mut state, liliana, 9);
+        if index == 0 {
+            // Two cards each, so neither player's discard is auto-picked.
+            for p in [P0, P1] {
+                spell_in_hand(&mut state, &reg, "Grizzly Bears", p);
+                spell_in_hand(&mut state, &reg, "Lightning Bolt", p);
+            }
+        } else {
+            ready_creature(&mut state, P1, 2, 2);
+            ready_creature(&mut state, P1, 3, 3);
+        }
+        let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+        behavior.on_loyalty_ability(&mut state, liliana, index, targets, &reg);
+
+        assert!(state.awaiting_action.is_some(),
+            "control: ability {index} does ask once there is {needs}");
+    }
 }
 
 #[test]
@@ -1537,21 +1533,6 @@ fn liliana_minus_six_all_in_one_pile() {
 
     assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard);
     assert_eq!(state.get_object(c2).unwrap().zone, Zone::Graveyard);
-}
-
-#[test]
-fn liliana_minus_six_no_permanents() {
-    // If target player has no permanents, nothing happens.
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
-    set_loyalty(&mut state, liliana, 9);
-
-    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
-
-    assert!(state.awaiting_action.is_none(), "No permanents, no pile division needed");
 }
 
 #[test]

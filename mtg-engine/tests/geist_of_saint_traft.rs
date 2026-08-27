@@ -44,10 +44,7 @@ fn angel_exiled_at_end_of_combat() {
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
-    let angel_id = state.objects.values()
-        .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)
-        .map(|o| o.id)
-        .expect("Angel should exist");
+    let angel_id = find_token_named(&state, "Angel").expect("Angel should exist");
 
     // End combat fires the delayed trigger; auto-resolve exiles the Angel.
     state.step = Step::EndCombat;
@@ -70,10 +67,7 @@ fn angel_exiled_even_if_geist_dies() {
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
-    let angel_id = state.objects.values()
-        .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)
-        .map(|o| o.id)
-        .expect("Angel should exist");
+    let angel_id = find_token_named(&state, "Angel").expect("Angel should exist");
 
     // Kill the Geist before end of combat.
     state.move_object(geist, Zone::Graveyard, &reg);
