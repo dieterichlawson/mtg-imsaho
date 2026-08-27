@@ -194,9 +194,14 @@ fn ghost_quarter_search(reg: &mtg_engine::cards::CardRegistry) -> Vec<usize> {
         })
         .collect();
 
+    // The two halves of CR 602.2a, in order: the sacrifice is a cost, paid on
+    // activation, and `on_activate_ability` only puts the ability on the stack.
+    // The effect belongs to `resolve_top_of_stack`, so calling the activation
+    // hook alone destroys nothing.
     let behavior = reg.get(state.get_object(gq).unwrap().card_id).unwrap();
     state.move_object(gq, Zone::Graveyard, reg);
     behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(victim)], reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, reg);
 
     let options = pending_choice_options(&state);
     let state = mtg_engine::engine::submit_action(

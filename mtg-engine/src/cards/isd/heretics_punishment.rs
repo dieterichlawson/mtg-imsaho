@@ -58,8 +58,11 @@ impl CardBehavior for HereticsPunishment {
                         .is_some_and(|o| o.zone == Zone::Battlefield)
                 }
                 Target::Player(_) => true,
-                // CR 608.2b: a target that stopped being legal is skipped.
-                Target::Illegal => true,
+                // Ruling (2011-09-22): "If the targeted permanent or player is
+                // an illegal target by the time the ability resolves, the
+                // entire ability won't resolve. No cards will be put into your
+                // graveyard, and no damage will be dealt."
+                Target::Illegal => false,
             };
             if !target_legal {
                 state.log(crate::state::LogLevel::Event,

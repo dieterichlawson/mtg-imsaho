@@ -293,3 +293,50 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
         "the land was still a legal target, so that half of the spell happened \
          — the spell is not countered while one target remains (CR 608.2b)");
 }
+
+/// CR 608.2b applies to activated abilities too. The check is now in
+/// `stack.rs`'s `StackEntry::Ability` arm, which previously had none at all.
+///
+/// **Ignored**: it cannot pass yet, and the reason is a larger finding recorded
+/// in `audits/ghost_quarter.md`. `engine::actions::abilities` resolves an
+/// activated ability *immediately after pushing it* —
+///
+/// ```ignore
+/// behavior.on_activate_ability(state, object_id, ability_index, targets, registry);
+/// if state.stack.last().is_some_and(|e| matches!(e, StackEntry::Ability { .. })) {
+///     crate::stack::resolve_top_of_stack(state, registry);
+/// }
+/// ```
+///
+/// so no activated ability in the engine ever waits for priority, and nothing
+/// can be done in response to one. Until that is fixed there is no window in
+/// which to make a target illegal.
+#[test]
+#[ignore = "blocked on activated abilities resolving immediately instead of waiting for priority (CR 602.2a) — see audits/ghost_quarter.md"]
+fn an_activated_abilitys_targets_are_rechecked_when_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let quarter = named_permanent(&mut state, &reg, "Ghost Quarter", P0);
+    let victim = named_permanent(&mut state, &reg, "Forest", P1);
+    // Give P1 a basic to find, so "no search happened" cannot be for want of one.
+    let library_basic = state.create_object(
+        reg.get_id_by_name("Island").unwrap(), P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order.push(library_basic);
+
+    let state = activate_offered(&state, &reg, quarter, Some(Target::Object(victim)));
+    let mut state = state;
+
+    // Between activation and resolution the land becomes untargetable.
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: victim,
+        keyword: Keyword::Hexproof,
+    });
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+        "the land is no longer a legal target, so it is not destroyed");
+    assert_eq!(state.get_object(library_basic).unwrap().zone, Zone::Library,
+        "and none of the ability's other effects happen either — the search \
+         does not occur (CR 608.2b)");
+}

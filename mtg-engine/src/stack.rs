@@ -95,6 +95,30 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop();
             state.last_activated_x_value = x_value;
             let name = state.name_of(source_id, registry);
+
+            // CR 608.2b applies to abilities as well as spells, and this path
+            // used to skip the check entirely — an activated ability resolved
+            // against whatever it had targeted however the board had changed.
+            // Ghost Quarter's ruling is the plain statement of it: "If the
+            // targeted land is an illegal target by the time Ghost Quarter's
+            // ability resolves, it won't resolve and none of its effects will
+            // happen. The land's controller won't get to search for a basic
+            // land card."
+            let controller = state.get_object(source_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+            let targets: Vec<Target> = targets.into_iter()
+                .map(|t| match t {
+                    Target::Object(id)
+                        if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry) =>
+                            Target::Illegal,
+                    other => other,
+                })
+                .collect();
+            if !targets.is_empty() && targets.iter().all(|t| matches!(t, Target::Illegal)) {
+                state.log(LogLevel::Event,
+                    format!("{name} ability fizzled (all targets illegal)"));
+                return;
+            }
+
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
                 behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);

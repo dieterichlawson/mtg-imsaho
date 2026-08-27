@@ -101,8 +101,11 @@ fn ghost_quarter_may_choice_offered_when_no_basics() {
         })
         .collect();
 
+    // CR 602.2a: activating puts the ability on the stack; the destroy and the
+    // "may search" happen on resolution.
     reg.get(state.get_object(quarter).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, quarter, 0, &[Target::Object(victim)], &reg);
+        .on_activate_ability(&mut state, quarter, 1, &[Target::Object(victim)], &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert!(matches!(&state.awaiting_action,
         Some(AwaitingAction::ResolutionChoice {
@@ -139,8 +142,11 @@ fn ghost_quarter_declining_the_search_does_not_shuffle() {
         })
         .collect();
 
+    // CR 602.2a: activating puts the ability on the stack; the destroy and the
+    // "may search" happen on resolution.
     reg.get(state.get_object(quarter).unwrap().card_id).unwrap()
-        .on_activate_ability(&mut state, quarter, 0, &[Target::Object(victim)], &reg);
+        .on_activate_ability(&mut state, quarter, 1, &[Target::Object(victim)], &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
         choice: ResolvedChoice::ChosenTarget(None),
