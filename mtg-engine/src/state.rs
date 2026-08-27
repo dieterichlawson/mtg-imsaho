@@ -398,6 +398,7 @@ impl GameState {
             entering_copy_source: false,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
+            last_controller: None,
         };
         self.objects.insert(id, obj);
         id
@@ -519,6 +520,7 @@ impl GameState {
             entering_copy_source: false,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
+            last_controller: None,
         };
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
@@ -692,6 +694,7 @@ impl GameState {
                 // whose graveyard to count, and a card whose controller was
                 // never reset counted the wrong one. Last known information is
                 // already captured above in `pre_move_controller`.
+                obj.last_controller = Some(obj.controller);
                 obj.controller = obj.owner;
                 obj.tapped = false;
                 obj.summoning_sick = false;
@@ -1978,6 +1981,22 @@ impl GameState {
             .collect()
     }
 
+    /// Who controls this object, or — once it has left the battlefield — who
+    /// controlled it last (CR 608.2g).
+    ///
+    /// For anything still on the battlefield this is just `controller`. It
+    /// differs only for a permanent that has left, where `controller` has been
+    /// reset to the owner and the answer a resolving ability wants is the
+    /// player who controlled the permanent when it triggered.
+    #[must_use]
+    pub fn last_known_controller(&self, id: ObjectId) -> PlayerId {
+        let Some(obj) = self.get_object(id) else { return PlayerId(0) };
+        if obj.zone == Zone::Battlefield {
+            return obj.controller;
+        }
+        obj.last_controller.unwrap_or(obj.controller)
+    }
+
     /// Whether this permanent was declared as an attacker this turn (CR 508.1).
     ///
     /// Homicidal Brute's "if this creature didn't attack this turn" is the
@@ -2139,6 +2158,15 @@ pub struct GameObject {
     // Battlefield state
     pub tapped: bool,
     pub summoning_sick: bool,
+    /// Who controlled this permanent immediately before it left the
+    /// battlefield (CR 608.2g — last known information).
+    ///
+    /// A triggered ability on the stack outlives its source (CR 113.7a), so a
+    /// handler resolving after the permanent has died still has to know whose
+    /// ability it is. `controller` is reset to the owner on the way out, per
+    /// CR 108.4, so it cannot answer that. The Curse pair
+    /// `last_attached_to_player` exists for the same reason.
+    pub last_controller: Option<PlayerId>,
     /// The turn this permanent was last declared as an attacker, if any
     /// (CR 508.1). "Didn't attack this turn" is a plain fact about the game,
     /// asked by Homicidal Brute among others; it is not a triggered ability,

@@ -237,9 +237,8 @@ fn howlpack_alpha_creates_wolf_token_on_end_step() {
     let reg = registry();
     let mut state = game_at_step(Step::EndStep, P0);
     let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
-    // Transform to Howlpack Alpha
-    state.get_object_mut(mayor).unwrap().is_transformed = true;
-    state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
 
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
@@ -738,4 +737,36 @@ fn terror_of_kruin_pass_grants_menace_as_a_keyword() {
     assert!(state.has_keyword(terror, Keyword::Menace, &reg), "the Terror itself");
     assert!(state.has_keyword(wolf, Keyword::Menace, &reg), "another of your Werewolves");
     assert!(!state.has_keyword(human, Keyword::Menace, &reg), "but not a non-Werewolf");
+}
+
+/// CR 113.7a: a triggered ability on the stack exists independently of its
+/// source. "At the beginning of your end step, create a 2/2 green Wolf creature
+/// token" says nothing about Howlpack Alpha, so killing the Alpha in response to
+/// its own trigger does not stop the Wolf.
+///
+/// The handler used to require the source to still be on the battlefield *and*
+/// still transformed — and leaving the battlefield clears `is_transformed`, so a
+/// dead Alpha failed both checks and the token silently never appeared.
+#[test]
+fn howlpack_alphas_wolf_arrives_even_if_the_alpha_dies_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::EndStep, P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+
+    // The trigger goes on the stack...
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the end-step trigger is on the stack");
+
+    // ...and the Alpha is killed in response.
+    state.move_object(mayor, Zone::Graveyard, &reg);
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert_eq!(count_tokens_named(&state, "Wolf"), 1,
+        "the Wolf is created even though its source is gone");
+    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(state.get_object(wolf).unwrap().controller, P0,
+        "under the player who controlled the Alpha when it triggered");
 }

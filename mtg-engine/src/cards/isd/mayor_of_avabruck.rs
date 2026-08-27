@@ -111,14 +111,18 @@ impl CardBehavior for MayorOfAvabruck {
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
-            _ => return,
-        };
-        // Only create Wolf tokens on the back face (Howlpack Alpha) during controller's end step.
-        if !is_transformed {
-            return;
-        }
+        // CR 113.7a: the ability is on the stack independently of its source.
+        // "Create a 2/2 green Wolf creature token" names nothing about
+        // Howlpack Alpha, so killing the Alpha in response to its own trigger
+        // does not stop the Wolf. This used to return early unless the source
+        // was still on the battlefield *and* still transformed — and leaving
+        // the battlefield clears `is_transformed`, so a dead Alpha failed both.
+        //
+        // There is also nothing to re-check: step triggers are selected by
+        // face when they are collected (`face_trigger_description`), and the
+        // front face declares no end-step ability, so this hook is only ever
+        // reached for a card that was Howlpack Alpha when the end step began.
+        let controller = state.last_known_controller(self_id);
         state.create_token_with_subtypes(
             "Wolf",
             controller,

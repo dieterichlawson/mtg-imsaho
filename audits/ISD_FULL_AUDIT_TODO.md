@@ -13,8 +13,8 @@ bugs but it is not this. This list is the per-card pass.
 | x | Civilized Scholar | `civilized_scholar.rs` | 240 | 12 | 5 |
 | x | Garruk Relentless | `garruk_relentless.rs` | 301 | 9 | 0 |
 | x | Liliana of the Veil | `liliana_of_the_veil.rs` | 274 | 9 | 0 |
-|   | Mayor of Avabruck | `mayor_of_avabruck.rs` | 135 | 7 | 4 |
-|   | Screeching Bat | `screeching_bat.rs` | 145 | 7 | 3 |
+| x | Mayor of Avabruck | `mayor_of_avabruck.rs` | 135 | 7 | 4 |
+| x | Screeching Bat | `screeching_bat.rs` | 145 | 7 | 3 |
 |   | Cloistered Youth | `cloistered_youth.rs` | 115 | 7 | 4 |
 |   | Wooden Stake | `wooden_stake.rs` | 102 | 8 | 2 |
 |   | Daybreak Ranger | `daybreak_ranger.rs` | 135 | 7 | 2 |
