@@ -426,6 +426,55 @@ fn paraselene_destroys_enchantments_and_gains_life() {
     assert_eq!(state.get_player(P0).life, 22, "Should gain 1 life per enchantment destroyed");
 }
 
+/// "Destroy all **enchantments**" — and nothing else. The test above puts two
+/// enchantments on an otherwise empty battlefield, so a version that destroyed
+/// every permanent would pass it.
+#[test]
+fn paraselene_leaves_everything_that_is_not_an_enchantment() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchantment = named_permanent(&mut state, &reg, "Glorious Anthem", P1);
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let artifact = named_permanent(&mut state, &reg, "Cobbled Wings", P1);
+
+    let spell = castable_spell(&mut state, &reg, "Paraselene", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    assert_eq!(state.get_object(enchantment).unwrap().zone, Zone::Graveyard);
+    for (id, what) in [(creature, "creature"), (land, "land"), (artifact, "artifact")] {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield,
+            "a {what} is not an enchantment");
+    }
+    assert_eq!(state.get_player(P0).life, 21, "one life, for the one enchantment");
+}
+
+/// "You gain 1 life for each enchantment **destroyed this way**" — so an
+/// enchantment that survived the destruction is not one of them.
+///
+/// This is the sentence a naive implementation gets wrong by counting the
+/// enchantments it found rather than the ones that died, and the only reason
+/// the card needs `try_destroy_all`'s results at all.
+#[test]
+fn paraselene_gains_no_life_for_an_enchantment_it_could_not_destroy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let doomed = named_permanent(&mut state, &reg, "Glorious Anthem", P1);
+    let survivor = named_permanent(&mut state, &reg, "Intangible Virtue", P1);
+    grant_keyword(&mut state, survivor, Keyword::Indestructible);
+
+    let spell = castable_spell(&mut state, &reg, "Paraselene", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    assert_eq!(state.get_object(doomed).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(survivor).unwrap().zone, Zone::Battlefield,
+        "indestructible answers a mass destroy like any other (CR 702.12b)");
+    assert_eq!(state.get_player(P0).life, 21,
+        "one life, for the one that was destroyed this way");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Into the Maw of Hell
 // ══════════════════════════════════════════════════════════════════

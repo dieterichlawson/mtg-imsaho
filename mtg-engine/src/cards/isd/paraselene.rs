@@ -27,10 +27,12 @@ impl CardBehavior for Paraselene {
 
         // Find all enchantments on the battlefield.
         let enchantments: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
-            .filter(|o| {
-                state.face_data(o.id, registry)
-                    .is_some_and(|d| d.card_types.contains(&CardType::Enchantment))
-            })
+            // `has_card_type` rather than a raw `face_data` read: it unions
+            // the object's own types with its active face's, so a token or a
+            // permanent granted the type counts. Nothing in this set is an
+            // enchantment that way, but the accessor is the one every other
+            // card asks through.
+            .filter(|o| state.has_card_type(o.id, CardType::Enchantment, registry))
             .map(|o| o.id)
             .collect();
 
