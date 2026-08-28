@@ -319,6 +319,57 @@ fn lost_in_the_mist_needs_a_target_for_both_halves() {
 // Bramblecrush
 // -------------------------------------------------------------------------
 
+/// "Target **noncreature** permanent" is about what the permanent is, not about
+/// which of the other types it has. Manor Gargoyle is an artifact *creature*,
+/// so it is not a legal target — an implementation asking "is it an artifact,
+/// enchantment or land?" rather than "is it noncreature" would take it.
+///
+/// The table above uses a plain creature, which that implementation also
+/// refuses; only a permanent that is a creature *and* something else separates
+/// the two readings.
+#[test]
+fn bramblecrush_cannot_target_an_artifact_that_is_also_a_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P1);
+    assert!(state.is_creature(gargoyle, &reg), "test precondition");
+    assert!(state.has_card_type(gargoyle, CardType::Artifact, &reg),
+        "test precondition: it is an artifact as well");
+    let plain_artifact = named_permanent(&mut state, &reg, "Cobbled Wings", P1);
+
+    let crush = castable_spell(&mut state, &reg, "Bramblecrush", P0);
+    let offered = offered_targets(&state, &reg, crush);
+
+    assert!(!offered.contains(&Target::Object(gargoyle)),
+        "an artifact creature is a creature; offered {offered:?}");
+    assert!(offered.contains(&Target::Object(plain_artifact)),
+        "a plain artifact is a legal target, so the refusal above is about \
+         creature-ness; offered {offered:?}");
+}
+
+/// "Target noncreature permanent" carries no controller restriction, so your
+/// own permanents are legal targets too. Every existing case points it at the
+/// opponent.
+#[test]
+fn bramblecrush_may_target_your_own_permanents() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = named_permanent(&mut state, &reg, "Forest", P0);
+    let theirs = named_permanent(&mut state, &reg, "Forest", P1);
+
+    let crush = castable_spell(&mut state, &reg, "Bramblecrush", P0);
+    let offered = offered_targets(&state, &reg, crush);
+
+    assert!(offered.contains(&Target::Object(mine)), "your own; offered {offered:?}");
+    assert!(offered.contains(&Target::Object(theirs)), "and theirs; offered {offered:?}");
+
+    let state = cast_and_resolve(&state, &reg, crush, vec![Target::Object(mine)]);
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Graveyard,
+        "and it does destroy your own when you point it there");
+}
+
 /// Bramblecrush should use the destruction pipeline for non-creature permanents.
 /// An indestructible enchantment should survive Bramblecrush.
 #[test]

@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Bramblecrush — {2}{G}{G} sorcery. Destroy target noncreature permanent.
 pub struct Bramblecrush;
@@ -26,22 +26,18 @@ impl CardBehavior for Bramblecrush {
         TargetRequirement::PermanentWithFilter(TargetFilter::Noncreature)
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                let obj = match state.get_object(*id) {
-                    Some(o) if o.zone == Zone::Battlefield => o,
-                    _ => return false,
-                };
-                state.face_data(obj.id, registry)
-                    .is_some_and(|d| !d.card_types.contains(&CardType::Creature))
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
-
+    /// No `is_valid_target`: "noncreature permanent on the battlefield" is
+    /// exactly `PermanentWithFilter(Noncreature)`, which `legal_actions`
+    /// applies when offering targets and `stack::is_target_legal` re-applies on
+    /// the way down along with the zone check (CR 608.2b).
+    ///
+    /// The two also asked slightly different questions: the card read
+    /// `face_data`, i.e. printed card types, where `TargetFilter::Noncreature`
+    /// is `!state.is_creature(..)`, which counts the object's own types and the
+    /// P/T sentinel a token or an animated permanent carries. Nothing in this
+    /// set makes those answers differ — swapping the filter to the printed
+    /// reading fails no test — so this is a restatement being removed rather
+    /// than a disagreement being resolved.
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // "Destroy" always goes through the destruction pipeline,
         // which checks indestructible and regeneration.
