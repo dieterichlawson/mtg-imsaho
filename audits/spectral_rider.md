@@ -40,3 +40,26 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:27
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)
+**Type line**: Creature — Spirit Knight
+**P/T**: 2/2
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/spectral_rider.rs` matches: {W}{W}, Spirit Knight (both subtypes), 2/2, Intimidate. French vanilla otherwise.
+
+### Tricky interactions checked
+- Intimidate reads the attacker's CURRENT colors and the blocker's artifact-ness at block time (shared `can_block_attacker` path). Both arms tested with this card: same-color blocks, off-color can't, artifact creature always can. PASS
+- It is white via its mana cost; a color-changing effect would move who can block it (continuous read). PASS
+- Spirit: lord-buffed via shared paths. PASS
+
+### Test coverage
+- Color arm: `mtg-engine/tests/keywords.rs` `intimidate_blocks_different_color`
+- Artifact arm: `keywords.rs` `artifact_creature_blocks_intimidate`
+- No rulings on Scryfall for this card.
+
+Mutation check: emptying `keywords` (Intimidate) fails `intimidate_blocks_different_color`. Bites.
