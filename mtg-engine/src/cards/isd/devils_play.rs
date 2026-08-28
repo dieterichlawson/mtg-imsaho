@@ -8,10 +8,16 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 /// Devil's Play deals X damage to any target.
 /// Flashback {X}{R}{R}{R}.
 ///
-/// Simplified: Since the engine doesn't yet support choosing X at cast time,
-/// X is computed as the total mana the player had minus the colored requirement ({R})
-/// when cast normally, or minus {R}{R}{R} when cast via flashback.
-/// The X value is stored on the spell object by the engine's casting code.
+/// X is the player's, announced as the spell is cast (CR 601.2b): the engine
+/// puts up a `ChooseXFunding` prompt, taps what the player names for it and
+/// records the result as `x_value` on the spell object. This card reads that
+/// number and nothing else — which is also why the flashback cost needs no
+/// special case here, its {R}{R}{R} being paid by the same machinery.
+///
+/// The comment that stood here described X as "computed as the total mana the
+/// player had minus the colored requirement", under a heading of "Simplified:
+/// since the engine doesn't yet support choosing X at cast time". It does; the
+/// note outlived the limitation it described.
 pub struct DevilsPlay;
 
 impl CardBehavior for DevilsPlay {
@@ -39,13 +45,11 @@ impl CardBehavior for DevilsPlay {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        // Read X from the stored x_value on the spell object.
+        // No guard on X being zero: CR 120.8 says a source that would deal 0
+        // damage deals none, and `damage::deal_damage` is where that lives.
         let x = state.get_object(object_id)
             .and_then(|o| o.x_value)
             .unwrap_or(0);
-        if x > 0 {
-            crate::cards::helpers::resolve_damage(state, object_id, targets, x, registry);
-        } else {
-        }
+        crate::cards::helpers::resolve_damage(state, object_id, targets, x, registry);
     }
 }
