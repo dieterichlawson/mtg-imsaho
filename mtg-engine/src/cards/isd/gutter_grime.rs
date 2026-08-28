@@ -37,19 +37,18 @@ impl CardBehavior for GutterGrime {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
+    /// "Whenever a **nontoken** creature **you control** dies" — both are
+    /// conditions on the event (CR 603.2).
+    ///
+    /// `dead_is_token` comes from the death event rather than the object: SBA
+    /// 704.5d has already taken the token out of `state.objects` by the time
+    /// anything asks, so its own record of itself is gone (CR 608.2g).
+    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _registry: &CardRegistry) -> bool {
+        !dead_is_token && dead_controller == crate::cards::helpers::controller_of(state, self_id)
+    }
+
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
-        // Must be our creature.
-        if dead_controller != controller {
-            return;
-        }
-        // Must be a nontoken creature. Use the captured `dead_is_token` because
-        // by the time this trigger resolves, SBA 704.5d has already removed the
-        // dead token from `state.objects`, so we can't read `is_token` from the
-        // object any more.
-        if dead_is_token {
-            return;
-        }
         // Put a slime counter on Gutter Grime.
         state.add_counters(self_id, CounterType::Slime, 1);
         let slime_count = state.get_counter_count(self_id, CounterType::Slime);

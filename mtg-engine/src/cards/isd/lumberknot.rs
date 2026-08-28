@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, CounterType};
 use crate::actions::Target;
 
 /// Lumberknot — {2}{G}{G} 1/1 Treefolk. Hexproof.
@@ -35,8 +35,8 @@ impl CardBehavior for Lumberknot {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        if state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        }
+        // `add_counters` is where CR 121.1 says a Lumberknot that has left the
+        // battlefield is not there to take one.
+        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
     }
 }

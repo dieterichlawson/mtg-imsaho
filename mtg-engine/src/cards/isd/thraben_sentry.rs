@@ -51,18 +51,33 @@ impl CardBehavior for ThrabenSentry {
     }
 
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        // The trigger untaps and transforms the Sentry, so a Sentry that is
-        // gone has nothing for it to do.
+    /// "Whenever another creature **you control** dies" — a condition on the
+    /// event (CR 603.2). The front-face check beside it is CR 712.8d: the
+    /// ability is printed on Thraben Sentry, not on Thraben Militia, so a
+    /// transformed Sentry does not have it to trigger.
+    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) -> bool {
+        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
+        !is_transformed && dead_controller == crate::cards::helpers::controller_of(state, self_id)
+    }
+
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
+        // Whether it triggered was settled as the creature died. What is left
+        // is the effect, and there are two ways it has nothing to do.
+        //
+        // The Sentry is no longer on the battlefield: there is nothing there
+        // to transform (CR 400.7).
         if !crate::cards::helpers::still_on_battlefield(state, self_id) {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
-        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
-        // Only trigger when another creature WE control dies, and only on front face.
-        if dead_controller != controller || is_transformed {
+        // Or it is already transformed. Ruling: "If multiple creatures you
+        // control die simultaneously, Thraben Sentry's ability will trigger
+        // that many times. Only the first one to resolve will cause it to
+        // transform." Both triggered — they were collected while it was still
+        // a Sentry — and the second must not flip it back, or ask.
+        if state.get_object(self_id).is_some_and(|o| o.is_transformed) {
             return;
         }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // "You may transform Thraben Sentry" — present a choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

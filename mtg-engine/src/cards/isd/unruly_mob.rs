@@ -32,15 +32,18 @@ impl CardBehavior for UnrulyMob {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        // The counter goes on the Mob itself, so a Mob that is gone has
-        // nothing for this trigger to do.
-        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
-            return;
-        }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
-        if dead_controller == controller {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        }
+    /// "another creature **you control** dies" — a condition on the event, so
+    /// it is read as the creature dies (CR 603.2). "Another" is the
+    /// collector's: a permanent never sees its own death in the watcher scan.
+    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) -> bool {
+        dead_controller == crate::cards::helpers::controller_of(state, self_id)
+    }
+
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
+        // Ruling: a Mob that died alongside the creature "won't be on the
+        // battlefield as its triggered ability resolves. It can't be saved by
+        // the +1/+1 counter that would have been put on it." That is CR 121.1,
+        // and `add_counters` is where it lives.
+        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
     }
 }

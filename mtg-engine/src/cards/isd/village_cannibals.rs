@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 use crate::actions::Target;
 
 /// Village Cannibals — {2}{B} 2/2 Human.
@@ -32,12 +32,13 @@ impl CardBehavior for VillageCannibals {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
-        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
-        }
-        if state.has_subtype(dead_id, "Human", registry) {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        }
+    /// "another **Human** dies" — a condition on the event (CR 603.2), so a
+    /// Zombie dying is not this ability's event and puts nothing on the stack.
+    fn should_trigger_on_creature_dies(&self, state: &GameState, _self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, registry: &CardRegistry) -> bool {
+        state.has_subtype(dead_id, "Human", registry)
+    }
+
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
+        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
     }
 }
