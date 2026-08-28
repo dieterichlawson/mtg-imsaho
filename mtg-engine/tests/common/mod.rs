@@ -208,6 +208,24 @@ pub fn activate_via_hooks(
             if let Some((counter_type, amount)) = ab.counter_cost {
                 state.remove_counters(object_id, counter_type, amount);
             }
+            // "Sacrifice this permanent:" is part of the cost too, and leaving
+            // it unpaid is not a small difference: Full Moon's Rise kept
+            // granting its Werewolves +1/+0 and trample after the ability that
+            // is supposed to cost you the enchantment had resolved.
+            //
+            // The variants that sacrifice *some other* creature are the
+            // player's choice, which `legal_actions` enumerates and this
+            // helper has no way to make — those go through `activate`.
+            match ab.sacrifice_cost {
+                mtg_engine::cards::SacrificeCost::SacrificeThis => {
+                    mtg_engine::destruction::sacrifice(state, object_id, registry);
+                }
+                mtg_engine::cards::SacrificeCost::None => {}
+                mtg_engine::cards::SacrificeCost::SacrificeCreature
+                | mtg_engine::cards::SacrificeCost::SacrificeAnotherCreature => panic!(
+                    "activate_via_hooks cannot choose which creature to sacrifice; \
+                     use `activate`, which picks from what legal_actions offers"),
+            }
         }
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
