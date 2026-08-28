@@ -181,7 +181,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Gruesome Deformity | `gruesome_deformity.rs` | 34 | 3 | 0 |
 | x | Sensory Deprivation | `sensory_deprivation.rs` | 34 | 3 | 0 |
 | x | Brimstone Volley | `brimstone_volley.rs` | 33 | 3 | 0 |
-|   | Dream Twist | `dream_twist.rs` | 33 | 3 | 0 |
+| x | Dream Twist | `dream_twist.rs` | 33 | 3 | 0 |
 |   | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 53 | 2 | 1 |
 |   | Rakish Heir | `rakish_heir.rs` | 53 | 2 | 1 |
 |   | Creepy Doll | `creepy_doll.rs` | 51 | 2 | 1 |

@@ -247,8 +247,9 @@ fn dream_twist_mills_three() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Stock P1's library with 5 cards.
+    // Stock both libraries, so "whose" is a question the test can answer.
     let lib_cards = stock_library(&mut state, &reg, P1, 5);
+    stock_library(&mut state, &reg, P0, 5);
 
     // Cast Dream Twist from hand. Cost: {U}.
     let dt = castable_spell(&mut state, &reg, "Dream Twist", P0);
@@ -262,6 +263,33 @@ fn dream_twist_mills_three() {
     assert_eq!(gy_count, 3, "Dream Twist should mill 3 cards");
     assert_eq!(state.get_player(P1).library_order.len(), 2,
         "P1 library should have 2 cards remaining");
+    assert_eq!(state.get_player(P0).library_order.len(), 5,
+        "and only the targeted player's — the caster's library is untouched");
+}
+
+/// "Target *player*", not "target opponent": the caster is a legal target and
+/// milling yourself is a real reason to cast it here (Splinterfright, Spider
+/// Spawning, and the flashback cards all want your own graveyard filled).
+///
+/// The pair of directions is what pins the target down. A resolve that always
+/// milled the opponent, or always the caster, passes one of these two tests.
+#[test]
+fn dream_twist_mills_the_caster_when_it_targets_them() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+
+    let dt = castable_spell(&mut state, &reg, "Dream Twist", P0);
+    state = cast_and_resolve(&state, &reg, dt, vec![Target::Player(P0)]);
+
+    let gy_count = mine.iter()
+        .filter(|&&id| state.get_object(id).unwrap().zone == Zone::Graveyard)
+        .count();
+    assert_eq!(gy_count, 3, "the caster milled themselves");
+    assert_eq!(state.get_player(P1).library_order.len(), 5,
+        "and the opponent was not the target");
 }
 
 /// Travel Preparations adds a +1/+1 counter to a target creature.
