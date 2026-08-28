@@ -221,7 +221,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 38 | 2 | 0 |
 | x | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 36 | 2 | 0 |
 | x | Boneyard Wurm | `boneyard_wurm.rs` | 36 | 2 | 0 |
-|   | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 36 | 2 | 0 |
+| x | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 36 | 2 | 0 |
 |   | Altar's Reap | `altars_reap.rs` | 35 | 2 | 0 |
 |   | Infernal Plunge | `infernal_plunge.rs` | 34 | 2 | 0 |
 |   | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 34 | 2 | 0 |

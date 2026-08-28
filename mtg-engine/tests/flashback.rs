@@ -406,6 +406,13 @@ fn gnaw_to_the_bone_gains_life() {
         state.get_object_mut(c).unwrap().name = "Grizzly Bears".into();
     }
 
+    // "creature **card** in **your** graveyard" — a land in yours and a
+    // creature card in the opponent's are each one word wrong.
+    let land = state.create_object(reg.get_id_by_name("Forest").unwrap(), P0, Zone::Graveyard, None, None);
+    state.get_object_mut(land).unwrap().name = "Forest".into();
+    let theirs = state.create_object(bears_id, P1, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(theirs).unwrap().name = "Grizzly Bears".into();
+
     let life_before = state.get_player(P0).life;
 
     // Cast Gnaw to the Bone. Cost: {2}{G}.
