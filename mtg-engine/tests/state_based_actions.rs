@@ -163,14 +163,18 @@ fn bug_grimoire_legend_rule_not_applied() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
     // After returning, we should have two legendary Grimgrins controlled by P0.
-    let grimgrins: Vec<_> = state.objects.values()
+    let grimgrins: Vec<_> = state.objects_in_id_order().into_iter()
         .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
-        .map(|o| (o.id, o.is_legendary))
+        .map(|o| o.id)
         .collect();
     assert_eq!(grimgrins.len(), 2,
         "Test setup: should have 2 Grimgrins on battlefield before SBA. Got: {grimgrins:?}");
-    assert!(grimgrins.iter().all(|(_, leg)| *leg),
-        "Both Grimgrins must have is_legendary=true for SBA to detect them. Got: {grimgrins:?}");
+    // Asks the property, not the `is_legendary` cache this used to assert.
+    // Only the ordinary "resolve a permanent spell" path ever set that flag, so
+    // requiring it here was requiring every card that reanimates a legend to
+    // remember to stamp it — which is the bug the legend rule keeps hitting.
+    assert!(grimgrins.iter().all(|&id| state.is_legendary(id, &registry)),
+        "both Grimgrins are legendary, however they got to the battlefield");
 
     // SBA should present a legend-rule choice.
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);

@@ -247,13 +247,22 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(keep_id), PendingEffect::LegendRuleKeep { player, legend_name }) => {
             // Keep the chosen permanent, move all other legendaries with the same name to graveyard.
-            let to_remove: Vec<ObjectId> = state.objects_in_id_order().into_iter()
-                .filter(|o| o.zone == crate::types::Zone::Battlefield
-                    && o.controller == *player
-                    && o.is_legendary
-                    && o.name == *legend_name
-                    && o.id != *keep_id)
-                .map(|o| o.id)
+            // Through `state.is_legendary`, the same question the SBA asked to
+            // raise this choice. Reading `o.is_legendary` here instead meant
+            // the two halves could disagree: the choice was offered for a
+            // reanimated legend and then removed nothing, because only the
+            // ordinary "resolve a permanent spell" path fills that flag in.
+            let candidates: Vec<(ObjectId, crate::ids::PlayerId, String)> =
+                state.objects_in_id_order().into_iter()
+                    .filter(|o| o.zone == crate::types::Zone::Battlefield)
+                    .map(|o| (o.id, o.controller, o.name.clone()))
+                    .collect();
+            let to_remove: Vec<ObjectId> = candidates.into_iter()
+                .filter(|(id, controller, name)| controller == player
+                    && name == legend_name
+                    && id != keep_id
+                    && state.is_legendary(*id, registry))
+                .map(|(id, _, _)| id)
                 .collect();
             for id in to_remove {
                 state.move_object(id, crate::types::Zone::Graveyard, registry);

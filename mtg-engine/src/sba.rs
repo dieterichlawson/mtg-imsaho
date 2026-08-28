@@ -261,13 +261,23 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         {
             use std::collections::HashMap as Map;
             let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
-            for obj in state.objects_in_id_order() {
-                if obj.zone == Zone::Battlefield && obj.is_legendary {
-                    legend_groups.entry((obj.controller, obj.name.clone()))
-                        .or_default()
-                        .push(obj.id);
+            let battlefield: Vec<(crate::ids::ObjectId, crate::ids::PlayerId, String)> =
+                state.objects_in_id_order().into_iter()
+                    .filter(|o| o.zone == Zone::Battlefield)
+                    .map(|o| (o.id, o.controller, o.name.clone()))
+                    .collect();
+            for (id, controller, name) in battlefield {
+                // Read from the active face, not from the `is_legendary` cache
+                // that only the ordinary "resolve a permanent spell" path fills
+                // in — a reanimated or returned legend is still a legend.
+                if state.is_legendary(id, registry) {
+                    legend_groups.entry((controller, name)).or_default().push(id);
                 }
             }
+            // Sorted: which duplicate a player is asked about first should not
+            // depend on HashMap order.
+            let mut legend_groups: Vec<_> = legend_groups.into_iter().collect();
+            legend_groups.sort_by(|a, b| (a.0.0.0, &a.0.1).cmp(&(b.0.0.0, &b.0.1)));
             for ((player, name), ids) in legend_groups {
                 if ids.len() > 1 {
                     // Player must choose which to keep.

@@ -2228,6 +2228,28 @@ impl GameState {
         self.get_object(id).map_or((None, None), |o| (o.power, o.toughness))
     }
 
+    /// Whether this permanent is legendary (CR 205.4), read from the active
+    /// face rather than from a flag.
+    ///
+    /// `obj.is_legendary` is a cache, and only the default "resolve a permanent
+    /// spell" path ever filled it in. Everything that puts a permanent onto the
+    /// battlefield another way — reanimation, a leaves-the-battlefield return,
+    /// a blink — had to remember to stamp it, or the legend rule (CR 704.5j)
+    /// silently skipped that permanent. Grimoire of the Dead remembered;
+    /// nothing made the others.
+    ///
+    /// The flag survives for objects with no face to read: a token copy of a
+    /// legendary creature is legendary and has no card behind it.
+    #[must_use]
+    pub fn is_legendary(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        if let Some(data) = self.face_data(id, registry) {
+            if data.supertypes.contains(&crate::types::Supertype::Legendary) {
+                return true;
+            }
+        }
+        self.get_object(id).is_some_and(|o| o.is_legendary)
+    }
+
     /// Colors of the object: the union of any granted at runtime (Grimoire of
     /// the Dead's black) and those derived from the active face's mana cost.
     /// (Color indicators are not modeled.)
