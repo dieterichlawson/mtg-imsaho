@@ -608,3 +608,63 @@ fn combat_ends_when_the_attacker_leaves_combat_between_damage_steps() {
     assert_eq!(state.step, Step::EndCombat,
         "combat must end; leaving the flag set looped Step::CombatDamage");
 }
+
+// ---------------------------------------------------------------------------
+// A card that hands out a blocking restriction
+// ---------------------------------------------------------------------------
+
+/// Crossway Vampire: "When this creature enters, target creature can't block
+/// this turn."
+///
+/// The rule itself — `TemporaryEffect::CantBlock` keeping a creature out of
+/// `eligible_blockers` — is covered above. What had no test is that this card
+/// applies it: making its ETB hook do nothing at all passed the whole
+/// workspace, because its only coverage was about which targets are offered.
+///
+/// Three claims here: the targeted creature can't block, another creature of
+/// the same controller still can, and the restriction is "this turn" — it goes
+/// away with the turn, through the engine's cleanup rather than by hand.
+#[test]
+fn crossway_vampire_stops_its_target_blocking_for_the_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let stopped = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    let free = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+
+    let vampire = named_permanent(&mut state, &reg, "Crossway Vampire", P0);
+    state.events.push(GameEvent::EnteredBattlefield { object: vampire, controller: P0 });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    // "target creature" reaches any creature, so with three on the battlefield
+    // the controller is asked which (CR 603.3d).
+    let options = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.clone(),
+        other => panic!("the trigger should ask which creature, got {other:?}"),
+    };
+    assert!(options.contains(&Target::Object(stopped)) && options.contains(&Target::Object(free)),
+        "both of the opponent's creatures are legal targets, got {options:?}");
+    let mut state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(stopped))),
+        },
+        &reg,
+    );
+    // Answering the target choice puts the trigger on the stack; it still has
+    // to resolve before anything happens (CR 603.3).
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let eligible = combat::eligible_blockers(&state, P1, &reg);
+    assert!(!eligible.contains(&stopped),
+        "the targeted creature can't block this turn");
+    assert!(eligible.contains(&free),
+        "and the one beside it still can — the restriction is on a target, not a sweep");
+
+    advance_to_next_turn(&mut state, &reg);
+
+    assert!(combat::eligible_blockers(&state, P1, &reg).contains(&stopped),
+        "'this turn' — the restriction is gone once the turn is");
+}
