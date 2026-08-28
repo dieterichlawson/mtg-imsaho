@@ -121,36 +121,37 @@ fn a_token_copy_of_a_werewolf_cannot_transform() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: `card_state` (like hatchling counters) persists through zone changes.
-/// When Ludevic's Test Subject dies and is reanimated, it should start fresh
-/// but keeps its old counter state.
+/// CR 400.7: a permanent that leaves the battlefield and comes back is a new
+/// object, so nothing it accumulated comes with it. For Ludevic's Test Subject
+/// that means its hatchling counters: killed at four counters and reanimated,
+/// it starts over at zero rather than one activation from a 13/13.
+///
+/// This used to hand-insert a `card_state["hatchling_counters"]` key, back when
+/// the card kept its own tally there instead of using real counters. The key
+/// has not existed since; the test asserted that a map nobody writes to is
+/// empty. Both halves are worth checking — the counters *and* card_state — so
+/// check them on the state the card actually keeps.
 #[test]
-fn bug_card_state_not_reset_on_zone_change() {
+fn a_reanimated_permanent_brings_back_neither_counters_nor_card_state() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Ludevic's Test Subject
     let subject = named_permanent(&mut state, &registry, "Ludevic's Test Subject", P0);
 
-    // Add some hatchling counters via card_state
-    if let Some(obj) = state.get_object_mut(subject) {
-        obj.card_state.insert("hatchling_counters".into(),
-            mtg_engine::ids::ObjectId(3));
-    }
+    // Four activations short of the flip.
+    state.add_counters(subject, CounterType::Hatchling, 4);
+    state.get_object_mut(subject).unwrap()
+        .card_state.insert("scratch".into(), mtg_engine::ids::ObjectId(3));
+    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 4);
 
-    // Move to graveyard (dies)
+    // It dies and is reanimated.
     state.move_object(subject, Zone::Graveyard, &registry);
-
-    // Move back to battlefield (reanimated)
     state.move_object(subject, Zone::Battlefield, &registry);
 
-    // card_state should be empty — new battlefield instance
-    let has_counters = state.get_object(subject).unwrap()
-        .card_state.contains_key("hatchling_counters");
-
-    // BUG: card_state persists through zone changes
-    assert!(!has_counters,
-        "card_state should be reset when permanent re-enters the battlefield");
+    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0,
+        "counters do not survive the trip through the graveyard (CR 121.2)");
+    assert!(state.get_object(subject).unwrap().card_state.is_empty(),
+        "and neither does anything else the old object was carrying");
 }
 
 // -------------------------------------------------------------------------

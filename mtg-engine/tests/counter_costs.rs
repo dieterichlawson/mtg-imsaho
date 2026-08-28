@@ -101,31 +101,26 @@ fn removing_more_counters_than_present_does_not_underflow() {
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug 76-002 (`audits/AUDIT_BUGS.md)`: Ludevic's Test Subject stores
-/// its hatchling counters in `obj.card_state` (abused as an `ObjectId`)
-/// instead of using `state.add_counters`. Per CR 122 these are real
-/// counters; proliferate (CR 701.24) and counter-removal effects
-/// can't see them in the abused-card-state form.
+/// Hatchling counters are counters (CR 122.1), so they live in the engine's
+/// counter pipeline where proliferate and counter-removal effects can see
+/// them. Ludevic's Test Subject used to keep its own tally in
+/// `obj.card_state`, an `ObjectId`-valued map abused as a number:
+///
+/// ```ignore
+/// obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
+/// ```
+///
+/// Nothing outside the card could read that, and nothing could add to it.
 ///
 /// Oracle (Ludevic's Test Subject): "{1}{U}: Put a hatchling counter
 /// on this creature. Then if there are five or more hatchling
 /// counters on it, remove all of them and transform it."
 ///
-/// Failure mode: `ludevics_test_subject.rs` does
-/// ```
-/// obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
-/// ```
-/// instead of using the real counter pipeline (`state.add_counters` /
-/// `state.get_counter_count`). Mikaeus the Lunarch in the same set
-/// stores +1/+1 counters correctly via `CounterType::PlusOnePlusOne`
-/// — that's the model to follow.
-///
-/// We assert the bug-fingerprint: after activating the hatchling
-/// ability, `obj.card_state` should NOT contain a `hatchling_counters`
-/// key — the counter must live in the real counter pipeline so other
-/// effects can interact with it.
+/// The fingerprint this used to assert — that `card_state` has no
+/// `hatchling_counters` key — could be satisfied by a card that put the tally
+/// somewhere else again, so assert the counter is where it belongs instead.
 #[test]
-fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
+fn ludevic_hatchling_counters_live_in_the_counter_pipeline() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -134,14 +129,13 @@ fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
     activate_via_hooks(&mut state, &registry, ludevic, 0, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
-    let obj = state.get_object(ludevic).unwrap();
+    assert_eq!(
+        state.get_counter_count(ludevic, CounterType::Hatchling), 1,
+        "the hatchling counter has to be a real counter for proliferate and \
+         counter removal to interact with it (CR 122)");
     assert!(
-        !obj.card_state.contains_key("hatchling_counters"),
-        "Ludevic's Test Subject should not store hatchling counters in \
-         obj.card_state — they're real CR 122 counters and need to live \
-         in the engine's counter pipeline so proliferate and counter \
-         removal can interact with them. Bug 76-002: card_state still \
-         contains 'hatchling_counters' after activation. card_state = {:?}",
-        obj.card_state,
+        state.get_object(ludevic).unwrap().card_state.is_empty(),
+        "and not a private tally alongside it: card_state = {:?}",
+        state.get_object(ludevic).unwrap().card_state,
     );
 }

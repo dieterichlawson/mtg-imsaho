@@ -36,6 +36,10 @@ impl CardBehavior for LudevicsTestSubject {
     fn back_face_data(&self) -> Option<CardData> {
         Some(CardData {
             name: "Ludevic's Abomination".into(),
+            // CR 204.2: the back face has no mana cost, so its colour comes
+            // from the printed colour indicator. Without one it resolved to
+            // colourless and dodged every "blue creature" effect in the set.
+            color_indicator: vec![Color::Blue],
             card_types: vec![CardType::Creature],
             subtypes: vec!["Lizard".into(), "Horror".into()],
             power: Some(13),
@@ -48,11 +52,13 @@ impl CardBehavior for LudevicsTestSubject {
 
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield && !o.is_transformed => o,
-            _ => return vec![],
-        };
-        let _ = obj;
+        // The ability is printed on the front face only, so it can only be
+        // activated while that face is up (CR 712.8a).
+        let front_face_up = state.get_object(object_id)
+            .is_some_and(|o| o.zone == Zone::Battlefield && !o.is_transformed);
+        if !front_face_up {
+            return vec![];
+        }
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}{U}: Put a hatchling counter. At 5, transform.".into(),
@@ -69,30 +75,36 @@ impl CardBehavior for LudevicsTestSubject {
         }]
     }
 
+    /// "Put a hatchling counter on this creature. Then if there are five or
+    /// more hatchling counters on it, remove all of them and transform it."
+    ///
+    /// Every part of that is unconditional, and none of it asks which face is
+    /// up. This used to open with `if is_transformed { return }`, on the
+    /// reasoning that "the back face has no activated abilities" — but which
+    /// abilities the back face has says nothing about what an ability already
+    /// on the stack does. The ability exists on the stack independently of its
+    /// source (CR 113.7a), transforming is not a zone change so the permanent
+    /// is the same object throughout (CR 400.7, CR 712.8), and "this creature"
+    /// is a self-reference to that object rather than to a permanent with a
+    /// particular name. So five surplus activations held on the
+    /// stack really do stack hatchling counters onto Ludevic's Abomination and
+    /// flip it back.
+    ///
+    /// Pre-errata the line read "Put a hatchling counter on Ludevic's Test
+    /// Subject", which is where the old contrary reading came from; the name
+    /// is gone from the current Oracle text.
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        // If already transformed, this ability shouldn't do anything (back face has no activated abilities).
-        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
-            return;
-        }
-        // Add a hatchling counter via the standard counter pipeline.
         state.add_counters(object_id, CounterType::Hatchling, 1);
-        let new_count = state.get_object(object_id)
-            .and_then(|o| o.counters.get(&CounterType::Hatchling).copied())
-            .unwrap_or(0);
+        let new_count = state.get_counter_count(object_id, CounterType::Hatchling);
 
         if new_count >= 5 {
-            // Remove all hatchling counters and transform.
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.counters.remove(&CounterType::Hatchling);
-            }
+            // "remove all of them" — all, not five, so a permanent pushed past
+            // five by proliferate loses the surplus too.
+            state.remove_counters(object_id, CounterType::Hatchling, new_count);
             helpers::apply_transform(state, object_id, registry);
         } else {
             state.log(crate::state::LogLevel::Event,
                 format!("Ludevic's Test Subject: hatchling counter added ({new_count}/5)"));
         }
-    }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
     }
 }

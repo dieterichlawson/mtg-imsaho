@@ -470,6 +470,129 @@ fn ludevics_test_subject_transforms_at_five_counters() {
     assert!(state.has_subtype(subject, "Horror", &reg));
 }
 
+/// CR 204.2: the back face carries no mana cost, so its colour comes from its
+/// colour indicator. Without one Ludevic's Abomination was colourless and slid
+/// past every "blue creature" effect in the set.
+#[test]
+fn ludevics_abomination_is_blue() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
+    assert_eq!(state.colors_of(subject, &reg), vec![Color::Blue],
+        "the front face is blue from its {{1}}{{U}} cost");
+
+    state.add_counters(subject, CounterType::Hatchling, 4);
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(subject).unwrap().is_transformed);
+    assert_eq!(state.colors_of(subject, &reg), vec![Color::Blue],
+        "the back face's colour indicator is blue (CR 204.2)");
+}
+
+/// "Then if there are five or more hatchling counters on it" counts counters,
+/// not activations. Anything that puts hatchling counters on it — proliferate
+/// (CR 701.28), Doubling Season — moves it toward the flip, so the code cannot
+/// keep its own tally of how many times the ability has resolved.
+#[test]
+fn ludevic_counts_hatchling_counters_it_did_not_put_there_itself() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
+    state.add_counters(subject, CounterType::Hatchling, 4);
+
+    // A single activation is now the fifth counter.
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(subject).unwrap().is_transformed,
+        "one activation on top of four counters from elsewhere reaches five");
+}
+
+/// "remove all of them" — all, not five. A permanent pushed past the threshold
+/// before the ability resolves loses the surplus with the rest.
+#[test]
+fn ludevic_transforming_removes_every_hatchling_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
+    state.add_counters(subject, CounterType::Hatchling, 8);
+
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(subject).unwrap().is_transformed);
+    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0,
+        "all nine counters go, not just five");
+}
+
+/// The ability is printed on the front face, so it can only be activated while
+/// that face is up (CR 712.8a).
+#[test]
+fn ludevics_abomination_offers_no_activated_ability() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
+    state.add_counters(subject, CounterType::Hatchling, 4);
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.get_object(subject).unwrap().is_transformed);
+
+    let card_id = state.get_object(subject).unwrap().card_id;
+    let abilities = reg.get(card_id).unwrap().activated_abilities(&state, subject, &reg);
+    assert!(abilities.is_empty(),
+        "Ludevic's Abomination's only printed ability is trample");
+}
+
+/// Once the ability is on the stack it is its own object and resolves on its
+/// own terms (CR 113.7a); transforming is not a zone change, so the permanent
+/// underneath it is the same object throughout (CR 400.7, CR 712.8). Nothing
+/// in "put a hatchling counter on this creature ... remove all of them and
+/// transform it" asks which face is up, so activations held back after the
+/// flip land their counters on Ludevic's Abomination and, at five, flip it
+/// back.
+///
+/// The card used to open its resolution with `if is_transformed { return }`,
+/// reasoning that the back face has no activated abilities — which is true and
+/// beside the point, since the ability is no longer on the permanent.
+#[test]
+fn surplus_activations_keep_working_after_the_flip() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
+
+    // Five activations reach the flip.
+    state.add_counters(subject, CounterType::Hatchling, 4);
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.get_object(subject).unwrap().is_transformed,
+        "precondition: it is Ludevic's Abomination now");
+
+    // Four more copies of the ability, held on the stack from before the flip,
+    // resolve one at a time.
+    for expected in 1..=4 {
+        activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+        assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), expected,
+            "the counter goes on the permanent whichever face is up");
+        assert!(state.get_object(subject).unwrap().is_transformed,
+            "four counters is not five");
+    }
+
+    // The fifth removes them all and transforms it — back to the front face.
+    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let obj = state.get_object(subject).unwrap();
+    assert!(!obj.is_transformed, "\"transform it\" flips whichever face is up");
+    assert_eq!(obj.name, "Ludevic's Test Subject");
+    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0);
+}
+
 // -------------------------------------------------------------------------
 // Thraben Sentry
 // -------------------------------------------------------------------------
