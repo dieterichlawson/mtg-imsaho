@@ -1,7 +1,7 @@
 //! Creatures with several interacting abilities — transform, a trigger and an
 //! activated ability at once. The largest of the per-card files.
 //!
-//! Cards covered (20), so this is greppable by name as well as by rule:
+//! Cards covered (21), so this is greppable by name as well as by rule:
 //!
 //! - Back from the Brink
 //! - Bitterheart Witch
@@ -12,6 +12,7 @@
 //! - Dearly Departed
 //! - Evil Twin
 //! - Galvanic Juggernaut
+//! - Geistcatcher's Rig
 //! - Gutter Grime
 //! - Heretic's Punishment
 //! - Kessig Cagebreakers
@@ -2841,4 +2842,83 @@ fn bitterheart_witch_may_search_and_decline_the_only_curse() {
     assert_eq!(state.get_object(curse_obj).unwrap().zone, Zone::Library,
         "declining leaves the Curse in the library");
     assert_eq!(state.get_object(curse_obj).unwrap().attached_to_player, None);
+}
+
+// ── Geistcatcher's Rig ───────────────────────────────────────────
+
+/// "When this creature enters, **you may** have it deal **4** damage to target
+/// creature **with flying**."
+///
+/// Ruling (2011-09-22): "The target creature with flying is chosen when the
+/// ability triggers and goes on the stack. You choose whether or not
+/// Geistcatcher's Rig will deal 4 damage to it when the ability resolves."
+///
+/// So there are two moments, and three claims across them, none of which had a
+/// test: only a flyer may be targeted, the choice is a "may", and the amount is
+/// 4. `hexproof_filter.rs` checks that an opponent's hexproof flyer is not
+/// offered, which needs none of these to be right.
+///
+/// `accept` runs the same board both ways.
+fn geistcatchers_rig_hits_the_flyer(accept: bool) -> (mtg_engine::state::GameState, ObjectId, ObjectId) {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let flyer = named_permanent(&mut state, &reg, "Abbey Griffin", P1);
+    assert!(state.has_keyword(flyer, Keyword::Flying, &reg), "test precondition");
+    let grounded = ready_creature(&mut state, P1, 3, 3);
+
+    let rig = named_permanent(&mut state, &reg, "Geistcatcher's Rig", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: rig, controller: P0,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    // CR 603.3d: the target is locked as the trigger goes on the stack, and
+    // the flyer is the only legal one — the 3/3 is not a "creature with flying".
+    let locked: Vec<Target> = state.stack.iter().filter_map(|e| match e {
+        mtg_engine::state::StackEntry::Trigger(t) => Some(t.source.chosen_targets.clone()),
+        mtg_engine::state::StackEntry::Spell(_) | mtg_engine::state::StackEntry::Ability { .. } => None,
+    }).flatten().collect();
+    assert!(locked.contains(&Target::Object(flyer)),
+        "the flyer is the trigger's target");
+    assert!(!locked.contains(&Target::Object(grounded)),
+        "'target creature with flying' does not reach a creature without it");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // "you may" — a prompt, not a fait accompli.
+    assert!(matches!(&state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { optional: true, .. }, ..
+        })),
+        "the controller is asked whether to deal the damage, got {:?}",
+        state.awaiting_action);
+    assert_eq!(state.get_object(flyer).unwrap().damage_marked, 0,
+        "and nothing has happened yet");
+
+    let choice = if accept {
+        ResolvedChoice::ChosenTarget(Some(Target::Object(flyer)))
+    } else {
+        ResolvedChoice::ChosenTarget(None)
+    };
+    let state = engine::submit_action(&state, &Action::ResolveChoice { choice }, &reg);
+    (state, flyer, grounded)
+}
+
+#[test]
+fn geistcatchers_rig_deals_four_to_the_flyer_when_you_say_yes() {
+    let (state, flyer, grounded) = geistcatchers_rig_hits_the_flyer(true);
+    assert_eq!(state.get_object(flyer).unwrap().damage_marked, 4,
+        "four damage, not some other number");
+    assert_eq!(state.get_object(grounded).unwrap().damage_marked, 0,
+        "and only to the creature it targeted");
+}
+
+#[test]
+fn geistcatchers_rig_deals_nothing_when_you_decline() {
+    let (state, flyer, _) = geistcatchers_rig_hits_the_flyer(false);
+    assert_eq!(state.get_object(flyer).unwrap().damage_marked, 0,
+        "'you may' — declining deals no damage at all");
+    assert!(state.awaiting_action.is_none(),
+        "and the trigger is finished, not still asking");
 }
