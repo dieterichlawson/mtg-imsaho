@@ -93,7 +93,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Woodland Cemetery | `woodland_cemetery.rs` | 73 | 4 | 0 |
 | x | Inquisitor's Flail | `inquisitors_flail.rs` | 70 | 4 | 0 |
 | x | Cobbled Wings | `cobbled_wings.rs` | 69 | 4 | 0 |
-|   | Gavony Township | `gavony_township.rs` | 69 | 4 | 0 |
+| x | Gavony Township | `gavony_township.rs` | 69 | 4 | 0 |
 |   | Lost in the Mist | `lost_in_the_mist.rs` | 68 | 4 | 0 |
 |   | Murder of Crows | `murder_of_crows.rs` | 88 | 3 | 1 |
 |   | Frightful Delusion | `frightful_delusion.rs` | 67 | 4 | 0 |
