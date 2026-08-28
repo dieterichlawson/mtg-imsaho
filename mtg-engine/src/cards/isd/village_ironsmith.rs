@@ -41,7 +41,7 @@ impl CardBehavior for VillageIronsmith {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(1),
-            oracle_text: "First strike\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Ironfang.".into(),
+            oracle_text: "First strike\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::FirstStrike],
             triggered_abilities: vec![
                 TriggeredAbilityDef {

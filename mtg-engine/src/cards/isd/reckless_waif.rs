@@ -39,7 +39,7 @@ impl CardBehavior for RecklessWaif {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(2),
-            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Merciless Predator.".into(),
+            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,

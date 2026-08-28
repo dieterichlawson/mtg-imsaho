@@ -682,3 +682,109 @@ fn no_card_reads_its_sources_controller_by_hand() {
          Use `helpers::controller_of`, which answers CR 608.2g.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// Strip parenthesised reminder text and collapse the leftover whitespace.
+///
+/// Reminder text is printed on the card but says nothing the rules do not
+/// already say, and the set is inconsistent about carrying it — Scryfall gives
+/// Gatstaf Howler's intimidate with reminder text and the code writes it
+/// without. That difference is not drift worth failing a build over; a changed
+/// *rule* is.
+fn without_reminder_text(s: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    for c in s.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Every card's oracle text — both faces — says what Scryfall says.
+///
+/// `data/oracle_cache.json` is fetched, not written alongside the card, so this
+/// is a real cross-check. Cards are errata'd, and a card whose text has drifted
+/// is a card being audited against the wrong words: seven back faces still read
+/// "transform Ironfang" long after the front faces were updated to "transform
+/// this creature", and Ulvenwald Primordials still regenerated itself by name.
+/// Nothing behavioural depended on those strings, which is exactly why they sat
+/// there — the text is what a reader, a log line, and an audit compare against.
+#[test]
+fn oracle_text_says_what_scryfall_says() {
+    let raw = std::fs::read_to_string("../data/oracle_cache.json")
+        .expect("oracle cache is checked in at data/oracle_cache.json");
+
+    // The cache is pretty-printed: cards are keyed at four-space indent, a back
+    // face is a nested object, and both carry an "oracle_text" line.
+    let mut front: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut back: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut current: Option<String> = None;
+    let mut in_back = false;
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("    \"") {
+            if let Some(end) = rest.find("\": {") {
+                current = Some(rest[..end].to_string());
+                in_back = false;
+            }
+        }
+        let t = line.trim_start();
+        if t.starts_with("\"back_face\": {") {
+            in_back = true;
+        }
+        if let Some(rest) = t.strip_prefix("\"oracle_text\": \"") {
+            // The value ends at the closing quote, and exactly one — text that
+            // itself ends in an escaped quote (`... this creature.\""`) loses
+            // its last character to a greedy trim.
+            let raw_text = rest.trim_end().strip_suffix(',').unwrap_or(rest.trim_end());
+            let raw_text = raw_text.strip_suffix('"').unwrap_or(raw_text);
+            let text = raw_text
+                .replace("\\n", "\n")
+                .replace("\\\"", "\"")
+                .replace("\\u2014", "\u{2014}")
+                .replace("\\u2019", "\u{2019}");
+            if let Some(name) = current.clone() {
+                if in_back { back.insert(name, text); } else { front.insert(name, text); }
+            }
+        }
+    }
+    assert!(front.len() > 200, "parsed only {} front texts from the cache", front.len());
+
+    // A basic land's printed text *is* its reminder text — Scryfall gives
+    // "({T}: Add {U}.)" and nothing else, because the mana ability is intrinsic
+    // (CR 305.6) rather than printed. The cards state it as the ability it is.
+    const INTRINSIC_MANA: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"];
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        if INTRINSIC_MANA.contains(&name) {
+            continue;
+        }
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        if let Some(want) = front.get(name) {
+            checked += 1;
+            if without_reminder_text(want) != without_reminder_text(&data.oracle_text) {
+                offenders.push(format!(
+                    "{name}\n    Scryfall: {:?}\n    card    : {:?}", want, data.oracle_text));
+            }
+        }
+        if let (Some(want), Some(face)) = (back.get(name), reg.get(id).and_then(|b| b.back_face_data())) {
+            checked += 1;
+            if without_reminder_text(want) != without_reminder_text(&face.oracle_text) {
+                offenders.push(format!(
+                    "{name} // {}\n    Scryfall: {:?}\n    card    : {:?}",
+                    face.name, want, face.oracle_text));
+            }
+        }
+    }
+    assert!(checked > 200, "only cross-checked {checked} faces");
+    assert!(offenders.is_empty(),
+        "{} card face(s) state oracle text the fetched cache disagrees with:\n\n{}\n",
+        offenders.len(), offenders.join("\n\n"));
+}

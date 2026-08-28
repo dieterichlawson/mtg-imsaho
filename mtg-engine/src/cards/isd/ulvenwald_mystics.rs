@@ -43,7 +43,7 @@ impl CardBehavior for UlvenwaldMystics {
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "{G}: Regenerate Ulvenwald Primordials.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Ulvenwald Primordials.".into(),
+            oracle_text: "{G}: Regenerate this creature.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,

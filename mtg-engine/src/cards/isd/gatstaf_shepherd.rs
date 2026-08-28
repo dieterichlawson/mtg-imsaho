@@ -40,7 +40,7 @@ impl CardBehavior for GatstafShepherd {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "Intimidate\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Gatstaf Howler.".into(),
+            oracle_text: "Intimidate\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::Intimidate],
             triggered_abilities: vec![
                 TriggeredAbilityDef {

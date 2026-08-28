@@ -40,7 +40,7 @@ impl CardBehavior for VillagersOfEstwald {
             subtypes: vec!["Werewolf".into()],
             power: Some(4),
             toughness: Some(6),
-            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack of Estwald.".into(),
+            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,

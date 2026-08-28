@@ -40,7 +40,7 @@ impl CardBehavior for TormentedPariah {
             subtypes: vec!["Werewolf".into()],
             power: Some(6),
             toughness: Some(4),
-            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Rampaging Werewolf.".into(),
+            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,

@@ -40,7 +40,7 @@ impl CardBehavior for GrizzledOutcasts {
             subtypes: vec!["Werewolf".into()],
             power: Some(7),
             toughness: Some(7),
-            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Krallenhorde Wantons.".into(),
+            oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
