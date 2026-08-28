@@ -150,3 +150,34 @@ fn a_choice_answered_in_the_wrong_shape_is_refused() {
         "the target question is still unanswered");
     assert_eq!(state.get_player(P1).life, life_before);
 }
+
+/// A player is not a creature, and "target creature" has to say so.
+///
+/// The requirement decides what *kind* of thing a target can be, and the
+/// player arm of the re-check used to ask only whether the player could be
+/// targeted at all — so every creature-, permanent-, card- and spell-shaped
+/// requirement accepted a player. Nothing offers such a target, which is
+/// exactly why it went unnoticed: it is only reachable through a submitted
+/// one, and both clients submit their own.
+///
+/// Rebuke is "Destroy target attacking creature", declared `CreatureWithFilter`.
+#[test]
+fn a_player_is_not_a_legal_target_for_a_spell_that_wants_a_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P1);
+    state.priority_player = Some(P1);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    attacks_unblocked(&mut state, attacker, P1);
+    let rebuke = castable_spell(&mut state, &reg, "Rebuke", P1);
+    let life_before = state.get_player(P0).life;
+
+    let state = cast_onto_stack(&state, &reg, rebuke, vec![Target::Player(P0)]);
+
+    assert_eq!(state.get_object(rebuke).unwrap().zone, Zone::Hand,
+        "the spell never left the hand");
+    assert!(state.stack.is_empty());
+    assert_eq!(state.get_player(P0).life, life_before);
+    assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Battlefield,
+        "and nothing else was destroyed in its place");
+}

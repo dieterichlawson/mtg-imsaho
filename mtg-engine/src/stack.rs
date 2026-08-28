@@ -151,10 +151,39 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
         // than restating it — plus the requirement's own restriction, which
         // `can_target_player` does not know about.
         Target::Player(pid) => {
-            if matches!(inner_req, TargetRequirement::OpponentOnly) && *pid == caster {
-                return false;
-            }
-            crate::engine::can_target_player(state, *pid, caster, registry)
+            // Which requirements take a player at all, named one by one so a
+            // new one has to answer the question rather than inherit an
+            // answer. This used to reject only `OpponentOnly` targeting its
+            // own caster and accept a player for everything else, so "target
+            // creature" accepted a player — at the cast check and again at the
+            // CR 608.2b re-check on resolution. The offer lists never produce
+            // such a target, but neither client picks a whole offered action:
+            // both assemble one from per-slot choices, so this is the check
+            // that has to hold.
+            let takes_a_player = match inner_req {
+                TargetRequirement::PlayerOnly
+                | TargetRequirement::AnyTarget
+                | TargetRequirement::PlayerOrPlaneswalker => true,
+                TargetRequirement::OpponentOnly => *pid != caster,
+                // Everything else names a card, a permanent, or a spell.
+                TargetRequirement::None
+                | TargetRequirement::Creature
+                | TargetRequirement::CreatureWithFilter(_)
+                | TargetRequirement::Spell
+                | TargetRequirement::PermanentWithFilter(_)
+                | TargetRequirement::GraveyardCard
+                | TargetRequirement::GraveyardCreature
+                | TargetRequirement::GraveyardCreatureOfSubtype(_)
+                | TargetRequirement::GraveyardCardOwnedByCaster
+                | TargetRequirement::GraveyardCardOwnedByOpponent
+                | TargetRequirement::GraveyardCardOwnedByTargetPlayer
+                | TargetRequirement::ExileCard => false,
+                // Unwrapped above, before `inner_req` was taken.
+                TargetRequirement::TwoTargets(..)
+                | TargetRequirement::UpToTargets(..)
+                | TargetRequirement::ModalChoice(_) => false,
+            };
+            takes_a_player && crate::engine::can_target_player(state, *pid, caster, registry)
         }
     }
 }
