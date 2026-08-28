@@ -350,6 +350,82 @@ fn paraselene_destroys_enchantments_and_gains_life() {
 // Into the Maw of Hell
 // ══════════════════════════════════════════════════════════════════
 
+/// "Destroy target land. Into the Maw of Hell deals 13 damage to target
+/// creature." Both halves, in one cast.
+///
+/// This section header had no test under it, while the file's own list of
+/// covered cards named the card — the rest of its coverage lives in
+/// `fizzle.rs` and `characteristics_targeting.rs` and is all about targeting.
+/// Nothing anywhere asserted the spell's plain effect.
+#[test]
+fn into_the_maw_of_hell_destroys_the_land_and_burns_the_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let maw = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+
+    let state = cast_and_resolve(&state, &reg, maw,
+        vec![Target::Object(land), Target::Object(creature)]);
+
+    assert_eq!(state.get_object(land).unwrap().zone, Zone::Graveyard,
+        "the land is destroyed");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 13,
+        "and the creature takes 13, not some other number");
+    assert!(state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::NonCombatDamageDealt { .. })),
+        "a sorcery's damage is not combat damage — the distinction is what \
+         lifelink and Brimstone Volley's morbid read");
+    assert!(state.get_object(creature).unwrap().damaged_by.contains(&maw),
+        "and the source is recorded, which is what 'dealt damage by' effects read");
+}
+
+/// "**Destroy** target land" goes through the destruction pipeline, so an
+/// indestructible land survives — and the other half of the spell happens
+/// anyway, because the two halves are independent.
+#[test]
+fn into_the_maw_of_hell_cannot_destroy_an_indestructible_land() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    grant_keyword(&mut state, land, Keyword::Indestructible);
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let maw = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+
+    let state = cast_and_resolve(&state, &reg, maw,
+        vec![Target::Object(land), Target::Object(creature)]);
+
+    assert_eq!(state.get_object(land).unwrap().zone, Zone::Battlefield,
+        "'destroy' does not move an indestructible permanent");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 13,
+        "the creature still takes its 13");
+}
+
+/// Ruling: "Into the Maw of Hell targets both the land and the creature. You
+/// can only cast it if you can choose a legal target for both." CR 601.2c —
+/// with only one of the two kinds on the battlefield there is no legal set of
+/// targets, so the spell is not castable at all.
+#[test]
+fn into_the_maw_of_hell_needs_a_legal_target_for_both_halves() {
+    let reg = registry();
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let maw = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+    assert!(!can_cast(&state, &reg, maw), "an empty battlefield offers neither");
+
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    assert!(!can_cast(&state, &reg, maw), "a land alone is not enough");
+
+    state.move_object(land, Zone::Graveyard, &reg);
+    ready_creature(&mut state, P1, 5, 5);
+    assert!(!can_cast(&state, &reg, maw), "and neither is a creature alone");
+
+    named_permanent(&mut state, &reg, "Forest", P1);
+    assert!(can_cast(&state, &reg, maw), "with one of each it is castable");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Maw of the Mire
 // ══════════════════════════════════════════════════════════════════

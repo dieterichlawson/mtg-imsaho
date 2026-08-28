@@ -294,6 +294,64 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
          — the spell is not countered while one target remains (CR 608.2b)");
 }
 
+/// The mirror of the case above — the *land* is the one that becomes illegal —
+/// and then the case the same ruling ends on: "If both targets are illegal at
+/// this time, Into the Maw of Hell won't resolve."
+///
+/// The existing test covers only the creature half, which a card that had
+/// simply forgotten to check its first target would also pass.
+#[test]
+fn into_the_maw_of_hell_keeps_the_half_whose_target_is_still_legal() {
+    let reg = registry();
+
+    // Only the land becomes illegal: the creature still burns.
+    {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let land = named_permanent(&mut state, &reg, "Forest", P1);
+        let creature = ready_creature(&mut state, P1, 5, 5);
+        let spell = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+        let mut state = cast_onto_stack(&state, &reg, spell,
+            vec![Target::Object(land), Target::Object(creature)]);
+
+        state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+            target: land,
+            keyword: Keyword::Hexproof,
+        });
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert_eq!(state.get_object(land).unwrap().zone, Zone::Battlefield,
+            "the land is no longer targetable, so it is not destroyed");
+        assert_eq!(state.get_object(creature).unwrap().damage_marked, 13,
+            "but the creature was still legal and takes its 13");
+    }
+
+    // Both become illegal: the spell is countered by game rules and does
+    // nothing at all.
+    {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let land = named_permanent(&mut state, &reg, "Forest", P1);
+        let creature = ready_creature(&mut state, P1, 5, 5);
+        let spell = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+        let mut state = cast_onto_stack(&state, &reg, spell,
+            vec![Target::Object(land), Target::Object(creature)]);
+
+        for target in [land, creature] {
+            state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+                target,
+                keyword: Keyword::Hexproof,
+            });
+        }
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert_eq!(state.get_object(land).unwrap().zone, Zone::Battlefield,
+            "no legal target remains, so the spell does not resolve");
+        assert_eq!(state.get_object(creature).unwrap().damage_marked, 0,
+            "neither half happens");
+        assert_eq!(state.get_object(spell).unwrap().zone, Zone::Graveyard,
+            "a countered spell still goes to its owner's graveyard (CR 608.2b)");
+    }
+}
+
 /// CR 608.2b applies to activated abilities too, and `stack.rs`'s
 /// `StackEntry::Ability` arm had no legality check at all — an ability
 /// resolved against whatever it had targeted however the board had changed.
