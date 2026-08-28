@@ -419,7 +419,7 @@ assert what they mean.
 - **`should_trigger_on_damage_to_player`** — Curiosity's "enchanted creature
   deals damage to an opponent" was checked at resolution, so the ability went
   on the stack every time any permanent damaged any player.
-- **CR 112.7a** — the EndStepTrigger arm required its source still be on the
+- **CR 113.7a** — the EndStepTrigger arm required its source still be on the
   battlefield, unlike the Upkeep and ETB arms beside it, so killing Reaper from
   the Abyss in response silently cancelled its destruction.
 - **CR 603.10a** — the simultaneous-death list was keyed on `CreatureDied`,

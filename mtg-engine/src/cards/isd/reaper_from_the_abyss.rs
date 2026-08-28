@@ -68,12 +68,12 @@ impl CardBehavior for ReaperFromTheAbyss {
         !state.has_subtype(obj.id, "Demon", registry)
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        // CR 112.7a: the ability is on the stack independently of the Reaper,
-        // so it resolves even if the Reaper has since been destroyed — the
-        // creature being destroyed is a different permanent and the Reaper's
-        // whereabouts are irrelevant to it. This used to return early here.
-        let _ = self_id;
+    /// CR 113.7a: the ability is on the stack independently of the Reaper, so
+    /// it resolves even if the Reaper has since been destroyed — the creature
+    /// being destroyed is a different permanent and the Reaper's whereabouts
+    /// are irrelevant to it. This used to return early on a battlefield check,
+    /// which is why the source is not read at all here.
+    fn on_end_step(&self, state: &mut GameState, _self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.4 checks the intervening-if a second time on resolution.
         if !state.creature_died_this_turn {
             return;

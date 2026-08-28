@@ -1,5 +1,5 @@
 //! A triggered ability, once on the stack, is independent of its source
-//! (CR 112.7a) — and the conditions in the trigger's own wording are read when
+//! (CR 113.7a) — and the conditions in the trigger's own wording are read when
 //! the event happens (CR 603.2), not when it resolves.
 
 mod common;
@@ -69,7 +69,7 @@ fn curiosity_only_triggers_for_its_own_creature_damaging_an_opponent() {
         "damage to its own controller is not damage to 'an opponent'");
 }
 
-/// CR 112.7a: destroying the source in response does not counter the ability.
+/// CR 113.7a: destroying the source in response does not counter the ability.
 #[test]
 fn reapers_end_step_trigger_resolves_after_the_reaper_dies() {
     let reg = registry();
@@ -88,7 +88,7 @@ fn reapers_end_step_trigger_resolves_after_the_reaper_dies() {
 
     assert_ne!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
         "the ability is on the stack independently of the Reaper, so killing \
-         the Reaper in response must not save the target (CR 112.7a)");
+         the Reaper in response must not save the target (CR 113.7a)");
 }
 
 /// A non-creature watcher destroyed alongside the creature it watches still
