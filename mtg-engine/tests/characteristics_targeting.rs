@@ -73,17 +73,24 @@ fn any_target_includes_non_token_planeswalker() {
 // A card's target filter has to match its own wording (CR 601.2c)
 // ---------------------------------------------------------------------------
 
-/// What each card's `is_valid_target` must reject, and — as importantly — what
-/// it must still accept.
+/// What each card's wording must reject, and — as importantly — what it must
+/// still accept.
 ///
 /// The rejection alone proves nothing: a filter that rejected everything, or an
 /// id the state has never heard of, satisfies it. One of the tests this
 /// replaces built its creature in `&mut state.clone()` and then asked about it
 /// in the original state, so the answer was "no such object" rather than
 /// anything about lands.
+///
+/// Asked through `legal_actions`, which is where a target is actually offered
+/// (CR 601.2c). This used to call `behavior.is_valid_target` directly, which
+/// tests one implementation layer rather than the rule: a card whose wording
+/// lives entirely in its `TargetRequirement` — the normal case, and where these
+/// two are heading — has no override at all, and the trait default returns
+/// `true` for everything, so every row would have passed vacuously.
 #[test]
 fn a_cards_target_filter_matches_its_wording() {
-    /// What to put on the battlefield and hand to `is_valid_target`.
+    /// What to put on the battlefield and offer to the spell.
     enum Candidate {
         /// A token with these subtypes — its characteristics live on the
         /// object, which is where the registry-only filters used to miss them.
@@ -122,11 +129,14 @@ fn a_cards_target_filter_matches_its_wording() {
         let good = place(accept);
         let bad = place(reject);
 
-        let behavior = reg.get(reg.get_id_by_name(name).unwrap()).unwrap();
-        assert!(behavior.is_valid_target(&state, P0, &good, &reg),
-            "{name} must accept {good:?}: {why}");
-        assert!(!behavior.is_valid_target(&state, P0, &bad, &reg),
-            "{name} must reject {bad:?}: {why}");
+        state.priority_player = Some(P0);
+        let spell = castable_spell(&mut state, &reg, name, P0);
+        let offered = offered_targets(&state, &reg, spell);
+
+        assert!(offered.contains(&good),
+            "{name} must accept {good:?}: {why}. offered: {offered:?}");
+        assert!(!offered.contains(&bad),
+            "{name} must reject {bad:?}: {why}. offered: {offered:?}");
     }
 }
 
