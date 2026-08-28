@@ -58,6 +58,70 @@ fn morbid_flag_set_on_creature_death() {
         "Morbid flag should be set after creature dies");
 }
 
+/// "Morbid — When this creature enters, if a creature died this turn, you gain
+/// 5 life."
+///
+/// The card's whole effect, which nothing tested: its only coverage was the
+/// registry-wide intervening-if sweep, and that asserts the trigger goes on
+/// the stack, not that anything happens when it resolves. Both arms, and the
+/// opponent's life as a control.
+#[test]
+fn hollowhenge_scavenger_gains_five_life_only_if_a_creature_died() {
+    let reg = registry();
+    for died in [true, false] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.creature_died_this_turn = died;
+        let before = state.get_player(P0).life;
+        let their_life = state.get_player(P1).life;
+
+        let scavenger = castable_spell(&mut state, &reg, "Hollowhenge Scavenger", P0);
+        let mut state = cast_and_resolve(&state, &reg, scavenger, vec![]);
+        triggers::process_triggers(&mut state, &reg);
+
+        assert_eq!(state.get_object(scavenger).unwrap().zone, Zone::Battlefield,
+            "the Scavenger arrives whether or not morbid is on");
+        assert_eq!(state.get_player(P0).life, if died { before + 5 } else { before },
+            "creature_died_this_turn = {died}");
+        assert_eq!(state.get_player(P1).life, their_life,
+            "'you gain 5 life' — the opponent gains nothing either way");
+    }
+}
+
+/// CR 608.2g: "you" is the Scavenger's last known controller. A permanent that
+/// has left the battlefield has its `controller` reset to its owner (CR 400.7),
+/// so a Scavenger killed in response to its own morbid trigger is the case
+/// where reading the field and reading last-known information differ.
+///
+/// CR 113.7a: killing it does not counter the trigger — the life is still
+/// gained.
+#[test]
+fn hollowhenge_scavengers_life_goes_to_its_last_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let scavenger = named_permanent(&mut state, &reg, "Hollowhenge Scavenger", P0);
+    // Owned by the opponent, controlled by P0.
+    state.get_object_mut(scavenger).unwrap().owner = P1;
+    let card_id = state.get_object(scavenger).unwrap().card_id;
+
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(scavenger, card_id, P0, "Hollowhenge Scavenger"),
+        event: TriggerEvent::SelfEntered,
+    }));
+    // Killed with its own trigger already on the stack.
+    state.move_object(scavenger, Zone::Graveyard, &reg);
+
+    let mine = state.get_player(P0).life;
+    let theirs = state.get_player(P1).life;
+    triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, mine + 5,
+        "the life goes to the player who controlled it, not the one who owns it");
+    assert_eq!(state.get_player(P1).life, theirs,
+        "and the owner gains nothing");
+}
+
 /// `creature_died_this_turn` resets at start of new turn.
 #[test]
 fn morbid_flag_resets_on_new_turn() {
