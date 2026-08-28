@@ -48,10 +48,19 @@ impl CardBehavior for TrepanationBlade {
 
     fn on_attacks(&self, state: &mut GameState, _self_id: ObjectId, attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
         // "Whenever equipped creature attacks, defending player reveals cards
-        // from the top of their library until they reveal a land card. That
-        // player puts those cards into their graveyard. Equipped creature gets
-        // +1/+0 until end of turn for each card put into that player's
-        // graveyard this way."
+        // from the top of their library until they reveal a land card. The
+        // creature gets +1/+0 until end of turn for each card revealed this
+        // way. That player puts the revealed cards into their graveyard."
+        //
+        // The bonus counts cards **revealed**, not cards that reached the
+        // graveyard — the card was errata'd from the latter, and the comment
+        // here still quoted the printed wording. Nothing in this set can
+        // separate the two counts, but the distinction is the card's, so the
+        // count is named for what it counts.
+        //
+        // Ruling: "The land card is counted when calculating the bonus, and it
+        // will be put into the graveyard with the other revealed cards" — so
+        // the land is revealed, counted, and milled before the loop stops.
         //
         // Both halves are about the attack that happened, so they read the
         // snapshot rather than the Blade's current `attached_to`. Killing the
@@ -62,7 +71,7 @@ impl CardBehavior for TrepanationBlade {
         let defending_player = attack.defending_player;
 
         // Reveal cards from defending player's library until a land is revealed.
-        let mut cards_milled = 0;
+        let mut cards_revealed = 0;
         loop {
             let card_id = {
                 let player = state.get_player(defending_player);
@@ -81,17 +90,17 @@ impl CardBehavior for TrepanationBlade {
             // "That player puts the revealed cards into their graveyard" —
             // library to graveyard, so it is a mill.
             crate::engine::mill_one(state, defending_player, card_id, registry);
-            cards_milled += 1;
+            cards_revealed += 1;
 
             if is_land {
                 break; // Stop after revealing a land.
             }
         }
 
-        if cards_milled > 0 {
+        if cards_revealed > 0 {
             state.log(crate::state::LogLevel::Event,
-                format!("Trepanation Blade: p{} milled {} card{}", defending_player.0, cards_milled,
-                    if cards_milled == 1 { "" } else { "s" }));
+                format!("Trepanation Blade: p{} revealed and milled {} card{}", defending_player.0, cards_revealed,
+                    if cards_revealed == 1 { "" } else { "s" }));
 
             // The buff needs a creature to land on: skipped if the attacker
             // died, and it goes on the creature that attacked even if the
@@ -100,12 +109,12 @@ impl CardBehavior for TrepanationBlade {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: creature_id,
-                        power_mod: cards_milled,
+                        power_mod: cards_revealed,
                         toughness_mod: 0,
                     }
                 );
                 state.log(crate::state::LogLevel::Event,
-                    format!("Trepanation Blade: equipped creature gets +{cards_milled}/+0"));
+                    format!("Trepanation Blade: equipped creature gets +{cards_revealed}/+0"));
             }
         }
     }

@@ -446,3 +446,67 @@ fn fight_damage_is_not_combat_damage_and_is_not_doubled() {
     assert_eq!(state.get_object(creature).unwrap().damage_marked, 5,
         "and the fight damage it takes is undoubled too");
 }
+
+/// Ruling: "The land card is counted when calculating the bonus, and it will be
+/// put into the graveyard with the other revealed cards."
+///
+/// The existing `trepanation_blade_stops_on_land` checks how many cards left
+/// the library but never the bonus, and it passes the Blade itself as the
+/// attacker — so the buff, if any, would have landed on the Equipment. This
+/// checks the number the ruling is about.
+#[test]
+fn trepanation_blades_bonus_counts_the_land_it_stopped_on() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
+    attacks_unblocked(&mut state, attacker, P1);
+
+    // P1's library: one nonland, then a land. Two cards revealed in total.
+    let nonland = state.create_object(
+        reg.get_id_by_name("Doom Blade").unwrap(), P1, Zone::Library, None, None);
+    let land = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P1, Zone::Library, None, None);
+    let spare = state.create_object(
+        reg.get_id_by_name("Doom Blade").unwrap(), P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order = vec![nonland, land, spare];
+
+    let behavior = reg.get(state.get_object(blade).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, blade,
+        mtg_engine::cards::AttackInfo::new(attacker, P1), &[], &reg);
+
+    assert_eq!(state.get_object(land).unwrap().zone, Zone::Graveyard,
+        "the land goes to the graveyard with the rest");
+    assert_eq!(state.get_object(spare).unwrap().zone, Zone::Library,
+        "and nothing past it is revealed");
+    assert_eq!(state.effective_power(attacker, &reg), Some(4),
+        "2/2 plus one for the nonland and one for the land it stopped on");
+}
+
+/// An all-nonland library is milled out rather than looping forever, and every
+/// card revealed counts.
+#[test]
+fn trepanation_blade_stops_at_an_empty_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
+    attacks_unblocked(&mut state, attacker, P1);
+
+    let cards: Vec<ObjectId> = (0..3)
+        .map(|_| state.create_object(
+            reg.get_id_by_name("Doom Blade").unwrap(), P1, Zone::Library, None, None))
+        .collect();
+    state.get_player_mut(P1).library_order = cards.clone();
+
+    let behavior = reg.get(state.get_object(blade).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, blade,
+        mtg_engine::cards::AttackInfo::new(attacker, P1), &[], &reg);
+
+    assert!(state.get_player(P1).library_order.is_empty(), "the library is emptied");
+    assert_eq!(state.effective_power(attacker, &reg), Some(5), "2/2 plus three revealed");
+}
