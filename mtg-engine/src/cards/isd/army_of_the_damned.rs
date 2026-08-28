@@ -35,7 +35,7 @@ impl CardBehavior for ArmyOfTheDamned {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         for _ in 0..13 {
             let token_ids = state.create_token_with_subtypes(
-                "Zombie", controller, 2, 2,
+                "", controller, 2, 2,
                 vec![Color::Black],
                 vec![CardType::Creature],
                 vec![],

@@ -434,6 +434,19 @@ impl GameState {
     /// Create a token on the battlefield with specific creature subtypes.
     /// If a permanent with `ReplacementEffect::DoubleTokens` is on the battlefield
     /// under the same controller, extra copies of the token are created.
+    ///
+    /// `name` is the name the *effect gives* the token, and is almost always
+    /// empty: CR 111.4 says a token's name is its subtypes plus the word
+    /// "Token" unless the effect names it, so a "1/1 white Spirit creature
+    /// token" is named `Spirit Token`. No card in this set names a token, so
+    /// the derived name is what every one of them gets.
+    ///
+    /// This used to be passed in by each card, and they disagreed — five cards
+    /// make a 1/1 white flying Spirit and four of them called it `Spirit` while
+    /// Moorland Haunt called it `Spirit Token`. Two cards in the set match
+    /// creatures *by name* (Sever the Bloodline's "all other creatures with the
+    /// same name", Evil Twin's granted ability), so the disagreement was
+    /// reachable, not cosmetic.
     pub fn create_token_with_subtypes(
         &mut self,
         name: &str,
@@ -446,6 +459,16 @@ impl GameState {
         subtypes: Vec<String>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
+        // CR 111.4: the token's name is its subtypes plus "Token", unless the
+        // effect gave it one.
+        let derived;
+        let name = if name.is_empty() && !subtypes.is_empty() {
+            derived = format!("{} Token", subtypes.join(" "));
+            derived.as_str()
+        } else {
+            name
+        };
+
         // CR 614: a replacement effect may change how many tokens are created
         // (Parallel Lives). Two doublers compound, which falls out of running
         // the event through each in turn.

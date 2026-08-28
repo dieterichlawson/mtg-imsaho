@@ -86,7 +86,7 @@ fn a_caller_that_mutates_the_returned_tokens_reaches_the_doubled_ones() {
     state.get_object_mut(army).unwrap().name = "Army of the Damned".into();
     reg.get(card_id).unwrap().on_resolve(&mut state, army, &[], &reg);
 
-    let zombies = count_tokens_named_by(&state, "Zombie", P0);
+    let zombies = count_tokens_named_by(&state, "Zombie Token", P0);
     assert!(zombies >= 26,
         "test precondition: 13 tokens doubled is 26, got {zombies}");
     for z in state.objects.values().filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0) {

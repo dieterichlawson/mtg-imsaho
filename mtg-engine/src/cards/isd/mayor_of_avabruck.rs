@@ -124,7 +124,7 @@ impl CardBehavior for MayorOfAvabruck {
         // reached for a card that was Howlpack Alpha when the end step began.
         let controller = state.last_known_controller(self_id);
         state.create_token_with_subtypes(
-            "Wolf",
+            "",
             controller,
             2, 2,
             vec![Color::Green],

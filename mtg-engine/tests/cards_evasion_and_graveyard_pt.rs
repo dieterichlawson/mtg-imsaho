@@ -141,7 +141,7 @@ fn spider_spawning_creates_tokens() {
     let ss = castable_spell(&mut state, &reg, "Spider Spawning", P0);
     state = cast_and_resolve(&state, &reg, ss, vec![]);
 
-    assert_eq!(count_tokens_named(&state, "Spider"), 4, "one Spider per creature card");
+    assert_eq!(count_tokens_named(&state, "Spider Token"), 4, "one Spider per creature card");
     for spider in state.objects.values().filter(|o| o.is_token && o.name == "Spider") {
         assert_eq!((spider.power, spider.toughness), (Some(1), Some(2)));
     }

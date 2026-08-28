@@ -56,7 +56,7 @@ impl CardBehavior for UndeadAlchemist {
         // Exile the milled creature card and create a 2/2 Zombie token.
         state.move_object(milled_object, Zone::Exile, registry);
         state.create_token_with_subtypes(
-            "Zombie", controller, 2, 2,
+            "", controller, 2, 2,
             vec![Color::Black],
             vec![CardType::Creature],
             vec![],

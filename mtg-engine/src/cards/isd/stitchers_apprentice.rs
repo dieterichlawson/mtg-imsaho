@@ -51,7 +51,7 @@ impl CardBehavior for StitchersApprentice {
 
         // Create a 2/2 blue Homunculus creature token.
         let _token_ids = state.create_token_with_subtypes(
-            "Homunculus", controller, 2, 2,
+            "", controller, 2, 2,
             vec![Color::Blue], vec![CardType::Creature],
             vec![], vec!["Homunculus".into()],
             registry,

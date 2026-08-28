@@ -16,7 +16,7 @@
 mod common;
 use common::*;
 use mtg_engine::cards::{CardData, CardRegistry};
-use mtg_engine::types::{CardType, Keyword, Supertype};
+use mtg_engine::types::{CardType, Color, Keyword, Step, Supertype};
 use std::collections::HashSet;
 
 /// Every card in the registry, by name.
@@ -452,4 +452,75 @@ fn every_card_with_a_back_face_declares_it() {
 
     assert_covers(checked, 15, "have a back face in the oracle cache");
     assert_none(&offenders, "declare the back face the oracle cache gives them");
+}
+
+/// CR 111.4: "If the spell or ability doesn't specify the name of the token,
+/// its name is the same as its subtype(s) plus the word 'Token.'"
+///
+/// No card in this set names a token, so every token it makes should be named
+/// that way. This mattered because five cards make a 1/1 white flying Spirit
+/// and they did not agree what to call it — four said `Spirit`, Moorland Haunt
+/// said `Spirit Token`. Two cards match creatures *by name* (Sever the
+/// Bloodline, Evil Twin's granted ability), so a Sever aimed at one kind of
+/// Spirit token would have missed the other.
+#[test]
+fn tokens_are_named_after_their_subtypes() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let cases: &[(&str, &[&str])] = &[
+        ("Spirit Token", &["Spirit"]),
+        ("Zombie Token", &["Zombie"]),
+        ("Wolf Token", &["Wolf"]),
+        ("Human Soldier Token", &["Human", "Soldier"]),
+    ];
+
+    for (expected, subtypes) in cases {
+        let ids = state.create_token_with_subtypes(
+            "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![],
+            subtypes.iter().map(|s| (*s).to_string()).collect(), &reg);
+        assert_eq!(state.get_object(ids[0]).unwrap().name, *expected,
+            "a token with subtypes {subtypes:?} is named {expected}");
+    }
+
+    // A token the effect *does* name keeps that name (CR 111.4's other half).
+    let ids = state.create_token_with_subtypes(
+        "Boo", P0, 1, 1, vec![Color::Red], vec![CardType::Creature], vec![],
+        vec!["Hamster".into()], &reg);
+    assert_eq!(state.get_object(ids[0]).unwrap().name, "Boo",
+        "a named token keeps its given name");
+}
+
+/// No card hardcodes a token name that the engine would derive anyway — that
+/// duplication is what let the set disagree with itself about Spirit tokens.
+#[test]
+fn no_card_hardcodes_a_derivable_token_name() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut offenders = Vec::new();
+    let mut files = Vec::new();
+    let mut stack = vec![src.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+    for path in files {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for (i, window) in text.split("create_token_with_subtypes(").skip(1).enumerate() {
+            let head: String = window.chars().take(60).collect();
+            let first_arg = head.trim_start().trim_start_matches('\n').trim_start();
+            if first_arg.starts_with('"') && !first_arg.starts_with("\"\"") {
+                offenders.push(format!("{name}: token call #{} passes a literal name: {}",
+                    i + 1, first_arg.lines().next().unwrap_or("")));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} card(s) name a token the engine derives from its subtypes:\n  {}\n\n\
+         Pass \"\" and let CR 111.4 name it.",
+        offenders.len(), offenders.join("\n  "));
 }

@@ -121,7 +121,7 @@ impl CardBehavior for BloodlineKeeper {
             0 => {
                 // Create a 2/2 Vampire token with flying.
                 state.create_token_with_subtypes(
-                    "Vampire",
+                    "",
                     controller,
                     2, 2,
                     vec![Color::Black],

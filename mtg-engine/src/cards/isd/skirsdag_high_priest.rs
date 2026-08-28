@@ -121,7 +121,7 @@ impl CardBehavior for SkirsdagHighPriest {
         };
 
         state.create_token_with_subtypes(
-            "Demon",
+            "",
             controller,
             5, 5,
             vec![Color::Black],

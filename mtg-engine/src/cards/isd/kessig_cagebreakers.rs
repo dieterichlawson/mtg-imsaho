@@ -56,7 +56,7 @@ impl CardBehavior for KessigCagebreakers {
 
         for _ in 0..creature_count {
             let token_ids = state.create_token_with_subtypes(
-                "Wolf", controller, 2, 2,
+                "", controller, 2, 2,
                 vec![Color::Green],
                 vec![CardType::Creature],
                 vec![],

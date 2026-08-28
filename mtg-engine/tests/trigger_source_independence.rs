@@ -295,7 +295,7 @@ fn geist_of_saint_traft_makes_its_angel_after_dying() {
     resolve_after_source_dies(&mut state, &reg, geist,
         TriggerEvent::Attacks { attacker: geist, defending_player: P1 });
 
-    assert_eq!(count_tokens_named(&state, "Angel"), 1,
+    assert_eq!(count_tokens_named(&state, "Angel Token"), 1,
         "CR 113.7a: killing the Geist with its attack trigger on the stack \
          still leaves the Angel");
 }
@@ -318,7 +318,7 @@ fn kessig_cagebreakers_counts_itself_among_the_dead() {
     resolve_after_source_dies(&mut state, &reg, cb,
         TriggerEvent::Attacks { attacker: cb, defending_player: P1 });
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 3,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 3,
         "CR 113.7a/608.2: the count happens on resolution, by which time the \
          Cagebreakers are themselves a creature card in the graveyard");
 }
@@ -337,13 +337,13 @@ fn endless_ranks_of_the_dead_makes_its_zombies_after_being_destroyed() {
         let obj = state.get_object_mut(z).unwrap();
         obj.is_token = true;
         obj.subtypes = vec!["Zombie".into()];
-        obj.name = "Zombie".into();
+        obj.name = "Zombie Token".into();
     }
-    assert_eq!(count_tokens_named(&state, "Zombie"), 4, "test setup");
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 4, "test setup");
 
     resolve_after_source_dies(&mut state, &reg, ranks, TriggerEvent::Upkeep);
 
-    assert_eq!(count_tokens_named(&state, "Zombie"), 6,
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 6,
         "CR 113.7a: four Zombies makes two more, even though the enchantment \
          that counted them is gone");
 }
@@ -384,7 +384,7 @@ fn undead_alchemist_exiles_and_makes_its_zombie_after_dying() {
 
     assert_eq!(state.get_object(milled).unwrap().zone, Zone::Exile,
         "CR 113.7a: the exile still happens after the Alchemist is destroyed");
-    assert_eq!(count_tokens_named(&state, "Zombie"), 1, "and so does the token");
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 1, "and so does the token");
 }
 
 // Mentor of the Meek: "Whenever a creature with power 2 or less enters the
@@ -478,7 +478,7 @@ fn gutter_grime_makes_its_ooze_after_dying_alongside_the_creature() {
         dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
     });
 
-    assert_eq!(count_tokens_named(&state, "Ooze"), 1,
+    assert_eq!(count_tokens_named(&state, "Ooze Token"), 1,
         "CR 603.10: a death-watch fires for a creature that died simultaneously \
          with the watcher");
 }

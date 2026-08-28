@@ -69,23 +69,27 @@ fn parallel_lives_doubles_only_its_controllers_tokens() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let make = |state: &mut mtg_engine::state::GameState, name: &str, p: PlayerId| {
-        state.create_token(name, p, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg);
+    // Created with a subtype, the way every card in the set does, so the name
+    // is derived per CR 111.4 ("Spirit Token").
+    let make = |state: &mut mtg_engine::state::GameState, subtype: &str, p: PlayerId| {
+        state.create_token_with_subtypes(
+            "", p, 1, 1, vec![Color::White], vec![CardType::Creature], vec![],
+            vec![subtype.to_string()], &reg);
     };
 
     // Baseline: one token is one token.
     make(&mut state, "Spirit", P0);
-    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 1,
+    assert_eq!(count_tokens_named_by(&state, "Spirit Token", P0), 1,
         "without Parallel Lives, creating one token creates one token");
 
     named_permanent(&mut state, &reg, "Parallel Lives", P0);
 
     make(&mut state, "Angel", P0);
-    assert_eq!(count_tokens_named_by(&state, "Angel", P0), 2,
+    assert_eq!(count_tokens_named_by(&state, "Angel Token", P0), 2,
         "its controller's tokens are doubled");
 
     make(&mut state, "Zombie", P1);
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P1), 1,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P1), 1,
         "an opponent's are not");
 }
 

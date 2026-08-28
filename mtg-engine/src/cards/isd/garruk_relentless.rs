@@ -141,7 +141,7 @@ impl CardBehavior for GarrukRelentless {
             1 => {
                 // 0: Create a 2/2 green Wolf token.
                 state.create_token_with_subtypes(
-                    "Wolf",
+                    "",
                     controller,
                     2, 2,
                     vec![Color::Green],
@@ -158,7 +158,7 @@ impl CardBehavior for GarrukRelentless {
             10 => {
                 // +1: Create a 1/1 black Wolf creature token with deathtouch.
                 state.create_token_with_subtypes(
-                    "Wolf",
+                    "",
                     controller,
                     1, 1,
                     vec![Color::Black],

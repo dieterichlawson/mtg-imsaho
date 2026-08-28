@@ -105,7 +105,7 @@ fn skirsdag_high_priest_is_offered_only_with_morbid_and_two_helpers() {
         if offered {
             let state = activate_offered(&state, &reg, priest, None);
             let demons: Vec<_> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.name == "Demon")
+                .filter(|o| o.zone == Zone::Battlefield && o.name == "Demon Token")
                 .collect();
             assert_eq!(demons.len(), 1, "one Demon token");
             assert_eq!((demons[0].power, demons[0].toughness), (Some(5), Some(5)), "a 5/5");

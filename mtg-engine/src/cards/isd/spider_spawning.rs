@@ -33,7 +33,7 @@ impl CardBehavior for SpiderSpawning {
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_card(o.id) && state.is_creature(o.id, registry) && o.id != object_id)
             .count();
         for _ in 0..creature_count {
-            state.create_token_with_subtypes("Spider", controller, 1, 2, vec![Color::Green], vec![CardType::Creature], vec![Keyword::Reach], vec!["Spider".into()], registry);
+            state.create_token_with_subtypes("", controller, 1, 2, vec![Color::Green], vec![CardType::Creature], vec![Keyword::Reach], vec!["Spider".into()], registry);
         }
         if creature_count > 0 {
             state.log(crate::state::LogLevel::Event, format!("Spider Spawning created {creature_count} Spider tokens"));

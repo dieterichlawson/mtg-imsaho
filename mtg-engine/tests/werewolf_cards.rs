@@ -243,8 +243,8 @@ fn howlpack_alpha_creates_wolf_token_on_end_step() {
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // Should have created a 2/2 Wolf token
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Howlpack Alpha should create one Wolf token");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1, "Howlpack Alpha should create one Wolf token");
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
     assert_eq!(state.get_object(wolf).unwrap().toughness, Some(2));
 }
@@ -258,7 +258,7 @@ fn howlpack_alpha_does_not_create_token_on_front_face() {
 
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 0,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 0,
         "Front face Mayor should not create Wolf tokens");
 }
 
@@ -275,7 +275,7 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // Should NOT create a Wolf token on opponent's end step
-    assert_eq!(count_tokens_named(&state, "Wolf"), 0,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 0,
         "Howlpack Alpha should not create Wolf tokens on opponent's end step");
 }
 
@@ -819,9 +819,9 @@ fn howlpack_alphas_wolf_arrives_even_if_the_alpha_dies_in_response() {
 
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1,
         "the Wolf is created even though its source is gone");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     assert_eq!(state.get_object(wolf).unwrap().controller, P0,
         "under the player who controlled the Alpha when it triggered");
 }

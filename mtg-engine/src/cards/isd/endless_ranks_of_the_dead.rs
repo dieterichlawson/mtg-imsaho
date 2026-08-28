@@ -54,7 +54,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
         let tokens_to_create = zombie_count / 2;
         for _ in 0..tokens_to_create {
             state.create_token_with_subtypes(
-                "Zombie",
+                "",
                 controller,
                 2, 2,
                 vec![Color::Black],

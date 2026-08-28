@@ -543,8 +543,8 @@ fn bloodline_keeper_creates_vampire_token() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have a Vampire token.
-    assert_eq!(count_tokens_named(&state, "Vampire"), 1);
-    let token = find_token_named(&state, "Vampire").unwrap();
+    assert_eq!(count_tokens_named(&state, "Vampire Token"), 1);
+    let token = find_token_named(&state, "Vampire Token").unwrap();
     let obj = state.get_object(token).unwrap();
     assert_eq!(obj.power, Some(2));
     assert_eq!(obj.toughness, Some(2));
@@ -610,8 +610,8 @@ fn garruk_creates_wolf_token() {
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1);
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1);
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
 }
 
@@ -650,8 +650,8 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
     behavior.on_loyalty_ability(&mut state, garruk, 10, &[], &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Should create a Wolf token");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1, "Should create a Wolf token");
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     let obj = state.get_object(wolf).unwrap();
     assert_eq!(obj.power, Some(1), "Wolf should be 1/1");
     assert_eq!(obj.toughness, Some(1), "Wolf should be 1/1");

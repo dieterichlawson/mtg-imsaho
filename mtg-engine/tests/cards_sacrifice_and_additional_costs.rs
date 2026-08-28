@@ -411,7 +411,8 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
     let token = token.unwrap();
     assert_eq!(token.power, Some(2), "Token should have power 2");
     assert_eq!(token.toughness, Some(2), "Token should have toughness 2");
-    assert_eq!(token.name, "Homunculus", "Token should be named Homunculus");
+    assert_eq!(token.name, "Homunculus Token",
+        "CR 111.4: an unnamed token is its subtypes plus \"Token\"");
 }
 #[test]
 fn corpse_lunge_deals_damage_equal_to_exiled_power() {

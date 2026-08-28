@@ -145,7 +145,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     behavior.on_attacks(&mut state, cage, AttackInfo::new(cage, P1), &[], &reg);
 
     // Should have 3 Wolf tokens on the battlefield.
-    assert_eq!(count_tokens_named(&state, "Wolf"), 3, "Should have created 3 Wolf tokens");
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 3, "Should have created 3 Wolf tokens");
 
     // Wolves should be tapped and attacking.
     for wolf in state.objects.values().filter(|o| o.zone == Zone::Battlefield && o.name == "Wolf") {
@@ -302,7 +302,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
         "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
-    assert_eq!(count_tokens_named(&state, "Ooze"), 1, "Should have created 1 Ooze token");
+    assert_eq!(count_tokens_named(&state, "Ooze Token"), 1, "Should have created 1 Ooze token");
 }
 
 // ── Heretic's Punishment ─────────────────────────────────────────
@@ -449,7 +449,7 @@ fn undead_alchemist_mills_instead_of_damage() {
 
     // Should have created Zombie tokens.
     // 2 creature cards milled = 2 Zombie tokens + the original zombie we created.
-    assert!(count_tokens_named_by(&state, "Zombie", P0) >= 2,
+    assert!(count_tokens_named_by(&state, "Zombie Token", P0) >= 2,
         "Should create Zombie tokens for each milled creature");
 }
 
@@ -603,7 +603,7 @@ fn cellar_door_creates_zombie_when_milling_creature() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have created a Zombie token (since a creature was milled).
-    assert_eq!(count_tokens_named(&state, "Zombie"), 1,
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 1,
         "Should create a Zombie token when milling a creature");
 }
 
@@ -2059,7 +2059,7 @@ fn every_ooze_is_sized_by_the_current_slime_count() {
 
         assert_eq!(counters_of(&state, grime, CounterType::Slime), expected,
             "one slime counter per nontoken creature death");
-        assert_eq!(count_tokens_named(&state, "Ooze"), expected as usize,
+        assert_eq!(count_tokens_named(&state, "Ooze Token"), expected as usize,
             "and one Ooze per death");
 
         // Every Ooze, including the ones made earlier, is the current size.
@@ -2110,7 +2110,7 @@ fn gutter_grime_counts_only_your_own_nontoken_creatures() {
 
         assert_eq!(counters_of(&state, grime, CounterType::Slime), u32::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
-        assert_eq!(count_tokens_named(&state, "Ooze"), usize::from(counts),
+        assert_eq!(count_tokens_named(&state, "Ooze Token"), usize::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
     }
 }
@@ -2127,7 +2127,7 @@ fn the_oozes_die_when_gutter_grime_leaves() {
     kill_by_damage(&mut state, &reg, creature);
     triggers::process_triggers(&mut state, &reg);
 
-    let ooze = find_token_named(&state, "Ooze").expect("an Ooze was made");
+    let ooze = find_token_named(&state, "Ooze Token").expect("an Ooze was made");
     assert_eq!(state.effective_power(ooze, &reg), Some(1), "test precondition: a 1/1");
 
     state.move_object(grime, Zone::Graveyard, &reg);

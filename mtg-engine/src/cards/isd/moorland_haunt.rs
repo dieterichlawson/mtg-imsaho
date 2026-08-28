@@ -115,7 +115,7 @@ impl CardBehavior for MoorlandHaunt {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         state.create_token_with_subtypes(
-            "Spirit Token", controller, 1, 1,
+            "", controller, 1, 1,
             vec![Color::White], vec![CardType::Creature],
             vec![Keyword::Flying], vec!["Spirit".into()], registry,
         );

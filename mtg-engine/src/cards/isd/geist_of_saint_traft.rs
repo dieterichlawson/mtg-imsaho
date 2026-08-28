@@ -44,7 +44,7 @@ impl CardBehavior for GeistOfSaintTraft {
 
         // Create a 4/4 Angel token with flying, tapped and attacking.
         let token_ids = state.create_token_with_subtypes(
-            "Angel",
+            "",
             controller,
             4, 4,
             vec![Color::White],

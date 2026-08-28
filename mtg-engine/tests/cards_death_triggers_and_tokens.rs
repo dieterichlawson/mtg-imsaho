@@ -39,8 +39,8 @@ use mtg_engine::types::*;
 fn token_making_spells_make_the_tokens_they_print() {
     // (spell, token name, power, toughness, keywords)
     const SPELLS: &[(&str, &str, i32, i32, &[Keyword])] = &[
-        ("Midnight Haunting", "Spirit", 1, 1, &[Keyword::Flying]),
-        ("Moan of the Unhallowed", "Zombie", 2, 2, &[]),
+        ("Midnight Haunting", "Spirit Token", 1, 1, &[Keyword::Flying]),
+        ("Moan of the Unhallowed", "Zombie Token", 2, 2, &[]),
     ];
 
     for &(spell_name, token_name, power, toughness, keywords) in SPELLS {
@@ -87,9 +87,9 @@ fn creatures_that_leave_spirits_behind_leave_the_right_number() {
         kill_by_damage(&mut state, &reg, creature);
         triggers::process_triggers(&mut state, &reg);
 
-        assert_eq!(count_tokens_named(&state, "Spirit"), count,
+        assert_eq!(count_tokens_named(&state, "Spirit Token"), count,
             "{name} should leave {count} Spirit token(s) behind");
-        for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
+        for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit Token") {
             assert_eq!((o.power, o.toughness), (Some(1), Some(1)), "{name}'s Spirits are 1/1");
             assert!(o.keywords.contains(&Keyword::Flying), "{name}'s Spirits fly");
         }

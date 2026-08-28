@@ -66,7 +66,7 @@ impl CardBehavior for CellarDoor {
 
             if is_creature {
                 state.create_token_with_subtypes(
-                    "Zombie", controller, 2, 2,
+                    "", controller, 2, 2,
                     vec![Color::Black],
                     vec![CardType::Creature],
                     vec![],

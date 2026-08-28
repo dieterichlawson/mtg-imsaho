@@ -57,7 +57,7 @@ impl CardBehavior for GutterGrime {
             .map_or(1, |o| *o.counters.get(&CounterType::Slime).unwrap_or(&0));
         // Create the Ooze token with base 0/0 and dynamic P/T linked to this Gutter Grime.
         let token_ids = state.create_token_with_subtypes(
-            "Ooze", controller, 0, 0,
+            "", controller, 0, 0,
             vec![Color::Green],
             vec![CardType::Creature],
             vec![],

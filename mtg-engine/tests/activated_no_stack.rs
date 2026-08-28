@@ -245,13 +245,13 @@ fn skirsdag_high_priest_makes_its_demon_on_resolution() {
     activate_via_hooks(&mut state, &reg, priest, 0, &[]);
 
     assert_eq!(
-        count_tokens_named(&state, "Demon"), 0,
+        count_tokens_named(&state, "Demon Token"), 0,
         "CR 602.2a: Skirsdag High Priest should not create Demon token until ability resolves"
     );
 
     resolve_the_ability(&mut state, &reg);
     assert_eq!(
-        count_tokens_named(&state, "Demon"), 1,
+        count_tokens_named(&state, "Demon Token"), 1,
         "and the Demon does arrive once the ability resolves"
     );
 }
@@ -279,12 +279,12 @@ fn skirsdag_high_priests_tap_cost_is_paid_at_activation() {
         "tap cost should be paid during activation"
     );
     assert_eq!(
-        count_tokens_named(&state, "Demon"), 0,
+        count_tokens_named(&state, "Demon Token"), 0,
         "CR 602.2a: Demon token should not be created until ability resolves from stack"
     );
 
     resolve_the_ability(&mut state, &reg);
-    assert_eq!(count_tokens_named(&state, "Demon"), 1,
+    assert_eq!(count_tokens_named(&state, "Demon Token"), 1,
         "and the Demon does arrive once the ability resolves");
     assert!(state.get_object(creature1).unwrap().tapped,
         "the creatures tapped as a cost stay tapped");
@@ -312,12 +312,12 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
         "CR 302.6: summoning-sick creature should be valid tap candidate for additional cost"
     );
     assert_eq!(
-        count_tokens_named(&state, "Demon"), 0,
+        count_tokens_named(&state, "Demon Token"), 0,
         "CR 602.2a: Demon token should not exist until ability resolves from stack"
     );
 
     resolve_the_ability(&mut state, &reg);
-    assert_eq!(count_tokens_named(&state, "Demon"), 1,
+    assert_eq!(count_tokens_named(&state, "Demon Token"), 1,
         "and the Demon does arrive once the ability resolves");
 }
 

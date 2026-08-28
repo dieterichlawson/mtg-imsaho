@@ -61,7 +61,7 @@ fn army_of_the_damned_creates_13_tapped_zombies() {
     let state = cast_and_resolve(&state, &reg, spell, vec![]);
 
     // Count tokens on battlefield.
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 13, "Should have 13 Zombie tokens");
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 13, "Should have 13 Zombie tokens");
 
     for z in state.objects.values().filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0) {
         assert!(z.tapped, "Zombie tokens should enter tapped");
