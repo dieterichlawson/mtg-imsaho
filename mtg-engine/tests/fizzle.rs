@@ -246,7 +246,7 @@ fn a_multi_target_spell_is_countered_only_when_every_target_is_illegal() {
 /// Prey Upon ("Target creature you control fights target creature you don't
 /// control") keeps a legal target when the opponent's creature leaves, so the
 /// spell is *not* countered — it resolves and the fight simply does not happen,
-/// because a fight needs both creatures (CR 701.15).
+/// because a fight needs both creatures (CR 701.12b).
 ///
 /// Resolving-and-doing-nothing and being-countered look the same from the
 /// battlefield, which is why this asserts on both the spell's zone and the

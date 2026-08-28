@@ -505,6 +505,39 @@ fn bug_aw_prey_upon_rejects_two_of_your_own_creatures() {
     );
 }
 
+/// The other direction, and the half nobody wrote down: two creatures the
+/// caster does *not* control is equally illegal.
+///
+/// "Target creature **you control** fights target creature **you don't
+/// control**" is two filters, and only one of them was checked by anything —
+/// changing the first slot to `YouDontControl`, so the card read "target
+/// creature you don't control fights target creature you don't control",
+/// passed the whole suite.
+#[test]
+fn prey_upon_rejects_two_creatures_the_caster_does_not_control() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two creatures on the opponent's side, none on the caster's.
+    let theirs_a = ready_creature(&mut state, P1, 2, 2);
+    let theirs_b = ready_creature(&mut state, P1, 2, 2);
+
+    let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
+
+    let offered = engine::legal_actions(&state, &reg).actions.into_iter().any(|a| matches!(
+        a,
+        Action::CastSpell { object_id, ref targets, .. }
+            if object_id == prey
+                && targets.len() == 2
+                && matches!(targets[0], Target::Object(id) if id == theirs_a || id == theirs_b)
+                && matches!(targets[1], Target::Object(id) if id == theirs_a || id == theirs_b)
+    ));
+
+    assert!(!offered,
+        "the first slot is \"target creature **you control**\", so a board \
+         with only the opponent's creatures offers Prey Upon no legal pair");
+}
+
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
