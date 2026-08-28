@@ -81,7 +81,7 @@ fn an_attack_in_an_earlier_turn_does_not_keep_the_brute_transformed() {
     // It attacked on the front face this turn...
     state.step = Step::DeclareAttackers;
     state.get_object_mut(scholar).unwrap().summoning_sick = false;
-    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &[], &reg);
     state.step = Step::EndStep;
     // ...then a later turn begins, and it transforms.
     state.turn_number += 1;
@@ -107,7 +107,7 @@ fn an_attack_this_turn_keeps_the_brute_transformed() {
 
     state.step = Step::DeclareAttackers;
     state.get_object_mut(scholar).unwrap().summoning_sick = false;
-    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &[], &reg);
     state.step = Step::EndStep;
     mtg_engine::cards::helpers::apply_transform(&mut state, scholar, &reg);
     behavior.on_end_step(&mut state, scholar, &[], &reg);

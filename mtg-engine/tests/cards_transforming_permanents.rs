@@ -1328,7 +1328,7 @@ fn an_attack_before_transforming_still_counts_for_the_back_face() {
     state.get_object_mut(scholar).unwrap().summoning_sick = false;
 
     // It attacks with its front face up.
-    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &registry);
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &[], &registry);
     assert!(state.attacked_this_turn(scholar),
         "declaring it as an attacker is what makes it have attacked");
 
@@ -1360,7 +1360,7 @@ fn civilized_scholar_attacking_puts_nothing_on_the_stack() {
     let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
     state.get_object_mut(scholar).unwrap().summoning_sick = false;
 
-    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &registry);
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &[], &registry);
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     assert!(state.stack.is_empty(),
@@ -1379,7 +1379,7 @@ fn returning_to_the_battlefield_clears_the_attack(){
 
     let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
     state.get_object_mut(scholar).unwrap().summoning_sick = false;
-    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &registry);
+    mtg_engine::combat::declare_attackers(&mut state, &[(scholar, P1)], &[], &registry);
     assert!(state.attacked_this_turn(scholar));
 
     state.move_object(scholar, Zone::Graveyard, &registry);

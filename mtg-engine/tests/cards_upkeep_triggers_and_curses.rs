@@ -853,7 +853,7 @@ fn curse_of_nightly_hunt_forces_its_own_controller_when_it_enchants_them() {
     state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
     let state = mtg_engine::engine::submit_action(
         &state,
-        &mtg_engine::actions::Action::DeclareAttackers { attackers: vec![] },
+        &mtg_engine::actions::Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] },
         &reg,
     );
     assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&cursed)),

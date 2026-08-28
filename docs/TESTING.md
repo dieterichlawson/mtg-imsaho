@@ -42,6 +42,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | summoning sickness (CR 302.6) | `summoning_sickness.rs` |
 | planeswalkers, loyalty (CR 306, 606, 704.5i) | `planeswalkers.rs` |
 | combat | `combat.rs`, `combat_rules.rs` |
+| attacking planeswalkers (CR 508.1a, 702.19d/i) | `planeswalker_combat.rs` |
 | damage | `damage_pipeline.rs`, `damage_helper.rs` (any target includes planeswalkers), `inline_damage.rs` |
 | state-based actions (CR 704) | `state_based_actions.rs` |
 | tokens and counters | `tokens_counters_triggers.rs`, `token_is_not_a_card.rs`, `token_copy.rs` |

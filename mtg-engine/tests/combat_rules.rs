@@ -135,7 +135,7 @@ fn bug_bp_forced_attack_respects_cant_attack() {
     // combat.attackers should NOT contain the locked creature.
     let new_state = mtg_engine::engine::submit_action(
         &state,
-        &Action::DeclareAttackers { attackers: vec![] },
+        &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] },
         &registry,
     );
 
@@ -226,7 +226,7 @@ fn a_hasty_creature_is_forced_to_attack_the_turn_it_arrives() {
 
     // The player declares nothing. The requirement stands regardless.
     let state = engine::submit_action(
-        &state, &Action::DeclareAttackers { attackers: vec![] }, &registry);
+        &state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, &registry);
 
     assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&skeleton)),
         "CR 508.1d: a creature that is able to attack and is required to must be \
@@ -282,7 +282,7 @@ fn a_creature_that_forces_itself_to_attack_must_attack() {
 
     // The player declares nothing. The requirement stands regardless.
     let state = engine::submit_action(
-        &state, &Action::DeclareAttackers { attackers: vec![] }, &registry);
+        &state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, &registry);
 
     assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&jug)),
         "CR 508.1d: it is able and required, so it is declared as an attacker");
@@ -329,7 +329,7 @@ fn no_attackers_game_loop_skips_to_end_combat() {
         // When asked to declare attackers, declare none.
         if legal.combat_prompt.is_some() {
             if game_state.step == Step::DeclareAttackers {
-                return Action::DeclareAttackers { attackers: vec![] };
+                return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
             }
             if game_state.step == Step::DeclareBlockers {
                 return Action::DeclareBlockers { assignments: vec![] };
@@ -368,7 +368,7 @@ fn an_illegal_block_by_a_tapped_creature_does_not_absorb_damage() {
     state.get_object_mut(blocker).unwrap().tapped = true;
     let p1_life = state.get_player(P1).life;
 
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &reg);
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 
@@ -388,7 +388,7 @@ fn attacking_players_own_creature_cannot_block() {
     let fake_blocker = ready_creature(&mut state, P0, 2, 2); // controlled by the attacker's player
     let p1_life = state.get_player(P1).life;
 
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(fake_blocker, attacker)], &reg);
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 
@@ -409,7 +409,7 @@ fn ineligible_attacker_is_filtered_by_the_handler() {
 
     let state = engine::submit_action(
         &state,
-        &Action::DeclareAttackers { attackers: vec![(sick, P1), (ready, P1)] },
+        &Action::DeclareAttackers { attackers: vec![(sick, P1), (ready, P1)], planeswalker_attacks: vec![] },
         &reg,
     );
 
@@ -434,7 +434,7 @@ fn regenerated_blocker_deals_no_regular_combat_damage() {
     state.get_object_mut(blocker).unwrap().regeneration_shields = 1;
     let p1_life = state.get_player(P1).life;
 
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 
@@ -466,7 +466,7 @@ fn double_striker_stays_blocked_when_blocker_leaves_combat() {
     state.get_object_mut(blocker).unwrap().regeneration_shields = 1;
     let p1_life = state.get_player(P1).life;
 
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 
@@ -493,7 +493,7 @@ fn first_strike_creates_second_combat_damage_step_with_window() {
     state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
     let blocker = ready_creature(&mut state, P1, 4, 4);
 
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
 
     // Enter the combat damage step: FIRST instance — first-strike damage only.
@@ -531,7 +531,7 @@ fn no_first_strike_single_combat_damage_step() {
 
     let attacker = ready_creature(&mut state, P0, 2, 2);
     let blocker = ready_creature(&mut state, P1, 2, 2);
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
 
     mtg_engine::engine::advance_step(&mut state, &reg);
@@ -557,7 +557,7 @@ fn first_strike_kill_prevents_regular_damage_back() {
     let attacker = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
     let blocker = ready_creature(&mut state, P1, 2, 2);
-    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
 
     mtg_engine::engine::advance_step(&mut state, &reg);
@@ -652,7 +652,7 @@ fn combat_ends_when_the_attacker_leaves_combat_between_damage_steps() {
     let blocker = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(blocker).unwrap().keywords.push(Keyword::FirstStrike);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
 
     // First combat damage step: only the first striker deals damage.

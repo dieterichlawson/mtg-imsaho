@@ -515,7 +515,7 @@ fn furor_forces_attack() {
     // Player declares zero attackers.
     state = engine::submit_action(
         &state,
-        &Action::DeclareAttackers { attackers: vec![] },
+        &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] },
         &reg,
     );
 
@@ -539,7 +539,7 @@ fn forced_into_combat_by_furor(
     state.get_object_mut(furor).unwrap().attached_to = Some(creature);
 
     state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
-    *state = engine::submit_action(state, &Action::DeclareAttackers { attackers: vec![] }, reg);
+    *state = engine::submit_action(state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, reg);
     state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature))
 }
 

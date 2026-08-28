@@ -136,7 +136,7 @@ fn declaring_zero_attackers_is_legal() {
     assert!(legal.combat_prompt.is_some(),
         "Should have a combat prompt for declare attackers");
     // An empty DeclareAttackers action is always valid to submit.
-    let action = Action::DeclareAttackers { attackers: vec![] };
+    let action = Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
     // Should not panic when submitted.
     let _new_state = engine::submit_action(&state, &action, &registry);
 }
@@ -235,7 +235,7 @@ fn submit_action_declare_attackers_forces_must_attack_creatures() {
     // Player submits no attackers — engine must force the Neonate.
     let new_state = engine::submit_action(
         &state,
-        &Action::DeclareAttackers { attackers: vec![] },
+        &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] },
         &reg,
     );
 
@@ -260,7 +260,7 @@ fn submit_action_declare_attackers_skips_force_when_already_declared() {
 
     let new_state = engine::submit_action(
         &state,
-        &Action::DeclareAttackers { attackers: vec![(neonate, P1)] },
+        &Action::DeclareAttackers { attackers: vec![(neonate, P1)], planeswalker_attacks: vec![] },
         &reg,
     );
 
@@ -282,7 +282,7 @@ fn submit_action_declare_attackers_records_attackers() {
     let attacker = ready_creature(&mut state, P0, 3, 3);
     state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
 
-    let action = Action::DeclareAttackers { attackers: vec![(attacker, P1)] };
+    let action = Action::DeclareAttackers { attackers: vec![(attacker, P1)], planeswalker_attacks: vec![] };
     let new_state = engine::submit_action(&state, &action, &reg);
 
     assert!(new_state.awaiting_action.is_none(),
@@ -305,7 +305,7 @@ fn submit_action_declare_attackers_with_none_is_noop() {
     ready_creature(&mut state, P0, 3, 3);
     state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
 
-    let action = Action::DeclareAttackers { attackers: vec![] };
+    let action = Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
     let new_state = engine::submit_action(&state, &action, &reg);
 
     assert!(new_state.awaiting_action.is_none());

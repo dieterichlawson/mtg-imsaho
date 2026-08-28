@@ -659,7 +659,7 @@ pub fn submit_declare_attackers(
     state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
     *state = mtg_engine::engine::submit_action(
         state,
-        &Action::DeclareAttackers { attackers: attackers.to_vec() },
+        &Action::DeclareAttackers { attackers: attackers.to_vec(), planeswalker_attacks: vec![] },
         registry,
     );
 }
@@ -733,7 +733,7 @@ pub fn advance_to_step(state: &mut GameState, registry: &CardRegistry, step: Ste
         match state.awaiting_action {
             Some(mtg_engine::state::AwaitingAction::DeclareAttackers) => {
                 *state = mtg_engine::engine::submit_action(
-                    state, &Action::DeclareAttackers { attackers: vec![] }, registry);
+                    state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, registry);
             }
             Some(mtg_engine::state::AwaitingAction::DeclareBlockers { .. }) => {
                 *state = mtg_engine::engine::submit_action(
@@ -756,7 +756,7 @@ pub fn advance_to_next_turn(state: &mut GameState, registry: &CardRegistry) {
         match state.awaiting_action {
             Some(mtg_engine::state::AwaitingAction::DeclareAttackers) => {
                 *state = mtg_engine::engine::submit_action(
-                    state, &Action::DeclareAttackers { attackers: vec![] }, registry);
+                    state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, registry);
             }
             Some(mtg_engine::state::AwaitingAction::DeclareBlockers { .. }) => {
                 *state = mtg_engine::engine::submit_action(
