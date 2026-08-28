@@ -319,3 +319,71 @@ fn each_kessig_wolf_chooses_its_own_defender() {
     assert_eq!(at_walker.len(), 1,
         "exactly one Wolf is attacking Liliana; the other attacks the player");
 }
+
+/// Trepanation Blade's ruling: "If the equipped creature is attacking a
+/// planeswalker, the controller of the planeswalker is the defending player."
+/// Its audit recorded this as unreachable while planeswalkers could not be
+/// attacked; they can now, and the trigger's `defending_player` — snapshotted
+/// at declaration — is the walker's controller, so the mill hits their
+/// library.
+#[test]
+fn trepanation_blade_mills_the_walker_controllers_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(blade).unwrap().attached_to = Some(attacker);
+
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+
+    // P1's library: a nonland then a land — the reveal stops after two.
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    let nl = state.create_object(bears_id, P1, Zone::Library, Some(2), Some(2));
+    state.get_object_mut(nl).unwrap().name = "Grizzly Bears".into();
+    let land = state.create_object(forest_id, P1, Zone::Library, None, None);
+    state.get_object_mut(land).unwrap().name = "Forest".into();
+    state.get_player_mut(P1).library_order = vec![nl, land];
+
+    // Declare the attack on the walker through the real submit path, so the
+    // AttackersDeclared event — and the Blade's trigger — carry what combat
+    // recorded rather than a hand-built AttackInfo.
+    submit_attack_on_walker(&mut state, attacker, liliana, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).library_order.len(), 0,
+        "both cards revealed and milled from the walker's controller's library");
+    assert_eq!(state.effective_power(attacker, &reg), Some(4),
+        "+1/+0 for each of the two revealed cards");
+}
+
+/// "Whenever this creature deals combat damage to a player" is not "…to a
+/// player or planeswalker": combat damage to an attacked walker removes
+/// loyalty through the object pipeline and no player was dealt anything, so
+/// the trigger must not fire. Recorded in the Rakish Heir audit as
+/// unreachable while planeswalker combat was unimplemented.
+#[test]
+fn combat_damage_to_a_walker_is_not_combat_damage_to_a_player() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    // Stromkirk Noble's own trigger: a +1/+1 counter when IT connects with a
+    // player.
+    let noble = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+
+    submit_attack_on_walker(&mut state, noble, liliana, &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(loyalty_of(&state, liliana), 2, "the Noble's 1 damage hit the walker");
+    assert_eq!(state.get_player(P1).life, 20, "and no player was dealt anything");
+    assert_eq!(
+        state.get_object(noble).unwrap()
+            .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0),
+        0,
+        "so 'deals combat damage to a player' did not trigger");
+}

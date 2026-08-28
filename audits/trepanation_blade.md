@@ -142,3 +142,17 @@ ruling is about had no coverage.
 - the attack snapshot survives removal and re-equipping: `trigger_snapshots.rs:46`.
 - mill goes through the shared pipeline: `multi_target_and_mill.rs:204`.
 
+
+## Follow-up — 2026-08-28 22:53
+
+The 2017-11-17 ruling "If the equipped creature is attacking a planeswalker,
+the controller of the planeswalker is the defending player" was marked
+unreachable in the previous entry because the engine did not model attacking a
+planeswalker. Planeswalker combat now exists
+(`Action::DeclareAttackers { planeswalker_attacks, .. }`), so the ruling is
+reachable and is now pinned:
+`planeswalker_combat.rs::trepanation_blade_mills_the_walker_controllers_library`
+sends the equipped creature at Liliana of the Veil and asserts the Blade's
+trigger mills the walker's controller's library and grants the +1/+0 per card
+— confirming the handler's `attack.defending_player` read (the walker's
+controller, per CR 508.1a as recorded by combat) does what the ruling says.

@@ -134,3 +134,16 @@ instead of the dealer each kill exactly one test. The CR 121.1 test was vacuous 
   the table is about ("whenever *this creature* deals combat damage"), and the table's own
   coverage check never included it.
 - `trigger_source_independence.rs`: the two collection-time tests.
+
+## Follow-up — 2026-08-28 22:53
+
+The previous entry recorded "Combat damage to a creature or a planeswalker:
+not a player, no trigger. (Planeswalker combat is unimplemented engine-wide;
+recorded, not this card's.)" Planeswalker combat is now implemented, and the
+walker half of that claim is pinned:
+`planeswalker_combat.rs::combat_damage_to_a_walker_is_not_combat_damage_to_a_player`
+sends a Stromkirk Noble (same `AnyCombatDamageToPlayer` shape as the Heir's
+trigger) at Liliana of the Veil and asserts the walker loses loyalty, the
+player loses no life, and no +1/+1 counter is granted. Mutation-checked:
+emitting a `CombatDamageDealt { target: Player }` event alongside walker
+damage in `deal_walker_damage_with_trample_spill` fails exactly this test.
