@@ -13,9 +13,29 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
         return modes.iter().any(|mode_req| is_target_legal(state, target, mode_req, caster, registry));
     }
 
-    // Unwrap nested requirements (UpToTargets, TwoTargets).
+    // TwoTargets: the same shape. This is asked one target at a time, with no
+    // way to know which slot the target came from, so it used to unwrap to the
+    // FIRST slot and judge everything against that. For Into the Maw of Hell —
+    // "Destroy target land. ... deals 13 damage to target creature" — that
+    // meant the creature was tested against `PermanentWithFilter(Land)` and
+    // could never count as legal. Whenever the land target became illegal,
+    // `any_legal` was false and the whole spell was countered, against its own
+    // ruling: "If one of Into the Maw of Hell's targets is illegal by the time
+    // it resolves, Into the Maw of Hell will still affect the remaining legal
+    // target."
+    //
+    // Which slot a target belongs to was settled when the spell was cast
+    // (CR 601.2c); what CR 608.2b re-checks is whether the target is still
+    // there and still targetable. So: legal under either slot.
+    if let TargetRequirement::TwoTargets(ref first, ref second) = target_req {
+        return is_target_legal(state, target, first, caster, registry)
+            || is_target_legal(state, target, second, caster, registry);
+    }
+
+    // Unwrap nested requirements (UpToTargets — every target shares the inner
+    // requirement, so unwrapping is exact there).
     let inner_req = match target_req {
-        TargetRequirement::UpToTargets(_, inner) | TargetRequirement::TwoTargets(inner, _) => inner.as_ref(),
+        TargetRequirement::UpToTargets(_, inner) => inner.as_ref(),
         other => other,
     };
     match target {
