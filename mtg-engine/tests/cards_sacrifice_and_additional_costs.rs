@@ -825,3 +825,38 @@ fn one_action_per_sacrifice_target() {
     assert!(sac_ids.contains(&creature_a), "Should include creature A as sacrifice option");
     assert!(sac_ids.contains(&creature_b), "Should include creature B as sacrifice option");
 }
+
+/// The creature list a player picks from is offered in a stable order.
+///
+/// It used to be built straight off `state.objects.values()`, a HashMap
+/// iterator, so the order varied between runs of the same game. The player
+/// picks from this list by position, so an unstable order means the same
+/// decisions replay differently.
+#[test]
+fn divine_reckonings_choice_list_is_in_a_stable_order() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Several creatures for P0, so there is a real list to order.
+    let mut mine: Vec<ObjectId> = (0..5).map(|_| ready_creature(&mut state, P0, 2, 2)).collect();
+    mine.sort_by_key(|id| id.0);
+    // And one for the opponent, which must not appear in P0's list.
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+
+    let spell = castable_spell(&mut state, &reg, "Divine Reckoning", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, .. })
+            => options.clone(),
+        _ => panic!("expected P0 to be choosing a creature to keep"),
+    };
+
+    let offered: Vec<ObjectId> = options.iter()
+        .filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None })
+        .collect();
+
+    assert_eq!(offered, mine, "offered in ascending object-id order");
+    assert!(!offered.contains(&theirs), "and only creatures this player controls");
+}

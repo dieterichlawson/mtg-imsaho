@@ -142,24 +142,40 @@ pub fn present_optional_target_choice(
 // Build lists of valid targets for common patterns.
 // ═══════════════════════════════════════════════════════════════════
 
+/// Put a list of targets into a stable order.
+///
+/// Every list below is built by iterating `state.objects`, which is a HashMap
+/// and yields in arbitrary order. Players — and the LLM player especially —
+/// pick from these lists by position, so an unstable order means the same game
+/// replays differently and a recorded decision means something else on the way
+/// back. Objects sort by id, players after objects and by id among themselves.
+fn stable(mut targets: Vec<Target>) -> Vec<Target> {
+    targets.sort_by_key(|t| match t {
+        Target::Object(id) => (0u8, id.0),
+        Target::Player(p) => (1u8, u64::from(p.0)),
+        Target::Illegal => (2u8, 0),
+    });
+    targets
+}
+
 /// All targetable creatures on the battlefield (respects hexproof/protection).
 #[must_use]
 pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    state.objects.values()
+    stable(state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
         .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
-        .collect()
+        .collect())
 }
 
 /// All targetable creatures on the battlefield except a specific one.
 #[must_use]
 pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    state.objects.values()
+    stable(state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.id != exclude)
         .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
-        .collect()
+        .collect())
 }
 
 /// Every creature on the battlefield except one — for effects that CHOOSE a
@@ -172,11 +188,11 @@ pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: 
 /// is a legal thing to copy — using the targeting helper wrongly hid it.
 #[must_use]
 pub fn creature_choices_except(state: &GameState, exclude: ObjectId, registry: &CardRegistry) -> Vec<Target> {
-    state.objects.values()
+    stable(state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.id != exclude)
         .filter(|o| state.is_creature(o.id, registry))
         .map(|o| Target::Object(o.id))
-        .collect()
+        .collect())
 }
 
 /// All targetable creatures + planeswalkers + all players ("any target").
@@ -197,7 +213,7 @@ pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId,
             targets.push(Target::Player(player.id));
         }
     }
-    targets
+    stable(targets)
 }
 
 /// All targetable creatures + planeswalkers + all players, excluding a specific object.
@@ -218,16 +234,16 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
             targets.push(Target::Player(player.id));
         }
     }
-    targets
+    stable(targets)
 }
 
 /// All creatures controlled by a specific player.
 #[must_use]
 pub fn creatures_controlled_by(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    state.objects.values()
+    stable(state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == player)
         .map(|o| Target::Object(o.id))
-        .collect()
+        .collect())
 }
 
 /// The single opponent in a 2-player game (auto-target convenience).
