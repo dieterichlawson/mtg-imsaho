@@ -154,7 +154,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Silverchase Fox | `silverchase_fox.rs` | 53 | 3 | 0 |
 | x | Moonmist | `moonmist.rs` | 97 | 2 | 0 |
 | x | Bonds of Faith | `bonds_of_faith.rs` | 51 | 3 | 0 |
-|   | Devil's Play | `devils_play.rs` | 51 | 3 | 0 |
+| x | Devil's Play | `devils_play.rs` | 51 | 3 | 0 |
 |   | Lantern Spirit | `lantern_spirit.rs` | 51 | 3 | 0 |
 |   | Spidery Grasp | `spidery_grasp.rs` | 51 | 3 | 0 |
 |   | Ghoulcaller's Bell | `ghoulcallers_bell.rs` | 49 | 3 | 0 |
