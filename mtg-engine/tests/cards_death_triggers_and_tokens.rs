@@ -1168,3 +1168,40 @@ fn unruly_mob_is_not_saved_by_its_own_counter() {
     assert_eq!(state.get_counter_count(mob, CounterType::PlusOnePlusOne), 0,
         "which is not put on it at all");
 }
+
+/// "Whenever another **Human** creature dies." Which is asked of the creature
+/// as it died, and half this set's Humans are the front face of a werewolf.
+///
+/// A werewolf that died *as a Werewolf* is not a Human dying — and the object
+/// cannot say so afterwards. `move_object` clears `is_transformed` on the way
+/// to the graveyard (CR 400.7), so a Werewolf reads back as the Human on its
+/// front face. Reading the object gave the Cannibals a counter it had not
+/// earned; the death event carries the subtypes it had at the time
+/// (CR 608.2g).
+///
+/// Both directions, because the front-face half is what a fix that simply
+/// stopped counting werewolves would break.
+#[test]
+fn village_cannibals_reads_the_face_the_werewolf_died_on() {
+    for (transformed, expected, why) in [
+        (false, 1, "a Village Ironsmith that died as a Human is a Human dying"),
+        (true, 0, "one that died as a Werewolf is not"),
+    ] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let cannibals = named_permanent(&mut state, &reg, "Village Cannibals", P0);
+        let smith = named_permanent(&mut state, &reg, "Village Ironsmith", P1);
+        if transformed {
+            mtg_engine::cards::helpers::apply_transform(&mut state, smith, &reg);
+        }
+        assert_eq!(state.has_subtype(smith, "Human", &reg), !transformed,
+            "test setup: {why}");
+
+        kill_by_damage(&mut state, &reg, smith);
+        triggers::process_triggers(&mut state, &reg);
+
+        assert_eq!(state.get_counter_count(cannibals, CounterType::PlusOnePlusOne), expected,
+            "{why}");
+    }
+}
