@@ -22,6 +22,41 @@ use common::*;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
+/// Reaper from the Abyss, ruling 2011-09-22: "The morbid ability is mandatory.
+/// If you control the only non-Demon creature when the ability triggers, you
+/// must choose it as the target."
+///
+/// Targeting a trigger is not a "you may" — CR 603.3d makes the controller
+/// choose targets as the ability goes on the stack, and CR 601.2c requires a
+/// legal one if any exists. With exactly one legal target the engine takes it
+/// without asking, which is the same thing: there is nothing to decide.
+///
+/// The board is built so the only legal target is the Reaper's controller's
+/// own creature: the Reaper is a Demon and so cannot target itself, and the
+/// opponent's only creature is a Demon too.
+#[test]
+fn reapers_morbid_target_is_forced_even_when_it_is_your_own_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::EndStep, P0);
+    state.creature_died_this_turn = true; // morbid satisfied
+
+    let _reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
+    let mine = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let their_demon = named_permanent(&mut state, &reg, "Bloodgift Demon", P1);
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::EndStep });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Graveyard,
+        "the only non-Demon creature on the board is the Reaper controller's \
+         own, and the ruling says they must choose it");
+    assert_eq!(state.get_object(their_demon).unwrap().zone, Zone::Battlefield,
+        "a Demon is never a legal target for it");
+    assert!(state.awaiting_action.is_none(),
+        "with one legal target there is nothing to ask, so no prompt is left \
+         open: {:?}", state.awaiting_action);
+}
+
 /// CR 603.3c: with no legal target, the ability never reaches the stack.
 #[test]
 fn elder_cathar_trigger_is_removed_with_no_legal_targets() {
