@@ -158,13 +158,15 @@ fn fiend_hunter_trigger_fizzles_when_locked_target_dies() {
 /// `dead_toughness` mirrors what `triggers.rs` does at trigger
 /// resolution time.
 ///
-/// NOTE: the same `o.zone == Zone::Battlefield` early-return gate
-/// exists in Murder of Crows (`murder_of_crows.rs`),
-/// Rage Thrower (`rage_thrower.rs`), and
-/// Selhoff Occultist (`selhoff_occultist.rs`). All four use
-/// the identical zone-gate pattern. One test covers the shared
-/// defect; the other three need the same one-line fix (drop the
-/// zone guard, mirror Falkenrath Noble's handler which is correct).
+/// The same `o.zone == Zone::Battlefield` early-return gate once existed in
+/// Murder of Crows, Rage Thrower and Selhoff Occultist. It is gone from all
+/// four, and each of the other three now has its own regression test beside
+/// this one: `trigger_source_independence.rs:581` (Murder of Crows), `:600`
+/// (Selhoff Occultist) and `:626` (Rage Thrower).
+///
+/// This note used to end "the other three need the same one-line fix", which
+/// stopped being true once they were fixed — a comment directing work that is
+/// already done sends the next reader looking for a guard that is not there.
 #[test]
 fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
     let registry = CardRegistry::with_all_cards();
