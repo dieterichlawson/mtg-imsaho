@@ -176,6 +176,35 @@ fn dead_weight_kills_small_creature() {
     check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Creature with 0 toughness from Dead Weight should die");
+    // The other half of the card's signature: two state-based actions in one
+    // pass. The creature goes for 0 toughness (CR 704.5f), and the Aura then
+    // has nothing to enchant and goes too (CR 704.5m).
+    assert_eq!(state.get_object(dw).unwrap().zone, Zone::Graveyard,
+        "and the Aura follows it, in the same pass");
+}
+
+/// -2/-2 is a modifier, not a verdict: it applies on top of whatever the
+/// creature's toughness already is. A 2/2 with a +1/+1 counter is a 3/3, so
+/// Dead Weight leaves a 1/1 alive.
+#[test]
+fn dead_weight_does_not_kill_through_a_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    state.add_counters(creature, CounterType::PlusOnePlusOne, 1);
+
+    let dw = castable_spell(&mut state, &reg, "Dead Weight", P0);
+    let mut state = cast_and_resolve(&state, &reg, dw, vec![Target::Object(creature)]);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(1));
+    assert_eq!(state.effective_toughness(creature, &reg), Some(1));
+
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "1 toughness is not 0");
+    assert_eq!(state.get_object(dw).unwrap().zone, Zone::Battlefield,
+        "and the Aura stays on it");
 }
 
 /// Sensory Deprivation gives -3/-0.
