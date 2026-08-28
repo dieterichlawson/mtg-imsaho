@@ -689,3 +689,62 @@ fn an_etb_trigger_does_not_offer_an_opponents_hexproof_creature() {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// One rule, one place
+// ─────────────────────────────────────────────────────────────────
+//
+// "May this player be targeted by this caster" used to be written out three
+// times: `targeting::can_target_player`, again inline in `stack.rs`'s CR
+// 608.2b re-check, and again in `helpers::any_targets` /
+// `any_targets_except`. Only the callers of the first also filtered out a
+// player who had lost, and they each did it themselves. The rule now lives in
+// `can_target_player` alone; these two cases are what the divergence let
+// through.
+
+/// CR 104.3a: a player who has lost has left the game, so nothing may target
+/// them. `helpers::any_targets` — the enumerator behind every "any target"
+/// card — walked `state.players` and asked only about hexproof.
+#[test]
+fn a_player_who_has_lost_is_not_an_any_target() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let source = named_permanent(&mut state, &reg, "Witchbane Orb", P0);
+
+    let before = mtg_engine::cards::helpers::any_targets(&state, source, P0, &reg);
+    assert!(before.contains(&Target::Player(P1)),
+        "test precondition: the opponent is an 'any target' while still in the game");
+
+    state.get_player_mut(P1).lost = true;
+
+    let after = mtg_engine::cards::helpers::any_targets(&state, source, P0, &reg);
+    assert!(!after.contains(&Target::Player(P1)),
+        "a player who has left the game is not there to be targeted");
+    assert!(after.contains(&Target::Player(P0)),
+        "and the caster is still a legal target for their own spell");
+}
+
+/// The same rule on the way down. CR 608.2b re-checks each target as the spell
+/// resolves, and that check has to be the one that offered the target — a
+/// hexproof player who was never offerable must not become legal just because
+/// the re-check restated the rule for itself.
+#[test]
+fn the_resolution_recheck_uses_the_same_player_targeting_rule() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Witchbane Orb", P1);
+
+    // Bump in the Night: "Target player loses 3 life." P0 casts it at P1, who
+    // has hexproof — the engine would never offer this, so drive it directly.
+    let bump = castable_spell(&mut state, &reg, "Bump in the Night", P0);
+    let mut state = cast_onto_stack(&state, &reg, bump, vec![Target::Player(P1)]);
+    let their_life = state.get_player(P1).life;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, their_life,
+        "the only target is illegal on resolution, so the spell is countered \
+         by game rules (CR 608.2b) and no life is lost");
+    assert_eq!(state.get_object(bump).unwrap().zone, Zone::Graveyard,
+        "a countered spell still goes to the graveyard");
+}
+
