@@ -510,3 +510,67 @@ fn trepanation_blade_stops_at_an_empty_library() {
     assert!(state.get_player(P1).library_order.is_empty(), "the library is emptied");
     assert_eq!(state.effective_power(attacker, &reg), Some(5), "2/2 plus three revealed");
 }
+
+/// "Equipped creature can't be blocked by Vampires or Zombies." — the Torch's
+/// other half, which had no test at all.
+#[test]
+fn blazing_torch_stops_vampires_and_zombies_from_blocking() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    state.get_object_mut(torch).unwrap().attached_to = Some(attacker);
+
+    // Bloodcrazed Neonate is a Vampire, Walking Corpse a Zombie, Avacyn's
+    // Pilgrim neither.
+    for (name, may_block) in [
+        ("Bloodcrazed Neonate", false),
+        ("Walking Corpse", false),
+        ("Avacyn's Pilgrim", true),
+    ] {
+        let blocker = named_permanent(&mut state, &reg, name, P1);
+        assert_eq!(
+            mtg_engine::combat::can_block_attacker(&state, blocker, attacker, &reg),
+            may_block,
+            "{name} blocking a creature equipped with Blazing Torch");
+    }
+}
+
+/// Ruling: "The source of the damage is Blazing Torch, not the equipped
+/// creature. However, the equipped creature's ability is what targets the
+/// permanent or player. ... It could target a creature with protection from
+/// artifacts, but all the damage would be prevented."
+///
+/// Both halves at once: the target is legal (targeting is the creature's, and
+/// the creature is not an artifact) and the damage is prevented (the damage is
+/// the Torch's, and the Torch is).
+#[test]
+fn blazing_torch_targets_as_the_creature_and_damages_as_the_torch() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(torch).unwrap().attached_to = Some(creature);
+
+    let warded = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(warded).unwrap().instance_continuous_effects =
+        Some(vec![ContinuousEffect::ProtectionFrom {
+            filter: CreatureFilter::HasCardType(CardType::Artifact),
+            scope: EffectScope::OnSelf,
+        }]);
+
+    // Targeting: the ability is the creature's, and the creature is no
+    // artifact, so protection from artifacts does not stop it being targeted.
+    assert!(mtg_engine::engine::can_be_targeted_by(&state, warded, P0, Some(creature), &reg),
+        "protection from artifacts does not stop the equipped creature's \
+         ability from targeting");
+
+    // Damage: the source is the Torch, which is an artifact, so all of it is
+    // prevented.
+    let new_state = activate(&state, &reg, creature, 1, vec![Target::Object(warded)]);
+    assert_eq!(new_state.get_object(warded).unwrap().damage_marked, 0,
+        "the damage's source is the Torch, an artifact, so protection from \
+         artifacts prevents all of it");
+}
