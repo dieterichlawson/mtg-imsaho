@@ -80,3 +80,74 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 - The snapshot at resolution: `snapshot_anthems.rs:selfless_cathars_anthem_is_fixed_at_resolution`
+## Full audit — 2026-08-28
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/30/selfless-cathar?utm_source=api
+**Type line**: `Creature — Human Cleric` — {W}, 1/1
+**Oracle text**:
+```
+{1}{W}, Sacrifice this creature: Creatures you control get +1/+1 until end of turn.
+```
+
+**Rulings fetched**:
+- [2011-09-22] You can activate Selfless Cathar's ability even if you control no other creatures.
+- [2011-09-22] Only creatures you control when Selfless Cathar's ability resolves will be affected. Creatures that enter or that you gain control of later in the turn will not.
+
+**Status**: ISSUE (fixed)
+
+**Oracle text source**: Oracle cache (Scryfall API), via `scripts/oracle_lookup.py`
+**Oracle text**: `{1}{W}, Sacrifice this creature: Creatures you control get +1/+1 until end of turn.`
+**Type line**: `Creature — Human Cleric` — {W}, 1/1
+**Status**: ISSUE (fixed)
+
+### Rulings (both 2011-09-22)
+1. "You can activate Selfless Cathar's ability even if you control no other creatures."
+2. "Only creatures you control when Selfless Cathar's ability resolves will be affected. Creatures that enter or that you gain control of later in the turn will not."
+
+### Code issues
+
+- `mtg-engine/src/cards/isd/selfless_cathar.rs:7` — the doc comment named the wrong creature type.
+  - Type line says: `Creature — Human Cleric`
+  - Comment said: `/// Selfless Cathar — {W} 1/1 Human Soldier.`
+  - The `subtypes` field had `["Human", "Cleric"]` — correct — so nothing behavioural was wrong. What made this worth more than a one-line fix is that nothing in the suite would have caught the same slip in the *field*: `type_lines_say_what_scryfall_says` now cross-checks every card's supertypes, card types and subtypes against the checked-in oracle cache, on both faces, and `mana_costs_and_printed_pt_say_what_scryfall_says` does the same for cost and printed P/T. The cache already backed the rules text and the back-face names; the rest of the printed characteristics was the half nobody compared. Both pass across the pool as written — no card was actually wrong — so this closes a class rather than a case. Subtypes are not cosmetic here: they decide what Slayer of the Wicked can destroy, what Elite Inquisitor has protection from, and which creatures the set's Human-matters cards see.
+
+Nothing else. `{W}`, Creature, Human Cleric, 1/1, oracle text verbatim, the ability `{1}{W}` + `SacrificeCost::SacrificeThis` with no target requirement, and the pump snapshotted at resolution.
+
+### Tricky interactions checked
+
+- Ruling 2, CR 611.2c: PASS, and for the right reason — `creatures_controlled_snapshot` fixes the affected set at resolution rather than applying a live filter, which is the line between this and Glorious Anthem. Tested at `snapshot_anthems.rs:127`.
+- Ruling 1, activatable with no other creatures: PASS. The ability names no minimum and pays for itself. Untested until this audit.
+- The Cathar does not pump itself: PASS by construction — the sacrifice is a cost, so by resolution it is in the graveyard and not a creature its controller controls.
+- "Creatures **you control**": PASS. Untested until this audit — pumping the opponent's creatures too passed the whole workspace.
+- Resolving from the graveyard: PASS, via `ability_controller`, which reads `resolving_ability_activator` (CR 602.2a) rather than the object's controller.
+- Cost is `{1}{W}`, not `{W}`: PASS. Untested until this audit.
+
+### Test coverage
+
+- Pump applies to your creatures: `cards_sacrifice_and_additional_costs.rs:29` `selfless_cathar_pumps_only_the_creatures_you_control`
+- "you control" excludes the opponent's: same test, added this audit
+- Ruling 2, fixed at resolution, newcomers unaffected: `snapshot_anthems.rs:127` `selfless_cathars_anthem_is_fixed_at_resolution`
+- Ruling 1, activatable alone on the battlefield: `cards_sacrifice_and_additional_costs.rs:63` `selfless_cathar_can_be_activated_with_no_other_creatures_but_not_for_one_mana`, added this audit
+- The ability's cost is `{1}{W}`: same test, added this audit
+- Autotap does not fund the ability from the Cathar itself: `trigger_dispatch.rs:391`
+- Printed characteristics against Scryfall: `card_data_invariants.rs:1573` and `:1633`, added this audit (whole pool)
+
+### Mutation checking
+
+| Mutation | Before | After |
+| --- | --- | --- |
+| M1 `+1/+1` -> `+2/+2` | 2 tests FAILED | (unchanged) |
+| M2 pump every creature, not only yours | passed whole workspace | `selfless_cathar_pumps_only_the_creatures_you_control` FAILED |
+| M3 `ability_controller` -> `controller_of` | passed whole workspace | passed — **vacuous**, see below |
+| M4 ability cost `{1}{W}` -> `{W}` | passed whole workspace | `selfless_cathar_can_be_activated_..._but_not_for_one_mana` FAILED |
+| M5 subtypes `Human Cleric` -> `Human Soldier` | passed whole workspace | `type_lines_say_what_scryfall_says` FAILED |
+| M6 `SacrificeThis` -> `None` | n/a | both Cathar tests FAILED |
+| M7 printed cost `{W}` -> `{1}{W}`, power 1 -> 2 | n/a | `mana_costs_and_printed_pt_say_what_scryfall_says` FAILED |
+
+M3 is vacuous and is recorded as such rather than as a gap. The two helpers differ only when an activated ability's activator is not the source's last known controller, which needs the source to change hands between activation and resolution. This ability sacrifices its source as a cost, so the source is in the graveyard before anyone could respond — the activator and the last known controller are necessarily the same player. No test can distinguish them here, and writing one that appeared to would be writing a test that passes for the wrong reason.
+
+Source restored from `/tmp/sc.bak` after each.
+
+### Suite
+
+`cargo test --workspace --no-fail-fast` exit 0, 1480 passing (was 1477). `cargo check --workspace --all-targets` clean, zero warnings.
