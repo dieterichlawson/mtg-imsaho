@@ -40,3 +40,24 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:18
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+**Type line**: Creature — Spirit
+**P/T**: 2/3
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/chapel_geist.rs` matches: {1}{W}{W}, Spirit, 2/3, Flying. French vanilla — no behavior hooks, correctly.
+
+### Tricky interactions checked
+- None specific to the card; flying evasion and Spirit-lord interactions are engine-generic. It serves as a fixture in several rule tests, which is where its data is load-bearing.
+
+### Test coverage
+- Flying (as the flying-blocker row): `mtg-engine/tests/cards_evasion_and_graveyard_pt.rs` `orchard_spirit_is_blocked_only_by_flying_or_reach`
+- Spirit + printed 2/3 (buffed by both lords): same file, `a_spirit_lord_buffs_other_spirits_you_control_and_nothing_else`
+- No rulings on Scryfall for this card.
+
+Mutation check: emptying `keywords` (Flying) fails the Orchard Spirit blocker table ("Chapel Geist (flying)"). Bites.
