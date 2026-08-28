@@ -169,9 +169,11 @@ fn auto_paying_an_exile_cost_picks_the_strongest_creature_card() {
         "the 5/5 is exiled, not whichever card happened to come first");
     assert_eq!(state.get_object(weak).unwrap().zone, Zone::Graveyard);
     assert_eq!(
-        state.get_object(lunge).unwrap().card_state.get("exiled_power").map(|o| o.0),
-        Some(5),
-        "and its power is what the spell will deal");
+        state.get_object(lunge).unwrap().card_state
+            .get(&mtg_engine::cards::exiled_to_cost_key(0)).copied(),
+        Some(strong),
+        "and the spell records the card it exiled, so it can ask that card its \
+         power when it resolves");
 }
 
 // ---------------------------------------------------------------------------

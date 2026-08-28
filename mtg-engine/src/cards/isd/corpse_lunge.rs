@@ -29,10 +29,17 @@ impl CardBehavior for CorpseLunge {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        // The creature was exiled at cast time (additional cost). Read the stored power.
+        // "damage equal to the exiled card's power" — the card's power where it
+        // now is, asked now. The card was exiled to pay the additional cost
+        // (CR 601.2f), and a characteristic-defining power goes with it
+        // (CR 604.3), so Boneyard Wurm exiled out of a graveyard stops counting
+        // itself among the creature cards there. The engine used to hand this
+        // card a power snapshotted while the Wurm was still in the graveyard,
+        // one too high.
         let power = state.get_object(object_id)
-            .and_then(|o| o.card_state.get("exiled_power").copied())
-            .map_or(0, |id| i32::try_from(id.0).unwrap_or(i32::MAX));
+            .and_then(|o| o.card_state.get(&crate::cards::exiled_to_cost_key(0)).copied())
+            .and_then(|exiled| state.effective_power(exiled, registry))
+            .unwrap_or(0);
 
         let damage = u32::try_from(power.max(0)).unwrap_or(0);
         if let Some(Target::Object(target_id)) = targets.first() {

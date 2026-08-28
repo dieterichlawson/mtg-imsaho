@@ -361,7 +361,9 @@ pub(crate) fn pay_additional_cost(
 /// non-token card, so it was really picking arbitrarily. That is visible on
 /// Corpse Lunge, whose damage is the exiled creature's power.
 ///
-/// Records that power on the spell as `exiled_power`, read back at resolution.
+/// Records the exiled cards on the spell as
+/// [`crate::cards::EXILED_TO_COST`], for a card that wants to ask them
+/// something when it resolves.
 pub fn pay_exile_creatures(
     state: &mut GameState,
     registry: &CardRegistry,
@@ -386,10 +388,9 @@ pub fn pay_exile_creatures(
         chosen.to_vec()
     };
 
-    if let Some(&first) = to_exile.first() {
-        let power = state.effective_power(first, registry).unwrap_or(0);
+    for (i, &id) in to_exile.iter().enumerate() {
         if let Some(obj) = state.get_object_mut(spell) {
-            obj.card_state.insert("exiled_power".into(), ObjectId(u64::try_from(power).unwrap_or(0)));
+            obj.card_state.insert(crate::cards::exiled_to_cost_key(i), id);
         }
     }
     for id in &to_exile {

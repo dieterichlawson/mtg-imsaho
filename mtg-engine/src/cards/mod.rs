@@ -140,6 +140,25 @@ pub const PT_DEFINED_BY: &str = "pt_defined_by";
 /// sides agree by construction rather than by both spelling the same string.
 pub const EXILE_COUNT: &str = "exile_count";
 
+/// `GameObject::card_state` key prefix: which cards an
+/// [`AdditionalCost::ExileCreaturesFromGraveyard`] exiled, as
+/// `exiled_to_cost_0`, `exiled_to_cost_1`, … in the order they were exiled.
+///
+/// The engine writes the *cards*, not anything derived from them. It used to
+/// write `exiled_power` instead — the power of the first one, read off while
+/// that card was still in the graveyard — which is one card's question
+/// (Corpse Lunge's) answered inside the cost machinery, at the wrong moment
+/// and in the wrong zone. What the cost did is that these cards were exiled;
+/// what a card wants to know about them is the card's own business, asked when
+/// it resolves.
+pub const EXILED_TO_COST: &str = "exiled_to_cost";
+
+/// The `card_state` key naming the `i`th card exiled to pay an additional cost.
+#[must_use]
+pub fn exiled_to_cost_key(i: usize) -> String {
+    format!("{EXILED_TO_COST}_{i}")
+}
+
 /// A mana ability definition.
 #[derive(Debug, Clone)]
 pub struct ManaAbilityDef {
