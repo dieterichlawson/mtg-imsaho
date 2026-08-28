@@ -18,13 +18,47 @@ use mtg_engine::types::*;
 
 /// Push a trigger for `source` directly onto the stack, the way the collector
 /// would have, then remove the source and resolve.
+///
+/// The source is given a different owner first. Leaving the battlefield resets
+/// `controller` to `owner` (CR 400.7), so a source whose two agree cannot tell
+/// `helpers::controller_of` — which answers CR 608.2g with the *last known*
+/// controller — from a raw read of the reset field. Every test in this file
+/// passed against code that read the raw field until this line existed.
 fn resolve_after_source_dies(
     state: &mut mtg_engine::state::GameState,
     reg: &CardRegistry,
     source: mtg_engine::ids::ObjectId,
     event: TriggerEvent,
 ) {
+    give_the_source_a_different_owner(state, source);
     resolve_after_source_dies_targeting(state, reg, source, event, vec![]);
+}
+
+/// The same, for a scenario that depends on which graveyard the source lands
+/// in — a card goes to its *owner's* graveyard (CR 404.3), so these cannot use
+/// a different owner as the discriminator without changing the board they are
+/// about. Kessig Cagebreakers counts itself among the creature cards in its
+/// controller's graveyard, and Curse of the Bloody Tome's test counts the
+/// cursed player's.
+fn resolve_after_source_dies_into_its_controllers_graveyard(
+    state: &mut mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    source: mtg_engine::ids::ObjectId,
+    event: TriggerEvent,
+) {
+    resolve_after_source_dies_targeting(state, reg, source, event, vec![]);
+}
+
+fn give_the_source_a_different_owner(
+    state: &mut mtg_engine::state::GameState,
+    source: mtg_engine::ids::ObjectId,
+) {
+    let obj = state.get_object(source).unwrap();
+    let (controller, owner) = (obj.controller, obj.owner);
+    if owner == controller {
+        let other = state.next_player(controller);
+        state.get_object_mut(source).unwrap().owner = other;
+    }
 }
 
 /// The same, for an ability that targets: CR 603.3d locks targets in when the
@@ -55,11 +89,6 @@ fn rakish_heir_gives_its_counter_after_trading_in_combat() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
-    // Owned by P1, controlled by P0. Leaving the battlefield resets
-    // `controller` to `owner`, so with the two the same this test could not
-    // tell `controller_of` (CR 608.2g) from the reset field — and the code did
-    // read the reset field, comparing the attacking Vampire against P1.
-    state.get_object_mut(heir).unwrap().owner = P1;
     let other = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
 
     resolve_after_source_dies(&mut state, &reg, heir,
@@ -83,7 +112,6 @@ fn hamlet_captain_pumps_the_team_after_being_killed_in_response() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
     let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
-    state.get_object_mut(captain).unwrap().owner = P1;
     let human = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
     let before = state.effective_power(human, &reg).unwrap();
 
@@ -104,7 +132,6 @@ fn ghoulraiser_returns_its_zombie_after_being_killed_in_response() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let raiser = named_permanent(&mut state, &reg, "Ghoulraiser", P0);
-    state.get_object_mut(raiser).unwrap().owner = P1;
     let zombie = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
 
     resolve_after_source_dies(&mut state, &reg, raiser,
@@ -197,7 +224,7 @@ fn curse_of_the_bloody_tome_mills_after_the_curse_is_destroyed() {
     }
     let before = state.objects_in_zone(Zone::Graveyard, P1).len();
 
-    resolve_after_source_dies(&mut state, &reg, curse, TriggerEvent::Upkeep);
+    resolve_after_source_dies_into_its_controllers_graveyard(&mut state, &reg, curse, TriggerEvent::Upkeep);
 
     assert_eq!(state.objects_in_zone(Zone::Graveyard, P1).len(), before + 2,
         "CR 113.7a/608.2: the Curse's mill still happens, and the trigger still \
@@ -357,7 +384,7 @@ fn geist_of_saint_traft_makes_its_angel_after_dying() {
     resolve_after_source_dies(&mut state, &reg, geist,
         TriggerEvent::Attacks { attacker: geist, defending_player: P1 });
 
-    assert_eq!(count_tokens_named(&state, "Angel Token"), 1,
+    assert_eq!(count_tokens_named_by(&state, "Angel Token", P0), 1,
         "CR 113.7a: killing the Geist with its attack trigger on the stack \
          still leaves the Angel");
 }
@@ -377,10 +404,10 @@ fn kessig_cagebreakers_counts_itself_among_the_dead() {
         state.move_object(c, Zone::Graveyard, &reg);
     }
 
-    resolve_after_source_dies(&mut state, &reg, cb,
+    resolve_after_source_dies_into_its_controllers_graveyard(&mut state, &reg, cb,
         TriggerEvent::Attacks { attacker: cb, defending_player: P1 });
 
-    assert_eq!(count_tokens_named(&state, "Wolf Token"), 3,
+    assert_eq!(count_tokens_named_by(&state, "Wolf Token", P0), 3,
         "CR 113.7a/608.2: the count happens on resolution, by which time the \
          Cagebreakers are themselves a creature card in the graveyard");
 }
@@ -401,11 +428,11 @@ fn endless_ranks_of_the_dead_makes_its_zombies_after_being_destroyed() {
         obj.subtypes = vec!["Zombie".into()];
         obj.name = "Zombie Token".into();
     }
-    assert_eq!(count_tokens_named(&state, "Zombie Token"), 4, "test setup");
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 4, "test setup");
 
     resolve_after_source_dies(&mut state, &reg, ranks, TriggerEvent::Upkeep);
 
-    assert_eq!(count_tokens_named(&state, "Zombie Token"), 6,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 6,
         "CR 113.7a: four Zombies makes two more, even though the enchantment \
          that counted them is gone");
 }
@@ -446,7 +473,8 @@ fn undead_alchemist_exiles_and_makes_its_zombie_after_dying() {
 
     assert_eq!(state.get_object(milled).unwrap().zone, Zone::Exile,
         "CR 113.7a: the exile still happens after the Alchemist is destroyed");
-    assert_eq!(count_tokens_named(&state, "Zombie Token"), 1, "and so does the token");
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 1,
+        "and so does the token, under the Alchemist's last known controller");
 }
 
 // Mentor of the Meek: "Whenever a creature with power 2 or less enters the
@@ -540,7 +568,7 @@ fn gutter_grime_makes_its_ooze_after_dying_alongside_the_creature() {
         dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
     });
 
-    assert_eq!(count_tokens_named(&state, "Ooze Token"), 1,
+    assert_eq!(count_tokens_named_by(&state, "Ooze Token", P0), 1,
         "CR 603.10: a death-watch fires for a creature that died simultaneously \
          with the watcher");
 }
