@@ -44,7 +44,7 @@ impl CardBehavior for TravelersAmulet {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
 
         // The artifact was already sacrificed by the engine.
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // "Search your library for a basic land card, reveal it, put it into
         // your hand, then shuffle." The search shape itself is general.

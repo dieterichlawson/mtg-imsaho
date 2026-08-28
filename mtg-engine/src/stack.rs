@@ -143,7 +143,13 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             if let Some(behavior) = registry.get(behavior_card_id) {
                 state.resolving_ability_activator = Some(activator);
                 behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);
-                state.resolving_ability_activator = None;
+                // Held across a choice the ability raised: the rest of the
+                // effect happens when that choice is answered, and it is still
+                // this ability's effect, so its "you" is still the activator.
+                // `choices.rs` clears it when the chain runs out.
+                if state.awaiting_action.is_none() {
+                    state.resolving_ability_activator = None;
+                }
             }
         }
     }

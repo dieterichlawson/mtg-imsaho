@@ -41,7 +41,7 @@ impl CardBehavior for DiscipleOfGriselbrand {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // The engine already sacrificed a creature before calling this.
         // Find the most recent CreatureDied event to get the sacrificed creature's toughness.

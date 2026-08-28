@@ -47,7 +47,7 @@ impl CardBehavior for StitchersApprentice {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // Create a 2/2 blue Homunculus creature token.
         let _token_ids = state.create_token_with_subtypes(

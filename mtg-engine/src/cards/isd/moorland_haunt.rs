@@ -113,7 +113,7 @@ impl CardBehavior for MoorlandHaunt {
     /// "Create a 1/1 white Spirit creature token with flying." The token's
     /// characteristics are this card's text, not the engine's business.
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
         state.create_token_with_subtypes(
             "", controller, 1, 1,
             vec![Color::White], vec![CardType::Creature],

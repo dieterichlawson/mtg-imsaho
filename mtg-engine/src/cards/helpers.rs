@@ -252,6 +252,24 @@ pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
     Target::Player(state.opponent(controller))
 }
 
+/// The controller of the activated ability currently resolving — the player
+/// its "you" refers to.
+///
+/// CR 602.2a: an ability's controller is the player who activated it, fixed
+/// when it went on the stack. That is not always the source's controller by
+/// the time it resolves: take the source in response and `controller_of` names
+/// the thief, so "you gain 2 life" paid the wrong player and "for as long as
+/// you control it" handed over the wrong permanent.
+///
+/// Falls back to the source's last known controller, which is the right answer
+/// for a triggered ability or an effect reached outside a resolving activated
+/// ability.
+#[must_use]
+pub fn ability_controller(state: &GameState, source_id: ObjectId) -> PlayerId {
+    state.resolving_ability_activator
+        .unwrap_or_else(|| controller_of(state, source_id))
+}
+
 /// The controller of an ability's source — the player the ability's "you"
 /// refers to.
 ///

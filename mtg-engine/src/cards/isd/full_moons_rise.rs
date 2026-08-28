@@ -60,7 +60,7 @@ impl CardBehavior for FullMoonsRise {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         let werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
