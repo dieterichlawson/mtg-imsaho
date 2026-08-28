@@ -30,7 +30,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Moorland Haunt | `moorland_haunt.rs` | 132 | 6 | 0 |
 | x | Trepanation Blade | `trepanation_blade.rs` | 139 | 5 | 1 |
 | x | Curse of the Pierced Heart | `curse_of_the_pierced_heart.rs` | 109 | 5 | 2 |
-|   | Instigator Gang | `instigator_gang.rs` | 107 | 5 | 2 |
+| x | Instigator Gang | `instigator_gang.rs` | 107 | 5 | 2 |
 |   | Curiosity | `curiosity.rs` | 79 | 6 | 1 |
 |   | Blazing Torch | `blazing_torch.rs` | 147 | 5 | 0 |
 |   | Fiend Hunter | `fiend_hunter.rs` | 91 | 5 | 2 |

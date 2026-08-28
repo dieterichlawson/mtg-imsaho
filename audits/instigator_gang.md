@@ -97,3 +97,86 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 - The attacking-creatures anthem and its static scope: `snapshot_anthems.rs:a_static_anthem_stops_when_its_source_leaves`, `werewolf_cards.rs`
+## Full audit — 2026-08-27
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/149/instigator-gang-wildblood-pack?utm_source=api
+**Type line**: `Creature — Human Werewolf` — {3}{R}, 2/3
+**Oracle text**:
+```
+Attacking creatures you control get +1/+0.
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+```
+**Back face**: Wildblood Pack — `Creature — Werewolf`, 5/5
+```
+Trample
+Attacking creatures you control get +3/+0.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+```
+
+**Rulings fetched**:
+- [2016-07-13] For more information on double-faced cards, see the Shadows over Innistrad mechanics article (http://magic.wizards.com/en/articles/archive/feature/shadows-over-innistrad-mechanics).
+
+**Status**: ISSUE (fixed)
+
+### Code issues
+
+Three found, all fixed in this pass. The card's own rules behaviour was correct; every issue was in how it participates in shared machinery.
+
+1. **Back-face oracle text used the pre-errata wording.** `instigator_gang.rs:59`
+   - Oracle (back face) says: `At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.`
+   - Code had: `"...transform Wildblood Pack."` — the front face had already been updated to "transform this creature" and the back face had not.
+   - Now matches the fetched text exactly.
+
+2. **A hand-rolled `on_upkeep` that hardcoded both face names.** `instigator_gang.rs:91` (before the fix)
+   - Code did: `let (old_name, new_name) = if was_transformed { ("Wildblood Pack", "Instigator Gang") } else { ("Instigator Gang", "Wildblood Pack") };`
+   - Eleven other werewolves have a byte-identical `on_upkeep` that reads the names off the object; Instigator Gang's is the one that drifted. Twelve copies of one behaviour is the shape the engine is supposed to avoid.
+   - Now: `helpers::werewolf_on_upkeep(self, state, self_id, registry)`, shared by all twelve.
+
+3. **The transform log claimed transforms that did not happen.** All 19 sites around `helpers::apply_transform`
+   - `apply_transform` refuses to flip a token copy of a double-faced card (CR 111.7). Every card that logged the flip around that call announced it regardless, so a token copy of Reckless Waif logged `"Reckless Waif transforms into Merciless Predator"` and stayed a Waif. Screeching Bat's line was `format!("Transforms into {}", ...)`, naming neither the permanent nor its controller.
+   - Now `apply_transform` logs it, on the path that actually flips. `card_data_invariants::no_card_announces_its_own_transform` keeps it there.
+
+**Found while doing this: Moonmist bypassed the transform operation entirely** (`moonmist.rs:45-74`, before the fix). It flipped `is_transformed` by hand and then `clone_from`ed the new face's `name`/`power`/`toughness`/`keywords`/`subtypes` onto the object. Those object vectors hold runtime *grants*, not printed characteristics, so the copy threw away everything granted to that permanent — an Olivia-bitten Human stopped being a Vampire at the moment Moonmist flipped it (CR 712.8a: transforming does not make a new object, so a type-changing effect that applied still applies) — and pinned its P/T against later effects. It also skipped the CR 111.7 token refusal. Fixed by calling `apply_transform`; the existing Olivia/Moonmist test now asserts the bite survives, and that assertion is mutation-checked.
+
+### Checked and correct
+
+- Cost `{3}{R}`, type `Creature — Human Werewolf`, 2/3; back face `Creature — Werewolf`, 5/5 with Trample. All match. The front face correctly declares **no** keywords — Scryfall's `keywords` field aggregates both faces, and Trample is printed only on Wildblood Pack.
+- `Attacking creatures you control get +1/+0` is a `ContinuousEffect::ModifyPT` scoped to `Global(And([ControlledByYou, Attacking]))`, and the back face's is the same with `power: 3`. `Global`, not `GlobalOther`: "attacking creatures you control" includes the Gang itself when it attacks.
+- The two faces' anthems do not stack: `continuous_effects_of` reads `face_data`, i.e. the active face only, so a transformed Gang gives +3/+0 and not +4/+0.
+- The upkeep trigger is `TriggerScope::Each` (the default) — "At the beginning of **each** upkeep", not "your upkeep".
+- `werewolf_should_trigger` suppresses the trigger entirely for a token copy, so no phantom stack entry.
+- `werewolf_should_transform` reads the face the ability triggered *from*, not the face that is up now (CR 603.4 + CR 712.8), which is what makes the Moonmist-in-response case resolve correctly.
+
+### Tricky interactions checked
+
+- Anthem persists after the Gang transforms, at the back face's value: PASS.
+- Anthem ends when combat ends, not at end of turn: PASS.
+- Creature put onto the battlefield attacking gets the bonus: PASS.
+- Gang arriving after attackers are declared buffs those already attacking: PASS.
+- Anthem stops when the Gang leaves: PASS.
+- Opponent's attackers get nothing: PASS.
+- Token copy cannot transform, and no longer says it did: PASS.
+- Moonmist in response to the upkeep trigger: PASS.
+
+### Test coverage
+
+- anthem on both faces: `attacking_creatures_anthem.rs:25`
+- only attacking creatures you control: `attacking_creatures_anthem.rs:49`
+- bonus ends with combat, not with the turn: `attacking_creatures_anthem.rs:70`
+- creature put onto the battlefield attacking: `attacking_creatures_anthem.rs:94`
+- Gang arriving mid-combat: `attacking_creatures_anthem.rs:114`
+- bonus stops when the Gang leaves: `attacking_creatures_anthem.rs:133`
+- transforms and gains Trample: `werewolf_cards.rs:385`
+- buffs itself when attacking: `werewolf_cards.rs:401`
+- buffs other attackers you control: `werewolf_cards.rs:417`
+- does not buff the opponent's attackers: `werewolf_cards.rs:435`
+- Wildblood Pack's +3/+0: `werewolf_cards.rs:450`
+- Moonmist in response to the upkeep trigger: `werewolf_cards.rs:834`
+- token copy neither transforms nor announces one: `zone_change_resets_object.rs` `a_token_copy_of_a_werewolf_cannot_transform` (log assertion NEW)
+- granted subtype survives Moonmist: `subtype.rs` `bug_au_moonmist_transforms_olivia_bitten_human_dfc` (assertion NEW, mutation-checked)
+- no card announces its own transform: `card_data_invariants.rs` `no_card_announces_its_own_transform` (NEW)
+
+### Rulings
+
+One ruling in the Scryfall-sourced cache (2016-07-13), a pointer to the Shadows over Innistrad double-faced-card mechanics article; nothing card-specific to check against.
+
