@@ -97,7 +97,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Lost in the Mist | `lost_in_the_mist.rs` | 68 | 4 | 0 |
 | x | Murder of Crows | `murder_of_crows.rs` | 88 | 3 | 1 |
 | x | Frightful Delusion | `frightful_delusion.rs` | 67 | 4 | 0 |
-|   | Maw of the Mire | `maw_of_the_mire.rs` | 67 | 4 | 0 |
+| x | Maw of the Mire | `maw_of_the_mire.rs` | 67 | 4 | 0 |
 |   | Stensia Bloodhall | `stensia_bloodhall.rs` | 66 | 4 | 0 |
 |   | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 65 | 4 | 0 |
 |   | Mask of Avacyn | `mask_of_avacyn.rs` | 64 | 4 | 0 |
