@@ -1476,3 +1476,49 @@ fn a_card_section_header_has_tests_under_it() {
          Either write the tests or drop the header.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// Nothing decides at random except through the game's own seeded stream.
+///
+/// A game has to be a function of its inputs. Coin flips (CR 705.2), "at
+/// random" choices (CR 701.9c) and shuffles (CR 701.20a) each used to call
+/// `rand::thread_rng()` where they stood, which cost two things. A bug seen
+/// once in a runner game could not be replayed. And nothing a card decided at
+/// random could be tested: Creepy Doll's "flip a coin, if you win destroy that
+/// creature" had a test that ran the hook fifty times and asserted at least
+/// one run destroyed something — which is a claim about the coin, not about
+/// the card.
+///
+/// `GameState::next_random` and the three verbs over it (`flip_coin`,
+/// `choose_at_random`, `shuffle`) are that stream. Two calls into `rand`
+/// remain in `engine.rs` and both are outside a game rather than inside one:
+/// seeding `rng_state` when a game is set up, and choosing who starts before
+/// there is a game to ask.
+#[test]
+fn randomness_comes_from_the_game_state() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        // The two seeding calls, documented above.
+        if rel == "engine.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            // `rand::` as a path root, not as the tail of an identifier —
+            // `griselbrand::DiscipleOfGriselbrand` is a card, not a die roll.
+            let uses_rand_crate = l.match_indices("rand::").any(|(i, _)| {
+                i == 0 || !l.as_bytes()[i - 1].is_ascii_alphanumeric() && l.as_bytes()[i - 1] != b'_'
+            });
+            if uses_rand_crate || l.contains("thread_rng") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a random decision goes through `GameState`, so the game replays from \
+         its seed:\n  {}",
+        offenders.join("\n  "));
+}

@@ -179,8 +179,9 @@ fn empty_pool_cannot_pay() {
 /// Keyed on object ids rather than names: the ten cards are two each of five
 /// basics, so a name-keyed order cannot tell several genuinely different
 /// shuffles apart.
-fn ghost_quarter_search(reg: &mtg_engine::cards::CardRegistry) -> Vec<usize> {
+fn ghost_quarter_search(reg: &mtg_engine::cards::CardRegistry, seed: u64) -> Vec<usize> {
     let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.rng_state = seed;
 
     let gq = named_permanent(&mut state, reg, "Ghost Quarter", P0);
     let victim = named_permanent(&mut state, reg, "Forest", P1);
@@ -309,13 +310,13 @@ fn ghost_quarter_targeting_itself_does_nothing() {
 fn ghost_quarter_shuffles_the_library_after_the_search() {
     let reg = registry();
     let mut orders: Vec<Vec<usize>> = Vec::new();
-    for _ in 0..20 {
-        let order = ghost_quarter_search(&reg);
+    for seed in 0..20u64 {
+        let order = ghost_quarter_search(&reg, seed);
         if !orders.contains(&order) {
             orders.push(order);
         }
     }
     assert!(orders.len() > 1,
-        "twenty searches all left the library in the same order, so it is not \
+        "twenty seeds all left the library in the same order, so it is not \
          being shuffled: {:?}", orders.first());
 }

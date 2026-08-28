@@ -883,3 +883,25 @@ pub fn answer_library_search(
     };
     mtg_engine::engine::submit_action(state, &Action::ResolveChoice { choice }, registry)
 }
+
+/// Set the game's random stream so the next coin flip comes out `win`.
+///
+/// Randomness lives on `GameState` precisely so a test can say which way it
+/// went. Searching for a seed rather than hard-coding one keeps this honest if
+/// the generator is ever replaced: the test asks for an outcome, not for a
+/// magic number.
+///
+/// # Panics
+/// Panics if no seed in the first thousand produces the requested outcome,
+/// which would mean `flip_coin` is not a coin.
+pub fn rig_next_coin_flip(state: &mut GameState, win: bool) {
+    for seed in 0..1000u64 {
+        let mut probe = state.clone();
+        probe.rng_state = seed;
+        if probe.flip_coin() == win {
+            state.rng_state = seed;
+            return;
+        }
+    }
+    panic!("no seed in the first thousand flips {win}");
+}

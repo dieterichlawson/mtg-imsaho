@@ -167,8 +167,9 @@ fn ghoulraiser_picks_at_random_among_several_zombies() {
     let reg = registry();
     let mut seen = std::collections::HashSet::new();
 
-    for _ in 0..40 {
+    for seed in 0..40u64 {
         let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
         let candidates: Vec<ObjectId> = ["Walking Corpse", "Diregraf Ghoul", "Makeshift Mauler"]
             .iter()
             .map(|n| named_card_in_graveyard(&mut state, &reg, n, P0))
@@ -184,7 +185,7 @@ fn ghoulraiser_picks_at_random_among_several_zombies() {
     }
 
     assert!(seen.len() > 1,
-        "40 entries always returned the same Zombie, so the choice is not \
+        "40 seeds always returned the same Zombie, so the choice is not \
          random; saw {seen:?}");
 }
 

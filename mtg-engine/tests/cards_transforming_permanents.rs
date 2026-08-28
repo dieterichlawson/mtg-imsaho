@@ -990,8 +990,9 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
 fn garruk_back_face_tutor_shuffles_library() {
     let reg = registry();
 
-    let run = || {
+    let run = |seed: u64| {
         let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
         let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
         set_loyalty(&mut state, garruk, 4);
         helpers::apply_transform(&mut state, garruk, &reg);
@@ -1026,11 +1027,12 @@ fn garruk_back_face_tutor_shuffles_library() {
         after
     };
 
-    let first = run();
-    // Four cards remain, so an unshuffled library repeats the same order every
-    // time. Twenty runs that all agree would be a 1-in-24^19 coincidence.
-    let shuffled = (0..20).any(|_| run() != first);
-    assert!(shuffled, "the library came back in the same order 20 times — it was never shuffled");
+    let first = run(0);
+    // Four cards remain, so a library that was not shuffled comes back in the
+    // same order whatever the seed. Twenty seeds that all agree would mean the
+    // shuffle never happened.
+    let shuffled = (1..21u64).any(|seed| run(seed) != first);
+    assert!(shuffled, "the library came back in the same order under 20 seeds — it was never shuffled");
 }
 
 #[test]
