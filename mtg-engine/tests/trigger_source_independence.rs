@@ -534,9 +534,14 @@ fn sturmgeist_draws_after_dying() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     let sturmgeist = named_permanent(&mut state, &reg, "Sturmgeist", P0);
+    // Three cards, not one: "draw a card" is a claim about how many, and with a
+    // single card in the library a Sturmgeist that drew two would draw one and
+    // stop — which is what the assertion below would have measured.
     let card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
-    state.get_player_mut(P0).library_order.push(lib_card);
+    for _ in 0..3 {
+        let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(lib_card);
+    }
     let before = state.objects_in_zone(Zone::Hand, P0).len();
 
     resolve_after_source_dies(&mut state, &reg, sturmgeist,
