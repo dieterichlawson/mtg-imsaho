@@ -124,7 +124,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Geistcatcher's Rig | `geistcatchers_rig.rs` | 58 | 3 | 1 |
 | x | Stitcher's Apprentice | `stitchers_apprentice.rs` | 82 | 3 | 0 |
 | x | Full Moon's Rise | `full_moons_rise.rs` | 81 | 3 | 0 |
-|   | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 56 | 3 | 1 |
+| x | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 56 | 3 | 1 |
 |   | Sturmgeist | `sturmgeist.rs` | 53 | 3 | 1 |
 |   | Memory's Journey | `memorys_journey.rs` | 77 | 3 | 0 |
 |   | Crossway Vampire | `crossway_vampire.rs` | 47 | 3 | 1 |
