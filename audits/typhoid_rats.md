@@ -40,3 +40,23 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:28
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Deathtouch (Any amount of damage this deals to a creature is enough to destroy it.)
+**Type line**: Creature — Rat
+**P/T**: 1/1
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/typhoid_rats.rs` matches: {B}, Rat, 1/1, Deathtouch. French vanilla otherwise.
+
+### Tricky interactions checked
+- Deathtouch: 1 damage into a 5/5 kills it via the `dealt_deathtouch_damage` mark + SBA (CR 704.5h) — tested with this card. Deathtouch+trample minimum assignment covered generically. PASS
+
+### Test coverage
+- Deathtouch kill: `mtg-engine/tests/keywords.rs` `deathtouch_kills_with_one_damage` (tabled over both deathtouch creatures during the Ambush Viper audit)
+- No rulings on Scryfall for this card.
+
+Mutation check: emptying `keywords` (Deathtouch) fails the tabled test on the Rats row. Bites.
