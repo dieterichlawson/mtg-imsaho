@@ -110,7 +110,7 @@ fn bug_planeswalker_damage_uses_damage_marked_not_loyalty() {
     engine::apply_pending_effect(
         &mut state,
         &Target::Object(garruk),
-        &mtg_engine::state::PendingEffect::DealDamage { source_id: garruk, amount: 2, source_name: "Test".into() },
+        &mtg_engine::state::PendingEffect::DealDamage { source_id: garruk, amount: 2 },
         &registry,
     );
 

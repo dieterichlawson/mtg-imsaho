@@ -78,12 +78,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 behavior.resolve_card_effect(state, *source_id, key, target, registry);
             }
         }
-        (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name: _ }) => {
+        (Target::Object(id), PendingEffect::DealDamage { amount, source_id }) => {
             crate::damage::deal_damage(state, *source_id,
                 crate::events::DamageTarget::Object(*id), *amount,
                 crate::damage::DamageKind::NonCombat, registry);
         }
-        (Target::Player(pid), PendingEffect::DealDamage { amount, source_id, source_name: _ }) => {
+        (Target::Player(pid), PendingEffect::DealDamage { amount, source_id }) => {
             crate::damage::deal_damage(state, *source_id,
                 crate::events::DamageTarget::Player(*pid), *amount,
                 crate::damage::DamageKind::NonCombat, registry);

@@ -114,13 +114,9 @@ impl CardBehavior for GarrukRelentless {
                 // equal to its power to him.
                 if let Some(Target::Object(target_id)) = targets.first() {
                     let target_power = state.effective_power(*target_id, registry).unwrap_or(0);
-                    let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                    let self_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-
                     let garruk_effect = PendingEffect::DealDamage {
                         amount: 3,
                         source_id: self_id,
-                        source_name: self_name,
                     };
                     crate::engine::apply_pending_effect(state, &Target::Object(*target_id), &garruk_effect, registry);
 
@@ -129,7 +125,6 @@ impl CardBehavior for GarrukRelentless {
                         let creature_effect = PendingEffect::DealDamage {
                             amount: remove,
                             source_id: *target_id,
-                            source_name: target_name.clone(),
                         };
                         crate::engine::apply_pending_effect(state, &Target::Object(self_id), &creature_effect, registry);
                     }

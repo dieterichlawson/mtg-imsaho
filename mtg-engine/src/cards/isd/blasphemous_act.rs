@@ -44,7 +44,6 @@ impl CardBehavior for BlasphemousAct {
             let effect = PendingEffect::DealDamage {
                 amount: 13,
                 source_id: object_id,
-                source_name: "Blasphemous Act".into(),
             };
             crate::engine::apply_pending_effect(
                 state,

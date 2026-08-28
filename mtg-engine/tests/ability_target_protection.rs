@@ -208,7 +208,6 @@ fn bug_spare_from_evil_protection_non_combat_damage() {
         &mtg_engine::state::PendingEffect::DealDamage {
             amount: 3,
             source_id: zombie,
-            source_name: "Zombie".into(),
         },
         &registry,
     );

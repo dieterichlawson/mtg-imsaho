@@ -58,7 +58,6 @@ impl CardBehavior for StensiaBloodhall {
             let effect = crate::state::PendingEffect::DealDamage {
                 amount: 2,
                 source_id: object_id,
-                source_name: "Stensia Bloodhall".into(),
             };
             crate::engine::apply_pending_effect(state, target, &effect, registry);
         }

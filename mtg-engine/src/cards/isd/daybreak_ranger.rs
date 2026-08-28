@@ -108,7 +108,6 @@ impl CardBehavior for DaybreakRanger {
                 let effect = crate::state::PendingEffect::DealDamage {
                     amount: 2,
                     source_id: object_id,
-                    source_name: "Daybreak Ranger".into(),
                 };
                 crate::engine::apply_pending_effect(
                     state,

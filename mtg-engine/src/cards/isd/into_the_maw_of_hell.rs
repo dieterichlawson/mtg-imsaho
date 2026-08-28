@@ -63,7 +63,6 @@ impl CardBehavior for IntoTheMawOfHell {
                 let effect = crate::state::PendingEffect::DealDamage {
                     amount: 13,
                     source_id: object_id,
-                    source_name: "Into the Maw of Hell".into(),
                 };
                 crate::engine::apply_pending_effect(
                     state,

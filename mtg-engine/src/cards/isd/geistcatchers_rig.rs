@@ -50,7 +50,6 @@ impl CardBehavior for GeistcatchersRig {
             PendingEffect::DealDamage {
                 amount: 4,
                 source_id: object_id,
-                source_name: "Geistcatcher's Rig".into(),
             },
             "Geistcatcher's Rig: you may deal 4 damage to the targeted creature",
             registry,

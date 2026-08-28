@@ -109,7 +109,6 @@ impl CardBehavior for OliviaVoldaren {
                     let effect = crate::state::PendingEffect::DealDamage {
                         amount: 1,
                         source_id: object_id,
-                        source_name: "Olivia Voldaren".into(),
                     };
                     crate::engine::apply_pending_effect(
                         state,

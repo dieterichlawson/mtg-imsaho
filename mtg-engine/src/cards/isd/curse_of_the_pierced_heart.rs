@@ -96,7 +96,6 @@ impl CardBehavior for CurseOfThePiercedHeart {
         let effect = PendingEffect::DealDamage {
             amount: 1,
             source_id: self_id,
-            source_name: "Curse of the Pierced Heart".into(),
         };
         let mut options = vec![Target::Player(cursed_player)];
         options.extend(planeswalkers);

@@ -252,12 +252,9 @@ pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Targe
 /// (creature or player), then move the spell to the appropriate zone.
 pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Target], amount: u32, registry: &CardRegistry) {
     if let Some(target) = targets.first() {
-        let source_name = state.get_object(spell_id)
-            .map_or_else(|| "spell".into(), |o| o.name.clone());
         let effect = PendingEffect::DealDamage {
             amount,
             source_id: spell_id,
-            source_name,
         };
         crate::engine::apply_pending_effect(state, target, &effect, registry);
     }

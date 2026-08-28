@@ -2996,7 +2996,10 @@ pub enum ResolutionChoiceKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PendingEffect {
     /// Deal N damage to the chosen target.
-    DealDamage { amount: u32, source_id: ObjectId, source_name: String },
+    /// CR 119.3: damage has a source, and the source is an object — not its
+    /// name. The name used to ride along beside it and was read by nothing:
+    /// `deal_damage` writes the log line itself, from the source object.
+    DealDamage { amount: u32, source_id: ObjectId },
     /// Destroy the chosen permanent.
     Destroy { source_name: String },
     /// Move chosen creature from graveyard to battlefield.

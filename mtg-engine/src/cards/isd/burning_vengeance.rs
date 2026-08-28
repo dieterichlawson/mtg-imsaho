@@ -64,7 +64,6 @@ impl CardBehavior for BurningVengeance {
         let effect = PendingEffect::DealDamage {
             amount: 2,
             source_id: self_id,
-            source_name: "Burning Vengeance".into(),
         };
         crate::engine::apply_pending_effect(state, target, &effect, registry);
     }

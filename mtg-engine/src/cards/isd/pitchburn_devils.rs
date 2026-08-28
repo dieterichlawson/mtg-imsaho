@@ -38,7 +38,6 @@ impl CardBehavior for PitchburnDevils {
         let effect = PendingEffect::DealDamage {
             amount: 3,
             source_id: object_id,
-            source_name: "Pitchburn Devils".into(),
         };
         crate::engine::apply_pending_effect(state, target, &effect, registry);
     }

@@ -41,7 +41,6 @@ impl CardBehavior for HarvestPyre {
             let effect = crate::state::PendingEffect::DealDamage {
                 amount: count,
                 source_id: object_id,
-                source_name: "Harvest Pyre".into(),
             };
             crate::engine::apply_pending_effect(
                 state,
