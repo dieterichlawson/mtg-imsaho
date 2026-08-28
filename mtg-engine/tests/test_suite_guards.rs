@@ -663,10 +663,13 @@ fn only_the_library_helper_puts_a_card_into_a_library() {
             if l.starts_with("//") || !l.contains("library_order") {
                 continue;
             }
-            // `drain` is not removal from a library: Forbidden Alchemy and
-            // Mulch take the revealed cards out of the order while they are
-            // still in the zone, which is how "look at the top four" is
-            // modelled. `shuffle` reorders and adds nothing.
+            // `drain` is not removal from a library: Forbidden Alchemy takes
+            // the revealed cards out of the order while they are still in the
+            // zone, because its choice prompt spans a priority window. Mulch
+            // used to do the same and no longer needs to — every card it
+            // reveals leaves the library in the same resolution, so
+            // `move_object` takes each out of the order for it.
+            // `shuffle` reorders and adds nothing.
             if l.contains(".insert(") || l.contains(".push(") || l.contains(".extend(")
                 || l.contains(".retain(")
             {

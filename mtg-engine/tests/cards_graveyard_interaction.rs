@@ -325,6 +325,57 @@ fn mulch_puts_lands_in_hand_and_rest_in_graveyard() {
     assert_eq!(new_state.get_object(nonland2).unwrap().zone, Zone::Graveyard);
 }
 
+/// "the top **four** cards" — the fifth and sixth are not revealed, stay in the
+/// library, and stay in order. The test above stocks exactly four, so it cannot
+/// tell "the top four" from "the whole library".
+#[test]
+fn mulch_reveals_only_the_top_four() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest = reg.get_id_by_name("Forest").unwrap();
+    let library: Vec<ObjectId> = (0..6)
+        .map(|_| state.create_object(forest, P0, Zone::Library, None, None))
+        .collect();
+    state.get_player_mut(P0).library_order = library.clone();
+
+    let mulch = castable_spell(&mut state, &reg, "Mulch", P0);
+    let state = cast_and_resolve(&state, &reg, mulch, vec![]);
+
+    for id in &library[..4] {
+        assert_eq!(state.get_object(*id).unwrap().zone, Zone::Hand,
+            "the top four are lands, so they go to hand");
+    }
+    for id in &library[4..] {
+        assert_eq!(state.get_object(*id).unwrap().zone, Zone::Library);
+    }
+    assert_eq!(state.get_player(P0).library_order, library[4..],
+        "and the library still lists what is left, in order — the zone and the \
+         order have to agree");
+}
+
+/// A library with fewer than four cards reveals all of them and does not lose
+/// the game for it: revealing is not drawing (CR 704.5b).
+#[test]
+fn mulch_with_a_short_library_reveals_what_is_there() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest = reg.get_id_by_name("Forest").unwrap();
+    let bears = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let land = state.create_object(forest, P0, Zone::Library, None, None);
+    let creature = state.create_object(bears, P0, Zone::Library, Some(2), Some(2));
+    state.get_player_mut(P0).library_order = vec![land, creature];
+
+    let mulch = castable_spell(&mut state, &reg, "Mulch", P0);
+    let state = cast_and_resolve(&state, &reg, mulch, vec![]);
+
+    assert_eq!(state.get_object(land).unwrap().zone, Zone::Hand);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+    assert!(state.get_player(P0).library_order.is_empty());
+    assert!(!state.get_player(P0).lost, "an empty library is not a loss until a draw");
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Purify the Grave
 // ═══════════════════════════════════════════════════════════════════

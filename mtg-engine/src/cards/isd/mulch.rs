@@ -26,10 +26,14 @@ impl CardBehavior for Mulch {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
-        // Reveal the top four cards.
-        let player = state.get_player_mut(controller);
-        let count = std::cmp::min(4, player.library_order.len());
-        let revealed: Vec<ObjectId> = player.library_order.drain(..count).collect();
+        // Reveal the top four cards. Every one of them is going somewhere, so
+        // the ids are all this needs — `move_object` takes each out of the
+        // library's order as it leaves (CR 401.1). Draining them out here
+        // first left four cards whose zone said Library while the library did
+        // not list them, which is a state nothing should be able to observe
+        // and nothing here needs.
+        let library = &state.get_player(controller).library_order;
+        let revealed: Vec<ObjectId> = library.iter().take(4).copied().collect();
 
         let mut lands = Vec::new();
         let mut non_lands = Vec::new();
