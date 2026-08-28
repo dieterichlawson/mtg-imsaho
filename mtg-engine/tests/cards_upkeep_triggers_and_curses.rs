@@ -296,6 +296,84 @@ fn curse_of_oblivion_exiles_from_graveyard() {
     assert_eq!(state.get_object(g2).unwrap().zone, Zone::Exile);
 }
 
+/// Ruling: "If the enchanted player has only one card in their graveyard, they
+/// exile that card." Not "no cards are exiled" — the effect does as much as it
+/// can (CR 608.2).
+#[test]
+fn curse_of_oblivion_exiles_the_only_card_when_there_is_just_one() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+    attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
+
+    let only = state.create_object(CardId(9999), P1, Zone::Graveyard, None, None);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(only).unwrap().zone, Zone::Exile,
+        "the one card is exiled");
+}
+
+/// An empty graveyard is not an error — nothing is exiled and no choice is
+/// offered.
+#[test]
+fn curse_of_oblivion_does_nothing_with_an_empty_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+    attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert!(state.awaiting_action.is_none(), "no card to choose, so no prompt");
+}
+
+/// With three or more cards the enchanted player chooses which two to exile,
+/// one prompt at a time. This is the branch that carries a countdown in the
+/// effect key, and it had no test — an off-by-one there would exile one card or
+/// three instead of two.
+#[test]
+fn curse_of_oblivion_lets_the_cursed_player_choose_exactly_two_of_several() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+    attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
+
+    let g: Vec<ObjectId> = (0..4)
+        .map(|_| state.create_object(CardId(9999), P1, Zone::Graveyard, None, None))
+        .collect();
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    // First prompt — and it goes to the *cursed* player, not the Curse's
+    // controller.
+    match state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player, .. }) =>
+            assert_eq!(player, P1, "the enchanted player chooses"),
+        _ => panic!("expected a choice of card to exile"),
+    }
+    let mut state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(mtg_engine::actions::Target::Object(g[0]))) },
+        &reg,
+    );
+
+    // Second prompt.
+    assert!(state.awaiting_action.is_some(), "a second card is still owed");
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(mtg_engine::actions::Target::Object(g[1]))) },
+        &reg,
+    );
+
+    assert!(state.awaiting_action.is_none(), "two is two — no third prompt");
+    let exiled = g.iter().filter(|&&id| state.get_object(id).unwrap().zone == Zone::Exile).count();
+    assert_eq!(exiled, 2, "exactly two cards left the graveyard");
+    assert_eq!(state.get_object(g[0]).unwrap().zone, Zone::Exile);
+    assert_eq!(state.get_object(g[1]).unwrap().zone, Zone::Exile);
+}
+
 // ── Curse of the Nightly Hunt ─────────────────────────────────────
 
 /// Curse forces enchanted player's creatures to attack.
