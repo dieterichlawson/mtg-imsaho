@@ -43,7 +43,7 @@ impl CardBehavior for FalkenrathNoble {
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         // "This creature dies" — trigger fires even when Noble itself dies.
         // Use controller (last known information from when it was on the battlefield).
-        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         drain(state, controller, chosen_targets, registry);
     }
 

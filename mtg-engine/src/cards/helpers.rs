@@ -252,10 +252,19 @@ pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
     Target::Player(state.opponent(controller))
 }
 
-/// Get the controller of a permanent, with a fallback.
+/// The controller of an ability's source — the player the ability's "you"
+/// refers to.
+///
+/// CR 608.2g: an ability that resolves after its source has left the
+/// battlefield uses the source's last known information, and that includes who
+/// controlled it. Reading `o.controller` instead gave the wrong answer in
+/// exactly that case, because leaving the battlefield resets `controller` to
+/// `owner` — so a card whose comment said "this still happens if the source is
+/// destroyed in response" (CR 113.7a) handed the effect to the owner. For a
+/// source still on the battlefield the two are the same.
 #[must_use]
 pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
-    state.get_object(object_id).map_or(PlayerId(0), |o| o.controller)
+    state.last_known_controller(object_id)
 }
 
 // ═══════════════════════════════════════════════════════════════════

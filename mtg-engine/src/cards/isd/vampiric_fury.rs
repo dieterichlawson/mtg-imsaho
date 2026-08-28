@@ -23,7 +23,7 @@ impl CardBehavior for VampiricFury {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Find the controller of this spell.
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Build a registry to look up subtypes.
 

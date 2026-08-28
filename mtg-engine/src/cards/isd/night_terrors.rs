@@ -27,7 +27,7 @@ impl CardBehavior for NightTerrors {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         if let Some(Target::Player(target_player)) = targets.first() {
             // Reveal target player's hand — find all nonland cards.
             let nonland_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)

@@ -23,7 +23,7 @@ impl CardBehavior for SpareFromEvil {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Grant protection from non-Human creatures until end of turn.
         // CR 611.2c: a continuous effect created by a resolving spell or

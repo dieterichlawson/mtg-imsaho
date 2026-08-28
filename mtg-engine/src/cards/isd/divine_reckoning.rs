@@ -43,7 +43,7 @@ impl CardBehavior for DivineReckoning {
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
         let (mut kept, remaining) = Self::decode(key);
-        let chooser = state.get_object(*id).map_or(PlayerId(0), |o| o.controller);
+        let chooser = crate::cards::helpers::controller_of(state, *id);
         state.log(LogLevel::Event,
             format!("Divine Reckoning: p{} keeps {}", chooser.0, state.obj_name(*id)));
         kept.push(*id);

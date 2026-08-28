@@ -35,7 +35,7 @@ impl CardBehavior for VillageBellRinger {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         let to_untap: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller).into_iter()
             .filter(|o| state.is_creature(o.id, registry) && o.tapped)
             .map(|o| o.id)

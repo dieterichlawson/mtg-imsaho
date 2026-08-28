@@ -37,8 +37,7 @@ impl CardBehavior for TributeToHunger {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id)
-            .map_or(PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Target opponent — use the target if provided, otherwise pick the opponent.
         let opponent = match targets.first() {

@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::{GameState, TemporaryEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 
@@ -31,9 +31,9 @@ impl CardBehavior for TraiterousBlood {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
             if state.get_object(*creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
+                let controller = crate::cards::helpers::controller_of(state, object_id);
                 // Save original controller for revert at end of turn.
-                let original = state.get_object(*creature_id).map_or(PlayerId(0), |o| o.controller);
+                let original = crate::cards::helpers::controller_of(state, *creature_id);
                 state.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: *creature_id, original_controller: original });
                 // Gain control (summoning-sick for the new controller) and untap.
                 // The haste grant below lets it attack this turn anyway.

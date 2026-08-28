@@ -23,7 +23,7 @@ impl CardBehavior for Paraselene {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Find all enchantments on the battlefield.
         let enchantments: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()

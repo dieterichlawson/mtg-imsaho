@@ -61,7 +61,7 @@ impl CardBehavior for CaravanVigil {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
 
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Search library for all basic land cards.
         let basic_lands: Vec<ObjectId> = state.get_player(controller).library_order.iter()
@@ -116,7 +116,7 @@ impl CardBehavior for CaravanVigil {
         let Some(land_id) = state.get_object(self_id).and_then(|o| o.card_state.get("morbid_land").copied()) else {
             return;
         };
-        let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         let land_name = state.obj_name(land_id);
 
         if yes {

@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
@@ -32,7 +32,7 @@ impl CardBehavior for ArmyOfTheDamned {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         for _ in 0..13 {
             let token_ids = state.create_token_with_subtypes(
                 "", controller, 2, 2,

@@ -58,8 +58,7 @@ impl CardBehavior for MurderOfCrows {
             return;
         }
         // "You may draw a card. If you do, discard a card."
-        let controller = state.get_object(self_id)
-            .map_or(PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // "If you do" — the discard happens only if a card was actually
         // drawn. With an empty library nothing is drawn, and checking the hand
         // instead made a player with cards already in hand discard one they

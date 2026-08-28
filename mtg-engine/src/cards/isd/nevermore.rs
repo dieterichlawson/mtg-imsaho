@@ -34,7 +34,7 @@ impl CardBehavior for Nevermore {
     fn chooses_as_it_enters(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Collect all implemented nonland card names.
         // Nevermore names a CARD, not a permanent — this reads the registry by

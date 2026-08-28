@@ -61,7 +61,7 @@ impl CardBehavior for GraveyardShovel {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         if let Some(Target::Player(target_player)) = targets.first() {
             // Collect all cards in the targeted player's graveyard.

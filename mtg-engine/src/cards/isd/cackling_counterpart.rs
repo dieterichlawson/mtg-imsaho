@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, TargetFilter, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
@@ -36,7 +36,7 @@ impl CardBehavior for CacklingCounterpart {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
+                let controller = crate::cards::helpers::controller_of(state, object_id);
                 let token_id = state.create_token_copy(*target_id, controller, registry);
                 let name = state.get_object(token_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,

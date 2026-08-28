@@ -23,7 +23,7 @@ impl CardBehavior for RallyThePeasants {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // CR 611.2c: a continuous effect created by a resolving spell or
         // ability affects the set of objects that existed when it resolved, and

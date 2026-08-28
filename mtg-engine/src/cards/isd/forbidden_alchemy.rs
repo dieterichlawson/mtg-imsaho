@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
@@ -24,7 +24,7 @@ impl CardBehavior for ForbiddenAlchemy {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         // Remove top 4 cards from library_order (they stay in Zone::Library but aren't drawable).
         let player = state.get_player_mut(controller);
         let count = std::cmp::min(4, player.library_order.len());

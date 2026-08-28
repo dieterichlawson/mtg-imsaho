@@ -54,8 +54,11 @@ impl CardBehavior for Curiosity {
 
     fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
         // CR 113.7a: the draw happens even if Curiosity is destroyed in
-        // response to its own trigger.
-        let Some(controller) = state.get_object(self_id).map(|o| o.controller) else { return };
+        // response to its own trigger — and CR 608.2g says the "you" is then
+        // the player who last controlled it, which is what `controller_of`
+        // answers. Reading `o.controller` gave the owner in that one case,
+        // because leaving the battlefield resets the field.
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // "You may draw a card" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
@@ -71,8 +74,7 @@ impl CardBehavior for Curiosity {
         if !yes {
             return;
         }
-        let controller = state.get_object(self_id)
-            .map_or(PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         let _ = draw_cards(state, controller, 1, registry);
         state.log(LogLevel::Event, "Curiosity: drew a card".into());
     }

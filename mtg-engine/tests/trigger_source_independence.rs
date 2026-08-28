@@ -12,7 +12,7 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::state::StackEntry;
+use mtg_engine::state::{AwaitingAction, StackEntry};
 use mtg_engine::triggers::{DeadCreature, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
@@ -93,13 +93,24 @@ fn curiosity_offers_its_draw_after_the_aura_is_destroyed() {
     let bearer = ready_creature(&mut state, P0, 2, 2);
     let aura = named_permanent(&mut state, &reg, "Curiosity", P0);
     state.get_object_mut(aura).unwrap().attached_to = Some(bearer);
+    // Owned by P1, controlled by P0. "You" is Curiosity's controller (ruling,
+    // 2011-09-22), and the two must differ or the assertion below cannot tell
+    // which field the code read.
+    state.get_object_mut(aura).unwrap().owner = P1;
 
     resolve_after_source_dies(&mut state, &reg, aura,
         TriggerEvent::AnyDamageToPlayer { dealer: bearer, damaged_player: P1, amount: 2 });
 
-    assert!(state.awaiting_action.is_some(),
-        "CR 113.7a: destroying Curiosity in response to its own trigger must \
-         still present the 'you may draw a card' choice");
+    let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action else {
+        panic!("CR 113.7a: destroying Curiosity in response to its own trigger \
+                must still present the 'you may draw a card' choice; got {:?}",
+               state.awaiting_action);
+    };
+    // CR 608.2g: the ability uses the source's last known information, which
+    // includes who controlled it. Leaving the battlefield resets `controller`
+    // to `owner`, so reading that field offered the draw to the wrong player.
+    assert_eq!(*player, P0,
+        "the draw is offered to the player who controlled Curiosity, not its owner");
 }
 
 // Burning Vengeance: "Whenever you cast an instant or sorcery spell from your

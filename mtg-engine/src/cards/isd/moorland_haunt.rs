@@ -68,7 +68,7 @@ impl CardBehavior for MoorlandHaunt {
     /// before the colon is a cost, paid on activation (CR 601.2h via 602.2b).
     /// The token it buys is the effect and waits for resolution.
     fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // CR 109.1: "a creature CARD in your graveyard", so a token there is
         // not one of them.

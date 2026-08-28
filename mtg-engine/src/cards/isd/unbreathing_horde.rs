@@ -49,7 +49,7 @@ impl CardBehavior for UnbreathingHorde {
         registry: &CardRegistry,
     ) -> Option<crate::replacement::Replacement> {
         crate::cards::helpers::enters_with_counters(self_id, event, || {
-        let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, self_id);
 
         // Count other Zombies on the battlefield.
         let bf_count = u32::try_from(state.objects_in_zone(Zone::Battlefield, controller).into_iter()

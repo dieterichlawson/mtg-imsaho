@@ -25,8 +25,7 @@ impl CardBehavior for AltarsReap {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id)
-            .map_or(crate::ids::PlayerId(0), |o| o.controller);
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // The creature sacrifice happens at cast time (as an additional cost).
         // On resolution, just draw two cards.

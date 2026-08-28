@@ -22,7 +22,7 @@ impl CardBehavior for HystericalBlindness {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Collect creature IDs controlled by opponents.
         let opponent_creature_ids: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
