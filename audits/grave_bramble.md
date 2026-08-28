@@ -40,3 +40,32 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 Static-ability behaviour is exercised through the shared continuous-effects tests in `continuous_effects.rs` and `snapshot_anthems.rs`.
 
+
+## Audit — 2026-08-28 20:04
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Defender, protection from Zombies
+**Type line**: Creature — Plant
+**P/T**: 3/4
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/grave_bramble.rs` matches: {1}{G}{G}, Plant, 3/4, `Keyword::Defender`, `ProtectionFromSubtype { "Zombie", OnSelf }`.
+
+### Tricky interactions checked
+- Defender means it never attacks, so "Zombies can't block it" is unreachable; the protection's live arms are damage-while-blocking, targeting, and the one-direction rule. All three now covered.
+- One-directional: the Bramble CAN block Zombies (protection stops Zombies blocking IT, not the reverse). Tested. PASS
+- Targeting arm: Grimgrin (Zombie source) cannot target it — trigger-target filtering consults `has_protection_from` with the source id. Tested. PASS
+- Damage arm: blocking a Walking Corpse, the Bramble takes 0 while dealing its full 3 (protection is not mutual). NEW test this audit.
+- Zombie tokens count as Zombies for the protection (accessor union). PASS
+
+### Test coverage
+- Defender can't attack / can block (uses Grave Bramble itself): `mtg-engine/tests/keywords.rs` `defender_cannot_attack`, `defender_can_block`
+- Can block Zombies: `ability_target_protection.rs` `bug_protection_incorrectly_prevents_blocking_zombies`
+- Untargetable by a Zombie source: `ability_target_protection.rs` `bug_protection_doesnt_prevent_zombie_source_targeting`
+- Damage prevented while blocking: `ability_target_protection.rs` `grave_bramble_blocks_a_zombie_and_takes_no_damage` (NEW)
+- No rulings on Scryfall for this card.
+
+Mutation checks:
+- Emptying `continuous_effects` (with a sink so it compiles): the new damage test FAILS. Bites. (First attempt dropped the import and didn't compile — discarded.)
+- Emptying `keywords` (Defender): `defender_cannot_attack` FAILS. Bites.

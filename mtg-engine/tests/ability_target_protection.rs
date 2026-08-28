@@ -170,6 +170,27 @@ fn bug_protection_incorrectly_prevents_blocking_zombies() {
         "Grave Bramble should be able to block Zombies — protection prevents Zombies from blocking IT, not the reverse");
 }
 
+/// The damage arm of that same block: the Zombie's combat damage to the
+/// Bramble is prevented, while the Bramble's own 3 lands on the Zombie.
+/// (With defender the Bramble never attacks, so blocking a Zombie is the
+/// only way this protection's damage arm ever matters.)
+#[test]
+fn grave_bramble_blocks_a_zombie_and_takes_no_damage() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let bramble = named_permanent(&mut state, &registry, "Grave Bramble", P1);
+    let zombie = named_permanent(&mut state, &registry, "Walking Corpse", P0); // 2/2 Zombie
+
+    attacks_blocked_by(&mut state, zombie, P1, &[bramble]);
+    mtg_engine::combat::deal_combat_damage(&mut state, &registry);
+
+    assert_eq!(state.get_object(bramble).unwrap().damage_marked, 0,
+        "protection from Zombies prevents the Walking Corpse's combat damage");
+    assert_eq!(state.get_object(zombie).unwrap().damage_marked, 3,
+        "the Bramble's own 3 damage is dealt normally — protection is not mutual");
+}
+
 /// Bug: Spare from Evil gives "protection from non-Human creatures."
 /// Protection prevents damage from those sources (all damage, not just
 /// combat). Non-combat damage from a non-Human creature source should
