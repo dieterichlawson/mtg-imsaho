@@ -240,7 +240,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Invisible Stalker | `invisible_stalker.rs` | 27 | 1 | 0 |
 | x | One-Eyed Scarecrow | `one_eyed_scarecrow.rs` | 27 | 1 | 0 |
 | x | Rooftop Storm | `rooftop_storm.rs` | 27 | 1 | 0 |
-|   | Skaab Goliath | `skaab_goliath.rs` | 27 | 1 | 0 |
+| x | Skaab Goliath | `skaab_goliath.rs` | 27 | 1 | 0 |
 |   | Vampire Interloper | `vampire_interloper.rs` | 27 | 1 | 0 |
 |   | Makeshift Mauler | `makeshift_mauler.rs` | 26 | 1 | 0 |
 |   | Chapel Geist | `chapel_geist.rs` | 25 | 1 | 0 |

@@ -33,14 +33,14 @@ use mtg_engine::cards::CardRegistry;
 /// test that only checked the creature arrived would miss.
 #[test]
 fn exiling_creature_cards_pays_for_the_skaab() {
-    // (spell, creature cards it exiles, its power/toughness)
-    const CARDS: &[(&str, &[&str], i32, i32)] = &[
-        ("Makeshift Mauler", &["Walking Corpse"], 4, 5),
-        ("Stitched Drake", &["Grizzly Bears"], 3, 4),
-        ("Skaab Goliath", &["Walking Corpse", "Grizzly Bears"], 6, 9),
+    // (spell, creature cards it exiles, its power/toughness, its keyword)
+    const CARDS: &[(&str, &[&str], i32, i32, Option<Keyword>)] = &[
+        ("Makeshift Mauler", &["Walking Corpse"], 4, 5, None),
+        ("Stitched Drake", &["Grizzly Bears"], 3, 4, Some(Keyword::Flying)),
+        ("Skaab Goliath", &["Walking Corpse", "Grizzly Bears"], 6, 9, Some(Keyword::Trample)),
     ];
 
-    for &(spell_name, fuel_names, power, toughness) in CARDS {
+    for &(spell_name, fuel_names, power, toughness, keyword) in CARDS {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -59,6 +59,9 @@ fn exiling_creature_cards_pays_for_the_skaab() {
         }
         assert_eq!(state.effective_power(spell, &reg), Some(power), "{spell_name}'s power");
         assert_eq!(state.effective_toughness(spell, &reg), Some(toughness), "{spell_name}'s toughness");
+        if let Some(kw) = keyword {
+            assert!(state.has_keyword(spell, kw, &reg), "{spell_name} has {kw:?}");
+        }
     }
 }
 
