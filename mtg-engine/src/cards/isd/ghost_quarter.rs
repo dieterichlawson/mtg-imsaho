@@ -60,15 +60,16 @@ impl CardBehavior for GhostQuarter {
     /// basic land card." 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            let (target_controller, target_name) = match state.get_object(*target_id) {
-                Some(o) if o.zone == Zone::Battlefield => (o.controller, o.name.clone()),
-                _ => return,
-            };
+            let Some(target_controller) = state.get_object(*target_id)
+                .filter(|o| o.zone == Zone::Battlefield)
+                .map(|o| o.controller) else { return };
 
             // Destroy target land.
-            crate::destruction::try_destroy(state, *target_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Ghost Quarter destroyed {target_name}"));
+            // The search happens either way (ruling 2013-07-01: "even if that
+            // land wasn't destroyed... because the land has indestructible or
+            // because it was regenerated"), so the result is only used to say
+            // truthfully what happened.
+            crate::destruction::try_destroy_by(state, *target_id, "Ghost Quarter", registry);
 
             // "Its controller may search their library for a basic land card,
             // put it onto the battlefield, then shuffle."

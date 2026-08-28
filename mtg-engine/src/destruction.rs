@@ -48,6 +48,34 @@ pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry)
     DestroyResult::Died
 }
 
+/// `try_destroy`, with one accurate line in the log naming what tried.
+///
+/// The pipeline already announces what *happened* — `move_object` writes the
+/// death, `regenerate` writes the regeneration — but neither names the source,
+/// and five cards wrote their own "X destroyed Y" line beside it without
+/// looking at the result. Ghost Quarter's ruling is explicit that the land can
+/// survive ("even if that land wasn't destroyed... because the land has
+/// indestructible or because it was regenerated"), and the log said it was
+/// destroyed anyway. This is the same shape as `mill_cards` taking a source:
+/// the line that names the card is the one a reader trusts, so it has to be
+/// the true one.
+pub fn try_destroy_by(
+    state: &mut GameState,
+    id: ObjectId,
+    source: &str,
+    registry: &CardRegistry,
+) -> DestroyResult {
+    let name = state.obj_name(id);
+    let result = try_destroy(state, id, registry);
+    let line = match result {
+        DestroyResult::Died => format!("{source} destroyed {name}"),
+        DestroyResult::Regenerated => format!("{source} could not destroy {name} — it regenerated"),
+        DestroyResult::Indestructible => format!("{source} could not destroy {name} — it is indestructible"),
+    };
+    state.log(crate::state::LogLevel::Event, line);
+    result
+}
+
 /// Destroy several permanents simultaneously (CR 700.2c, CR 701.7b).
 ///
 /// "Destroy all creatures" is one event, not a sequence of them, and the

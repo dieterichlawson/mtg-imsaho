@@ -117,10 +117,7 @@ impl CardBehavior for EvilTwin {
 
     fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::try_destroy(state, *target_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Evil Twin: destroyed {target_name} (same name)"));
+            crate::destruction::try_destroy_by(state, *target_id, "Evil Twin", registry);
         }
     }
 }

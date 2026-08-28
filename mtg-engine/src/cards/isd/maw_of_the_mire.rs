@@ -52,10 +52,7 @@ impl CardBehavior for MawOfTheMire {
             if !state.get_object(*land_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 return;
             }
-            let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::try_destroy(state, *land_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Maw of the Mire destroyed {name}"));
+            crate::destruction::try_destroy_by(state, *land_id, "Maw of the Mire", registry);
 
             // Gain 4 life (only if target was valid).
             state.change_life(controller, 4);

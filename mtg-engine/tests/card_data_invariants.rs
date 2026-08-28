@@ -1090,6 +1090,67 @@ fn no_card_creates_a_regeneration_shield_by_hand() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// `try_destroy` returns whether the permanent actually died, and a card that
+/// writes "X destroyed Y" without looking at that answer is writing a line
+/// that can be false. Ghost Quarter's ruling says so in as many words: the
+/// land's controller searches "even if that land wasn't destroyed... because
+/// the land has indestructible or because it was regenerated" — and the log
+/// announced a destruction that had not happened.
+///
+/// `destruction::try_destroy_by` takes the source's name and writes one true
+/// line, the same shape as `mill_cards` taking a source. The pipeline's own
+/// lines say what happened; this one says who tried.
+#[test]
+fn no_card_announces_a_destruction_it_did_not_check() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    let mut scanned = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") || !code.contains("try_destroy") {
+                continue;
+            }
+            scanned += 1;
+            // The result is used when it is bound, matched, or compared —
+            // `try_destroy_by` does that inside itself.
+            let uses_result = code.contains("try_destroy_by")
+                || code.contains("let ") || code.contains("match ")
+                || code.contains("==") || code.contains("if ");
+            if uses_result {
+                continue;
+            }
+            // A bare call is fine on its own; it is only a problem when the
+            // card then narrates a destruction it never confirmed.
+            let window: String = lines[n..].iter().take(6).copied().collect::<Vec<_>>().join(" ");
+            if window.contains("state.log") && window.contains("destroyed") {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(scanned >= 5,
+        "only {scanned} destruction call(s) in src/cards — this invariant has stopped covering anything");
+    assert!(offenders.is_empty(),
+        "{} card(s) log a destruction without checking whether it happened:\n  {}\n\n\
+         Use `destruction::try_destroy_by`, which names the source and writes \
+         the line the result justifies.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

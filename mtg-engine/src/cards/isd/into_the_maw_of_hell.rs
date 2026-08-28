@@ -55,10 +55,7 @@ impl CardBehavior for IntoTheMawOfHell {
         // targets[0] = land, targets[1] = creature
         if let Some(Target::Object(land_id)) = targets.first() {
             if state.get_object(*land_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
-                crate::destruction::try_destroy(state, *land_id, registry);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Into the Maw of Hell destroyed {name}"));
+                crate::destruction::try_destroy_by(state, *land_id, "Into the Maw of Hell", registry);
             }
         }
         if let Some(Target::Object(creature_id)) = targets.get(1) {
