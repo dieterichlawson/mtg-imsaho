@@ -146,7 +146,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Selfless Cathar | `selfless_cathar.rs` | 58 | 3 | 0 |
 | x | Dearly Departed | `dearly_departed.rs` | 57 | 3 | 0 |
 | x | Darkthicket Wolf | `darkthicket_wolf.rs` | 56 | 3 | 0 |
-|   | Feral Ridgewolf | `feral_ridgewolf.rs` | 56 | 3 | 0 |
+| x | Feral Ridgewolf | `feral_ridgewolf.rs` | 56 | 3 | 0 |
 |   | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
 |   | Harvest Pyre | `harvest_pyre.rs` | 54 | 3 | 0 |
 |   | Kessig Wolf | `kessig_wolf.rs` | 54 | 3 | 0 |
