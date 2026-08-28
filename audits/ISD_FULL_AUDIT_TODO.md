@@ -64,7 +64,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 67 | 4 | 2 |
 | x | Bloodgift Demon | `bloodgift_demon.rs` | 66 | 4 | 2 |
 | x | Skeletal Grimace | `skeletal_grimace.rs` | 64 | 5 | 0 |
-|   | Ghost Quarter | `ghost_quarter.rs` | 104 | 4 | 0 |
+| x | Ghost Quarter | `ghost_quarter.rs` | 104 | 4 | 0 |
 |   | Woodland Sleuth | `woodland_sleuth.rs` | 79 | 4 | 1 |
 |   | Elder Cathar | `elder_cathar.rs` | 75 | 4 | 1 |
 |   | Snapcaster Mage | `snapcaster_mage.rs` | 68 | 4 | 1 |
