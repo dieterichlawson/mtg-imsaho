@@ -323,6 +323,34 @@ fn lifelink_gains_life_from_creature_damage() {
         "Should gain 3 life from lifelink even when blocked");
 }
 
+/// The third road to lifelink, and the one nothing followed to the end: an
+/// until-end-of-turn grant from a spell.
+///
+/// `has_keyword` reads three separate places — the printed face, a permanent's
+/// continuous effects, and `until_end_of_turn` — so "Markov Patrician gains
+/// life" and "Butcher's Cleaver's Human gains life" say nothing about the
+/// third. Moment of Heroism's own test asked `has_keyword` and stopped there.
+#[test]
+fn lifelink_granted_until_end_of_turn_gains_life_in_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let moh = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    let mut state = cast_and_resolve(&state, &reg, moh, vec![Target::Object(attacker)]);
+    assert_eq!(state.effective_power(attacker, &reg), Some(4),
+        "test precondition: +2/+2 landed");
+
+    let life_before = state.get_player(P0).life;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[], &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, 20 - 4, "the 4 damage lands");
+    assert_eq!(state.get_player(P0).life, life_before + 4,
+        "and the granted lifelink pays for it (CR 702.15a)");
+}
+
 /// Butcher's Cleaver grants lifelink through `ContinuousEffect::when`, and
 /// every test of it asks `has_keyword`. That the keyword is granted and that
 /// the combat damage step honours a keyword granted by *another permanent* are
