@@ -87,80 +87,7 @@ fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
     );
 }
 
-/// Bug 17-003 — `creature_targets` path (`audits/AUDIT_BUGS.md)`:
-/// Crossway Vampire's ETB "target creature can't block" uses the
-/// `creature_targets` helper (not `any_targets`), which also lacks
-/// a hexproof filter. This is a DIFFERENT helper from the one
-/// Pitchburn Devils tests.
-///
-/// Oracle (Crossway Vampire): "When this creature enters, target
-/// creature can't block this turn."
-#[test]
-fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
-    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let lumberknot = named_permanent(&mut state, &registry, "Lumberknot", P1);
-    // A second non-hexproof target so present_target_choice doesn't
-    // auto-resolve the single mandatory target.
-    let _bears = ready_creature(&mut state, P1, 2, 2);
-
-    let cv = named_permanent(&mut state, &registry, "Crossway Vampire", P0);
-    let cv_card_id = state.get_object(cv).unwrap().card_id;
-    let behavior = registry.get(cv_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, cv, &[], &registry);
-
-    let lumberknot_in_options = match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
-        }) => options.iter().any(|t| matches!(t, Target::Object(id) if *id == lumberknot)),
-        _ => false,
-    };
-    assert!(
-        !lumberknot_in_options,
-        "Crossway Vampire's ETB 'target creature can't block' should \
-         NOT offer an opponent's hexproof creature. Bug 17-003: \
-         creature_targets() doesn't filter hexproof."
-    );
-}
-
-/// Bug 17-003 — `creature_targets_except` path (`audits/AUDIT_BUGS.md)`:
-/// Fiend Hunter's ETB "you may exile another target creature" uses
-/// the `creature_targets_except` helper, which also lacks a hexproof
-/// filter. This is the third distinct helper in this bug family.
-///
-/// Oracle (Fiend Hunter): "When this creature enters, you may exile
-/// another target creature."
-#[test]
-fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
-    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
-
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let lumberknot = named_permanent(&mut state, &registry, "Lumberknot", P1);
-    let _bears = ready_creature(&mut state, P1, 2, 2);
-
-    let fh = named_permanent(&mut state, &registry, "Fiend Hunter", P0);
-    let fh_card_id = state.get_object(fh).unwrap().card_id;
-    let behavior = registry.get(fh_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, fh, &[], &registry);
-
-    let lumberknot_in_options = match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
-        }) => options.iter().any(|t| matches!(t, Target::Object(id) if *id == lumberknot)),
-        _ => false,
-    };
-    assert!(
-        !lumberknot_in_options,
-        "Fiend Hunter's ETB 'exile another target creature' should NOT \
-         offer an opponent's hexproof creature. Bug 17-003: \
-         creature_targets_except() doesn't filter hexproof."
-    );
-}
 
 /// Bug E1-001 (`audits/AUDIT_BUGS.md)`: Grimgrin, Corpse-Born's attack
 /// trigger inline-enumerates the defender's creatures and only filters
@@ -643,6 +570,16 @@ fn an_etb_trigger_does_not_offer_an_opponents_hexproof_creature() {
     let cases: &[(&str, &str, Option<Keyword>)] = &[
         ("Slayer of the Wicked", "Diregraf Ghoul", None),
         ("Geistcatcher's Rig", "Abbey Griffin", Some(Keyword::Flying)),
+        // Crossway Vampire ("target creature can't block this turn") and Fiend
+        // Hunter ("you may exile another target creature") each had their own
+        // Bug 17-003 test, which called `on_enter_battlefield` with an empty
+        // `chosen_targets`. Both cards declare a `target_requirement` now, so
+        // that hook returns immediately and sets nothing pending — and the test
+        // asked whether a hexproof creature was among the options of a prompt
+        // that was never raised. Both passed against an inert hook; here the
+        // enumeration is the engine's, which is the thing the bug was about.
+        ("Crossway Vampire", "Walking Corpse", None),
+        ("Fiend Hunter", "Walking Corpse", None),
     ];
 
     for (source_name, victim_name, needs) in cases {
