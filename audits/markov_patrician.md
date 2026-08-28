@@ -40,3 +40,27 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:26
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Lifelink (Damage dealt by this creature also causes you to gain that much life.)
+**Type line**: Creature — Vampire
+**P/T**: 3/1
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/markov_patrician.rs` matches: {2}{B}, Vampire, 3/1, Lifelink. No behavior hooks.
+
+### Tricky interactions checked
+- Lifelink applies to combat damage to players AND to creatures — both tested with this card. The grant path (until-end-of-turn lifelink) is tested separately. PASS
+- Lifelink is not a trigger: the gain is simultaneous with the damage (`LifeChanged` from the damage pipeline). PASS
+- Vampire subtype read by Elite Inquisitor's protection (this card was the vacuous attacker there until the rewrite — its 3/1 dies to first strike, which is exactly why the rewritten test replaced it). PASS
+
+### Test coverage
+- Combat damage to player: `mtg-engine/tests/keywords.rs` `lifelink_gains_life_on_combat_damage`
+- Combat damage to a blocking creature: `keywords.rs` `lifelink_gains_life_from_creature_damage`
+- Fixture duty in vampire-subtype and removal tests.
+- No rulings on Scryfall for this card.
+
+Mutation check: emptying `keywords` (Lifelink) fails both lifelink tests. Bites.
