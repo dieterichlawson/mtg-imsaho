@@ -1,7 +1,11 @@
-//! Tests for the flashback mechanic and all 15 flashback cards.
+//! Tests for the flashback mechanic and the cards that print it.
 //!
 //! Flashback allows casting a spell from the graveyard for an alternative cost.
 //! After resolution (or countering), the spell is exiled instead of returning to graveyard.
+//!
+//! [`every_flashback_card_is_offered_from_the_graveyard`] sweeps the whole
+//! pool, so a new flashback card is covered on the day it is added; the tests
+//! below it are for behaviour a sweep cannot reach.
 
 mod common;
 use common::*;
@@ -11,6 +15,66 @@ use mtg_engine::engine;
 use mtg_engine::types::*;
 
 // ── System tests: flashback mechanics ──────────────────────────────
+
+/// Every card that declares a flashback cost can actually be cast from the
+/// graveyard for it (CR 702.33a).
+///
+/// The cost itself is pinned against the printed text by
+/// `card_data_invariants.rs`; what that cannot see is whether the engine ever
+/// offers the cast. This does the other half for the whole pool at once — a
+/// card whose flashback is unreachable, for whatever reason, is a card whose
+/// second half does not exist.
+///
+/// The pool is deliberately not listed here. Naming the cards is how the
+/// module doc came to claim "all 15 flashback cards" while there were 27 of
+/// them, seventeen of which no test cast from a graveyard.
+#[test]
+fn every_flashback_card_is_offered_from_the_graveyard() {
+    let reg = registry();
+    let mut unreachable = Vec::new();
+    let mut checked = 0;
+
+    for name in reg.all_names() {
+        let Some(card_id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(card_id) else { continue };
+        if data.flashback_cost.is_none() {
+            continue;
+        }
+        checked += 1;
+
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        // One of everything a flashback spell in this set can ask to target,
+        // on both sides, so "not offered" means the engine, not the board:
+        // a creature, a land and an artifact on the battlefield, a creature
+        // card in the graveyard (Unburial Rites), and a library to read.
+        for player in [P0, P1] {
+            named_permanent(&mut state, &reg, "Grizzly Bears", player);
+            named_permanent(&mut state, &reg, "Forest", player);
+            named_permanent(&mut state, &reg, "Blazing Torch", player);
+            named_card_in_graveyard(&mut state, &reg, "Walking Corpse", player);
+            stock_library(&mut state, &reg, player, 5);
+        }
+        // Enough of every colour to pay any flashback cost in the set several
+        // times over.
+        add_mana(&mut state, P0, &[
+            (ManaType::White, 12), (ManaType::Blue, 12), (ManaType::Black, 12),
+            (ManaType::Red, 12), (ManaType::Green, 12), (ManaType::Colorless, 12),
+        ]);
+
+        let card = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+        state.get_object_mut(card).unwrap().name = name.to_string();
+
+        if !can_cast(&state, &reg, card) {
+            unreachable.push(format!("{name}: flashback {}",
+                data.flashback_cost.as_ref().map_or(String::new(), std::string::ToString::to_string)));
+        }
+    }
+
+    assert!(unreachable.is_empty(),
+        "{} card(s) print a flashback cost the engine never offers:\n  {}",
+        unreachable.len(), unreachable.join("\n  "));
+    assert!(checked >= 27, "expected the set's flashback cards; swept only {checked}");
+}
 
 /// Flashback is offered when a card with `flashback_cost` is in the graveyard
 /// and the player has enough mana.
