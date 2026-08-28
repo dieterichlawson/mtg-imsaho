@@ -695,6 +695,13 @@ fn intangible_virtue_buffs_creatures() {
     // Non-token should NOT have vigilance.
     assert!(!state.has_keyword(non_token, Keyword::Vigilance, &reg),
         "Non-token should NOT have vigilance from Intangible Virtue");
+
+    // "tokens YOU control" — an opponent's token is untouched.
+    let theirs = state.create_token(
+        "Spirit", P1, 2, 2, vec![Color::White], vec![CardType::Creature], vec![], &reg)[0];
+    assert_eq!(state.effective_power(theirs, &reg), Some(2),
+        "an opponent's token gets nothing from your Intangible Virtue");
+    assert!(!state.has_keyword(theirs, Keyword::Vigilance, &reg));
 }
 
 // ══════════════════════════════════════════════════════════════════

@@ -40,3 +40,30 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 Static-ability behaviour is exercised through the shared continuous-effects tests in `continuous_effects.rs` and `snapshot_anthems.rs`.
 
+
+## Audit — 2026-08-28 20:25
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Creature tokens you control get +1/+1 and have vigilance.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/intangible_virtue.rs` matches: {1}{W} Enchantment, `ModifyPT { +1, +1 }` and `GrantKeyword { Vigilance }`, both scoped `Global(ControlledByYouToken)`.
+
+One test gap closed: neither test checked that an OPPONENT'S token gets nothing — added that row.
+
+### Tricky interactions checked
+- Tokens only: your non-token creatures untouched. Tested (both files).
+- "you control": opponent's tokens untouched. NEW row this audit.
+- `ControlledByYouToken` reads `creature.is_token` + controller — copies of tokens are tokens (`is_token` carries), and a token that changes control moves in and out of the anthem live. PASS
+- +1/+1 keeps 1/1 Spirits alive through -1/-1 sweeps; interacts with the SBA toughness check via `effective_toughness`. Engine-generic. PASS
+
+### Test coverage
+- Buff + vigilance on token, non-token untouched, opponent token untouched: `mtg-engine/tests/cards_death_triggers_and_tokens.rs` `intangible_virtue_buffs_creatures` (extended)
+- Same claims (near-duplicate kept from the phase-6 reorg): `cards_morbid_and_ltb.rs` `intangible_virtue_token_only`
+- No rulings on Scryfall for this card.
+
+Mutation checks:
+- Widening the P/T scope to `ControlledByYou` (non-tokens buffed): FAILS. Bites.
+- Replacing the vigilance grant with a no-op effect (import sink kept): FAILS on the vigilance assertion. Bites. (First attempt deleted the line, dropped the only `Keyword` use, and did not compile — discarded.)
