@@ -1989,3 +1989,58 @@ fn any_target_in_the_text_means_any_target_in_the_requirement() {
     assert_covers(checked, 40, "are instants or sorceries");
     assert_none(&offenders, "declare AnyTarget exactly when their text says \"any target\"");
 }
+
+/// A card whose text says a creature "attack[s] each combat if able" declares
+/// `ContinuousEffect::ForceAttack`, and one that declares it says so.
+///
+/// The same shape as `any_target_in_the_text_means_any_target_in_the_requirement`
+/// above, and for the same reason: the behavioural tests for this rule
+/// (`combat_rules.rs`) name their cards, so a card that quietly stopped
+/// declaring the effect would drop out of nothing. This reads the oracle text,
+/// which `oracle_text_says_what_scryfall_says` pins to Scryfall, so the two
+/// cannot drift together.
+///
+/// The scope is checked too, because it is the half a card can get wrong while
+/// still declaring something: "this creature attacks" is `OnSelf`, "enchanted
+/// creature attacks" is `Attached`, and a Curse's "creatures enchanted player
+/// controls attack" is neither.
+#[test]
+fn attacks_each_combat_in_the_text_means_force_attack_in_the_effects() {
+    use mtg_engine::types::{ContinuousEffect, EffectScope};
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        checked += 1;
+
+        let printed = data.oracle_text.contains("attacks each combat if able")
+            || data.oracle_text.contains("attack each combat if able");
+        let declared: Option<EffectScope> = data.continuous_effects.iter().find_map(|e|
+            match e { ContinuousEffect::ForceAttack { scope } => Some(scope.clone()), _ => None });
+
+        match (printed, declared) {
+            (true, None) => offenders.push(format!(
+                "{name}: text says it attacks each combat if able, no ForceAttack declared")),
+            (false, Some(scope)) => offenders.push(format!(
+                "{name}: declares ForceAttack ({scope:?}), text does not say so")),
+            (true, Some(ref scope)) => {
+                // "This creature attacks" is about itself; anything else is
+                // about somebody else's creatures.
+                let about_self = data.oracle_text.contains("This creature attacks each combat");
+                let self_scoped = *scope == EffectScope::OnSelf;
+                if about_self != self_scoped {
+                    offenders.push(format!(
+                        "{name}: text is about {}, scope is {scope:?}",
+                        if about_self { "itself" } else { "other creatures" }));
+                }
+            }
+            (false, None) => {}
+        }
+    }
+
+    assert_covers(checked, 200, "are in the registry");
+    assert_none(&offenders, "declare ForceAttack exactly when their text says so");
+}

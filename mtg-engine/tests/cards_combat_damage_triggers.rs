@@ -546,6 +546,16 @@ fn rakish_heir_no_counter_on_non_vampire() {
 /// different reason — "a Vampire you control", which happens to include
 /// itself — and its own tests are the ones that say so.
 ///
+/// Bloodcrazed Neonate has no section of its own in this file because this row
+/// is the whole of what belongs here. Its other line, "attacks each combat if
+/// able", had a test that asserted it declares `ContinuousEffect::ForceAttack`
+/// — a claim about its card data, not about the game, and true of the card
+/// data by inspection. Both halves are covered better elsewhere:
+/// `card_data_invariants.rs::attacks_each_combat_in_the_text_means_force_attack_in_the_effects`
+/// checks that declaration against the printed text for every card in the set,
+/// and `combat_rules.rs::a_creature_that_forces_itself_to_attack_must_attack`
+/// checks that a creature scoped `OnSelf` is really declared as an attacker.
+///
 /// The table is checked against the registry: a new card with a
 /// combat-damage-to-player trigger that counters itself has to be added here,
 /// or the coverage assertion below fails.
@@ -600,21 +610,6 @@ fn the_self_counter_table_covers_every_such_card() {
     }
     assert!(missing.is_empty(),
         "these cards counter themselves on combat damage but are not in the table: {missing:?}");
-}
-
-// ── Bloodcrazed Neonate ───────────────────────────────────────────
-
-/// Bloodcrazed Neonate must attack each combat (`ForceAttack`).
-#[test]
-fn bloodcrazed_neonate_forced_to_attack() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
-
-    let neonate = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
-
-    // Check that the neonate has ForceAttack via continuous effects.
-    let has_force_attack = state.has_effect(neonate, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg);
-    assert!(has_force_attack, "Bloodcrazed Neonate should have ForceAttack");
 }
 
 // ── Sturmgeist ────────────────────────────────────────────────────
