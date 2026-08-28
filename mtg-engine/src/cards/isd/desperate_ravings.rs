@@ -1,5 +1,3 @@
-use rand::seq::SliceRandom;
-
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
@@ -31,7 +29,8 @@ impl CardBehavior for DesperateRavings {
         let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller).into_iter()
             .map(|o| o.id)
             .collect();
-        let to_discard = hand.choose(&mut rand::thread_rng()).copied();
+        // "then discard a card AT RANDOM".
+        let to_discard = crate::cards::helpers::choose_at_random(&hand, 1).first().copied();
         if let Some(discard_id) = to_discard {
             state.discard_card(discard_id, registry);
         }

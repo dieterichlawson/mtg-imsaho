@@ -866,3 +866,27 @@ pub fn shuffle_library(state: &mut GameState, player: PlayerId) {
     let mut rng = rand::thread_rng();
     state.get_player_mut(player).library_order.shuffle(&mut rng);
 }
+
+/// CR 104.3 / "at random": take up to `n` of `candidates`, chosen at random.
+///
+/// Five cards wrote this as "shuffle my candidate vector, then `.take(n)`" and
+/// a sixth as `.choose()` — Charmbreaker Devils, Ghoulraiser, Make a Wish,
+/// Moldgraf Monstrosity, Woodland Sleuth, Desperate Ravings. Same rule, six
+/// copies, and six places that would each need a seed. Fewer than `n`
+/// candidates yields all of them, which is what "at random" does with a short
+/// list.
+#[must_use]
+pub fn choose_at_random(candidates: &[ObjectId], n: usize) -> Vec<ObjectId> {
+    use rand::seq::SliceRandom;
+    let mut pool = candidates.to_vec();
+    pool.shuffle(&mut rand::thread_rng());
+    pool.truncate(n);
+    pool
+}
+
+/// CR 705.2: flip a coin. True is "you win the flip".
+#[must_use]
+pub fn flip_coin() -> bool {
+    use rand::Rng;
+    rand::thread_rng().gen_bool(0.5)
+}

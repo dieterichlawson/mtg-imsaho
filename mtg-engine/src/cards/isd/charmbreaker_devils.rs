@@ -1,5 +1,3 @@
-use rand::seq::SliceRandom;
-
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
@@ -54,7 +52,7 @@ impl CardBehavior for CharmbreakerDevils {
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         // Find instant or sorcery cards in graveyard.
-        let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
+        let candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             // "an instant or sorcery **card**" — CR 109.1. `face_data` is
             // already None for a token, but relying on that leaves the rule
@@ -64,9 +62,8 @@ impl CardBehavior for CharmbreakerDevils {
             .map(|o| o.id)
             .collect();
         if !candidates.is_empty() {
-            let mut rng = rand::thread_rng();
-            candidates.shuffle(&mut rng);
-            let chosen = candidates[0];
+            let Some(chosen) = crate::cards::helpers::choose_at_random(&candidates, 1).first().copied()
+            else { return };
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,

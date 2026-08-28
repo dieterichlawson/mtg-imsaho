@@ -1294,7 +1294,11 @@ fn a_card_that_says_at_random_actually_randomizes() {
         if !says_at_random {
             continue;
         }
-        let randomizes = ["shuffle(", "choose(", "choose_multiple(", "gen_range", "gen_bool"]
+        // `choose_at_random` is where five of these cards' RNG went when it was
+        // centralised (CR 104.3, one place to seed); calling it is reaching for
+        // an RNG just as much as `shuffle(` was.
+        let randomizes = ["choose_at_random", "flip_coin",
+                          "shuffle(", "choose(", "choose_multiple(", "gen_range", "gen_bool"]
             .iter()
             .any(|needle| text.lines().any(|l| {
                 let c = l.trim_start();

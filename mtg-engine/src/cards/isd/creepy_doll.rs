@@ -2,7 +2,6 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, CardType, Keyword, Zone};
-use rand::Rng;
 
 /// Creepy Doll — {5} 1/1 Artifact Creature — Construct with Indestructible.
 /// Whenever Creepy Doll deals combat damage to a creature, flip a coin.
@@ -37,7 +36,7 @@ impl CardBehavior for CreepyDoll {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
-        let won = rand::thread_rng().gen_bool(0.5);
+        let won = crate::cards::helpers::flip_coin();
         if won {
             let name = state.get_object(damaged_creature).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,

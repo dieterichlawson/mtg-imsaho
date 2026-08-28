@@ -1,5 +1,3 @@
-use rand::seq::SliceRandom;
-
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -50,7 +48,7 @@ impl CardBehavior for Ghoulraiser {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Find Zombie cards in graveyard (not restricted to creatures).
-        let mut zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
+        let zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             // "a Zombie **card**" — CR 109.1, said rather than left to
             // `face_data` happening to be None for a token.
@@ -60,9 +58,8 @@ impl CardBehavior for Ghoulraiser {
             .collect();
 
         if !zombies.is_empty() {
-            let mut rng = rand::thread_rng();
-            zombies.shuffle(&mut rng);
-            let chosen = zombies[0];
+            let Some(chosen) = crate::cards::helpers::choose_at_random(&zombies, 1).first().copied()
+            else { return };
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,

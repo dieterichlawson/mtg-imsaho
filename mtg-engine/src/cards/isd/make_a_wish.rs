@@ -23,22 +23,17 @@ impl CardBehavior for MakeAWish {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
-
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Get all cards in graveyard (excluding tokens).
-        let mut gy_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
+        let gy_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| state.is_card(o.id) && o.id != object_id)
             .map(|o| o.id)
             .collect();
 
-        // Pick two at random.
-        let mut rng = rand::thread_rng();
-        gy_cards.shuffle(&mut rng);
-
-        let to_return: Vec<ObjectId> = gy_cards.into_iter().take(2).collect();
+        // "Return two cards AT RANDOM from your graveyard to your hand."
+        let to_return = crate::cards::helpers::choose_at_random(&gy_cards, 2);
         for card_id in &to_return {
             let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(*card_id, Zone::Hand, registry);

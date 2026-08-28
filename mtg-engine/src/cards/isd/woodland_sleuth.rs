@@ -1,5 +1,3 @@
-use rand::seq::SliceRandom;
-
 use crate::cards::helpers;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
@@ -53,7 +51,7 @@ impl CardBehavior for WoodlandSleuth {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Find creature cards in graveyard.
-        let mut creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
+        let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             // "return a creature **card** at random from your graveyard" —
             // CR 109.1. `face_data` is None for a token, and the `map_or`
@@ -64,9 +62,8 @@ impl CardBehavior for WoodlandSleuth {
             .collect();
 
         if !creatures.is_empty() {
-            let mut rng = rand::thread_rng();
-            creatures.shuffle(&mut rng);
-            let chosen = creatures[0];
+            let Some(chosen) = crate::cards::helpers::choose_at_random(&creatures, 1).first().copied()
+            else { return };
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,

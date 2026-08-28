@@ -967,6 +967,42 @@ fn a_card_enumerating_a_graveyard_excludes_tokens() {
         offenders.join("\n  "));
 }
 
+/// A card reaches randomness through `cards::helpers`, not `rand` directly.
+///
+/// "At random" and "flip a coin" are rules (CR 104.3, CR 705.2), and seven
+/// cards each had their own `rand::thread_rng()` — five writing "shuffle my
+/// candidate vector, then take N", one `.choose()`, one `gen_bool(0.5)`. Same
+/// rules, seven copies, and seven places that would each need a seed threaded
+/// through them. `choose_at_random` and `flip_coin` are the two shapes; this
+/// keeps them the only two.
+#[test]
+fn a_card_gets_its_randomness_from_the_helpers() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") || rel.ends_with("helpers.rs") {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            // `rand::` alone also matches "Griselb*rand::*", so this asks for
+            // the ways the crate is actually reached.
+            if l.contains("rand::thread_rng") || l.contains("rand::Rng")
+                || l.contains("rand::seq") || l.contains("SliceRandom")
+            {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "\"at random\" (CR 104.3) and \"flip a coin\" (CR 705.2) are \
+         `cards::helpers::choose_at_random` and `cards::helpers::flip_coin`, \
+         so there is one place to seed:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// A card shuffles a library through `helpers::shuffle_library`.
 ///
 /// CR 701.20 is one rule, and it has one home. Three cards reached past it to
