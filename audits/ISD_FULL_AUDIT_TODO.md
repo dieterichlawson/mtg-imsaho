@@ -137,7 +137,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Moldgraf Monstrosity | `moldgraf_monstrosity.rs` | 84 | 2 | 1 |
 | x | Nevermore | `nevermore.rs` | 63 | 3 | 0 |
 | x | Disciple of Griselbrand | `disciple_of_griselbrand.rs` | 62 | 3 | 0 |
-|   | Skirsdag Cultist | `skirsdag_cultist.rs` | 62 | 3 | 0 |
+| x | Skirsdag Cultist | `skirsdag_cultist.rs` | 62 | 3 | 0 |
 |   | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 80 | 2 | 1 |
 |   | Blasphemous Act | `blasphemous_act.rs` | 59 | 3 | 0 |
 |   | Deranged Assistant | `deranged_assistant.rs` | 59 | 3 | 0 |
