@@ -471,6 +471,8 @@ fn first_strike_kills_before_normal_damage() {
 
     // Voiceless Spirit: 2/1 flying, first strike
     let attacker = named_permanent(&mut state, &reg, "Voiceless Spirit", P0);
+    assert!(state.has_keyword(attacker, Keyword::Flying, &reg),
+        "its other keyword — flying — asked of the game");
 
     // Blocker: Moon Heron 3/2 (would kill the 2/1 in simultaneous damage, but first strike prevents it)
     let blocker = named_permanent(&mut state, &reg, "Moon Heron", P1);

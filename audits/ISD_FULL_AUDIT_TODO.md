@@ -252,7 +252,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Markov Patrician | `markov_patrician.rs` | 24 | 1 | 0 |
 | x | Moon Heron | `moon_heron.rs` | 24 | 1 | 0 |
 | x | Spectral Rider | `spectral_rider.rs` | 24 | 1 | 0 |
-|   | Voiceless Spirit | `voiceless_spirit.rs` | 24 | 1 | 0 |
+| x | Voiceless Spirit | `voiceless_spirit.rs` | 24 | 1 | 0 |
 |   | Typhoid Rats | `typhoid_rats.rs` | 23 | 1 | 0 |
 |   | Fortress Crab | `fortress_crab.rs` | 22 | 1 | 0 |
 |   | Riot Devils | `riot_devils.rs` | 22 | 1 | 0 |
