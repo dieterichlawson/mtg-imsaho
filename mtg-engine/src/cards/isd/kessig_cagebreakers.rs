@@ -33,7 +33,7 @@ impl CardBehavior for KessigCagebreakers {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
         // Count creature cards in graveyard.
         let creature_count = state.objects_in_zone(Zone::Graveyard, controller)
@@ -46,10 +46,13 @@ impl CardBehavior for KessigCagebreakers {
         if creature_count == 0 {
             return;
         }
-        // Find the defending player from the combat state.
-        let defending_player = state.combat.as_ref()
-            .and_then(|c| c.attackers.get(&self_id).copied())
-            .unwrap_or_else(|| state.opponent(controller));
+        // "tapped and attacking" — attacking whoever this creature was declared
+        // attacking, which the trigger already carries. Re-deriving it from
+        // `state.combat` is wrong the moment the Cagebreakers has left combat
+        // before the trigger resolves (it can be killed in response), and the
+        // `state.opponent(controller)` fallback invents a defender that is only
+        // right in a two-player game with no planeswalkers.
+        let defending_player = attack.defending_player;
 
         for _ in 0..creature_count {
             let token_ids = state.create_token_with_subtypes(

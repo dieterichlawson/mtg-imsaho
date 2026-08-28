@@ -266,6 +266,43 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     assert_eq!(combat_attackers, 4, "Should have 4 attackers (cage + 3 wolves)");
 }
 
+/// Ruling: the tokens are attacking, but "they were never declared as
+/// attacking creatures" — and the player they attack comes from the trigger,
+/// not from whoever happens to be the next player in turn order. With three
+/// players that is a different answer.
+#[test]
+fn kessig_wolves_attack_the_cagebreakers_defender_and_not_just_the_next_player() {
+    use mtg_engine::ids::PlayerId;
+    const P2: PlayerId = PlayerId(2);
+
+    let reg = registry();
+    let mut state = mtg_engine::state::GameState::new(3);
+    state.step = Step::DeclareAttackers;
+    state.active_player = P0;
+    state.priority_player = Some(P0);
+    state.is_first_turn = false;
+    for p in 0..3 {
+        state.players[p].life = 20;
+    }
+    assert_eq!(state.opponent(P0), P1, "test setup: the *next* player is P1");
+
+    let cage = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
+    // ...but the Cagebreakers is attacking P2.
+    attacks_unblocked(&mut state, cage, P2);
+
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(c, Zone::Graveyard, &reg);
+
+    let card_id = state.get_object(cage).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .on_attacks(&mut state, cage, AttackInfo::new(cage, P2), &[], &reg);
+
+    let wolf = find_token_named(&state, "Wolf Token").expect("should have created a Wolf token");
+    assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&wolf).copied()), Some(P2),
+        "the Wolf attacks whoever the Cagebreakers is attacking, which the \
+         trigger already knows — not whoever happens to be the next player");
+}
+
 // ── Galvanic Juggernaut ──────────────────────────────────────────
 
 #[test]
