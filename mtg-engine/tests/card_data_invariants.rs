@@ -1691,3 +1691,101 @@ fn mana_costs_and_printed_pt_say_what_scryfall_says() {
     assert_covers(checked, 200, "have a mana cost or printed P/T in the oracle cache");
     assert_none(&offenders, "declare the mana cost and P/T the oracle cache gives them");
 }
+
+/// Every activated ability's declared cost is the cost its oracle text prints.
+///
+/// CR 602.1: an activated ability is written "cost: effect". The cost half is
+/// right there in the text the `oracle_text_says_what_scryfall_says` invariant
+/// already pins to Scryfall, and nothing compared it with the
+/// `ActivatedAbilityDef` the engine actually charges. Dropping the {G} from
+/// Darkthicket Wolf's "{2}{G}: This creature gets +2/+2" and charging {3}
+/// instead passed the whole suite: a card's colour requirement is only ever
+/// exercised by a test that happens to pay for it in the right colours.
+///
+/// Deliberately narrow, so that what it does check it checks exactly: only
+/// cards where the text prints exactly one activated ability and the card
+/// declares exactly one. A card with two abilities gives no way to say which
+/// line belongs to which without guessing, and a guess here would be a test
+/// that passes for the wrong reason.
+#[test]
+fn activated_ability_costs_are_the_costs_the_oracle_text_prints() {
+    /// The mana part of a printed cost, or `None` if the prefix is not a cost
+    /// at all (so "Flying" or a reminder-text colon is skipped) or contains a
+    /// cost this cannot render (sacrifice, discard, counters, life).
+    ///
+    /// Returns (mana cost as printed, whether the cost includes {T}).
+    fn printed_cost(prefix: &str) -> Option<(String, bool)> {
+        let mut mana = String::new();
+        let mut taps = false;
+        for part in prefix.split(',') {
+            let part = part.trim();
+            if part == "{T}" {
+                taps = true;
+                continue;
+            }
+            // A mana-symbol run: "{2}{G}", "{X}{R}{G}".
+            if part.starts_with('{') && part.ends_with('}')
+                && part.chars().filter(|c| *c == '{').count()
+                    == part.chars().filter(|c| *c == '}').count()
+            {
+                mana.push_str(part);
+                continue;
+            }
+            return None; // "Sacrifice this creature", "Discard a card", ...
+        }
+        Some((mana, taps))
+    }
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        let Some(behavior) = reg.get(id) else { continue };
+
+        let printed: Vec<(String, bool)> = data.oracle_text.lines()
+            .filter_map(|line| line.split_once(": ").and_then(|(p, _)| printed_cost(p)))
+            .collect();
+        if printed.len() != 1 {
+            continue;
+        }
+        let object = state.create_object(id, P0, mtg_engine::types::Zone::Battlefield, data.power, data.toughness);
+        let abilities = behavior.activated_abilities(&state, object, &reg);
+        if abilities.len() != 1 {
+            continue;
+        }
+        checked += 1;
+        let (want_mana, want_tap) = &printed[0];
+        let got_mana = abilities[0].cost.to_string();
+        if &got_mana != want_mana {
+            offenders.push(format!(
+                "{name}: oracle prints cost {want_mana:?}, ability charges {got_mana:?}"));
+        }
+        if abilities[0].requires_tap != *want_tap {
+            offenders.push(format!(
+                "{name}: oracle cost {} {{T}}, ability requires_tap = {}",
+                if *want_tap { "includes" } else { "does not include" },
+                abilities[0].requires_tap));
+        }
+
+        // The two printed restrictions, which are flags rather than costs.
+        // These are plain text-to-flag checks, so they hold for a card with
+        // one ability without any of the matching problem above.
+        for (phrase, got, what) in [
+            ("Activate only once each turn", abilities[0].once_per_turn, "once_per_turn"),
+            ("Activate only as a sorcery", abilities[0].sorcery_speed_only, "sorcery_speed_only"),
+        ] {
+            let want = data.oracle_text.contains(phrase);
+            if want != got {
+                offenders.push(format!(
+                    "{name}: oracle text {} {phrase:?}, ability has {what} = {got}",
+                    if want { "prints" } else { "does not print" }));
+            }
+        }
+    }
+
+    assert_covers(checked, 15, "print exactly one activated ability");
+    assert_none(&offenders, "charge the cost their oracle text prints");
+}
