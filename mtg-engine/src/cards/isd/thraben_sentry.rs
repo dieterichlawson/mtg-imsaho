@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::cards::helpers;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 use crate::actions::Target;
 
 /// Thraben Sentry {3}{W} 2/2 Human Soldier with Vigilance // Thraben Militia 5/4 Human Soldier.
@@ -52,10 +52,13 @@ impl CardBehavior for ThrabenSentry {
 
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
-            _ => return,
-        };
+        // The trigger untaps and transforms the Sentry, so a Sentry that is
+        // gone has nothing for it to do.
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
         // Only trigger when another creature WE control dies, and only on front face.
         if dead_controller != controller || is_transformed {
             return;

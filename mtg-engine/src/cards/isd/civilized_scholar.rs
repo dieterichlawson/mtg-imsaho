@@ -172,10 +172,12 @@ impl CardBehavior for CivilizedScholar {
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        let is_transformed = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.is_transformed,
-            _ => return,
-        };
+        // The trigger transforms the Scholar back, so a Scholar that is gone
+        // has nothing for it to do.
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
         // `step_trigger_scope` already scopes this to the controller's own end
         // step; re-deriving that here is duplication, not defence.
         if !is_transformed {

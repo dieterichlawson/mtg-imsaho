@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::{CardType, ManaCost, ManaSymbol, Color, Keyword, Zone};
+use crate::types::{CardType, ManaCost, ManaSymbol, Color, Keyword};
 use crate::actions::Target;
 
 /// Delver of Secrets {U} 1/1 Human Wizard // Insectile Aberration 3/2 Human Insect with Flying.
@@ -67,10 +67,13 @@ impl CardBehavior for DelverOfSecrets {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
-            _ => return,
-        };
+        // The trigger transforms the Delver, so a Delver that is gone has
+        // nothing for it to do.
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
         // Only trigger on the front face, during controller's upkeep.
         if is_transformed {
             return;

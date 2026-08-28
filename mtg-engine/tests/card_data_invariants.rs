@@ -736,6 +736,112 @@ fn no_card_reaches_into_the_counter_map_by_hand() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// "Who controls my source" and "is my source still on the battlefield" are
+/// two questions, and cards kept asking them with one expression:
+///
+/// ```ignore
+/// let controller = match state.get_object(self_id) {
+///     Some(o) if o.zone == Zone::Battlefield => o.controller,
+///     _ => return,
+/// };
+/// ```
+///
+/// It reads as the first and behaves as the second, so an ability whose effect
+/// has nothing to do with its source silently did nothing when the source was
+/// removed in response to it — against CR 113.7a, which is the whole point of
+/// an ability existing on the stack independently of the object it came from.
+/// Hamlet Captain stopped pumping the rest of the team; Ghoulraiser stopped
+/// returning a Zombie, so removal in response ate the card advantage as well
+/// as the body. And once the source *has* left, `o.controller` is reset to
+/// `o.owner`, so the read is wrong on its own terms too (CR 608.2g).
+///
+/// Ask them separately: `helpers::controller_of` for the first,
+/// `helpers::still_on_battlefield` for the second. Most effects need neither
+/// guard — `add_counters` and `apply_transform` already decline on a permanent
+/// that is not there.
+///
+/// The methods listed in `FUNCTIONS_ON_THE_BATTLEFIELD` are exempt, because
+/// for them the battlefield check is the correct question rather than a
+/// smuggled one: a static ability, a replacement effect and the list of
+/// abilities a permanent offers all function only while the permanent is on
+/// the battlefield (CR 113.6), unlike an ability already on the stack.
+#[test]
+fn no_card_conflates_its_controller_with_still_being_on_the_battlefield() {
+    /// Hooks that answer "what is true of this permanent right now", not
+    /// "resolve this ability".
+    const FUNCTIONS_ON_THE_BATTLEFIELD: &[&str] = &[
+        "replace_event", "activated_abilities", "continuous_effects",
+        "is_valid_target", "dynamic_pt", "should_trigger",
+        "should_trigger_on_blocks", "should_trigger_on_becomes_blocked",
+        "state_trigger_condition", "should_transform",
+    ];
+
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    let mut scanned = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name == "helpers.rs" {
+            continue; // where both helpers live, and the doc comment shows the idiom
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let mut current_fn = String::new();
+        for (n, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if let Some(rest) = code.strip_prefix("fn ") {
+                current_fn = rest.split('(').next().unwrap_or("").to_string();
+            }
+            if code.starts_with("//") {
+                continue;
+            }
+            if !code.contains("o.zone == Zone::Battlefield") || !code.contains("=>") {
+                continue;
+            }
+            scanned += 1;
+            if FUNCTIONS_ON_THE_BATTLEFIELD.contains(&current_fn.as_str()) {
+                continue;
+            }
+            // Whose object is being matched on? Only the ability's own source
+            // counts; a guard on a *target* is CR 608.2b and belongs there.
+            let subject_is_source = lines[n.saturating_sub(1)].contains("state.get_object(self_id)")
+                || lines[n.saturating_sub(1)].contains("state.get_object(object_id)");
+            if !subject_is_source {
+                continue;
+            }
+            // Comparing one object's controller against another's is a
+            // different question, so only a bare `o.controller` counts.
+            let yields_controller = code.match_indices("o.controller").any(|(i, _)| {
+                let after = code[i + "o.controller".len()..].trim_start();
+                let before = code[..i].trim_end();
+                !after.starts_with("==") && !before.ends_with("==")
+            });
+            if yields_controller {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(scanned >= 5,
+        "only {scanned} battlefield-guarded match arm(s) in src/cards — this invariant has stopped covering anything");
+    assert!(offenders.is_empty(),
+        "{} site(s) read a controller through a battlefield guard:\n  {}\n\n\
+         Split them: `helpers::controller_of` for who \"you\" is (CR 608.2g), \
+         and `helpers::still_on_battlefield` only if the effect genuinely \
+         needs the permanent to be there.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

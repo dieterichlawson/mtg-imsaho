@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 
 /// Champion of the Parish — {W} 1/1 Human Soldier.
 /// Whenever another Human you control enters, put a +1/+1 counter on this creature.
@@ -31,10 +31,13 @@ impl CardBehavior for ChampionOfTheParish {
     }
 
     fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
+        // The counter goes on the Champion, so a Champion that is gone has
+        // nothing for this trigger to do. Asked as its own question, not
+        // smuggled into the controller read (CR 608.2g).
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // Must be under our control
         if entered_controller != controller {
             return;

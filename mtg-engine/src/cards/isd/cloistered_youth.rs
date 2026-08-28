@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 use crate::actions::Target;
 
 /// Cloistered Youth {1}{W} 1/1 Human // Unholy Fiend 3/3 Horror.
@@ -62,10 +62,13 @@ impl CardBehavior for CloisteredYouth {
 
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        let (controller, is_transformed) = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
-            _ => return,
-        };
+        // The trigger transforms the Youth, so a Youth that is gone has
+        // nothing for it to do.
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         if !is_transformed {

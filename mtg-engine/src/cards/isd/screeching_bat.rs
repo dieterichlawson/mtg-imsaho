@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 use crate::actions::Target;
 
 /// Screeching Bat {2}{B} 2/2 Bat with Flying // Stalking Vampire 5/5 Vampire.
@@ -72,10 +72,12 @@ impl CardBehavior for ScreechingBat {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
+        // The trigger transforms the Bat, so a Bat that is gone has nothing
+        // for it to do.
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         // "You may pay {2}{B}{B}. If you do, transform."
@@ -115,10 +117,12 @@ impl CardBehavior for ScreechingBat {
             return;
         }
 
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
+        // The trigger transforms the Bat, so a Bat that is gone has nothing
+        // for it to do.
+        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, self_id);
 
         // Recompute the tap plan and execute it. State hasn't changed since
         // `on_upkeep` set up the prompt (no intervening triggers / priority),

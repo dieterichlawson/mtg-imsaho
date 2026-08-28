@@ -56,10 +56,12 @@ impl CardBehavior for MirrorMadPhantasm {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let owner = match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.owner,
-            _ => return,
-        };
+        // The ability shuffles the Phantasm itself into its owner's library,
+        // so a Phantasm that already left the battlefield has nothing to do.
+        let Some(owner) = state.get_object(object_id).map(|o| o.owner) else { return };
+        if !crate::cards::helpers::still_on_battlefield(state, object_id) {
+            return;
+        }
 
         state.move_object(object_id, Zone::Library, registry);
         state.get_player_mut(owner).library_order.push(object_id);

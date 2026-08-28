@@ -50,10 +50,10 @@ impl CardBehavior for TreeOfRedemption {
         // so it does nothing if the Tree is no longer on the battlefield when it
         // resolves (destroyed or bounced in response). CR 608.2: an ability that
         // can't perform its action does as much as it can, which here is nothing.
-        let controller = match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
+        if !crate::cards::helpers::still_on_battlefield(state, object_id) {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, object_id);
         let current_toughness = state.effective_toughness(object_id, registry).unwrap_or(13);
         let current_life = state.get_player(controller).life;
 
