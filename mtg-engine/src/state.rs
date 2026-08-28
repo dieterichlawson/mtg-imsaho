@@ -1675,13 +1675,11 @@ impl GameState {
                     .any(|o| self.has_subtype(o.id, subtype, registry))
             }
             EffectCondition::SelfHasKeyword(kw) => {
-                let removed = self.until_end_of_turn.iter().any(|e| matches!(e,
-                    TemporaryEffect::RemoveKeyword { target, keyword }
-                    if *target == source_id && *keyword == *kw
-                ));
-                if removed {
-                    return false;
-                }
+                // Just ask. This used to re-check `until_end_of_turn` for a
+                // `RemoveKeyword` on `kw` first, which `has_keyword` already
+                // does as its very first step — two copies of "was this
+                // keyword removed this turn", free to disagree, and neither
+                // one a guard against the recursion the walk order handles.
                 self.has_keyword(source_id, *kw, registry)
             }
             EffectCondition::AttachedHasSubtype(subtype) => {
