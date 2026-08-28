@@ -145,9 +145,10 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator } => {
+        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, sacrificed } => {
             state.stack.pop();
             state.last_activated_x_value = x_value;
+            state.last_activated_sacrifice = sacrificed;
             let name = state.name_of(source_id, registry);
 
             // CR 608.2b applies to abilities as well as spells, and this path

@@ -43,11 +43,21 @@ impl CardBehavior for DiscipleOfGriselbrand {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         let controller = crate::cards::helpers::ability_controller(state, object_id);
 
-        // The engine already sacrificed a creature before calling this.
-        // Find the most recent CreatureDied event to get the sacrificed creature's toughness.
+        // Ruling: "The amount of life you gain is equal to the toughness of the
+        // creature as it last existed on the battlefield, not its toughness in
+        // the graveyard" — which is what `CreatureDied` carries.
+        //
+        // Keyed on the creature that actually paid the cost, which the engine
+        // records on the stack entry. This used to take the *most recent*
+        // `CreatureDied` event, and the cost is paid at activation (CR 601.2h)
+        // while the ability resolves later: anything that died in the priority
+        // window in between was read instead. Sacrificing a 1/1 while the
+        // opponent killed a 5/9 in response gained nine life.
+        let Some(sacrificed) = state.last_activated_sacrifice else { return };
         let toughness = state.events.iter().rev()
             .find_map(|e| match e {
-                GameEvent::CreatureDied { last_known_toughness, .. } => Some(*last_known_toughness),
+                GameEvent::CreatureDied { object, last_known_toughness, .. }
+                    if *object == sacrificed => Some(*last_known_toughness),
                 _ => None,
             })
             .unwrap_or(0)

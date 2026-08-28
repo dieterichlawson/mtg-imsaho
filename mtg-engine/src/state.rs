@@ -20,6 +20,15 @@ pub enum StackEntry {
         targets: Vec<crate::actions::Target>,
         activator: PlayerId,
         x_value: Option<u32>,
+        /// The creature sacrificed to pay this ability's cost, if any.
+        ///
+        /// Disciple of Griselbrand's "you gain life equal to the sacrificed
+        /// creature's toughness" needs to know *which* creature that was, and
+        /// the cost is paid at activation (CR 601.2h) while the ability
+        /// resolves later. It used to scan back for the most recent
+        /// `CreatureDied` event, which is whatever died last — including
+        /// something the opponent killed in the priority window in between.
+        sacrificed: Option<ObjectId>,
     },
 }
 
@@ -185,6 +194,10 @@ pub struct GameState {
     /// Set by the engine before the ability goes on the stack; cards read this.
     #[serde(default)]
     pub last_activated_x_value: Option<u32>,
+    /// The creature sacrificed to pay the activated ability now resolving.
+    /// Threaded exactly like `last_activated_x_value`: set when the ability is
+    /// activated, carried on the stack entry, restored on resolution.
+    pub last_activated_sacrifice: Option<ObjectId>,
 
     /// Context stashed between the `ActivateAbility` handler and the follow-up
     /// `ChooseXFunding` resolution for X-cost activated abilities. Unlike
@@ -355,6 +368,7 @@ impl GameState {
             num_spells_cast_this_turn: HashMap::new(),
             num_spells_cast_last_turn: HashMap::new(),
             last_activated_x_value: None,
+            last_activated_sacrifice: None,
             pending_ability_effect: None,
             pending_spell_cast: None,
             trigger_event_index: 0,

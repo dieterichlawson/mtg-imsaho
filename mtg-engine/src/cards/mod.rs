@@ -55,6 +55,7 @@ pub fn push_ability(
         targets: targets.to_vec(),
         activator,
         x_value: state.last_activated_x_value,
+        sacrificed: state.last_activated_sacrifice,
     });
 }
 

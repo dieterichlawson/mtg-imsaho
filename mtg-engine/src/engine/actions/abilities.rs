@@ -147,6 +147,17 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             // when picking the action — legal_actions enumerated one
             // ActivateAbility per (target, sacrifice) combo, so the choice is
             // already encoded in `sacrifice`. We just sacrifice it here.
+            // Which creature paid the cost is part of what the ability
+            // resolves with — Disciple of Griselbrand's "the sacrificed
+            // creature's toughness" is about this one and not about whatever
+            // died most recently. Carried to the stack entry alongside
+            // `x_value`, so the priority window between paying and resolving
+            // cannot change the answer.
+            state.last_activated_sacrifice = match &ab.sacrifice_cost {
+                SacrificeCost::None => None,
+                SacrificeCost::SacrificeThis => Some(object_id),
+                SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => sacrifice,
+            };
             match &ab.sacrifice_cost {
                 SacrificeCost::None => {}
                 SacrificeCost::SacrificeThis => {
