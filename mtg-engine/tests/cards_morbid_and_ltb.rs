@@ -1119,6 +1119,88 @@ fn morkrut_banshee_can_target_self() {
     }
 }
 
+/// Ruling 2020-08-07: "Morkrut Banshee's morbid ability triggers only once,
+/// not once for each creature that has died this turn."
+///
+/// Morbid is an intervening-if on an enters trigger, so the number of deaths
+/// is a yes/no question and never a count.
+#[test]
+fn morkrut_banshees_morbid_triggers_once_however_many_creatures_died() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Three creatures die this turn.
+    for _ in 0..3 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        mtg_engine::destruction::try_destroy(&mut state, c, &reg);
+    }
+    assert!(state.creature_died_this_turn, "test setup");
+
+    // The Banshee is the only creature left on the battlefield, so its trigger
+    // has exactly one legal target and dispatch pushes it instead of stopping
+    // to prompt — a prompt would leave the stack empty for a reason that has
+    // nothing to do with how many times it triggered.
+    let banshee = named_permanent(&mut state, &reg, "Morkrut Banshee", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: banshee, controller: P0,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    mtg_engine::triggers::process_pending_trigger_pushes(&mut state, &reg);
+
+    let banshee_triggers = state.stack.iter().filter(|e| matches!(e,
+        mtg_engine::state::StackEntry::Trigger(t) if t.source_object() == banshee)).count();
+    assert_eq!(banshee_triggers, 1,
+        "one enters trigger, whatever the body count");
+}
+
+/// "...gets -4/-4 **until end of turn**." A creature that survives it is back
+/// to its printed size next turn (CR 514.2).
+#[test]
+fn morkrut_banshees_minus_four_wears_off() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let victim = ready_creature(&mut state, P1, 6, 6);
+    let banshee = named_permanent(&mut state, &reg, "Morkrut Banshee", P0);
+    let card_id = state.get_object(banshee).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .on_enter_battlefield(&mut state, banshee, &[Target::Object(victim)], &reg);
+
+    assert_eq!(
+        (state.effective_power(victim, &reg), state.effective_toughness(victim, &reg)),
+        (Some(2), Some(2)),
+        "6/6 less 4/4");
+
+    advance_to_next_turn(&mut state, &reg);
+    assert_eq!(
+        (state.effective_power(victim, &reg), state.effective_toughness(victim, &reg)),
+        (Some(6), Some(6)),
+        "the debuff ended at the cleanup step");
+}
+
+/// CR 113.7a: the enters trigger is on the stack independently of the Banshee,
+/// so removal in response does not save the target. The handler already ignores
+/// its own source — nothing in "target creature gets -4/-4 until end of turn"
+/// is about the Banshee — and this is what says so.
+#[test]
+fn morkrut_banshees_debuff_lands_after_the_banshee_is_killed_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let victim = ready_creature(&mut state, P1, 6, 6);
+    let banshee = named_permanent(&mut state, &reg, "Morkrut Banshee", P0);
+    let card_id = state.get_object(banshee).unwrap().card_id;
+
+    state.move_object(banshee, Zone::Graveyard, &reg);
+    reg.get(card_id).unwrap()
+        .on_enter_battlefield(&mut state, banshee, &[Target::Object(victim)], &reg);
+
+    assert_eq!(state.effective_toughness(victim, &reg), Some(2),
+        "the trigger resolves without its source");
+}
+
 /// Frightful Delusion: opponent should discard even when they pay {1}.
 #[test]
 fn frightful_delusion_discard_on_pay() {

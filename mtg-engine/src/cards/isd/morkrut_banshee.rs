@@ -1,6 +1,6 @@
 use crate::cards::helpers;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 use crate::actions::Target;
@@ -42,15 +42,22 @@ impl CardBehavior for MorkrutBanshee {
         helpers::morbid_should_trigger(state, kind)
     }
 
-    /// Enforce morbid at target selection: if no creature died this turn,
-    /// no creature is a legal target, so the trigger is removed per CR 603.3c.
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, _target: &Target, _registry: &CardRegistry) -> bool {
-        state.creature_died_this_turn
-    }
-
+    /// Morbid is an intervening-if (CR 603.4), so it belongs in
+    /// `should_trigger` and is checked again here on resolution — the ruling
+    /// says as much: "If no creatures have died by the time it enters the
+    /// battlefield, its ability won't trigger at all."
+    ///
+    /// It used to be an `is_valid_target` that ignored its target and answered
+    /// `state.creature_died_this_turn`, on the reasoning that no legal target
+    /// removes the trigger under CR 603.3c. That reaches the same board state
+    /// by the wrong route: 603.3c puts the ability on the stack and then takes
+    /// it off, and the engine says so in the game log, where 603.4 means it
+    /// never triggered. It also left the card asserting that *any* object is a
+    /// legal target for it, which is only harmless because the engine's
+    /// `TargetRequirement::Creature` is checked alongside it. Reaper from the
+    /// Abyss had the same thing and lost it; this one was missed.
     fn on_enter_battlefield(&self, state: &mut GameState, _object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        // Morbid — only apply if a creature died this turn (also enforced at
-        // stack-time via is_valid_target).
+        // CR 603.4 checks the intervening-if a second time on resolution.
         if !state.creature_died_this_turn {
             return;
         }
