@@ -191,3 +191,45 @@ fn avacynian_priest_taps_a_non_human_and_then_cannot_be_paid_again() {
     assert!(!offers_ability_of(&state, &reg, priest),
         "a tapped Priest cannot pay {{T}} again");
 }
+
+/// CR 608.2b: a target that stops satisfying what the ability *asks* of it is
+/// illegal on resolution, not only one that has left or gained hexproof.
+///
+/// `stack.rs` names this card as the example — "Avacynian Priest's 'target
+/// non-Human creature' is not a legal target once it has become a Human" — and
+/// nothing tested it. A werewolf transforming back to its Human front face is
+/// how a creature becomes a Human in this set: Villagers of Estwald is a Human
+/// Werewolf, and its back face, Howlpack of Estwald, is not a Human.
+#[test]
+fn avacynian_priests_target_that_becomes_a_human_is_no_longer_legal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    let villager = named_permanent(&mut state, &reg, "Villagers of Estwald", P1);
+    // On its back face it is a Werewolf and not a Human, so it is targetable.
+    mtg_engine::cards::helpers::apply_transform(&mut state, villager, &reg);
+    assert!(!state.has_subtype(villager, "Human", &reg),
+        "test precondition: Howlpack of Estwald is not a Human");
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1)]);
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == priest && targets == &[Target::Object(villager)]))
+        .expect("the non-Human back face is a legal target");
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    // In response it transforms back, and is a Human again.
+    mtg_engine::cards::helpers::apply_transform(&mut state, villager, &reg);
+    assert!(state.has_subtype(villager, "Human", &reg),
+        "test precondition: the front face is a Human Werewolf");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!state.get_object(villager).unwrap().tapped,
+        "'target non-Human creature' stopped being true of it, so the ability \
+         is countered by game rules and it is not tapped");
+    assert!(state.get_object(priest).unwrap().tapped,
+        "the Priest still paid its {{T}} — costs are not refunded when an \
+         ability is countered");
+}
