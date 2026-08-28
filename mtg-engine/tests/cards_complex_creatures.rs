@@ -750,10 +750,71 @@ fn manor_gargoyle_loses_defender_and_gains_flying() {
     assert!(!state.has_keyword(gargoyle, Keyword::Defender, &reg),
         "Manor Gargoyle should lose Defender after activation");
 
-    // Should have gained Flying (as until-end-of-turn keyword).
-    let has_flying = state.until_end_of_turn.iter()
-        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == gargoyle && *keyword == Keyword::Flying));
-    assert!(has_flying, "Manor Gargoyle should gain Flying until end of turn");
+    // Should have gained Flying. Asked through the accessor for the same
+    // reason as Defender above: the `until_end_of_turn` entry existing and the
+    // engine honouring it are two different claims, and only the second is
+    // what the card promises.
+    assert!(state.has_keyword(gargoyle, Keyword::Flying, &reg),
+        "Manor Gargoyle should gain Flying until end of turn");
+}
+
+/// "This creature has indestructible **as long as** it has defender." The two
+/// halves are tested separately elsewhere — that it has indestructible while
+/// it has defender, and that activating removes defender — but never chained,
+/// and the chain is the card. Losing defender has to cost it indestructible in
+/// the same breath.
+#[test]
+fn manor_gargoyle_loses_indestructible_with_its_defender() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P0);
+    assert!(state.has_keyword(gargoyle, Keyword::Indestructible, &reg),
+        "test precondition: indestructible while it has defender");
+
+    activate_via_hooks(&mut state, &reg, gargoyle, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!state.has_keyword(gargoyle, Keyword::Indestructible, &reg),
+        "the condition is 'as long as it has defender', and it no longer does");
+
+    advance_to_next_turn(&mut state, &reg);
+    assert!(state.has_keyword(gargoyle, Keyword::Defender, &reg),
+        "the loss was until end of turn");
+    assert!(state.has_keyword(gargoyle, Keyword::Indestructible, &reg),
+        "so the indestructible comes back with it");
+}
+
+/// The card's one ruling: "Lethal damage dealt to Manor Gargoyle while it has
+/// indestructible will stay marked on it that turn. If Manor Gargoyle loses
+/// indestructible after having been dealt lethal damage earlier in the turn,
+/// it will be destroyed."
+///
+/// CR 120.3 marks the damage whatever the creature's indestructibility; CR
+/// 704.5g only declines to destroy it. So the {1} ability is a way to kill
+/// your own Gargoyle, and that is the trap worth pinning.
+#[test]
+fn manor_gargoyle_dies_to_damage_marked_while_it_was_indestructible() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P0);
+    state.get_object_mut(gargoyle).unwrap().damage_marked = 4;
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(gargoyle).unwrap().zone, Zone::Battlefield,
+        "lethal damage does not destroy an indestructible creature (CR 704.5g)");
+    assert_eq!(state.get_object(gargoyle).unwrap().damage_marked, 4,
+        "but the damage stays marked on it (CR 120.3) — surviving is not \
+         healing");
+
+    activate_via_hooks(&mut state, &reg, gargoyle, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(gargoyle).unwrap().zone, Zone::Graveyard,
+        "with defender gone the indestructible went too, and the damage that \
+         was already marked is now lethal");
 }
 
 // ── Tree of Redemption ───────────────────────────────────────────
