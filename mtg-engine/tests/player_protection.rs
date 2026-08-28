@@ -139,6 +139,9 @@ fn bitterheart_witch_attaches_a_curse_of_another_color_to_the_same_player() {
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
     behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
     behavior.on_yes_no_choice(&mut state, witch, true, &reg);
+    // CR 701.19b: the search offers the Curse rather than forcing it, so the
+    // find is a separate step even with one Curse in the library.
+    behavior.resolve_card_effect(&mut state, witch, "", &Target::Object(curse), &reg);
 
     assert_eq!(state.get_object(curse).unwrap().zone, Zone::Battlefield,
         "protection from red says nothing about a black Curse");
@@ -162,6 +165,7 @@ fn a_curse_does_not_enter_attached_to_a_player_it_cannot_enchant() {
     // ...and the ward arrives before the trigger resolves.
     give_ward(&mut state, ward, P1);
     behavior.on_yes_no_choice(&mut state, witch, true, &reg);
+    behavior.resolve_card_effect(&mut state, witch, "", &Target::Object(curse), &reg);
 
     assert_eq!(state.get_object(curse).unwrap().zone, Zone::Library,
         "the Curse can't legally enchant P1 by the time it would enter, so it \

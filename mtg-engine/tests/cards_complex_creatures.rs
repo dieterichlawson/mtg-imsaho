@@ -196,11 +196,18 @@ fn bitterheart_witch_finds_curse_on_death() {
     behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
     assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
 
-    // Player chooses yes to search. One Curse in the library, so there is
-    // nothing left to choose and it attaches straight away.
+    // Player chooses yes to search...
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    // ...then picks the Curse. CR 701.19b: searching never forces a find, so
+    // the choice is offered even with a single Curse in the library.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(curse_obj))) },
         &reg,
     );
 
@@ -230,6 +237,12 @@ fn bitterheart_witch_can_attach_curse_to_self() {
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(curse_obj))) },
         &reg,
     );
 
@@ -2305,4 +2318,45 @@ fn bitterheart_witch_targets_its_player_when_the_trigger_goes_on_the_stack() {
     behavior.on_dies(&mut state, witch, &[], &reg);
     assert!(state.awaiting_action.is_none(),
         "no target, no ability — it must not fall back to asking at resolution");
+}
+
+/// CR 701.19b: "If a player is instructed to search a hidden zone for cards
+/// with a stated quality ... that player isn't required to find some or all of
+/// those cards even if they're present."
+///
+/// So Bitterheart Witch's controller may search, decline the only Curse in the
+/// library, and still have shuffled. The code used to take the Curse for them
+/// whenever exactly one was there.
+#[test]
+fn bitterheart_witch_may_search_and_decline_the_only_curse() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
+    let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
+    let curse_obj = state.create_object(curse_card_id, P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(curse_obj);
+
+    let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
+
+    // Yes, search.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    assert!(state.awaiting_action.is_some(),
+        "the Curse is offered, not taken — even though there is only one");
+
+    // Decline the find.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(curse_obj).unwrap().zone, Zone::Library,
+        "declining leaves the Curse in the library");
+    assert_eq!(state.get_object(curse_obj).unwrap().attached_to_player, None);
 }

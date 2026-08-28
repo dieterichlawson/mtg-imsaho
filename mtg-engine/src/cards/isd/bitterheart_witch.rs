@@ -79,37 +79,41 @@ impl CardBehavior for BitterheartWitch {
             .copied()
             .collect();
 
+        // The shuffle happens here rather than after the Curse is found, so
+        // that declining to find one still shuffles. "…then shuffle" is part of
+        // the search, not of finding: a player who searched and found nothing
+        // has still shuffled. Doing it before removing the Curse rather than
+        // after is unobservable — the result is a uniformly random order either
+        // way.
+        let mut rng = rand::thread_rng();
+        state.get_player_mut(controller).library_order.shuffle(&mut rng);
+
         if curse_ids.is_empty() {
             state.log(LogLevel::Event,
                 "Bitterheart Witch: no Curse found in library".to_string());
-            // Still shuffle.
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(controller).library_order.shuffle(&mut rng);
             return;
         }
 
-        if curse_ids.len() == 1 {
-            // Only one Curse — no choice to present; the player is already known.
-            Self::attach_and_shuffle(state, self_id, curse_ids[0], registry);
-        } else {
-            // Multiple Curses — player chooses which one via ChooseTarget.
-            let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()
-                .map(|&id| crate::actions::Target::Object(id))
-                .collect();
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: self_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Bitterheart Witch: choose a Curse card from your library".into(),
-                    options: curse_targets,
-                    optional: false,
-                    effect: PendingEffect::CardEffect {
-                        source_id: self_id,
-                        key: "choose".into(),
-                    },
+        // CR 701.19b: searching a hidden zone never forces you to find. Even
+        // with exactly one Curse in the library the player may decline it, so
+        // the choice is offered — and offered as optional — rather than taken
+        // for them.
+        let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()
+            .map(|&id| crate::actions::Target::Object(id))
+            .collect();
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Bitterheart Witch: choose a Curse card from your library".into(),
+                options: curse_targets,
+                optional: true,
+                effect: PendingEffect::CardEffect {
+                    source_id: self_id,
+                    key: "choose".into(),
                 },
-            });
-        }
+            },
+        });
     }
 
     /// "When this creature dies, you may search your library for a Curse card,
@@ -118,7 +122,7 @@ impl CardBehavior for BitterheartWitch {
     /// choice left inside the resolution is *which* Curse.
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(curse_id) = target else { return };
-        Self::attach_and_shuffle(state, source_id, *curse_id, registry);
+        Self::attach_curse(state, source_id, *curse_id, registry);
     }
 }
 
@@ -131,11 +135,9 @@ impl BitterheartWitch {
     }
 
     /// Put the found Curse onto the battlefield attached to the targeted
-    /// player, then shuffle — the tail of the trigger, whether or not a choice
-    /// of Curse was presented.
-    fn attach_and_shuffle(state: &mut GameState, self_id: ObjectId, curse_id: ObjectId, registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
-
+    /// player. The shuffle is not here: it belongs to the search, which
+    /// happens whether or not a Curse is found.
+    fn attach_curse(state: &mut GameState, self_id: ObjectId, curse_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
         let name = state.obj_name(curse_id);
 
@@ -160,8 +162,5 @@ impl BitterheartWitch {
                     format!("Bitterheart Witch: {name} can't enchant p{} and stays in the library", pid.0));
             }
         }
-
-        let mut rng = rand::thread_rng();
-        state.get_player_mut(controller).library_order.shuffle(&mut rng);
     }
 }
