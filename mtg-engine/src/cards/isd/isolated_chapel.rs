@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::{ManaCost, Zone, CardType, ManaType};
 
 /// Isolated Chapel — Land.
-/// Isolated Chapel enters the battlefield tapped unless you control a Plains or a Swamp.
+/// This land enters tapped unless you control a Plains or a Swamp.
 /// {T}: Add {W} or {B}.
 pub struct IsolatedChapel;
 
