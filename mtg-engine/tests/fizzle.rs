@@ -399,6 +399,48 @@ fn counterspell_is_countered_when_its_target_has_left_the_stack() {
          game rules (CR 608.2b)");
 }
 
+/// Dissipate whose target has left the stack: countered by game rules, and it
+/// is Dissipate that goes to the graveyard while nothing at all is exiled.
+///
+/// This is *adjacent* to the 2004-10-04 ruling "If the spell is not countered
+/// ..., then it does not get exiled", but it is not a test of it, and the
+/// distinction is worth writing down. The ruling is about Dissipate resolving
+/// and failing to counter an uncounterable spell — no card in this set can't
+/// be countered, and with a single target the only way the counter does not
+/// happen is the spell never resolving at all. So `counter_spell_exiling`'s
+/// own "is it still on the stack?" guard is unreachable from here: mutating it
+/// to exile regardless changes nothing, because `on_resolve` is never called.
+///
+/// What this does hold is the other half, which a rider implemented carelessly
+/// could get wrong: "exile it instead" is about the *countered* spell, so a
+/// fizzling Dissipate must land in its owner's graveyard like any other spell.
+#[test]
+fn a_fizzling_dissipate_goes_to_the_graveyard_and_exiles_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
+    let dissipate = castable_spell(&mut state, &reg, "Dissipate", P1);
+    state.priority_player = Some(P1);
+    let mut state = cast_onto_stack(&state, &reg, dissipate, vec![Target::Object(bears)]);
+
+    // Something else deals with the Bears first — it is off the stack and in
+    // the graveyard by the time Dissipate resolves.
+    state.stack.retain(|e| e.as_spell() != Some(bears));
+    state.move_object(bears, Zone::Graveyard, &reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!resolved(&state, dissipate),
+        "its only target is gone, so Dissipate is countered by game rules");
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "the Bears are where they already were; nothing was exiled");
+    assert_eq!(state.get_object(dissipate).unwrap().zone, Zone::Graveyard,
+        "and Dissipate itself goes to its owner's graveyard — it is the \
+         countered spell that gets exiled, never Dissipate");
+}
+
 /// CR 608.2b: on resolution, a spell checks each of its targets. One that is no
 /// longer legal is not affected; the spell still resolves and still affects the
 /// targets that are.
