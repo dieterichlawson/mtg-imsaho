@@ -1065,9 +1065,7 @@ impl GameState {
             self.add_counters(id, *counter_type, *count);
         }
         if entering.tapped {
-            if let Some(obj) = self.get_object_mut(id) {
-                obj.tapped = true;
-            }
+            self.arrives_tapped(id);
             let name = self.obj_name(id);
             self.log(LogLevel::Info, format!("{name} enters tapped"));
         }
@@ -1821,6 +1819,43 @@ impl GameState {
             _ => return,
         }
         self.events.push(crate::events::GameEvent::Untapped { object: id });
+    }
+
+    /// Tap a permanent (CR 701.21a), emitting `Tapped`.
+    ///
+    /// "Only untapped permanents can be tapped", so tapping one that is
+    /// already tapped does nothing at all — not even an event. That is the
+    /// half a bare `obj.tapped = true` gets wrong: the field is already true,
+    /// so the write is invisible, but the event it should not have sent is
+    /// not.
+    ///
+    /// This is for a permanent *becoming* tapped. A permanent that arrives on
+    /// the battlefield tapped was never untapped there and is not tapped by
+    /// anything — see [`GameState::arrives_tapped`].
+    pub fn tap(&mut self, id: ObjectId) {
+        match self.get_object_mut(id) {
+            Some(obj) if !obj.tapped => obj.tapped = true,
+            _ => return,
+        }
+        self.events.push(crate::events::GameEvent::Tapped { object: id });
+    }
+
+    /// A permanent arrives on the battlefield tapped.
+    ///
+    /// The counterpart to [`GameState::tap`] and deliberately not the same
+    /// thing. "Create a 2/2 Wolf that's tapped and attacking", "search for a
+    /// basic land and put it onto the battlefield tapped", and every
+    /// enters-tapped replacement (CR 614.1c) describe the state a permanent
+    /// is in when it arrives — nothing tapped it, so nothing that watches for
+    /// a permanent becoming tapped should see it.
+    ///
+    /// The two are one field and two events' worth of difference, which is
+    /// exactly why they are two named operations rather than one assignment
+    /// spelled the same way in sixteen places.
+    pub fn arrives_tapped(&mut self, id: ObjectId) {
+        if let Some(obj) = self.get_object_mut(id) {
+            obj.tapped = true;
+        }
     }
 
     /// Change control of a battlefield permanent (CR 800.4a).
