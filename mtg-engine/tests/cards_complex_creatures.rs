@@ -1083,6 +1083,45 @@ fn tree_of_redemption_swaps_life_and_toughness() {
         "Tree's toughness should become old life total (20)");
 }
 
+/// Ruling (2018-03-16): "Any toughness-modifying effects, counters, Auras, or
+/// Equipment will apply after its toughness is set to your former life total.
+/// For example, say Tree of Redemption is enchanted with Lunarch Mantle (which
+/// makes it 2/15) and your life total is 7. After the exchange, Tree of
+/// Redemption would be a 2/9 creature (its toughness became 7, which was then
+/// modified by Lunarch Mantle) and your life total would be 15."
+///
+/// So the exchange reads the **effective** toughness — the modifier counts
+/// toward the life you gain — and writes the **base**, which the modifier then
+/// applies on top of. Reading the base instead passed the whole workspace.
+///
+/// Lunarch Mantle is not in this pool, so the modifier here is two +1/+1
+/// counters, which the ruling names in the same breath. The numbers are the
+/// ruling's own: 2/15 with 7 life becomes 2/9 with 15 life.
+#[test]
+fn tree_of_redemption_exchanges_the_toughness_it_actually_has() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
+    state.add_counters(tree, CounterType::PlusOnePlusOne, 2);
+    state.get_player_mut(P0).life = 7;
+
+    assert_eq!(state.effective_power(tree, &reg), Some(2), "test setup: a 2/15");
+    assert_eq!(state.effective_toughness(tree, &reg), Some(15));
+
+    activate_via_hooks(&mut state, &reg, tree, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, 15,
+        "you gain up to the toughness it actually had, counters included");
+    assert_eq!(state.get_object(tree).unwrap().toughness, Some(7),
+        "its BASE toughness becomes your former life total");
+    assert_eq!(state.effective_toughness(tree, &reg), Some(9),
+        "and the counters apply on top of that, so it is a 2/9");
+    assert_eq!(state.effective_power(tree, &reg), Some(2),
+        "power is untouched by the exchange");
+}
+
 // ── Back from the Brink ──────────────────────────────────────────
 
 #[test]
