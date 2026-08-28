@@ -440,6 +440,75 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
          — the spell is not countered while one target remains (CR 608.2b)");
 }
 
+/// CR 608.2b, the half of `CreatureWithFilter` the re-check used to skip: a
+/// "target creature" that has stopped being a creature is no longer a legal
+/// target, whatever the filter says about it.
+///
+/// `is_target_legal` re-ran the filter — "you control", "power 4 or greater" —
+/// but never creature-ness, so seven cards each restated it in their own
+/// `is_valid_target`. Nothing in this set turns a creature into a
+/// non-creature, so no card can stage this; the state is built directly, which
+/// is the only way to hold an engine rule that the card pool never reaches.
+#[test]
+fn a_target_creature_that_stopped_being_a_creature_is_no_longer_legal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let guile = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
+    let mut state = cast_onto_stack(&state, &reg, guile, vec![Target::Object(creature)]);
+
+    // An anonymous object is a creature by virtue of carrying a P/T
+    // (CR 205.1b, and `card_types_of` says so); taking that away is the
+    // shortest honest way to make it stop being one.
+    state.get_object_mut(creature).unwrap().power = None;
+    state.get_object_mut(creature).unwrap().toughness = None;
+    assert!(!state.is_creature(creature, &reg), "test precondition");
+
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!resolved(&state, guile),
+        "the only target is no longer a creature, so the spell is countered by \
+         game rules");
+}
+
+/// Ranger's Guile is what the test above simulates by hand, and the reason the
+/// card exists: cast in response to removal, it makes its creature an illegal
+/// target and the removal is countered by game rules.
+///
+/// Asserted through `resolved()` rather than "the creature survived", because
+/// a single-target spell that resolved and found nothing to do leaves exactly
+/// the same board.
+#[test]
+fn rangers_guile_counters_removal_by_granting_hexproof() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let removal = castable_spell(&mut state, &reg, "Doom Blade", P1);
+    state.priority_player = Some(P1);
+    let mut state = cast_onto_stack(&state, &reg, removal, vec![Target::Object(creature)]);
+
+    // In response, its controller casts Ranger's Guile on it.
+    state.priority_player = Some(P0);
+    let guile = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
+    let mut state = cast_and_resolve(&state, &reg, guile, vec![Target::Object(creature)]);
+    assert!(state.has_keyword(creature, Keyword::Hexproof, &reg),
+        "test precondition: the Guile resolved and granted hexproof");
+
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!resolved(&state, removal),
+        "its only target is no longer legal for an opponent's spell, so the \
+         removal is countered by game rules (CR 608.2b / 702.11b)");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "and the creature is still there");
+    assert_eq!(state.effective_power(creature, &reg), Some(3),
+        "with the +1/+1 as well — both halves of one spell");
+}
+
 /// The mirror of the case above — the *land* is the one that becomes illegal —
 /// and then the case the same ruling ends on: "If both targets are illegal at
 /// this time, Into the Maw of Hell won't resolve."

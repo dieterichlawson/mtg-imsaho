@@ -444,3 +444,26 @@ fn rangers_guile_targets_only_your_own_creatures() {
     assert!(offered.contains(&Target::Object(mine)), "your own creature; offered {offered:?}");
     assert!(!offered.contains(&Target::Object(theirs)), "not the opponent's");
 }
+
+/// "gets +1/+1 and gains hexproof **until end of turn**" — both halves are
+/// bounded by the same duration, and neither was tested for expiry.
+#[test]
+fn rangers_guile_wears_off_at_end_of_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let guile = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
+    let mut state = cast_and_resolve(&state, &reg, guile, vec![Target::Object(creature)]);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(3), "test precondition");
+    assert!(state.has_keyword(creature, Keyword::Hexproof, &reg), "test precondition");
+
+    advance_to_next_turn(&mut state, &reg);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(2), "the +1/+1 is gone");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
+    assert!(!state.has_keyword(creature, Keyword::Hexproof, &reg),
+        "and so is the hexproof — an effect that outlived its duration would \
+         protect the creature forever");
+}

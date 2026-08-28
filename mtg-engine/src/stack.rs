@@ -66,6 +66,20 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                         return false;
                     }
 
+                    // "Target **creature**" has to still be one (CR 608.2b).
+                    // The filter below carries the rest of the restriction —
+                    // "you control", "power 4 or greater" — but never
+                    // creature-ness, so this was the one part of
+                    // `CreatureWithFilter` that the re-check did not re-check.
+                    // Seven cards each put it back in their own
+                    // `is_valid_target`; four of them are there for a further
+                    // restriction anyway, but the preamble was doing this job.
+                    if matches!(inner_req, TargetRequirement::CreatureWithFilter(_))
+                        && !state.is_creature(*id, registry)
+                    {
+                        return false;
+                    }
+
                     // Check TargetFilter for requirements that carry one.
                     let filter = match inner_req {
                         TargetRequirement::CreatureWithFilter(f) | TargetRequirement::PermanentWithFilter(f) => Some(f),

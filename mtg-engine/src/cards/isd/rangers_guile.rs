@@ -24,18 +24,11 @@ impl CardBehavior for RangersGuile {
         TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster)
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
-
+    /// No `is_valid_target`: "target creature you control on the battlefield"
+    /// is exactly `CreatureWithFilter(YouControl)`, which `legal_actions`
+    /// applies when offering targets and `stack::is_target_legal` re-applies
+    /// on the way down — creature-ness included, since that re-check now makes
+    /// it (CR 608.2b).
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
