@@ -219,7 +219,11 @@ fn is_combat_damage_prevented_by_exception(state: &GameState, source: ObjectId, 
     let controller = state.get_object(source).map_or(crate::ids::PlayerId(0), |o| o.controller);
     state.until_end_of_turn.iter().any(|e| match e {
         crate::state::TemporaryEffect::PreventCombatDamageExcept { filter } =>
-            !state.matches_filter(source, filter, controller, registry),
+            // Moonmist's blanket prevention is an until-end-of-turn effect with
+            // no permanent behind it; the damage source stands in, which only
+            // `ControlledByAttachedPlayer` would notice and no such effect
+            // uses.
+            !state.matches_filter(source, filter, source, controller, registry),
         _ => false,
     })
 }

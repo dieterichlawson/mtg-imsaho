@@ -517,7 +517,7 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
         registry,
         &mut |e, source| {
             if let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = e {
-                if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
+                if !state.matches_filter(blocker_id, allowed_blockers, source.id, source.controller, registry) {
                     restricted = true;
                     return false;
                 }

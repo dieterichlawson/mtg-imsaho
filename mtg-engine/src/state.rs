@@ -1216,13 +1216,23 @@ impl GameState {
         self.game_log.push(LogEntry { level, message: msg });
     }
 
-    /// Check if a creature matches a `CreatureFilter`, evaluated from the perspective
-    /// of the effect's source permanent.
+    /// Check if a creature matches a `CreatureFilter`, evaluated from the
+    /// perspective of the effect's source permanent.
+    ///
+    /// `source_id` is that permanent. Most filters need only its controller,
+    /// but `ControlledByAttachedPlayer` needs the object itself — a Curse's
+    /// "creatures enchanted player controls" is a question about whom the
+    /// Curse is on, and there is no answering it from a `PlayerId`. This arm
+    /// used to fall back to "creatures controlled by anyone who isn't the
+    /// source's controller", with a comment saying so; that is a different
+    /// set the moment a Curse is put on the player who controls it, which
+    /// "Enchant player" allows.
     #[must_use]
     pub fn matches_filter(
         &self,
         creature_id: ObjectId,
         filter: &crate::types::CreatureFilter,
+        source_id: ObjectId,
         source_controller: PlayerId,
         registry: &crate::cards::CardRegistry,
     ) -> bool {
@@ -1235,9 +1245,9 @@ impl GameState {
             CreatureFilter::HasSubtype(subtype) => self.has_subtype(creature_id, subtype, registry),
             CreatureFilter::HasCardType(ct) => self.has_card_type(creature_id, *ct, registry),
             CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
-            CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
-            CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
-            CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_controller, registry),
+            CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_id, source_controller, registry)),
+            CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_id, source_controller, registry)),
+            CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_id, source_controller, registry),
             CreatureFilter::Attacking => {
                 self.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature_id))
             }
@@ -1246,11 +1256,9 @@ impl GameState {
                     c.blocker_assignments.values().any(|bs| bs.contains(&creature_id)))
             }
             CreatureFilter::ControlledByAttachedPlayer => {
-                // This filter requires knowing the source object's attached_to_player.
-                // It's resolved in effect_applies_to which has source_id.
-                // If called directly from matches_filter without source context,
-                // fall back to Opponents (the common case for curses).
-                creature.controller != source_controller
+                self.get_object(source_id)
+                    .and_then(|o| o.attached_to_player)
+                    .is_some_and(|player| creature.controller == player)
             }
         }
     }
@@ -1274,20 +1282,11 @@ impl GameState {
                     .is_some_and(|target| target == creature_id)
             }
             EffectScope::Global(filter) => {
-                // For AttachedPlayer filter, use the source's attached_to_player.
-                if matches!(filter, crate::types::CreatureFilter::ControlledByAttachedPlayer) {
-                    let attached_player = self.get_object(source_id)
-                        .and_then(|o| o.attached_to_player);
-                    if let Some(player) = attached_player {
-                        let creature = self.get_object(creature_id);
-                        return creature.is_some_and(|c| c.controller == player);
-                    }
-                    return false;
-                }
-                self.matches_filter(creature_id, filter, source_controller, registry)
+                self.matches_filter(creature_id, filter, source_id, source_controller, registry)
             }
             EffectScope::GlobalOther(filter) => {
-                creature_id != source_id && self.matches_filter(creature_id, filter, source_controller, registry)
+                creature_id != source_id
+                    && self.matches_filter(creature_id, filter, source_id, source_controller, registry)
             }
         }
     }
@@ -1727,7 +1726,7 @@ impl GameState {
             registry,
             &mut |e, src_obj| {
                 if let ContinuousEffect::ProtectionFrom { filter, .. } = e {
-                    if self.matches_filter(source_id, filter, src_obj.controller, registry) {
+                    if self.matches_filter(source_id, filter, src_obj.id, src_obj.controller, registry) {
                         protected = true;
                         return false;
                     }
@@ -1746,7 +1745,13 @@ impl GameState {
         for effect in &self.until_end_of_turn {
             match effect {
                 TemporaryEffect::GrantProtection { target, filter } if *target == target_id => {
-                    if self.matches_filter(source_id, filter, target_controller, registry) {
+                    // An until-end-of-turn grant has no permanent behind it any
+                    // more (Spare from Evil is a spell that has resolved), so
+                    // the protected creature stands in as the source. Only
+                    // `ControlledByAttachedPlayer` would notice, and no grant
+                    // in the set uses it — a Curse's filter is a static
+                    // ability, not a grant.
+                    if self.matches_filter(source_id, filter, target_id, target_controller, registry) {
                         return true;
                     }
                 }

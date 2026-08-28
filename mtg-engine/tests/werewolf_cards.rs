@@ -854,7 +854,7 @@ fn transformed_werewolf_has_werewolf_subtype_not_human() {
 
     // Front face: Human subtype
     assert!(state.matches_filter(waif,
-        &CreatureFilter::HasSubtype("Human".into()), P0, &reg),
+        &CreatureFilter::HasSubtype("Human".into()), waif, P0, &reg),
         "Front face should have Human subtype");
 
     // Transform
@@ -862,10 +862,10 @@ fn transformed_werewolf_has_werewolf_subtype_not_human() {
 
     // Back face: Werewolf subtype, not Human
     assert!(state.matches_filter(waif,
-        &CreatureFilter::HasSubtype("Werewolf".into()), P0, &reg),
+        &CreatureFilter::HasSubtype("Werewolf".into()), waif, P0, &reg),
         "Back face should have Werewolf subtype");
     assert!(!state.matches_filter(waif,
-        &CreatureFilter::HasSubtype("Human".into()), P0, &reg),
+        &CreatureFilter::HasSubtype("Human".into()), waif, P0, &reg),
         "Back face should not have Human subtype");
 }
 
