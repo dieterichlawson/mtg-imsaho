@@ -101,7 +101,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Stensia Bloodhall | `stensia_bloodhall.rs` | 66 | 4 | 0 |
 | x | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 65 | 4 | 0 |
 | x | Mask of Avacyn | `mask_of_avacyn.rs` | 64 | 4 | 0 |
-|   | Mirror-Mad Phantasm | `mirror_mad_phantasm.rs` | 108 | 3 | 0 |
+| x | Mirror-Mad Phantasm | `mirror_mad_phantasm.rs` | 108 | 3 | 0 |
 |   | Nephalia Drownyard | `nephalia_drownyard.rs` | 61 | 4 | 0 |
 |   | Ashmouth Hound | `ashmouth_hound.rs` | 55 | 3 | 2 |
 |   | Ranger's Guile | `rangers_guile.rs` | 58 | 4 | 0 |
