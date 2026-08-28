@@ -40,3 +40,23 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:31
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Dog
+**P/T**: 3/5
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/thraben_purebloods.rs` matches: {4}{W}, **Dog** (the current type line — this card was printed as a Hound and errata'd, exactly the drift the audit procedure's no-training-data rule exists for; the code is on the right side of it), 3/5, no text, no hooks.
+
+### Tricky interactions checked
+- True vanilla; nothing in the ISD pool reads "Dog" or "Hound", so the subtype is future-proofing rather than live — but it is now pinned to the current oracle so a well-meaning "fix" back to Hound fails a test.
+
+### Test coverage
+- All printed characteristics: `mtg-engine/tests/cards_vanilla_and_keywords.rs` `vanilla_creatures_have_their_printed_characteristics`
+- No rulings on Scryfall for this card.
+
+Mutation check: subtype "Dog" -> "Hound" (the pre-errata type) fails the table ("Thraben Purebloods is a Dog"). Bites.
