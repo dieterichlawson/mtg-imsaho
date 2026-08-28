@@ -3,7 +3,7 @@ use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 
-/// Stromkirk Patrol — {4}{B} 4/3 Vampire.
+/// Stromkirk Patrol — {4}{B} 4/3 Vampire Soldier.
 /// Whenever Stromkirk Patrol deals combat damage to a player, put a +1/+1 counter on it.
 pub struct StromkirkPatrol;
 
