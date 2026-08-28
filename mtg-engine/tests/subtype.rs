@@ -580,8 +580,8 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
     );
 
     // Sanity-check: nothing else of P0's is on the battlefield to make
-    // single-target the only path. (Cathar itself is excluded from the
-    // target list because of the `o.id != object_id` filter at line 41.)
+    // single-target the only path. (The Cathar excludes itself by being in
+    // the graveyard by then, not by an id filter — it has never had one.)
     let p0_creature_count = state
         .objects
         .values()

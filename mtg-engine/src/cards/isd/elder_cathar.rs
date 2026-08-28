@@ -47,7 +47,16 @@ impl CardBehavior for ElderCathar {
     }
 
     /// "target creature you control" — restrict the engine's creature
-    /// enumeration to this card's controller, and exclude the dying Cathar.
+    /// enumeration to this card's controller.
+    ///
+    /// `caster` is the trigger's controller, which for a death trigger is the
+    /// Cathar's *last known* controller (CR 608.2g) — leaving the battlefield
+    /// resets the object's own `controller` to its owner (CR 400.7), so this
+    /// must not be re-derived from the source here.
+    ///
+    /// There is no self-exclusion clause because none is needed: the Cathar is
+    /// already in the graveyard when its own death trigger picks targets, so
+    /// the zone check covers it.
     fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         let Target::Object(id) = target else { return false };
         state.get_object(*id).is_some_and(|o| {
