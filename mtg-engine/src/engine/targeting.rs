@@ -23,9 +23,24 @@ pub fn can_be_targeted_by(state: &GameState, target_id: ObjectId, caster: Player
     }
     true
 }
-/// Check if a player can be targeted by a given caster.
-/// Players with hexproof can't be targeted by opponents.
+/// Whether `caster` may target `target_player` — the whole rule, in one place.
+///
+/// It used to be written out three different ways: here, again inline in
+/// `stack.rs`'s CR 608.2b re-check, and again in `helpers::any_targets` and
+/// `any_targets_except`. Only the callers of *this* one also checked `lost`,
+/// and they did it themselves, so "a player who has left the game" was a
+/// legal target for an "any target" spell and for every re-check on
+/// resolution. Witchbane Orb is the only card in the pool that grants a
+/// player hexproof, so each divergent copy was a way for its one static
+/// ability to be quietly skipped.
 pub(crate) fn can_target_player(state: &GameState, target_player: PlayerId, caster: PlayerId, registry: &CardRegistry) -> bool {
+    // CR 104.3a: a player who has lost has left the game and is not there to
+    // be targeted.
+    if state.players.iter().any(|p| p.id == target_player && p.lost) {
+        return false;
+    }
+    // CR 702.11b: hexproof stops spells and abilities your OPPONENTS control.
+    // Your own still reach you.
     if target_player != caster && state.player_has_hexproof(target_player, registry) {
         return false;
     }
@@ -271,7 +286,7 @@ pub(crate) fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost && can_target_player(state, p.id, caster, registry) {
+                if can_target_player(state, p.id, caster, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
                         targets.push(t);
@@ -282,7 +297,6 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::PlayerOnly => {
             state.players.iter()
-                .filter(|p| !p.lost)
                 .filter(|p| can_target_player(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -290,7 +304,6 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::PlayerOrPlaneswalker => {
             let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| !p.lost)
                 .filter(|p| can_target_player(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -522,7 +535,6 @@ pub(crate) fn generate_ability_targets(
         }
         TargetRequirement::PlayerOnly => {
             state.players.iter()
-                .filter(|p| !p.lost)
                 .filter(|p| can_target_player(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
@@ -530,7 +542,6 @@ pub(crate) fn generate_ability_targets(
         }
         TargetRequirement::PlayerOrPlaneswalker => {
             let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| !p.lost)
                 .filter(|p| can_target_player(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
@@ -555,7 +566,7 @@ pub(crate) fn generate_ability_targets(
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost && can_target_player(state, p.id, controller, registry) {
+                if can_target_player(state, p.id, controller, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
                         targets.push(t);

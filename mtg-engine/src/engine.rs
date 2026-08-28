@@ -30,6 +30,7 @@ pub use mana_sources::{
     activate_mana_source, available_mana_abilities, can_pay_with_sources, pay_cost_with_sources,
 };
 pub use targeting::can_be_targeted_by;
+pub(crate) use targeting::can_target_player;
 
 pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, legal_discard_actions, notify_discard};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};

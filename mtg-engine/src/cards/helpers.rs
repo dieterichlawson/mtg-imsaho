@@ -270,7 +270,7 @@ pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId,
         }
     }
     for player in &state.players {
-        if !state.player_has_hexproof(player.id, registry) || player.id == controller {
+        if crate::engine::can_target_player(state, player.id, controller, registry) {
             targets.push(Target::Player(player.id));
         }
     }
@@ -291,7 +291,7 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
         }
     }
     for player in &state.players {
-        if !state.player_has_hexproof(player.id, registry) || player.id == controller {
+        if crate::engine::can_target_player(state, player.id, controller, registry) {
             targets.push(Target::Player(player.id));
         }
     }
