@@ -394,6 +394,40 @@ fn curse_of_bloody_tome_mills_on_upkeep() {
     assert_eq!(gy, 2, "Should mill 2 cards from P1's library");
 }
 
+/// Ruling: "If the enchanted player has only one card in their library, they
+/// put that card into their graveyard."
+///
+/// Milling is not drawing: a short library mills what is there (CR 701.13b)
+/// and nobody loses. The log has to say what happened rather than what was
+/// asked for — six cards used to log their intended count beside
+/// `mill_cards`'s real one.
+#[test]
+fn curse_of_bloody_tome_mills_the_last_card_and_says_so() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Bloody Tome", P0, P1);
+    let only = stock_library(&mut state, &reg, P1, 1)[0];
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(only).unwrap().zone, Zone::Graveyard,
+        "the one card in the library is milled");
+    assert!(state.get_player(P1).library_order.is_empty(), "and the library is empty");
+    assert!(!state.get_player(P1).lost,
+        "milling an empty library is not drawing from one — nobody loses");
+
+    let mill_lines: Vec<&str> = state.game_log.iter()
+        .filter(|e| e.message.contains("milled"))
+        .map(|e| e.message.as_str())
+        .collect();
+    assert_eq!(mill_lines.len(), 1, "one line for one mill; got {mill_lines:?}");
+    assert!(mill_lines[0].contains("Curse of the Bloody Tome"),
+        "and it names the source: {mill_lines:?}");
+    assert!(mill_lines[0].contains("1 card") && mill_lines[0].contains("of 2"),
+        "and reports what happened, not what was asked for: {mill_lines:?}");
+}
+
 // ── Curse of Oblivion ─────────────────────────────────────────────
 
 /// Curse exiles 2 cards from enchanted player's graveyard (auto when ≤2).
