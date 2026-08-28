@@ -33,10 +33,7 @@ impl CardBehavior for GraspOfPhantoms {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {
                     let name = obj.name.clone();
-                    let owner = obj.owner;
-                    state.move_object(*target_id, Zone::Library, registry);
-                    // Insert at position 0 (top of library).
-                    state.get_player_mut(owner).library_order.insert(0, *target_id);
+                    state.put_into_library(*target_id, crate::state::LibraryPosition::Top, registry);
                     state.log(crate::state::LogLevel::Event,
                         format!("Grasp of Phantoms put {name} on top of its owner's library"));
                 }

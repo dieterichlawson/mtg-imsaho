@@ -126,10 +126,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::PutOnTopOfLibrary { source_name }) => {
             let name = state.obj_name(*id);
-            let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
-            state.move_object(*id, Zone::Library, registry);
-            // Insert at position 0 (top of library).
-            state.get_player_mut(owner).library_order.insert(0, *id);
+            state.put_into_library(*id, crate::state::LibraryPosition::Top, registry);
             state.log(LogLevel::Event, format!("{source_name}: put {name} on top of library"));
         }
         (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {

@@ -38,12 +38,7 @@ pub(crate) fn mulligan_mull(state: &mut GameState, registry: &CardRegistry) -> A
         let hand_ids: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
             .iter().map(|o| o.id).collect();
         for id in &hand_ids {
-            state.move_object(*id, Zone::Library, registry);
-            // Append to the end of the library_order (bottom).
-            let lib = &mut state.get_player_mut(player).library_order;
-            if !lib.contains(id) {
-                lib.push(*id);
-            }
+            state.put_into_library(*id, crate::state::LibraryPosition::Bottom, registry);
         }
         // Shuffle.
         let mut rng = rand::thread_rng();
@@ -84,10 +79,7 @@ pub(crate) fn bottom_cards(state: &mut GameState, cards: &[ObjectId], registry: 
         // Move each card from hand to library and append to the bottom, in
         // the order given (so `cards[0]` ends up bottom-most of the group).
         for &card_id in cards {
-            state.move_object(card_id, Zone::Library, registry);
-            let lib = &mut state.get_player_mut(player).library_order;
-            lib.retain(|&id| id != card_id);
-            lib.push(card_id);
+            state.put_into_library(card_id, crate::state::LibraryPosition::Bottom, registry);
         }
         // Bottoming is a hidden action — the opponent must not see which
         // specific cards were sent to the bottom. Log only the count.

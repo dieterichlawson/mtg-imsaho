@@ -72,8 +72,7 @@ impl CardBehavior for MirrorMadPhantasm {
             return;
         }
 
-        state.move_object(object_id, Zone::Library, registry);
-        state.get_player_mut(owner).library_order.push(object_id);
+        state.put_into_library(object_id, crate::state::LibraryPosition::Bottom, registry);
         {
             
             crate::cards::helpers::shuffle_library(state, owner);

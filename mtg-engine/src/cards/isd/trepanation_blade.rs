@@ -82,7 +82,7 @@ impl CardBehavior for TrepanationBlade {
 
             // "That player puts the revealed cards into their graveyard" —
             // library to graveyard, so it is a mill.
-            crate::engine::mill_one(state, defending_player, card_id, registry);
+            crate::engine::mill_one(state, card_id, registry);
             cards_revealed += 1;
 
             if is_land {

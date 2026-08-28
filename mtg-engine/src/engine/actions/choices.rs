@@ -106,9 +106,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // an opponent's Undead Alchemist.
                     for &card_id in revealed {
                         if card_id != *keep_id {
-                            let Some(owner) = state.get_object(card_id).map(|o| o.owner)
-                                else { continue };
-                            crate::engine::mill_one(state, owner, card_id, registry);
+                            crate::engine::mill_one(state, card_id, registry);
                         }
                     }
                     state.log(LogLevel::Event, format!("Kept {keep_name}"));

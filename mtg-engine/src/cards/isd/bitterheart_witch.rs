@@ -137,7 +137,6 @@ impl BitterheartWitch {
     /// player. The shuffle is not here: it belongs to the search, which
     /// happens whether or not a Curse is found.
     fn attach_curse(state: &mut GameState, self_id: ObjectId, curse_id: ObjectId, registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
         let name = state.obj_name(curse_id);
 
         if let Some(pid) = Self::curse_target(state, self_id) {
@@ -148,7 +147,6 @@ impl BitterheartWitch {
             // you couldn't put a red Curse onto the battlefield this way."
             // The shuffle below still happens; the search did.
             if state.player_can_be_enchanted_by(curse_id, pid, registry) {
-                state.get_player_mut(controller).library_order.retain(|&id| id != curse_id);
                 state.move_object(curse_id, crate::types::Zone::Battlefield, registry);
                 if let Some(obj) = state.get_object_mut(curse_id) {
                     obj.attached_to_player = Some(pid);

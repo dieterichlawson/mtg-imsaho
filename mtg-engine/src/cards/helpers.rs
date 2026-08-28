@@ -855,7 +855,6 @@ pub fn finish_library_search(
     registry: &CardRegistry,
 ) {
     let name = state.obj_name(found);
-    state.get_player_mut(searcher).library_order.retain(|&id| id != found);
     state.move_object(found, destination, registry);
     if destination == Zone::Battlefield {
         if let Some(obj) = state.get_object_mut(found) {

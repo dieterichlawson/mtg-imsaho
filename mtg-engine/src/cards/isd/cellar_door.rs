@@ -66,7 +66,7 @@ impl CardBehavior for CellarDoor {
             // and emits CreatureCardMilled. Doing the move by hand meant
             // Undead Alchemist's trigger never fired for it.
             let is_creature = state.is_creature(milled_id, registry);
-            crate::engine::mill_one(state, *player_id, milled_id, registry);
+            crate::engine::mill_one(state, milled_id, registry);
 
             if is_creature {
                 state.create_token_with_subtypes(

@@ -63,7 +63,7 @@ impl CardBehavior for Mulch {
         // card among them emits CreatureCardMilled — moving it directly meant
         // Undead Alchemist never saw it.
         for &non_land_id in &non_lands {
-            crate::engine::mill_one(state, controller, non_land_id, registry);
+            crate::engine::mill_one(state, non_land_id, registry);
         }
 
     }

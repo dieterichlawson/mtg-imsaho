@@ -72,12 +72,13 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
 /// (CR 701.13a), whether it comes off the top, the bottom, or out of a pile
 /// of revealed cards.
 ///
-/// This exists to take the card out of `library_order` as well as moving it;
 /// `CreatureCardMilled` is `move_object`'s, emitted for any library-to-
 /// graveyard move, so a card that does the move by hand cannot lose the event
-/// the way four of them used to.
-pub fn mill_one(state: &mut GameState, player: PlayerId, obj_id: ObjectId, registry: &CardRegistry) {
-    state.get_player_mut(player).library_order.retain(|&id| id != obj_id);
+/// the way four of them used to; the card's place in `library_order` goes the
+/// same way, for the same reason. What is left here is the name — a mill is a
+/// thing the rules have a word for, and a reader looking for where one happens
+/// should find it.
+pub fn mill_one(state: &mut GameState, obj_id: ObjectId, registry: &CardRegistry) {
     state.move_object(obj_id, Zone::Graveyard, registry);
 }
 /// Mill up to `count` cards, and say how many actually went (CR 701.13b: a
@@ -105,7 +106,7 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source:
             }
             player_state.library_order[0]
         };
-        mill_one(state, player, obj_id, registry);
+        mill_one(state, obj_id, registry);
         milled_ids.push(obj_id);
     }
     let milled = milled_ids.len();

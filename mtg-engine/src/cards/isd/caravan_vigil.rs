@@ -16,9 +16,9 @@ impl CaravanVigil {
 
         let land_name = state.obj_name(land_id);
 
-        // Remove from library order.
-        state.get_player_mut(controller).library_order.retain(|&id| id != land_id);
-
+        // The land stays in the library — listed, and in its place — until it
+        // actually leaves it. Every path below moves it, and `move_object`
+        // takes it out of the order then.
         if state.creature_died_this_turn {
             // Morbid: "You may put that card onto the battlefield instead."
             if let Some(obj) = state.get_object_mut(spell_id) {
