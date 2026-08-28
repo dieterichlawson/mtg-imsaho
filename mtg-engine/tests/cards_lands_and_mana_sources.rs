@@ -309,6 +309,9 @@ fn a_second_deranged_assistant_cannot_mill_an_empty_library() {
 // Ghoulcaller's Bell
 // ══════════════════════════════════════════════════════════════════
 
+/// "{T}: Each player mills **a** card." Each is one card, from every player's
+/// library — so each library needs a second card underneath, or milling two
+/// looks exactly like milling one.
 #[test]
 fn ghoulcallers_bell_mills_both_players() {
     let reg = registry();
@@ -316,16 +319,20 @@ fn ghoulcallers_bell_mills_both_players() {
 
     let bell = named_permanent(&mut state, &reg, "Ghoulcaller's Bell", P0);
 
-    // Put cards in both libraries.
-    let forest_id = reg.get_id_by_name("Forest").unwrap();
-    let p0_card = state.create_object(forest_id, P0, Zone::Library, None, None);
-    state.get_object_mut(p0_card).unwrap().name = "Forest".into();
-    state.players[0].library_order = vec![p0_card];
-
-    let island_id = reg.get_id_by_name("Island").unwrap();
-    let p1_card = state.create_object(island_id, P1, Zone::Library, None, None);
-    state.get_object_mut(p1_card).unwrap().name = "Island".into();
-    state.players[1].library_order = vec![p1_card];
+    // Two cards in each library: the top one is milled, the one under it is
+    // the claim about how many.
+    let library_of = |state: &mut mtg_engine::state::GameState, owner, name: &str| {
+        let card_id = reg.get_id_by_name(name).unwrap();
+        let ids: Vec<ObjectId> = (0..2).map(|_| {
+            let id = state.create_object(card_id, owner, Zone::Library, None, None);
+            state.get_object_mut(id).unwrap().name = name.into();
+            id
+        }).collect();
+        state.get_player_mut(owner).library_order.clone_from(&ids);
+        ids
+    };
+    let p0_cards = library_of(&mut state, P0, "Forest");
+    let p1_cards = library_of(&mut state, P1, "Island");
 
     let legal = engine::legal_actions(&state, &reg);
     let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == bell));
@@ -333,9 +340,37 @@ fn ghoulcallers_bell_mills_both_players() {
 
     state = resolve_activated(engine::submit_action(&state, activate.unwrap(), &reg), &reg);
 
-    // Both players should have had a card milled.
-    assert_eq!(state.get_object(p0_card).unwrap().zone, Zone::Graveyard);
-    assert_eq!(state.get_object(p1_card).unwrap().zone, Zone::Graveyard);
+    // Both players should have had exactly one card milled.
+    assert_eq!(state.get_object(p0_cards[0]).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(p1_cards[0]).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(p0_cards[1]).unwrap().zone, Zone::Library,
+        "\"mills **a** card\" — the one underneath stays put");
+    assert_eq!(state.get_object(p1_cards[1]).unwrap().zone, Zone::Library);
+}
+
+/// CR 701.17b: milling as an *effect* mills as many as possible, so a player
+/// with an empty library simply mills nothing — unlike a *cost* that includes
+/// milling, which cannot be paid at all (Deranged Assistant).
+#[test]
+fn ghoulcallers_bell_mills_what_it_can_from_an_empty_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bell = named_permanent(&mut state, &reg, "Ghoulcaller's Bell", P0);
+    // P0's library is empty; P1 has one card.
+    let card_id = reg.get_id_by_name("Island").unwrap();
+    let theirs = state.create_object(card_id, P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order = vec![theirs];
+
+    let legal = engine::legal_actions(&state, &reg);
+    let activate = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == bell))
+        .expect("still activatable — the mill is an effect, not a cost");
+    let state = resolve_activated(engine::submit_action(&state, activate, &reg), &reg);
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "the player who has a card still mills it");
+    assert!(state.get_player(P0).library_order.is_empty());
 }
 
 // ══════════════════════════════════════════════════════════════════
