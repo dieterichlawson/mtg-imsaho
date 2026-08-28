@@ -190,7 +190,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Past in Flames | `past_in_flames.rs` | 73 | 2 | 0 |
 | x | Mulch | `mulch.rs` | 70 | 2 | 0 |
 | x | Pitchburn Devils | `pitchburn_devils.rs` | 45 | 2 | 1 |
-|   | Stromkirk Noble | `stromkirk_noble.rs` | 45 | 2 | 1 |
+| x | Stromkirk Noble | `stromkirk_noble.rs` | 45 | 2 | 1 |
 |   | Unruly Mob | `unruly_mob.rs` | 44 | 2 | 1 |
 |   | Bloodcrazed Neonate | `bloodcrazed_neonate.rs` | 43 | 2 | 1 |
 |   | Mausoleum Guard | `mausoleum_guard.rs` | 43 | 2 | 1 |

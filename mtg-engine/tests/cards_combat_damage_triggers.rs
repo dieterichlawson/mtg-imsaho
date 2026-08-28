@@ -389,6 +389,34 @@ fn stromkirk_noble_cant_be_blocked_by_humans() {
     assert!(can_block_nh, "Non-Humans should be able to block Stromkirk Noble");
 }
 
+/// "Humans" is read off the blocker's ACTIVE face, and half this set's Humans
+/// are the front face of a werewolf. A transformed Village Ironsmith is a
+/// Werewolf, not a Human, and can block the Noble — Moonmist on the defending
+/// side is the line of play that gets there.
+///
+/// The test above uses Unruly Mob, which is a Human on both sides of nothing,
+/// so it cannot tell an active-face read from a printed-front-face one.
+#[test]
+fn stromkirk_noble_can_be_blocked_by_a_human_that_has_transformed() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let noble = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
+    let smith = named_permanent(&mut state, &reg, "Village Ironsmith", P1);
+    attacks_unblocked(&mut state, noble, P1);
+
+    assert!(state.has_subtype(smith, "Human", &reg), "test setup: it starts as a Human");
+    assert!(!combat::can_block_attacker(&state, smith, noble, &reg),
+        "and as a Human it cannot block");
+
+    mtg_engine::cards::helpers::apply_transform(&mut state, smith, &reg);
+
+    assert!(!state.has_subtype(smith, "Human", &reg),
+        "its back face is a Werewolf");
+    assert!(combat::can_block_attacker(&state, smith, noble, &reg),
+        "so the restriction no longer reaches it");
+}
+
 // ── Rakish Heir ───────────────────────────────────────────────────
 
 /// "Whenever a Vampire you control deals combat damage to a player, put a

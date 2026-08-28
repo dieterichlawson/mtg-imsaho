@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, CreatureFilter, EffectScope, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, CreatureFilter, EffectScope, CounterType};
 
 /// Stromkirk Noble — {R} 1/1 Vampire Noble.
 /// Stromkirk Noble can't be blocked by Humans.
@@ -38,8 +38,9 @@ impl CardBehavior for StromkirkNoble {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        if state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        }
+        // `add_counters` is where CR 121.1 says a Noble that has left the
+        // battlefield is not there to take a counter — for every card at once,
+        // rather than here again.
+        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
     }
 }
