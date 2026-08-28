@@ -18,6 +18,20 @@ use mtg_engine::ids::ObjectId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
+
+/// Every target the engine currently offers for `object_id`'s activated
+/// ability, flattened across the offered actions.
+fn ability_targets(state: &GameState, reg: &CardRegistry, object_id: ObjectId) -> Vec<Target> {
+    mtg_engine::engine::legal_actions(state, reg).actions.iter()
+        .filter_map(|a| match a {
+            Action::ActivateAbility { object_id: o, targets, .. } if *o == object_id =>
+                Some(targets.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Elder of Laurels
 // ══════════════════════════════════════════════════════════════════
@@ -334,6 +348,70 @@ fn nephalia_drownyard_mills_three() {
     assert_eq!(graveyard_count, 3);
 }
 
+/// "Target **player**" — no restriction on which. Milling yourself is a real
+/// play in this set, where the graveyard is a resource (flashback, Splinterfright,
+/// Boneyard Wurm), so the ability must offer its own controller as well as the
+/// opponent. And CR 702.11b still applies: a player with hexproof from
+/// Witchbane Orb cannot be targeted by an opponent's ability.
+#[test]
+fn nephalia_drownyard_may_target_either_player_but_not_a_hexproof_one() {
+    let reg = registry();
+
+    // Both players are legal targets by default.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let drownyard = named_permanent(&mut state, &reg, "Nephalia Drownyard", P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Blue, 1), (ManaType::Black, 1)]);
+    let offered = ability_targets(&state, &reg, drownyard);
+    assert!(offered.contains(&Target::Player(P1)), "the opponent; offered {offered:?}");
+    assert!(offered.contains(&Target::Player(P0)),
+        "and yourself — \"target player\" says nothing about whose; offered {offered:?}");
+
+    // The Orb takes its controller off the list, and only them.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let drownyard = named_permanent(&mut state, &reg, "Nephalia Drownyard", P0);
+    named_permanent(&mut state, &reg, "Witchbane Orb", P1);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Blue, 1), (ManaType::Black, 1)]);
+    let offered = ability_targets(&state, &reg, drownyard);
+    assert!(!offered.contains(&Target::Player(P1)),
+        "P1 has hexproof from the Orb; offered {offered:?}");
+    assert!(offered.contains(&Target::Player(P0)),
+        "hexproof stops opponents, so P0 can still target themselves; offered {offered:?}");
+}
+
+/// CR 701.13a: "If a library has fewer cards in it than the number of cards
+/// the player is instructed to mill, that player mills as many cards as they
+/// can." Not "the ability does nothing", and not a loss — CR 704.5b costs you
+/// the game for attempting to *draw* from an empty library, which milling is
+/// not.
+#[test]
+fn nephalia_drownyard_mills_as_many_as_it_can_and_no_one_loses() {
+    let reg = registry();
+    // (cards in the target's library, how many end up milled)
+    for (stocked, expected) in [(1usize, 1usize), (0, 0)] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let drownyard = named_permanent(&mut state, &reg, "Nephalia Drownyard", P0);
+
+        let forest_id = reg.get_id_by_name("Forest").unwrap();
+        let lib: Vec<ObjectId> = (0..stocked)
+            .map(|_| state.create_object(forest_id, P1, Zone::Library, None, None))
+            .collect();
+        state.players[1].library_order = lib.clone();
+
+        add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::Blue, 1), (ManaType::Black, 1)]);
+        let mut state = activate_offered(&state, &reg, drownyard, Some(Target::Player(P1)));
+
+        assert!(state.players[1].library_order.is_empty(),
+            "{stocked} card(s): the library is emptied, not left alone");
+        let in_graveyard = state.objects_in_zone(Zone::Graveyard, P1).len();
+        assert_eq!(in_graveyard, expected, "{stocked} card(s): milled count");
+
+        check_state_based_actions(&mut state, &reg);
+        assert!(!state.get_player(P1).lost,
+            "{stocked} card(s): milling an empty library is not drawing from one \
+             — CR 704.5b costs you the game for the draw, not the mill");
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Stensia Bloodhall
 // ══════════════════════════════════════════════════════════════════
@@ -351,18 +429,6 @@ fn stensia_bloodhall_deals_2_damage() {
     state = activate_offered(&state, &reg, bloodhall, Some(Target::Player(P1)));
 
     assert_eq!(state.get_player(P1).life, 18, "P1 should take 2 damage (20 - 2 = 18)");
-}
-
-/// Every target the Bloodhall's ability is offered, with mana already floating.
-fn bloodhall_targets(state: &GameState, reg: &CardRegistry, bloodhall: ObjectId) -> Vec<Target> {
-    mtg_engine::engine::legal_actions(state, reg).actions.iter()
-        .filter_map(|a| match a {
-            Action::ActivateAbility { object_id, targets, .. } if *object_id == bloodhall =>
-                Some(targets.clone()),
-            _ => None,
-        })
-        .flatten()
-        .collect()
 }
 
 /// A Bloodhall with its activation cost already floating.
@@ -385,7 +451,7 @@ fn stensia_bloodhall_cannot_point_at_a_creature() {
     let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
     let bloodhall = ready_bloodhall(&mut state, &reg);
 
-    let offered = bloodhall_targets(&state, &reg, bloodhall);
+    let offered = ability_targets(&state, &reg, bloodhall);
     assert!(!offered.contains(&Target::Object(creature)),
         "a creature is neither a player nor a planeswalker; offered {offered:?}");
     // Both legal kinds are offered, so the assertion above is about the
@@ -406,7 +472,7 @@ fn stensia_bloodhall_cannot_target_a_player_with_hexproof() {
     named_permanent(&mut state, &reg, "Witchbane Orb", P1);
     let bloodhall = ready_bloodhall(&mut state, &reg);
 
-    let offered = bloodhall_targets(&state, &reg, bloodhall);
+    let offered = ability_targets(&state, &reg, bloodhall);
     assert!(!offered.contains(&Target::Player(P1)),
         "P1 has hexproof from the Orb, so an opponent's ability cannot target \
          them; offered {offered:?}");
