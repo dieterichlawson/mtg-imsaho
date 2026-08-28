@@ -97,6 +97,36 @@ fn prevent_and_remove_a_counter_replaces_the_damage() {
         "the creature without the replacement takes all 13");
 }
 
+/// Ruling (2011-09-22): "If Unbreathing Horde has no +1/+1 counters on it (but
+/// its toughness is raised above 0 by another effect), any damage dealt to it
+/// will still be prevented, even though no counter will be removed."
+///
+/// The counter is what the prevention does, not a condition on doing it. The
+/// implementation may therefore not gate the prevention on having a counter to
+/// remove — making it `return false` when the count is zero broke nothing in
+/// the whole suite before this test existed.
+#[test]
+fn the_damage_is_prevented_even_with_no_counter_left_to_remove() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let source = ready_creature(&mut state, P0, 13, 13);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
+    // No counters, and alive only because something raised its toughness —
+    // the situation the ruling describes. (A printed 0/0 with no counters
+    // would otherwise be put into its owner's graveyard by CR 704.5a.)
+    state.get_object_mut(horde).unwrap().toughness = Some(3);
+    assert_eq!(counters_of(&state, horde, CounterType::PlusOnePlusOne), 0,
+        "test setup: no +1/+1 counters to remove");
+
+    deal_damage(&mut state, source, DamageTarget::Object(horde), 13, DamageKind::NonCombat, &reg);
+
+    assert_eq!(state.get_object(horde).unwrap().damage_marked, 0,
+        "the damage is still prevented with no counter to remove");
+    assert_eq!(counters_of(&state, horde, CounterType::PlusOnePlusOne), 0,
+        "and no counter appears from nowhere");
+}
+
 /// CR 120.3c: damage to a planeswalker removes that many loyalty counters. It
 /// does not become marked damage, which nothing would ever clear.
 #[test]
