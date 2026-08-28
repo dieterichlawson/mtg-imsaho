@@ -33,21 +33,18 @@ impl CardBehavior for GhoulcallersChant {
         ])
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
-        // Both modes require cards in the caster's graveyard.
-        // The TargetRequirement handles creature/subtype filtering.
-        match target {
-            Target::Object(id) => {
-                state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Graveyard && o.owner == caster
-                        && state.is_card(o.id))
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
-
+    /// No `is_valid_target`: "creature card in your graveyard" and "Zombie
+    /// card in your graveyard" are exactly the two requirements above, which
+    /// `legal_actions` applies when offering targets and
+    /// `stack::is_target_legal` re-applies on the way down (CR 608.2b). The
+    /// card used to restate them, and had to, because
+    /// `GraveyardCreatureOfSubtype` omitted the owner check its sibling makes.
+    /// That is fixed at the requirement now.
+    ///
+    /// The zone guard in the loop below is *not* redundant, unlike the
+    /// requirement check: mode 2 names two targets, so one of them leaving the
+    /// graveyard in response leaves the spell resolving with a target it must
+    /// skip (CR 608.2b).
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(card_id) = target {

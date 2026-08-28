@@ -380,9 +380,14 @@ pub enum TargetRequirement {
     UpToTargets(usize, Box<TargetRequirement>),
     /// Target a card in any player's graveyard (Purify the Grave).
     GraveyardCard,
-    /// Target a creature card in any graveyard (Ghoulcaller's Chant mode 1).
+    /// Target a creature card in the **caster's** graveyard (Ghoulcaller's
+    /// Chant mode 1, "from your graveyard"). Both doc comments here used to
+    /// say "any graveyard"; `GraveyardCreature` never meant that, and
+    /// `GraveyardCreatureOfSubtype` did until its owner check was added.
     GraveyardCreature,
-    /// Target a creature card with a specific subtype in any graveyard (Ghoulcaller's Chant mode 2).
+    /// Target a creature card of a given subtype in the **caster's** graveyard
+    /// (Ghoulcaller's Chant mode 2, "two target Zombie cards from your
+    /// graveyard").
     GraveyardCreatureOfSubtype(String),
     /// Target a card in the caster's own graveyard (Memory's Journey mode 1).
     GraveyardCardOwnedByCaster,

@@ -343,10 +343,17 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::GraveyardCreatureOfSubtype(ref subtype) => {
-            // Creature cards with a specific subtype in all graveyards.
+            // Creature cards of that subtype in the caster's graveyard —
+            // "from your graveyard", the same scope as `GraveyardCreature`
+            // above. This used to say "in all graveyards" and omit the owner
+            // check, and its only card (Ghoulcaller's Chant) put the check
+            // back in its own `is_valid_target`. Two sibling requirements
+            // disagreeing about whose graveyard they mean, with the card that
+            // uses the looser one compensating, is a trap for the next card.
             state.objects_in_id_order().into_iter()
                 .filter(|o| {
                     o.zone == Zone::Graveyard
+                        && o.owner == caster
                         && state.is_card(o.id)
                         && state.is_creature(o.id, registry)
                         && state.has_subtype(o.id, subtype, registry)

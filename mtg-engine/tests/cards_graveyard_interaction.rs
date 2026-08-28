@@ -446,6 +446,13 @@ fn each_mode_offers_exactly_the_cards_it_may_name() {
          "three cards, two of them Zombies: three singles and the one pair"),
         (&[], &["Grizzly Bears"], 0, 0,
          "'your graveyard' — an opponent's creature card is not a legal target"),
+        // Mode 2's half of the same rule. The row above uses a non-Zombie, so
+        // it is equally explained by the Zombie restriction; only an
+        // opponent's *Zombie* separates "not yours" from "not a Zombie".
+        (&[], &["Walking Corpse", "Diregraf Ghoul"], 0, 0,
+         "two Zombies in the opponent's graveyard are still not yours"),
+        (&["Walking Corpse"], &["Diregraf Ghoul"], 1, 0,
+         "mode 2 cannot make up its pair from an opponent's Zombie"),
     ];
 
     for &(mine, theirs, singles_expected, pairs_expected, why) in CASES {
@@ -512,6 +519,49 @@ fn mode_two_returns_both_zombies_it_named() {
 
     assert_eq!(state.get_object(a).unwrap().zone, Zone::Hand);
     assert_eq!(state.get_object(b).unwrap().zone, Zone::Hand);
+}
+
+/// CR 608.2b: mode 2 names two targets, so one of them leaving the graveyard
+/// in response does not stop the other coming back. The spell is countered
+/// only if *both* are gone.
+///
+/// This is what the zone guard in the card's `on_resolve` loop is for — with
+/// one target it would be unreachable, because a spell whose only target is
+/// illegal never resolves at all.
+#[test]
+fn mode_two_returns_the_zombie_that_is_still_there() {
+    let reg = registry();
+
+    // One of the two leaves: the other still comes back.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let b = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let mut state = cast_onto_stack(&state, &reg, chant,
+        vec![Target::Object(a), Target::Object(b)]);
+    state.move_object(a, Zone::Exile, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(b).unwrap().zone, Zone::Hand,
+        "the Zombie still in the graveyard comes back");
+    assert_eq!(state.get_object(a).unwrap().zone, Zone::Exile,
+        "and the one that left is not dragged out of exile");
+
+    // Both leave: countered by game rules, so neither moves.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let b = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let mut state = cast_onto_stack(&state, &reg, chant,
+        vec![Target::Object(a), Target::Object(b)]);
+    state.move_object(a, Zone::Exile, &reg);
+    state.move_object(b, Zone::Exile, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(chant).unwrap().zone, Zone::Graveyard,
+        "no legal target left, so the spell is countered by game rules");
+    assert_eq!(state.get_object(a).unwrap().zone, Zone::Exile);
+    assert_eq!(state.get_object(b).unwrap().zone, Zone::Exile);
 }
 
 // -------------------------------------------------------------------------
