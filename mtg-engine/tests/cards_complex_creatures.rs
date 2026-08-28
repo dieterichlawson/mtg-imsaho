@@ -29,7 +29,7 @@ mod common;
 
 use common::*;
 use mtg_engine::cards::AttackInfo;
-use mtg_engine::ids::CardId;
+use mtg_engine::ids::{CardId, ObjectId};
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::sba::check_state_based_actions;
@@ -225,21 +225,41 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     // Set up combat: Kessig Cagebreakers is attacking P1.
     attacks_unblocked(&mut state, cage, P1);
 
-    // Put 3 creatures in graveyard.
+    // Put 3 creature cards in the graveyard...
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 2, 2);
         state.move_object(c, Zone::Graveyard, &reg);
     }
+    // ...and a non-creature card, which "for each creature card in your
+    // graveyard" does not count.
+    named_card_in_graveyard(&mut state, &reg, "Rebuke", P0);
+    // A creature card in the *opponent's* graveyard is not in "your" graveyard.
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    state.move_object(theirs, Zone::Graveyard, &reg);
 
     let behavior = reg.get(state.get_object(cage).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, cage, AttackInfo::new(cage, P1), &[], &reg);
 
-    // Should have 3 Wolf tokens on the battlefield.
+    // Should have 3 Wolf tokens on the battlefield. CR 111.4 names a token
+    // after its subtypes, so these are "Wolf Token", not "Wolf" — a filter on
+    // the latter matches nothing and asserts nothing.
     assert_eq!(count_tokens_named(&state, "Wolf Token"), 3, "Should have created 3 Wolf tokens");
 
-    // Wolves should be tapped and attacking.
-    for wolf in state.objects.values().filter(|o| o.zone == Zone::Battlefield && o.name == "Wolf") {
-        assert!(wolf.tapped, "Wolf tokens should be tapped");
+    let wolves: Vec<ObjectId> = state.objects.values()
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Wolf Token")
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(wolves.len(), 3);
+    for wolf in wolves {
+        // "a 2/2 green Wolf creature token that's tapped and attacking".
+        assert_eq!(state.effective_power(wolf, &reg), Some(2), "Wolf token should be 2 power");
+        assert_eq!(state.effective_toughness(wolf, &reg), Some(2), "Wolf token should be 2 toughness");
+        assert_eq!(state.colors_of(wolf, &reg), vec![Color::Green], "Wolf token should be green");
+        assert!(state.is_creature(wolf, &reg), "Wolf token should be a creature");
+        assert!(state.has_subtype(wolf, "Wolf", &reg), "Wolf token should be a Wolf");
+        assert!(state.get_object(wolf).unwrap().tapped, "Wolf tokens should be tapped");
+        assert_eq!(state.combat.as_ref().unwrap().attackers.get(&wolf).copied(), Some(P1),
+            "Wolf tokens should be attacking the player the Cagebreakers is attacking");
     }
     let combat_attackers = state.combat.as_ref().unwrap().attackers.len();
     // Cage + 3 wolves = 4 attackers.
