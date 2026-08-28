@@ -2060,6 +2060,67 @@ fn mirror_mad_phantasm_mills_to_find_itself() {
     assert!(saw_a_mill, "20 shuffles never once put a card above the Phantasm");
 }
 
+/// Scryfall ruling (2011-09-22): "You can only activate the ability if you
+/// control Mirror-Mad Phantasm, even if you don't own it."
+///
+/// The ability belongs to whoever controls the Phantasm; everything it does
+/// belongs to the owner. So when an opponent steals it and activates it, it is
+/// the *owner's* library that gets shuffled and revealed, the owner's cards
+/// that are milled, and the owner who gets the Phantasm back — the thief
+/// spends the mana and hands it over.
+#[test]
+fn mirror_mad_phantasm_digs_through_its_owners_library_not_the_activators() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 owns the Phantasm; P1 takes control of it.
+    let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
+    state.change_control(phantasm, P1);
+    assert_eq!(state.get_object(phantasm).unwrap().owner, P0);
+    assert_eq!(state.get_object(phantasm).unwrap().controller, P1);
+
+    // Both players have a library, so "the owner's" is a real choice between
+    // two and not the only one available.
+    let mine: Vec<ObjectId> = ["Grizzly Bears", "Lightning Bolt", "Doom Blade"]
+        .iter().map(|n| {
+            let c = spell_in_hand(&mut state, &reg, n, P0);
+            state.move_object(c, Zone::Library, &reg);
+            c
+        }).collect();
+    state.players[0].library_order = mine.clone();
+    let theirs: Vec<ObjectId> = ["Grizzly Bears", "Divination"]
+        .iter().map(|n| {
+            let c = spell_in_hand(&mut state, &reg, n, P1);
+            state.move_object(c, Zone::Library, &reg);
+            c
+        }).collect();
+    state.players[1].library_order = theirs.clone();
+
+    let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
+    behavior.resolve_activated_ability(&mut state, phantasm, 0, &[], &reg);
+
+    // The thief's library is untouched.
+    assert_eq!(state.players[1].library_order, theirs,
+        "P1 activated it, but it is not P1's library that gets dug through");
+    for card in &theirs {
+        assert_eq!(state.get_object(*card).unwrap().zone, Zone::Library);
+    }
+
+    // The owner's library is where the Phantasm went and came back from.
+    assert_eq!(state.get_object(phantasm).unwrap().zone, Zone::Battlefield,
+        "it finds itself in its owner's library");
+    assert_eq!(state.get_object(phantasm).unwrap().controller, P0,
+        "and the *owner* puts it onto the battlefield, so the thief does not \
+         keep it");
+    let left_behind = state.players[0].library_order.len();
+    let milled = mine.iter()
+        .filter(|c| state.get_object(**c).unwrap().zone == Zone::Graveyard)
+        .count();
+    assert_eq!(left_behind + milled, mine.len(),
+        "every one of the owner's cards is either still in their library or in \
+         their graveyard; {left_behind} + {milled} != {}", mine.len());
+}
+
 // ── Grimoire of the Dead ──────────────────────────────────────────
 
 /// "{1}, {T}, Discard a card:" — the discard is *cost*, everything before the

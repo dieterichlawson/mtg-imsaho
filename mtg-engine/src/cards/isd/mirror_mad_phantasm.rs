@@ -4,14 +4,23 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
-/// Mirror-Mad Phantasm {3}{U}{U} 5/1 Spirit with Flying.
-/// {1}{U}: Mirror-Mad Phantasm's owner shuffles it into their library. If that player does,
-/// they reveal cards from the top of their library until they reveal a card named Mirror-Mad
-/// Phantasm, put that card onto the battlefield, and put all other cards revealed this way
-/// into their graveyard.
+/// Mirror-Mad Phantasm — {3}{U}{U} 5/1 Spirit. Flying.
+/// {1}{U}: This creature's owner shuffles it into their library. If that
+/// player does, they reveal cards from the top of that library until a card
+/// named Mirror-Mad Phantasm is revealed. The player puts that card onto the
+/// battlefield and all other cards revealed this way into their graveyard.
 ///
-/// Simplified: Shuffle into library, then mill until we find Mirror-Mad Phantasm (or run out).
-/// If found, put it on the battlefield. All others go to graveyard.
+/// Two words in that text carry the whole card. **Owner**, not controller:
+/// the ability can be activated by whoever controls the Phantasm, but it is
+/// the owner's library that is shuffled and revealed, and the owner who ends
+/// up with it (Scryfall, 2011-09-22: "You can only activate the ability if you
+/// control Mirror-Mad Phantasm, even if you don't own it"). And **card**, not
+/// permanent: a token copy is not a card (CR 109.1), so it is never what the
+/// reveal stops on — the same ruling says a library with no *card* named
+/// Mirror-Mad Phantasm in it is milled entirely.
+///
+/// This comment used to quote a pre-errata wording and describe the
+/// implementation as "Simplified", which it is not.
 pub struct MirrorMadPhantasm;
 
 impl CardBehavior for MirrorMadPhantasm {
@@ -81,7 +90,13 @@ impl CardBehavior for MirrorMadPhantasm {
             match top {
                 Some(card_id) => {
                     let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    if name == "Mirror-Mad Phantasm" {
+                    // "until **a card** named Mirror-Mad Phantasm is revealed"
+                    // — CR 109.1, a token is not a card. A token copy shuffled
+                    // in is still sitting in the library here, because
+                    // state-based actions do not run mid-resolution (CR
+                    // 704.3), so without this the reveal would stop on it and
+                    // put it back onto the battlefield.
+                    if name == "Mirror-Mad Phantasm" && state.is_card(card_id) {
                         found = Some(card_id);
                         break;
                     }

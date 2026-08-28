@@ -417,3 +417,58 @@ fn a_token_in_a_graveyard_is_not_a_targetable_card() {
         "a token in a graveyard is not a card (CR 109.1), so it is not a legal \
          target for \"exile target card from a graveyard\"; got {offered:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Mirror-Mad Phantasm: "reveal cards ... until a CARD named Mirror-Mad
+// Phantasm is revealed."
+// ---------------------------------------------------------------------------
+
+/// Scryfall ruling (2011-09-22): "If no card named Mirror-Mad Phantasm is
+/// revealed (possibly because it was a card copying Mirror-Mad Phantasm or it
+/// was a **token**), all cards from that library will be put into their
+/// owner's graveyard."
+///
+/// Cackling Counterpart makes exactly that token. Activating its copy of the
+/// ability shuffles the token into the library, where it sits until the next
+/// state-based action pass — SBAs do not run mid-resolution (CR 704.3) — so
+/// the reveal walks straight past it, because a token is not a card, and does
+/// not stop until the library is empty.
+#[test]
+fn a_token_phantasm_is_not_the_card_the_reveal_is_looking_for() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let real = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
+    let token = state.create_token_copy(real, P0, &reg);
+    assert!(!state.is_card(token), "test precondition: a token is not a card");
+    assert_eq!(state.get_object(token).unwrap().name, "Mirror-Mad Phantasm",
+        "test precondition: it has the name the reveal looks for");
+
+    // A library with no card of that name in it. The real Phantasm stays on
+    // the battlefield, so it is not there to be found either.
+    let library: Vec<ObjectId> = ["Grizzly Bears", "Lightning Bolt", "Doom Blade"]
+        .iter()
+        .map(|n| {
+            let c = spell_in_hand(&mut state, &reg, n, P0);
+            state.move_object(c, Zone::Library, &reg);
+            c
+        })
+        .collect();
+    state.players[0].library_order = library.clone();
+
+    let behavior = reg.get(state.get_object(token).unwrap().card_id).unwrap();
+    behavior.resolve_activated_ability(&mut state, token, 0, &[], &reg);
+
+    assert!(state.players[0].library_order.is_empty(),
+        "nothing stopped the reveal, so the whole library was revealed");
+    for card in &library {
+        assert_eq!(state.get_object(*card).unwrap().zone, Zone::Graveyard,
+            "and every card revealed this way went to the graveyard");
+    }
+    assert_ne!(state.get_object(token).unwrap().zone, Zone::Battlefield,
+        "the token is not a card named Mirror-Mad Phantasm, so it was not put \
+         back onto the battlefield");
+    assert_eq!(state.get_object(real).unwrap().zone, Zone::Battlefield,
+        "and the real one never left the battlefield");
+}
+
