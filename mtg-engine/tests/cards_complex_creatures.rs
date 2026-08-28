@@ -482,6 +482,83 @@ fn heretics_punishment_fizzles_when_target_illegal() {
     assert_eq!(lib_count, 3, "Library should be unchanged when ability fizzles");
 }
 
+/// Put `n` copies of `card` on top of P0's library.
+fn library_top(state: &mut mtg_engine::state::GameState, reg: &CardRegistry, card: &str, n: usize) {
+    let card_id = reg.get_id_by_name(card).unwrap_or_else(|| panic!("Unknown card: {card}"));
+    for _ in 0..n {
+        let obj = state.create_object(card_id, P0, Zone::Library, None, None);
+        state.get_object_mut(obj).unwrap().name = card.into();
+        state.get_player_mut(P0).library_order.insert(0, obj);
+    }
+}
+
+/// Ruling: "If you have two or fewer cards in your library when the ability
+/// resolves, all of them will be put into your graveyard. Heretic's Punishment
+/// will still deal damage equal to the highest mana value among those cards."
+#[test]
+fn heretics_punishment_mills_a_short_library_and_still_deals_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    // Two cards only. Kalonian Tusker is {G}{G}, mana value 2.
+    library_top(&mut state, &reg, "Kalonian Tusker", 2);
+
+    let before = state.get_player(P1).life;
+    activate_via_hooks(&mut state, &reg, hp, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).library_order.len(), 0,
+        "all of them go, and running out is not a failure to resolve");
+    assert_eq!(before - state.get_player(P1).life, 2,
+        "damage is the highest mana value among the cards that were milled");
+}
+
+/// Ruling: "If all three cards have a mana value of 0, no damage will be
+/// dealt." Basic lands have no mana cost at all, which is the same zero.
+#[test]
+fn heretics_punishment_deals_no_damage_when_every_card_is_mana_value_zero() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    library_top(&mut state, &reg, "Forest", 3);
+
+    let before = state.get_player(P1).life;
+    activate_via_hooks(&mut state, &reg, hp, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).library_order.len(), 0,
+        "the mill still happens");
+    assert_eq!(state.get_player(P1).life, before,
+        "but nothing is dealt — not a zero-damage event, which damage watchers \
+         would otherwise see");
+    assert!(!state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::NonCombatDamageDealt { .. })),
+        "and no damage event is emitted at all");
+}
+
+/// Ruling: "The mana value of a double-faced card in your graveyard is the mana
+/// value of the front face."
+///
+/// Villagers of Estwald is {2}{G}, mana value 3; its back face, Howlpack of
+/// Estwald, has no mana cost at all, so reading the wrong face gives 0.
+#[test]
+fn heretics_punishment_reads_a_double_faced_cards_front_face() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    library_top(&mut state, &reg, "Villagers of Estwald", 3);
+
+    let before = state.get_player(P1).life;
+    activate_via_hooks(&mut state, &reg, hp, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(before - state.get_player(P1).life, 3,
+        "the front face mana value of Villagers of Estwald is 3");
+}
+
 // ── Undead Alchemist ─────────────────────────────────────────────
 
 #[test]

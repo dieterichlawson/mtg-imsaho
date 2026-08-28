@@ -11,7 +11,7 @@
 
 mod common;
 use common::*;
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::events::GameEvent;
 use mtg_engine::types::*;
 
@@ -392,3 +392,38 @@ fn an_activated_abilitys_targets_are_rechecked_when_it_resolves() {
         "and none of the ability's other effects happen either — the search \
          does not occur (CR 608.2b)");
 }
+
+/// Ruling: "If the targeted permanent or player is an illegal target by the
+/// time the ability resolves, the entire ability won't resolve. No cards will
+/// be put into your graveyard, and no damage will be dealt."
+///
+/// Both halves matter. The mill is the part a card that checked its target
+/// *after* milling would get wrong, and the library is the only place that
+/// shows it.
+#[test]
+fn heretics_punishment_mills_nothing_when_its_target_is_gone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let punishment = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    stock_library(&mut state, &reg, P0, 6);
+    let victim = ready_creature(&mut state, P1, 5, 5);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 4);
+
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == punishment && targets == &[Target::Object(victim)]))
+        .expect("the ability, targeting the creature");
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    let library_before = state.get_player(P0).library_order.len();
+    // In response, the creature leaves the battlefield.
+    state.move_object(victim, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).library_order.len(), library_before,
+        "the entire ability does not resolve, so no cards are milled");
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 0,
+        "and no damage is dealt");
+}
+
