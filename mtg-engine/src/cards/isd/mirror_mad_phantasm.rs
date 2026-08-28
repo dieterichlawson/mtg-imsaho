@@ -75,9 +75,8 @@ impl CardBehavior for MirrorMadPhantasm {
         state.move_object(object_id, Zone::Library, registry);
         state.get_player_mut(owner).library_order.push(object_id);
         {
-            use rand::seq::SliceRandom;
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(owner).library_order.shuffle(&mut rng);
+            
+            crate::cards::helpers::shuffle_library(state, owner);
         }
 
         state.log(crate::state::LogLevel::Event,

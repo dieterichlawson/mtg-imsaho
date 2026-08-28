@@ -967,6 +967,41 @@ fn a_card_enumerating_a_graveyard_excludes_tokens() {
         offenders.join("\n  "));
 }
 
+/// A card shuffles a library through `helpers::shuffle_library`.
+///
+/// CR 701.20 is one rule, and it has one home. Three cards reached past it to
+/// `state.get_player_mut(p).library_order.shuffle(&mut rand::thread_rng())` —
+/// Memory's Journey, Mirror-Mad Phantasm and Bitterheart Witch — which is the
+/// same two lines written four times, in four places free to disagree about
+/// which player's library is being shuffled. It also puts every card in the way
+/// of seeding the RNG later: one call site can take a seed from the game state,
+/// four cannot.
+///
+/// `engine/actions/mulligan.rs` is not a card and shuffles as part of the
+/// opening procedure (CR 103.2), so this scans card files only.
+#[test]
+fn a_card_shuffles_a_library_through_the_helper() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") || rel.ends_with("helpers.rs") {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            if l.contains("library_order.shuffle") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "CR 701.20: shuffling a library is `cards::helpers::shuffle_library`, \
+         so there is one place to seed and one answer to \"whose library\":\n  {}",
+        offenders.join("\n  "));
+}
+
 /// A double-faced card does not restate its back face's P/T.
 ///
 /// CR 712.8: a transformed permanent has its back face's characteristics, P/T

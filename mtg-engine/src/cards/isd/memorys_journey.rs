@@ -36,17 +36,19 @@ impl CardBehavior for MemorysJourney {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let _controller = crate::cards::helpers::controller_of(state, object_id);
 
-        // Determine which player's graveyard the cards come from.
-        // With the TwoTargets requirement, the first target is Target::Player.
-        let target_player = targets.iter().find_map(|t| {
-            if let Target::Player(pid) = t {
-                Some(*pid)
-            } else {
-                None
-            }
-        }).unwrap_or(controller); // If no player target, default to controller
+        // "TARGET PLAYER shuffles" — the player is a target in its own right,
+        // and the first slot of the `TwoTargets` requirement. There is no
+        // reading of this card without one: falling back to the controller, as
+        // this used to, invents a target the caster never declared, and the
+        // rule for a target that stopped being legal is CR 608.2b — the spell
+        // does not resolve at all, which `stack::resolve_spell` applies before
+        // this is ever called.
+        let Some(target_player) = targets.iter().find_map(|t| match t {
+            Target::Player(pid) => Some(*pid),
+            Target::Object(_) | Target::Illegal => None,
+        }) else { return };
 
         for target in targets {
             if let Target::Object(card_id) = target {
@@ -64,14 +66,11 @@ impl CardBehavior for MemorysJourney {
             }
         }
 
-        // Shuffle the targeted player's library (even if no cards were shuffled in).
-        {
-            use rand::seq::SliceRandom;
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(target_player).library_order.shuffle(&mut rng);
-            state.log(crate::state::LogLevel::Event,
-                format!("Memory's Journey: p{}'s library shuffled", target_player.0));
-        }
-
+        // Ruling: "If no cards were targeted by Memory's Journey or if all the
+        // targeted cards are illegal targets by the time Memory's Journey
+        // resolves, the targeted player will still shuffle their library."
+        crate::cards::helpers::shuffle_library(state, target_player);
+        state.log(crate::state::LogLevel::Event,
+            format!("Memory's Journey: p{}'s library shuffled", target_player.0));
     }
 }

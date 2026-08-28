@@ -63,7 +63,7 @@ impl CardBehavior for BitterheartWitch {
 
 
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
+        
 
         if !yes {
             return;
@@ -85,8 +85,7 @@ impl CardBehavior for BitterheartWitch {
         // has still shuffled. Doing it before removing the Curse rather than
         // after is unobservable — the result is a uniformly random order either
         // way.
-        let mut rng = rand::thread_rng();
-        state.get_player_mut(controller).library_order.shuffle(&mut rng);
+        crate::cards::helpers::shuffle_library(state, controller);
 
         if curse_ids.is_empty() {
             state.log(LogLevel::Event,
