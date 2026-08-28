@@ -219,7 +219,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Desperate Ravings | `desperate_ravings.rs` | 40 | 2 | 0 |
 | x | Rolling Temblor | `rolling_temblor.rs` | 38 | 2 | 0 |
 | x | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 38 | 2 | 0 |
-|   | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 36 | 2 | 0 |
+| x | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 36 | 2 | 0 |
 |   | Boneyard Wurm | `boneyard_wurm.rs` | 36 | 2 | 0 |
 |   | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 36 | 2 | 0 |
 |   | Altar's Reap | `altars_reap.rs` | 35 | 2 | 0 |

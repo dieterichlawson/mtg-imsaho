@@ -263,3 +263,33 @@ mod other_choices {
         assert!(state.awaiting_action.is_some(), "and the question still stands");
     }
 }
+
+/// The same rule for a mana ability: a submitted activation for a source that
+/// cannot pay {T} — tapped, or a summoning-sick creature — produces nothing.
+///
+/// Offer and submit share `available_mana_abilities`, so this holds by
+/// construction; the test pins the sharing, because a submit path that read
+/// the card's raw ability list instead would make phantom mana.
+#[test]
+fn a_mana_ability_submitted_for_a_source_that_cannot_pay_produces_nothing() {
+    let reg = registry();
+
+    // Summoning-sick Pilgrim.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let card_id = reg.get_id_by_name("Avacyn's Pilgrim").unwrap();
+    let sick = state.create_object(card_id, P0, Zone::Battlefield, Some(1), Some(1));
+    let state2 = mtg_engine::engine::submit_action(&state,
+        &Action::ActivateManaAbility { object_id: sick, ability_index: 0 }, &reg);
+    assert_eq!(state2.get_player(P0).mana_pool.get(ManaType::White), 0,
+        "a summoning-sick creature cannot pay {{T}} (CR 302.6)");
+    assert!(!state2.get_object(sick).unwrap().tapped, "and it was not tapped either");
+
+    // Tapped Pilgrim.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    state.tap(pilgrim);
+    let state3 = mtg_engine::engine::submit_action(&state,
+        &Action::ActivateManaAbility { object_id: pilgrim, ability_index: 0 }, &reg);
+    assert_eq!(state3.get_player(P0).mana_pool.get(ManaType::White), 0,
+        "an already-tapped source cannot pay {{T}} again");
+}
