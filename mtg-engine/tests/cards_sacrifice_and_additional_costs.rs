@@ -106,6 +106,117 @@ fn brain_weevil_forces_discard() {
     let hand_after = new_state.objects_in_zone(Zone::Hand, P1).len();
     assert_eq!(hand_after, 0, "P1 should have 0 cards left after discarding 2");
 }
+/// Ruling 2013-04-15: "If you cast this as normal during your main phase, it
+/// will enter the battlefield and you'll receive priority. If no abilities
+/// trigger because of this, you can activate its ability immediately, before
+/// any other player has a chance to remove it from the battlefield."
+///
+/// The cost is "Sacrifice this creature" with no {T} in it, and summoning
+/// sickness only restricts a {T} (or {Q}) symbol in a creature's own cost
+/// (CR 302.6). So a Brain Weevil that arrived this turn can still eat itself.
+#[test]
+fn brain_weevil_can_be_sacrificed_the_turn_it_arrives() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    state.get_object_mut(weevil).unwrap().summoning_sick = true;
+    spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+
+    assert!(offers_ability_of(&state, &reg, weevil),
+        "no {{T}} in the cost, so summoning sickness has nothing to say");
+
+    let after = activate(&state, &reg, weevil, 0, vec![Target::Player(P1)]);
+    assert_eq!(after.objects_in_zone(Zone::Hand, P1).len(), 0);
+}
+
+/// "Target **player**" — that includes you. Nothing about the ability says
+/// opponent.
+#[test]
+fn brain_weevil_can_target_its_own_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+
+    let after = activate(&state, &reg, weevil, 0, vec![Target::Player(P0)]);
+    assert_eq!(after.objects_in_zone(Zone::Hand, P0).len(), 0,
+        "you may point it at yourself");
+}
+
+/// "Discards two cards" with one card in hand discards the one — a player does
+/// as much as they can and does not lose for the shortfall.
+#[test]
+fn brain_weevil_takes_the_only_card_in_a_one_card_hand() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    let only = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+
+    let after = activate(&state, &reg, weevil, 0, vec![Target::Player(P1)]);
+    assert_eq!(after.get_object(only).unwrap().zone, Zone::Graveyard);
+    assert!(after.awaiting_action.is_none(),
+        "one card is not a choice, so no prompt is left open");
+}
+
+/// An empty hand is not an error, and not a prompt either.
+#[test]
+fn brain_weevil_against_an_empty_hand_does_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    let after = activate(&state, &reg, weevil, 0, vec![Target::Player(P1)]);
+
+    assert!(after.awaiting_action.is_none());
+    assert_eq!(after.get_object(weevil).unwrap().zone, Zone::Graveyard,
+        "the sacrifice is a cost, paid whether or not the effect finds anything");
+}
+
+/// Both discards are the *targeted player's* choice, not the activator's, and
+/// the second is asked after the first has left the hand.
+///
+/// The card used to chain the second discard itself, carrying the target
+/// player between the two in `card_state` as an `ObjectId`.
+#[test]
+fn brain_weevils_two_discards_are_both_the_targeted_players_choice() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    let a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let b = spell_in_hand(&mut state, &reg, "Lightning Bolt", P1);
+    let c = spell_in_hand(&mut state, &reg, "Giant Growth", P1);
+
+    let mut state = activate(&state, &reg, weevil, 0, vec![Target::Player(P1)]);
+
+    for expected_left in [3usize, 2] {
+        let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player, choice, .. }) =
+            &state.awaiting_action else {
+            panic!("expected a discard prompt with {expected_left} cards in hand; \
+                    got {:?}", state.awaiting_action);
+        };
+        assert_eq!(*player, P1, "the discarding player chooses, not the activator");
+        let mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand { cards, .. } = choice else {
+            panic!("expected a hand choice, got {choice:?}");
+        };
+        assert_eq!(cards.len(), expected_left,
+            "the second prompt is against the hand as it stands after the first");
+        let pick = cards[0];
+        state = engine::submit_action(&state, &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenCard(pick),
+        }, &reg);
+    }
+
+    let left: Vec<_> = state.objects_in_zone(Zone::Hand, P1).iter().map(|o| o.id).collect();
+    assert_eq!(left.len(), 1, "two of the three went");
+    assert!([a, b, c].contains(&left[0]));
+    assert!(state.awaiting_action.is_none(), "and nothing is still being asked");
+}
+
 #[test]
 fn disciple_of_griselbrand_gains_life() {
     let reg = registry();
