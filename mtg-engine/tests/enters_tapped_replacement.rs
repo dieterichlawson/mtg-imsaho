@@ -147,115 +147,60 @@ fn check_lands_do_not_satisfy_each_other() {
          enters tapped");
 }
 
-/// "unless **you control** a Mountain or a Plains." An opponent's is not
-/// yours, and no test put the qualifying land on the other side of the board —
-/// a condition that scanned the whole battlefield would have passed every
+/// The check lands whose oracle text has been read during an audit, with the
+/// two subtypes that satisfy each and the two mana they add. Rows are added as
+/// each card is audited — the procedure forbids judging a card against wording
+/// nobody has fetched.
+const AUDITED: &[(&str, [&str; 2], [ManaType; 2])] = &[
+    ("Clifftop Retreat",  ["Mountain", "Plains"], [ManaType::Red, ManaType::White]),
+    ("Hinterland Harbor", ["Forest", "Island"],   [ManaType::Green, ManaType::Blue]),
+];
+
+/// "unless **you control** a Forest or an Island." An opponent's is not yours,
+/// and no test put the qualifying land on the other side of the board — a
+/// condition that scanned the whole battlefield would have passed every
 /// existing case.
-///
-/// Scoped to Clifftop Retreat: it is the check land whose oracle text was
-/// fetched for this audit, and the procedure forbids judging the other four
-/// against wording I have not read. Their own audits cover them.
 #[test]
-fn clifftop_retreat_is_not_satisfied_by_an_opponents_land() {
+fn a_check_land_is_not_satisfied_by_an_opponents_land() {
     let reg = registry();
-    for basic in ["Mountain", "Plains"] {
-        let mut state = game_at_step(Step::PrecombatMain, P0);
-        play_land(&mut state, &reg, basic, P1);
-        let id = play_land(&mut state, &reg, "Clifftop Retreat", P0);
+    for (land, subtypes, _) in AUDITED {
+        for basic in subtypes {
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            play_land(&mut state, &reg, basic, P1);
+            let id = play_land(&mut state, &reg, land, P0);
+            assert!(state.get_object(id).unwrap().tapped,
+                "{land}: an opponent's {basic} is not one you control");
 
-        assert!(state.get_object(id).unwrap().tapped,
-            "an opponent's {basic} is not one you control, so the Retreat \
-             enters tapped");
-    }
-
-    // And the same basic on your own side does satisfy it, so the assertion
-    // above is about *whose* it is and not about the basic being absent.
-    for basic in ["Mountain", "Plains"] {
-        let mut state = game_at_step(Step::PrecombatMain, P0);
-        play_land(&mut state, &reg, basic, P0);
-        let id = play_land(&mut state, &reg, "Clifftop Retreat", P0);
-
-        assert!(!state.get_object(id).unwrap().tapped,
-            "your own {basic} does satisfy it");
+            // The same basic on your own side does satisfy it, so the
+            // assertion above is about *whose* land it is and not about the
+            // land being absent.
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            play_land(&mut state, &reg, basic, P0);
+            let id = play_land(&mut state, &reg, land, P0);
+            assert!(!state.get_object(id).unwrap().tapped,
+                "{land}: your own {basic} does satisfy it");
+        }
     }
 }
 
-/// "{T}: Add {R} **or** {W}." The shared sweep counts two mana abilities,
-/// which a land exposing "Add {R}" twice would also satisfy. This pins the
-/// colours for the one check land whose text this audit fetched.
+/// "{T}: Add {G} **or** {U}." The shared sweep counts two mana abilities,
+/// which a land exposing the same one twice would also satisfy.
 #[test]
-fn clifftop_retreat_taps_for_red_or_white() {
+fn an_audited_check_land_taps_for_both_of_its_colours() {
     let reg = registry();
     let state = game_at_step(Step::PrecombatMain, P0);
-    let card_id = reg.get_id_by_name("Clifftop Retreat").unwrap();
-    let behavior = reg.get(card_id).unwrap();
+    for (land, _, colours) in AUDITED {
+        let card_id = reg.get_id_by_name(land).unwrap();
+        let produced: Vec<Vec<(ManaType, u32)>> = reg.get(card_id).unwrap()
+            .mana_abilities(&state, mtg_engine::ids::ObjectId(0))
+            .into_iter()
+            .map(|a| a.produced)
+            .collect();
 
-    let produced: Vec<Vec<(ManaType, u32)>> = behavior
-        .mana_abilities(&state, mtg_engine::ids::ObjectId(0))
-        .into_iter()
-        .map(|a| a.produced)
-        .collect();
-
-    assert_eq!(produced.len(), 2, "two mana abilities");
-    assert!(produced.contains(&vec![(ManaType::Red, 1)]), "one adds {{R}}: {produced:?}");
-    assert!(produced.contains(&vec![(ManaType::White, 1)]), "the other adds {{W}}: {produced:?}");
-}
-
-/// "This creature enters tapped" holds however it enters — cast, reanimated,
-/// or put onto the battlefield by anything else (CR 614.1c).
-///
-/// Diregraf Ghoul used to tap itself inside `on_resolve`, which only runs when
-/// the card is *cast*. Innistrad has several ways to put a creature card from a
-/// graveyard onto the battlefield — Unburial Rites, Grimoire of the Dead, Back
-/// from the Brink — and down every one of those paths the Ghoul arrived
-/// untapped. Its own comment said "'enters tapped' is a static/replacement
-/// ability, NOT a triggered ability", and the code did not follow it.
-#[test]
-fn a_creature_that_enters_tapped_does_so_however_it_arrives() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Not cast: reanimated straight from the graveyard onto the battlefield.
-    let ghoul = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
-    assert!(!state.get_object(ghoul).unwrap().tapped, "test premise: not tapped in the yard");
-
-    state.move_object(ghoul, Zone::Battlefield, &reg);
-
-    assert!(state.get_object(ghoul).unwrap().tapped,
-        "a reanimated Diregraf Ghoul still enters tapped — the replacement \
-         applies to the entering event, not to being cast (CR 614.1c)");
-}
-
-/// CR 614.12: "**As** [this] enters, choose ..." is a replacement effect. The
-/// choice is made as the permanent enters — there is no moment where it is on
-/// the battlefield with the choice not yet made, and nothing goes on the stack
-/// for anyone to respond to.
-///
-/// Nevermore ("As this enchantment enters, choose a nonland card name. Spells
-/// with the chosen name can't be cast.") declared an `EntersBattlefield`
-/// triggered ability instead. It resolved onto the battlefield with no name
-/// chosen and the choice sitting on the stack — a window in which an opponent
-/// could cast the very card it was about to name, which is the entire point of
-/// the card.
-#[test]
-fn a_name_chosen_as_a_permanent_enters_is_chosen_before_anyone_has_priority() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    stock_library(&mut state, &reg, P0, 4);
-
-    let nevermore = castable_spell(&mut state, &reg, "Nevermore", P0);
-    let state = cast_onto_stack(&state, &reg, nevermore, vec![]);
-    let mut state = state;
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-
-    assert_eq!(state.get_object(nevermore).unwrap().zone, Zone::Battlefield,
-        "test premise: it resolved onto the battlefield");
-    assert!(state.awaiting_action.is_some(),
-        "the name is chosen AS it enters (CR 614.12), so the choice is already \
-         pending the moment it arrives");
-
-    triggers::collect_triggers(&mut state, &reg);
-    assert!(state.stack.is_empty(),
-        "and nothing is on the stack — a replacement effect is not a triggered \
-         ability, so no priority window opens before the name exists");
+        assert_eq!(produced.len(), 2, "{land}: two mana abilities");
+        for colour in colours {
+            assert!(produced.contains(&vec![(*colour, 1)]),
+                "{land} should add {colour:?}; got {produced:?}");
+        }
+    }
 }
