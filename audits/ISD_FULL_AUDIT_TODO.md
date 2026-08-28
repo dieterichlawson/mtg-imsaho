@@ -53,7 +53,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 88 | 4 | 2 |
 | x | Skirsdag High Priest | `skirsdag_high_priest.rs` | 137 | 4 | 0 |
 | x | Tribute to Hunger | `tribute_to_hunger.rs` | 92 | 5 | 0 |
-|   | Morkrut Banshee | `morkrut_banshee.rs` | 66 | 5 | 1 |
+| x | Morkrut Banshee | `morkrut_banshee.rs` | 66 | 5 | 1 |
 |   | Brain Weevil | `brain_weevil.rs` | 131 | 4 | 0 |
 |   | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 131 | 4 | 0 |
 |   | Runechanter's Pike | `runechanters_pike.rs` | 86 | 5 | 0 |
