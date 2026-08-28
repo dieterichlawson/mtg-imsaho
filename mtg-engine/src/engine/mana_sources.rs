@@ -151,6 +151,14 @@ pub(crate) fn gather_mana_sources(
 }
 /// Activate a single mana source (tap + add mana + side effects).
 /// Shared by both `ActivateManaAbility` and `CastSpell` `tap_plan` execution.
+///
+/// The ability is looked up through [`available_mana_abilities`], not through
+/// `CardBehavior::mana_abilities`, so the cost-legality gate holds where the
+/// tap actually happens and not only where the action was offered. A tap plan
+/// is worked out in full before any of it is executed, and the state moves
+/// underneath it: the first Deranged Assistant in a plan mills the last card
+/// of the library, and the second can no longer pay its cost (CR 701.17b).
+/// Reading the card's own list here executed every such plan as written.
 pub fn activate_mana_source(
     state: &mut GameState,
     source_id: ObjectId,
@@ -161,31 +169,32 @@ pub fn activate_mana_source(
     let card_id = obj.card_id;
     let controller = obj.controller;
 
-    if let Some(behavior) = registry.get(card_id) {
-        let abilities = behavior.mana_abilities(state, source_id);
-        if let Some(ability) = abilities.iter().find(|a| a.ability_index == ability_index) {
-            // A filter's mana cost is paid before it produces (CR 605.1a — it
-            // is still a mana ability, it just isn't free). The tap plan puts
-            // cost-bearing abilities last so the mana is already floating.
-            if !ability.cost.symbols.is_empty()
-                && mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &ability.cost).is_err() {
-                return;
-            }
-            if ability.requires_tap {
-                state.get_object_mut(source_id).expect("object must exist for tapping").tapped = true;
-                state.events.push(GameEvent::Tapped { object: source_id });
-            }
-            for &(mana_type, amount) in &ability.produced {
-                state.get_player_mut(controller).mana_pool.add(mana_type, amount);
-                state.events.push(GameEvent::ManaAdded {
-                    player: controller,
-                    mana_type,
-                    amount,
-                });
-            }
-            behavior.on_activate_mana_ability(state, source_id, ability_index, registry);
-        }
+    let abilities = available_mana_abilities(state, source_id, registry);
+    let Some(ability) = abilities.iter().find(|a| a.ability_index == ability_index) else {
+        return;
+    };
+    let Some(behavior) = registry.get(card_id) else { return };
+
+    // A filter's mana cost is paid before it produces (CR 605.1a — it
+    // is still a mana ability, it just isn't free). The tap plan puts
+    // cost-bearing abilities last so the mana is already floating.
+    if !ability.cost.symbols.is_empty()
+        && mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &ability.cost).is_err() {
+        return;
     }
+    if ability.requires_tap {
+        state.get_object_mut(source_id).expect("object must exist for tapping").tapped = true;
+        state.events.push(GameEvent::Tapped { object: source_id });
+    }
+    for &(mana_type, amount) in &ability.produced {
+        state.get_player_mut(controller).mana_pool.add(mana_type, amount);
+        state.events.push(GameEvent::ManaAdded {
+            player: controller,
+            mana_type,
+            amount,
+        });
+    }
+    behavior.on_activate_mana_ability(state, source_id, ability_index, registry);
 
     let name = card_name(state, registry, source_id);
     let pool = &state.get_player(controller).mana_pool;

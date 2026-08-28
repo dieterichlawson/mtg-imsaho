@@ -294,3 +294,48 @@ fn the_isd_utility_lands_do_not_fund_their_own_tap_abilities() {
              assertion above was about the count and not about colours");
     }
 }
+
+/// The gate has to hold where the tap actually happens, not only where the
+/// action is offered.
+///
+/// `legal_actions` filters through `available_mana_abilities`, but
+/// `engine::activate_mana_source` — every path that taps a permanent for mana,
+/// the auto-tapper's plans included — looked the ability up with
+/// `CardBehavior::mana_abilities` directly. Nothing between the two re-checked
+/// zone, tapped, or summoning sickness, so an `ActivateManaAbility` that did
+/// not come from `legal_actions` produced mana from a creature that could not
+/// have paid the `{T}`.
+#[test]
+fn activating_a_mana_ability_re_checks_the_tap_cost() {
+    let reg = registry();
+
+    // Summoning-sick creature: CR 302.6.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let assistant = sick_named(&mut state, &reg, "Deranged Assistant", P0);
+    let card = state.create_object(
+        reg.get_id_by_name("Walking Corpse").unwrap(), P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(card);
+
+    mtg_engine::engine::activate_mana_source(&mut state, assistant, 0, &reg);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0,
+        "a summoning-sick creature produces no mana");
+    assert!(!state.get_object(assistant).unwrap().tapped, "and is not tapped");
+    assert_eq!(state.get_object(card).unwrap().zone, Zone::Library,
+        "and mills nothing");
+
+    // Already tapped.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    state.get_object_mut(forest).unwrap().tapped = true;
+    mtg_engine::engine::activate_mana_source(&mut state, forest, 0, &reg);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0,
+        "a tapped land cannot pay {{T}} a second time");
+
+    // Off the battlefield.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    state.move_object(forest, Zone::Graveyard, &reg);
+    mtg_engine::engine::activate_mana_source(&mut state, forest, 0, &reg);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0,
+        "a land in the graveyard has no mana ability to activate");
+}
