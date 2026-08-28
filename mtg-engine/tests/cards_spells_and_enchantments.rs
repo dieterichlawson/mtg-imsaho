@@ -560,6 +560,9 @@ fn blasphemous_act_deals_13_damage_to_all_creatures() {
 
     let c1 = ready_creature(&mut state, P0, 2, 14);
     let c2 = ready_creature(&mut state, P1, 3, 3);
+    // "13 damage to each **creature**" — not to each permanent.
+    let land = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    let equipment = named_permanent(&mut state, &reg, "Butcher's Cleaver", P1);
 
     // Add tons of mana to afford it even with no cost reduction.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
@@ -576,32 +579,55 @@ fn blasphemous_act_deals_13_damage_to_all_creatures() {
     // is still on the battlefield holding lethal damage.
     assert_eq!(state.get_object(c2).unwrap().damage_marked, 13,
         "Blasphemous Act should deal 13 damage to opponent's creature too");
+
+    assert_eq!(state.get_object(land).unwrap().damage_marked, 0,
+        "a land is not a creature and takes none of it");
+    assert_eq!(state.get_object(equipment).unwrap().damage_marked, 0,
+        "nor is an unattached Equipment");
 }
 
-/// Blasphemous Act cost reduction works.
+/// "This spell costs {1} less to cast for each creature on the battlefield",
+/// asked the way the rest of the engine asks — through `cost_to_cast`, not by
+/// calling the card's `modified_cost` hook directly. A hook that returns the
+/// right number is worth nothing if the cost pipeline never consults it.
 #[test]
 fn blasphemous_act_cost_reduction() {
+    use mtg_engine::engine::{CastMethod, cost_to_cast};
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
+    let card_id = reg.get_id_by_name("Blasphemous Act").unwrap();
+    let cost = |s: &mtg_engine::state::GameState| {
+        cost_to_cast(s, &reg, card_id, P0, &CastMethod::Normal).mana
+    };
 
     // No creatures: costs {8}{R} = 9 mana.
-    let ba = reg.get(reg.get_id_by_name("Blasphemous Act").unwrap()).unwrap();
-    assert!(ba.modified_cost(&state, &reg).is_none(),
-        "With 0 creatures, no cost modification needed");
+    assert_eq!(cost(&state).mana_value(), 9, "With 0 creatures it costs its printed {{8}}{{R}}");
+
+    // Non-creature permanents are not creatures and do not reduce it.
+    named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    named_permanent(&mut state, &reg, "Butcher's Cleaver", P1);
+    named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    assert_eq!(cost(&state).mana_value(), 9,
+        "a land, an Equipment and an enchantment are not creatures");
 
     // Add 5 creatures: should cost {3}{R} = 4 mana.
     for _ in 0..5 {
         ready_creature(&mut state, P0, 1, 1);
     }
-    let modified = ba.modified_cost(&state, &reg).unwrap();
-    assert_eq!(modified.mana_value(), 4, "With 5 creatures, Blasphemous Act should cost {{3}}{{R}}");
+    assert_eq!(cost(&state).mana_value(), 4, "With 5 creatures, Blasphemous Act should cost {{3}}{{R}}");
 
-    // Add 8+ creatures: should cost {R} = 1 mana.
+    // Add 8+ creatures: should cost {R} = 1 mana. Creatures anyone controls
+    // count — "each creature on the battlefield".
     for _ in 0..5 {
         ready_creature(&mut state, P1, 1, 1);
     }
-    let modified = ba.modified_cost(&state, &reg).unwrap();
-    assert_eq!(modified.mana_value(), 1, "With 10 creatures, Blasphemous Act should cost just {{R}}");
+    let cost = cost(&state);
+    assert_eq!(cost.mana_value(), 1, "With 10 creatures, Blasphemous Act should cost just {{R}}");
+    // Ruling: "Blasphemous Act's ability can't reduce the total cost to cast
+    // the spell below {R}." The reduction comes off the generic portion only.
+    assert_eq!(cost.generic_amount(), 0);
+    assert_eq!(cost.colored_requirements().get(&Color::Red).copied().unwrap_or(0), 1,
+        "the {{R}} survives any number of creatures");
 }
 
 /// Blasphemous Act can be cast cheaply with many creatures.
