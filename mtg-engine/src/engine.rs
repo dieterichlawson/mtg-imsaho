@@ -724,8 +724,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 .collect();
 
             for id in to_untap {
-                state.get_object_mut(id).expect("object must exist for untap").tapped = false;
-                state.events.push(GameEvent::Untapped { object: id });
+                state.untap(id);
             }
 
             // Clear summoning sickness for creatures the active player controls.

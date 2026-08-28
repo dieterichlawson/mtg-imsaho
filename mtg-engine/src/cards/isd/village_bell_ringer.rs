@@ -41,7 +41,7 @@ impl CardBehavior for VillageBellRinger {
             .map(|o| o.id)
             .collect();
         for id in to_untap {
-            state.get_object_mut(id).unwrap().tapped = false;
+            state.untap(id);
         }
     }
 }

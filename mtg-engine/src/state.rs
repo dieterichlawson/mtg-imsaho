@@ -1716,6 +1716,26 @@ impl GameState {
         }
     }
 
+    /// CR 701.20a: untap a permanent, emitting `Untapped`.
+    ///
+    /// The one place an *effect* clears `tapped`, so the event is emitted the
+    /// same way wherever the untap comes from — the untap step, "Untap target
+    /// creature", Grimgrin's activated ability, Village Bell-Ringer's ETB.
+    /// Six cards wrote the field by hand and none of them emitted anything;
+    /// nothing in this pool watches for an untap yet, and the first card that
+    /// does would have seen five sixths of them.
+    ///
+    /// Not for a permanent *leaving* the battlefield, where the flag is reset
+    /// because CR 400.7 makes it a new object rather than because anything
+    /// untapped it, and not for one entering tapped, which was never untapped.
+    pub fn untap(&mut self, id: ObjectId) {
+        match self.get_object_mut(id) {
+            Some(obj) if obj.tapped => obj.tapped = false,
+            _ => return,
+        }
+        self.events.push(crate::events::GameEvent::Untapped { object: id });
+    }
+
     /// Change control of a battlefield permanent (CR 800.4a).
     ///
     /// The permanent becomes summoning-sick for the new controller: it hasn't

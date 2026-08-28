@@ -131,9 +131,7 @@ impl CardBehavior for CivilizedScholar {
             if is_creature {
                 // "untap this creature, **then** transform it" — in that order,
                 // with no priority in between (ruling, 2011-09-22).
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.tapped = false;
-                }
+                state.untap(object_id);
                 crate::cards::helpers::apply_transform(state, object_id, registry);
             }
         } else {
@@ -156,9 +154,7 @@ impl CardBehavior for CivilizedScholar {
         let is_creature = Self::is_creature_card(state, discarded_id, registry);
         if is_creature {
             // "untap this creature, **then** transform it", in that order.
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.tapped = false;
-            }
+            state.untap(self_id);
             crate::cards::helpers::apply_transform(state, self_id, registry);
         }
     }

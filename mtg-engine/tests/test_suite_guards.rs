@@ -554,6 +554,46 @@ fn only_the_damage_pipeline_marks_damage() {
         offenders.join("\n  "));
 }
 
+/// Nothing outside `state.rs` untaps a permanent by writing the field.
+///
+/// CR 701.20a is an action, and `GameState::untap` is where it happens: it
+/// clears the flag and emits `Untapped`. Six cards wrote `tapped = false`
+/// themselves — Traitorous Blood, Spidery Grasp, Village Bell-Ringer,
+/// Grimgrin, Civilized Scholar (twice) and Galvanic Juggernaut — and the
+/// event was emitted by the untap step alone. Nothing in this pool watches
+/// for an untap yet, so nothing was visibly broken; the first card that does
+/// would have seen one untap in seven.
+///
+/// Setting the flag to `true` is a different act and stays allowed: a
+/// permanent entering tapped was never untapped (CR 614.1c), and tapping is
+/// its own action with its own event.
+#[test]
+fn only_the_untap_helper_untaps_a_permanent() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        // `state.rs` implements `untap`, and resets the flag on a permanent
+        // leaving the battlefield — where CR 400.7 makes it a new object
+        // rather than anything untapping it.
+        if rel == "state.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            if l.contains("tapped = false") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "an untap goes through `GameState::untap`, which emits `Untapped` \
+         (CR 701.20a); writing `tapped = false` emits nothing:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// Nothing outside the loyalty-cost machinery takes loyalty counters off a
 /// planeswalker.
 ///

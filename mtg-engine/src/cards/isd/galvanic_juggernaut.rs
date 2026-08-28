@@ -42,12 +42,14 @@ impl CardBehavior for GalvanicJuggernaut {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        if let Some(obj) = state.get_object_mut(self_id) {
-            if obj.zone == Zone::Battlefield && obj.tapped {
-                obj.tapped = false;
-                state.log(crate::state::LogLevel::Event,
-                    "Galvanic Juggernaut untapped (creature died)".to_string());
-            }
+        // CR 400.7: a Juggernaut that has left the battlefield is a different
+        // object, and there is nothing there to untap.
+        let was_tapped = state.get_object(self_id)
+            .is_some_and(|o| o.zone == Zone::Battlefield && o.tapped);
+        if was_tapped {
+            state.untap(self_id);
+            state.log(crate::state::LogLevel::Event,
+                "Galvanic Juggernaut untapped (creature died)".to_string());
         }
     }
 }

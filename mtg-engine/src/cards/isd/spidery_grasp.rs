@@ -29,9 +29,7 @@ impl CardBehavior for SpideryGrasp {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 // Untap the target creature.
-                if let Some(target) = state.get_object_mut(*target_id) {
-                    target.tapped = false;
-                }
+                state.untap(*target_id);
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,

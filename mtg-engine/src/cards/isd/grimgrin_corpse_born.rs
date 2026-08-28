@@ -113,9 +113,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // The engine already sacrificed another creature as part of paying the cost.
         // Now untap Grimgrin and add a +1/+1 counter.
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.tapped = false;
-        }
+        state.untap(object_id);
         state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
         state.log(crate::state::LogLevel::Event,
             "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
