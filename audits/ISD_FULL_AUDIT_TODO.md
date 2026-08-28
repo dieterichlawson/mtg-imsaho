@@ -60,7 +60,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Claustrophobia | `claustrophobia.rs` | 56 | 5 | 1 |
 | x | Mentor of the Meek | `mentor_of_the_meek.rs` | 101 | 4 | 1 |
 | x | Splinterfright | `splinterfright.rs` | 71 | 4 | 2 |
-|   | Back from the Brink | `back_from_the_brink.rs` | 120 | 4 | 0 |
+| x | Back from the Brink | `back_from_the_brink.rs` | 120 | 4 | 0 |
 |   | Angel of Flight Alabaster | `angel_of_flight_alabaster.rs` | 67 | 4 | 2 |
 |   | Bloodgift Demon | `bloodgift_demon.rs` | 66 | 4 | 2 |
 |   | Skeletal Grimace | `skeletal_grimace.rs` | 64 | 5 | 0 |
