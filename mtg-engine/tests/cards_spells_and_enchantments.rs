@@ -162,6 +162,80 @@ fn ashmouth_hound_deals_damage_on_block() {
     assert_eq!(att.damage_marked, 1, "Ashmouth Hound should deal 1 damage to the creature it blocks");
 }
 
+/// The other half of the same ability: "or becomes **blocked by** a creature".
+/// Only the blocking half was tested, so `on_becomes_blocked` — a separate
+/// hook, reached by a separate trigger kind — was never exercised.
+#[test]
+fn ashmouth_hound_deals_damage_when_it_becomes_blocked() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let hound = named_permanent(&mut state, &reg, "Ashmouth Hound", P0);
+    let blocker = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, hound, P1, &[blocker]);
+
+    state.events.push(GameEvent::BlockersDeclared {
+        assignments: vec![(blocker, hound)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 1,
+        "the Hound damages the creature that blocked it");
+    assert_eq!(state.get_object(hound).unwrap().damage_marked, 0,
+        "and takes nothing from its own ability");
+}
+
+/// Scryfall ruling (2011-09-22): "Ashmouth Hound's ability triggers once for
+/// each creature it blocks or becomes blocked by."
+///
+/// Two blockers is two triggers, so 1 damage to each — not one trigger that
+/// picks a blocker, and not 1 damage split between them.
+#[test]
+fn ashmouth_hound_triggers_once_per_creature_blocking_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let hound = named_permanent(&mut state, &reg, "Ashmouth Hound", P0);
+    let first = ready_creature(&mut state, P1, 3, 3);
+    let second = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, hound, P1, &[first, second]);
+
+    state.events.push(GameEvent::BlockersDeclared {
+        assignments: vec![(first, hound), (second, hound)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(first).unwrap().damage_marked, 1,
+        "each blocker is dealt 1 — this is the first");
+    assert_eq!(state.get_object(second).unwrap().damage_marked, 1,
+        "and the second, rather than the two sharing one trigger");
+}
+
+/// "This creature **deals 1 damage** to that creature" is a triggered
+/// ability's damage, not combat damage. Inquisitor's Flail doubles "combat
+/// damage" only, so it must leave this alone — the Hound's own combat damage
+/// in the same combat is a different event and is doubled.
+#[test]
+fn ashmouth_hounds_trigger_damage_is_not_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let hound = named_permanent(&mut state, &reg, "Ashmouth Hound", P0);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+    state.get_object_mut(flail).unwrap().attached_to = Some(hound);
+
+    let blocker = ready_creature(&mut state, P1, 9, 9);
+    attacks_blocked_by(&mut state, hound, P1, &[blocker]);
+
+    state.events.push(GameEvent::BlockersDeclared {
+        assignments: vec![(blocker, hound)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 1,
+        "the trigger deals 1, undoubled — the Flail says 'combat damage'");
+}
+
 // ── Hamlet Captain ──────────────────────────────────────────────
 
 /// Hamlet Captain gives other Humans +1/+1 when it attacks.
