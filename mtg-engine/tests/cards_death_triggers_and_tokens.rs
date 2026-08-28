@@ -562,6 +562,80 @@ fn falkenrath_nobles_life_goes_to_its_last_controller() {
 }
 
 // -------------------------------------------------------------------------
+// Selhoff Occultist — the same death-watch shape, milling instead of draining
+// -------------------------------------------------------------------------
+
+/// "Whenever this creature or another creature dies, target player mills a
+/// card." The plain effect, which nothing tested: the card's coverage was the
+/// simultaneous-death regression and the hexproof-target filter, neither of
+/// which asserts that a mill of one card happens on an ordinary death.
+///
+/// Both arms of "this creature or another": an ally dying, and the Occultist
+/// itself. Its own death must mill once, not twice — the card declares two
+/// triggered abilities for one ability, and only the collector's exclusion of
+/// the dead creature from watching its own death keeps that honest.
+#[test]
+fn selhoff_occultist_mills_one_card_per_creature_death() {
+    let reg = registry();
+    for kill_the_occultist in [false, true] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let occultist = named_permanent(&mut state, &reg, "Selhoff Occultist", P0);
+        let ally = ready_creature(&mut state, P0, 1, 1);
+        stock_library(&mut state, &reg, P1, 5);
+        let before = state.get_player(P1).library_order.len();
+
+        let victim = if kill_the_occultist { occultist } else { ally };
+        state.get_object_mut(victim).unwrap().damage_marked = 99;
+        check_state_based_actions(&mut state, &reg);
+        process_triggers_auto_target_opponent(&mut state, &reg);
+
+        assert_eq!(before - state.get_player(P1).library_order.len(), 1,
+            "kill_the_occultist = {kill_the_occultist}: exactly one card, and \
+             its own death is one trigger rather than two");
+    }
+}
+
+/// A creature card the Occultist mills is seen by Undead Alchemist —
+/// "whenever a creature card is put into an opponent's graveyard from their
+/// library, exile that card and create a Zombie token". Here P0 controls both,
+/// and the mill lands on P1.
+///
+/// This does *not* show which code path did the milling, and an earlier
+/// version of this comment claimed it did. `move_object` emits
+/// `CreatureCardMilled` for any library-to-graveyard move of a creature card,
+/// deliberately — being a mill is a property of the zone change, not of the
+/// caller having remembered a helper — so a card that moved the top card by
+/// hand would reach an Alchemist just as well. What this pins is the
+/// cross-card interaction, and that the Occultist mills the *targeted* player.
+#[test]
+fn selhoff_occultists_mill_is_visible_to_undead_alchemist() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    named_permanent(&mut state, &reg, "Selhoff Occultist", P0);
+    // Top of P1's library — `mill_cards` takes index 0.
+    let top = state.create_object(
+        reg.get_id_by_name("Walking Corpse").unwrap(), P1, Zone::Library, Some(2), Some(2));
+    state.get_player_mut(P1).library_order.insert(0, top);
+    // One in P0's library too, so "the right player milled" is a real claim
+    // rather than the only card that could possibly have moved.
+    let mine = state.create_object(
+        reg.get_id_by_name("Walking Corpse").unwrap(), P0, Zone::Library, Some(2), Some(2));
+    state.get_player_mut(P0).library_order.insert(0, mine);
+
+    let ally = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(ally).unwrap().damage_marked = 99;
+    check_state_based_actions(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_object(top).unwrap().zone, Zone::Exile,
+        "P1 was the target, so P1 milled — and the Alchemist exiled the card");
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Library,
+        "the Occultist's controller did not mill; the target did");
+}
+
+// -------------------------------------------------------------------------
 // Murder of Crows
 // -------------------------------------------------------------------------
 
