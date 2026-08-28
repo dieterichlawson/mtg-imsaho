@@ -161,6 +161,43 @@ fn balefire_dragon_wipes_the_board_after_being_killed_in_response() {
          save the defending player's creatures");
 }
 
+/// The strongest form of CR 113.7a: a source that has not merely changed zones
+/// but ceased to exist. A token copy of Balefire Dragon — Cackling Counterpart
+/// makes one — that connects and is then destroyed goes to the graveyard and
+/// is removed from the game outright by SBA 704.5d (CR 111.7). There is no
+/// object left to read, and the trigger still wipes the board.
+///
+/// Every other test in this file kills a *card*, which stays readable in the
+/// graveyard; a card's handler can ask `state.get_object(self_id)` and always
+/// get an answer. Only a token tells the two apart, which is how Balefire
+/// Dragon carried a `get_object(self_id).is_none()` early return — directly
+/// under a comment saying that killing the Dragon must not save the board.
+#[test]
+fn balefire_dragon_token_wipes_the_board_after_ceasing_to_exist() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let printed = named_permanent(&mut state, &reg, "Balefire Dragon", P0);
+    let token = state.create_token_copy(printed, P0, &reg);
+    let victim = ready_creature(&mut state, P1, 2, 2);
+
+    let card_id = state.get_object(token).unwrap().card_id;
+    state.stack.push(StackEntry::Trigger(PendingTrigger {
+        source: TriggerSource::new(token, card_id, P0, ""),
+        event: TriggerEvent::CombatDamageToPlayer { damaged_player: P1, amount: 6 },
+    }));
+    state.move_object(token, Zone::Graveyard, &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert!(state.get_object(token).is_none(),
+        "CR 111.7: the token has ceased to exist, so there is nothing to read");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert!(state.get_object(victim).is_none_or(|o| o.damage_marked >= 6),
+        "CR 113.7a: the trigger exists on the stack independently of the token \
+         that put it there, so the defending player's creatures still take 6");
+}
+
 // Curiosity: "Whenever enchanted creature deals damage to an opponent, you may
 // draw a card." Destroying the Aura in response still offers the draw.
 #[test]

@@ -36,23 +36,24 @@ impl CardBehavior for BalefireDragon {
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, registry: &CardRegistry) {
         // CR 113.7a: killing the Dragon with the trigger on the stack does not
-        // save the defending player's board.
-        if state.get_object(self_id).is_none() {
-            return;
-        }
-
+        // save the defending player's board. Nothing here reads the Dragon —
+        // "that much" is the damage it already dealt and "that player" is the
+        // one it dealt it to, both carried by the trigger — so there is
+        // nothing to check for. This used to open with an
+        // `if state.get_object(self_id).is_none() { return; }` directly under
+        // that sentence, which did the opposite of what it said for the one
+        // source that can stop existing: a token copy of the Dragon (Cackling
+        // Counterpart) destroyed in response ceases to exist under SBA 704.5d,
+        // and the board was spared.
         let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, damaged_player).into_iter()
             .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
 
-        let source_name = state.get_object(self_id)
-            .map_or_else(|| "Balefire Dragon".into(), |o| o.name.clone());
         for creature_id in creatures {
             let effect = crate::state::PendingEffect::DealDamage {
                 amount,
                 source_id: self_id,
-                source_name: source_name.clone(),
             };
             crate::engine::apply_pending_effect(
                 state,
