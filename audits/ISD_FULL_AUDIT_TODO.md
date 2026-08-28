@@ -68,7 +68,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Woodland Sleuth | `woodland_sleuth.rs` | 79 | 4 | 1 |
 | x | Elder Cathar | `elder_cathar.rs` | 75 | 4 | 1 |
 | x | Snapcaster Mage | `snapcaster_mage.rs` | 68 | 4 | 1 |
-|   | Witchbane Orb | `witchbane_orb.rs` | 60 | 4 | 1 |
+| x | Witchbane Orb | `witchbane_orb.rs` | 60 | 4 | 1 |
 |   | Demonmail Hauberk | `demonmail_hauberk.rs` | 82 | 4 | 0 |
 |   | Geist-Honored Monk | `geist_honored_monk.rs` | 56 | 4 | 1 |
 |   | Manor Gargoyle | `manor_gargoyle.rs` | 81 | 4 | 0 |
