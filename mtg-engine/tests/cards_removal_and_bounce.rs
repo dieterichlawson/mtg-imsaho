@@ -239,6 +239,51 @@ fn silent_departure_bounces_creature() {
         "Creature should be returned to hand");
 }
 
+/// "to its **owner's** hand". The test above bounces a creature its owner also
+/// controls, where owner and controller are the same player and the word
+/// cannot be seen. A stolen creature goes home.
+#[test]
+fn silent_departure_returns_the_creature_to_its_owners_hand() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Owned by P1, controlled by P0 — P0 is also the one casting.
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(creature).unwrap().controller = P0;
+
+    let card = castable_spell(&mut state, &reg, "Silent Departure", P0);
+    let state = cast_and_resolve(&state, &reg, card, vec![Target::Object(creature)]);
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Hand);
+    assert!(state.objects_in_zone(Zone::Hand, P1).iter().any(|o| o.id == creature),
+        "it is in its owner's hand");
+    assert!(!state.objects_in_zone(Zone::Hand, P0).iter().any(|o| o.id == creature),
+        "and not the hand of the player who controlled it");
+}
+
+/// A bounced token goes to a hand and then ceases to exist (CR 111.7 /
+/// SBA 704.5d) — nobody gets a card out of it.
+#[test]
+fn silent_departure_on_a_token_leaves_nothing_behind() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let token = state.create_token_with_subtypes(
+        "", P1, 1, 1,
+        vec![Color::White], vec![CardType::Creature], vec![], vec!["Spirit".into()],
+        &reg,
+    )[0];
+    let hand_before = state.objects_in_zone(Zone::Hand, P1).len();
+
+    let card = castable_spell(&mut state, &reg, "Silent Departure", P0);
+    let mut state = cast_and_resolve(&state, &reg, card, vec![Target::Object(token)]);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    assert!(state.get_object(token).is_none(), "the token ceased to exist");
+    assert_eq!(state.objects_in_zone(Zone::Hand, P1).len(), hand_before,
+        "so its controller's hand is no bigger than it was");
+}
+
 // ── Fight ───────────────────────────────────────────────────────────
 
 /// Prey Upon: your creature fights their creature. Both deal damage.
