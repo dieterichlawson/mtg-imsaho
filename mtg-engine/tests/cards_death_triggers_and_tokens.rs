@@ -499,6 +499,68 @@ fn falkenrath_noble_triggers_on_self_death() {
         "Falkenrath Noble should drain opponent on its own death");
 }
 
+/// Ruling: "If Falkenrath Noble and another creature die at the same time,
+/// Falkenrath Noble's triggered ability will trigger for each of them."
+///
+/// Two triggers, so two drains. It works because the death-watch collector
+/// treats permanents that left in the same event batch as still having been
+/// there (CR 603.10a) — the Noble is a legal watcher of the other creature's
+/// death even though it died alongside it — while excluding the dead creature
+/// from watching its *own* death, which is what the separate self-dies arm is
+/// for. Get either half wrong and this reads 1 or 3.
+#[test]
+fn falkenrath_noble_triggers_once_per_creature_when_it_dies_alongside_another() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
+    let ally = ready_creature(&mut state, P0, 1, 1);
+    // Both take lethal damage, so both die in the same state-based action pass.
+    state.get_object_mut(noble).unwrap().damage_marked = 5;
+    state.get_object_mut(ally).unwrap().damage_marked = 2;
+
+    let mine = state.get_player(P0).life;
+    let theirs = state.get_player(P1).life;
+
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(noble).unwrap().zone, Zone::Graveyard,
+        "test precondition: both died");
+    assert_eq!(state.get_object(ally).unwrap().zone, Zone::Graveyard,
+        "test precondition: both died");
+
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, mine + 2,
+        "one trigger for each creature that died");
+    assert_eq!(state.get_player(P1).life, theirs - 2,
+        "and each drains the target for 1");
+}
+
+/// "...and **you** gain 1 life." When the Noble itself dies, "you" is its last
+/// known controller (CR 608.2g) — leaving the battlefield resets `controller`
+/// to `owner` (CR 400.7), so a Noble whose owner and controller agree cannot
+/// tell a correct read from a read of the reset field.
+#[test]
+fn falkenrath_nobles_life_goes_to_its_last_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P0);
+    state.get_object_mut(noble).unwrap().owner = P1;
+    state.get_object_mut(noble).unwrap().damage_marked = 5;
+
+    let mine = state.get_player(P0).life;
+    let theirs = state.get_player(P1).life;
+
+    check_state_based_actions(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, mine + 1,
+        "the life goes to the player who controlled the Noble, not its owner");
+    assert_eq!(state.get_player(P1).life, theirs - 1,
+        "and the opponent is the one drained");
+}
+
 // -------------------------------------------------------------------------
 // Murder of Crows
 // -------------------------------------------------------------------------
