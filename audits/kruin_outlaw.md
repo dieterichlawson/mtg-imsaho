@@ -103,3 +103,64 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 - The menace grant and the strike keywords: `werewolf_cards.rs`, `evasion.rs`, `combat_rules.rs`
+## Full audit — 2026-08-27
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/152/kruin-outlaw-terror-of-kruin-pass?utm_source=api
+**Type line**: `Creature — Human Rogue Werewolf` — {1}{R}{R}, 2/2
+**Oracle text**:
+```
+First strike
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+```
+**Back face**: Terror of Kruin Pass — `Creature — Werewolf`, 3/3
+```
+Double strike
+Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+```
+
+**Rulings fetched**:
+- [2011-09-22] If Kruin Outlaw somehow transforms after blockers have been declared but before combat ends, any Werewolves you control that are blocked by a single creature will remain blocked.
+
+**Status**: PASS
+
+### Code issues
+
+No issues in the card. Both faces match the fetched text and the one ruling holds.
+
+**Found while checking the ruling**, in the two modules the audit walked through: `src/combat.rs` and `src/sba.rs` were the last places scanning the object map in HashMap order, and both scans are order-observable. `eligible_attackers` and `eligible_blockers` are the lists a player declares combat from, by position. State-based actions collect the dying creatures in scan order, and that is the order their `CreatureDied` events — and so their death triggers — reach the stack; worse, the state-trigger pass `break`s at the **first** candidate whose condition holds, so map order decided which of several ready state triggers fired. Both swept, and the guard now covers all of `src` except `state.rs` (where the sorted accessors are built, and where the genuinely order-free walks live).
+
+### Checked against the ruling
+
+- `If Kruin Outlaw somehow transforms after blockers have been declared but before combat ends, any Werewolves you control that are blocked by a single creature will remain blocked.` — PASS, and structurally so: the minimum-blocker count is applied in `declare_blockers_with_registry`, at declaration only, and `declare_blockers` records the attacker in `blocked_attackers` (CR 509.2), which nothing later re-examines. Now tested, mutation-checked against a transform that re-validates the count.
+
+### Checked and correct
+
+- Front: `{1}{R}{R}`, `Creature — Human Rogue Werewolf`, 2/2, `keywords: [FirstStrike]`. All three subtypes present.
+- Back: `Terror of Kruin Pass`, `Creature — Werewolf`, 3/3, `keywords: [DoubleStrike]`. First strike is **not** carried over — it belongs to the front face only, and `has_keyword` reads the active face.
+- `Werewolves you control have menace` is `GrantKeyword { keyword: Menace, scope: Global(And([ControlledByYou, HasSubtype("Werewolf")])) }`. `Global` rather than `GlobalOther` is right: the Terror is itself a Werewolf its controller controls, so it has menace too.
+- Scryfall's `keywords` list for the card is `Transform, First strike, Double strike` — menace is absent there because the Terror *grants* it rather than printing it, which is exactly how the code models it (a continuous effect, not a `keywords` entry).
+- The grant is `ControlledByYou`, so an opponent's Werewolf gets nothing — the Terror is not helping them.
+- The upkeep trigger is the shared werewolf mechanism: `werewolf_should_trigger` (which suppresses it entirely for a token copy), `werewolf_should_transform` (which reads the face the ability triggered from, CR 603.4 + CR 712.8), and `werewolf_on_upkeep`.
+- Both faces declare the upkeep trigger, and `TriggerScope` is the default `Each` — "At the beginning of **each** upkeep".
+
+### Tricky interactions checked
+
+- Transform after blockers declared: block stands. PASS.
+- Menace applies to the Terror itself: PASS.
+- Menace does not reach your non-Werewolves or the opponent's Werewolves: PASS.
+- Two blockers are enough — "except by two or more", not "can't be blocked": PASS.
+- First strike is lost on transforming, double strike gained: PASS.
+- Menace is visible through `has_keyword`, not only inside blocker validation: PASS.
+
+### Test coverage
+
+- transforms and gains double strike: `werewolf_cards.rs:551`
+- loses first strike on transforming: `werewolf_subtype_after_transform.rs:47`
+- menace reaches your Werewolves only: `werewolf_cards.rs:733`
+- the Terror needs two blockers itself, and two suffice: `werewolf_cards.rs:761`
+- menace shows up in `has_keyword`: `werewolf_cards.rs:779`
+- intervening-if on the upkeep trigger: `intervening_if.rs:130`
+- trigger snapshot: `trigger_snapshots.rs:132`
+- transform mid-combat leaves a declared block alone: `werewolf_cards.rs` `transforming_after_blockers_leaves_a_single_blocker_in_place` (NEW, mutation-checked)
+
