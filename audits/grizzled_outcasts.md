@@ -81,3 +81,60 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 ### Test coverage
 - The flip conditions: `werewolf_cards.rs`, `intervening_if.rs`
 - The back face's size: `cards_transforming_permanents.rs:every_transformed_dfc_is_its_back_faces_printed_size`
+## Full audit — 2026-08-27
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/185/grizzled-outcasts-krallenhorde-wantons?utm_source=api
+**Type line**: `Creature — Human Werewolf` — {4}{G}, 4/4
+**Oracle text**:
+```
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+```
+**Back face**: Krallenhorde Wantons — `Creature — Werewolf`, 7/7
+```
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+```
+
+**Rulings fetched**:
+- [2016-07-13] For more information on double-faced cards, see the Shadows over Innistrad mechanics article (http://magic.wizards.com/en/articles/archive/feature/shadows-over-innistrad-mechanics).
+
+**Status**: ISSUE (fixed)
+
+### Code issues
+
+One found, of the class opened under Gatstaf Shepherd.
+
+1. **The back face had no colour indicator, so Krallenhorde Wantons was colourless.** `grizzled_outcasts.rs:37`
+   - Type line (back face) is `Creature — Werewolf` with no mana cost, so CR 204.2 puts the colour in an indicator beside it.
+   - Code declared `power`, `toughness`, `subtypes` and `oracle_text` for the back face and no colour, and `colors_of` therefore returned an empty vector for a transformed Outcasts.
+   - Now `color_indicator: vec![Color::Green]`.
+
+Nothing on this card reads its own colour — it is a vanilla body on both faces — so unlike Gatstaf Howler there is no ability here that visibly misfires. It still matters for anything that asks: protection from green, a colour-matters block restriction, another card's intimidate. Two of the set's twenty back faces now have their indicator; `audits/BACK_FACE_COLORS.md` tracks the rest.
+
+**Where the green came from.** A web search this session, over the Scryfall and mtg.wtf results for the card, returned that "Krallenhorde Wantons has a color indicator of green and is a Creature — Werewolf. It has stats of 7/7." External source obtained during this audit, not memory.
+
+### Checked and correct
+
+- Front: `{4}{G}`, `Creature — Human Werewolf`, 4/4, no keywords. Scryfall's aggregate keyword list is `Transform` alone, so there is nothing else to declare on either face.
+- Back: `Krallenhorde Wantons`, `Creature — Werewolf`, 7/7, no keywords, no continuous effects, no activated abilities — the plainest double-faced card in the set.
+- Oracle text on both faces matches the cache (the back face's stale "transform Krallenhorde Wantons" was fixed in the sweep under Village Ironsmith and is now held by `oracle_text_says_what_scryfall_says`).
+- Both faces declare the upkeep trigger at the default `TriggerScope::Each` — "At the beginning of **each** upkeep".
+- The transform runs on the shared werewolf mechanism: `werewolf_should_trigger` (suppressing the trigger for a token copy), `werewolf_should_transform` (reading the face the ability triggered from, CR 603.4 + CR 712.8), and `werewolf_on_upkeep`.
+- The front face is Human and the back is not, which is what makes it a legal Moonmist target on one side only.
+
+### Tricky interactions checked
+
+- Transforms with other werewolves on the same upkeep, and back again: PASS.
+- Intervening-if on both faces' conditions: PASS.
+- Loses the Human subtype on transforming: PASS.
+- Colour is kept across the transform: PASS (after fix).
+- Token copy cannot transform: PASS (set-wide werewolf coverage).
+
+### Test coverage
+
+- transforms alongside other werewolves, and back: `werewolf_cards.rs:726` and `:741`
+- intervening-if on the upkeep trigger: `intervening_if.rs:129`
+- trigger snapshot: `trigger_snapshots.rs:130`
+- a green 4/4 that becomes a green 7/7, and stops being Human: `werewolf_cards.rs` `grizzled_outcasts_is_a_green_4_4_that_becomes_a_green_7_7` (NEW, mutation-checked by removing the indicator)
+
+Before this the card had a section header in `werewolf_cards.rs` with nothing under it.
+
