@@ -164,7 +164,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Grasp of Phantoms | `grasp_of_phantoms.rs` | 46 | 3 | 0 |
 | x | Balefire Dragon | `balefire_dragon.rs` | 65 | 2 | 1 |
 | x | Corpse Lunge | `corpse_lunge.rs` | 44 | 3 | 0 |
-|   | Curse of Death's Hold | `curse_of_deaths_hold.rs` | 43 | 3 | 0 |
+| x | Curse of Death's Hold | `curse_of_deaths_hold.rs` | 43 | 3 | 0 |
 |   | Curse of the Nightly Hunt | `curse_of_the_nightly_hunt.rs` | 40 | 3 | 0 |
 |   | Feeling of Dread | `feeling_of_dread.rs` | 40 | 3 | 0 |
 |   | Nightbird's Clutches | `nightbirds_clutches.rs` | 39 | 3 | 0 |
