@@ -168,6 +168,18 @@ pub fn activate_mana_source(
     let card_id = obj.card_id;
     let controller = obj.controller;
 
+    // Stony Silence: "activated abilities of artifacts can't be activated",
+    // mana abilities included. The auto-tap planner already skips artifact
+    // sources, but a SUBMITTED action — a standalone ActivateManaAbility or a
+    // tap plan naming one — funnels through here too, so the gate holds where
+    // the tap actually happens (same reasoning as the cost-legality gate
+    // above). The refusal produces no mana, which the cast path's funding
+    // rehearsal then turns into a refused cast.
+    if prevents_artifact_abilities(state, registry)
+        && state.has_card_type(source_id, CardType::Artifact, registry) {
+        return;
+    }
+
     let abilities = available_mana_abilities(state, source_id, registry);
     let Some(ability) = abilities.iter().find(|a| a.ability_index == ability_index) else {
         return;

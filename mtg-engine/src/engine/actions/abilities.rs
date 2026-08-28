@@ -124,6 +124,17 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
         };
 
         if let Some(ab) = ability {
+            // Stony Silence: "activated abilities of artifacts can't be
+            // activated" — equip included, since equip is an activated ability
+            // of the Equipment. `legal_actions` never offers these, but the
+            // submit path must speak for itself (neither client picks a whole
+            // offered action).
+            if crate::engine::mana_sources::prevents_artifact_abilities(state, registry)
+                && state.has_card_type(object_id, CardType::Artifact, registry) {
+                state.log(crate::state::LogLevel::Debug, format!(
+                    "activation refused, activated abilities of artifacts can't be activated"));
+                return Applied::ReturnNow;
+            }
             // CR 601.2c via 602.2b: an activated ability chooses its targets as
             // it is activated, and they must be legal ones. Same reason as the
             // cast path — `legal_actions` enumerates only legal sets, and the

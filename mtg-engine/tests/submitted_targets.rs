@@ -421,3 +421,82 @@ fn an_activation_submitted_without_funding_is_refused() {
     assert!(state.get_object(creature).unwrap().counters.is_empty(),
         "and no counters were handed out");
 }
+
+/// Stony Silence: "Activated abilities of artifacts can't be activated" —
+/// mana abilities included (2017-03-14 ruling). `legal_actions` never offers
+/// them, but a submitted action must be refused on its own merits.
+mod stony_silence_submits {
+    use super::*;
+
+    #[test]
+    fn a_submitted_artifact_mana_ability_is_refused() {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.priority_player = Some(P0);
+
+        let ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
+        named_permanent(&mut state, &reg, "Stony Silence", P1);
+
+        let state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ActivateManaAbility { object_id: ring, ability_index: 0 },
+            &reg,
+        );
+
+        assert_eq!(state.get_player(P0).mana_pool.total(), 0,
+            "no mana from an artifact ability under Stony Silence");
+        assert!(!state.get_object(ring).unwrap().tapped, "and the Ring is not tapped");
+    }
+
+    #[test]
+    fn a_submitted_tap_plan_naming_an_artifact_source_cannot_fund_a_cast() {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.priority_player = Some(P0);
+
+        let ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
+        named_permanent(&mut state, &reg, "Stony Silence", P1);
+        let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+
+        let state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::CastSpell {
+                object_id: bears, targets: vec![], sacrifice: None,
+                exile_count: None, exile_ids: vec![], alternative_cost: None,
+                tap_plan: vec![(ring, 0)],
+            },
+            &reg,
+        );
+
+        assert_eq!(state.get_object(bears).unwrap().zone, Zone::Hand,
+            "the silenced Ring produces nothing, so the cast is refused whole");
+        assert!(!state.get_object(ring).unwrap().tapped, "the Ring was not tapped");
+    }
+
+    /// Equip has a colon: it is an activated ability of an artifact, and the
+    /// same ruling shuts it off.
+    #[test]
+    fn a_submitted_equip_is_refused() {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.priority_player = Some(P0);
+
+        let cleaver = named_permanent(&mut state, &reg, "Butcher's Cleaver", P0);
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        named_permanent(&mut state, &reg, "Stony Silence", P1);
+        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+
+        let state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ActivateAbility {
+                object_id: cleaver, ability_index: 0, targets: vec![Target::Object(creature)],
+                tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+            },
+            &reg,
+        );
+
+        assert_eq!(state.get_object(cleaver).unwrap().attached_to, None,
+            "equip is an activated ability of an artifact — refused");
+        assert_eq!(state.get_player(P0).mana_pool.total(), 3, "no mana was charged");
+    }
+}
