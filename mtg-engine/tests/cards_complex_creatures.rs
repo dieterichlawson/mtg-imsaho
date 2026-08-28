@@ -865,6 +865,114 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
     assert_eq!(piker_cost.symbols.len(), 2, "Goblin Piker costs {{1}}{{R}}");
 }
 
+/// Ruling 2011-09-22: "If you exile a double-faced creature card this way,
+/// you'll pay the mana cost of the front face. The token will be a copy of the
+/// front face and it won't be able to transform."
+#[test]
+fn back_from_the_brink_copies_a_dfcs_front_face_only() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
+    let villagers = named_card_in_graveyard(&mut state, &reg, "Villagers of Estwald", P0);
+
+    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
+    let abilities = behavior.activated_abilities(&state, enchant, &reg);
+    let ability = abilities.iter()
+        .find(|a| a.description.contains("Villagers of Estwald"))
+        .expect("the DFC is a creature card in the graveyard");
+    assert_eq!(ability.cost.symbols.len(), 2,
+        "the front face's {{2}}{{G}}, not the back face, which has no mana cost");
+
+    let ability_index = usize::try_from(villagers.0).unwrap();
+    activate_via_hooks(&mut state, &reg, enchant, ability_index, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let token = state.objects.values()
+        .find(|o| o.is_token && o.zone == Zone::Battlefield)
+        .map(|o| o.id)
+        .expect("a token copy was created");
+    assert_eq!(state.get_object(token).unwrap().name, "Villagers of Estwald",
+        "a copy of the front face");
+
+    // "it won't be able to transform" — CR 111.7, a token copy of a DFC has
+    // only the copied face.
+    mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg);
+    assert!(!state.get_object(token).unwrap().is_transformed,
+        "the token has only the face it was copied from");
+    assert_eq!(state.get_object(token).unwrap().name, "Villagers of Estwald");
+}
+
+/// Ruling 2011-09-22: "Any 'enters' abilities of the creature will trigger when
+/// the token enters."
+#[test]
+fn back_from_the_brinks_token_brings_its_enters_trigger() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
+    // Ghoulraiser: "When this creature enters, return a Zombie card at random
+    // from your graveyard to your hand." Something for it to find, too.
+    let raiser = named_card_in_graveyard(&mut state, &reg, "Ghoulraiser", P0);
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    let ability_index = usize::try_from(raiser.0).unwrap();
+    activate_via_hooks(&mut state, &reg, enchant, ability_index, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Hand,
+        "the token's enters trigger fired and returned the Zombie card");
+}
+
+/// Ruling 2011-09-22: "Although you're paying the card's mana cost, you aren't
+/// casting that card. Abilities that reduce the cost to cast a creature spell
+/// won't apply... Alternative costs that affect what it costs to cast a
+/// creature spell... can't."
+///
+/// Rooftop Storm is "You may pay {0} rather than pay the mana cost for Zombie
+/// creature spells you cast" — an alternative cost for *casting*, so it has
+/// nothing to say about this ability's cost.
+#[test]
+fn back_from_the_brink_ignores_an_alternative_cost_for_casting() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
+    named_permanent(&mut state, &reg, "Rooftop Storm", P0);
+    // Walking Corpse is a {1}{B} Zombie.
+    let _corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
+    let abilities = behavior.activated_abilities(&state, enchant, &reg);
+    let ability = abilities.iter()
+        .find(|a| a.description.contains("Walking Corpse"))
+        .expect("the Zombie is a creature card in the graveyard");
+
+    assert_eq!(ability.cost.mana_value(), 2,
+        "still {{1}}{{B}}: you are not casting it, so Rooftop Storm's {{0}} \
+         does not apply (cost was {:?})", ability.cost);
+}
+
+/// CR 109.1: a token is not a card, and it sits in a graveyard until the next
+/// state-based-action check — so it must never be offered as something to
+/// exile.
+#[test]
+fn back_from_the_brink_does_not_offer_a_token_in_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
+    let token = state.create_token(
+        "Zombie", P0, 2, 2, vec![], vec![CardType::Creature], vec![], &reg)[0];
+    state.move_object(token, Zone::Graveyard, &reg);
+    assert!(state.get_object(token).is_some(), "test premise: it is still there");
+
+    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
+    assert!(behavior.activated_abilities(&state, enchant, &reg).is_empty(),
+        "a token in the graveyard is not a creature card");
+}
+
 #[test]
 fn back_from_the_brink_no_abilities_without_creatures_in_graveyard() {
     let reg = registry();

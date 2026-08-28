@@ -84,7 +84,10 @@ impl CardBehavior for BackFromTheBrink {
         }).collect()
     }
 
-    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    /// "Exile a creature card from your graveyard and pay its mana cost:" —
+    /// everything before the colon is cost (CR 602.2b), so the exile happens on
+    /// activation, before the ability goes on the stack.
+    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -98,9 +101,7 @@ impl CardBehavior for BackFromTheBrink {
             return;
         }
 
-        // Exile the creature card (cost — before the colon in oracle text).
-        state.move_object(creature_id, Zone::Exile, _registry);
-
+        state.move_object(creature_id, Zone::Exile, registry);
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
