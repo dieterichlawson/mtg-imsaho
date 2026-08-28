@@ -752,25 +752,103 @@ fn creeping_renaissance_flashback_exiles() {
 
 // ── Cellar Door ──────────────────────────────────────────────────
 
+/// "{3}, {T}: Target player puts the **bottom** card of their library into
+/// their graveyard. **If it's a creature card**, **you** create a 2/2 black
+/// Zombie creature token."
+///
+/// Each emphasis is a clause that had no test. The version this replaces put a
+/// single creature card in the library and asserted a Zombie appeared: with one
+/// card, the bottom and the top are the same object, so milling from the top
+/// passed — and so did creating the token unconditionally. A decoy on the other
+/// end of the library separates them.
 #[test]
-fn cellar_door_creates_zombie_when_milling_creature() {
+fn cellar_door_mills_the_bottom_card_and_zombies_only_for_a_creature() {
+    // (what sits on the bottom, what sits on top, does a Zombie appear)
+    const CASES: &[(&str, &str, bool)] = &[
+        ("Walking Corpse", "Forest", true),
+        // Reversed: the creature card is on TOP, where this ability must not
+        // reach. Milling the top would take the Corpse and make a Zombie.
+        ("Forest", "Walking Corpse", false),
+    ];
+
+    for &(bottom_name, top_name, expect_zombie) in CASES {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let door = named_permanent(&mut state, &reg, "Cellar Door", P0);
+
+        let put_in_library = |state: &mut mtg_engine::state::GameState, name: &str| {
+            let card_id = reg.get_id_by_name(name).unwrap();
+            let data = reg.card_data(card_id).unwrap();
+            let id = state.create_object(card_id, P1, Zone::Library, data.power, data.toughness);
+            state.get_object_mut(id).unwrap().name = name.into();
+            id
+        };
+        let top = put_in_library(&mut state, top_name);
+        let bottom = put_in_library(&mut state, bottom_name);
+        state.get_player_mut(P1).library_order = vec![top, bottom];
+
+        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+        activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert_eq!(state.get_object(bottom).unwrap().zone, Zone::Graveyard,
+            "the bottom card ({bottom_name}) is the one that goes");
+        assert_eq!(state.get_object(top).unwrap().zone, Zone::Library,
+            "and the top card ({top_name}) stays where it is");
+        assert_eq!(count_tokens_named(&state, "Zombie Token"), usize::from(expect_zombie),
+            "milled {bottom_name}: 'if it's a creature card' is {expect_zombie}");
+    }
+}
+
+/// "**you** create a 2/2 black Zombie creature token" — you being the ability's
+/// controller, not the player whose library was milled. And the token is the
+/// thing the text describes, not merely something named Zombie.
+#[test]
+fn cellar_doors_zombie_is_a_two_two_black_zombie_for_the_activating_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let door = named_permanent(&mut state, &reg, "Cellar Door", P0);
+    let card_id = reg.get_id_by_name("Walking Corpse").unwrap();
+    let corpse = state.create_object(card_id, P1, Zone::Library, Some(2), Some(2));
+    state.get_object_mut(corpse).unwrap().name = "Walking Corpse".into();
+    state.get_player_mut(P1).library_order = vec![corpse];
 
-    // Put a creature card on top of P1's library.
-    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
-    let card = state.create_object(tusker_id, P1, Zone::Library, Some(3), Some(3));
-    state.get_object_mut(card).unwrap().name = "Kalonian Tusker".into();
-    state.get_player_mut(P1).library_order.insert(0, card);
-
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
     activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    // Should have created a Zombie token (since a creature was milled).
-    assert_eq!(count_tokens_named(&state, "Zombie Token"), 1,
-        "Should create a Zombie token when milling a creature");
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 1,
+        "the token belongs to whoever activated the ability");
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P1), 0,
+        "not to the player whose library was milled");
+
+    let token = find_token_named(&state, "Zombie Token").unwrap();
+    assert_eq!(state.effective_power(token, &reg), Some(2));
+    assert_eq!(state.effective_toughness(token, &reg), Some(2));
+    assert!(state.colors_of(token, &reg).contains(&Color::Black), "black");
+    assert!(state.has_subtype(token, "Zombie", &reg), "a Zombie");
+}
+
+/// An empty library has no bottom card: nothing is milled, so there is no
+/// creature card and no Zombie.
+#[test]
+fn cellar_door_does_nothing_to_an_empty_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let door = named_permanent(&mut state, &reg, "Cellar Door", P0);
+    state.get_player_mut(P1).library_order.clear();
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+    activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 0,
+        "nothing was milled, so nothing was a creature card");
+    assert!(state.awaiting_action.is_none(),
+        "and the ability finished rather than stalling");
 }
 
 // ── Skaab Ruinator ───────────────────────────────────────────────

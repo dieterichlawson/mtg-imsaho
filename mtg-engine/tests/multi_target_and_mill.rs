@@ -120,7 +120,10 @@ fn mulch_emits_creature_card_milled() {
 }
 
 /// Cellar Door mills from the BOTTOM, so it cannot use `mill_cards` — but it
-/// is still a mill.
+/// is still a mill, and the event has to say so. That it takes the bottom card
+/// rather than the top is `cards_complex_creatures.rs`'s business; one card in
+/// the library is enough here, where the question is only whether the mill was
+/// announced.
 #[test]
 fn cellar_door_emits_creature_card_milled() {
     let reg = registry();
