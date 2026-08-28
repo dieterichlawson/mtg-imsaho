@@ -111,7 +111,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Bramblecrush | `bramblecrush.rs` | 50 | 4 | 0 |
 | x | Ancient Grudge | `ancient_grudge.rs` | 48 | 4 | 0 |
 | x | Ghoulraiser | `ghoulraiser.rs` | 67 | 3 | 1 |
-|   | Naturalize | `naturalize.rs` | 47 | 4 | 0 |
+| x | Naturalize | `naturalize.rs` | 47 | 4 | 0 |
 |   | Smite the Monstrous | `smite_the_monstrous.rs` | 47 | 4 | 0 |
 |   | Urgent Exorcism | `urgent_exorcism.rs` | 47 | 4 | 0 |
 |   | Rebuke | `rebuke.rs` | 46 | 4 | 0 |
