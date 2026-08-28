@@ -441,6 +441,36 @@ fn feeling_of_dread_taps_creature() {
         "Feeling of Dread should tap the target creature");
 }
 
+/// Ruling: "If Feeling of Dread targets two creatures, and one of them is an
+/// illegal target by the time Feeling of Dread resolves, the other creature
+/// will still be tapped."
+///
+/// CR 608.2b: a spell is countered only when *every* target is illegal, and
+/// the instructions skip the ones that are. One creature leaves in response,
+/// the other taps.
+#[test]
+fn feeling_of_dread_taps_the_target_that_is_still_there() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let leaving = ready_creature(&mut state, P1, 3, 3);
+    let staying = ready_creature(&mut state, P1, 3, 3);
+
+    let fod = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    let mut state = cast_onto_stack(&state, &reg, fod,
+        vec![Target::Object(leaving), Target::Object(staying)]);
+
+    // In response, one of the two targets leaves the battlefield.
+    state.move_object(leaving, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(staying).unwrap().tapped,
+        "the target that is still a legal target is tapped");
+    assert!(!state.get_object(leaving).unwrap().tapped,
+        "and the one that left is not (leaving the battlefield untaps it in \
+         any case — CR 400.7 makes it a new object)");
+}
+
 /// Bump in the Night flashback: opponent loses 3 life and Bump is exiled.
 #[test]
 fn bump_in_the_night_flashback_exiles() {

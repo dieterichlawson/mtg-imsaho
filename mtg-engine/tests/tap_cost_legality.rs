@@ -13,6 +13,10 @@
 //! mana creature could be tapped for mana the turn it arrived. They now all
 //! defer to `GameState::can_pay_tap_cost`, applied centrally by
 //! `engine::available_mana_abilities` and by `legal_actions`.
+//!
+//! Paying the cost is the other half, and it is the same act as any other
+//! tapping: `GameState::tap`, which applies CR 701.21a and emits `Tapped`.
+//! The rules for that verb are at the end of this file.
 
 mod common;
 
@@ -338,4 +342,49 @@ fn activating_a_mana_ability_re_checks_the_tap_cost() {
     mtg_engine::engine::activate_mana_source(&mut state, forest, 0, &reg);
     assert_eq!(state.get_player(P0).mana_pool.total(), 0,
         "a land in the graveyard has no mana ability to activate");
+}
+
+// ── What tapping is (CR 701.21a) ──────────────────────────────────
+
+/// "Only untapped permanents can be tapped." So tapping one that is already
+/// tapped is not a smaller event — it is no event at all, and the field it
+/// would have written is already true, which is what made this invisible when
+/// sixteen places wrote it by hand.
+#[test]
+fn tapping_an_already_tapped_permanent_is_not_an_event() {
+    use mtg_engine::events::GameEvent;
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+
+    state.events.clear();
+    state.tap(creature);
+    assert!(state.get_object(creature).unwrap().tapped);
+    assert_eq!(
+        state.events.iter().filter(|e| matches!(e, GameEvent::Tapped { object } if *object == creature)).count(),
+        1, "tapping an untapped permanent is one Tapped event");
+
+    state.events.clear();
+    state.tap(creature);
+    assert!(state.get_object(creature).unwrap().tapped, "it stays tapped");
+    assert!(!state.events.iter().any(|e| matches!(e, GameEvent::Tapped { .. })),
+        "and tapping it again is nothing at all");
+}
+
+/// A permanent that *arrives* tapped was never untapped on the battlefield, so
+/// nothing tapped it. `arrives_tapped` is the other verb, and it deliberately
+/// emits nothing — Army of the Damned's thirteen Zombies would otherwise be
+/// thirteen tap events.
+#[test]
+fn a_permanent_that_arrives_tapped_is_not_tapped_by_anything() {
+    use mtg_engine::events::GameEvent;
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+
+    state.events.clear();
+    state.arrives_tapped(creature);
+    assert!(state.get_object(creature).unwrap().tapped, "it is tapped");
+    assert!(!state.events.iter().any(|e| matches!(e, GameEvent::Tapped { .. })),
+        "but nothing tapped it");
 }

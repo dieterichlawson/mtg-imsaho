@@ -683,6 +683,52 @@ fn only_the_library_helper_puts_a_card_into_a_library() {
         offenders.join("\n  "));
 }
 
+/// A permanent becoming tapped goes through `GameState::tap`, and one that
+/// arrives tapped through `GameState::arrives_tapped`.
+///
+/// The mirror of the untap guard above, and the same reason: a bare
+/// `tapped = true` emits nothing, so `Tapped` was pushed at two of the sixteen
+/// places that tapped something — attacking and paying a `{T}` cost — and the
+/// other fourteen were silent. It also loses CR 701.21a: only an untapped
+/// permanent can be tapped, so tapping one that is already tapped is not an
+/// event, and the two sites that did emit sent one anyway.
+///
+/// The split between the two helpers is a rules distinction, not a style one.
+/// "Create a 2/2 Wolf that's tapped and attacking", "put it onto the
+/// battlefield tapped", and every enters-tapped replacement (CR 614.1c)
+/// describe how a permanent *arrives*; nothing tapped it, and nothing watching
+/// for a permanent becoming tapped should see it.
+#[test]
+fn only_the_tap_helpers_tap_a_permanent() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        // `state.rs` implements both helpers.
+        if rel == "state.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || !l.contains("tapped = true") {
+                continue;
+            }
+            // `e.tapped = true` in `cards/helpers.rs` writes the *entering
+            // event* an enters-tapped replacement returns (CR 614.1c), not a
+            // permanent. Nothing has entered yet; there is no object to tap.
+            if l == "e.tapped = true;" || l.contains("entering.tapped") {
+                continue;
+            }
+            offenders.push(format!("{rel}:{}: {l}", n + 1));
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a permanent becoming tapped goes through `GameState::tap`, which \
+         emits `Tapped` and applies CR 701.21a; one that arrives tapped goes \
+         through `GameState::arrives_tapped`, which deliberately emits \
+         nothing:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// Nothing outside the loyalty-cost machinery takes loyalty counters off a
 /// planeswalker.
 ///
