@@ -1087,7 +1087,7 @@ impl CardRegistry {
         reg.register(Box::new(hamlet_captain::HamletCaptain));
         reg.register(Box::new(spare_from_evil::SpareFromEvil));
         reg.register(Box::new(burning_vengeance::BurningVengeance));
-        reg.register(Box::new(traitorous_blood::TraiterousBlood));
+        reg.register(Box::new(traitorous_blood::TraitorousBlood));
         reg.register(Box::new(blasphemous_act::BlasphemousAct));
         reg.register(Box::new(cackling_counterpart::CacklingCounterpart));
         reg.register(Box::new(sever_the_bloodline::SeverTheBloodline));

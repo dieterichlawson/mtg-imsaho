@@ -7,9 +7,9 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 /// Traitorous Blood — {1}{R}{R} Sorcery.
 /// Gain control of target creature until end of turn. Untap it.
 /// It gains trample and haste until end of turn.
-pub struct TraiterousBlood;
+pub struct TraitorousBlood;
 
-impl CardBehavior for TraiterousBlood {
+impl CardBehavior for TraitorousBlood {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Traitorous Blood".into(),
