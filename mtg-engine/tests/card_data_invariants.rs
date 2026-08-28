@@ -1789,3 +1789,109 @@ fn activated_ability_costs_are_the_costs_the_oracle_text_prints() {
     assert_covers(checked, 15, "print exactly one activated ability");
     assert_none(&offenders, "charge the cost their oracle text prints");
 }
+
+/// Every keyword ability a card is printed with is a keyword the card
+/// declares, and every keyword it declares is printed.
+///
+/// The last of the printed characteristics the checked-in oracle cache can
+/// settle, after the rules text, the back face, the type line and the mana
+/// cost. A missing `Keyword::Trample` is invisible in every test that does not
+/// stage the blocked-creature case it changes, and a spurious one is invisible
+/// in every test that does not stage its absence: keywords are only ever
+/// exercised by the combat or targeting scenario that happens to need them.
+///
+/// Only the keywords `Keyword` models are compared. Scryfall's list also
+/// carries keyword *actions* (Mill, Fight, Proliferate) and mechanics the
+/// engine models elsewhere — Flashback as `flashback_cost`, Protection and
+/// Enchant as continuous effects, Transform as `back_face_data` — and reading
+/// those as missing keywords would be reading the cache wrong, not the card.
+#[test]
+fn keywords_say_what_scryfall_says() {
+    use mtg_engine::types::Keyword;
+
+    /// The Scryfall spelling of every keyword the engine models as one.
+    const MODELLED: &[(&str, Keyword)] = &[
+        ("Flying", Keyword::Flying),
+        ("First strike", Keyword::FirstStrike),
+        ("Double strike", Keyword::DoubleStrike),
+        ("Trample", Keyword::Trample),
+        ("Deathtouch", Keyword::Deathtouch),
+        ("Lifelink", Keyword::Lifelink),
+        ("Vigilance", Keyword::Vigilance),
+        ("Flash", Keyword::Flash),
+        ("Reach", Keyword::Reach),
+        ("Haste", Keyword::Haste),
+        ("Defender", Keyword::Defender),
+        ("Hexproof", Keyword::Hexproof),
+        ("Intimidate", Keyword::Intimidate),
+        ("Menace", Keyword::Menace),
+        ("Indestructible", Keyword::Indestructible),
+    ];
+
+    let raw = std::fs::read_to_string("../data/oracle_cache.json")
+        .expect("oracle cache is checked in at data/oracle_cache.json");
+
+    // Scryfall's `keywords` is a card-level array covering both faces, and it
+    // is pretty-printed across several lines.
+    let mut listed: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut current: Option<String> = None;
+    let mut collecting: Option<Vec<String>> = None;
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("    \"") {
+            if let Some(end) = rest.find("\": {") {
+                current = Some(rest[..end].to_string());
+            }
+        }
+        let t = line.trim();
+        if t.starts_with("\"keywords\": [") {
+            collecting = Some(Vec::new());
+            continue;
+        }
+        if let Some(items) = collecting.as_mut() {
+            if t.starts_with(']') {
+                if let Some(name) = current.clone() {
+                    // A card-level list and a back face's list both belong to
+                    // the same card.
+                    listed.entry(name).or_default().extend(std::mem::take(items));
+                }
+                collecting = None;
+                continue;
+            }
+            let item = t.trim_end_matches(',').trim_matches('"');
+            if !item.is_empty() {
+                items.push(item.to_string());
+            }
+        }
+    }
+    assert!(listed.len() > 100, "parsed only {} keyword lists from the cache", listed.len());
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        let Some(behavior) = reg.get(id) else { continue };
+        let Some(want) = listed.get(name) else { continue };
+        checked += 1;
+
+        // Either face may be the one carrying it — Scryfall's list does not
+        // say which, and Villagers of Estwald's back face is the flier.
+        let back = behavior.back_face_data();
+        for (spelling, keyword) in MODELLED {
+            let printed = want.iter().any(|k| k == spelling);
+            let declared = data.keywords.contains(keyword)
+                || back.as_ref().is_some_and(|d| d.keywords.contains(keyword));
+            if printed != declared {
+                offenders.push(format!(
+                    "{name}: Scryfall {} {spelling}, card {} it",
+                    if printed { "prints" } else { "does not print" },
+                    if declared { "declares" } else { "does not declare" }));
+            }
+        }
+    }
+
+    assert_covers(checked, 100, "have a keyword list in the oracle cache");
+    assert_none(&offenders, "declare the keywords the oracle cache gives them");
+}
