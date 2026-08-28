@@ -45,7 +45,11 @@ impl CardBehavior for ShimmeringGrotto {
                 ability_index: i + 1,
                 description: format!("{{1}}, {{T}}: Add {{{}}}", match mana_type {
                     ManaType::White => "W", ManaType::Blue => "U", ManaType::Black => "B",
-                    ManaType::Red => "R", _ => "G",
+                    ManaType::Red => "R", ManaType::Green => "G",
+                    // The array above holds the five colours and nothing else.
+                    // Spelled out rather than left to a `_` arm, which would
+                    // have labelled anything new as green.
+                    ManaType::Colorless => "C",
                 }),
                 produced: vec![(mana_type, 1)],
                 requires_tap: true,

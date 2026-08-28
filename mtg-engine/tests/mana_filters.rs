@@ -204,3 +204,30 @@ fn every_tap_plan_the_solver_returns_actually_pays_the_cost() {
     }
     assert!(exercised >= 8, "only {exercised} plans exercised — the guard is too weak");
 }
+
+/// CR 605.3a: a mana ability resolves immediately. It does not use the stack,
+/// so nobody gets priority in the middle of it and nothing can respond.
+///
+/// Every other activated ability in the set goes on the stack first
+/// (`activated_no_stack.rs` is the file for that rule), and nothing asserted
+/// the exception. The Grotto's filter is where it shows: it is the only mana
+/// ability in the set with a cost, so there is a moment — the {1} paid, the
+/// colour not yet added — that a stack would make visible.
+#[test]
+fn a_mana_ability_does_not_use_the_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grotto = named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let index = ability_producing(&reg, &state, grotto, ManaType::Green);
+    let state = mtg_engine::engine::submit_action(&state,
+        &Action::ActivateManaAbility { object_id: grotto, ability_index: index }, &reg);
+
+    assert!(state.stack.is_empty(),
+        "a mana ability never goes on the stack: {:?}", state.stack);
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Green), 1,
+        "and it has already resolved — the mana is in the pool");
+    assert!(state.awaiting_action.is_none(),
+        "with nobody asked to respond in between");
+}
