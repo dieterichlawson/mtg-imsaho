@@ -472,6 +472,77 @@ fn furor_forces_attack() {
         "Creature with Furor of the Bitten should be forced to attack even if not declared");
 }
 
+/// Attach the Aura and declare no attackers; say whether the creature was
+/// dragged into combat anyway.
+fn forced_into_combat_by_furor(
+    state: &mut mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    creature: ObjectId,
+) -> bool {
+    let furor_id = reg.get_id_by_name("Furor of the Bitten").unwrap();
+    let furor = state.create_object(furor_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(furor).unwrap().name = "Furor of the Bitten".into();
+    state.get_object_mut(furor).unwrap().attached_to = Some(creature);
+
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    *state = engine::submit_action(state, &Action::DeclareAttackers { attackers: vec![] }, reg);
+    state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature))
+}
+
+/// "attacks each combat **if able**", and haste is what makes a creature that
+/// arrived this turn able (CR 302.6). The Aura route to the same rule the
+/// Curses reach through a global effect.
+#[test]
+fn furor_forces_a_hasty_creature_the_turn_it_arrives() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let skeleton = named_permanent(&mut state, &reg, "Manor Skeleton", P0);
+    state.get_object_mut(skeleton).unwrap().summoning_sick = true;
+
+    assert!(forced_into_combat_by_furor(&mut state, &reg, skeleton),
+        "haste makes it able, so the Aura makes it attack");
+}
+
+/// Ruling: "If the enchanted creature can't attack for any reason (such as
+/// being tapped or **having come under that player's control that turn**),
+/// then it doesn't attack."
+///
+/// `change_control` sets summoning sickness for the new controller, which is
+/// what that clause is; a stolen creature with no haste stays home however
+/// furious it is.
+#[test]
+fn furor_does_not_force_a_creature_that_just_changed_hands() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let stolen = ready_creature(&mut state, P1, 2, 2);
+    state.change_control(stolen, P0);
+
+    assert!(!forced_into_combat_by_furor(&mut state, &reg, stolen),
+        "it came under its new controller's control this turn and has no haste");
+}
+
+/// Both halves are the Aura's, so both end when it does.
+#[test]
+fn furors_buff_and_compulsion_end_with_the_aura() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let furor = castable_spell(&mut state, &reg, "Furor of the Bitten", P0);
+    let mut state = cast_and_resolve(&state, &reg, furor, vec![Target::Object(creature)]);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(4), "test setup: +2/+2");
+    assert!(state.must_attack(creature, &reg), "test setup: and compelled");
+
+    state.move_object(furor, Zone::Graveyard, &reg);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(2), "the buff goes");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
+    assert!(!state.must_attack(creature, &reg), "and so does the compulsion");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Ghostly Possession — damage prevention
 // ══════════════════════════════════════════════════════════════════
