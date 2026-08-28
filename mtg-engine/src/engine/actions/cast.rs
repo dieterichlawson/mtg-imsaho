@@ -46,6 +46,19 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
             return Applied::ReturnNow;
         }
 
+        // CR 601.2h: the additional cost must be one the caster can pay, and
+        // what they named to pay it with must really be theirs to pay. Refused
+        // here for the same reason the target check is: before anything is
+        // paid, so a refused cast is a cast that did not happen.
+        if !crate::engine::costs::additional_cost_is_payable(
+            state, registry, card_id, object_id, player, sacrifice, exile_ids)
+        {
+            state.log(crate::state::LogLevel::Debug, format!(
+                "{}: cast refused, additional cost not payable as submitted (CR 601.2h)",
+                data.name));
+            return Applied::ReturnNow;
+        }
+
         let in_graveyard = state.get_object(object_id)
             .is_some_and(|o| o.zone == Zone::Graveyard);
         let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard();

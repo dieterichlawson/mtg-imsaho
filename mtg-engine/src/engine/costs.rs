@@ -288,6 +288,77 @@ pub(crate) fn exile_prompt(
 /// One dispatch on the kind. The cast handler and the exile-choice handler
 /// each used to spell all three out, and had drifted apart in how they picked
 /// when the player left the choice open.
+/// Whether the additional cost the caster proposes to pay is one they CAN pay
+/// (CR 601.2h: if you can't pay all costs, the spell is never cast).
+///
+/// `pay_additional_cost` below used to be the only word on the subject, and it
+/// takes what it is given: a cast submitted with nothing to sacrifice went on
+/// the stack with the cost unpaid, a named sacrifice was sacrificed without
+/// asking whose creature it was, and explicit exile ids were exiled from
+/// whichever graveyard they were in. `legal_actions` never offers any of
+/// those — but neither client picks a whole offered action, so the submit
+/// path has to ask for itself, before anything is paid.
+pub(crate) fn additional_cost_is_payable(
+    state: &GameState,
+    registry: &CardRegistry,
+    card_id: CardId,
+    spell: ObjectId,
+    player: PlayerId,
+    sacrifice: Option<ObjectId>,
+    exile_ids: &[ObjectId],
+) -> bool {
+    // A named sacrifice must be the caster's own battlefield creature,
+    // whatever the card's cost says: "sacrifice" can only reach what you
+    // control (CR 701.17a).
+    if let Some(id) = sacrifice {
+        let ok = state.get_object(id).is_some_and(|o|
+            o.zone == Zone::Battlefield && o.controller == player)
+            && state.is_creature(id, registry);
+        if !ok {
+            return false;
+        }
+    }
+    let Some(cost) = registry.card_data(card_id).and_then(|d| d.additional_cost) else {
+        return true;
+    };
+    // A card named twice is one card (CR 601.2h pays with distinct objects).
+    let distinct = |ids: &[ObjectId]| {
+        let set: std::collections::HashSet<_> = ids.iter().collect();
+        set.len() == ids.len()
+    };
+    let in_own_graveyard_card = |id: ObjectId| {
+        state.get_object(id).is_some_and(|o|
+            o.zone == Zone::Graveyard && o.owner == player && o.id != spell)
+            && state.is_card(id)
+    };
+    match cost {
+        AdditionalCost::SacrificeCreature => {
+            sacrifice.is_some()
+                || state.objects_in_zone(Zone::Battlefield, player)
+                    .iter().any(|o| state.is_creature(o.id, registry))
+        }
+        AdditionalCost::ExileCreaturesFromGraveyard(n) => {
+            if exile_ids.is_empty() {
+                // Unnamed: the auto-picker needs n candidates to take.
+                state.objects_in_id_order().iter()
+                    .filter(|o| o.zone == Zone::Graveyard && o.owner == player
+                        && o.id != spell && state.is_creature(o.id, registry))
+                    .count() >= n as usize
+            } else {
+                exile_ids.len() == n as usize
+                    && distinct(exile_ids)
+                    && exile_ids.iter().all(|&id|
+                        in_own_graveyard_card(id) && state.is_creature(id, registry))
+            }
+        }
+        AdditionalCost::ExileXFromGraveyard => {
+            // X may be zero; what is named just has to be really available.
+            distinct(exile_ids)
+                && exile_ids.iter().all(|&id| in_own_graveyard_card(id))
+        }
+    }
+}
+
 pub(crate) fn pay_additional_cost(
     state: &mut GameState,
     registry: &CardRegistry,

@@ -293,3 +293,74 @@ fn a_mana_ability_submitted_for_a_source_that_cannot_pay_produces_nothing() {
     assert_eq!(state3.get_player(P0).mana_pool.get(ManaType::White), 0,
         "an already-tapped source cannot pay {{T}} again");
 }
+
+/// The same rule for an additional cost: what the caster names to pay with
+/// must really be theirs to pay (CR 601.2h, CR 701.17a).
+///
+/// Found at Altar's Reap: the offer path never proposes an opponent's
+/// creature, but the submit path sacrificed whatever id it was handed —
+/// removal stapled to a draw spell.
+#[test]
+fn a_sacrifice_cost_cannot_be_paid_with_an_opponents_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    let spell = castable_spell(&mut state, &reg, "Altar's Reap", P0);
+    let mana_before = state.get_player(P0).mana_pool.clone();
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: spell,
+            targets: vec![],
+            sacrifice: Some(theirs),
+            exile_count: None,
+            exile_ids: vec![],
+            alternative_cost: None,
+            tap_plan: vec![],
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Battlefield,
+        "their creature is not yours to sacrifice");
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Battlefield,
+        "and nothing was taken in its place");
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Hand,
+        "the cast did not happen");
+    assert_eq!(state.get_player(P0).mana_pool, mana_before, "and nothing was paid");
+}
+
+/// And for an exile cost: Corpse Lunge's "exile a creature card from your
+/// graveyard" cannot be paid out of the opponent's.
+#[test]
+fn an_exile_cost_cannot_be_paid_from_an_opponents_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _mine = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let target = ready_creature(&mut state, P1, 1, 4);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: spell,
+            targets: vec![Target::Object(target)],
+            sacrifice: None,
+            exile_count: None,
+            exile_ids: vec![theirs],
+            alternative_cost: None,
+            tap_plan: vec![],
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "their card stays in their graveyard");
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Hand,
+        "the cast did not happen");
+}

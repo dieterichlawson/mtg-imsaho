@@ -306,6 +306,49 @@ fn altars_reap_sacrifices_and_draws_two() {
     assert_eq!(hand_after, 2,
         "Should have drawn 2 cards");
 }
+
+/// Ruling: "You must sacrifice exactly one creature to cast this spell; you
+/// cannot cast it without sacrificing a creature." With no creature the cost
+/// is unpayable, so the cast is not offered at all (CR 601.2h) — and a
+/// submitted cast is refused with everything intact.
+#[test]
+fn altars_reap_cannot_be_cast_without_a_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let spell = castable_spell(&mut state, &reg, "Altar's Reap", P0);
+    let mana_before = state.get_player(P0).mana_pool.clone();
+
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(!legal.actions.iter().any(|a|
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell)),
+        "no creature to sacrifice, so the cast is not offered");
+
+    // Submitted anyway, nothing happens and nothing is paid.
+    let state = cast_onto_stack(&state, &reg, spell, vec![]);
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Hand,
+        "the spell never left the hand");
+    assert_eq!(state.get_player(P0).mana_pool, mana_before, "and no mana was paid");
+}
+
+/// Ruling: "No one can try to destroy the creature you sacrificed to prevent
+/// you from casting this spell" — the sacrifice is part of paying the cost
+/// (CR 601.2h), so by the first moment anyone could respond, the creature is
+/// already in the graveyard and the spell already on the stack.
+#[test]
+fn altars_reap_sacrifice_happens_with_the_cast_not_the_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let spell = castable_spell(&mut state, &reg, "Altar's Reap", P0);
+    let state = cast_onto_stack(&state, &reg, spell, vec![]);
+
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Stack,
+        "the spell is on the stack, unresolved");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "and the creature is already gone — the cost was paid at announcement");
+}
 #[test]
 fn infernal_plunge_sacrifices_and_adds_rrr() {
     let reg = registry();
