@@ -71,6 +71,47 @@ fn splinterfright_mills_on_upkeep() {
     assert_eq!(gy_count, 2, "Splinterfright should mill 2 cards on upkeep");
 }
 
+/// Ruling 2025-01-24: "If Splinterfright's controller has only one card in
+/// their library when its triggered ability resolves, they put that card into
+/// their graveyard." Milling more cards than a library holds mills all of them
+/// and does not lose the game for the shortfall (CR 701.13b); the loss comes
+/// later, from trying to draw from an empty library.
+#[test]
+fn splinterfright_mills_what_is_left_of_a_short_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let _splinter = named_permanent(&mut state, &reg, "Splinterfright", P0);
+    stock_library(&mut state, &reg, P0, 1);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_player(P0).library_order.len(), 0, "the one card went");
+    assert_eq!(
+        state.objects.values().filter(|o| o.zone == Zone::Graveyard && o.owner == P0).count(),
+        1,
+        "one card, not two, and no panic over the missing second");
+    assert!(!state.get_player(P0).lost,
+        "milling an empty library is not a loss (CR 701.13b) — drawing from one is");
+}
+
+/// An empty library is not an error either: nothing to mill, nothing happens.
+#[test]
+fn splinterfright_against_an_empty_library_does_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let _splinter = named_permanent(&mut state, &reg, "Splinterfright", P0);
+    assert_eq!(state.get_player(P0).library_order.len(), 0, "test setup");
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert!(!state.get_player(P0).lost);
+    assert_eq!(
+        state.objects.values().filter(|o| o.zone == Zone::Graveyard && o.owner == P0).count(),
+        0);
+}
+
 // ── Bloodgift Demon ───────────────────────────────────────────────
 
 /// CR 113.7a: "target player draws a card and loses 1 life" is entirely about
