@@ -44,8 +44,16 @@ impl CardBehavior for Claustrophobia {
 
     fn has_etb_handler(&self) -> bool { true }
 
+    /// "When this Aura enters, tap enchanted creature."
+    ///
+    /// `attached_creature` rather than `o.attached_to`, because CR 113.7a says
+    /// the trigger resolves whether or not the Aura survived it and CR 608.2g
+    /// says "enchanted creature" is then the one it was last attached to.
+    /// Leaving the battlefield clears `attached_to`, so destroying
+    /// Claustrophobia in response to its own enters trigger used to mean the
+    /// creature was never tapped at all.
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
-        if let Some(target_id) = state.get_object(object_id).and_then(|o| o.attached_to) {
+        if let Some(target_id) = state.attached_creature(object_id) {
             if let Some(target) = state.get_object_mut(target_id) {
                 target.tapped = true;
             }

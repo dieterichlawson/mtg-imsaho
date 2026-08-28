@@ -196,6 +196,84 @@ fn claustrophobia_taps_creature() {
     assert_eq!(state.get_object(cl).unwrap().attached_to, Some(creature));
 }
 
+/// CR 113.7a: the enters trigger is on the stack independently of the Aura, so
+/// destroying Claustrophobia in response does not save the creature from being
+/// tapped — and CR 608.2g says "enchanted creature" is then the one the Aura
+/// was last attached to.
+///
+/// The card read `o.attached_to`, which the zone change clears, so the tap
+/// simply did not happen.
+#[test]
+fn claustrophobia_still_taps_if_the_aura_is_destroyed_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    let cl = castable_spell(&mut state, &reg, "Claustrophobia", P0);
+    let mut state = cast_and_resolve(&state, &reg, cl, vec![Target::Object(creature)]);
+    assert_eq!(state.get_object(cl).unwrap().attached_to, Some(creature), "test setup");
+
+    // Destroyed with its own enters trigger still to resolve.
+    mtg_engine::destruction::try_destroy(&mut state, cl, &reg);
+    assert_eq!(state.get_object(cl).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(cl).unwrap().attached_to, None,
+        "leaving the battlefield clears the attachment (CR 400.7)");
+
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert!(state.get_object(creature).unwrap().tapped,
+        "the trigger resolves without its source and still knows what it enchanted");
+    // But nothing holds it down any more: the static ability is gone with the Aura.
+    assert!(state.untaps_normally(creature, &reg),
+        "\"doesn't untap\" is a static ability of a permanent that is no longer there");
+}
+
+/// Ruling 2015-06-22: "Claustrophobia can target and enchant a tapped or
+/// untapped creature." Nothing about the ability asks.
+#[test]
+fn claustrophobia_can_enchant_an_already_tapped_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(creature).unwrap().tapped = true;
+
+    let cl = castable_spell(&mut state, &reg, "Claustrophobia", P0);
+    assert!(offered_targets(&state, &reg, cl).contains(&Target::Object(creature)),
+        "a tapped creature is a legal target");
+
+    let mut state = cast_and_resolve(&state, &reg, cl, vec![Target::Object(creature)]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    assert_eq!(state.get_object(cl).unwrap().attached_to, Some(creature));
+    assert!(state.get_object(creature).unwrap().tapped);
+}
+
+/// Ruling 2015-06-22: "The enchanted creature can still be untapped in other
+/// ways. Claustrophobia will remain attached, and the creature will continue to
+/// not untap during its controller's untap step."
+///
+/// So "doesn't untap" is about the untap step alone, and an effect that untaps
+/// the creature works — `untaps_normally` is only consulted from there.
+#[test]
+fn claustrophobia_does_not_stop_a_creature_being_untapped_some_other_way() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    let cl = castable_spell(&mut state, &reg, "Claustrophobia", P0);
+    let mut state = cast_and_resolve(&state, &reg, cl, vec![Target::Object(creature)]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    assert!(state.get_object(creature).unwrap().tapped, "test setup");
+
+    // Something untaps it outright.
+    state.get_object_mut(creature).unwrap().tapped = false;
+
+    assert_eq!(state.get_object(cl).unwrap().attached_to, Some(creature),
+        "Claustrophobia remains attached");
+    assert!(!state.untaps_normally(creature, &reg),
+        "and it still will not untap during its controller's untap step");
+}
+
 /// Skeletal Grimace gives +1/+1.
 #[test]
 fn skeletal_grimace_gives_plus_one_plus_one() {

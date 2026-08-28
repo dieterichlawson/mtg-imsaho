@@ -2042,6 +2042,25 @@ impl GameState {
         obj.attached_to_player.or(obj.last_attached_to_player)
     }
 
+    /// The creature an Aura or Equipment is attached to, falling back to the
+    /// one it was attached to immediately before it left the battlefield.
+    ///
+    /// The counterpart of `attached_player`, and it exists for the same reason.
+    /// CR 113.7a and CR 608.2g: an ability on the stack resolves even if its
+    /// source is destroyed in response, and it still knows what that source was
+    /// attached to. Claustrophobia's "when this Aura enters, tap enchanted
+    /// creature" read `attached_to` directly, which the zone change clears —
+    /// so destroying the Aura in response to its own enters trigger meant the
+    /// creature was never tapped.
+    ///
+    /// The last known value is the one `move_object` stashes in
+    /// `card_state["last_attached_to"]` on the way out.
+    #[must_use]
+    pub fn attached_creature(&self, id: ObjectId) -> Option<ObjectId> {
+        let obj = self.get_object(id)?;
+        obj.attached_to.or_else(|| obj.card_state.get("last_attached_to").copied())
+    }
+
     /// The creatures a player controls right now, as a fixed list.
     ///
     /// CR 611.2c: a continuous effect created by a resolving spell or ability
