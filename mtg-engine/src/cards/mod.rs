@@ -121,12 +121,22 @@ impl AttackInfo {
 /// `GameObject::card_state` key: the object whose ability defines this
 /// object's power and toughness (CR 604.3).
 ///
-/// The one `card_state` entry the engine itself reads. Every other key is
-/// written and read by the same card; this one is written by the card that
-/// created a token and read by `GameState::effective_power` /
-/// `effective_toughness`, which do not interpret it further — they ask that
-/// object's card through [`CardBehavior::token_dynamic_pt`].
+/// One of the two `card_state` entries that cross between the engine and a
+/// card — every other key is written and read by the same card. This one is
+/// written by the card that created a token and read by
+/// `GameState::effective_power` / `effective_toughness`, which do not
+/// interpret it further: they ask that object's card through
+/// [`CardBehavior::token_dynamic_pt`].
 pub const PT_DEFINED_BY: &str = "pt_defined_by";
+
+/// `GameObject::card_state` key: how many cards an
+/// [`AdditionalCost::ExileXFromGraveyard`] actually exiled.
+///
+/// The other direction of the same contract. The engine writes it while
+/// paying the cost (`engine::costs`) and the card reads it at resolution —
+/// Harvest Pyre's "deals X damage" is that number. Named here so the two
+/// sides agree by construction rather than by both spelling the same string.
+pub const EXILE_COUNT: &str = "exile_count";
 
 /// A mana ability definition.
 #[derive(Debug, Clone)]

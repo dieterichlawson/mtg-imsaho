@@ -29,26 +29,26 @@ impl CardBehavior for HarvestPyre {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        // The exile happened at cast time (additional cost). Read the count.
+        // X was fixed while the spell was cast — "as an additional cost",
+        // CR 601.2b — and the engine recorded what it exiled. No guard on
+        // X being zero: CR 120.8 says an effect that would deal 0 damage
+        // deals none, and `damage::deal_damage` is where that lives.
         let count = state.get_object(object_id)
-            .and_then(|o| o.card_state.get("exile_count").copied())
+            .and_then(|o| o.card_state.get(crate::cards::EXILE_COUNT).copied())
             .map_or(0, |id| u32::try_from(id.0).unwrap_or(u32::MAX));
 
-        if count > 0 {
-            if let Some(Target::Object(target_id)) = targets.first() {
-                let effect = crate::state::PendingEffect::DealDamage {
-                    amount: count,
-                    source_id: object_id,
-                    source_name: "Harvest Pyre".into(),
-                };
-                crate::engine::apply_pending_effect(
-                    state,
-                    &Target::Object(*target_id),
-                    &effect,
-                    registry,
-                );
-            }
+        if let Some(Target::Object(target_id)) = targets.first() {
+            let effect = crate::state::PendingEffect::DealDamage {
+                amount: count,
+                source_id: object_id,
+                source_name: "Harvest Pyre".into(),
+            };
+            crate::engine::apply_pending_effect(
+                state,
+                &Target::Object(*target_id),
+                &effect,
+                registry,
+            );
         }
-
     }
 }

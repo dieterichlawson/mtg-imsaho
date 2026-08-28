@@ -344,7 +344,7 @@ pub(crate) fn pay_additional_cost(
             }
             // X is read back at resolution (Harvest Pyre's damage).
             if let Some(obj) = state.get_object_mut(spell) {
-                obj.card_state.insert("exile_count".into(), ObjectId(u64::from(count)));
+                obj.card_state.insert(crate::cards::EXILE_COUNT.into(), ObjectId(u64::from(count)));
             }
             state.log(crate::state::LogLevel::Event,
                 format!("Exiled {count} cards from graveyard as additional cost"));
