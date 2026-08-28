@@ -1940,3 +1940,52 @@ fn flashback_costs_are_the_costs_the_oracle_text_prints() {
     assert_covers(checked, 20, "print a flashback cost");
     assert_none(&offenders, "charge the flashback cost their oracle text prints");
 }
+
+/// A spell whose text says "any target" declares `TargetRequirement::AnyTarget`,
+/// and one that declares it says so.
+///
+/// CR 115.4a: "any target" means any creature, player, planeswalker or battle.
+/// `damage_helper.rs::every_any_target_spell_can_point_at_a_planeswalker`
+/// sweeps the registry for cards declaring `AnyTarget` and checks each one
+/// offers a planeswalker — but a card that *stopped* declaring it simply drops
+/// out of the sweep, and the floor of three that guards the sweep is still met
+/// by the others. Narrowing Devil's Play to "target creature" passed the whole
+/// suite for exactly that reason: the sweep is derived from the declaration it
+/// is meant to check.
+///
+/// This is the other half, and it reads the oracle text — which
+/// `oracle_text_says_what_scryfall_says` pins to Scryfall — so the two cannot
+/// drift together.
+#[test]
+fn any_target_in_the_text_means_any_target_in_the_requirement() {
+    use mtg_engine::cards::TargetRequirement;
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        let Some(behavior) = reg.get(id) else { continue };
+        // Only spells: "any target" also appears in activated and triggered
+        // abilities (Stensia Bloodhall, Pitchburn Devils), whose requirements
+        // live on the ability rather than on `target_requirement`.
+        if data.card_types.iter().all(|t|
+            !matches!(t, mtg_engine::types::CardType::Instant | mtg_engine::types::CardType::Sorcery)) {
+            continue;
+        }
+        checked += 1;
+
+        let printed = data.oracle_text.contains("any target");
+        let declared = matches!(behavior.target_requirement(), TargetRequirement::AnyTarget);
+        if printed != declared {
+            offenders.push(format!(
+                "{name}: text {} \"any target\", requirement {} AnyTarget",
+                if printed { "says" } else { "does not say" },
+                if declared { "is" } else { "is not" }));
+        }
+    }
+
+    assert_covers(checked, 40, "are instants or sorceries");
+    assert_none(&offenders, "declare AnyTarget exactly when their text says \"any target\"");
+}
