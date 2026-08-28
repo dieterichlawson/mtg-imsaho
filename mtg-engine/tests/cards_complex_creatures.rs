@@ -800,6 +800,64 @@ fn creeping_renaissance_only_returns_chosen_type() {
     assert_eq!(gy_creatures, 2, "Creatures should remain in graveyard");
 }
 
+/// Ruling: "The permanent types are artifact, creature, enchantment, land, and
+/// planeswalker." All five are offered, each returns its own kind, and
+/// "**your** graveyard" is the caster's — a card goes to its owner's
+/// (CR 404.3), and an opponent's is not yours.
+///
+/// The two tests above cover Creature and Enchantment with only the caster's
+/// cards in play, so neither the other three options nor the word "your" was
+/// exercised.
+#[test]
+fn creeping_renaissance_returns_the_chosen_type_from_your_graveyard_only() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
+    // The options in the order the card offers them.
+    let types = [
+        (0usize, CardType::Creature),
+        (1, CardType::Artifact),
+        (2, CardType::Enchantment),
+        (3, CardType::Land),
+        (4, CardType::Planeswalker),
+    ];
+
+    for &(index, wanted) in &types {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        // One card of every type in each player's graveyard.
+        let mut mine = Vec::new();
+        let mut theirs = Vec::new();
+        for &(_, t) in &types {
+            for (owner, into) in [(P0, &mut mine), (P1, &mut theirs)] {
+                let c = state.create_object(CardId(9999), owner, Zone::Battlefield, None, None);
+                state.get_object_mut(c).unwrap().card_types = vec![t];
+                state.move_object(c, Zone::Graveyard, &reg);
+                into.push((t, c));
+            }
+        }
+
+        let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
+        let mut state = cast_onto_stack(&state, &reg, spell, vec![]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+        let state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(index, String::new()) },
+            &reg,
+        );
+
+        for (t, id) in &mine {
+            let zone = state.get_object(*id).unwrap().zone;
+            let expected = if *t == wanted { Zone::Hand } else { Zone::Graveyard };
+            assert_eq!(zone, expected, "{wanted:?} chosen: your {t:?} card");
+        }
+        for (t, id) in &theirs {
+            assert_eq!(state.get_object(*id).unwrap().zone, Zone::Graveyard,
+                "{wanted:?} chosen: an opponent's {t:?} card is not in your graveyard");
+        }
+    }
+}
+
 #[test]
 fn creeping_renaissance_flashback_exiles() {
     use mtg_engine::actions::{Action, ResolvedChoice};

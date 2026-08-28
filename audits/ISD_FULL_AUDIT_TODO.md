@@ -205,7 +205,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Army of the Damned | `army_of_the_damned.rs` | 55 | 2 | 0 |
 | x | Essence of the Wild | `essence_of_the_wild.rs` | 55 | 2 | 0 |
 | x | Make a Wish | `make_a_wish.rs` | 55 | 2 | 0 |
-|   | Creeping Renaissance | `creeping_renaissance.rs` | 54 | 2 | 0 |
+| x | Creeping Renaissance | `creeping_renaissance.rs` | 54 | 2 | 0 |
 |   | Laboratory Maniac | `laboratory_maniac.rs` | 54 | 2 | 0 |
 |   | Spare from Evil | `spare_from_evil.rs` | 53 | 2 | 0 |
 |   | Vampiric Fury | `vampiric_fury.rs` | 50 | 2 | 0 |

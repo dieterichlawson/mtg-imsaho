@@ -824,6 +824,17 @@ pub trait CardBehavior: Send + Sync {
     /// if the discarded card was a creature and trigger untap/transform.
     fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {}
 
+    /// Called after the player answers a `ChooseCardType` resolution choice
+    /// this card initiated, with the type they named.
+    ///
+    /// What choosing a type *does* is the card's, not the engine's. Creeping
+    /// Renaissance's "return all cards of the chosen type from your graveyard
+    /// to your hand" used to live in the choice handler, where it was the only
+    /// thing a `ChooseCardType` could ever mean — so a second card that named
+    /// a permanent type for any other reason would have had to be special-cased
+    /// beside it.
+    fn on_card_type_choice(&self, _state: &mut GameState, _self_id: ObjectId, _chosen_type: &str, _registry: &CardRegistry) {}
+
     /// Called after the player answers a `YesNo` resolution choice initiated by this permanent.
     /// `yes` is true if the player chose yes, false if they declined.
     fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, _registry: &CardRegistry) {}

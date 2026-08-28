@@ -5,7 +5,7 @@ use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
 use crate::mana;
 use crate::state::{AwaitingAction, GameState, LogLevel};
-use crate::types::{Zone, CardType, ContinuousEffect};
+use crate::types::{Zone, ContinuousEffect};
 use super::super::*;
 
 pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::ResolvedChoice, registry: &CardRegistry) -> Applied {
@@ -169,38 +169,22 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.log(LogLevel::Event, format!("p{}: found nothing", searcher.0));
                     crate::cards::helpers::shuffle_library(&mut *state, searcher);
                 }
-                (ResolutionChoiceKind::ChooseCardType { options, controller, .. },
+                (ResolutionChoiceKind::ChooseCardType { options, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
                     // An index past the end used to fall through
-                    // `unwrap_or_default()` to an empty string and then to the
-                    // `_` arm below, quietly choosing "Creature".
+                    // `unwrap_or_default()` to an empty string and then to a
+                    // `_` arm, quietly choosing "Creature".
                     let Some(chosen_type) = options.get(*index).cloned() else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} types offered", options.len()));
                         state.awaiting_action = unanswered;
                         return Applied::ReturnNow;
                     };
-                    let card_type = match chosen_type.as_str() {
-                        "Artifact" => CardType::Artifact,
-                        "Enchantment" => CardType::Enchantment,
-                        "Land" => CardType::Land,
-                        "Planeswalker" => CardType::Planeswalker,
-                        _ => CardType::Creature,
-                    };
-                    let to_return: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, *controller)
-                        .iter()
-                        .map(|o| o.id)
-                        // "Return all **cards** of the chosen type" — CR 109.1,
-                        // so a token in the graveyard is not one of them.
-                        .filter(|id| state.is_card(*id) && state.has_card_type(*id, card_type, registry))
-                        .collect();
-                    let count = to_return.len();
-                    for id in to_return {
-                        state.move_object(id, Zone::Hand, registry);
+                    // What the type is *for* belongs to the card that asked.
+                    let source_card_id = state.get_object(choice_source).map(|o| o.card_id);
+                    if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
+                        behavior.on_card_type_choice(&mut *state, choice_source, &chosen_type, registry);
                     }
-                    state.log(LogLevel::Event,
-                        format!("{}: chose {chosen_type}. Returned {count} cards from graveyard to hand",
-                            state.obj_name(choice_source)));
                 }
                 (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
                  ResolvedChoice::ChosenSubset(pile_1_ids)) => {
