@@ -142,7 +142,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Blasphemous Act | `blasphemous_act.rs` | 59 | 3 | 0 |
 | x | Deranged Assistant | `deranged_assistant.rs` | 59 | 3 | 0 |
 | x | Gutter Grime | `gutter_grime.rs` | 79 | 2 | 1 |
-|   | Traitorous Blood | `traitorous_blood.rs` | 59 | 3 | 0 |
+| x | Traitorous Blood | `traitorous_blood.rs` | 59 | 3 | 0 |
 |   | Selfless Cathar | `selfless_cathar.rs` | 58 | 3 | 0 |
 |   | Dearly Departed | `dearly_departed.rs` | 57 | 3 | 0 |
 |   | Darkthicket Wolf | `darkthicket_wolf.rs` | 56 | 3 | 0 |
