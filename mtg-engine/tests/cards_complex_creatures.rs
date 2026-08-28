@@ -40,24 +40,113 @@ use mtg_engine::events::{DamageTarget, GameEvent};
 use mtg_engine::state::StackEntry;
 // ── Curse of Stalked Prey ────────────────────────────────────────
 
+/// Count the triggers this Curse has put on the stack.
+fn curse_triggers_on_stack(state: &mtg_engine::state::GameState, curse: ObjectId) -> usize {
+    state.stack.iter().filter(|e| matches!(e,
+        StackEntry::Trigger(t) if t.source.id == curse)).count()
+}
+
+/// Drive a creature's combat damage to a player through the real event path,
+/// the way the combat damage step does.
+fn deal_combat_damage_to(
+    state: &mut mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    source: ObjectId,
+    player: PlayerId,
+    amount: u32,
+) {
+    state.events.push(GameEvent::CombatDamageDealt {
+        source,
+        target: DamageTarget::Player(player),
+        amount,
+    });
+    triggers::process_triggers(state, reg);
+}
+
+/// "Whenever a creature deals combat damage to **enchanted player**, put a
+/// +1/+1 counter on that creature."
+///
+/// Both arms, and the stack as well as the counter. CR 603.2 makes "to
+/// enchanted player" part of the trigger event, so damage to anyone else does
+/// not make the ability trigger — it must not put a do-nothing entry on the
+/// stack, which is a real game object with a priority window around it.
 #[test]
-fn curse_of_stalked_prey_gives_counter_on_combat_damage() {
+fn curse_of_stalked_prey_only_triggers_for_damage_to_the_enchanted_player() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    // Place the curse on the battlefield attached to P1.
     let curse = attach_curse_to_player(&mut state, &reg, "Curse of Stalked Prey", P0, P1);
-
-    // Place an attacking creature.
     let attacker = ready_creature(&mut state, P0, 2, 2);
 
-    // Simulate combat damage to P1.
-    let behavior = reg.get(state.get_object(curse).unwrap().card_id).unwrap();
-    behavior.on_any_combat_damage_to_player(&mut state, curse, attacker, P1, 2, &reg);
+    // Damage to a player the Curse is not on.
+    deal_combat_damage_to(&mut state, &reg, attacker, P0, 2);
+    assert_eq!(curse_triggers_on_stack(&state, curse), 0,
+        "the ability does not trigger at all on damage to another player");
+    assert_eq!(counters_of(&state, attacker, CounterType::PlusOnePlusOne), 0,
+        "and so puts no counter");
 
-    // The attacker should have a +1/+1 counter.
+    // Damage to the enchanted player.
+    deal_combat_damage_to(&mut state, &reg, attacker, P1, 2);
     assert_eq!(counters_of(&state, attacker, CounterType::PlusOnePlusOne), 1,
-        "Attacker should get a +1/+1 counter");
+        "the creature that dealt the damage gets the counter");
+}
+
+/// Ruling: "The ability will trigger when **any** creature deals combat damage
+/// to the enchanted player, including one controlled by another opponent or
+/// even by the enchanted player (if combat damage gets redirected somehow)."
+///
+/// The text is "a creature", with no "you control" — this is the restriction
+/// the card conspicuously does not have.
+#[test]
+fn curse_of_stalked_prey_triggers_for_any_creature_whoever_controls_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Stalked Prey", P0, P1);
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    // A creature the enchanted player controls, dealing combat damage to
+    // themselves — the case the ruling calls out.
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+
+    // Both in one damage event batch, the way a combat damage step deals it.
+    for source in [mine, theirs] {
+        state.events.push(GameEvent::CombatDamageDealt {
+            source,
+            target: DamageTarget::Player(P1),
+            amount: 2,
+        });
+    }
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, mine, CounterType::PlusOnePlusOne), 1,
+        "the Curse controller's creature");
+    assert_eq!(counters_of(&state, theirs, CounterType::PlusOnePlusOne), 1,
+        "and the enchanted player's own creature — 'a creature', not 'a \
+         creature you control'");
+}
+
+/// CR 121.1: a counter goes only on a permanent still on the battlefield. A
+/// creature that dealt its combat damage and died in the same step gets
+/// nothing, even though the ability did trigger.
+#[test]
+fn curse_of_stalked_prey_puts_no_counter_on_a_creature_that_already_died() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Stalked Prey", P0, P1);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: attacker,
+        target: DamageTarget::Player(P1),
+        amount: 2,
+    });
+    // It traded with a blocker in the same damage step.
+    state.move_object(attacker, Zone::Graveyard, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, attacker, CounterType::PlusOnePlusOne), 0,
+        "nothing on the battlefield to put a counter on");
 }
 
 // ── Dearly Departed ──────────────────────────────────────────────
