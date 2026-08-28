@@ -49,3 +49,27 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `cards_sacrifice_and_additional_costs.rs` — the shared fixed-count exile tests.
+
+## Audit — 2026-08-28 20:17
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile a creature card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**P/T**: 4/5
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/makeshift_mauler.rs` matches: {3}{U}, Zombie Horror (both subtypes), 4/5, `AdditionalCost::ExileCreaturesFromGraveyard(1)`, no other abilities.
+
+### Tricky interactions checked
+- Ruling: "exactly one creature card ... cannot cast it without ... cannot exile additional": prompt min=max=1; offer gate needs one; submit validation refuses wrong counts/duplicates/foreign graveyards (shared machinery, audited at 217/227). PASS
+- Ruling: "Players can only respond once ... costs have been paid": exile happens in `cast_spell` before priority. PASS
+- Rooftop Storm interplay (this card is the one the Rooftop ruling names): the {0} alternative does not waive the exile — tested directly this session. PASS
+- Token in graveyard is not a creature CARD: `is_card` filter in every arm (CR 109.1). PASS
+
+### Test coverage
+- Cast pays (fuel exiled, 4/5 arrives): `mtg-engine/tests/cards_graveyard_interaction.rs` `exiling_creature_cards_pays_for_the_skaab`
+- Rooftop Storm ruling: `spell_costs.rs` `rooftop_storms_zero_does_not_waive_a_mandatory_additional_cost` (added during the Rooftop Storm audit, exercises the Mauler end to end)
+- Choice prompt machinery: `auto_pick.rs` (shared)
+
+Mutation check: `ExileCreaturesFromGraveyard(1)` -> `(2)` fails BOTH the skaab table and the Rooftop ruling test. Bites.
