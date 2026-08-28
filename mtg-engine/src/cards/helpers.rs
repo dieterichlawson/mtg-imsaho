@@ -285,6 +285,34 @@ pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
     state.last_known_controller(object_id)
 }
 
+/// Is this object still on the battlefield?
+///
+/// The companion question to `controller_of`, and a separate one. Cards kept
+/// asking both at once:
+///
+/// ```ignore
+/// let controller = match state.get_object(self_id) {
+///     Some(o) if o.zone == Zone::Battlefield => o.controller,
+///     _ => return,
+/// };
+/// ```
+///
+/// which reads as "who is my controller" but *behaves* as "do nothing at all
+/// if my source is gone" — and that is wrong for a triggered ability, which
+/// resolves whether or not its source survived (CR 113.7a). Hamlet Captain
+/// stopped pumping the team, and Ghoulraiser stopped returning a Zombie, if
+/// the source was killed in response to its own trigger.
+///
+/// Splitting the two makes each card say which one it meant. An ability whose
+/// effect genuinely needs the permanent — Tree of Redemption exchanging a life
+/// total with *its* toughness — asks this; everything else just asks
+/// `controller_of` and lets the individual effects (`add_counters`,
+/// `apply_transform`) decline on their own, which they already do.
+#[must_use]
+pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
+    state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield)
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Transform helpers
 //

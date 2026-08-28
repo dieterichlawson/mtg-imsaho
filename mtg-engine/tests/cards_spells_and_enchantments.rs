@@ -215,6 +215,52 @@ fn hamlet_captain_buffs_humans_on_block() {
     assert_eq!(inq_power, 3, "Elite Inquisitor should be 3 power (2 base + 1 from Hamlet Captain)");
 }
 
+/// "other Humans you control" — an opponent's Humans are not yours, whichever
+/// player the Captain's own `controller` field happens to say after it has
+/// left the battlefield.
+#[test]
+fn hamlet_captain_does_not_pump_an_opponents_humans() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
+    let mine = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+    let theirs = named_permanent(&mut state, &reg, "Elite Inquisitor", P1);
+    let theirs_before = state.effective_power(theirs, &reg).unwrap();
+
+    state.events.push(GameEvent::AttackersDeclared { attackers: vec![(captain, P1)] });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.effective_power(mine, &reg).unwrap(), 3);
+    assert_eq!(state.effective_power(theirs, &reg).unwrap(), theirs_before,
+        "an opponent's Human is not a Human you control");
+}
+
+/// CR 611.2c: which Humans get the bonus is settled when the ability resolves.
+/// A Human that arrives afterwards does not get it, and "until end of turn"
+/// means the bonus is gone by the next turn.
+#[test]
+fn hamlet_captains_pump_covers_who_was_there_and_lasts_one_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
+    let early = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+
+    state.events.push(GameEvent::AttackersDeclared { attackers: vec![(captain, P1)] });
+    triggers::process_triggers(&mut state, &reg);
+    assert_eq!(state.effective_power(early, &reg).unwrap(), 3);
+
+    // A Human arriving after the ability resolved is not in the affected set.
+    let late = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+    assert_eq!(state.effective_power(late, &reg).unwrap(), 2,
+        "the set of affected creatures was fixed at resolution (CR 611.2c)");
+
+    advance_to_next_turn(&mut state, &reg);
+    assert_eq!(state.effective_power(early, &reg).unwrap(), 2,
+        "\"until end of turn\" ends at the cleanup step (CR 514.2)");
+}
+
 // ── Spare from Evil ─────────────────────────────────────────────
 
 /// Spare from Evil gives protection from non-Human creatures.

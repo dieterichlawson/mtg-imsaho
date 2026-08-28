@@ -55,6 +55,11 @@ fn rakish_heir_gives_its_counter_after_trading_in_combat() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    // Owned by P1, controlled by P0. Leaving the battlefield resets
+    // `controller` to `owner`, so with the two the same this test could not
+    // tell `controller_of` (CR 608.2g) from the reset field — and the code did
+    // read the reset field, comparing the attacking Vampire against P1.
+    state.get_object_mut(heir).unwrap().owner = P1;
     let other = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
 
     resolve_after_source_dies(&mut state, &reg, heir,
@@ -63,6 +68,52 @@ fn rakish_heir_gives_its_counter_after_trading_in_combat() {
     assert_eq!(counters_of(&state, other, CounterType::PlusOnePlusOne), 1,
         "CR 113.7a: the Heir dying in the same combat damage step does not \
          counter its trigger, so the other Vampire still gets its counter");
+}
+
+// Hamlet Captain: "Whenever this creature attacks or blocks, other Humans you
+// control get +1/+1 until end of turn." Nothing in that is about the Captain,
+// so removal in response must not cancel the pump for the rest of the team.
+//
+// The Captain is owned by P1 and controlled by P0, because leaving the
+// battlefield resets `controller` to `owner` — with the two the same, a test
+// cannot tell `controller_of` (CR 608.2g) from the reset field.
+#[test]
+fn hamlet_captain_pumps_the_team_after_being_killed_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let captain = named_permanent(&mut state, &reg, "Hamlet Captain", P0);
+    state.get_object_mut(captain).unwrap().owner = P1;
+    let human = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+    let before = state.effective_power(human, &reg).unwrap();
+
+    resolve_after_source_dies(&mut state, &reg, captain,
+        TriggerEvent::Attacks { attacker: captain, defending_player: P1 });
+
+    assert_eq!(state.effective_power(human, &reg).unwrap(), before + 1,
+        "CR 113.7a: the attack trigger resolves without its source, and \
+         CR 608.2g makes \"you control\" the Captain's last known controller");
+}
+
+// Ghoulraiser: "When this creature enters, return a Zombie card at random from
+// your graveyard to your hand." Removal in response must not eat the card
+// advantage along with the body.
+#[test]
+fn ghoulraiser_returns_its_zombie_after_being_killed_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let raiser = named_permanent(&mut state, &reg, "Ghoulraiser", P0);
+    state.get_object_mut(raiser).unwrap().owner = P1;
+    let zombie = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    resolve_after_source_dies(&mut state, &reg, raiser,
+        TriggerEvent::SelfEntered);
+
+    assert_eq!(state.get_object(zombie).unwrap().zone, Zone::Hand,
+        "CR 113.7a: killing Ghoulraiser with its enters trigger on the stack \
+         does not counter the trigger, and \"your graveyard\" is its last \
+         known controller's (CR 608.2g)");
 }
 
 // Balefire Dragon: "Whenever Balefire Dragon deals combat damage to a player,

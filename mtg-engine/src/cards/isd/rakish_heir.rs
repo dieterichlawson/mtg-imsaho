@@ -35,17 +35,17 @@ impl CardBehavior for RakishHeir {
         // Whenever a Vampire YOU control deals combat damage to a player.
         // CR 113.7a: the Heir trading with a blocker in the same combat damage
         // step does not counter this — the Vampire still gets its counter.
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
-        // Check if the source creature is a Vampire we control.
-        let source = match state.get_object(source_id) {
-            Some(o) if o.zone == Zone::Battlefield && o.controller == controller => o,
-            _ => return,
-        };
-        let _ = source;
-        if state.has_subtype(source_id, "Vampire", registry) {
+        // CR 608.2g: "you" is the Heir's last known controller. Reading
+        // `o.controller` off the object gave the owner once the Heir had left
+        // the battlefield, which is exactly the case the comment above is
+        // about — a Heir that traded with a blocker in the same damage step
+        // would have compared the attacking Vampire against the wrong player.
+        let controller = crate::cards::helpers::controller_of(state, self_id);
+        // The Vampire that dealt the damage has to be one you control, and
+        // still be there for the counter to go on it.
+        let source_is_yours = state.get_object(source_id)
+            .is_some_and(|o| o.zone == Zone::Battlefield && o.controller == controller);
+        if source_is_yours && state.has_subtype(source_id, "Vampire", registry) {
             // Put a +1/+1 counter on THAT Vampire (the source).
             state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
         }

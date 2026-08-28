@@ -49,10 +49,13 @@ impl CardBehavior for HamletCaptain {
 
 impl HamletCaptain {
     fn buff_humans(state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
+        // CR 113.7a: the trigger resolves whether or not the Captain survived
+        // it, and CR 608.2g says "you" is then its last known controller. This
+        // used to bail outright if the Captain had left the battlefield, so
+        // killing it in response to its own attack trigger cancelled the pump
+        // for the rest of the team. Nothing in "other Humans you control get
+        // +1/+1 until end of turn" is about the Captain.
+        let controller = crate::cards::helpers::controller_of(state, self_id);
 
         // Find other Human creatures you control.
         let humans: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller).into_iter()

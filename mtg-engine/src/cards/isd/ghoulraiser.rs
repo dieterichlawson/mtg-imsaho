@@ -39,10 +39,15 @@ impl CardBehavior for Ghoulraiser {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
+        // CR 113.7a: killing Ghoulraiser in response to its own enters
+        // trigger does not counter the trigger, and CR 608.2g makes "your
+        // graveyard" its last known controller's. This used to return instead,
+        // so removal in response ate the card advantage as well as the body.
+        //
+        // A Ghoulraiser that died on the way is itself a Zombie card in that
+        // graveyard by the time the trigger resolves, so it is one of the
+        // candidates to be returned at random.
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Find Zombie cards in graveyard (not restricted to creatures).
         let mut zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
