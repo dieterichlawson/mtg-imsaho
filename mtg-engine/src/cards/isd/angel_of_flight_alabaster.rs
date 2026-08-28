@@ -52,11 +52,11 @@ impl CardBehavior for AngelOfFlightAlabaster {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        // `step_trigger_scope` gates this to the controller's own step, and
-        // CR 113.7a means the ability resolves whether or not the Angel is
-        // still around — so neither the controller nor the source is needed.
-        let _ = self_id;
+    /// `step_trigger_scope` gates this to the controller's own step, and
+    /// CR 113.7a means the ability resolves whether or not the Angel is still
+    /// around — so neither the controller nor the source is needed here, which
+    /// is why the source parameter is unused.
+    fn on_upkeep(&self, state: &mut GameState, _self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.3d: target was chosen when the trigger went on the stack.
         let Some(target) = chosen_targets.first() else { return };
         let effect = PendingEffect::ReturnToHand {

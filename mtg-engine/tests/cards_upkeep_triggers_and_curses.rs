@@ -335,6 +335,79 @@ fn angel_of_flight_alabaster_returns_spirit() {
         "Spirit should be returned to hand");
 }
 
+/// Ruling 2011-09-22: "The Spirit card must already be in your graveyard when
+/// the ability triggers at the beginning of your upkeep. If there is no Spirit
+/// card in your graveyard when your upkeep begins, the ability will be removed
+/// from the stack with no effect."
+///
+/// That is CR 603.3c, and it is deliberately *not* CR 603.4: the ability does
+/// trigger and does go on the stack, and is then removed for want of targets.
+/// Morkrut Banshee's morbid is the other case — its ruling says the ability
+/// "won't trigger at all" — and the two are implemented differently because
+/// the rulings say different things.
+#[test]
+fn angel_of_flight_alabaster_is_removed_from_the_stack_with_no_spirit() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    // A card in the graveyard, but not a Spirit.
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert!(state.stack.is_empty(), "nothing is left on the stack");
+    let removed: Vec<&str> = state.game_log.iter()
+        .filter(|e| e.message.contains("Trigger removed"))
+        .map(|e| e.message.as_str())
+        .collect();
+    assert_eq!(removed.len(), 1,
+        "the ability triggered and was then removed for want of a legal target \
+         (CR 603.3c), which is what the ruling describes; log was {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
+/// "target Spirit **card**" — a Spirit token that died is in the graveyard
+/// until the next state-based-action check, and is not a card (CR 109.1).
+/// Doomed Traveler makes one.
+#[test]
+fn angel_of_flight_alabaster_cannot_target_a_spirit_token() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let token = state.create_token_with_subtypes(
+        "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying],
+        vec!["Spirit".into()], &reg)[0];
+    state.move_object(token, Zone::Graveyard, &reg);
+    assert!(state.get_object(token).is_some(), "test premise: it is still there");
+    assert!(state.has_subtype(token, "Spirit", &reg), "and it is a Spirit");
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(token).unwrap().zone, Zone::Graveyard,
+        "a Spirit token is not a Spirit card, so there was nothing to return");
+    assert!(state.stack.is_empty());
+}
+
+/// "from **your** graveyard" — an opponent's Spirit card is not a candidate.
+#[test]
+fn angel_of_flight_alabaster_cannot_reach_an_opponents_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P1);
+    let mine = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Hand,
+        "your own Spirit card is the one legal target, so it is taken");
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "an opponent's Spirit card is not in your graveyard");
+}
+
 // ── Charmbreaker Devils ───────────────────────────────────────────
 
 /// "At the beginning of your upkeep, return an instant or sorcery card at
