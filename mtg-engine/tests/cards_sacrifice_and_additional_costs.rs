@@ -24,13 +24,16 @@ use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
+/// "{1}{W}, Sacrifice this creature: Creatures **you control** get +1/+1 until
+/// end of turn."
 #[test]
-fn selfless_cathar_pump_all_creatures() {
+fn selfless_cathar_pumps_only_the_creatures_you_control() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let cathar = named_permanent(&mut state, &reg, "Selfless Cathar", P0);
     let bear = ready_creature(&mut state, P0, 2, 2);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
 
     // Add mana for the ability: {1}{W}
     state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
@@ -48,6 +51,40 @@ fn selfless_cathar_pump_all_creatures() {
     // Bear should have +1/+1 from the effect.
     assert_eq!(new_state.effective_power(bear, &reg).unwrap(), 3);
     assert_eq!(new_state.effective_toughness(bear, &reg).unwrap(), 3);
+
+    assert_eq!(new_state.effective_power(theirs, &reg).unwrap(), 2,
+        "the opponent's creature is not one you control");
+    assert_eq!(new_state.effective_toughness(theirs, &reg).unwrap(), 2);
+}
+
+/// Ruling: "You can activate Selfless Cathar's ability even if you control no
+/// other creatures." The ability names no minimum, and the Cathar sacrifices
+/// itself to pay for it — so the empty board is the ordinary case, not an
+/// exception.
+///
+/// And the cost really is {1}{W}: with one white mana the ability is not on
+/// offer, which is the only way to tell {1}{W} from {W} here.
+#[test]
+fn selfless_cathar_can_be_activated_with_no_other_creatures_but_not_for_one_mana() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let cathar = named_permanent(&mut state, &reg, "Selfless Cathar", P0);
+
+    let offered = |s: &mtg_engine::state::GameState| {
+        engine::legal_actions(s, &reg).actions.iter().any(|a| matches!(a,
+            Action::ActivateAbility { object_id, .. } if *object_id == cathar))
+    };
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    assert!(!offered(&state), "{{W}} alone does not pay {{1}}{{W}}");
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    assert!(offered(&state),
+        "with {{1}}{{W}} it is activatable, alone on the battlefield");
+
+    let after = activate(&state, &reg, cathar, 0, vec![]);
+    assert_eq!(after.get_object(cathar).unwrap().zone, Zone::Graveyard,
+        "and it sacrifices itself, pumping nothing");
 }
 #[test]
 fn silverchase_fox_exiles_enchantment() {

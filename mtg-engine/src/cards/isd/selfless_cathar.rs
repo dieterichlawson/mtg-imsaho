@@ -4,8 +4,8 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
-/// Selfless Cathar — {W} 1/1 Human Soldier.
-/// {1}{W}, Sacrifice Selfless Cathar: Creatures you control get +1/+1 until end of turn.
+/// Selfless Cathar — {W} 1/1 Human Cleric.
+/// {1}{W}, Sacrifice this creature: Creatures you control get +1/+1 until end of turn.
 pub struct SelflessCathar;
 
 impl CardBehavior for SelflessCathar {
