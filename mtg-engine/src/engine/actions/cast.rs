@@ -18,6 +18,18 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         let card_id = state.get_object(object_id).expect("CastSpell object must exist").card_id;
         let data = registry.get(card_id).expect("card must be in registry").card_data();
         let behavior = registry.get(card_id).expect("card must be in registry");
+        // CR 601.2c: the same target cannot be chosen twice for one instance of
+        // the word "target". The offered action list already respects it; a
+        // list built by hand — which is how both clients assemble a cast — did
+        // not.
+        let deduped = crate::engine::targeting::distinct_within_each_target_instance(
+            &behavior.target_requirement(), targets);
+        if deduped.len() != targets.len() {
+            state.log(crate::state::LogLevel::Debug, format!(
+                "{}: dropped a target named twice (CR 601.2c)", data.name));
+        }
+        let targets: &[Target] = &deduped;
+
         let in_graveyard = state.get_object(object_id)
             .is_some_and(|o| o.zone == Zone::Graveyard);
         let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard();

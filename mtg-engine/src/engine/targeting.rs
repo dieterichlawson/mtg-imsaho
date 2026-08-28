@@ -230,6 +230,56 @@ pub(crate) fn generate_cast_actions_with_targets(
         }
     }
 }
+/// Drop a target named twice within one instance of the word "target"
+/// (CR 601.2c).
+///
+/// "Put a +1/+1 counter on each of **up to two target creatures**" is one
+/// instance covering both slots, so the same creature cannot fill both — the
+/// ruling on Travel Preparations says it outright: "You can't target the same
+/// creature twice to put two +1/+1 counters on it."
+///
+/// `generate_cast_actions_with_targets` already honours this, because it
+/// enumerates *combinations*. What did not was the submitted list: both
+/// clients build their `CastSpell` from a per-slot choice rather than picking
+/// a whole offered action, so an LLM answering `[0, 0]` put two counters on
+/// one creature. The engine is the authority for a declaration it is handed —
+/// the same stance `declare_attackers` takes — so the duplicate is dropped
+/// here rather than trusted.
+///
+/// Only `UpToTargets` is one instance covering many slots. `TwoTargets` is two
+/// separate instances, which CR 601.2c does not join, so each half is checked
+/// on its own.
+pub(crate) fn distinct_within_each_target_instance(
+    req: &crate::cards::TargetRequirement,
+    targets: &[crate::actions::Target],
+) -> Vec<crate::actions::Target> {
+    use crate::actions::Target;
+    use crate::cards::TargetRequirement as R;
+    match req {
+        R::UpToTargets(_, _) => {
+            let mut seen: Vec<Target> = Vec::new();
+            let mut out = Vec::new();
+            for t in targets {
+                if matches!(t, Target::Object(_)) {
+                    if seen.contains(t) {
+                        continue;
+                    }
+                    seen.push(t.clone());
+                }
+                out.push(t.clone());
+            }
+            out
+        }
+        R::TwoTargets(first, second) => {
+            let split = targets.len().min(1);
+            let mut out = distinct_within_each_target_instance(first, &targets[..split]);
+            out.extend(distinct_within_each_target_instance(second, &targets[split..]));
+            out
+        }
+        _ => targets.to_vec(),
+    }
+}
+
 /// Helper: collect all valid targets for a single-target requirement.
 pub(crate) fn valid_targets_for_req(
     state: &GameState,
