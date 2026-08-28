@@ -1531,3 +1531,163 @@ fn no_card_defines_is_valid_target_without_taking_a_target() {
          card does not have. Delete it.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// Pull one string field per card (and per back face) out of the checked-in
+/// oracle cache. Shared by the type-line and mana-cost cross-checks below,
+/// which need the same line-based walk `oracle_text_says_what_scryfall_says`
+/// does — the cache is pretty-printed JSON and this crate has no JSON parser.
+fn cache_field(raw: &str, field: &str) -> (
+    std::collections::HashMap<String, String>,
+    std::collections::HashMap<String, String>,
+) {
+    let mut front = std::collections::HashMap::new();
+    let mut back = std::collections::HashMap::new();
+    let key = format!("\"{field}\": ");
+    let mut current: Option<String> = None;
+    let mut in_back = false;
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("    \"") {
+            if let Some(end) = rest.find("\": {") {
+                current = Some(rest[..end].to_string());
+                in_back = false;
+            }
+        }
+        let t = line.trim_start();
+        if t.starts_with("\"back_face\": {") {
+            in_back = true;
+        }
+        if let Some(rest) = t.strip_prefix(key.as_str()) {
+            let v = rest.trim_end().strip_suffix(',').unwrap_or(rest.trim_end());
+            if v == "null" {
+                continue;
+            }
+            let v = v.trim_matches('"')
+                .replace("\\u2014", "\u{2014}")
+                .replace("\\u2019", "\u{2019}");
+            if let Some(name) = current.clone() {
+                if in_back { back.insert(name, v); } else { front.insert(name, v); }
+            }
+        }
+    }
+    (front, back)
+}
+
+/// Every card's type line — supertypes, card types and subtypes — says what
+/// Scryfall says, on both faces.
+///
+/// `oracle_text_says_what_scryfall_says` already cross-checks the rules text
+/// against the same checked-in cache, and `every_card_with_a_back_face_declares_it`
+/// the back face's name. The type line was the half nobody compared, and it is
+/// the half the engine reads: `subtypes` decides what Slayer of the Wicked can
+/// destroy, what Elite Inquisitor has protection from, and which creatures the
+/// set's dozen Human-matters cards see. Selfless Cathar is a Human **Cleric**
+/// and its file called it a Human Soldier in the comment; nothing would have
+/// caught the same slip in the field.
+#[test]
+fn type_lines_say_what_scryfall_says() {
+    let raw = std::fs::read_to_string("../data/oracle_cache.json")
+        .expect("oracle cache is checked in at data/oracle_cache.json");
+    let (front, back) = cache_field(&raw, "type_line");
+    assert!(front.len() > 200, "parsed only {} type lines from the cache", front.len());
+
+    /// Split "Legendary Creature — Human Rogue" into the words before the
+    /// dash and the words after it.
+    fn split(type_line: &str) -> (Vec<String>, Vec<String>) {
+        let (left, right) = match type_line.split_once('\u{2014}') {
+            Some((l, r)) => (l, r),
+            None => (type_line, ""),
+        };
+        (left.split_whitespace().map(str::to_string).collect(),
+         right.split_whitespace().map(str::to_string).collect())
+    }
+
+    fn describe(data: &mtg_engine::cards::CardData) -> (Vec<String>, Vec<String>) {
+        let mut left: Vec<String> = data.supertypes.iter().map(|s| format!("{s:?}")).collect();
+        left.extend(data.card_types.iter().map(|t| format!("{t:?}")));
+        (left, data.subtypes.clone())
+    }
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    let compare = |name: &str, want: &str, data: &mtg_engine::cards::CardData, offenders: &mut Vec<String>| {
+        let (want_left, want_right) = split(want);
+        let (got_left, got_right) = describe(data);
+        // Order is not part of a type line's meaning; membership is.
+        let sorted = |mut v: Vec<String>| { v.sort(); v };
+        if sorted(want_left.clone()) != sorted(got_left.clone())
+            || sorted(want_right.clone()) != sorted(got_right.clone()) {
+            offenders.push(format!(
+                "{name}\n    Scryfall: {want:?}\n    card    : {:?} \u{2014} {:?}", got_left, got_right));
+        }
+    };
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+        if let Some(want) = front.get(name) {
+            checked += 1;
+            compare(name, want, &data, &mut offenders);
+        }
+        if let (Some(want), Some(face)) = (back.get(name), reg.get(id).and_then(|b| b.back_face_data())) {
+            checked += 1;
+            let label = format!("{name} // {}", face.name);
+            compare(&label, want, &face, &mut offenders);
+        }
+    }
+
+    assert_covers(checked, 200, "have a type line in the oracle cache");
+    assert_none(&offenders, "declare the type line the oracle cache gives them");
+}
+
+/// Every card's mana cost and printed power/toughness say what Scryfall says.
+///
+/// The rest of the printed characteristics, against the same checked-in cache.
+/// A wrong cost is not a cosmetic slip: it is what `cost_to_cast` starts from,
+/// what `mana_value` reports, and what every "creature card with mana value N"
+/// reads.
+#[test]
+fn mana_costs_and_printed_pt_say_what_scryfall_says() {
+    let raw = std::fs::read_to_string("../data/oracle_cache.json")
+        .expect("oracle cache is checked in at data/oracle_cache.json");
+    let (costs, _) = cache_field(&raw, "mana_cost");
+    let (powers, _) = cache_field(&raw, "power");
+    let (toughnesses, _) = cache_field(&raw, "toughness");
+    assert!(costs.len() > 200, "parsed only {} mana costs from the cache", costs.len());
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+
+        if let Some(want) = costs.get(name) {
+            checked += 1;
+            // A land has no mana cost; Scryfall spells that "".
+            let got = data.cost.as_ref().map_or(String::new(), ToString::to_string);
+            if want != &got {
+                offenders.push(format!("{name}: Scryfall cost {want:?}, card {got:?}"));
+            }
+        }
+        // "*" is a characteristic-defining ability, not a printed number —
+        // Boneyard Wurm and Mindshrieker carry it, and the number comes from
+        // `dynamic_pt` rather than from `CardData`.
+        for (field, cache, got) in [
+            ("power", &powers, data.power),
+            ("toughness", &toughnesses, data.toughness),
+        ] {
+            let Some(want) = cache.get(name) else { continue };
+            if want.contains('*') {
+                continue;
+            }
+            let Ok(want_n) = want.parse::<i32>() else { continue };
+            checked += 1;
+            if got != Some(want_n) {
+                offenders.push(format!("{name}: Scryfall {field} {want_n}, card {got:?}"));
+            }
+        }
+    }
+
+    assert_covers(checked, 200, "have a mana cost or printed P/T in the oracle cache");
+    assert_none(&offenders, "declare the mana cost and P/T the oracle cache gives them");
+}
