@@ -160,6 +160,25 @@ fn a_once_per_turn_ability_is_blocked_this_turn_and_offered_the_next() {
         "the restriction is per turn, so a new turn offers it again");
 }
 
+/// The restriction Darkthicket Wolf prints is "only once each turn" and not
+/// "only as a sorcery", so the pump is available in combat — after blockers
+/// are declared, which is the whole point of holding the mana.
+#[test]
+fn a_pump_ability_with_no_speed_restriction_is_offered_during_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P1);
+
+    let wolf = named_permanent(&mut state, &reg, "Darkthicket Wolf", P0);
+    state.priority_player = Some(P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2), (ManaType::Green, 1)]);
+
+    assert!(offers_ability_of(&state, &reg, wolf),
+        "the ability says only \"once each turn\", not \"only as a sorcery\" — \
+         and this is not even P0's turn");
+    let state = activate_only_offered_ability(&state, &reg);
+    assert_eq!(state.effective_power(wolf, &reg), Some(4));
+}
+
 /// "{1}, {T}: Tap target non-Human creature." The tap symbol in the cost is its
 /// own restriction — a tapped permanent cannot pay it again (CR 602.2a) — and
 /// the target restriction is checked when the ability is offered (CR 601.2c).
