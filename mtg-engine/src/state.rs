@@ -121,6 +121,18 @@ pub struct GameState {
     #[serde(default, skip)]
     pub resolving_trigger_from_back_face: Option<bool>,
 
+    /// Who activated the activated ability currently resolving (CR 602.2a).
+    ///
+    /// An ability's controller is fixed when it is put on the stack and does
+    /// not follow its source. Reading the source's `controller` at resolution
+    /// instead handed the ability to whoever had stolen the source in
+    /// response — the case Olivia Voldaren's ruling is about: "if you activate
+    /// Olivia Voldaren's last ability, and before that ability resolves you
+    /// lose control of Olivia Voldaren, the ability will resolve with no
+    /// effect."
+    #[serde(default, skip)]
+    pub resolving_ability_activator: Option<PlayerId>,
+
     /// The spell currently mid-resolution because it presented a player
     /// choice (`awaiting_action`). The ENGINE owns moving a resolved spell
     /// off the stack: `stack::resolve_spell` for spells that finish in one
@@ -329,6 +341,7 @@ impl GameState {
             awaiting_action: None,
             combat_damage_step_pending: false,
             resolving_trigger_from_back_face: None,
+            resolving_ability_activator: None,
             resolving_spell: None,
             result: None,
             consecutive_passes: 0,

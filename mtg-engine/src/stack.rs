@@ -97,7 +97,7 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, .. } => {
+        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator } => {
             state.stack.pop();
             state.last_activated_x_value = x_value;
             let name = state.name_of(source_id, registry);
@@ -118,7 +118,11 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             // second is the card's own `is_valid_target`, and the behavior to
             // ask is the one that *granted* the ability, which is why
             // `behavior_card_id` rides on the stack entry.
-            let controller = state.get_object(source_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
+            // CR 602.2a: the ability's controller is the player who activated
+            // it, recorded on the stack entry. Re-reading the source's
+            // `controller` here handed the ability to whoever had taken the
+            // source in response.
+            let controller = activator;
             let behavior = registry.get(behavior_card_id);
             let targets: Vec<Target> = targets.into_iter()
                 .map(|t| match t {
@@ -137,7 +141,9 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
 
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
+                state.resolving_ability_activator = Some(activator);
                 behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);
+                state.resolving_ability_activator = None;
             }
         }
     }
