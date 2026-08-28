@@ -745,6 +745,77 @@ fn resolving_only_moves_the_targeted_players_cards() {
         "Opponent's card should remain in their graveyard");
 }
 
+/// Ruling (2011-09-22): "Any of the targeted cards that are illegal targets by
+/// the time Memory's Journey resolves aren't shuffled into their owner's
+/// library."
+///
+/// Letting a card that has left the graveyard be moved anyway passed the whole
+/// workspace: every test resolves against cards that stayed put.
+#[test]
+fn memorys_journey_skips_a_card_that_left_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let stays = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let leaves = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P0);
+
+    let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
+    let mut state = cast_onto_stack(&state, &reg, journey,
+        vec![Target::Player(P0), Target::Object(stays), Target::Object(leaves)]);
+
+    // One of the targeted cards is exiled in response.
+    state.move_object(leaves, Zone::Exile, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(stays).unwrap().zone, Zone::Library,
+        "the card still in the graveyard is shuffled in");
+    assert_eq!(state.get_object(leaves).unwrap().zone, Zone::Exile,
+        "the one that left is not a legal target any more, so it stays where it is");
+    assert!(!state.get_player(P0).library_order.contains(&leaves),
+        "and it is not in the library either");
+}
+
+/// Ruling (2011-09-22): "If no cards were targeted by Memory's Journey or if
+/// all the targeted cards are illegal targets by the time Memory's Journey
+/// resolves, the targeted player will still shuffle their library."
+///
+/// "Up to three" includes none, so the spell resolves on the player alone —
+/// it does not fizzle for want of a card. Skipping the shuffle when nothing
+/// moved passed the whole workspace.
+///
+/// The shuffle itself is not observable while the RNG is unseeded; what this
+/// pins down is that the spell resolves rather than being countered by game
+/// rules, and that it leaves the library's contents alone.
+#[test]
+fn memorys_journey_resolves_on_the_player_alone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let mut library = Vec::new();
+    for _ in 0..4 {
+        let c = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(c);
+        library.push(c);
+    }
+
+    let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
+    let mut state = cast_onto_stack(&state, &reg, journey, vec![Target::Player(P0)]);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::SpellResolved { object } if *object == journey)),
+        "'up to three' includes none, so the spell resolves on the player alone");
+
+    let mut after = state.get_player(P0).library_order.clone();
+    after.sort_by_key(|o| o.0);
+    library.sort_by_key(|o| o.0);
+    assert_eq!(after, library,
+        "the library holds exactly what it held — a shuffle moves cards around, \
+         it does not add or remove any");
+}
+
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
