@@ -25,14 +25,21 @@ use mtg_engine::ids::ObjectId;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers::{self, PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
-/// Each check land, with a basic that satisfies its condition and one that
-/// doesn't.
-const CHECK_LANDS: &[(&str, &str, &str)] = &[
-    ("Clifftop Retreat", "Mountain", "Island"),
-    ("Hinterland Harbor", "Forest", "Swamp"),
-    ("Isolated Chapel", "Plains", "Mountain"),
-    ("Sulfur Falls", "Island", "Forest"),
-    ("Woodland Cemetery", "Swamp", "Plains"),
+/// Every Innistrad check land: the two land types that satisfy its condition,
+/// a basic that does not, and the two mana it adds.
+///
+/// This used to be two tables — this one, and an `AUDITED` subset that the
+/// stricter tests looped over, because judging a card against wording nobody
+/// had fetched is exactly what the audit procedure forbids. All five have now
+/// been audited against their fetched oracle text, so the gate has done its
+/// job and the tables are one again. Adding a sixth check land means auditing
+/// it first.
+const CHECK_LANDS: &[(&str, [&str; 2], &str, [ManaType; 2])] = &[
+    ("Clifftop Retreat",  ["Mountain", "Plains"],   "Island",   [ManaType::Red,   ManaType::White]),
+    ("Hinterland Harbor", ["Forest",   "Island"],   "Swamp",    [ManaType::Green, ManaType::Blue]),
+    ("Isolated Chapel",   ["Plains",   "Swamp"],    "Mountain", [ManaType::White, ManaType::Black]),
+    ("Sulfur Falls",      ["Island",   "Mountain"], "Forest",   [ManaType::Blue,  ManaType::Red]),
+    ("Woodland Cemetery", ["Swamp",    "Forest"],   "Plains",   [ManaType::Black, ManaType::Green]),
 ];
 
 /// Put a land onto the battlefield the way a land drop does — through
@@ -48,20 +55,25 @@ fn play_land(state: &mut GameState, reg: &CardRegistry, name: &str, owner: mtg_e
 #[test]
 fn check_land_enters_untapped_when_condition_is_met() {
     let reg = registry();
-    for (land, good, _) in CHECK_LANDS {
-        let mut state = game_at_step(Step::PrecombatMain, P0);
-        play_land(&mut state, &reg, good, P0);
-        let id = play_land(&mut state, &reg, land, P0);
+    for (land, satisfying, _, _) in CHECK_LANDS {
+        // Both halves of "unless you control an X or a Y" — a condition that
+        // had dropped one of them would still pass a test that only ever
+        // played the first.
+        for good in satisfying {
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            play_land(&mut state, &reg, good, P0);
+            let id = play_land(&mut state, &reg, land, P0);
 
-        assert!(!state.get_object(id).unwrap().tapped,
-            "{land} should enter untapped while you control a {good}");
+            assert!(!state.get_object(id).unwrap().tapped,
+                "{land} should enter untapped while you control a {good}");
+        }
     }
 }
 
 #[test]
 fn check_land_enters_tapped_when_condition_is_not_met() {
     let reg = registry();
-    for (land, _, bad) in CHECK_LANDS {
+    for (land, _, bad, _) in CHECK_LANDS {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         play_land(&mut state, &reg, bad, P0);
         let id = play_land(&mut state, &reg, land, P0);
@@ -92,8 +104,8 @@ fn check_land_is_already_tapped_before_anyone_gets_priority() {
 #[test]
 fn check_land_puts_no_trigger_on_the_stack() {
     let reg = registry();
-    for (land, good, bad) in CHECK_LANDS {
-        for basic in [good, bad] {
+    for (land, satisfying, bad, _) in CHECK_LANDS {
+        for basic in satisfying.iter().chain(std::iter::once(bad)) {
             let mut state = game_at_step(Step::PrecombatMain, P0);
             play_land(&mut state, &reg, basic, P0);
             let id = play_land(&mut state, &reg, land, P0);
@@ -147,17 +159,6 @@ fn check_lands_do_not_satisfy_each_other() {
          enters tapped");
 }
 
-/// The check lands whose oracle text has been read during an audit, with the
-/// two subtypes that satisfy each and the two mana they add. Rows are added as
-/// each card is audited — the procedure forbids judging a card against wording
-/// nobody has fetched.
-const AUDITED: &[(&str, [&str; 2], [ManaType; 2])] = &[
-    ("Clifftop Retreat",  ["Mountain", "Plains"], [ManaType::Red, ManaType::White]),
-    ("Hinterland Harbor", ["Forest", "Island"],   [ManaType::Green, ManaType::Blue]),
-    ("Isolated Chapel",   ["Plains", "Swamp"],   [ManaType::White, ManaType::Black]),
-    ("Sulfur Falls",      ["Island", "Mountain"], [ManaType::Blue, ManaType::Red]),
-];
-
 /// "unless **you control** a Forest or an Island." An opponent's is not yours,
 /// and no test put the qualifying land on the other side of the board — a
 /// condition that scanned the whole battlefield would have passed every
@@ -165,8 +166,8 @@ const AUDITED: &[(&str, [&str; 2], [ManaType; 2])] = &[
 #[test]
 fn a_check_land_is_not_satisfied_by_an_opponents_land() {
     let reg = registry();
-    for (land, subtypes, _) in AUDITED {
-        for basic in subtypes {
+    for (land, satisfying, _, _) in CHECK_LANDS {
+        for basic in satisfying {
             let mut state = game_at_step(Step::PrecombatMain, P0);
             play_land(&mut state, &reg, basic, P1);
             let id = play_land(&mut state, &reg, land, P0);
@@ -188,10 +189,10 @@ fn a_check_land_is_not_satisfied_by_an_opponents_land() {
 /// "{T}: Add {G} **or** {U}." The shared sweep counts two mana abilities,
 /// which a land exposing the same one twice would also satisfy.
 #[test]
-fn an_audited_check_land_taps_for_both_of_its_colours() {
+fn each_check_land_taps_for_both_of_its_colours() {
     let reg = registry();
     let state = game_at_step(Step::PrecombatMain, P0);
-    for (land, _, colours) in AUDITED {
+    for (land, _, _, colours) in CHECK_LANDS {
         let card_id = reg.get_id_by_name(land).unwrap();
         let produced: Vec<Vec<(ManaType, u32)>> = reg.get(card_id).unwrap()
             .mana_abilities(&state, mtg_engine::ids::ObjectId(0))
