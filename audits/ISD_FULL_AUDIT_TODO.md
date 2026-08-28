@@ -250,7 +250,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Intangible Virtue | `intangible_virtue.rs` | 24 | 1 | 0 |
 | x | Kindercatch | `kindercatch.rs` | 24 | 1 | 0 |
 | x | Markov Patrician | `markov_patrician.rs` | 24 | 1 | 0 |
-|   | Moon Heron | `moon_heron.rs` | 24 | 1 | 0 |
+| x | Moon Heron | `moon_heron.rs` | 24 | 1 | 0 |
 |   | Spectral Rider | `spectral_rider.rs` | 24 | 1 | 0 |
 |   | Voiceless Spirit | `voiceless_spirit.rs` | 24 | 1 | 0 |
 |   | Typhoid Rats | `typhoid_rats.rs` | 23 | 1 | 0 |
