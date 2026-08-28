@@ -504,9 +504,10 @@ pub(crate) fn matches_target_filter(
         TargetFilter::HasKeyword(keyword) => state.has_keyword(obj.id, *keyword, registry),
         TargetFilter::Another => source_id.is_none_or(|s| obj.id != s),
         TargetFilter::SameNameAsSource => {
-            source_id
-                .and_then(|s| state.get_object(s))
-                .is_some_and(|source| source.name == obj.name)
+            // `name_of`, not `obj.name`: a name comparison is a rules decision
+            // and has to read the active face. CR 712.8a — a double-faced
+            // permanent has only the name of the face that is up.
+            source_id.is_some_and(|s| state.name_of(s, registry) == state.name_of(obj.id, registry))
         }
     }
 }

@@ -35,13 +35,21 @@ impl CardBehavior for SeverTheBloodline {
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                // Get the name of the target creature.
-                let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+                // Ruling: "A double-faced creature only has the name of the
+                // face that's up. For example, if Village Ironsmith is targeted
+                // by Sever the Bloodline, Ironfang wouldn't be exiled."
+                //
+                // That is what `name_of` answers and `obj.name` only mirrors:
+                // the object field is a display cache the module doc calls
+                // stale for anything but a token.
+                let name = state.name_of(*target_id, registry);
 
-                // Find all creatures on the battlefield with the same name.
+                // "and all OTHER creatures with the same name" — on the
+                // battlefield only. Ruling: "In other zones, they're 'creature
+                // cards,' not 'creatures.'"
                 let to_exile: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
-                    .filter(|o| state.is_creature(o.id, registry) && o.name == name)
                     .map(|o| o.id)
+                    .filter(|id| state.is_creature(*id, registry) && state.name_of(*id, registry) == name)
                     .collect();
 
                 for id in &to_exile {

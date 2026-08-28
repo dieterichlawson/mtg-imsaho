@@ -554,6 +554,48 @@ fn only_the_damage_pipeline_marks_damage() {
         offenders.join("\n  "));
 }
 
+/// A rules decision about what an object is *called* goes through `name_of`.
+///
+/// `GameObject::name` is a display cache — `state.rs` says so where it defines
+/// `name_of`: "obj.name is only authoritative for tokens, which have no
+/// registry face; for a real card it is a display cache that goes stale
+/// (CR 712.8a: a DFC outside the battlefield has its front face's name)."
+///
+/// Two places compared it anyway, and both were name-matching rules: Sever the
+/// Bloodline's "all other creatures with the same name" and the
+/// `SameNameAsSource` target filter Evil Twin's granted ability uses. They
+/// agreed with `name_of` only because `apply_transform` happens to mirror the
+/// back face's name into the field for every DFC that declares one.
+///
+/// Reading the field for a log line stays fine; comparing two of them is the
+/// rules question, and `name_of` is the answer.
+#[test]
+fn a_rules_decision_about_a_name_goes_through_name_of() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        // `state.rs` defines `name_of` and the field it caches. `funding.rs`
+        // compares the names of mana *groups* in a funding request, which are
+        // not game objects at all.
+        if rel == "state.rs" || rel == "funding.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            if l.contains(".name ==") || l.contains(".name !=") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a name comparison is a rules decision and reads the active face \
+         through `GameState::name_of`, not the `name` display cache:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// Nothing outside `state.rs` untaps a permanent by writing the field.
 ///
 /// CR 701.20a is an action, and `GameState::untap` is where it happens: it
