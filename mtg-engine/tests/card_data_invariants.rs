@@ -1313,6 +1313,69 @@ fn a_card_that_says_at_random_actually_randomizes() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// No card re-decides whether its own permanent is untapped and on the
+/// battlefield before offering an activated ability.
+///
+/// `legal_actions` enumerates battlefield permanents its player controls and
+/// rejects a `requires_tap` ability on a tapped one, and applies the
+/// summoning-sickness rule (CR 302.6) that no card copy ever did. Nine cards
+/// used to open `activated_abilities` with their own version anyway. Being
+/// redundant is the mild half; the sharp half is that the guard is written
+/// per *card*, not per ability, so the first of those cards to gain a second
+/// ability without `{T}` in its cost would have had it silently hidden while
+/// the permanent was tapped.
+///
+/// A card may still read `tapped` legitimately — Skirsdag High Priest's cost
+/// is "Tap two untapped creatures you control", so it filters on `!o.tapped`
+/// over *other* creatures. The anti-pattern is reading the source's own tapped
+/// state, which in all ten copies was `obj.tapped`, off the conventional
+/// `let Some(obj) = state.get_object(object_id)` binding, so that is what this
+/// matches. Keying on `object_id` appearing anywhere on the line instead
+/// flagged Skirsdag, whose filter names it precisely to exclude the source.
+///
+/// So this is a tripwire for the shape that existed, not a proof that no card
+/// can express the idea some other way. A card that reached for the source's
+/// tapped state through a different binding would slip past it.
+#[test]
+fn no_card_re_decides_the_tap_cost_rules_in_activated_abilities() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let Some(start) = text.find("fn activated_abilities") else { continue };
+        // The body runs to the next item at the same indentation.
+        let rest = &text[start..];
+        let end = rest.find("\n    fn ").map_or(rest.len(), |i| i + 1);
+        let body = &rest[..end];
+        let hit = body.lines()
+            .map(str::trim_start)
+            .filter(|l| !l.starts_with("//"))
+            .any(|l| l.contains("obj.tapped"));
+        if hit {
+            offenders.push(path.file_name().unwrap().to_string_lossy().to_string());
+        }
+    }
+
+    assert!(offenders.is_empty(),
+        "{} card(s) inspect `tapped` in `activated_abilities`:\n  {}\n\n\
+         Whether a `{{T}}` cost can be paid is `legal_actions`' decision, and it \
+         already makes it for every ability with `requires_tap` — including the \
+         summoning-sickness half a card-level guard leaves out. A guard written \
+         once per card also hides abilities that have no `{{T}}` in their cost.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// `is_valid_target` is only ever consulted for a target the card actually
 /// takes. On a card with no target requirement anywhere it is dead code that
 /// reads as a restriction — Manor Gargoyle carried one saying "any creature on

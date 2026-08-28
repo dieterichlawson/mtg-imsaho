@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, CardType};
 
 /// Ghoulcaller's Bell — {1} Artifact.
 /// {T}: Each player mills a card.
@@ -21,23 +21,23 @@ impl CardBehavior for GhoulcallersBell {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "{T}: Each player mills a card".into(),
-                cost: ManaCost::free(),
-                requires_tap: true,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: None,
-                once_per_turn: false,
-                sorcery_speed_only: false,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+        // No zone-or-tapped guard here: `legal_actions` enumerates only
+        // battlefield permanents its player controls and rejects a
+        // `requires_tap` ability on a tapped one, and it also applies the
+        // summoning-sickness rule this never did (CR 302.6 — irrelevant to a
+        // land, but a card should not be the place that decides).
+        vec![ActivatedAbilityDef {
+            ability_index: 0,
+            description: "{T}: Each player mills a card".into(),
+            cost: ManaCost::free(),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::None,
+            target_requirement: None,
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: None,
+        }]
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {

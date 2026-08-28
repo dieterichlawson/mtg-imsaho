@@ -21,11 +21,12 @@ impl CardBehavior for GraveyardShovel {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone != Zone::Battlefield || obj.tapped {
-            return vec![];
-        }
+    fn activated_abilities(&self, state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+        // No zone-or-tapped guard here: `legal_actions` enumerates only
+        // battlefield permanents its player controls and rejects a
+        // `requires_tap` ability on a tapped one, and it also applies the
+        // summoning-sickness rule this never did (CR 302.6 — irrelevant to a
+        // land, but a card should not be the place that decides).
         // "exiles a **card** from their graveyard" — CR 109.1, so a token
         // sitting in a graveyard until the next SBA check is not one.
         let any_graveyard = state.all_objects_in_zone(Zone::Graveyard).into_iter()

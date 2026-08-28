@@ -178,6 +178,54 @@ fn skirsdag_high_priest_with_haste_can_activate_while_summoning_sick() {
         "with haste the Priest can pay {{T}} the turn it arrives (CR 302.6)");
 }
 
+/// The "untapped" half of a `{T}` cost, for activated abilities.
+///
+/// The module header above describes this cleanup for `mana_abilities`. The
+/// `activated_abilities` half outlived it: nine cards opened with
+/// `if obj.zone == Zone::Battlefield && !obj.tapped` (two of them spelled the
+/// same test inside out as an early return), re-deciding what `legal_actions`
+/// already decides for every `requires_tap` ability. Redundant on all nine,
+/// and wrong on the first card to gain a second ability without `{T}` in its
+/// cost, since the guard hid every ability the card had.
+///
+/// Nothing asserted the engine's half for these cards on its own, so deleting
+/// the nine copies would have left the rule untested for them. This is that
+/// assertion. Each row is checked untapped as well, so "not offered" is about
+/// the tap and not about an unpayable cost or a missing target.
+#[test]
+fn a_tapped_permanent_offers_none_of_its_tap_abilities() {
+    const CARDS: &[&str] = &[
+        "Cellar Door", "Gavony Township", "Ghost Quarter", "Ghoulcaller's Bell",
+        "Graveyard Shovel", "Kessig Wolf Run", "Moorland Haunt",
+        "Nephalia Drownyard", "Stensia Bloodhall", "Tree of Redemption",
+    ];
+    let reg = registry();
+    for name in CARDS {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let land = named_permanent(&mut state, &reg, name, P0);
+
+        // Everything any of these abilities could want, so that the only
+        // variable below is whether the source is tapped: mana in every
+        // colour, a creature and a land to target, and a creature card in the
+        // graveyard for the two that exile one.
+        add_mana(&mut state, P0, &[
+            (ManaType::Colorless, 8), (ManaType::White, 8), (ManaType::Blue, 8),
+            (ManaType::Black, 8), (ManaType::Red, 8), (ManaType::Green, 8),
+        ]);
+        ready_creature(&mut state, P0, 2, 2);
+        named_permanent(&mut state, &reg, "Forest", P0);
+        let corpse = reg.get_id_by_name("Walking Corpse").unwrap();
+        state.create_object(corpse, P0, Zone::Graveyard, None, None);
+
+        assert!(offers_ability_of(&state, &reg, land),
+            "test precondition: {name}'s ability is payable and targetable while untapped");
+
+        state.get_object_mut(land).unwrap().tapped = true;
+        assert!(!offers_ability_of(&state, &reg, land),
+            "{name} is tapped, so it cannot pay the {{T}} in its own activation cost");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // CR 602.2h: one tap pays one cost.
 // ---------------------------------------------------------------------------

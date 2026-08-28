@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Tree of Redemption — {3}{G} 0/13 Plant with Defender.
 /// {T}: Exchange your life total with Tree of Redemption's toughness.
@@ -26,23 +26,24 @@ impl CardBehavior for TreeOfRedemption {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "{T}: Exchange life total with Tree's toughness".into(),
-                cost: ManaCost::free(),
-                requires_tap: true,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: None,
-                once_per_turn: false,
-                sorcery_speed_only: false,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+        // No zone-or-tapped guard here: `legal_actions` enumerates only
+        // battlefield permanents its player controls and rejects a
+        // `requires_tap` ability on a tapped one. It also applies summoning
+        // sickness with the haste exception (CR 302.6), which matters on this
+        // card in a way it did not on the utility lands that shared this
+        // guard — the Tree is a creature.
+        vec![ActivatedAbilityDef {
+            ability_index: 0,
+            description: "{T}: Exchange life total with Tree's toughness".into(),
+            cost: ManaCost::free(),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::None,
+            target_requirement: None,
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: None,
+        }]
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {

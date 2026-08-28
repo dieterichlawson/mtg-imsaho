@@ -32,12 +32,13 @@ impl CardBehavior for MoorlandHaunt {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone != Zone::Battlefield || obj.tapped {
-            return vec![];
-        }
+        // No zone-or-tapped guard here: `legal_actions` enumerates only
+        // battlefield permanents its player controls and rejects a
+        // `requires_tap` ability on a tapped one, and it also applies the
+        // summoning-sickness rule this never did (CR 302.6 — irrelevant to a
+        // land, but a card should not be the place that decides).
 
-        let controller = obj.controller;
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Check if there's a creature card in the graveyard to exile.
         let has_creature_in_graveyard = state.objects_in_zone(Zone::Graveyard, controller)

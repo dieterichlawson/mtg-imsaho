@@ -31,25 +31,25 @@ impl CardBehavior for GhostQuarter {
         }]
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ActivatedAbilityDef {
-                ability_index: 1,
-                description: "{T}, Sacrifice: Destroy target land, its controller may search for a basic land".into(),
-                cost: ManaCost::free(),
-                requires_tap: true,
-                sacrifice_cost: SacrificeCost::SacrificeThis,
-                target_requirement: Some(TargetRequirement::PermanentWithFilter(
-                    TargetFilter::HasCardType(vec![CardType::Land]),
-                )),
-                once_per_turn: false,
-                sorcery_speed_only: false,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+        // No zone-or-tapped guard here: `legal_actions` enumerates only
+        // battlefield permanents its player controls and rejects a
+        // `requires_tap` ability on a tapped one, and it also applies the
+        // summoning-sickness rule this never did (CR 302.6 — irrelevant to a
+        // land, but a card should not be the place that decides).
+        vec![ActivatedAbilityDef {
+            ability_index: 1,
+            description: "{T}, Sacrifice: Destroy target land, its controller may search for a basic land".into(),
+            cost: ManaCost::free(),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::SacrificeThis,
+            target_requirement: Some(TargetRequirement::PermanentWithFilter(
+                TargetFilter::HasCardType(vec![CardType::Land]),
+            )),
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: None,
+        }]
     }
 
     /// CR 602.2a: activating an ability puts it on the stack; the effect

@@ -30,27 +30,27 @@ impl CardBehavior for KessigWolfRun {
         }]
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !obj.tapped {
-            vec![ActivatedAbilityDef {
-                ability_index: 1,
-                description: "{X}{R}{G}, {T}: Target creature gets +X/+0 and trample until EOT".into(),
-                cost: ManaCost::new(vec![
-                    ManaSymbol::X,
-                    ManaSymbol::Colored(Color::Red),
-                    ManaSymbol::Colored(Color::Green),
-                ]),
-                requires_tap: true,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::Creature),
-                once_per_turn: false,
-                sorcery_speed_only: false,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+        // No zone-or-tapped guard here: `legal_actions` enumerates only
+        // battlefield permanents its player controls and rejects a
+        // `requires_tap` ability on a tapped one, and it also applies the
+        // summoning-sickness rule this never did (CR 302.6 — irrelevant to a
+        // land, but a card should not be the place that decides).
+        vec![ActivatedAbilityDef {
+            ability_index: 1,
+            description: "{X}{R}{G}, {T}: Target creature gets +X/+0 and trample until EOT".into(),
+            cost: ManaCost::new(vec![
+                ManaSymbol::X,
+                ManaSymbol::Colored(Color::Red),
+                ManaSymbol::Colored(Color::Green),
+            ]),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::None,
+            target_requirement: Some(TargetRequirement::Creature),
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: None,
+        }]
     }
 
     /// "Target creature" — and CR 608.2b asks again on resolution whether it is
