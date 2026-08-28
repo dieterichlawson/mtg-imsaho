@@ -282,6 +282,24 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
         })
         .collect();
 
+    // "a BASIC LAND card" is two restrictions, and with a library of nothing but
+    // basics neither is a claim the test can fail: searching for any land, or
+    // for any card at all, passed the whole workspace.
+    let nonbasic = {
+        let card_id = registry.get_id_by_name("Ghost Quarter").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Ghost Quarter".into();
+        state.get_player_mut(P0).library_order.push(id);
+        id
+    };
+    let nonland = {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        state.get_player_mut(P0).library_order.push(id);
+        id
+    };
+
     let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
     activate_via_hooks(&mut state, &registry, amulet, 0, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
@@ -294,6 +312,10 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
         assert_eq!(state.get_object(*id).unwrap().zone, Zone::Library,
             "nothing is fetched before the choice is made");
     }
+    assert!(!options.contains(&nonbasic),
+        "Ghost Quarter is a land, but not a BASIC land, got {options:?}");
+    assert!(!options.contains(&nonland),
+        "and Grizzly Bears is not a land at all, got {options:?}");
 
     let state = choose_object(&state, &registry, basics[1]);
     assert_eq!(state.get_object(basics[1]).unwrap().zone, Zone::Hand);
