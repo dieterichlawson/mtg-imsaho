@@ -41,7 +41,11 @@ fn lightning_bolt_kills_creature() {
 /// Direct-damage spells that hit a player drain that player's life by the
 /// spell's stated amount. Lightning Bolt's creature-target behavior is
 /// covered separately above; per-spell edge cases (morbid on Brimstone Volley,
-/// creature-only on Geistflame) have their own tests.
+/// flashback on Geistflame) have their own tests.
+///
+/// Geistflame's row is here because a comment on this test used to call it
+/// "creature-only", which it is not — it reads "any target", declares
+/// `AnyTarget`, and a player is one.
 ///
 /// Bump in the Night used to be a row here. It says "Target opponent loses 3
 /// life", which is life loss and not damage (CR 119.3 vs CR 120) — a different
@@ -53,6 +57,7 @@ fn direct_damage_spells_drain_player_life() {
         ("Lightning Bolt",    3u32),
         ("Lava Axe",          5),
         ("Brimstone Volley",  3),
+        ("Geistflame",        1),
     ] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
         let spell = castable_spell(&mut state, &reg, name, P0);
