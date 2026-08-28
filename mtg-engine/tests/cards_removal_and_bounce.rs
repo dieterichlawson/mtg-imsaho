@@ -162,6 +162,8 @@ fn targeted_removal_offers_the_targets_its_text_allows() {
          "'target noncreature permanent'"),
         ("Urgent Exorcism", Candidate::Named("Chapel Geist"), Candidate::Creature(3, 3),
          "'target Spirit or enchantment' — the Geist is a Spirit"),
+        ("Maw of the Mire", Candidate::Land, Candidate::Creature(3, 3),
+         "'target land'"),
     ];
 
     for (spell_name, legal, illegal, rule) in CASES {

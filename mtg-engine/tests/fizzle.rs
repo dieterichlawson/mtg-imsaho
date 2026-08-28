@@ -80,6 +80,85 @@ fn a_spell_whose_only_target_became_illegal_is_countered_by_game_rules() {
     }
 }
 
+/// Scryfall ruling (2011-09-22) for Maw of the Mire ("Destroy target land. You
+/// gain 4 life."): "If the targeted land is an illegal target by the time Maw
+/// of the Mire resolves, it won't resolve and none of its effects will occur.
+/// You won't gain 4 life."
+///
+/// The table above is all single-effect spells. This is the shape where CR
+/// 608.2b bites hardest: a *second* effect that names no target at all, and
+/// still does not happen, because the spell never resolves.
+#[test]
+fn a_countered_spells_untargeted_rider_does_not_happen_either() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    let forest = state.create_object(forest_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(forest).unwrap().name = "Forest".into();
+
+    let maw = castable_spell(&mut state, &reg, "Maw of the Mire", P0);
+    let life_before = state.get_player(P0).life;
+    cast_then_move_target(&mut state, &reg, maw, forest, Zone::Graveyard);
+
+    assert!(!resolved(&state, maw),
+        "the only target is gone, so the spell is countered by game rules");
+    assert_eq!(state.get_player(P0).life, life_before,
+        "and \"you gain 4 life\" does not happen — it is part of a spell that \
+         never resolved, not an independent effect");
+    assert_eq!(state.get_object(maw).unwrap().zone, Zone::Graveyard,
+        "the spell still goes to the graveyard");
+}
+
+/// The control for the test above: with the land still there the spell
+/// resolves, destroys it, and the 4 life does arrive. Without this, an engine
+/// that never gained the life would pass.
+#[test]
+fn maw_of_the_mire_gains_the_life_when_it_does_resolve() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    let forest = state.create_object(forest_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(forest).unwrap().name = "Forest".into();
+
+    let maw = castable_spell(&mut state, &reg, "Maw of the Mire", P0);
+    let life_before = state.get_player(P0).life;
+    state = cast_onto_stack(&state, &reg, maw, vec![Target::Object(forest)]);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(resolved(&state, maw), "the target was still legal");
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Graveyard, "the land is destroyed");
+    assert_eq!(state.get_player(P0).life, life_before + 4, "and the 4 life arrives");
+}
+
+/// "Destroy" is not "exile" or "sacrifice": an indestructible land survives
+/// (CR 701.7b). The spell still resolved, so the 4 life happens anyway — the
+/// two sentences are sequential, not conditional on each other.
+#[test]
+fn maw_of_the_mire_gains_the_life_even_when_the_land_survives() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    let forest = state.create_object(forest_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(forest).unwrap().name = "Forest".into();
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: forest,
+        keyword: Keyword::Indestructible,
+    });
+
+    let maw = castable_spell(&mut state, &reg, "Maw of the Mire", P0);
+    let life_before = state.get_player(P0).life;
+    let state = cast_and_resolve(&state, &reg, maw, vec![Target::Object(forest)]);
+
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Battlefield,
+        "\"destroy\" does not move an indestructible permanent");
+    assert_eq!(state.get_player(P0).life, life_before + 4,
+        "but the spell resolved, so the life is gained regardless");
+}
+
 /// A spell resolves when its target is still there. The control for the table
 /// above: without it, an engine that countered every spell would pass.
 #[test]
