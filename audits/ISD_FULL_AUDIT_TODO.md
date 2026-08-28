@@ -119,7 +119,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Unbreathing Horde | `unbreathing_horde.rs` | 89 | 3 | 0 |
 | x | Bump in the Night | `bump_in_the_night.rs` | 43 | 4 | 0 |
 | x | Mindshrieker | `mindshrieker.rs` | 88 | 3 | 0 |
-|   | Wreath of Geists | `wreath_of_geists.rs` | 41 | 4 | 0 |
+| x | Wreath of Geists | `wreath_of_geists.rs` | 41 | 4 | 0 |
 |   | Cellar Door | `cellar_door.rs` | 84 | 3 | 0 |
 |   | Geistcatcher's Rig | `geistcatchers_rig.rs` | 58 | 3 | 1 |
 |   | Stitcher's Apprentice | `stitchers_apprentice.rs` | 82 | 3 | 0 |
