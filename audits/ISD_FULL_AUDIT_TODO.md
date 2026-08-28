@@ -202,7 +202,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Forbidden Alchemy | `forbidden_alchemy.rs` | 58 | 2 | 0 |
 | x | Paraselene | `paraselene.rs` | 58 | 2 | 0 |
 | x | Shimmering Grotto | `shimmering_grotto.rs` | 58 | 2 | 0 |
-|   | Army of the Damned | `army_of_the_damned.rs` | 55 | 2 | 0 |
+| x | Army of the Damned | `army_of_the_damned.rs` | 55 | 2 | 0 |
 |   | Essence of the Wild | `essence_of_the_wild.rs` | 55 | 2 | 0 |
 |   | Make a Wish | `make_a_wish.rs` | 55 | 2 | 0 |
 |   | Creeping Renaissance | `creeping_renaissance.rs` | 54 | 2 | 0 |

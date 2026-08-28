@@ -64,10 +64,19 @@ fn army_of_the_damned_creates_13_tapped_zombies() {
     // Count tokens on battlefield.
     assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 13, "Should have 13 Zombie tokens");
 
-    for z in state.objects.values().filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0) {
-        assert!(z.tapped, "Zombie tokens should enter tapped");
-        assert_eq!(z.power, Some(2));
-        assert_eq!(z.toughness, Some(2));
+    // The name is "Zombie Token" — CR 111.4 derives it from the subtypes. This
+    // loop said "Zombie" and so ran over nothing: every assertion in it was
+    // vacuous, including the one about the thirteen Zombies being tapped, which
+    // is the only interesting word in the card's text.
+    let zombies: Vec<_> = state.objects.values()
+        .filter(|o| o.is_token && o.name == "Zombie Token" && o.controller == P0)
+        .collect();
+    assert_eq!(zombies.len(), 13, "the loop below has to run over something");
+    for z in zombies {
+        assert!(z.tapped, "\"thirteen **tapped** ... tokens\"");
+        assert_eq!((z.power, z.toughness), (Some(2), Some(2)));
+        assert_eq!(z.colors, vec![Color::Black], "black Zombies");
+        assert!(z.subtypes.iter().any(|s| s == "Zombie"));
     }
 }
 

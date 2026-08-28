@@ -89,7 +89,13 @@ fn a_caller_that_mutates_the_returned_tokens_reaches_the_doubled_ones() {
     let zombies = count_tokens_named_by(&state, "Zombie Token", P0);
     assert!(zombies >= 26,
         "test precondition: 13 tokens doubled is 26, got {zombies}");
-    for z in state.objects.values().filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0) {
+    // "Zombie Token", not "Zombie" — this loop ran over nothing, which is
+    // exactly the claim the test exists to make.
+    let tokens: Vec<_> = state.objects.values()
+        .filter(|o| o.is_token && o.name == "Zombie Token" && o.controller == P0)
+        .collect();
+    assert_eq!(tokens.len(), zombies, "the loop below has to run over something");
+    for z in tokens {
         assert!(z.tapped,
             "token {:?} is untapped: 'create thirteen tapped Zombies' has to \
              mean all of them, doubled ones included", z.id);

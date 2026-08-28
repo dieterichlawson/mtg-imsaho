@@ -273,7 +273,13 @@ fn spider_spawning_creates_tokens() {
     state = cast_and_resolve(&state, &reg, ss, vec![]);
 
     assert_eq!(count_tokens_named(&state, "Spider Token"), 4, "one Spider per creature card");
-    for spider in state.objects.values().filter(|o| o.is_token && o.name == "Spider") {
+    // "Spider Token", not "Spider" — the assertion below ran over nothing.
+    let spiders: Vec<_> = state.objects.values()
+        .filter(|o| o.is_token && o.name == "Spider Token")
+        .collect();
+    assert_eq!(spiders.len(), 4, "the loop below has to run over something");
+    for spider in spiders {
         assert_eq!((spider.power, spider.toughness), (Some(1), Some(2)));
+        assert!(spider.keywords.contains(&Keyword::Reach), "Spiders have reach");
     }
 }
