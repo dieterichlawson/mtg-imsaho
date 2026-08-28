@@ -737,3 +737,50 @@ fn crossway_vampire_stops_its_target_blocking_for_the_turn() {
     assert!(combat::eligible_blockers(&state, P1, &reg).contains(&stopped),
         "'this turn' — the restriction is gone once the turn is");
 }
+
+/// CR 508.1d asks that a required creature attack; it does not say whom. A
+/// forced attacker declared at a planeswalker satisfies the requirement —
+/// the declaration is validated and inserted before the forced-attacker pass
+/// runs, so that pass sees it already attacking and leaves it alone rather
+/// than re-pointing it at the player.
+///
+/// Recorded in the Curse of the Nightly Hunt audit as "worth revisiting
+/// whenever planeswalker combat is implemented — the forced pass would then
+/// need to ask rather than assume." It does not need to ask: the player makes
+/// the choice in the declaration itself, and only a creature the player left
+/// undeclared is defaulted to attacking the player, which is a legal
+/// completion of the requirement.
+#[test]
+fn a_forced_attacker_may_be_declared_at_a_planeswalker() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let forced = ready_creature(&mut state, P0, 2, 2);
+    let bystander = ready_creature(&mut state, P0, 1, 1);
+    attach_curse_to_player(&mut state, &registry, "Curse of the Nightly Hunt", P1, P0);
+    let liliana = named_permanent(&mut state, &registry, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    let state = engine::submit_action(
+        &state,
+        &Action::DeclareAttackers {
+            attackers: vec![],
+            planeswalker_attacks: vec![(forced, liliana)],
+        },
+        &registry,
+    );
+
+    let combat = state.combat.as_ref().expect("combat exists");
+    assert_eq!(combat.attackers.get(&forced), Some(&P1),
+        "the walker's controller is the defending player (CR 508.1a)");
+    assert_eq!(combat.planeswalker_defenders.get(&forced), Some(&liliana),
+        "the declaration at the walker stands; the forced pass must not \
+         re-point a creature that is already attacking");
+    // The bystander was also under the Curse and undeclared, so the forced
+    // pass completes the requirement for it — at the player, the default.
+    assert_eq!(combat.attackers.get(&bystander), Some(&P1),
+        "an undeclared forced attacker is still dragged into combat");
+    assert!(!combat.planeswalker_defenders.contains_key(&bystander),
+        "and it attacks the player, not the walker");
+}

@@ -156,3 +156,30 @@ attacking, so there is nothing to implement and nothing to test.
   the two tests pin the filter from both sides.
 
 Suite: 1515 passing, exit 0, `cargo check --workspace --all-targets` clean.
+
+## Follow-up — 2026-08-28 — the planeswalker-combat revisit, closed
+
+**Status**: PASS (the "recorded, not fixed" note under ruling 1 is resolved)
+
+The full audit recorded: "Worth revisiting whenever planeswalker combat is
+implemented — the forced pass would then need to ask rather than assume."
+Planeswalker combat is implemented, and the revisit shows the forced pass does
+not need to ask: the *declaration* is where the attacking player chooses. A
+forced attacker declared at a planeswalker (`planeswalker_attacks` on the
+submitted `DeclareAttackers`) is validated and inserted into
+`combat.attackers` before the CR 508.1d pass runs, and that pass skips
+anything already attacking — so the declaration stands. Only a forced creature
+the player left undeclared is completed by the engine, at the defending
+player, which is a legal way to satisfy a requirement that says *attack* but
+not *whom* (CR 508.1d); the player had the walker option at declaration time
+and passed on it.
+
+### Test coverage
+- A forced attacker declared at Liliana keeps its walker; an undeclared one
+  is dragged in at the player:
+  `combat_rules.rs::a_forced_attacker_may_be_declared_at_a_planeswalker` (new)
+
+### Mutations run
+- The forced pass re-pointing every forced attacker at the player and
+  clearing its walker record — the exact "assume" implementation the original
+  note feared — fails the new test on the walker assertion.
