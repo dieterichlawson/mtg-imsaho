@@ -508,6 +508,79 @@ fn a_death_watcher_counts_the_deaths_its_text_names() {
     }
 }
 
+/// CR 603.2: which death a death-watcher's text names is a condition on the
+/// event, so a death that does not match is not its event at all — nothing
+/// goes on the stack, and there is no priority window around a trigger that
+/// will do nothing when it gets there.
+///
+/// Five cards in the set used to decide this on resolution, which is
+/// invisible to any test that only counts the effect: a trigger that never
+/// happened and one that resolved and did nothing leave the same board. This
+/// counts stack entries instead.
+#[test]
+fn a_death_watcher_does_not_trigger_on_a_death_its_text_does_not_name() {
+    // (watcher, what dies, whether it should reach the stack, what the row says)
+    #[derive(Clone, Copy)]
+    enum Victim {
+        /// A vanilla 1/1 under this player's control.
+        Vanilla(PlayerId),
+        /// A vanilla 1/1 token under this player's control.
+        Token(PlayerId),
+        /// A named card under this player's control.
+        Named(&'static str, PlayerId),
+        /// A vanilla 1/1 under P1 that the watcher damaged this turn.
+        DamagedByTheWatcher,
+    }
+    use Victim::{DamagedByTheWatcher, Named, Token, Vanilla};
+
+    let cases: &[(&str, Victim, bool, &str)] = &[
+        ("Unruly Mob", Vanilla(P0), true, "another creature you control dying"),
+        ("Unruly Mob", Vanilla(P1), false, "an opponent's creature is not one you control"),
+        ("Village Cannibals", Named("Doomed Traveler", P1), true, "a Human dying"),
+        ("Village Cannibals", Named("Walking Corpse", P1), false, "a Zombie is not a Human"),
+        ("Gutter Grime", Vanilla(P0), true, "a nontoken creature you control dying"),
+        ("Gutter Grime", Token(P0), false, "a token is not a nontoken creature"),
+        ("Gutter Grime", Vanilla(P1), false, "an opponent's creature is not one you control"),
+        ("Thraben Sentry", Vanilla(P0), true, "another creature you control dying"),
+        ("Thraben Sentry", Vanilla(P1), false, "an opponent's creature is not one you control"),
+        ("Abattoir Ghoul", DamagedByTheWatcher, true, "a creature it damaged this turn dying"),
+        ("Abattoir Ghoul", Vanilla(P1), false, "a creature it never touched dying"),
+        // The watchers with no condition, so the table cannot pass by
+        // refusing everything.
+        ("Lumberknot", Vanilla(P1), true, "any creature dying, an opponent's included"),
+        ("Falkenrath Noble", Vanilla(P1), true, "any creature dying"),
+    ];
+
+    for &(watcher_name, victim, should_trigger, why) in cases {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let watcher = named_permanent(&mut state, &reg, watcher_name, P0);
+        let victim_id = match victim {
+            Vanilla(p) => ready_creature(&mut state, p, 1, 1),
+            Token(p) => {
+                let id = ready_creature(&mut state, p, 1, 1);
+                state.get_object_mut(id).unwrap().is_token = true;
+                id
+            }
+            Named(n, p) => named_permanent(&mut state, &reg, n, p),
+            DamagedByTheWatcher => {
+                let id = ready_creature(&mut state, P1, 1, 1);
+                state.get_object_mut(id).unwrap().damaged_by.push(watcher);
+                id
+            }
+        };
+
+        kill_by_damage(&mut state, &reg, victim_id);
+        triggers::collect_triggers(&mut state, &reg);
+
+        let reached_the_stack = !state.stack.is_empty() || state.awaiting_action.is_some();
+        assert_eq!(reached_the_stack, should_trigger,
+            "{watcher_name} on {why}: stack {:?}, awaiting {:?}",
+            state.stack, state.awaiting_action.is_some());
+    }
+}
+
 /// Elder Cathar grants a +1/+1 counter to another creature you control when it dies.
 #[test]
 fn elder_cathar_grants_counter_on_death() {
