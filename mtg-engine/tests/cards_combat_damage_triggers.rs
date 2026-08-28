@@ -88,6 +88,146 @@ fn abattoir_ghoul_uses_last_known_toughness_with_counters() {
     assert_eq!(state.get_player(P0).life, 24, "should gain life = last-known toughness including counters");
 }
 
+/// The ruling's own example: "if Abattoir Ghoul deals 3 first-strike damage to
+/// a 7/7 creature and then you give the creature -5/-5 before the regular
+/// combat damage step, you'll gain 2 life."
+///
+/// The existing counters test shrinks nothing — it adds a +1/+1 counter, so a
+/// reading that took the *printed* toughness would be wrong by one in the same
+/// direction as one that took the base. This is the case the ruling actually
+/// describes.
+#[test]
+fn abattoir_ghoul_gains_the_toughness_the_creature_died_with() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let victim = ready_creature(&mut state, P1, 7, 7);
+
+    mtg_engine::damage::deal_damage(&mut state, ghoul,
+        mtg_engine::events::DamageTarget::Object(victim), 3,
+        mtg_engine::damage::DamageKind::Combat, &reg);
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+        "test setup: 3 damage does not kill a 7/7");
+
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::ModifyPT {
+        target: victim, power_mod: -5, toughness_mod: -5,
+    });
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, 22,
+        "2 life — the toughness it had when it died, not the 7 it was printed with");
+}
+
+/// "a creature **dealt damage by this creature this turn**" is a fact about
+/// the turn, not about damage still marked on the creature.
+///
+/// Regenerating removes the damage (CR 701.15a) — it does not un-deal it. A
+/// creature the Ghoul damaged, that regenerated and then died later the same
+/// turn, still feeds the Ghoul. `regenerate` used to clear `damaged_by`
+/// alongside the marked damage, so it did not.
+#[test]
+fn abattoir_ghoul_still_gains_life_after_the_victim_regenerated() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let victim = ready_creature(&mut state, P1, 2, 3);
+    state.add_regeneration_shield(victim);
+
+    // Through the damage pipeline, so `damaged_by` is recorded the way the
+    // game records it rather than pushed by hand.
+    mtg_engine::damage::deal_damage(&mut state, ghoul,
+        mtg_engine::events::DamageTarget::Object(victim), 3,
+        mtg_engine::damage::DamageKind::Combat, &reg);
+
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+        "test setup: the shield saved it");
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 0,
+        "and regenerating removed the damage");
+
+    // It dies later the same turn, to something else.
+    state.get_object_mut(victim).unwrap().damage_marked = 3;
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, 23,
+        "the Ghoul dealt it damage this turn, so its death still gains 3 life");
+}
+
+/// The other half of "this turn": a creature the Ghoul damaged on an earlier
+/// turn is not one it damaged *this* turn. Cleanup clears the record along
+/// with the damage (CR 514.2).
+#[test]
+fn abattoir_ghoul_gains_nothing_from_a_creature_damaged_on_an_earlier_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let victim = ready_creature(&mut state, P1, 2, 3);
+
+    mtg_engine::damage::deal_damage(&mut state, ghoul,
+        mtg_engine::events::DamageTarget::Object(victim), 1,
+        mtg_engine::damage::DamageKind::Combat, &reg);
+    assert!(state.get_object(victim).unwrap().damaged_by.contains(&ghoul),
+        "test setup: the damage was recorded");
+
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+    advance_to_next_turn(&mut state, &reg);
+    let life_before = state.get_player(P0).life;
+
+    state.get_object_mut(victim).unwrap().damage_marked = 3;
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, life_before,
+        "the damage was dealt on a previous turn, so this death gains nothing");
+}
+
+/// The two halves together: damaged, regenerated, and dead on the *next* turn.
+///
+/// Regeneration leaves no marked damage, so a cleanup that only visited
+/// creatures with `damage_marked > 0` never reached this one — and once
+/// `regenerate` stopped clearing `damaged_by` itself, the record would have
+/// survived into the next turn and paid out there. Cleanup visits every
+/// permanent now.
+#[test]
+fn abattoir_ghouls_record_of_a_regenerated_creature_still_ends_with_the_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let victim = ready_creature(&mut state, P1, 2, 3);
+    state.add_regeneration_shield(victim);
+
+    mtg_engine::damage::deal_damage(&mut state, ghoul,
+        mtg_engine::events::DamageTarget::Object(victim), 3,
+        mtg_engine::damage::DamageKind::Combat, &reg);
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 0,
+        "test setup: it regenerated, so nothing is marked on it");
+
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+    advance_to_next_turn(&mut state, &reg);
+    let life_before = state.get_player(P0).life;
+
+    state.get_object_mut(victim).unwrap().damage_marked = 3;
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, life_before,
+        "a new turn, so the Ghoul did not damage it this turn");
+}
+
 // ── Champion of the Parish ────────────────────────────────────────
 
 /// Champion of the Parish gets a +1/+1 counter when another Human enters.
