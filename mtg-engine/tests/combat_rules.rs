@@ -193,6 +193,46 @@ fn a_creature_under_pacifism_is_not_forced_to_attack() {
         "and 'attacks each combat if able' cannot force a creature that is unable");
 }
 
+/// "Attacks each combat **if able**" — and haste is what makes a
+/// just-arrived creature able (CR 302.6). Curse of the Nightly Hunt on a
+/// player who plays a Manor Skeleton forces the Skeleton into combat the turn
+/// it arrives.
+///
+/// The prompt and the handler used to disagree about this. `legal_actions`
+/// builds its `must_attack` list by filtering `combat::eligible_attackers`,
+/// which asks `!summoning_sick || has_keyword(Haste)`; the declare-attackers
+/// handler rolled its own eligibility check that stopped at `summoning_sick`.
+/// So the prompt told the player the Skeleton had to attack and the engine
+/// then let it stay home.
+#[test]
+fn a_hasty_creature_is_forced_to_attack_the_turn_it_arrives() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let skeleton = named_permanent(&mut state, &registry, "Manor Skeleton", P0);
+    // It came down this turn; haste is the only reason it can attack.
+    state.get_object_mut(skeleton).unwrap().summoning_sick = true;
+    attach_curse_to_player(&mut state, &registry, "Curse of the Nightly Hunt", P1, P0);
+
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    let legal = engine::legal_actions(&state, &registry);
+    let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) =
+        legal.combat_prompt.as_ref()
+    else {
+        panic!("expected a ChooseAttackers prompt, got {:?}", legal.combat_prompt);
+    };
+    assert!(eligible.contains(&skeleton), "haste makes it able to attack");
+    assert!(must_attack.contains(&skeleton), "and the Curse makes it have to");
+
+    // The player declares nothing. The requirement stands regardless.
+    let state = engine::submit_action(
+        &state, &Action::DeclareAttackers { attackers: vec![] }, &registry);
+
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&skeleton)),
+        "CR 508.1d: a creature that is able to attack and is required to must be \
+         declared as an attacker");
+}
+
 /// The third route to "unable": Galvanic Juggernaut enters tapped and does not
 /// untap, and a tapped creature cannot attack.
 #[test]

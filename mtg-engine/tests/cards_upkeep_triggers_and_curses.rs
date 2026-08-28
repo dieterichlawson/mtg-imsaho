@@ -822,6 +822,35 @@ fn curse_of_nightly_hunt_forces_attack() {
     assert!(!own_forced, "P0's creature should NOT be forced to attack");
 }
 
+/// "Creatures **enchanted player** controls" — the same distinction as on
+/// Curse of Death's Hold, reached through a different continuous effect. A
+/// Curse put on the player who controls it drives *their* creatures into
+/// combat; "creatures controlled by anyone who isn't me" would drive the
+/// opponent's instead, and this is the board where the two disagree.
+#[test]
+fn curse_of_nightly_hunt_forces_its_own_controller_when_it_enchants_them() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Nightly Hunt", P0, P0);
+    let cursed = ready_creature(&mut state, P0, 2, 2);
+    let uncursed = ready_creature(&mut state, P1, 2, 2);
+
+    assert!(state.has_effect(cursed, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg),
+        "the enchanted player's own creature is the one driven into combat");
+    assert!(!state.has_effect(uncursed, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg),
+        "and the opponent's is not");
+
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::DeclareAttackers { attackers: vec![] },
+        &reg,
+    );
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&cursed)),
+        "and declaring nothing does not get the enchanted player out of it");
+}
+
 // ── Whose upkeep a Curse watches (CR 603.2) ───────────────────────
 
 /// "At the beginning of enchanted player's upkeep" — not the controller's.
