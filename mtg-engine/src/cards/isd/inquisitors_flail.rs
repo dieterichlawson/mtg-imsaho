@@ -6,9 +6,15 @@ use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope
 
 /// Inquisitor's Flail — {2} Artifact — Equipment.
 /// If equipped creature would deal combat damage, it deals double that damage instead.
-/// If another source would deal combat damage to equipped creature, it deals double
+/// If another creature would deal combat damage to equipped creature, it deals double
 /// that damage to equipped creature instead.
-/// Equip {2}.
+/// Equip {2}
+///
+/// The second clause says "another **creature**", not "another source"; this
+/// comment used to say the latter. Nothing in this set deals combat damage
+/// from a noncreature source — only attacking and blocking creatures deal
+/// combat damage at all — so the two readings never diverge here, but the
+/// card does not say "source" and the comment should not either.
 pub struct InquisitorsFlail;
 
 impl CardBehavior for InquisitorsFlail {

@@ -274,37 +274,6 @@ fn equip_does_not_attach_to_a_creature_that_left_in_response() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Inquisitor's Flail
-// ══════════════════════════════════════════════════════════════════
-
-#[test]
-fn inquisitors_flail_doubles_combat_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
-    let creature = ready_creature(&mut state, P0, 3, 3);
-
-    // Attach the flail.
-    state.get_object_mut(flail).unwrap().attached_to = Some(creature);
-
-    // Creature's effective power should NOT be doubled (no more dynamic_pt hack).
-    assert_eq!(state.effective_power(creature, &reg), Some(3),
-        "3/3 creature with Inquisitor's Flail should still show 3 effective power");
-
-    // Set up combat: creature attacks P1 unblocked.
-    attacks_unblocked(&mut state, creature, P1);
-
-    let life_before = state.get_player(P1).life;
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-    let life_after = state.get_player(P1).life;
-
-    // 3 damage doubled = 6 damage.
-    assert_eq!(life_before - life_after, 6,
-        "Inquisitor's Flail should double combat damage to player");
-}
-
-// ══════════════════════════════════════════════════════════════════
 // Trepanation Blade
 // ══════════════════════════════════════════════════════════════════
 
@@ -543,24 +512,92 @@ fn the_equipped_creature_takes_double_combat_damage() {
         "a 2-power blocker deals 4 to the equipped creature, not 2");
 }
 
-/// CR 616.1: several doubling replacements each apply once, so two Flails
-/// quadruple rather than triple.
-#[test]
-fn two_flails_quadruple_damage() {
-    let reg = registry();
-    let mut state = game_at_step(Step::DeclareBlockers, P0);
-
-    let creature = ready_creature(&mut state, P0, 3, 3);
-    for _ in 0..2 {
-        let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+/// Attach `count` Flails to a fresh P0 creature and return it.
+fn equipped_with_flails(state: &mut GameState, reg: &mtg_engine::cards::CardRegistry,
+                        count: usize, power: i32, toughness: i32) -> ObjectId {
+    let creature = ready_creature(state, P0, power, toughness);
+    for _ in 0..count {
+        let flail = named_permanent(state, reg, "Inquisitor's Flail", P0);
         state.get_object_mut(flail).unwrap().attached_to = Some(creature);
     }
-    attacks_unblocked(&mut state, creature, P1);
+    creature
+}
 
+/// Scryfall ruling (2011-09-22): "If a creature is equipped with a second
+/// Inquisitor's Flail, combat damage dealt by **and dealt to** that creature
+/// will be multiplied by four."
+///
+/// Both directions, because each Flail contributes its own clause to each: an
+/// engine that answered "is there a doubler?" rather than counting them would
+/// triple nothing and double everything.
+#[test]
+fn two_flails_quadruple_damage_in_both_directions() {
+    let reg = registry();
+
+    // Dealt by.
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let creature = equipped_with_flails(&mut state, &reg, 2, 3, 3);
+    attacks_unblocked(&mut state, creature, P1);
     let before = state.get_player(P1).life;
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
     assert_eq!(before - state.get_player(P1).life, 12,
-        "3 power doubled twice is 12, not 9");
+        "3 power doubled twice is 12, not 9 and not 6");
+
+    // Dealt to.
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = equipped_with_flails(&mut state, &reg, 2, 1, 20);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 8,
+        "the 2-power blocker's damage is doubled twice to 8, not 4");
+}
+
+/// Scryfall ruling (2011-09-22): "If you divide the combat damage dealt by the
+/// equipped creature, perhaps because the creature has trample ... you'll
+/// divide the original amount and then double the results. For example, if a
+/// 5/5 creature with trample is blocked by a 2/2 creature, you can assign 2
+/// damage to the blocker and 3 damage to the defending player. These amounts
+/// are then doubled to 4 and 6 damage, respectively. You can't double the
+/// damage to 10 first and then assign 2 to the creature and 8 to the player."
+///
+/// The ruling hands over numbers that separate the two orders, so this is the
+/// ruling's own example run verbatim: 4 and 6 if the doubling comes after the
+/// division, 2 and 8 if it comes before.
+#[test]
+fn damage_is_divided_first_and_doubled_afterwards() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = equipped(&mut state, &reg, 5, 5);
+    grant_keyword(&mut state, attacker, Keyword::Trample);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    let before = state.get_player(P1).life;
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 4,
+        "lethal is assigned out of the undoubled 5, then doubled: 2 -> 4");
+    assert_eq!(before - state.get_player(P1).life, 6,
+        "the 3 that tramples over is doubled to 6, not the 8 you would get by \
+         doubling to 10 before assigning");
+}
+
+/// The Flail is a damage replacement, not a pump. A 3/3 wearing it is still a
+/// 3/3 — which matters for lethal-damage assignment, for anything that reads
+/// power, and because modelling it as a P/T buff is the shortcut that would
+/// otherwise pass the "deals 6" test above.
+#[test]
+fn the_flail_does_not_change_power_or_toughness() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let creature = equipped(&mut state, &reg, 3, 3);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(3),
+        "the Flail doubles damage, it does not double power");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(3),
+        "nor toughness");
 }
 
 /// Both clauses say *combat* damage, and fight is not combat damage. Neither
