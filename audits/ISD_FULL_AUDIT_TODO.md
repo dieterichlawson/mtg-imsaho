@@ -51,7 +51,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Ludevic's Test Subject | `ludevics_test_subject.rs` | 100 | 5 | 0 |
 | x | Hamlet Captain | `hamlet_captain.rs` | 88 | 4 | 2 |
 | x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 88 | 4 | 2 |
-|   | Skirsdag High Priest | `skirsdag_high_priest.rs` | 137 | 4 | 0 |
+| x | Skirsdag High Priest | `skirsdag_high_priest.rs` | 137 | 4 | 0 |
 |   | Tribute to Hunger | `tribute_to_hunger.rs` | 92 | 5 | 0 |
 |   | Morkrut Banshee | `morkrut_banshee.rs` | 66 | 5 | 1 |
 |   | Brain Weevil | `brain_weevil.rs` | 131 | 4 | 0 |
