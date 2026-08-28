@@ -228,3 +228,41 @@ fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
         "a non-Human should lose the +2/+2 from Bonds — power {p_after} \
          (3 = Unholy Fiend's printed power, 5 = buff wrongly still applied)");
 }
+
+/// Ruling: "Once the enchanted creature has been declared as an attacking or
+/// blocking creature, causing it to stop being a Human won't remove it from
+/// combat. It will lose the +2/+2 bonus, however."
+///
+/// Both halves in one board. "Can't attack" is a restriction on *declaring* an
+/// attacker (CR 508.1), so it has nothing to say to a creature already
+/// attacking; the +2/+2 is a continuous effect read live, so it goes the moment
+/// the condition stops holding.
+#[test]
+fn bonds_of_faith_loses_its_bonus_mid_combat_without_removing_the_attacker() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
+    let bonds = named_permanent(&mut state, &reg, "Bonds of Faith", P0);
+    state.get_object_mut(bonds).unwrap().attached_to = Some(youth);
+    assert_eq!(state.effective_power(youth, &reg), Some(3),
+        "test precondition: a 1/1 Human with +2/+2");
+
+    submit_declare_attackers(&mut state, &[(youth, P1)], &reg);
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&youth)),
+        "test precondition: it was declared as an attacker");
+
+    // It stops being a Human.
+    mtg_engine::cards::helpers::apply_transform(&mut state, youth, &reg);
+    assert!(!state.has_subtype(youth, "Human", &reg),
+        "test precondition: Unholy Fiend is a Horror");
+
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&youth)),
+        "\"can't attack\" restricts declaring an attacker, so it does not pull \
+         one already attacking out of combat");
+    assert_eq!(state.effective_power(youth, &reg), Some(3),
+        "but the +2/+2 is gone — 3 is Unholy Fiend's printed power, 5 would be \
+         the bonus still applying to a creature that is no longer a Human");
+    assert!(!state.can_attack(youth, &reg),
+        "and it could not be declared again");
+}
