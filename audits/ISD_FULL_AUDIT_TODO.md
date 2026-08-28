@@ -187,7 +187,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Creepy Doll | `creepy_doll.rs` | 51 | 2 | 1 |
 | x | Geistflame | `geistflame.rs` | 31 | 3 | 0 |
 | x | Champion of the Parish | `champion_of_the_parish.rs` | 49 | 2 | 1 |
-|   | Past in Flames | `past_in_flames.rs` | 73 | 2 | 0 |
+| x | Past in Flames | `past_in_flames.rs` | 73 | 2 | 0 |
 |   | Mulch | `mulch.rs` | 70 | 2 | 0 |
 |   | Pitchburn Devils | `pitchburn_devils.rs` | 45 | 2 | 1 |
 |   | Stromkirk Noble | `stromkirk_noble.rs` | 45 | 2 | 1 |

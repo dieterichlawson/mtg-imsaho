@@ -716,6 +716,80 @@ fn past_in_flames_grants_flashback_at_each_cards_own_cost() {
         "Think Twice should now be castable from the graveyard");
 }
 
+/// Ruling: "Past in Flames affects only cards in your graveyard at the time it
+/// resolves. Instant and sorcery cards put into your graveyard later in the
+/// turn won't gain flashback."
+///
+/// Brimstone Volley rather than Think Twice throughout the three tests below:
+/// it is an instant with no flashback of its own, so the grant is the only
+/// reason it could ever be cast from a graveyard.
+#[test]
+fn past_in_flames_does_not_reach_a_card_that_arrives_after_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pif = castable_spell(&mut state, &reg, "Past in Flames", P0);
+    let mut state = cast_and_resolve(&state, &reg, pif, vec![]);
+
+    // Only now does the Volley reach the graveyard.
+    let volley = named_card_in_graveyard(&mut state, &reg, "Brimstone Volley", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+
+    assert!(!state.until_end_of_turn.iter().any(|e|
+        matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == volley)));
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.actions.iter().any(|a|
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == volley)),
+        "it was not in the graveyard when the ability resolved");
+}
+
+/// "Each instant and sorcery card in **your** graveyard." An opponent's
+/// graveyard is not yours (CR 404.3 — a card goes to its owner's).
+#[test]
+fn past_in_flames_leaves_an_opponents_graveyard_alone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Brimstone Volley", P1);
+    let pif = castable_spell(&mut state, &reg, "Past in Flames", P0);
+    let state = cast_and_resolve(&state, &reg, pif, vec![]);
+
+    assert!(!state.until_end_of_turn.iter().any(|e|
+        matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == theirs)),
+        "the ability reaches one graveyard, and it is the caster's");
+}
+
+/// "gains flashback **until end of turn**" — so the next turn it is an
+/// ordinary instant in a graveyard again.
+#[test]
+fn past_in_flames_flashback_grant_expires_at_end_of_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let volley = named_card_in_graveyard(&mut state, &reg, "Brimstone Volley", P0);
+    let pif = castable_spell(&mut state, &reg, "Past in Flames", P0);
+    let mut state = cast_and_resolve(&state, &reg, pif, vec![]);
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(legal.actions.iter().any(|a|
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == volley)),
+        "test setup: this turn it is castable from the graveyard");
+
+    // Round the table back to the caster's main phase.
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_step(&mut state, &reg, Step::PrecombatMain);
+    state.priority_player = Some(P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+
+    assert!(state.until_end_of_turn.is_empty(), "cleanup took the grant with it");
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.actions.iter().any(|a|
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == volley)),
+        "and it is an ordinary instant in a graveyard again");
+}
+
 /// Bug BS (`audits/AUDIT_BUGS.md)`: `cast_with_flashback` persisted on the
 /// object when Runic Repetition returned an exiled flashback card to hand. The
 /// next time that card was cast normally, `move_spell_after_resolve` saw the
