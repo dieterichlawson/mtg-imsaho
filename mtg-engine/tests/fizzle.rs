@@ -191,6 +191,73 @@ fn prey_upon_resolves_without_fighting_when_one_of_its_two_targets_is_gone() {
         "but a fight needs two creatures, so mine takes nothing");
 }
 
+/// Lost in the Mist ("Counter target spell. Return target permanent to its
+/// owner's hand") is the one card in the set whose two targets are of
+/// *different kinds*, so it is the only one that exercises `TwoTargets`'
+/// per-slot legality re-check rather than one requirement applied twice.
+///
+/// Scryfall ruling (2011-09-22): "If one of Lost in the Mist's targets is
+/// illegal by the time it resolves, Lost in the Mist will still affect the
+/// remaining legal target. If both targets are illegal at this time, Lost in
+/// the Mist won't resolve."
+///
+/// Both halves of the ruling, and both directions of the first half, because
+/// the card does nothing observable beyond what it does to its targets: a
+/// version that never fizzled would leave the same battlefield behind. Hence
+/// `resolved()`.
+#[test]
+fn lost_in_the_mist_counters_or_bounces_whichever_target_survives() {
+    let reg = registry();
+
+    /// The Bears on the stack, a creature on the battlefield, and Lost in the
+    /// Mist on top targeting both.
+    fn setup(reg: &mtg_engine::cards::CardRegistry)
+        -> (mtg_engine::state::GameState, ObjectId, ObjectId, ObjectId)
+    {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let creature = ready_creature(&mut state, P1, 3, 3);
+        let bears = castable_spell(&mut state, reg, "Grizzly Bears", P1);
+        state.priority_player = Some(P1);
+        let mut state = cast_onto_stack(&state, reg, bears, vec![]);
+        let litm = castable_spell(&mut state, reg, "Lost in the Mist", P0);
+        state.priority_player = Some(P0);
+        let state = cast_onto_stack(&state, reg, litm,
+            vec![Target::Object(bears), Target::Object(creature)]);
+        (state, litm, bears, creature)
+    }
+
+    // The permanent leaves: the counter half still happens.
+    let (mut state, litm, bears, creature) = setup(&reg);
+    state.move_object(creature, Zone::Graveyard, &reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(resolved(&state, litm), "the spell half is still legal");
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "so the Bears are still countered");
+
+    // The spell leaves: the bounce half still happens.
+    let (mut state, litm, bears, creature) = setup(&reg);
+    state.stack.retain(|e| e.as_spell() != Some(bears));
+    state.move_object(bears, Zone::Graveyard, &reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(resolved(&state, litm), "the permanent half is still legal");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Hand,
+        "so the creature is still bounced");
+
+    // Both leave: countered by game rules. Nothing on the battlefield tells
+    // this apart from the spell resolving and finding neither target, which is
+    // what `resolved` is for.
+    let (mut state, litm, bears, creature) = setup(&reg);
+    state.stack.retain(|e| e.as_spell() != Some(bears));
+    state.move_object(bears, Zone::Graveyard, &reg);
+    state.move_object(creature, Zone::Graveyard, &reg);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(!resolved(&state, litm), "neither target is legal, so it is countered");
+    assert_eq!(state.get_object(litm).unwrap().zone, Zone::Graveyard);
+}
+
 // ---------------------------------------------------------------------------
 // Fizzling does not skip the flashback replacement (CR 702.33a)
 // ---------------------------------------------------------------------------

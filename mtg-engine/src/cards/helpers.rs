@@ -170,6 +170,71 @@ pub fn equip_for_generic(
         EquipCost::Mana(crate::types::ManaCost::new(vec![crate::types::ManaSymbol::Generic(n)])))
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Countering (CR 701.5)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Whether `target` is still a spell on the stack — the whole of "target
+/// spell" legality, and what CR 608.2b re-checks on the way down.
+#[must_use]
+pub fn spell_target_is_legal(state: &GameState, target: &Target) -> bool {
+    match target {
+        Target::Object(id) => state.get_object(*id).is_some_and(|o| o.zone == Zone::Stack),
+        // A spell is never a player, and CR 608.2b skips a target that stopped
+        // being legal.
+        Target::Player(_) | Target::Illegal => false,
+    }
+}
+
+/// CR 701.5a: to counter a spell is to remove it from the stack and put it
+/// into its owner's graveyard — or into exile if it was cast with flashback
+/// (CR 702.33a), which `move_countered_spell` applies.
+///
+/// Returns whether anything was countered. `false` means the target is no
+/// longer on the stack, which CR 608.2b makes an ordinary outcome and not an
+/// error: something else countered it first, or it already resolved.
+///
+/// Four places did this by hand — Counterspell, Dissipate, Lost in the Mist,
+/// and the choice handler that finishes Frightful Delusion's "unless its
+/// controller pays {1}". Removing the stack entry and disposing of the card
+/// are two steps that must not come apart, and one of the four had already
+/// drifted: Dissipate removed the entry and then called `move_object(Exile)`
+/// itself. Exile is the right destination for *that* card, so it was not a
+/// bug — but it reached it without going through the pipeline, which is how
+/// the next card to want a destination gets it wrong.
+pub fn counter_spell(state: &mut GameState, spell_id: ObjectId, registry: &CardRegistry) -> bool {
+    counter_spell_inner(state, spell_id, false, registry)
+}
+
+/// `counter_spell`, for a card that replaces where the countered spell goes:
+/// "exile it instead of putting it into its owner's graveyard" (Dissipate).
+/// CR 614.1a — a replacement effect over CR 701.5a's default.
+pub fn counter_spell_exiling(state: &mut GameState, spell_id: ObjectId, registry: &CardRegistry) -> bool {
+    counter_spell_inner(state, spell_id, true, registry)
+}
+
+fn counter_spell_inner(
+    state: &mut GameState,
+    spell_id: ObjectId,
+    exile: bool,
+    registry: &CardRegistry,
+) -> bool {
+    if !state.get_object(spell_id).is_some_and(|o| o.zone == Zone::Stack) {
+        return false;
+    }
+    let name = state.obj_name(spell_id);
+    state.stack.retain(|e| e.as_spell() != Some(spell_id));
+    if exile {
+        state.move_object(spell_id, Zone::Exile, registry);
+        state.log(crate::state::LogLevel::Event,
+            format!("{name} was countered and exiled"));
+    } else {
+        state.move_countered_spell(spell_id, registry);
+        state.log(crate::state::LogLevel::Event, format!("{name} was countered"));
+    }
+    true
+}
+
 /// Resolve a curse aura: attach to a target player and move to battlefield.
 pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Target], registry: &CardRegistry) -> bool {
     if let Some(Target::Player(player_id)) = targets.first() {

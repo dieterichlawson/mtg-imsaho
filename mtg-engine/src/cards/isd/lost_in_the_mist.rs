@@ -43,16 +43,11 @@ impl CardBehavior for LostInTheMist {
     }
 
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        // Counter the spell (first target)
+        // "Counter target spell." CR 608.2b: if this target became illegal the
+        // helper reports it and the second half below still happens — the
+        // published ruling is that one illegal target does not stop the other.
         if let Some(Target::Object(spell_id)) = targets.first() {
-            if let Some(obj) = state.get_object(*spell_id) {
-                if obj.zone == Zone::Stack {
-                    let countered_name = state.obj_name(*spell_id);
-                    state.stack.retain(|e| e.as_spell() != Some(*spell_id));
-                    state.move_countered_spell(*spell_id, registry);
-                    state.log(LogLevel::Event, format!("{countered_name} was countered"));
-                }
-            }
+            crate::cards::helpers::counter_spell(state, *spell_id, registry);
         }
         // Bounce the permanent (second target)
         if let Some(Target::Object(perm_id)) = targets.get(1) {

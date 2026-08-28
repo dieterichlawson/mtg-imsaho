@@ -1313,6 +1313,54 @@ fn a_card_that_says_at_random_actually_randomizes() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// Countering goes through the pipeline, not through `state.stack` directly.
+///
+/// CR 701.5a makes countering two steps — remove the spell from the stack, and
+/// put it into its owner's graveyard (or exile, if it was cast with flashback)
+/// — and they must not come apart. Four places wrote both out by hand, and one
+/// of them, Dissipate, had already reached its destination without the second:
+/// `stack.retain(..)` then `move_object(Exile)`. Exile is the right zone for
+/// that card, so it was not a bug, but it is how the next card to want a
+/// destination gets one wrong.
+///
+/// `helpers::counter_spell` / `counter_spell_exiling` own both steps now. This
+/// scans card files only; `helpers.rs` is where the retain legitimately lives.
+#[test]
+fn no_card_removes_a_spell_from_the_stack_itself() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        if path.file_name().is_some_and(|n| n == "helpers.rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        if text.lines().map(str::trim_start).filter(|l| !l.starts_with("//"))
+            .any(|l| l.contains("stack.retain"))
+        {
+            offenders.push(path.file_name().unwrap().to_string_lossy().to_string());
+        }
+    }
+
+    assert!(offenders.is_empty(),
+        "{} card(s) edit `state.stack` directly:\n  {}\n\n\
+         Countering is `helpers::counter_spell` (CR 701.5a), which removes the \
+         stack entry AND disposes of the card — including exiling a spell cast \
+         with flashback. Use `counter_spell_exiling` for a card that replaces \
+         the destination.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// No card re-decides whether its own permanent is untapped and on the
 /// battlefield before offering an activated ability.
 ///

@@ -27,10 +27,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if paid {
                         state.log(LogLevel::Event, "Paid the cost to prevent the counter".into());
                     } else {
-                        let name = state.obj_name(*spell_id);
-                        state.stack.retain(|e| e.as_spell() != Some(*spell_id));
-                        state.move_countered_spell(*spell_id, registry);
-                        state.log(LogLevel::Event, format!("{name} was countered"));
+                        crate::cards::helpers::counter_spell(state, *spell_id, registry);
                     }
                     // Controller discards a card — player chooses which.
                     let controller = state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);

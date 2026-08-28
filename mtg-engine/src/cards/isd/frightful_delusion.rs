@@ -27,15 +27,7 @@ impl CardBehavior for FrightfulDelusion {
     }
 
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Stack)
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
+        crate::cards::helpers::spell_target_is_legal(state, target)
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {

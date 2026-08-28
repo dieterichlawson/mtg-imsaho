@@ -278,6 +278,41 @@ fn lost_in_the_mist_counters_and_bounces() {
         "Permanent should be bounced to hand");
 }
 
+/// Scryfall ruling (2011-09-22): "Lost in the Mist targets both the spell and
+/// the permanent. You can only cast it if you can choose legal targets for
+/// both parts."
+///
+/// With a permanent on the battlefield but nothing on the stack, the spell
+/// half has no legal target and the card is uncastable — not castable with the
+/// bounce half alone.
+#[test]
+fn lost_in_the_mist_needs_a_target_for_both_halves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    ready_creature(&mut state, P1, 3, 3);
+    let litm = castable_spell(&mut state, &reg, "Lost in the Mist", P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 3), (ManaType::Blue, 2)]);
+
+    let casts: Vec<_> = mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
+        .filter(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == litm))
+        .cloned()
+        .collect();
+    assert!(casts.is_empty(),
+        "nothing is on the stack, so \"counter target spell\" has no legal \
+         target and the card cannot be cast at all; got {casts:?}");
+
+    // The control: put a spell on the stack and it becomes castable, so the
+    // assertion above is about the missing spell and not about mana.
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P1);
+    state.priority_player = Some(P1);
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
+    state.priority_player = Some(P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 3), (ManaType::Blue, 2)]);
+    assert!(mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
+        .any(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == litm)),
+        "with a spell on the stack both halves have a target");
+}
+
 // -------------------------------------------------------------------------
 // Bramblecrush
 // -------------------------------------------------------------------------
