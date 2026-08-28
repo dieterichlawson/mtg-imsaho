@@ -96,14 +96,22 @@ change and a lot of missing tests.
 `resolve_activated_ability` with a hand-rolled check — quoting ruling 1 in the
 comment — and returned early if the target had left the battlefield.
 
-That is the only card in the set doing it that way, and it is a step too late.
-`stack.rs`'s ability arm asks each card's `is_valid_target`, substitutes
-`Target::Illegal`, and counters the ability outright when every target is
-illegal — which *is* ruling 1. Every other targeted activated ability in the
-set relies on that. Heretic's Punishment does not define `is_valid_target` at
-all, so its in-resolve check was load-bearing rather than redundant: removing
-it mills three cards against a dead target, which I confirmed by mutation
-before touching anything.
+That is a step too late. `stack.rs`'s ability arm asks each card's
+`is_valid_target`, substitutes `Target::Illegal`, and counters the ability
+outright when every target is illegal — which *is* ruling 1. Heretic's
+Punishment did not define `is_valid_target` at all, so its in-resolve check was
+load-bearing rather than redundant: removing it mills three cards against a
+dead target, which I confirmed by mutation before touching anything.
+
+**CORRECTION (Kessig Wolf Run audit, same day):** this entry originally said
+Heretic's Punishment was "the only card in the set doing it that way". That is
+wrong. Elder of Laurels, Kessig Wolf Run and Silverchase Fox guard their target
+inside `resolve_activated_ability` in the same way and also define no
+`is_valid_target`. (Ghost Quarter and Mindshrieker matched a first, cruder grep
+but do not belong on the list — Mindshrieker's zone check is on its own source,
+not its target.) Kessig Wolf Run has since been converted during its own audit;
+the other two are recorded for theirs. The refactor here was still right, but
+it fixed one instance of a shared pattern, not a lone outlier.
 
 Moved into `is_valid_target`, where the engine asks. Same answer, one mechanism
 instead of two, and it would have been the wrong place the moment the ability
