@@ -504,6 +504,76 @@ fn ghostly_possession_prevents_damage() {
         "Ghostly Possession should prevent combat damage FROM the creature");
 }
 
+/// "dealt **by** enchanted creature" includes damage to a player. The test
+/// above is creature-against-creature; the damage a creature deals to a player
+/// is a different path in the damage pipeline, and this is the one that
+/// matters most for the card — an enchanted attacker gets through and does
+/// nothing.
+#[test]
+fn ghostly_possession_prevents_the_creatures_damage_to_a_player() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let gp_id = reg.get_id_by_name("Ghostly Possession").unwrap();
+    let gp = state.create_object(gp_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(gp).unwrap().name = "Ghostly Possession".into();
+    state.get_object_mut(gp).unwrap().attached_to = Some(attacker);
+
+    let before = state.get_player(P1).life;
+    attacks_unblocked(&mut state, attacker, P1);
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, before,
+        "an unblocked enchanted attacker deals no combat damage to the player");
+}
+
+/// "Prevent all **combat** damage". Noncombat damage is not combat damage and
+/// is not prevented — the word is doing work, and nothing tested it.
+#[test]
+fn ghostly_possession_does_not_prevent_noncombat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    let source = ready_creature(&mut state, P0, 1, 1);
+    let gp_id = reg.get_id_by_name("Ghostly Possession").unwrap();
+    let gp = state.create_object(gp_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(gp).unwrap().name = "Ghostly Possession".into();
+    state.get_object_mut(gp).unwrap().attached_to = Some(creature);
+
+    mtg_engine::damage::deal_damage(&mut state, source,
+        mtg_engine::events::DamageTarget::Object(creature), 2,
+        mtg_engine::damage::DamageKind::NonCombat, &reg);
+
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 2,
+        "a Geistflame or a fight still marks its damage");
+}
+
+/// The prevention is the Aura's, so it goes when the Aura does — a continuous
+/// effect lasts only while its source is on the battlefield.
+#[test]
+fn ghostly_possessions_prevention_ends_with_the_aura() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 5);
+    let gp_id = reg.get_id_by_name("Ghostly Possession").unwrap();
+    let gp = state.create_object(gp_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(gp).unwrap().name = "Ghostly Possession".into();
+    state.get_object_mut(gp).unwrap().attached_to = Some(blocker);
+
+    state.move_object(gp, Zone::Graveyard, &reg);
+
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 3,
+        "with the Aura gone, the damage lands");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Grave Bramble — protection from Zombies
 // ══════════════════════════════════════════════════════════════════
