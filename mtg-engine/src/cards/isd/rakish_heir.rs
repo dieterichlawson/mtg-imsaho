@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 
 /// Rakish Heir — {2}{R} 2/2 Vampire.
 /// Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on that Vampire.
@@ -49,12 +49,14 @@ impl CardBehavior for RakishHeir {
     }
 
     fn on_any_combat_damage_to_player(&self, state: &mut GameState, _self_id: ObjectId, source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        // Whether this triggered was settled above. What is left is CR 121.1:
-        // the counter goes on the Vampire only if it is still on the
-        // battlefield. Trading with a blocker in the same combat damage step
-        // costs it the counter; CR 113.7a means the *Heir* trading does not.
-        if state.get_object(source_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
-        }
+        // Whether this triggered was settled above; "it" is the Vampire that
+        // dealt the damage, not the Heir.
+        //
+        // A Vampire that traded with a blocker in the same combat damage step
+        // is not there to take the counter, and `add_counters` is where CR
+        // 121.1 says so — for every card at once, rather than here again.
+        // CR 113.7a is the other direction: the *Heir* trading does not
+        // counter its own trigger.
+        state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
     }
 }

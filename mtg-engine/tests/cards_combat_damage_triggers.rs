@@ -319,13 +319,15 @@ fn stromkirk_noble_cant_be_blocked_by_humans() {
 
 // ── Rakish Heir ───────────────────────────────────────────────────
 
-/// Rakish Heir gives +1/+1 to other Vampires you control when they deal combat damage.
+/// "Whenever a Vampire you control deals combat damage to a player, put a
+/// +1/+1 counter on it." The counter goes on the Vampire that dealt the
+/// damage, not on the Heir.
 #[test]
 fn rakish_heir_counter_on_other_vampire_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let _heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
     let other_vamp = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
 
     state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
@@ -335,9 +337,82 @@ fn rakish_heir_counter_on_other_vampire_combat_damage() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let vamp_counters = counters_of(&state, other_vamp, CounterType::PlusOnePlusOne);
     // Stromkirk Noble gets +1/+1 from its own trigger AND +1/+1 from Rakish Heir.
-    assert!(vamp_counters >= 2, "Other Vampire should get counters from both itself and Rakish Heir, got {vamp_counters}");
+    assert_eq!(counters_of(&state, other_vamp, CounterType::PlusOnePlusOne), 2,
+        "one counter from the Noble's own trigger, one from the Heir");
+    assert_eq!(counters_of(&state, heir, CounterType::PlusOnePlusOne), 0,
+        "and none on the Heir — \"it\" is the Vampire that dealt the damage");
+}
+
+/// "A Vampire **you control**". An opponent's Vampire connecting is the same
+/// event and not this trigger's, and the Heir is the one who has to know the
+/// difference: the condition is answered as the damage is dealt (CR 603.2),
+/// in `should_trigger_on_damage_to_player`.
+///
+/// Vampire Interloper has no trigger of its own, so any counter on it came
+/// from the Heir.
+#[test]
+fn rakish_heir_ignores_a_vampire_an_opponent_controls() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let _heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let theirs = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: theirs,
+        target: mtg_engine::events::DamageTarget::Player(P0),
+        amount: 2,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, theirs, CounterType::PlusOnePlusOne), 0,
+        "a Vampire the Heir's controller does not control gets nothing");
+}
+
+/// The Heir is itself a Vampire its controller controls, so it counters
+/// itself — for that reason, not because its trigger says "this creature".
+#[test]
+fn rakish_heir_counters_itself_as_one_of_the_vampires_you_control() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: heir,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, heir, CounterType::PlusOnePlusOne), 1);
+}
+
+/// CR 121.1: a counter can only be put on a permanent that is there to take
+/// it. A Vampire that traded with a blocker in the same combat damage step is
+/// in the graveyard by the time the trigger resolves, and gets nothing — which
+/// is a different thing from the *Heir* dying, where CR 113.7a means the
+/// trigger resolves anyway.
+#[test]
+fn rakish_heir_gives_nothing_to_a_vampire_that_died_dealing_the_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let _heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let doomed = named_permanent(&mut state, &reg, "Vampire Interloper", P0);
+
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: doomed,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2,
+    });
+    // It dealt its damage and died to the blocker in the same step.
+    state.move_object(doomed, Zone::Graveyard, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, doomed, CounterType::PlusOnePlusOne), 0,
+        "there is no permanent left to put a counter on");
 }
 
 /// Rakish Heir does NOT give +1/+1 to non-Vampire creatures.
@@ -363,9 +438,13 @@ fn rakish_heir_no_counter_on_non_vampire() {
 
 // ── "Whenever this deals combat damage to a player, put a +1/+1 counter on it" ──
 
-/// Four cards in the set share this ability verbatim apart from how many
-/// counters they get. They had four tests that differed only in a name and a
+/// The cards in the set that share this ability verbatim apart from how many
+/// counters they get. They had a test each that differed only in a name and a
 /// number; the shape is the point, so it is one table.
+///
+/// Rakish Heir is deliberately not here. It counters itself too, but for a
+/// different reason — "a Vampire you control", which happens to include
+/// itself — and its own tests are the ones that say so.
 ///
 /// The table is checked against the registry: a new card with a
 /// combat-damage-to-player trigger that counters itself has to be added here,
@@ -373,7 +452,6 @@ fn rakish_heir_no_counter_on_non_vampire() {
 const SELF_COUNTER_ON_COMBAT_DAMAGE: &[(&str, u32)] = &[
     ("Stromkirk Noble", 1),
     ("Stromkirk Patrol", 1),
-    ("Rakish Heir", 1),
     ("Falkenrath Marauders", 2),
     // Found by the coverage check below — the four hand-written tests this
     // table replaced never covered the Neonate's counter at all.

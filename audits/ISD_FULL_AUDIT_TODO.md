@@ -183,7 +183,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Brimstone Volley | `brimstone_volley.rs` | 33 | 3 | 0 |
 | x | Dream Twist | `dream_twist.rs` | 33 | 3 | 0 |
 | x | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 53 | 2 | 1 |
-|   | Rakish Heir | `rakish_heir.rs` | 53 | 2 | 1 |
+| x | Rakish Heir | `rakish_heir.rs` | 53 | 2 | 1 |
 |   | Creepy Doll | `creepy_doll.rs` | 51 | 2 | 1 |
 |   | Geistflame | `geistflame.rs` | 31 | 3 | 0 |
 |   | Champion of the Parish | `champion_of_the_parish.rs` | 49 | 2 | 1 |
