@@ -158,7 +158,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Lantern Spirit | `lantern_spirit.rs` | 51 | 3 | 0 |
 | x | Spidery Grasp | `spidery_grasp.rs` | 51 | 3 | 0 |
 | x | Ghoulcaller's Bell | `ghoulcallers_bell.rs` | 49 | 3 | 0 |
-|   | Prey Upon | `prey_upon.rs` | 49 | 3 | 0 |
+| x | Prey Upon | `prey_upon.rs` | 49 | 3 | 0 |
 |   | Cackling Counterpart | `cackling_counterpart.rs` | 47 | 3 | 0 |
 |   | Moment of Heroism | `moment_of_heroism.rs` | 47 | 3 | 0 |
 |   | Grasp of Phantoms | `grasp_of_phantoms.rs` | 46 | 3 | 0 |
