@@ -604,6 +604,86 @@ fn make_a_wish_returns_cards_from_graveyard() {
     assert_eq!(in_hand_count, 2, "Should return exactly 2 cards to hand");
 }
 
+/// Ruling: "If you only have one card in your graveyard when Make a Wish
+/// resolves, that card will be returned to your hand." And with none, it
+/// resolves having returned nothing.
+#[test]
+fn make_a_wish_returns_what_is_there_when_the_graveyard_is_short() {
+    for stocked in [0usize, 1] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let cards: Vec<_> = (0..stocked).map(|_| {
+            let c = ready_creature(&mut state, P0, 1, 1);
+            state.move_object(c, Zone::Graveyard, &reg);
+            c
+        }).collect();
+
+        let spell = castable_spell(&mut state, &reg, "Make a Wish", P0);
+        let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+        for c in &cards {
+            assert_eq!(state.get_object(*c).unwrap().zone, Zone::Hand,
+                "{stocked} card(s): what is there comes back");
+        }
+        assert_eq!(state.get_object(spell).unwrap().zone, Zone::Graveyard,
+            "{stocked} card(s): and the spell finishes either way");
+    }
+}
+
+/// "from **your** graveyard" — a card goes to its owner's (CR 404.3), and an
+/// opponent's is not yours.
+#[test]
+fn make_a_wish_does_not_reach_an_opponents_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let theirs = ready_creature(&mut state, P1, 1, 1);
+    state.move_object(theirs, Zone::Graveyard, &reg);
+    let mine = ready_creature(&mut state, P0, 1, 1);
+    state.move_object(mine, Zone::Graveyard, &reg);
+
+    let spell = castable_spell(&mut state, &reg, "Make a Wish", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Hand);
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "their card stays in their graveyard");
+}
+
+/// "**at random**" — with three cards and two returned there are three
+/// possible pairs, and the card does not get to pick. Seeded, so this is a
+/// statement about the card rather than about the generator.
+#[test]
+fn make_a_wish_picks_its_two_at_random() {
+    let reg = registry();
+    let mut seen = std::collections::HashSet::new();
+
+    for seed in 0..20u64 {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
+        let cards: Vec<_> = (0..3).map(|_| {
+            let c = ready_creature(&mut state, P0, 1, 1);
+            state.move_object(c, Zone::Graveyard, &reg);
+            c
+        }).collect();
+
+        let spell = castable_spell(&mut state, &reg, "Make a Wish", P0);
+        let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+        let returned: Vec<usize> = cards.iter().enumerate()
+            .filter(|(_, id)| state.get_object(**id).unwrap().zone == Zone::Hand)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(returned.len(), 2, "seed {seed}: two of the three");
+        seen.insert(returned);
+    }
+
+    assert!(seen.len() > 1,
+        "twenty seeds returned the same pair every time, so the choice is not \
+         random: saw {seen:?}");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Moonmist
 // ══════════════════════════════════════════════════════════════════
