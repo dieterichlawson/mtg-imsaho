@@ -383,7 +383,7 @@ fn curse_of_pierced_heart_asks_its_last_controller_after_it_leaves() {
 
 // ── Curse of Death's Hold ─────────────────────────────────────────
 
-/// Curse gives opponent's creatures -1/-1.
+/// "Creatures enchanted player controls get -1/-1."
 #[test]
 fn curse_of_deaths_hold_debuffs_opponent_creatures() {
     let reg = registry();
@@ -404,6 +404,72 @@ fn curse_of_deaths_hold_debuffs_opponent_creatures() {
     assert_eq!(opp_power, 2, "Opponent's creature should have -1 power");
     assert_eq!(opp_toughness, 2, "Opponent's creature should have -1 toughness");
     assert_eq!(own_power, 3, "Own creature should be unaffected");
+}
+
+/// "**enchanted player**", not "your opponents". "Enchant player" names any
+/// player, and a Curse can be put on the player who controls it — at which
+/// point the -1/-1 lands on that player's own creatures and the opponent's are
+/// untouched. This is the board on which "the cursed player" and "everyone who
+/// isn't me" give opposite answers, and it is the only board that can tell
+/// which one the code asked.
+#[test]
+fn curse_of_deaths_hold_debuffs_its_own_controller_when_it_enchants_them() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Death's Hold", P0, P0);
+
+    let cursed = ready_creature(&mut state, P0, 3, 3);
+    let uncursed = ready_creature(&mut state, P1, 3, 3);
+
+    assert_eq!(state.effective_power(cursed, &reg), Some(2),
+        "the enchanted player's creature shrinks, though they control the Curse");
+    assert_eq!(state.effective_toughness(cursed, &reg), Some(2));
+    assert_eq!(state.effective_power(uncursed, &reg), Some(3),
+        "and the opponent's does not");
+}
+
+/// The point of the card: -1/-1 puts an X/1 into the graveyard as a
+/// state-based action (CR 704.5f), and takes that back the moment the Curse
+/// leaves the battlefield.
+#[test]
+fn curse_of_deaths_hold_kills_one_toughness_creatures_and_stops_when_it_leaves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let curse = attach_curse_to_player(&mut state, &reg, "Curse of Death's Hold", P0, P1);
+    let flier = ready_creature(&mut state, P1, 2, 1);
+    let survivor = ready_creature(&mut state, P1, 2, 2);
+
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(flier).unwrap().zone, Zone::Graveyard,
+        "0 toughness, so it dies to SBA — no damage and no destruction involved");
+    assert_eq!(state.get_object(survivor).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.effective_toughness(survivor, &reg), Some(1));
+
+    state.move_object(curse, Zone::Graveyard, &reg);
+    assert_eq!(state.effective_toughness(survivor, &reg), Some(2),
+        "a continuous effect lasts only while its source is on the battlefield");
+}
+
+/// The -1/-1 applies on top of a characteristic-defining base, not instead of
+/// it: Boneyard Wurm's "power and toughness are each equal to the number of
+/// creature cards in your graveyard" is layer 7a and the Curse is 7c, so a
+/// Wurm with three creature cards under a Curse is a 2/2.
+#[test]
+fn curse_of_deaths_hold_subtracts_from_a_defined_power() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Death's Hold", P0, P1);
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P1);
+    for name in ["Walking Corpse", "Grizzly Bears", "Chapel Geist"] {
+        named_card_in_graveyard(&mut state, &reg, name, P1);
+    }
+
+    assert_eq!(state.effective_power(wurm, &reg), Some(2),
+        "three creature cards in the graveyard, less the Curse's -1");
+    assert_eq!(state.effective_toughness(wurm, &reg), Some(2));
 }
 
 // ── Angel of Flight Alabaster ─────────────────────────────────────
