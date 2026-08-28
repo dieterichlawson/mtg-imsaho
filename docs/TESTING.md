@@ -35,7 +35,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | mana | `lands_and_mana.rs`, `mana_filters.rs`, `mana_ability_offers.rs`, `equipment_autotap.rs` |
 | casting and resolution (CR 601, 608) | `spells.rs`, `spell_cleanup.rs`, `multi_target_and_mill.rs`, `instant_interaction.rs` |
 | flashback (CR 702.33) | `flashback.rs`, `flashback_multiple_instances.rs` |
-| targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs` |
+| targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs`, `submitted_targets.rs` |
 | fizzling | `fizzle.rs` |
 | activated abilities (CR 602) | `activated_abilities.rs`, `activated_no_stack.rs` |
 | regeneration (CR 701.15) | `regeneration.rs` |
