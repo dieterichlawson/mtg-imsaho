@@ -224,11 +224,12 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
 /// for ALL spell types... Individual card handlers can filter by
 /// spell type if needed" — Charmbreaker doesn't.
 ///
-/// We exercise the bug by calling Charmbreaker's `on_spell_cast`
-/// handler directly with a creature spell as the trigger source. The
-/// handler should be a no-op (Grizzly Bears is a creature, not an
-/// instant or sorcery). Today the handler unconditionally pushes a
-/// `+4/+0` `ModifyPT` into `until_end_of_turn`.
+/// Exercised through the trigger system rather than by calling
+/// `on_spell_cast` directly. "Whenever you cast an **instant or sorcery**
+/// spell" is a trigger condition (CR 603.2), so it belongs to
+/// `should_trigger_on_spell_cast` — whether the ability fires at all is the
+/// thing under test, and calling the resolution hook skips the gate that
+/// decides it.
 #[test]
 fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
     let registry = CardRegistry::with_all_cards();
@@ -243,9 +244,8 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
     let bears_spell = state.create_object(bears_card_id, P0, Zone::Stack, Some(2), Some(2));
     state.get_object_mut(bears_spell).unwrap().name = "Grizzly Bears".into();
 
-    let devils_card_id = registry.get_id_by_name("Charmbreaker Devils").unwrap();
-    let behavior = registry.get(devils_card_id).unwrap();
-    behavior.on_spell_cast(&mut state, devils, P0, bears_spell, &[], &registry);
+    state.events.push(mtg_engine::events::GameEvent::SpellCast { player: P0, object: bears_spell });
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
 
     let after_power = state.effective_power(devils, &registry).unwrap_or(0);
     assert_eq!(

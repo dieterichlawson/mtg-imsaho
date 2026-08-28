@@ -89,25 +89,19 @@ impl CardBehavior for CharmbreakerDevils {
                 || state.has_card_type(spell_id, CardType::Sorcery, registry))
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        // CR 113.7a: the trigger resolves even if the Devils are destroyed in
-        // response, the same way their upkeep trigger already did.
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
-        // Only trigger on your own spells.
-        if caster != controller {
-            return;
-        }
-        // Only trigger on instant or sorcery spells.
-        let is_instant_or_sorcery = state.get_object(spell_id)
-            .and_then(|o| state.face_data(o.id, registry))
-            .is_some_and(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery));
-        if !is_instant_or_sorcery {
-            return;
-        }
-        // +4/+0 until end of turn.
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
+        // Both halves of "whenever **you** cast an **instant or sorcery**
+        // spell" are trigger conditions (CR 603.2), asked once in
+        // `should_trigger_on_spell_cast`. They are deliberately not re-asked
+        // here: CR 603.4 re-checks only an intervening-if clause, and this
+        // ability has none, so once it has triggered the pump is unconditional.
+        //
+        // Re-asking was also a second, drifted implementation of the same
+        // question — the gate used `has_card_type` and the re-check used
+        // `face_data` — and it read the *current* controller, so an
+        // instant-speed control change between the cast and the resolution
+        // would have swallowed the pump. CR 113.7a: the ability resolves and
+        // the +4/+0 goes on this creature whoever controls it by then.
         state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
             target: self_id,
             power_mod: 4,

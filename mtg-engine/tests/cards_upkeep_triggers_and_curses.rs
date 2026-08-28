@@ -234,6 +234,62 @@ fn angel_of_flight_alabaster_returns_spirit() {
 
 // ── Charmbreaker Devils ───────────────────────────────────────────
 
+/// "At the beginning of your upkeep, return an instant or sorcery card at
+/// random from your graveyard to your hand." The card's other half, which had
+/// no test at all.
+#[test]
+fn charmbreaker_devils_returns_an_instant_or_sorcery_at_upkeep() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
+
+    // One instant and one creature card in the graveyard: only the instant is
+    // a candidate, so the random pick is deterministic here.
+    let bolt = state.create_object(
+        reg.get_id_by_name("Brimstone Volley").unwrap(), P0, Zone::Graveyard, None, None);
+    let creature = state.create_object(
+        reg.get_id_by_name("Ambush Viper").unwrap(), P0, Zone::Graveyard, None, None);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Hand,
+        "the instant came back");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "the creature card is not a candidate");
+}
+
+/// Nothing to return is not an error.
+#[test]
+fn charmbreaker_devils_does_nothing_with_no_instants_or_sorceries() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Charmbreaker Devils", P0);
+
+    let creature = state.create_object(
+        reg.get_id_by_name("Ambush Viper").unwrap(), P0, Zone::Graveyard, None, None);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+}
+
+/// "At the beginning of **your** upkeep" — an opponent's Devils do not return a
+/// card on your turn.
+#[test]
+fn charmbreaker_devils_returns_nothing_on_the_opponents_upkeep() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Charmbreaker Devils", P1);
+
+    let bolt = state.create_object(
+        reg.get_id_by_name("Brimstone Volley").unwrap(), P1, Zone::Graveyard, None, None);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Graveyard,
+        "it is P0's upkeep, not the Devils' controller's");
+}
+
 /// Charmbreaker Devils gets +4/+0 when you cast an instant or sorcery.
 #[test]
 fn charmbreaker_devils_plus4_on_spell_cast() {

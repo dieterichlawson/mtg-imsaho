@@ -39,9 +39,12 @@ fn charmbreaker_devils_no_pump_on_creature_spell() {
     let creature_spell = state.create_object(creature_card_id, P0, Zone::Stack, Some(2), Some(2));
     state.get_object_mut(creature_spell).unwrap().name = "Grizzly Bears".into();
 
-    // Fire the on_spell_cast trigger with this creature spell.
-    let behavior = reg.get(state.get_object(devils).unwrap().card_id).unwrap();
-    behavior.on_spell_cast(&mut state, devils, P0, creature_spell, &[], &reg);
+    // Through the trigger system, not the resolution hook: "whenever you cast
+    // an **instant or sorcery** spell" is a trigger condition (CR 603.2), so
+    // whether it fires at all is the thing under test. Calling the hook
+    // directly would skip the gate that decides it.
+    state.events.push(mtg_engine::events::GameEvent::SpellCast { player: P0, object: creature_spell });
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     // The Devils should NOT have gotten +4/+0 because it's a creature, not
     // an instant or sorcery.
@@ -65,8 +68,8 @@ fn charmbreaker_devils_does_pump_on_instant_spell() {
     let instant_spell = state.create_object(instant_card_id, P0, Zone::Stack, None, None);
     state.get_object_mut(instant_spell).unwrap().name = "Think Twice".into();
 
-    let behavior = reg.get(state.get_object(devils).unwrap().card_id).unwrap();
-    behavior.on_spell_cast(&mut state, devils, P0, instant_spell, &[], &reg);
+    state.events.push(mtg_engine::events::GameEvent::SpellCast { player: P0, object: instant_spell });
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     let has_pump = state.until_end_of_turn.iter().any(|e| {
         matches!(e, mtg_engine::state::TemporaryEffect::ModifyPT { target, power_mod: 4, .. } if *target == devils)
