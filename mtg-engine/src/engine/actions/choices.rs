@@ -12,6 +12,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
         use crate::state::ResolutionChoiceKind;
         use crate::actions::ResolvedChoice;
         let awaiting = state.awaiting_action.take();
+        // A refused answer has to leave the prompt exactly where it was. The
+        // engine asked a question; being handed something that does not answer
+        // it is not an answer, and nothing about the game has moved on. Taking
+        // the prompt and dropping it would resume a resolution that never got
+        // its choice.
+        let unanswered = awaiting.clone();
         if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, .. }) = awaiting {
             match (&kind, resolved) {
                 (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
@@ -50,8 +56,29 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         behavior.on_yes_no_choice(&mut *state, *source_card, *yes, registry);
                     }
                 }
-                (ResolutionChoiceKind::ChooseTarget { effect, .. },
+                (ResolutionChoiceKind::ChooseTarget { effect, options, optional, .. },
                  ResolvedChoice::ChosenTarget(chosen)) => {
+                    // The third place a submitted target used to be taken on
+                    // trust, after the cast and activation paths. Here the
+                    // legal set is the `options` the prompt offered, so the
+                    // check is that the answer is one of them — a target the
+                    // player was never shown is not a choice they could make
+                    // (CR 601.2c). Rage Thrower's "target player or
+                    // planeswalker" is the one this was found on: submitting a
+                    // planeswalker worked whatever the ability had declared.
+                    if chosen.as_ref().is_some_and(|t| !options.contains(t)) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {chosen:?} was not among the options offered"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    // Declining is only an answer when the choice allows it.
+                    if chosen.is_none() && !*optional {
+                        state.log(LogLevel::Debug,
+                            "choice refused, this one is not optional".into());
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
                     if let Some(t) = chosen {
                         apply_pending_effect(&mut *state, t, effect, registry);
                     } else {
@@ -391,7 +418,16 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.log(LogLevel::Event, "Cast cancelled".into());
                     state.pending_spell_cast = None;
                 }
-                _ => {}
+                // An answer of the wrong shape for the question asked — a
+                // yes/no handed to a "choose a target" prompt. Same rule as a
+                // target that was never offered: not an answer, so the
+                // question stands.
+                _ => {
+                    state.log(LogLevel::Debug, format!(
+                        "choice refused, {resolved:?} does not answer {kind:?}"));
+                    state.awaiting_action = unanswered;
+                    return Applied::ReturnNow;
+                }
             }
         }
         state.consecutive_passes = 0;
