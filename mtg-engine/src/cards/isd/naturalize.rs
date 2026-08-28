@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Naturalize — {1}{G} instant. Destroy target artifact or enchantment.
 pub struct Naturalize;
@@ -25,22 +25,14 @@ impl CardBehavior for Naturalize {
         TargetRequirement::PermanentWithFilter(TargetFilter::HasCardType(vec![CardType::Artifact, CardType::Enchantment]))
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                let obj = match state.get_object(*id) {
-                    Some(o) if o.zone == Zone::Battlefield => o,
-                    _ => return false,
-                };
-                state.face_data(obj.id, registry)
-                    .is_some_and(|d| d.card_types.contains(&CardType::Artifact) || d.card_types.contains(&CardType::Enchantment))
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
-
+    /// No `is_valid_target`: "an artifact or enchantment on the battlefield" is
+    /// exactly `PermanentWithFilter(HasCardType([Artifact, Enchantment]))`,
+    /// whose filter arm is `types.iter().any(..)`. `legal_actions` applies it
+    /// when offering targets and `stack::is_target_legal` re-applies it with
+    /// the zone check on the way down (CR 608.2b).
+    ///
+    /// As with Ancient Grudge, the requirement says nothing about creatures, so
+    /// an artifact creature or an enchantment creature is a legal target.
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         crate::cards::helpers::resolve_destroy(state, targets, registry);
     }

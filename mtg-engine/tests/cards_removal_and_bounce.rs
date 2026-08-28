@@ -316,6 +316,55 @@ fn lost_in_the_mist_needs_a_target_for_both_halves() {
 }
 
 // -------------------------------------------------------------------------
+// Naturalize
+// -------------------------------------------------------------------------
+
+/// "Destroy target artifact **or** enchantment" — both halves. The table above
+/// gives Naturalize one row, with an enchantment, so dropping `Artifact` from
+/// the type list passes every existing test.
+#[test]
+fn naturalize_destroys_either_half_of_its_type_line() {
+    let reg = registry();
+    for name in ["Cobbled Wings", "Claustrophobia"] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        // Claustrophobia is an Aura, so it needs a creature to enchant.
+        let host = ready_creature(&mut state, P1, 2, 2);
+        let permanent = named_permanent(&mut state, &reg, name, P1);
+        if name == "Claustrophobia" {
+            state.get_object_mut(permanent).unwrap().attached_to = Some(host);
+        }
+
+        let nat = castable_spell(&mut state, &reg, "Naturalize", P0);
+        assert!(offered_targets(&state, &reg, nat).contains(&Target::Object(permanent)),
+            "{name} should be a legal target");
+
+        let state = cast_and_resolve(&state, &reg, nat, vec![Target::Object(permanent)]);
+        assert_eq!(state.get_object(permanent).unwrap().zone, Zone::Graveyard,
+            "{name} should be destroyed");
+    }
+}
+
+/// The requirement says nothing about creatures, so an artifact creature is a
+/// legal target — same reading as Ancient Grudge, and the opposite of
+/// Bramblecrush's "noncreature permanent".
+#[test]
+fn naturalize_can_target_an_artifact_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P1);
+    let plain_creature = ready_creature(&mut state, P1, 3, 3);
+
+    let nat = castable_spell(&mut state, &reg, "Naturalize", P0);
+    let offered = offered_targets(&state, &reg, nat);
+
+    assert!(offered.contains(&Target::Object(gargoyle)),
+        "an artifact creature is an artifact; offered {offered:?}");
+    assert!(!offered.contains(&Target::Object(plain_creature)),
+        "but a creature that is neither is not; offered {offered:?}");
+}
+
+// -------------------------------------------------------------------------
 // Ancient Grudge
 // -------------------------------------------------------------------------
 
