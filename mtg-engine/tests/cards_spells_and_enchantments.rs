@@ -735,6 +735,69 @@ fn cackling_counterpart_creates_token_copy() {
     assert_eq!(token.toughness, Some(3));
 }
 
+/// Ruling: "The token copies exactly what was printed on the original creature
+/// and nothing else... It doesn't copy whether that creature is tapped or
+/// untapped, whether it has any counters on it or Auras and Equipment attached
+/// to it, or any non-copy effects that have changed its power, toughness,
+/// types, color, or so on."
+///
+/// Tree of Redemption is the one card in this set that *writes* a permanent's
+/// toughness — "exchange your life total with this creature's toughness" — so
+/// it is the only place where the printed value and the object's field come
+/// apart. Copying it used to produce the exchanged number.
+#[test]
+fn cackling_counterpart_copies_the_printed_creature_and_nothing_else() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
+    state.get_player_mut(P0).life = 4;
+    let mut state = activate_only_offered_ability(&state, &reg);
+    assert_eq!(state.effective_toughness(tree, &reg), Some(4),
+        "test precondition: the exchange made it a 0/4");
+    assert_eq!(state.get_player(P0).life, 13, "and gave its controller its printed 13");
+
+    // Counters and a tapped state, none of which are copiable either.
+    state.add_counters(tree, CounterType::PlusOnePlusOne, 2);
+    state.get_object_mut(tree).unwrap().tapped = true;
+
+    let spell = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(tree)]);
+
+    let token = state.objects.values()
+        .find(|o| o.is_token && o.zone == Zone::Battlefield)
+        .expect("a token copy");
+    assert_eq!((token.power, token.toughness), (Some(0), Some(13)),
+        "the copy is the printed 0/13, not the exchanged 0/4");
+    assert_eq!(state.effective_toughness(token.id, &reg), Some(13),
+        "and no +1/+1 counters came across");
+    assert!(!token.tapped, "nor did the tapped state");
+}
+
+/// Ruling: "If the copied creature is copying something else, then the token
+/// enters the battlefield as whatever that creature copied" — and the same
+/// logic makes a transformed permanent copiable as the face it is showing
+/// (CR 712.8a), not as the front face its card id names.
+#[test]
+fn cackling_counterpart_copies_the_face_that_is_up() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ironsmith = named_permanent(&mut state, &reg, "Village Ironsmith", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, ironsmith, &reg);
+    assert_eq!(state.name_of(ironsmith, &reg), "Ironfang", "test precondition: it flipped");
+
+    let spell = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(ironsmith)]);
+
+    let token = state.objects.values()
+        .find(|o| o.is_token && o.zone == Zone::Battlefield)
+        .expect("a token copy");
+    assert_eq!(token.name, "Ironfang", "the copy is of the face that is up");
+    assert_eq!((token.power, token.toughness), (Some(3), Some(1)),
+        "with the back face's printed 3/1, not Village Ironsmith's 1/1");
+}
+
 // ── Sever the Bloodline ────────────────────────────────────────
 
 /// Sever the Bloodline exiles target creature and all others with the same name.
@@ -873,3 +936,4 @@ fn angelic_overseer_survives_destroy_with_human() {
     assert_eq!(state.get_object(angel).unwrap().zone, Zone::Battlefield,
         "Angelic Overseer should survive destruction");
 }
+
