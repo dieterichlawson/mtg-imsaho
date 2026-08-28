@@ -316,6 +316,78 @@ fn lost_in_the_mist_needs_a_target_for_both_halves() {
 }
 
 // -------------------------------------------------------------------------
+// Ancient Grudge
+// -------------------------------------------------------------------------
+
+/// "Destroy target artifact." Ancient Grudge appears in this suite only as a
+/// prop in Snapcaster Mage's tests — nothing cast it or watched it do
+/// anything, in either of its two ways of being cast.
+#[test]
+fn ancient_grudge_destroys_an_artifact_from_hand() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let artifact = named_permanent(&mut state, &reg, "Cobbled Wings", P1);
+    let bystander = ready_creature(&mut state, P1, 2, 2);
+
+    let grudge = castable_spell(&mut state, &reg, "Ancient Grudge", P0);
+    let offered = offered_targets(&state, &reg, grudge);
+    assert!(offered.contains(&Target::Object(artifact)), "the artifact; offered {offered:?}");
+    assert!(!offered.contains(&Target::Object(bystander)),
+        "a plain creature is not an artifact");
+
+    let state = cast_and_resolve(&state, &reg, grudge, vec![Target::Object(artifact)]);
+    assert_eq!(state.get_object(artifact).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(grudge).unwrap().zone, Zone::Graveyard,
+        "cast from hand, so it goes to the graveyard — where its flashback \
+         waits");
+}
+
+/// "Target **artifact**" says nothing about creatures, so an artifact creature
+/// is a legal target. This is the mirror of
+/// `bramblecrush_cannot_target_an_artifact_that_is_also_a_creature`: the same
+/// permanent, refused there and taken here, which is what makes each test
+/// about its own card's wording rather than about Manor Gargoyle.
+#[test]
+fn ancient_grudge_can_target_an_artifact_that_is_also_a_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gargoyle = named_permanent(&mut state, &reg, "Manor Gargoyle", P1);
+    assert!(state.is_creature(gargoyle, &reg), "test precondition");
+
+    let grudge = castable_spell(&mut state, &reg, "Ancient Grudge", P0);
+    assert!(offered_targets(&state, &reg, grudge).contains(&Target::Object(gargoyle)),
+        "an artifact creature is an artifact");
+}
+
+/// "Flashback {G}", cast from the graveyard, and CR 702.33a's "then exile it"
+/// — the whole second life of the card, end to end.
+#[test]
+fn ancient_grudge_can_be_flashed_back_and_is_then_exiled() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let artifact = named_permanent(&mut state, &reg, "Cobbled Wings", P1);
+
+    let card_id = reg.get_id_by_name("Ancient Grudge").unwrap();
+    let grudge = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+    state.get_object_mut(grudge).unwrap().name = "Ancient Grudge".into();
+    // Exactly {G}: the flashback cost, and not the {1}{R} printed cost.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+
+    assert!(can_cast(&state, &reg, grudge),
+        "flashback is offered for a card with flashback in your graveyard");
+    let state = cast_and_resolve(&state, &reg, grudge, vec![Target::Object(artifact)]);
+
+    assert_eq!(state.get_object(artifact).unwrap().zone, Zone::Graveyard,
+        "the flashed-back Grudge still destroys what it targeted");
+    assert_eq!(state.get_object(grudge).unwrap().zone, Zone::Exile,
+        "and is exiled rather than returning to the graveyard, so it cannot be \
+         flashed back a second time");
+}
+
+// -------------------------------------------------------------------------
 // Bramblecrush
 // -------------------------------------------------------------------------
 

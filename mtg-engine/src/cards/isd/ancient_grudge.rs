@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Ancient Grudge — {1}{R} instant. Destroy target artifact. Flashback {G}.
 pub struct AncientGrudge;
@@ -26,22 +26,14 @@ impl CardBehavior for AncientGrudge {
         TargetRequirement::PermanentWithFilter(TargetFilter::HasCardType(vec![CardType::Artifact]))
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                let obj = match state.get_object(*id) {
-                    Some(o) if o.zone == Zone::Battlefield => o,
-                    _ => return false,
-                };
-                state.face_data(obj.id, registry)
-                    .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
-
+    /// No `is_valid_target`: "an artifact on the battlefield" is exactly
+    /// `PermanentWithFilter(HasCardType([Artifact]))`, which `legal_actions`
+    /// applies when offering targets and `stack::is_target_legal` re-applies
+    /// with the zone check on the way down (CR 608.2b).
+    ///
+    /// Note what the requirement does *not* say: nothing about creatures. An
+    /// artifact creature is an artifact, so it is a legal target — the mirror
+    /// of Bramblecrush, whose "noncreature permanent" refuses the same card.
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         crate::cards::helpers::resolve_destroy(state, targets, registry);
     }
