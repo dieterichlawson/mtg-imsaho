@@ -325,6 +325,61 @@ fn woodland_sleuth_returns_a_creature_only_if_one_died_this_turn() {
     }
 }
 
+/// "return a creature card **at random** from your graveyard to your hand."
+///
+/// A card that always returned the first eligible creature would satisfy every
+/// other Woodland Sleuth test — they each set up exactly one candidate — so
+/// this is the only place the randomness itself is under test. Sixty draws
+/// from three candidates: a fixed choice fails with certainty, a uniform one
+/// fails with probability 3 * (1/3)^60.
+#[test]
+fn woodland_sleuth_returns_a_random_creature_not_a_fixed_one() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let candidates: Vec<_> = ["Grizzly Bears", "Makeshift Mauler", "Stitched Drake"]
+        .iter()
+        .map(|n| named_card_in_graveyard(&mut state, &reg, n, P0))
+        .collect();
+    let sleuth = named_permanent(&mut state, &reg, "Woodland Sleuth", P0);
+    let behavior = reg.get(state.get_object(sleuth).unwrap().card_id).unwrap();
+
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..60 {
+        behavior.on_enter_battlefield(&mut state, sleuth, &[], &reg);
+        let returned = candidates.iter().copied()
+            .find(|&id| state.get_object(id).unwrap().zone == Zone::Hand)
+            .expect("one of the three creature cards is returned every time");
+        seen.insert(returned);
+        // Put it back so every draw sees the same three candidates.
+        state.move_object(returned, Zone::Graveyard, &reg);
+    }
+
+    assert!(seen.len() > 1,
+        "sixty resolutions over three creature cards only ever returned {} of \
+         them — the choice is not being made at random", seen.len());
+}
+
+/// "from **your** graveyard" — CR 404.3 puts a card in its owner's graveyard,
+/// so an opponent's creature card is not a legal choice no matter who controls
+/// the Sleuth.
+#[test]
+fn woodland_sleuth_does_not_reach_into_an_opponents_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let sleuth = named_permanent(&mut state, &reg, "Woodland Sleuth", P0);
+    reg.get(state.get_object(sleuth).unwrap().card_id).unwrap()
+        .on_enter_battlefield(&mut state, sleuth, &[], &reg);
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "the only creature card in the game is in the opponent's graveyard, \
+         which is not \"your graveyard\"");
+}
+
 // -------------------------------------------------------------------------
 // Ghoulcaller's Chant
 // -------------------------------------------------------------------------
