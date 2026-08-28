@@ -962,3 +962,33 @@ fn angelic_overseer_survives_destroy_with_human() {
         "Angelic Overseer should survive destruction");
 }
 
+/// Ruling: "If you control a Human, and lethal damage is dealt to Angelic
+/// Overseer, that damage will remain marked on it that turn. If later in the
+/// turn you no longer control a Human, Angelic Overseer will be destroyed."
+/// Blasphemous Act does the whole thing in one card: 13 damage marks the
+/// Overseer (indestructible, so it lives through the first SBA pass, in which
+/// the Human still stands) and kills the Human — and the NEXT pass finds an
+/// Overseer with lethal damage and no Human (CR 704.3: passes repeat until
+/// nothing more happens).
+#[test]
+fn angelic_overseer_dies_to_marked_damage_once_its_human_is_gone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let angel = named_permanent(&mut state, &reg, "Angelic Overseer", P0);
+    let human = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
+    assert!(state.has_keyword(angel, Keyword::Indestructible, &reg), "precondition");
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 8);
+    let spell = spell_in_hand(&mut state, &reg, "Blasphemous Act", P0);
+    let mut state = cast_and_resolve(&state, &reg, spell, vec![]);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(human).unwrap().zone, Zone::Graveyard,
+        "13 damage kills the Human");
+    assert_eq!(state.get_object(angel).unwrap().zone, Zone::Graveyard,
+        "the marked 13 stays on the Overseer, and with its Human gone the \
+         next state-based check destroys it");
+}
+
