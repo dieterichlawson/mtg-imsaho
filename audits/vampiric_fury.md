@@ -75,3 +75,66 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `snapshot_anthems.rs` — a creature entering after resolution gets nothing.
+
+## Audit — 2026-08-28 19:03
+
+**Oracle text source**: Oracle cache (Scryfall API) — `scripts/oracle_lookup.py lookup "Vampiric Fury"`, https://scryfall.com/card/isd/167/vampiric-fury
+**Oracle text**:
+```
+Vampire creatures you control get +2/+0 and gain first strike until end of turn. (They deal combat damage before creatures without first strike.)
+```
+**Type line**: Instant
+**Mana cost**: {1}{R}
+**Rulings** (1, 2011-09-22): "Only Vampires you control when Vampiric Fury resolves will receive
+the bonus. Creatures that enter later in the turn, that you gain control of later in the turn,
+or that become Vampires later in the turn won't be affected."
+**Status**: PASS (the ruling's third clause gained its test; one stale comment removed)
+
+### Code issues
+No behavioural issues in `mtg-engine/src/cards/isd/vampiric_fury.rs`.
+
+`{1}{R}`, `CardType::Instant`, oracle text verbatim including the reminder text, no target
+requirement ("Vampire creatures you control" targets nothing).
+
+`on_resolve` snapshots `creatures_controlled_snapshot(controller)` filtered by
+`has_subtype(id, "Vampire")` **at resolution**, then pushes a `ModifyPT { +2, +0 }` and a
+`GrantKeyword(FirstStrike)` per id into `until_end_of_turn`. That id-snapshot is all three
+clauses of the ruling at once: a creature that enters later, changes controller later, or
+becomes a Vampire later is not in the set, because the set was fixed then (CR 611.2c).
+
+`has_subtype` reads the object's own subtypes before the registry face, so a creature Olivia
+Voldaren turned into a Vampire *before* the Fury resolved is covered — the granted-subtype
+direction that `cards_shortcuts_taken.rs` pins.
+
+**One stale comment removed**: `// Build a registry to look up subtypes.` sat above nothing —
+leftover from before the registry was threaded in as a parameter.
+
+### Tricky interactions checked
+- **Your Vampires get +2/+0 and first strike; a non-Vampire and an opponent's Vampire get
+  nothing**: PASS.
+- **A Vampire entering after resolution**: PASS (CR 611.2c), tested twice.
+- **A creature that becomes a Vampire after resolution** — reachable via Olivia Voldaren:
+  PASS, newly tested. The Bears are on the battlefield when the Fury resolves, gain the Vampire
+  subtype afterwards, and get nothing.
+- **A creature granted Vampire before resolution**: PASS (`cards_shortcuts_taken.rs`).
+- **+2/+0, not +2/+2**: the table row's exact power, and toughness untouched by `ModifyPT`'s 0.
+- **First strike matters in combat**: the two-damage-step machinery is `combat_rules.rs`'s;
+  nothing card-specific.
+- **Expires at end of turn**: `until_end_of_turn`, cleared by cleanup.
+
+### Test coverage
+- fixed at resolution (shared anthem table): `snapshot_anthems.rs:48 an_until_end_of_turn_anthem_is_fixed_at_resolution` (row)
+- Vampires only, yours only, first strike included, becomes-a-Vampire-later excluded:
+  `snapshot_anthems.rs:76 vampiric_fury_reaches_vampires_and_nothing_else` (extended)
+- a runtime-granted Vampire subtype counts: `cards_shortcuts_taken.rs:217 vampiric_fury_buffs_instance_vampire`
+
+Mutation-checked: dropping the Vampire filter fails the reaches-Vampires test (and only it —
+the instance-subtype test survives, correctly, since a superset still covers its subject);
+granting haste instead of first strike fails it too. The becomes-a-Vampire-later assertion is
+pinned by the same snapshot mechanism as the late-arrival rows; like Past in Flames' "at the
+time it resolves" test, it stands as a regression guard against a live-filter rewrite, which is
+the one shape of implementation that would break it.
+
+### Changes made
+- `vampiric_fury.rs`: stale comment removed. No behavioural change.
+- `snapshot_anthems.rs`: the becomes-a-Vampire-later assertion.

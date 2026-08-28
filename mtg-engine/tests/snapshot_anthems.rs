@@ -91,6 +91,15 @@ fn vampiric_fury_reaches_vampires_and_nothing_else() {
     assert_eq!(state.effective_power(their_vampire, &reg), Some(1),
         "an opponent's Vampire");
 
+    // Ruling: creatures "that become Vampires later in the turn won't be
+    // affected". The Bears were there when the Fury resolved but were not a
+    // Vampire then, and Olivia turning them into one afterwards does not
+    // reopen the set — the snapshot filtered at resolution, by id.
+    state.get_object_mut(not_a_vampire).unwrap().subtypes.push("Vampire".into());
+    assert!(state.has_subtype(not_a_vampire, "Vampire", &reg), "test premise");
+    assert_eq!(state.effective_power(not_a_vampire, &reg), Some(2),
+        "a creature that became a Vampire after the Fury resolved gets nothing");
+
     // A Vampire cast afterwards is not in the set, filter or no filter.
     let late_vampire = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
     assert_eq!(state.effective_power(late_vampire, &reg), Some(1),

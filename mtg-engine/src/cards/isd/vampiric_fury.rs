@@ -25,8 +25,6 @@ impl CardBehavior for VampiricFury {
         // Find the controller of this spell.
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
-        // Build a registry to look up subtypes.
-
         // CR 611.2c: a continuous effect created by a resolving spell or
         // ability affects the set of objects that existed when it resolved, and
         // that set never changes. This is the line between Glorious Anthem (a
