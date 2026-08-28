@@ -12,10 +12,14 @@
 //! `instance_continuous_effects` vector. So if a Human Werewolf transformed
 //! into its non-Human back face (via Moonmist or via the no-spells-last-turn
 //! upkeep trigger), the +1/+0 / lifelink stayed put. The fix is to express
-//! the bonus as a `ContinuousEffect::ConditionalModifyPT` /
-//! `ContinuousEffect::ConditionalKeyword` (the same shape Bonds of Faith
-//! uses), which gets re-evaluated every time we compute effective P/T or
-//! check keywords.
+//! the bonus as a condition wrapped around the effect —
+//! `ContinuousEffect::when(EffectCondition::AttachedHasSubtype("Human"), ..)`,
+//! the same shape Bonds of Faith uses — which is re-evaluated every time we
+//! compute effective P/T or check keywords.
+//!
+//! (This note used to name `ContinuousEffect::ConditionalModifyPT` and
+//! `ConditionalKeyword`. Those were four parallel variants that have since
+//! been folded into the single `when` wrapper, so the names no longer exist.)
 //!
 //! These tests pin the fix in both directions: bonus appears when the
 //! creature is Human, drops when it isn't, and updates live when the
@@ -27,6 +31,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
@@ -211,6 +216,54 @@ fn human_equipment_bonuses_follow_reattachment() {
             assert!(!state.has_keyword(pilgrim, k, &reg),
                 "{}: unconditional {k:?} should follow the equipment, not stay", case.equipment);
         }
+        assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
+    }
+}
+
+/// CR 704.5n: when the equipped creature dies the Equipment stays on the
+/// battlefield, unattached. The general detach test checks the zones; it does
+/// not check that the bonus stopped, and neither does anything else here — the
+/// reattachment test moves a live Equipment, which is a different path.
+///
+/// Then equip the survivor, so the conditional is recomputed against the new
+/// creature rather than against whatever it last saw.
+#[test]
+fn human_equipment_bonuses_end_when_the_equipped_creature_dies() {
+    let reg = registry();
+    for case in HUMAN_CONDITIONAL {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+        let gear = named_permanent(&mut state, &reg, case.equipment, P0);
+
+        let mut state = equip(&state, &reg, gear, pilgrim, case.equip_cost);
+        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, true);
+
+        // Kill the Human it is attached to. Lethal is measured against the
+        // toughness it has *while equipped* — Sharpened Pitchfork's Human
+        // bonus is +1/+1, so the base 1/1 is not the number here.
+        let lethal = state.effective_toughness(pilgrim, &reg).expect("a creature has toughness");
+        state.get_object_mut(pilgrim).unwrap().damage_marked = u32::try_from(lethal).unwrap_or(0);
+        check_state_based_actions(&mut state, &reg);
+        assert_eq!(state.get_object(pilgrim).unwrap().zone, Zone::Graveyard,
+            "{}: test precondition — the equipped creature died", case.equipment);
+
+        assert_eq!(state.get_object(gear).unwrap().zone, Zone::Battlefield,
+            "{}: an Equipment does not follow its creature to the graveyard", case.equipment);
+        assert_eq!(state.get_object(gear).unwrap().attached_to, None,
+            "{}: it detaches instead (CR 704.5n)", case.equipment);
+
+        // Nothing it used to buff, and nothing it never buffed, is affected.
+        assert_eq!(state.effective_power(zombie, &reg), Some(ZOMBIE_BASE.0),
+            "{}: an unattached Equipment buffs nothing", case.equipment);
+        if let Some(k) = case.base_kw {
+            assert!(!state.has_keyword(zombie, k, &reg),
+                "{}: nor grants its keyword to anything", case.equipment);
+        }
+
+        // Equipping the survivor recomputes the conditional for *it* — the
+        // zombie is not a Human, so only the unconditional half applies.
+        let state = equip(&state, &reg, gear, zombie, case.equip_cost);
         assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
     }
 }
