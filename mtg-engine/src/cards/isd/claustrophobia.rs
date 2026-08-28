@@ -54,9 +54,7 @@ impl CardBehavior for Claustrophobia {
     /// creature was never tapped at all.
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         if let Some(target_id) = state.attached_creature(object_id) {
-            if let Some(target) = state.get_object_mut(target_id) {
-                target.tapped = true;
-            }
+            state.tap(target_id);
             state.log(crate::state::LogLevel::Event,
                 "Claustrophobia taps enchanted creature".to_string());
         }

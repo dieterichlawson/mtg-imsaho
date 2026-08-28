@@ -18,10 +18,7 @@ pub fn declare_attackers(
         // Vigilance: don't tap when attacking.
         let has_vigilance = state.has_keyword(attacker_id, Keyword::Vigilance, registry);
         if !has_vigilance {
-            if let Some(obj) = state.get_object_mut(attacker_id) {
-                obj.tapped = true;
-                state.events.push(GameEvent::Tapped { object: attacker_id });
-            }
+            state.tap(attacker_id);
         }
         combat.attackers.insert(attacker_id, defending_player);
         combat.blocker_assignments.insert(attacker_id, Vec::new());

@@ -108,8 +108,8 @@ impl CardBehavior for SkirsdagHighPriest {
         }
 
         if let Some((c1, c2)) = to_tap {
-            if let Some(obj) = state.get_object_mut(c1) { obj.tapped = true; }
-            if let Some(obj) = state.get_object_mut(c2) { obj.tapped = true; }
+            state.tap(c1);
+            state.tap(c2);
         }
 
     }

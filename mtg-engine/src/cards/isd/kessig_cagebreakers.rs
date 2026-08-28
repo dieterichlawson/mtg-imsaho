@@ -65,8 +65,10 @@ impl CardBehavior for KessigCagebreakers {
             );
             // Tapped and attacking.
             for token_id in token_ids {
+                // "a 2/2 green Wolf creature token that's tapped and
+                // attacking" — the token arrives that way; nothing tapped it.
+                state.arrives_tapped(token_id);
                 if let Some(obj) = state.get_object_mut(token_id) {
-                    obj.tapped = true;
                     obj.summoning_sick = false;
                 }
                 if let Some(combat) = &mut state.combat {

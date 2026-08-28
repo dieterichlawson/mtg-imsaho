@@ -58,9 +58,10 @@ impl CardBehavior for GeistOfSaintTraft {
         // exactly two players and no planeswalkers to attack.
         let defender = attack.defending_player;
         for token_id in token_ids {
-            // Set the token as tapped and attacking.
+            // "tapped and attacking" — the token arrives that way; nothing
+            // tapped it.
+            state.arrives_tapped(token_id);
             if let Some(obj) = state.get_object_mut(token_id) {
-                obj.tapped = true;
                 obj.summoning_sick = false; // It's attacking, so summoning sickness doesn't matter.
             }
 

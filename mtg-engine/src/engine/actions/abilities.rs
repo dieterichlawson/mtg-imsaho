@@ -141,7 +141,7 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
 
             // Pay tap cost.
             if ab.requires_tap {
-                state.get_object_mut(object_id).expect("object must exist for tapping").tapped = true;
+                state.tap(object_id);
             }
 
             // Pay the counter cost. Before the sacrifice below, which moves

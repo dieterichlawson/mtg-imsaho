@@ -27,12 +27,14 @@ impl CardBehavior for FeelingOfDread {
     }
 
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+        // Ruling: "If Feeling of Dread targets two creatures, and one of them
+        // is an illegal target by the time Feeling of Dread resolves, the
+        // other creature will still be tapped." That falls out of iterating:
+        // an illegal target arrives as `Target::Illegal` and matches nothing.
         for target in targets {
             if let Target::Object(target_id) = target {
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.tapped = true;
-                    }
+                if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                    state.tap(*target_id);
                 }
             }
         }

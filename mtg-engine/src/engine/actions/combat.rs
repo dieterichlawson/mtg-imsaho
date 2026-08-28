@@ -72,11 +72,7 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
             for id in &forced_ids {
                 let has_vig = state.has_keyword(*id, crate::types::Keyword::Vigilance, registry);
                 if !has_vig {
-                    if let Some(obj) = state.get_object_mut(*id) {
-                        if !obj.tapped {
-                            obj.tapped = true;
-                        }
-                    }
+                    state.tap(*id);
                 }
             }
             let names: Vec<String> = forced_ids.iter()

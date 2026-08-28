@@ -159,8 +159,8 @@ pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -
 
 /// Apply regeneration: tap, remove damage, consume one shield, remove from combat.
 fn regenerate(state: &mut GameState, id: ObjectId) {
+    state.tap(id);
     if let Some(obj) = state.get_object_mut(id) {
-        obj.tapped = true;
         obj.damage_marked = 0;
         obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
         obj.regeneration_shields -= 1;

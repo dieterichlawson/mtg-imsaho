@@ -856,9 +856,11 @@ pub fn finish_library_search(
     if destination == Zone::Battlefield {
         if let Some(obj) = state.get_object_mut(found) {
             obj.summoning_sick = false;
-            if tapped {
-                obj.tapped = true;
-            }
+        }
+        // "put it onto the battlefield tapped" — the land arrives tapped
+        // rather than being tapped by anything (CR 614.1c).
+        if tapped {
+            state.arrives_tapped(found);
         }
     }
     state.log(crate::state::LogLevel::Event,

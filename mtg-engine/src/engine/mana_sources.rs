@@ -183,8 +183,7 @@ pub fn activate_mana_source(
         return;
     }
     if ability.requires_tap {
-        state.get_object_mut(source_id).expect("object must exist for tapping").tapped = true;
-        state.events.push(GameEvent::Tapped { object: source_id });
+        state.tap(source_id);
     }
     for &(mana_type, amount) in &ability.produced {
         state.get_player_mut(controller).mana_pool.add(mana_type, amount);

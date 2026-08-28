@@ -186,9 +186,8 @@ impl CardBehavior for CivilizedScholar {
         }
         // The condition is checked a second time on resolution (CR 603.4).
         if !state.attacked_this_turn(self_id) {
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.tapped = true; // "tap Homicidal Brute, then transform it"
-            }
+            // "tap Homicidal Brute, then transform it"
+            state.tap(self_id);
             // Through the helper rather than flipping the flag by hand, so
             // this cannot drift from what transforming means.
             crate::cards::helpers::apply_transform(state, self_id, _registry);

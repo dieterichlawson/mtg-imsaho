@@ -42,11 +42,9 @@ impl CardBehavior for ArmyOfTheDamned {
                 vec!["Zombie".into()],
                 registry,
             );
-            // They enter the battlefield tapped.
+            // "that are tapped" — they arrive tapped; nothing tapped them.
             for token_id in token_ids {
-                if let Some(obj) = state.get_object_mut(token_id) {
-                    obj.tapped = true;
-                }
+                state.arrives_tapped(token_id);
             }
         }
         state.log(crate::state::LogLevel::Event,
