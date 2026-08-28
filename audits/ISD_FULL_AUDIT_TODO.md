@@ -135,7 +135,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Armored Skaab | `armored_skaab.rs` | 43 | 3 | 1 |
 | x | Geist of Saint Traft | `geist_of_saint_traft.rs` | 86 | 2 | 1 |
 | x | Moldgraf Monstrosity | `moldgraf_monstrosity.rs` | 84 | 2 | 1 |
-|   | Nevermore | `nevermore.rs` | 63 | 3 | 0 |
+| x | Nevermore | `nevermore.rs` | 63 | 3 | 0 |
 |   | Disciple of Griselbrand | `disciple_of_griselbrand.rs` | 62 | 3 | 0 |
 |   | Skirsdag Cultist | `skirsdag_cultist.rs` | 62 | 3 | 0 |
 |   | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 80 | 2 | 1 |
