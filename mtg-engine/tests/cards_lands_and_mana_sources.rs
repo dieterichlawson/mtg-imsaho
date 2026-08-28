@@ -258,6 +258,51 @@ fn deranged_assistant_taps_for_colorless() {
 
     state = engine::submit_action(&state, mana_action.unwrap(), &reg);
     assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Colorless), 1);
+
+    // "{T}, **Mill a card**: Add {C}." The mill is half the cost, and the
+    // mana is worth nothing as evidence that it was paid.
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Graveyard,
+        "the milled card is in the graveyard");
+    assert!(state.get_player(P0).library_order.is_empty(), "and out of the library");
+    assert!(state.get_object(assistant).unwrap().tapped, "and the Assistant is tapped");
+
+    // With nothing left to mill the cost can no longer be paid, so the
+    // ability is no longer offered (CR 701.17b).
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.actions.iter().any(|a| matches!(a,
+        Action::ActivateManaAbility { object_id, .. } if *object_id == assistant)));
+}
+
+/// CR 701.17b: "the player can't pay a cost that includes milling a number of
+/// cards greater than the number of cards in their library."
+///
+/// A tap plan is worked out in full before any of it is executed. Two Deranged
+/// Assistants over a one-card library are both offered — and after the first
+/// mills that card, the second one's cost has become unpayable.
+#[test]
+fn a_second_deranged_assistant_cannot_mill_an_empty_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let first = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
+    let second = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
+    let lib_card = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P0, Zone::Library, None, None);
+    state.players[0].library_order = vec![lib_card];
+
+    // Both are available while the card is still there.
+    for id in [first, second] {
+        assert_eq!(mtg_engine::engine::available_mana_abilities(&state, id, &reg).len(), 1);
+    }
+
+    mtg_engine::engine::activate_mana_source(&mut state, first, 0, &reg);
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Colorless), 1);
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Graveyard);
+
+    mtg_engine::engine::activate_mana_source(&mut state, second, 0, &reg);
+    assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Colorless), 1,
+        "the second Assistant's cost is unpayable, so it produces no mana");
+    assert!(!state.get_object(second).unwrap().tapped, "and it is not tapped");
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1036,3 +1081,73 @@ fn kessig_wolf_run_does_nothing_when_its_target_is_gone() {
          applied to a creature that is no longer there");
 }
 
+
+/// The Assistant is the pool's only mana source that costs you something to
+/// use, which is what `ManaAbilityDef::has_side_effects` is for: the auto-tap
+/// planner ranks it last (`ManaSourceKind::HasSideEffects`), below even a
+/// creature that merely loses the chance to attack.
+///
+/// With a Forest beside it, casting a {1} spell must not mill.
+#[test]
+fn autotap_taps_a_land_before_it_mills_you() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let assistant = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
+    let lib_card = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P0, Zone::Library, None, None);
+    state.players[0].library_order = vec![lib_card];
+
+    // Blazing Torch costs {1} — generic, so either source could pay it.
+    let torch = spell_in_hand(&mut state, &reg, "Blazing Torch", P0);
+    let legal = engine::legal_actions(&state, &reg);
+    let cast = legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == torch))
+        .expect("Blazing Torch should be castable off either source")
+        .clone();
+    let state = engine::submit_action(&state, &cast, &reg);
+
+    assert!(state.get_object(forest).unwrap().tapped, "the Forest paid for it");
+    assert!(!state.get_object(assistant).unwrap().tapped,
+        "not the Assistant, whose mana costs a card");
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Library,
+        "so nothing was milled");
+}
+
+/// The side-effect tier is not just "below a land" — it is below another
+/// creature's mana too, and it outranks the colour-demand tiebreak that would
+/// otherwise spare the Pilgrim's {W} for the white card in hand.
+///
+/// This is what `has_side_effects` buys. Without it the Assistant is ranked as
+/// an ordinary `Creature` alongside Avacyn's Pilgrim, and the demand for {W}
+/// picks the Assistant — milling a card to keep a colour open.
+#[test]
+fn autotap_would_rather_lose_a_colour_than_mill_a_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let assistant = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
+    let lib_card = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P0, Zone::Library, None, None);
+    state.players[0].library_order = vec![lib_card];
+
+    // A white card in hand, so the Pilgrim's {W} is the mana in demand.
+    spell_in_hand(&mut state, &reg, "Doomed Traveler", P0);
+    let torch = spell_in_hand(&mut state, &reg, "Blazing Torch", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cast = legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == torch))
+        .expect("Blazing Torch should be castable off either creature")
+        .clone();
+    let state = engine::submit_action(&state, &cast, &reg);
+
+    assert!(state.get_object(pilgrim).unwrap().tapped,
+        "the Pilgrim pays, even though its {{W}} is wanted for the card in hand");
+    assert!(!state.get_object(assistant).unwrap().tapped,
+        "the Assistant is ranked below it — its mana costs a card");
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Library,
+        "so nothing was milled");
+}
