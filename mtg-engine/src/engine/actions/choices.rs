@@ -100,6 +100,15 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 }
                 (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, remaining, player, description, .. },
                  ResolvedChoice::ChosenCard(discard_id)) => {
+                    // The offered set is that player's hand, and nothing else
+                    // is theirs to discard — not a card in their library, and
+                    // certainly not one in somebody else's hand.
+                    if !state.objects_in_zone(Zone::Hand, *player).iter().any(|o| o.id == *discard_id) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {discard_id:?} is not in p{}'s hand", player.0));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
                     // CR 101.4: when several players are each choosing a
                     // card to discard, the source collects the choices and
                     // discards them together once the last one has chosen
@@ -125,6 +134,15 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 }
                 (ResolutionChoiceKind::ChooseFromRevealed { revealed, .. },
                  ResolvedChoice::ChosenCard(keep_id)) => {
+                    // "Put ONE OF THEM into your hand" — one of the cards this
+                    // spell looked at. Taken on trust, this was a tutor: name
+                    // any card in your library and it came to hand.
+                    if !revealed.contains(keep_id) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {keep_id:?} was not among the cards revealed"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
                     let keep_name = state.obj_name(*keep_id);
                     state.move_object(*keep_id, Zone::Hand, registry);
                     // "…and the rest into your graveyard" — library to
@@ -153,7 +171,15 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 }
                 (ResolutionChoiceKind::ChooseCardType { options, controller, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
-                    let chosen_type = options.get(*index).cloned().unwrap_or_default();
+                    // An index past the end used to fall through
+                    // `unwrap_or_default()` to an empty string and then to the
+                    // `_` arm below, quietly choosing "Creature".
+                    let Some(chosen_type) = options.get(*index).cloned() else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} types offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
                     let card_type = match chosen_type.as_str() {
                         "Artifact" => CardType::Artifact,
                         "Enchantment" => CardType::Enchantment,
@@ -178,6 +204,16 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 }
                 (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
                  ResolvedChoice::ChosenSubset(pile_1_ids)) => {
+                    // "Divide THE permanents into two piles" — a division of
+                    // the set offered, so a pile cannot contain something that
+                    // was never in it. Unchecked, anything named here ended up
+                    // in pile 1 and was sacrificed if that pile was chosen.
+                    if let Some(stray) = pile_1_ids.iter().find(|id| !permanents.contains(id)) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {stray:?} is not one of the permanents being divided"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
                     // Controller has divided permanents into two piles.
                     // pile_1 = the chosen subset, pile_2 = the rest.
                     let pile_1: Vec<ObjectId> = pile_1_ids.clone();
@@ -217,6 +253,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 }
                 (ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
+                    // There are two piles. Anything other than 0 or 1 used to
+                    // mean pile 2 by falling off the end of the comparison.
+                    if *index > 1 {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the two piles"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
                     // Target player chose which pile to sacrifice.
                     let chosen_pile = if *index == 0 { pile_1 } else { pile_2 };
                     let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
@@ -233,7 +277,15 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 }
                 (ResolutionChoiceKind::ChooseCardName { options, source_id, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
-                    let chosen_name = options.get(*index).cloned().unwrap_or_default();
+                    // Same as the card-type choice: an index past the end used
+                    // to name the empty string, which names nothing and
+                    // prevents nothing.
+                    let Some(chosen_name) = options.get(*index).cloned() else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} names offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
                     // Store the restriction as an instance continuous effect on the source.
                     if let Some(obj) = state.get_object_mut(*source_id) {
                         let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name.clone() };

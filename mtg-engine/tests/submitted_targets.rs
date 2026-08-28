@@ -181,3 +181,85 @@ fn a_player_is_not_a_legal_target_for_a_spell_that_wants_a_creature() {
     assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Battlefield,
         "and nothing else was destroyed in its place");
 }
+
+/// The same rule for the rest of the resolution choices, which ask for a card
+/// or an index rather than a target.
+///
+/// `ChooseTarget` was the arm the audits kept arriving at, and it was the only
+/// one checked. Its siblings each carry the set they offered — the cards
+/// revealed, the player whose hand it is, the list of names — and each took
+/// the answer on trust.
+mod other_choices {
+    use super::*;
+
+    /// Forbidden Alchemy: "Look at the top four cards of your library. Put one
+    /// **of them** into your hand." Answering with a fifth card was a tutor —
+    /// name anything in your library and it came to hand.
+    #[test]
+    fn a_card_that_was_not_revealed_cannot_be_the_one_you_keep() {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let library = stock_library(&mut state, &reg, P0, 4);
+        // A fifth card, under the four the spell will look at.
+        let buried = spell_in_hand(&mut state, &reg, "Brimstone Volley", P0);
+        state.move_object(buried, Zone::Library, &reg);
+        state.get_player_mut(P0).library_order.push(buried);
+
+        let alchemy = castable_spell(&mut state, &reg, "Forbidden Alchemy", P0);
+        let state = cast_and_resolve(&state, &reg, alchemy, vec![]);
+        assert!(state.awaiting_action.is_some(), "test setup: it asks which to keep");
+
+        let state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenCard(buried),
+            },
+            &reg,
+        );
+
+        assert_eq!(state.get_object(buried).unwrap().zone, Zone::Library,
+            "the fifth card was never looked at, so it is not one to keep");
+        assert!(state.awaiting_action.is_some(), "and the question still stands");
+        for id in &library {
+            assert_eq!(state.get_object(*id).unwrap().zone, Zone::Library,
+                "nor did the rest go to the graveyard on a refused answer");
+        }
+    }
+
+    /// "That player discards a card" — theirs, out of their hand. Not a card
+    /// from their library, and not one of yours.
+    ///
+    /// The prompt is raised through `engine::discard_cards`, which is the one
+    /// place every "discards N cards" in the set goes through, rather than
+    /// through a particular card: the rule under test is the answer, not the
+    /// asker.
+    #[test]
+    fn a_card_outside_the_hand_cannot_be_the_one_discarded() {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        // Two cards in hand, so there is a real choice and a real prompt.
+        let _a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+        let _b = spell_in_hand(&mut state, &reg, "Doomed Traveler", P1);
+        let in_their_library = spell_in_hand(&mut state, &reg, "Brimstone Volley", P1);
+        state.move_object(in_their_library, Zone::Library, &reg);
+        state.get_player_mut(P1).library_order.push(in_their_library);
+        let source = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+
+        mtg_engine::engine::discard_cards(&mut state, P1, 1, source, "test", &reg);
+        assert!(state.awaiting_action.is_some(), "test setup: it asks them to discard");
+
+        let state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenCard(in_their_library),
+            },
+            &reg,
+        );
+
+        assert_eq!(state.get_object(in_their_library).unwrap().zone, Zone::Library,
+            "a card in the library is not a card in hand");
+        assert!(state.awaiting_action.is_some(), "and the question still stands");
+    }
+}
