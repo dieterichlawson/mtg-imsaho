@@ -55,7 +55,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Tribute to Hunger | `tribute_to_hunger.rs` | 92 | 5 | 0 |
 | x | Morkrut Banshee | `morkrut_banshee.rs` | 66 | 5 | 1 |
 | x | Brain Weevil | `brain_weevil.rs` | 131 | 4 | 0 |
-|   | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 131 | 4 | 0 |
+| x | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 131 | 4 | 0 |
 |   | Runechanter's Pike | `runechanters_pike.rs` | 86 | 5 | 0 |
 |   | Claustrophobia | `claustrophobia.rs` | 56 | 5 | 1 |
 |   | Mentor of the Meek | `mentor_of_the_meek.rs` | 101 | 4 | 1 |
