@@ -482,6 +482,70 @@ fn stony_silence_does_not_block_non_artifact_mana() {
 // Witchbane Orb
 // -------------------------------------------------------------------------
 
+/// "When this artifact enters, destroy all Curses attached to you."
+///
+/// The whole triggered half of the card, and the half with no test at all —
+/// every Witchbane Orb test was about hexproof. Both arms in one case, because
+/// "the Curse on me died" alone would pass for an Orb that destroyed every
+/// Curse on the battlefield.
+#[test]
+fn witchbane_orb_destroys_the_curses_on_you_and_leaves_the_others() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two on me, cast by the opponent; one the other way round.
+    let on_me_a = attach_curse_to_player(&mut state, &reg, "Curse of the Pierced Heart", P1, P0);
+    let on_me_b = attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P1, P0);
+    let on_them = attach_curse_to_player(&mut state, &reg, "Curse of the Bloody Tome", P0, P1);
+
+    let orb = castable_spell(&mut state, &reg, "Witchbane Orb", P0);
+    let mut state = cast_onto_stack(&state, &reg, orb, vec![]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(on_me_a).unwrap().zone, Zone::Graveyard,
+        "a Curse attached to you is destroyed whoever controls it");
+    assert_eq!(state.get_object(on_me_b).unwrap().zone, Zone::Graveyard,
+        "'all Curses', not one of them");
+    assert_eq!(state.get_object(on_them).unwrap().zone, Zone::Battlefield,
+        "'attached to you' — a Curse on the opponent is untouched, even one \
+         you control yourself");
+}
+
+/// "**Destroy** all Curses" — destroy, not exile and not sacrifice, so an
+/// indestructible Curse stays put (CR 701.7b via 702.12b).
+#[test]
+fn witchbane_orb_cannot_destroy_an_indestructible_curse() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let curse = attach_curse_to_player(&mut state, &reg, "Curse of the Pierced Heart", P1, P0);
+    grant_keyword(&mut state, curse, Keyword::Indestructible);
+
+    let orb = castable_spell(&mut state, &reg, "Witchbane Orb", P0);
+    let mut state = cast_onto_stack(&state, &reg, orb, vec![]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(curse).unwrap().zone, Zone::Battlefield,
+        "'destroy' does not move an indestructible permanent");
+}
+
+/// CR 113.6: a permanent's static ability functions only while it is on the
+/// battlefield. An Orb in the graveyard grants nothing.
+#[test]
+fn witchbane_orbs_hexproof_stops_when_it_leaves_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let orb = named_permanent(&mut state, &reg, "Witchbane Orb", P0);
+    assert!(state.player_has_hexproof(P0, &reg), "test precondition");
+
+    state.move_object(orb, Zone::Graveyard, &reg);
+    assert!(!state.player_has_hexproof(P0, &reg),
+        "the static ability functions only on the battlefield");
+}
+
 /// Player has hexproof when they control Witchbane Orb.
 #[test]
 fn grants_player_hexproof() {
