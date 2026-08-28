@@ -223,6 +223,53 @@ fn sensory_deprivation_reduces_power() {
         "Toughness should be unchanged");
 }
 
+/// "-3/**-0**" cannot kill, and power really does go below zero (CR 208.3).
+///
+/// The test above puts the Aura on a 3/3, where -3 lands exactly on 0 and a
+/// reading that clamped at zero would be indistinguishable from one that did
+/// not. A 2/2 separates them — and, unlike Dead Weight, the creature lives,
+/// because toughness is untouched.
+#[test]
+fn sensory_deprivation_takes_power_below_zero_without_killing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    let sd = castable_spell(&mut state, &reg, "Sensory Deprivation", P0);
+    let mut state = cast_and_resolve(&state, &reg, sd, vec![Target::Object(creature)]);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(-1),
+        "power is -1, not clamped to 0");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
+
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "-3/-0 leaves the toughness alone, so nothing dies");
+}
+
+/// A creature with negative power deals no combat damage — not negative
+/// damage. CR 119.4: an effect that would deal 0 or less damage deals none, so
+/// the defending player neither loses life nor gains any.
+#[test]
+fn sensory_deprivation_leaves_an_attacker_dealing_no_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let sd_id = reg.get_id_by_name("Sensory Deprivation").unwrap();
+    let sd = state.create_object(sd_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(sd).unwrap().name = "Sensory Deprivation".into();
+    state.get_object_mut(sd).unwrap().attached_to = Some(attacker);
+    assert_eq!(state.effective_power(attacker, &reg), Some(-1), "test setup");
+
+    let before = state.get_player(P1).life;
+    attacks_unblocked(&mut state, attacker, P1);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, before,
+        "no life lost, and none gained either");
+}
+
 /// Gruesome Deformity grants intimidate.
 #[test]
 fn gruesome_deformity_grants_intimidate() {
