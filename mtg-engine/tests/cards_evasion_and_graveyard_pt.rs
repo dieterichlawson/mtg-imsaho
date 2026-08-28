@@ -268,6 +268,14 @@ fn spider_spawning_creates_tokens() {
         let c = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
         state.get_object_mut(c).unwrap().name = format!("Dead {i}");
     }
+    // "for each **creature card** in **your** graveyard" — a land in yours and
+    // a creature card in the opponent's are each one word wrong, and neither
+    // counts. Without these the count cannot tell "creature cards in your
+    // graveyard" from "cards anywhere".
+    let land = state.create_object(reg.get_id_by_name("Forest").unwrap(), P0, Zone::Graveyard, None, None);
+    state.get_object_mut(land).unwrap().name = "Forest".into();
+    let theirs = state.create_object(CardId(9999), P1, Zone::Graveyard, Some(1), Some(1));
+    state.get_object_mut(theirs).unwrap().name = "Their Dead".into();
 
     let ss = castable_spell(&mut state, &reg, "Spider Spawning", P0);
     state = cast_and_resolve(&state, &reg, ss, vec![]);

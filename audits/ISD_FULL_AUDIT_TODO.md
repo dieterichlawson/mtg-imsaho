@@ -213,7 +213,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |
 | x | Somberwald Spider | `somberwald_spider.rs` | 43 | 2 | 0 |
 | x | Parallel Lives | `parallel_lives.rs` | 42 | 2 | 0 |
-|   | Spider Spawning | `spider_spawning.rs` | 42 | 2 | 0 |
+| x | Spider Spawning | `spider_spawning.rs` | 42 | 2 | 0 |
 |   | Diregraf Ghoul | `diregraf_ghoul.rs` | 41 | 2 | 0 |
 |   | Rally the Peasants | `rally_the_peasants.rs` | 41 | 2 | 0 |
 |   | Desperate Ravings | `desperate_ravings.rs` | 40 | 2 | 0 |
