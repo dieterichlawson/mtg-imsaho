@@ -154,6 +154,14 @@ fn targeted_removal_offers_the_targets_its_text_allows() {
     const CASES: &[(&str, Candidate, Candidate, &str)] = &[
         ("Victim of Night", Candidate::Creature(2, 2), Candidate::Named("Markov Patrician"),
          "'creature that isn't a Vampire, Werewolf, or Zombie' — the Patrician is a Vampire"),
+        // One row per excluded subtype. With only the Vampire row, dropping
+        // "Werewolf" or "Zombie" from the card's filter broke nothing in the
+        // whole suite.
+        ("Victim of Night", Candidate::Creature(2, 2), Candidate::Named("Gatstaf Shepherd"),
+         "'creature that isn't a Vampire, Werewolf, or Zombie' — the Shepherd's \
+          front face is 'Human Werewolf'"),
+        ("Victim of Night", Candidate::Creature(2, 2), Candidate::Named("Walking Corpse"),
+         "'creature that isn't a Vampire, Werewolf, or Zombie' — the Corpse is a Zombie"),
         ("Smite the Monstrous", Candidate::Creature(5, 5), Candidate::Creature(2, 2),
          "'creature with power 4 or greater'"),
         ("Naturalize", Candidate::Enchantment, Candidate::Creature(3, 3),
