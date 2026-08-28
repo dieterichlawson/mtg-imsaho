@@ -127,7 +127,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 56 | 3 | 1 |
 | x | Sturmgeist | `sturmgeist.rs` | 53 | 3 | 1 |
 | x | Memory's Journey | `memorys_journey.rs` | 77 | 3 | 0 |
-|   | Crossway Vampire | `crossway_vampire.rs` | 47 | 3 | 1 |
+| x | Crossway Vampire | `crossway_vampire.rs` | 47 | 3 | 1 |
 |   | Tree of Redemption | `tree_of_redemption.rs` | 72 | 3 | 0 |
 |   | Village Bell-Ringer | `village_bell_ringer.rs` | 47 | 3 | 1 |
 | x | Elder of Laurels | `elder_of_laurels.rs` | 71 | 3 | 0 |
