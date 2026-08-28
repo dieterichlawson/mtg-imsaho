@@ -30,23 +30,33 @@ impl CardBehavior for ChampionOfTheParish {
         }
     }
 
-    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
-        // The counter goes on the Champion, so a Champion that is gone has
-        // nothing for this trigger to do. Asked as its own question, not
-        // smuggled into the controller read (CR 608.2g).
-        if !crate::cards::helpers::still_on_battlefield(state, self_id) {
-            return;
-        }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
-        // Must be under our control
-        if entered_controller != controller {
-            return;
-        }
-        // `has_subtype` reads the ACTIVE face; the previous hand-rolled check
-        // used `registry.card_data`, which is always the front face, so a
-        // transformed werewolf still counted as a Human here.
-        if state.has_subtype(entered_id, "Human", registry) {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        }
+    /// "Whenever another **Human you control** enters" — a condition on the
+    /// event, so it is read as the creature enters (CR 603.2).
+    ///
+    /// It used to be read on resolution instead, which was wrong in both
+    /// directions. Every creature entering under any player's control put a
+    /// Champion trigger on the stack that then did nothing — a stack object
+    /// with a priority window around it. And a Human that entered and stopped
+    /// being one before the trigger resolved took the counter away with it:
+    /// Moonmist is an instant, and "transform all Human creatures" in response
+    /// to this trigger is a real line of play.
+    ///
+    /// "Another" is the collector's, not this card's — a permanent never sees
+    /// its own arrival in the ETB-watch scan.
+    ///
+    /// `has_subtype` reads the ACTIVE face. The check before it used
+    /// `registry.card_data`, which is always the front face, so a transformed
+    /// werewolf still counted as a Human.
+    fn should_trigger_on_creature_enters(&self, state: &GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) -> bool {
+        let Some(controller) = state.get_object(self_id).map(|o| o.controller) else { return false };
+        entered_controller == controller
+            && state.has_subtype(entered_id, "Human", registry)
+    }
+
+    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {
+        // The whole condition was settled at trigger time. What is left is the
+        // counter, and `add_counters` is where CR 121.1 says a Champion that
+        // has left the battlefield is not there to take one.
+        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
     }
 }

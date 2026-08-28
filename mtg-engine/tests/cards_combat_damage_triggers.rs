@@ -290,6 +290,78 @@ fn champion_of_the_parish_no_counter_on_opponent_human() {
         "Champion should NOT trigger on opponent's Human");
 }
 
+/// "Whenever **another** Human you control enters." A Champion is a Human, and
+/// its own arrival is not another's.
+#[test]
+fn champion_of_the_parish_does_not_count_its_own_arrival() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: champion,
+        controller: P0,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, champion, CounterType::PlusOnePlusOne), 0);
+}
+
+/// CR 603.2: the condition is read as the creature enters, so a creature that
+/// fails it never triggers at all — no stack entry, and no priority window
+/// around one.
+///
+/// The three tests above count counters, and counting counters cannot tell a
+/// trigger that never happened from one that resolved and did nothing.
+#[test]
+fn champion_of_the_parish_puts_nothing_on_the_stack_for_a_creature_it_does_not_care_about() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
+    let vampire = named_permanent(&mut state, &reg, "Rakish Heir", P1);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: vampire,
+        controller: P1,
+    });
+    triggers::collect_triggers(&mut state, &reg);
+
+    assert!(state.stack.is_empty(),
+        "an opponent's non-Human is not this trigger's event: {:?}", state.stack);
+}
+
+/// The other side of reading the condition as the creature enters: a Human
+/// that stops being one before the trigger resolves still earned the counter.
+///
+/// Village Ironsmith is a Human Werewolf, and Moonmist — an instant — reads
+/// "transform all Human creatures", so transforming the entered creature with
+/// the Champion's trigger on the stack is a real line of play.
+#[test]
+fn champion_of_the_parish_keeps_its_counter_when_the_human_stops_being_one() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let champion = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
+    let smith = named_permanent(&mut state, &reg, "Village Ironsmith", P0);
+    assert!(state.has_subtype(smith, "Human", &reg), "test setup: it enters as a Human");
+
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: smith,
+        controller: P0,
+    });
+    triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "test setup: the trigger is waiting");
+
+    // Transformed in response — now a Werewolf, not a Human.
+    mtg_engine::cards::helpers::apply_transform(&mut state, smith, &reg);
+    assert!(!state.has_subtype(smith, "Human", &reg));
+
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, champion, CounterType::PlusOnePlusOne), 1,
+        "it was a Human when it entered, which is when the ability triggered");
+}
+
 // ── Stromkirk Noble ───────────────────────────────────────────────
 
 /// Stromkirk Noble gets +1/+1 counter on combat damage to player.
