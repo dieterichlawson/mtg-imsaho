@@ -294,3 +294,39 @@ fn a_target_that_stops_qualifying_makes_the_spell_fizzle() {
             "{spell_name} is countered by game rules, not resolved with nothing to do");
     }
 }
+
+/// The same rule for a property that is not a characteristic at all.
+///
+/// Rebuke asks for "target attacking creature", and being an attacker is a
+/// combat status (CR 506.4), not something the object carries. It cannot join
+/// the table above because it needs a declared attacker rather than a creature
+/// standing in a main phase — which is also why this half of its rule was the
+/// untested one: `rebuke_only_targets_a_creature_that_is_attacking` in
+/// `cards_removal_and_bounce.rs` covers what the engine *offers*, and stops
+/// there.
+///
+/// Regeneration and its kin pull a creature out of combat through
+/// `destruction::remove_from_combat`, so that is the route this takes rather
+/// than editing `state.combat` by hand.
+#[test]
+fn rebuke_fizzles_when_its_target_stops_attacking() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.priority_player = Some(P1);
+
+    let rebuke = castable_spell(&mut state, &reg, "Rebuke", P1);
+    let mut state = cast_onto_stack(&state, &reg, rebuke, vec![Target::Object(attacker)]);
+
+    mtg_engine::destruction::remove_from_combat(&mut state, attacker);
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Battlefield,
+        "the creature is no longer attacking, so Rebuke has no legal target");
+    assert!(!state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::SpellResolved { object } if *object == rebuke)),
+        "Rebuke is countered by game rules (CR 608.2b), not resolved with nothing to destroy");
+}
