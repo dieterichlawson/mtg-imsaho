@@ -147,7 +147,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Dearly Departed | `dearly_departed.rs` | 57 | 3 | 0 |
 | x | Darkthicket Wolf | `darkthicket_wolf.rs` | 56 | 3 | 0 |
 | x | Feral Ridgewolf | `feral_ridgewolf.rs` | 56 | 3 | 0 |
-|   | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
+| x | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
 |   | Harvest Pyre | `harvest_pyre.rs` | 54 | 3 | 0 |
 |   | Kessig Wolf | `kessig_wolf.rs` | 54 | 3 | 0 |
 |   | Manor Skeleton | `manor_skeleton.rs` | 54 | 3 | 0 |
