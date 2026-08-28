@@ -140,13 +140,22 @@ fn dearly_departed_in_graveyard_adds_counter() {
         "Human entering with Dearly Departed in graveyard should get +1/+1 counter");
 }
 
-/// Dearly Departed on the battlefield should NOT trigger (it only fires from graveyard).
+/// "**As long as this creature is in your graveyard**" — from the battlefield
+/// it does nothing at all. Neither a trigger nor a counter: `replacement_zones`
+/// names only the graveyard, so a Dearly Departed in play is not even a
+/// candidate.
 #[test]
 fn dearly_departed_on_battlefield_does_not_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let _departed = named_permanent(&mut state, &reg, "Dearly Departed", P0);
+
+    // The claim that matters: an entering Human gets no counter.
+    let entering = spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    state.move_object(entering, Zone::Battlefield, &reg);
+    assert_eq!(counters_of(&state, entering, CounterType::PlusOnePlusOne), 0,
+        "Dearly Departed is on the battlefield, not in the graveyard");
 
     let human = named_permanent(&mut state, &reg, "Unruly Mob", P0);
     state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {

@@ -12,6 +12,7 @@ use common::*;
 use mtg_engine::events::DamageTarget;
 use mtg_engine::replacement::{ReplaceableEvent, apply};
 use mtg_engine::types::*;
+use mtg_engine::actions::Target;
 
 // ---------------------------------------------------------------------------
 // CR 614.1d — "enters tapped"
@@ -118,6 +119,33 @@ fn a_replacement_can_apply_from_the_graveyard_to_another_permanent() {
     state.move_object(nonhuman, Zone::Battlefield, &reg);
     assert_eq!(counters_of(&state, nonhuman, CounterType::PlusOnePlusOne), 0,
         "a Zombie is not a Human");
+
+    // "each Human creature **you control**" — the graveyard the card is in is
+    // its owner's (CR 404.1), and only that player's Humans are covered.
+    let theirs = spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P1);
+    state.move_object(theirs, Zone::Battlefield, &reg);
+    assert_eq!(counters_of(&state, theirs, CounterType::PlusOnePlusOne), 0,
+        "the opponent's Human is not one you control");
+}
+
+/// Ruling: "The effect is cumulative. Human creatures you control will enter
+/// with a +1/+1 counter for each Dearly Departed in your graveyard."
+///
+/// The counterpart to `a_replaced_event_is_not_replaced_again` below. An
+/// effect that *modifies* an event passes the modified event to the next
+/// candidate, so two of them each apply once; CR 614.5 stops one effect
+/// applying twice to the same event, not two effects applying once each.
+#[test]
+fn each_dearly_departed_in_the_graveyard_adds_its_own_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+
+    let human = spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    state.move_object(human, Zone::Battlefield, &reg);
+    assert_eq!(counters_of(&state, human, CounterType::PlusOnePlusOne), 2,
+        "one counter for each Dearly Departed in the graveyard");
 }
 
 // ---------------------------------------------------------------------------
@@ -224,3 +252,32 @@ fn replacement_has_exactly_one_mechanism() {
          single `replace_event` mechanism replaced:\n{}", found.join("\n"));
 }
 
+
+/// Ruling: "when determining whether a creature entering under your control
+/// should get a +1/+1 counter, you'll simply look at what the creature will
+/// look like on the battlefield. You'll consider any effects affecting a
+/// creature entering under your control."
+///
+/// A token entering as a copy of a Human is a Human as it enters (CR 706.2),
+/// so it is covered — even though nothing about the token before the copy
+/// effect applied said "Human".
+#[test]
+fn a_token_entering_as_a_copy_of_a_human_gets_the_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+
+    let original = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    assert!(state.has_subtype(original, "Human", &reg), "test precondition");
+
+    let spell = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(original)]);
+
+    let token = state.objects.values()
+        .find(|o| o.is_token && o.zone == Zone::Battlefield)
+        .map(|o| o.id)
+        .expect("Cackling Counterpart makes a token copy");
+    assert!(state.has_subtype(token, "Human", &reg), "the copy is a Human");
+    assert_eq!(counters_of(&state, token, CounterType::PlusOnePlusOne), 1,
+        "so Dearly Departed sees it entering");
+}
