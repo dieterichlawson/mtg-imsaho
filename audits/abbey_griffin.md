@@ -40,3 +40,25 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:22
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying, vigilance
+**Type line**: Creature — Griffin
+**P/T**: 2/2
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/abbey_griffin.rs` matches: {3}{W}, Griffin, 2/2, Flying + Vigilance. French vanilla, no behavior hooks.
+
+### Tricky interactions checked
+- None card-specific; both keywords are engine-generic and behavior-tested with this very card.
+
+### Test coverage
+- Flying (blocker table rows): `mtg-engine/tests/keywords.rs` `flying_restricts_who_can_block`
+- Vigilance (attacks untapped): `keywords.rs` `vigilance_does_not_tap_on_attack`
+- Fixture duty in `hexproof_filter.rs` (as the flying target) and `cards_complex_creatures.rs`.
+- No rulings on Scryfall for this card.
+
+Mutation checks: dropping Flying fails the blocker table; dropping Vigilance fails the vigilance test. Both bite.
