@@ -23,6 +23,7 @@ use common::*;
 use mtg_engine::events::GameEvent;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
+use mtg_engine::actions::Target;
 // ── Scourge of Geier Reach ──────────────────────────────────────
 
 /// "Scourge of Geier Reach gets +1/+1 for each creature your opponents
@@ -548,6 +549,61 @@ fn traitorous_blood_steals_untaps_and_grants_keywords() {
         "Traitorous Blood should grant haste");
     assert!(state.has_keyword(enemy, Keyword::Trample, &reg),
         "Traitorous Blood should grant trample");
+}
+
+/// Ruling: "Traitorous Blood can target any creature, even one that's tapped
+/// or one you already control."
+///
+/// "Target creature" with no restriction, so the engine must offer your own —
+/// the untap and the two keywords are worth having on a creature you already
+/// have.
+#[test]
+fn traitorous_blood_can_target_a_creature_you_already_control() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(mine).unwrap().tapped = true;
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let offered = offered_targets(&state, &reg, spell);
+    assert!(offered.contains(&Target::Object(mine)),
+        "your own creature is a legal target");
+    assert!(offered.contains(&Target::Object(theirs)),
+        "and so is the opponent's");
+
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(mine)]);
+    let obj = state.get_object(mine).unwrap();
+    assert_eq!(obj.controller, P0, "it stays yours");
+    assert!(!obj.tapped, "and is untapped");
+    assert!(state.has_keyword(mine, Keyword::Haste, &reg));
+    assert!(state.has_keyword(mine, Keyword::Trample, &reg));
+}
+
+/// Ruling: "Gaining control of a creature doesn't cause you gain control of
+/// any Auras or Equipment attached to it."
+#[test]
+fn traitorous_blood_leaves_the_equipment_with_its_owner() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let victim = ready_creature(&mut state, P1, 2, 2);
+    // Equipped on P1's own turn, before this one — equip is sorcery-speed
+    // (CR 702.6b), so it cannot be driven through the engine during P0's main
+    // phase. The attachment is the setup, not the claim.
+    let cleaver = named_permanent(&mut state, &reg, "Butcher's Cleaver", P1);
+    state.get_object_mut(cleaver).unwrap().attached_to = Some(victim);
+
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(victim)]);
+
+    assert_eq!(state.get_object(victim).unwrap().controller, P0,
+        "the creature changes hands");
+    assert_eq!(state.get_object(cleaver).unwrap().controller, P1,
+        "the Equipment does not");
+    assert_eq!(state.get_object(cleaver).unwrap().attached_to, Some(victim),
+        "and stays attached to it");
 }
 
 // ── Blasphemous Act ────────────────────────────────────────────
