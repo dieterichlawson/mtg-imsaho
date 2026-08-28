@@ -79,7 +79,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 80 | 4 | 0 |
 | x | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 79 | 4 | 0 |
 | x | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 72 | 3 | 2 |
-|   | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 52 | 4 | 1 |
+| x | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 52 | 4 | 1 |
 |   | Falkenrath Noble | `falkenrath_noble.rs` | 71 | 3 | 2 |
 |   | Heretic's Punishment | `heretics_punishment.rs` | 121 | 3 | 0 |
 |   | Kessig Wolf Run | `kessig_wolf_run.rs` | 75 | 4 | 0 |
