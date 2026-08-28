@@ -22,13 +22,29 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // the word "target". The offered action list already respects it; a
         // list built by hand — which is how both clients assemble a cast — did
         // not.
+        let target_req = behavior.target_requirement();
         let deduped = crate::engine::targeting::distinct_within_each_target_instance(
-            &behavior.target_requirement(), targets);
+            &target_req, targets);
         if deduped.len() != targets.len() {
             state.log(crate::state::LogLevel::Debug, format!(
                 "{}: dropped a target named twice (CR 601.2c)", data.name));
         }
         let targets: &[Target] = &deduped;
+
+        // CR 601.2c: the targets are chosen as the spell is cast, and they must
+        // be legal ones. `legal_actions` only offers legal sets, but neither
+        // client picks a whole offered action — both assemble their own from
+        // per-slot choices — so nothing had read the list back. Refused here,
+        // before any cost is paid and before the card moves, so the state is
+        // untouched: an illegal choice means the cast did not happen, not that
+        // it happened for nothing.
+        if !crate::engine::targeting::targets_are_legal(
+            state, &target_req, targets, player, object_id, behavior, registry)
+        {
+            state.log(crate::state::LogLevel::Debug, format!(
+                "{}: cast refused, illegal targets {targets:?} (CR 601.2c)", data.name));
+            return Applied::ReturnNow;
+        }
 
         let in_graveyard = state.get_object(object_id)
             .is_some_and(|o| o.zone == Zone::Graveyard);

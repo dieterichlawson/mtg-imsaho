@@ -696,19 +696,25 @@ fn a_player_who_has_lost_is_not_an_any_target() {
 
 /// The same rule on the way down. CR 608.2b re-checks each target as the spell
 /// resolves, and that check has to be the one that offered the target — a
-/// hexproof player who was never offerable must not become legal just because
-/// the re-check restated the rule for itself.
+/// player who has *become* hexproof must not stay legal just because the
+/// re-check restated the rule for itself.
+///
+/// The target is legal when the spell is cast and illegal when it resolves,
+/// which is the only way to reach the re-check now that `cast_spell` refuses a
+/// cast whose targets were never legal (CR 601.2c). Driving the illegal cast
+/// directly, as this test used to, no longer puts anything on the stack.
 #[test]
 fn the_resolution_recheck_uses_the_same_player_targeting_rule() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_permanent(&mut state, &reg, "Witchbane Orb", P1);
 
-    // Bump in the Night: "Target opponent loses 3 life." P0 casts it at P1, who
-    // has hexproof — the engine would never offer this, so drive it directly.
+    // Bump in the Night: "Target opponent loses 3 life." P1 is a legal target.
     let bump = castable_spell(&mut state, &reg, "Bump in the Night", P0);
     let mut state = cast_onto_stack(&state, &reg, bump, vec![Target::Player(P1)]);
     let their_life = state.get_player(P1).life;
+
+    // In response, P1 gains hexproof.
+    named_permanent(&mut state, &reg, "Witchbane Orb", P1);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, their_life,
@@ -717,4 +723,5 @@ fn the_resolution_recheck_uses_the_same_player_targeting_rule() {
     assert_eq!(state.get_object(bump).unwrap().zone, Zone::Graveyard,
         "a countered spell still goes to the graveyard");
 }
+
 

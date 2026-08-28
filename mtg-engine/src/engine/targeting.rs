@@ -280,6 +280,66 @@ pub(crate) fn distinct_within_each_target_instance(
     }
 }
 
+/// Whether a submitted list of targets is one the requirement actually allows
+/// (CR 601.2c).
+///
+/// `legal_actions` only ever *offers* legal target sets, but nothing re-read
+/// the list a caller handed back, and neither client picks a whole offered
+/// action — both assemble their own from per-slot choices. So a list the
+/// engine would never have produced went straight onto the stack: a creature
+/// card in an opponent's graveyard for Unburial Rites, a spell as its own
+/// target for Purify the Grave, the same creature twice for Travel
+/// Preparations. Each was caught by a different half-measure; this is the
+/// question those cards were each asking on their own.
+///
+/// Slots are positional here, which is what makes this stricter than
+/// `stack::is_target_legal`. That one is asked one target at a time at
+/// resolution, where which slot a target came from is no longer knowable, so
+/// it accepts a `TwoTargets` target that is legal under *either* slot. At cast
+/// time the position is the answer, and each slot is checked against its own
+/// requirement.
+///
+/// Both halves of legality, the way `generate_cast_actions_with_targets`
+/// applies them: the generic zone/hexproof/filter check and the card's own
+/// `is_valid_target`.
+pub(crate) fn targets_are_legal(
+    state: &GameState,
+    target_req: &crate::cards::TargetRequirement,
+    targets: &[crate::actions::Target],
+    caster: PlayerId,
+    source_id: ObjectId,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> bool {
+    use crate::cards::TargetRequirement as R;
+    let one = |t: &crate::actions::Target| {
+        crate::stack::is_target_legal(state, t, target_req, caster, Some(source_id), registry)
+            && behavior.is_valid_target(state, caster, t, registry)
+    };
+    match target_req {
+        R::None => targets.is_empty(),
+        R::TwoTargets(first, second) => {
+            let split = targets.len().min(1);
+            targets_are_legal(state, first, &targets[..split], caster, source_id, behavior, registry)
+                && targets_are_legal(state, second, &targets[split..], caster, source_id, behavior, registry)
+        }
+        R::UpToTargets(max, inner) => {
+            targets.len() <= *max
+                && targets.iter().all(|t| {
+                    crate::stack::is_target_legal(state, t, inner, caster, Some(source_id), registry)
+                        && behavior.is_valid_target(state, caster, t, registry)
+                })
+        }
+        // Legal under any one mode, which is what choosing a mode means.
+        R::ModalChoice(modes) => modes.iter().any(|mode| {
+            targets_are_legal(state, mode, targets, caster, source_id, behavior, registry)
+        }),
+        // Every other requirement names exactly one target, and a spell that
+        // names one cannot be cast without it (CR 601.2c).
+        _ => targets.len() == 1 && one(&targets[0]),
+    }
+}
+
 /// Helper: collect all valid targets for a single-target requirement.
 pub(crate) fn valid_targets_for_req(
     state: &GameState,
