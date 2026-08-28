@@ -44,6 +44,24 @@ pub fn ready_creature(state: &mut GameState, owner: PlayerId, power: i32, toughn
     id
 }
 
+/// Grant `keyword` to `id` until end of turn.
+///
+/// The way to do this, and not obvious: `state.has_keyword` deliberately does
+/// *not* consult `obj.keywords` for a card with a registry entry — keywords
+/// have an effects layer (`ContinuousEffect::GrantKeyword` and
+/// `TemporaryEffect`) and nothing grants one by writing the object vector, so
+/// unioning it in would resurrect a stale front-face keyword on a transformed
+/// DFC. Pushing to `obj.keywords` therefore works on an anonymous creature
+/// from [`ready_creature`] (no registry entry, so the vector *is* its printed
+/// keywords) and is silently ignored on a real card — a test that grants
+/// indestructible to a Forest that way then passes for the wrong reason.
+pub fn grant_keyword(state: &mut GameState, id: ObjectId, keyword: Keyword) {
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: id,
+        keyword,
+    });
+}
+
 /// Place a creature on the battlefield with summoning sickness.
 pub fn sick_creature(state: &mut GameState, owner: PlayerId, power: i32, toughness: i32) -> ObjectId {
     state.create_object(CardId(9999), owner, Zone::Battlefield, Some(power), Some(toughness))

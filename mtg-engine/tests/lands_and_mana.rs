@@ -221,6 +221,83 @@ fn ghost_quarter_search(reg: &mtg_engine::cards::CardRegistry) -> Vec<usize> {
     left
 }
 
+/// Ruling 2013-07-01: "The target land's controller gets to search for a basic
+/// land card **even if that land wasn't destroyed** by Ghost Quarter's ability.
+/// This may happen because the land has indestructible or because it was
+/// regenerated."
+///
+/// Two sentences in one ability, and only the first one is conditional on
+/// anything.
+#[test]
+fn ghost_quarter_offers_the_search_even_when_the_land_survives() {
+    let reg = registry();
+    for (label, make_survive) in [
+        ("indestructible", 0u32),
+        ("regeneration", 1u32),
+    ] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let gq = named_permanent(&mut state, &reg, "Ghost Quarter", P0);
+        let victim = named_permanent(&mut state, &reg, "Forest", P1);
+        if make_survive == 0 {
+            grant_keyword(&mut state, victim, Keyword::Indestructible);
+        } else {
+            state.add_regeneration_shield(victim);
+        }
+        let basic = state.create_object(
+            reg.get_id_by_name("Plains").unwrap(), P1, Zone::Library, None, None);
+        state.get_player_mut(P1).library_order.push(basic);
+
+        // The sacrifice is a cost, paid on activation.
+        state.move_object(gq, Zone::Graveyard, &reg);
+        activate_via_hooks(&mut state, &reg, gq, 1, &[Target::Object(victim)]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+            "{label}: the land survived, which is the point of the ruling");
+        assert!(state.awaiting_action.is_some(),
+            "{label}: its controller is still offered the search; got {:?}",
+            state.awaiting_action);
+
+        let options = pending_choice_options(&state);
+        assert!(options.contains(&Target::Object(basic)),
+            "{label}: the basic land is among the options: {options:?}");
+
+        // And the log says what actually happened rather than announcing a
+        // destruction that did not occur.
+        let claimed_destroyed = state.game_log.iter()
+            .any(|e| e.message == "Ghost Quarter destroyed Forest");
+        assert!(!claimed_destroyed,
+            "{label}: the log must not claim the land was destroyed; log was {:?}",
+            state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        assert!(state.game_log.iter().any(|e| e.message.contains("Ghost Quarter could not destroy")),
+            "{label}: and it should say why not");
+    }
+}
+
+/// Ruling 2006-05-01: "If you target Ghost Quarter with its own ability, the
+/// ability won't resolve because its target is no longer on the battlefield.
+/// You won't get to search for a land card." The sacrifice is a cost, so the
+/// Quarter is already gone when the ability would resolve (CR 608.2b).
+#[test]
+fn ghost_quarter_targeting_itself_does_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gq = named_permanent(&mut state, &reg, "Ghost Quarter", P0);
+    let basic = state.create_object(
+        reg.get_id_by_name("Plains").unwrap(), P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(basic);
+
+    state.move_object(gq, Zone::Graveyard, &reg);
+    activate_via_hooks(&mut state, &reg, gq, 1, &[Target::Object(gq)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.awaiting_action.is_none(),
+        "no search: the only target was the Quarter itself, already sacrificed");
+    assert_eq!(state.get_object(basic).unwrap().zone, Zone::Library,
+        "and the basic land stays where it is");
+}
+
 /// "…then shuffle." Checked across repeated searches rather than against one
 /// forbidden order: a shuffle of these nine cards can legitimately land back on
 /// any particular arrangement, and `assert_ne!` against one of them is
