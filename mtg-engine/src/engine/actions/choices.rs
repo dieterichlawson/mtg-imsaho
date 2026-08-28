@@ -21,34 +21,24 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // the "unless" clause takes effect as if declined —
                     // this used to ignore the payment's result, so saying
                     // "pay" with an empty pool saved the spell for free.
-                    let controller = state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
+                    let payer = state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
                     let paid = *pay
-                        && pay_cost_with_sources(&mut *state, controller, cost, registry);
+                        && pay_cost_with_sources(&mut *state, payer, cost, registry);
                     if paid {
                         state.log(LogLevel::Event, "Paid the cost to prevent the counter".into());
                     } else {
                         crate::cards::helpers::counter_spell(state, *spell_id, registry);
                     }
-                    // Controller discards a card — player chooses which.
-                    let controller = state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
-                    let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
-                        .iter().map(|o| o.id).collect();
-                    if hand.len() == 1 {
-                        state.discard_card(hand[0], registry);
-                        state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
-                    } else if !hand.is_empty() {
-                        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                            player: controller,
-                            source: *source_spell_id,
-                            choice: ResolutionChoiceKind::ChooseCardFromHand {
-                                description: format!("{}: choose a card to discard",
-                                    state.obj_name(*source_spell_id)),
-                                player: controller,
-                                cards: hand,
-                                discard_immediately: true,
-                                remaining: 1,
-                            },
-                        });
+
+                    // Whatever else the card says happens is the card's, not
+                    // this handler's. `payer` is passed rather than re-read:
+                    // the spell may now be in a graveyard, where CR 108.4
+                    // leaves it with no controller.
+                    let source_card_id = state.get_object(*source_spell_id).map(|o| o.card_id);
+                    if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
+                        behavior.on_pay_decision(&mut *state, *source_spell_id, payer, paid, registry);
+                    }
+                    if state.awaiting_action.is_some() {
                         return Applied::ReturnNow;
                     }
                 }

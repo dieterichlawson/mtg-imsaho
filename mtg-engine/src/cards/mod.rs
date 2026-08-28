@@ -723,6 +723,23 @@ pub trait CardBehavior: Send + Sync {
     /// `yes` is true if the player chose yes, false if they declined.
     fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, _registry: &CardRegistry) {}
 
+    /// Called after the player answers a `PayOrNot` resolution choice this
+    /// card initiated, once the engine has settled the payment and countered
+    /// the spell if it went unpaid. `payer` is the player who was asked (the
+    /// targeted spell's controller) and `paid` is whether they actually paid.
+    ///
+    /// This exists because everything a "counter unless its controller pays"
+    /// card does *besides* the counter is the card's own. Frightful Delusion's
+    /// "That player discards a card" used to live in the engine's `PayOrNot`
+    /// handler, which ran it unconditionally for whatever card raised the
+    /// choice — a second card with a different rider would have got Frightful
+    /// Delusion's discard as well as its own.
+    ///
+    /// `payer` is handed over rather than re-derived: by the time this runs
+    /// the spell may have been countered, and CR 108.4 says a card that is no
+    /// longer a spell has no controller to read.
+    fn on_pay_decision(&self, _state: &mut GameState, _self_id: ObjectId, _payer: PlayerId, _paid: bool, _registry: &CardRegistry) {}
+
     /// Called when the player declines an optional `ChooseTarget` this source
     /// offered — the counterpart of `resolve_card_effect` for "none of them".
     ///

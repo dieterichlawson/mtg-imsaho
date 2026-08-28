@@ -56,4 +56,39 @@ impl CardBehavior for FrightfulDelusion {
             }
         }
     }
+
+    /// "That player discards a card."
+    ///
+    /// A separate sentence from "counter target spell unless its controller
+    /// pays {1}", and Scryfall's ruling of 2011-09-22 spells out that they are
+    /// independent: "The player discards a card even if they pay {1}." So this
+    /// ignores `paid`.
+    ///
+    /// It used to live in the engine's `PayOrNot` handler, which ran it for
+    /// whatever card raised the choice. Nothing else in the set raises one, so
+    /// nothing was wrong — but "counter unless they pay" is a template and the
+    /// next card to use it would have inherited this discard on top of its own
+    /// rider.
+    fn on_pay_decision(&self, state: &mut GameState, self_id: ObjectId, payer: PlayerId, _paid: bool, registry: &CardRegistry) {
+        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, payer)
+            .iter().map(|o| o.id).collect();
+        if hand.len() == 1 {
+            // No choice to make with one card, so do not ask for one.
+            state.discard_card(hand[0], registry);
+            state.log(crate::state::LogLevel::Event,
+                format!("p{} discarded a card", payer.0));
+        } else if !hand.is_empty() {
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: payer,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseCardFromHand {
+                    description: format!("{}: choose a card to discard", state.obj_name(self_id)),
+                    player: payer,
+                    cards: hand,
+                    discard_immediately: true,
+                    remaining: 1,
+                },
+            });
+        }
+    }
 }

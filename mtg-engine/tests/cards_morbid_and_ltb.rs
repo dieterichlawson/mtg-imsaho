@@ -900,6 +900,113 @@ fn frightful_delusion_offers_the_choice_even_with_an_empty_pool() {
         "Bears is countered once the payment is declined");
 }
 
+/// Scryfall ruling (2011-09-22): "You must target a spell in order to cast
+/// Frightful Delusion. You can't cast it without a legal target just to make a
+/// player discard a card."
+///
+/// The discard reads like a second, independent sentence — and it is, once the
+/// spell resolves — but it is not a reason to cast the card with nothing on
+/// the stack.
+#[test]
+fn frightful_delusion_cannot_be_cast_just_for_the_discard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P1 holds a card, so there would be something to discard.
+    state.create_object(CardId(9999), P1, Zone::Hand, None, None);
+    let fd = castable_spell(&mut state, &reg, "Frightful Delusion", P0);
+
+    let can_cast = |state: &mtg_engine::state::GameState| {
+        engine::legal_actions(state, &reg).actions.iter()
+            .any(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == fd))
+    };
+    assert!(!can_cast(&state),
+        "nothing is on the stack, so there is no legal target and the card \
+         cannot be cast at all");
+
+    // The control: a spell on the stack makes it castable, so the assertion
+    // above is about the missing target and not about mana or timing.
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P1);
+    state.priority_player = Some(P1);
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
+    state.priority_player = Some(P0);
+    add_mana_for(&mut state, &reg, "Frightful Delusion", P0);
+    assert!(can_cast(&state), "with a spell on the stack it can be cast");
+}
+
+/// "That player discards a card." With more than one card in hand that is the
+/// player's choice, not the engine's pick.
+///
+/// Both existing discard tests hand the player exactly one card, which takes
+/// the branch that discards without asking. The branch that asks was
+/// uncovered, and it is the one that moved out of the engine and into the card
+/// in this audit.
+#[test]
+fn frightful_delusion_lets_the_player_choose_which_card_to_discard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
+    let held: Vec<ObjectId> = (0..2).map(|i| {
+        let id = state.create_object(CardId(9999), P0, Zone::Hand, None, None);
+        state.get_object_mut(id).unwrap().name = format!("Held {i}");
+        id
+    }).collect();
+
+    let fd = spell_in_hand(&mut state, &reg, "Frightful Delusion", P1);
+    add_mana_for(&mut state, &reg, "Frightful Delusion", P1);
+    state.priority_player = Some(P1);
+    let state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
+    let state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::PayDecision(false) }, &reg);
+
+    // The counter has happened; the discard is a pending choice for P0.
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "the payment was declined, so the spell is countered");
+    assert!(matches!(&state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player,
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand { .. }, .. })
+        if *player == P0),
+        "with two cards in hand the discard is P0's choice; got {:?}", state.awaiting_action);
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 2,
+        "and nothing has been discarded while it is pending");
+
+    let state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenCard(held[1]) }, &reg);
+    assert_eq!(state.get_object(held[1]).unwrap().zone, Zone::Graveyard,
+        "the card the player picked is the one discarded");
+    assert_eq!(state.get_object(held[0]).unwrap().zone, Zone::Hand,
+        "and the other is not");
+}
+
+/// An empty hand discards nothing and asks nothing. "That player discards a
+/// card" does as much as it can (CR 608.2) — with no cards, that is nothing,
+/// and it must not leave a prompt hanging.
+#[test]
+fn frightful_delusion_asks_nothing_of_a_player_with_an_empty_hand() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
+    assert!(state.objects_in_zone(Zone::Hand, P0).is_empty(),
+        "test precondition: P0 is holding nothing");
+
+    let fd = spell_in_hand(&mut state, &reg, "Frightful Delusion", P1);
+    add_mana_for(&mut state, &reg, "Frightful Delusion", P1);
+    state.priority_player = Some(P1);
+    let state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
+    let state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::PayDecision(false) }, &reg);
+
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "the counter still happens");
+    assert!(state.awaiting_action.is_none(),
+        "and nothing is left pending; got {:?}", state.awaiting_action);
+}
+
 /// Unburial Rites presents a choice when multiple creatures in graveyard.
 #[test]
 fn unburial_rites_choice_with_multiple_creatures() {
