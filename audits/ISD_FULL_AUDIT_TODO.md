@@ -35,7 +35,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Blazing Torch | `blazing_torch.rs` | 147 | 5 | 0 |
 | x | Fiend Hunter | `fiend_hunter.rs` | 91 | 5 | 2 |
 | x | Kruin Outlaw | `kruin_outlaw.rs` | 90 | 5 | 2 |
-|   | Caravan Vigil | `caravan_vigil.rs` | 136 | 5 | 0 |
+| x | Caravan Vigil | `caravan_vigil.rs` | 136 | 5 | 0 |
 |   | Olivia Voldaren | `olivia_voldaren.rs` | 152 | 4 | 1 |
 |   | Graveyard Shovel | `graveyard_shovel.rs` | 131 | 5 | 0 |
 |   | Hanweir Watchkeep | `hanweir_watchkeep.rs` | 80 | 5 | 2 |
