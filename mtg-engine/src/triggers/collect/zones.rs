@@ -120,7 +120,14 @@ pub(super) fn creature_died(
         // a transformed DFC only has its back face's abilities).
         let has_death_trigger = state.triggered_abilities_of(watcher_id, registry).iter()
             .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies);
-        if has_death_trigger {
+        // CR 603.2: the watcher's own condition on WHICH death this is, read
+        // here as the creature dies — the same gate the ETB-watch scan above
+        // and the damage collector both have.
+        let condition_holds = registry.get(watcher_card_id).is_some_and(|b|
+            b.should_trigger_on_creature_dies(
+                state, watcher_id, dead_id, dead_controller,
+                &dead.damaged_by, dead.toughness, dead.is_token, registry));
+        if has_death_trigger && condition_holds {
             let desc = face_trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, watcher_transformed);
             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,
                 TriggerEvent::CreatureDied { dead: dead.clone() });

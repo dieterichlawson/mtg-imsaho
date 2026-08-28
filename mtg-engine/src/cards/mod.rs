@@ -651,6 +651,34 @@ pub trait CardBehavior: Send + Sync {
     /// fired. Default: trigger for every creature that enters.
     fn should_trigger_on_creature_enters(&self, _state: &GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) -> bool { true }
 
+    /// CR 603.2: which death this is — "another creature YOU CONTROL dies",
+    /// "another HUMAN dies", "a creature DEALT DAMAGE BY THIS CREATURE THIS
+    /// TURN dies" — is a condition on the event, so it decides whether the
+    /// ability triggers at all rather than what it does once it has.
+    ///
+    /// Five cards in this set used to ask it on resolution instead. That put a
+    /// trigger on the stack for every creature that died anywhere, under any
+    /// player's control, which then did nothing: a stack object with a
+    /// priority window around it, and a "Village Cannibals" line in the log
+    /// for a dying Zombie.
+    ///
+    /// Consulted at COLLECTION time, and given the dead creature's last known
+    /// information (CR 608.2g) rather than its object — a token is already out
+    /// of `state.objects` by now (SBA 704.5d), and any creature's controller,
+    /// damage record and toughness were reset by the zone change (CR 400.7).
+    /// Default: trigger for every death.
+    fn should_trigger_on_creature_dies(
+        &self,
+        _state: &GameState,
+        _self_id: ObjectId,
+        _dead_id: ObjectId,
+        _dead_controller: PlayerId,
+        _dead_damaged_by: &[ObjectId],
+        _dead_toughness: i32,
+        _dead_is_token: bool,
+        _registry: &CardRegistry,
+    ) -> bool { true }
+
     /// CR 603.2: "whenever [this/equipped creature] blocks [a Type]" only
     /// triggers when the blocked creature matches. Consulted at DISPATCH
     /// time. `self_id` is the permanent whose trigger this is (the blocker,
