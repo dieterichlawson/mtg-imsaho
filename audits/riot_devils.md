@@ -40,3 +40,23 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:30
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Devil
+**P/T**: 2/3
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/riot_devils.rs` matches: {2}{R}, Devil, 2/3, no text, no hooks.
+
+### Tricky interactions checked
+- None — true vanilla. Its printed characteristics are pinned by the set-wide vanilla table added during the Fortress Crab audit.
+
+### Test coverage
+- All printed characteristics: `mtg-engine/tests/cards_vanilla_and_keywords.rs` `vanilla_creatures_have_their_printed_characteristics`
+- No rulings on Scryfall for this card.
+
+Mutation check: subtype "Devil" -> "Imp" fails the table ("Riot Devils is a Devil"). Bites.
