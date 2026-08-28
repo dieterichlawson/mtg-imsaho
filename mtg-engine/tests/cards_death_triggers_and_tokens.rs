@@ -675,3 +675,170 @@ fn murder_of_crows_presents_draw_choice() {
     assert_eq!(hand_count, 1,
         "Draw should NOT have happened yet (waiting for 'you may' choice)");
 }
+
+/// A Murder of Crows on the battlefield, another creature freshly dead, and
+/// the "you may draw" question on the table. `library` is how many cards P0
+/// has left to draw from; `hand` is how many they are holding.
+fn crows_death_trigger(
+    reg: &mtg_engine::cards::CardRegistry,
+    library: usize,
+    hand: usize,
+) -> (mtg_engine::state::GameState, Vec<ObjectId>) {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, reg, "Murder of Crows", P0);
+
+    let hand_cards: Vec<ObjectId> = (0..hand).map(|i| {
+        let id = state.create_object(CardId(9999), P0, Zone::Hand, None, None);
+        state.get_object_mut(id).unwrap().name = format!("Hand Card {i}");
+        id
+    }).collect();
+    for i in 0..library {
+        let id = state.create_object(CardId(9999), P0, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = format!("Library Card {i}");
+        state.get_player_mut(P0).library_order.push(id);
+    }
+
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, reg);
+    triggers::process_triggers(&mut state, reg);
+    (state, hand_cards)
+}
+
+fn answer(state: &mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry,
+          choice: mtg_engine::actions::ResolvedChoice) -> mtg_engine::state::GameState {
+    engine::submit_action(state, &Action::ResolveChoice { choice }, reg)
+}
+
+/// "you may draw a card. **If you do, discard a card.**" Saying yes does both,
+/// in one resolution. Only the yes/no prompt was tested; the half of the card
+/// that actually does something was not.
+#[test]
+fn murder_of_crows_draws_and_then_discards_when_you_accept() {
+    let reg = registry();
+    // An empty hand, so after the draw there is exactly one card and the
+    // discard needs no further choice — the whole ability in one answer.
+    let (state, _) = crows_death_trigger(&reg, 1, 0);
+
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::YesNoDecision(true));
+
+    assert!(state.objects_in_zone(Zone::Hand, P0).is_empty(),
+        "the drawn card was then discarded, so the hand is empty again");
+    assert_eq!(state.objects_in_zone(Zone::Graveyard, P0).len(), 1,
+        "and it is in the graveyard");
+    assert!(state.get_player(P0).library_order.is_empty(),
+        "and it did come off the library — the draw really happened");
+    assert!(state.awaiting_action.is_none(), "nothing is left pending");
+}
+
+/// "**you may** draw" — declining does nothing at all. Without this, an
+/// implementation that ignored the answer and always drew would pass the
+/// accepting test above.
+#[test]
+fn murder_of_crows_does_nothing_when_you_decline() {
+    let reg = registry();
+    let (state, _) = crows_death_trigger(&reg, 1, 1);
+
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::YesNoDecision(false));
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 1,
+        "declining draws nothing");
+    assert_eq!(state.get_player(P0).library_order.len(), 1,
+        "and the card stays in the library");
+    assert!(state.objects_in_zone(Zone::Graveyard, P0).is_empty(),
+        "and nothing is discarded");
+}
+
+/// "If you do, discard a card." The discard is conditional on the draw having
+/// happened, not on the ability resolving. With an empty library nothing is
+/// drawn, so nothing is discarded — even though the player is holding cards
+/// that an implementation checking the hand instead would take one of.
+///
+/// The card's own comment records this having been the behaviour once. A fixed
+/// bug with no test is one refactor from coming back.
+#[test]
+fn murder_of_crows_discards_nothing_when_the_draw_found_no_card() {
+    let reg = registry();
+    let (state, _) = crows_death_trigger(&reg, 0, 2);
+
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::YesNoDecision(true));
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 2,
+        "the library was empty, so no card was drawn and none may be discarded");
+    assert!(state.objects_in_zone(Zone::Graveyard, P0).is_empty(),
+        "'if you do' was not satisfied");
+    // Not merely "nothing discarded yet": with two cards in hand the discard
+    // would be a *choice*, and a version that asked for one would leave the
+    // hand and graveyard exactly as they are here. The ability has to be
+    // finished, with nothing outstanding.
+    assert!(state.awaiting_action.is_none(),
+        "no discard is pending either — the ability is over, not waiting on a \
+         card to throw away; got {:?}", state.awaiting_action);
+}
+
+/// Scryfall ruling (2018-03-16): "You can't do anything in between drawing a
+/// card and discarding a card, including casting or cycling the card you
+/// drew."
+///
+/// The draw and the discard are one resolution. With more than one card in
+/// hand the discard is a choice, and while it is pending the only legal
+/// actions are the ones that answer it — nobody receives priority.
+#[test]
+fn murder_of_crows_gives_nobody_priority_between_the_draw_and_the_discard() {
+    let reg = registry();
+    let (state, _) = crows_death_trigger(&reg, 1, 2);
+
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::YesNoDecision(true));
+
+    assert!(matches!(state.awaiting_action,
+            Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+                choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand { .. }, .. })),
+        "the draw happened and the discard is pending, mid-resolution");
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 3,
+        "the drawn card is in hand and nothing has been discarded yet");
+
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.actions.is_empty(), "test precondition: there is something to do");
+    assert!(legal.actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. })),
+        "the only thing anyone may do is answer the discard; got {:?}", legal.actions);
+
+    // And answering it finishes the ability: the chosen card is discarded and
+    // the hand is back to what it was.
+    let chosen = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand { cards, .. }, .. })
+            => cards[0],
+        other => panic!("expected a discard choice, got {other:?}"),
+    };
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::ChosenCard(chosen));
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 2,
+        "drew one and discarded one");
+    assert_eq!(state.get_object(chosen).unwrap().zone, Zone::Graveyard,
+        "and it was the card the player picked");
+}
+
+/// "Whenever **another** creature dies" — the Crows dying on their own is not
+/// another creature dying, and must not offer the draw.
+#[test]
+fn murder_of_crows_does_not_trigger_on_its_own_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let crows = named_permanent(&mut state, &reg, "Murder of Crows", P0);
+    let lib = state.create_object(CardId(9999), P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(lib);
+
+    state.get_object_mut(crows).unwrap().damage_marked = 4;
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(crows).unwrap().zone, Zone::Graveyard,
+        "test precondition: the Crows died");
+    assert!(state.awaiting_action.is_none(),
+        "the Crows' own death is not 'another creature', so no draw is offered");
+}
