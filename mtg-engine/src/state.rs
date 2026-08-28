@@ -1868,6 +1868,30 @@ impl GameState {
         }
     }
 
+    /// Create a regeneration shield on a permanent (CR 701.15).
+    ///
+    /// Like `add_counters`, this refuses anything that is not on the
+    /// battlefield. Regeneration is a replacement effect on "the next time
+    /// this permanent would be destroyed", and a permanent that has left is a
+    /// different object (CR 400.7) which cannot be destroyed — so a shield
+    /// aimed at one lands nowhere.
+    ///
+    /// Without the guard it landed on the graveyard object and stayed there:
+    /// the cleanup step clears unused shields only from permanents *on the
+    /// battlefield*, so a creature destroyed in response to its own
+    /// "{B}: Regenerate this creature" kept the shield through the graveyard
+    /// and came back from a reanimation with a free regeneration it never
+    /// earned. Grimoire of the Dead, Unburial Rites and Moldgraf Monstrosity
+    /// are all in this set.
+    pub fn add_regeneration_shield(&mut self, id: ObjectId) {
+        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+            return;
+        }
+        if let Some(obj) = self.objects.get_mut(&id) {
+            obj.regeneration_shields += 1;
+        }
+    }
+
     /// Remove up to `count` counters of a type from a permanent.
     ///
     /// Removal, unlike `add_counters`, is not restricted to the battlefield:

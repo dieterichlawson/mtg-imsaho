@@ -71,9 +71,7 @@ impl CardBehavior for FullMoonsRise {
             .collect();
 
         for cid in werewolves {
-            if let Some(obj) = state.get_object_mut(cid) {
-                obj.regeneration_shields += 1;
-            }
+            state.add_regeneration_shield(cid);
         }
         state.log(crate::state::LogLevel::Event,
             "Full Moon's Rise: all Werewolf creatures gain regeneration".into());

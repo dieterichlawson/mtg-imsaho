@@ -1046,6 +1046,50 @@ fn no_card_spends_mana_out_of_the_pool_by_hand() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// Creating a regeneration shield is `state.add_regeneration_shield`, which
+/// refuses a permanent that is not on the battlefield (CR 701.15 — the shield
+/// replaces a destruction, and a permanent that has left is a different object
+/// that cannot be destroyed).
+///
+/// Four cards wrote `obj.regeneration_shields += 1` by hand with no such
+/// check, and the cleanup step only clears unused shields from permanents on
+/// the battlefield — so a creature destroyed in response to its own
+/// "{B}: Regenerate this creature" kept the shield through the graveyard and
+/// came back from a reanimation with a free regeneration.
+#[test]
+fn no_card_creates_a_regeneration_shield_by_hand() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            if code.contains("regeneration_shields") {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} card(s) touch `regeneration_shields` directly:\n  {}\n\n\
+         Use `state.add_regeneration_shield`, which refuses a permanent that \
+         is no longer on the battlefield.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

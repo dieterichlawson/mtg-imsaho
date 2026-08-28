@@ -974,6 +974,37 @@ fn skeletal_grimace_regeneration_saves_from_lethal() {
         "Shield should be consumed");
 }
 
+/// "{B}: Regenerate this creature" resolving after the creature has already
+/// been destroyed does nothing — and, in particular, leaves nothing behind for
+/// a later reanimation to pick up. CR 113.7a keeps the ability on the stack;
+/// CR 400.7 makes what comes back a different object.
+#[test]
+fn skeletal_grimaces_regeneration_leaves_nothing_on_a_dead_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
+    let mut state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
+    assert_eq!(state.get_object(sg).unwrap().attached_to, Some(creature), "test setup");
+
+    // Destroyed with its own regenerate ability still to resolve.
+    mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+
+    let card_id = state.get_object(sg).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .resolve_activated_ability(&mut state, creature, 0, &[], &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "the shield has nothing to attach to");
+
+    // A turn later, something brings it back.
+    advance_to_next_turn(&mut state, &reg);
+    state.move_object(creature, Zone::Battlefield, &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "and no free regeneration comes back with it");
+}
+
 /// Skeletal Grimace regeneration saves creature from Doom Blade.
 #[test]
 fn skeletal_grimace_regeneration_vs_doom_blade() {

@@ -91,6 +91,33 @@ fn regeneration_shields_expire_at_cleanup() {
         "Unused regeneration shields should expire at cleanup");
 }
 
+/// A shield aimed at something that is no longer on the battlefield lands
+/// nowhere. Regeneration replaces a destruction, and a permanent that has left
+/// is a different object (CR 400.7) which cannot be destroyed.
+///
+/// This matters because the cleanup step clears unused shields only from
+/// permanents *on the battlefield*: a shield that landed on a graveyard card
+/// survived the turn and rode a reanimation back, handing the creature a free
+/// regeneration it never earned.
+#[test]
+fn a_shield_does_not_land_on_something_that_has_left_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(creature, Zone::Graveyard, &reg);
+
+    state.add_regeneration_shield(creature);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "nothing to shield");
+
+    // And so nothing survives the turn to come back with it.
+    advance_to_next_turn(&mut state, &reg);
+    state.move_object(creature, Zone::Battlefield, &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "a reanimated creature has no shield from a previous turn");
+}
+
 #[test]
 fn try_destroy_respects_regeneration() {
     use mtg_engine::destruction::DestroyResult;

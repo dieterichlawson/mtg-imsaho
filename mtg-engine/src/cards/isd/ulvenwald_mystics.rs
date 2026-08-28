@@ -86,9 +86,7 @@ impl CardBehavior for UlvenwaldMystics {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.regeneration_shields += 1;
-        }
+        state.add_regeneration_shield(object_id);
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
