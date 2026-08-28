@@ -60,7 +60,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         }
 
         // Identify creatures that need to leave the battlefield.
-        let creature_ids: Vec<_> = state.objects.values()
+        let creature_ids: Vec<_> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| o.id)
             .collect::<Vec<_>>()
@@ -143,7 +143,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         // Rule 704.5m: Aura not attached to anything goes to graveyard.
         // Curses attached to players (attached_to_player) are exempt.
         // Equipment stays on the battlefield when unattached (detaches instead).
-        let unattached_auras: Vec<_> = state.objects.values()
+        let unattached_auras: Vec<_> = state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && o.attached_to.is_some()
@@ -159,7 +159,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             .collect();
 
         // Equipment attached to creatures that left the battlefield: detach (don't destroy).
-        let detach_equipment: Vec<ObjectId> = state.objects.values()
+        let detach_equipment: Vec<ObjectId> = state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && state.is_equipment(o.id, registry)
@@ -185,7 +185,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         }
 
         // Rule 704.5q: +1/+1 and -1/-1 counters annihilate in pairs.
-        let counter_targets: Vec<_> = state.objects.values()
+        let counter_targets: Vec<_> = state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && *o.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) > 0
@@ -209,7 +209,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         // soon as their condition is true — Garruk Relentless's "transform when
         // ≤2 loyalty" must trigger before the zero-loyalty SBA destroys him.
         {
-            let candidates: Vec<(ObjectId, crate::ids::CardId, crate::ids::PlayerId)> = state.objects.values()
+            let candidates: Vec<(ObjectId, crate::ids::CardId, crate::ids::PlayerId)> = state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Battlefield && !o.state_trigger_on_stack)
                 .map(|o| (o.id, o.card_id, o.controller))
                 .collect();
@@ -238,7 +238,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         }
 
         // Rule 704.5i: A planeswalker with 0 or less loyalty goes to graveyard.
-        let pw_zero_loyalty: Vec<_> = state.objects.values()
+        let pw_zero_loyalty: Vec<_> = state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
@@ -261,7 +261,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         {
             use std::collections::HashMap as Map;
             let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
-            for obj in state.objects.values() {
+            for obj in state.objects_in_id_order() {
                 if obj.zone == Zone::Battlefield && obj.is_legendary {
                     legend_groups.entry((obj.controller, obj.name.clone()))
                         .or_default()
@@ -298,7 +298,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         }
 
         // Rule 704.5d: A token not on the battlefield ceases to exist.
-        let dead_tokens: Vec<_> = state.objects.values()
+        let dead_tokens: Vec<_> = state.objects_in_id_order().into_iter()
             .filter(|o| o.is_token && o.zone != Zone::Battlefield)
             .map(|o| o.id)
             .collect();

@@ -411,7 +411,7 @@ pub fn end_combat(state: &mut GameState, _registry: &crate::cards::CardRegistry)
 /// Checks keywords (defender, haste) and continuous effects (Pacifism).
 #[must_use]
 pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
-    state.objects.values()
+    state.objects_in_id_order().into_iter()
         .filter(|o| {
             o.zone == Zone::Battlefield
                 && o.controller == player
@@ -432,7 +432,7 @@ pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRe
 /// Checks continuous effects (Pacifism, can't block, etc.).
 #[must_use]
 pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
-    state.objects.values()
+    state.objects_in_id_order().into_iter()
         .filter(|o| {
             o.zone == Zone::Battlefield
                 && o.controller == player

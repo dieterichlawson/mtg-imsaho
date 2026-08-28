@@ -532,21 +532,23 @@ fn no_card_hardcodes_a_derivable_token_name() {
 /// Divine Reckoning's creatures), a `find`/`any` that stops at the first match,
 /// and a log that reports the same board in a different order.
 ///
-/// Cards go through the accessors that sort by id instead —
+/// The reach is the whole crate, because every layer of it has an
+/// order-sensitive scan: which creature the player is offered first, which of
+/// two simultaneous triggers goes on the stack first, which of two creatures
+/// dying together is reported first, which state trigger fires when several
+/// are ready at once. Everything goes through the accessors that sort by id —
 /// `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
+///
+/// `state.rs` is exempt: it is where those accessors are built, and where the
+/// genuinely order-free walks live (summing continuous effects over every
+/// source reaches the same total in any order).
 #[test]
 fn nothing_iterates_the_object_map_in_map_order() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    // Trigger collection is held to the same rule: the order the watchers are
-    // scanned is the order simultaneous triggers go on the stack. So is the
-    // engine's action generation, where the scan order is the order targets
-    // and abilities are offered to the player — who picks by position.
-    let mut stack = vec![
-        root.join("src/cards"),
-        root.join("src/triggers"),
-        root.join("src/engine"),
-    ];
+    // The whole crate, except `state.rs` — that is where the sorted accessors
+    // live, and where the order-free walks (summing continuous effects) belong.
+    let mut stack = vec![root.join("src")];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let p = entry.path();
@@ -560,6 +562,9 @@ fn nothing_iterates_the_object_map_in_map_order() {
     for path in files {
         let text = std::fs::read_to_string(&path).unwrap();
         let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name == "state.rs" {
+            continue;
+        }
         for (n, line) in text.lines().enumerate() {
             let code = line.trim_start();
             if code.starts_with("//") || code.starts_with("///") {
