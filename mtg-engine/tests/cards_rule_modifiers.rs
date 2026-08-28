@@ -174,6 +174,67 @@ fn nevermore_bans_the_name_it_chose_and_nothing_else() {
          first assertion on its own");
 }
 
+/// Ruling (2011-09-22): "The named card can be cast again once Nevermore leaves
+/// the battlefield."
+///
+/// That falls out of `state.global_effects` skipping any source not on the
+/// battlefield — but nothing held it there: letting global effects apply from
+/// every zone passed the whole workspace, which would leave the ban in force
+/// from the graveyard forever.
+#[test]
+fn nevermores_ban_lifts_when_it_leaves_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P1);
+
+    let nevermore = named_permanent(&mut state, &reg, "Nevermore", P0);
+    state.get_object_mut(nevermore).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::PreventCastingNamed { name: "Lightning Bolt".into() },
+    ]);
+
+    state.priority_player = Some(P1);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P1);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Red, 1);
+
+    assert!(!can_cast(&state, &reg, bolt), "banned while Nevermore is out");
+
+    state.move_object(nevermore, Zone::Graveyard, &reg);
+
+    assert!(can_cast(&state, &reg, bolt),
+        "and castable again the moment Nevermore is not on the battlefield");
+}
+
+/// Ruling (2011-09-22): "Although the named card can't be cast, it can still be
+/// put onto the battlefield by a spell or ability (if it's a permanent card)."
+///
+/// "Can't be cast" is a restriction on casting and nothing else, which is why
+/// the check lives in `legal/casting.rs` alone. Unburial Rites returns a
+/// creature card from a graveyard to the battlefield without casting it, and
+/// naming that creature must not stop it.
+#[test]
+fn a_named_card_can_still_be_put_onto_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let nevermore = named_permanent(&mut state, &reg, "Nevermore", P0);
+    state.get_object_mut(nevermore).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::PreventCastingNamed { name: "Walking Corpse".into() },
+    ]);
+
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    // The named card is indeed uncastable — otherwise this test would pass for
+    // a Nevermore that banned nothing.
+    let in_hand = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    assert!(!can_cast(&state, &reg, in_hand), "test precondition: the name is banned");
+
+    let rites = castable_spell(&mut state, &reg, "Unburial Rites", P0);
+    let state = cast_and_resolve(&state, &reg, rites, vec![Target::Object(corpse)]);
+
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Battlefield,
+        "'can't be cast' does not stop it being put onto the battlefield");
+}
+
 // ── Devil's Play ──────────────────────────────────────────
 
 /// "Devil's Play deals X damage to any target." X comes from what is left in
