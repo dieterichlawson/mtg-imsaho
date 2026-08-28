@@ -211,7 +211,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Vampiric Fury | `vampiric_fury.rs` | 50 | 2 | 0 |
 | x | Hysterical Blindness | `hysterical_blindness.rs` | 48 | 2 | 0 |
 | x | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |
-|   | Somberwald Spider | `somberwald_spider.rs` | 43 | 2 | 0 |
+| x | Somberwald Spider | `somberwald_spider.rs` | 43 | 2 | 0 |
 |   | Parallel Lives | `parallel_lives.rs` | 42 | 2 | 0 |
 |   | Spider Spawning | `spider_spawning.rs` | 42 | 2 | 0 |
 |   | Diregraf Ghoul | `diregraf_ghoul.rs` | 41 | 2 | 0 |
