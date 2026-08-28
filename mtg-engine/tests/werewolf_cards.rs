@@ -191,6 +191,87 @@ fn hanweir_watchkeep_loses_defender_gains_force_attack() {
     assert!(state.has_effect(watchkeep, &|e| matches!(e, ContinuousEffect::ForceAttack { .. }), &reg), "Bane of Hanweir should have ForceAttack");
 }
 
+/// Put Bane of Hanweir — the back face — onto `owner`'s battlefield, ready to
+/// attack.
+fn bane_of_hanweir(
+    state: &mut mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    owner: PlayerId,
+) -> ObjectId {
+    let id = named_permanent(state, reg, "Hanweir Watchkeep", owner);
+    mtg_engine::cards::helpers::apply_transform(state, id, reg);
+    assert_eq!(state.get_object(id).unwrap().name, "Bane of Hanweir", "test setup");
+    id
+}
+
+/// "This creature attacks each combat if able." The existing test asserts the
+/// effect is *present*; this one asserts it reaches combat — the Bane is an
+/// attacker even though its controller declared no attackers at all.
+#[test]
+fn bane_of_hanweir_attacks_whether_you_declare_it_or_not() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let bane = bane_of_hanweir(&mut state, &reg, P0);
+    // A creature with no such effect, to show the force is `OnSelf` and not
+    // dragging the whole board in with it.
+    let bystander = ready_creature(&mut state, P0, 2, 2);
+
+    submit_declare_attackers(&mut state, &[], &reg);
+
+    let combat = state.combat.as_ref().expect("combat exists");
+    assert!(combat.attackers.contains_key(&bane),
+        "the Bane attacks each combat if able, declared or not");
+    assert!(!combat.attackers.contains_key(&bystander),
+        "and the effect is on itself only — it does not drag other creatures in");
+}
+
+/// "…if **able**." A creature that cannot attack is not forced to: the Bane
+/// summoning-sick, and the Bane already tapped.
+#[test]
+fn bane_of_hanweir_is_not_forced_when_it_cannot_attack() {
+    for (label, sick, tapped) in [("summoning sick", true, false), ("tapped", false, true)] {
+        let reg = registry();
+        let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+        let bane = bane_of_hanweir(&mut state, &reg, P0);
+        {
+            let obj = state.get_object_mut(bane).unwrap();
+            obj.summoning_sick = sick;
+            obj.tapped = tapped;
+        }
+
+        submit_declare_attackers(&mut state, &[], &reg);
+
+        let attacking = state.combat.as_ref()
+            .is_some_and(|c| c.attackers.contains_key(&bane));
+        assert!(!attacking,
+            "a {label} creature is not able to attack, so 'attacks each combat \
+             if able' does not force it");
+    }
+}
+
+/// The front face has Defender, so it cannot attack — and a "must attack"
+/// effect could not make it, either.
+#[test]
+fn hanweir_watchkeep_cannot_attack_behind_its_defender() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let watchkeep = named_permanent(&mut state, &reg, "Hanweir Watchkeep", P0);
+    state.get_object_mut(watchkeep).unwrap().summoning_sick = false;
+    assert!(state.has_keyword(watchkeep, Keyword::Defender, &reg), "test setup");
+
+    assert!(!mtg_engine::combat::eligible_attackers(&state, P0, &reg).contains(&watchkeep),
+        "a creature with defender is not an eligible attacker");
+
+    submit_declare_attackers(&mut state, &[(watchkeep, P1)], &reg);
+
+    let attacking = state.combat.as_ref()
+        .is_some_and(|c| c.attackers.contains_key(&watchkeep));
+    assert!(!attacking, "and declaring it anyway does not make it one");
+}
+
 // ── Tormented Pariah ──────────────────────────────────────────────
 
 // ── Grizzled Outcasts ─────────────────────────────────────────────
