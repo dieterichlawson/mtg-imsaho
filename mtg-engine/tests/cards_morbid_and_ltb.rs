@@ -948,6 +948,10 @@ fn vampire_interloper_cant_block() {
     let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(!eligible.contains(&vi),
         "Vampire Interloper should not be eligible to block");
+
+    // Its other line — flying — asked of the game, not the card data.
+    assert!(state.has_keyword(vi, Keyword::Flying, &reg),
+        "Vampire Interloper flies");
 }
 
 // ══════════════════════════════════════════════════════════════════
