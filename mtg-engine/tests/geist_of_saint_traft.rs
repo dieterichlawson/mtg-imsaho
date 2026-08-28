@@ -201,3 +201,45 @@ fn the_angel_token_attacks_whoever_geist_is_attacking() {
     assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P1),
         "the Angel is inserted into combat attacking the same player as Geist");
 }
+
+/// The same rule, on a board where "the player Geist is attacking" and "the
+/// opponent" are different players.
+///
+/// The card used to write `state.opponent(controller)` and ignore the
+/// `AttackInfo` its own trigger carried. With two players those agree, so the
+/// test above passed either way; with three they do not, and re-deriving the
+/// defender sends the Angel at the wrong player.
+#[test]
+fn the_angel_attacks_geists_defender_and_not_just_the_next_player() {
+    use mtg_engine::cards::AttackInfo;
+    use mtg_engine::ids::PlayerId;
+    const P2: PlayerId = PlayerId(2);
+
+    let reg = registry();
+    let mut state = mtg_engine::state::GameState::new(3);
+    state.step = Step::DeclareAttackers;
+    state.active_player = P0;
+    state.priority_player = Some(P0);
+    state.is_first_turn = false;
+    for p in 0..3 {
+        state.players[p].life = 20;
+    }
+    assert_eq!(state.opponent(P0), P1, "test setup: the *next* player is P1");
+
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+    // ...but Geist is attacking P2.
+    attacks_unblocked(&mut state, geist, P2);
+
+    let card_id = state.get_object(geist).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .on_attacks(&mut state, geist, AttackInfo::new(geist, P2), &[], &reg);
+
+    let angel = state.objects.values()
+        .find(|o| o.is_token && o.name.contains("Angel") && o.controller == P0)
+        .map(|o| o.id)
+        .expect("Geist should have spawned an Angel token");
+
+    assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P2),
+        "the Angel attacks whoever Geist is attacking, which the trigger \
+         already knows — not whoever happens to be the next player");
+}

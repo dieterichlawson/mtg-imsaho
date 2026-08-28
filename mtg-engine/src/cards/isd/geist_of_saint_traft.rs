@@ -36,11 +36,9 @@ impl CardBehavior for GeistOfSaintTraft {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let (controller, source_card_id) = match state.get_object(self_id) {
-            Some(o) => (o.controller, o.card_id),
-            None => return,
-        };
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
+        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let Some(source_card_id) = state.get_object(self_id).map(|o| o.card_id) else { return };
 
         // Create a 4/4 Angel token with flying, tapped and attacking.
         let token_ids = state.create_token_with_subtypes(
@@ -54,7 +52,11 @@ impl CardBehavior for GeistOfSaintTraft {
             registry,
         );
 
-        let defender = state.opponent(controller);
+        // "that's tapped and attacking" — attacking the player Geist is
+        // attacking, which the trigger already knows. Re-deriving it as
+        // `state.opponent(controller)` is the same answer only while there are
+        // exactly two players and no planeswalkers to attack.
+        let defender = attack.defending_player;
         for token_id in token_ids {
             // Set the token as tapped and attacking.
             if let Some(obj) = state.get_object_mut(token_id) {
