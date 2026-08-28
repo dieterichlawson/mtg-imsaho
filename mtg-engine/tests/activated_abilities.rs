@@ -98,6 +98,56 @@ fn manor_skeleton_regenerates_out_of_lethal_damage() {
         "and regenerating removes all damage from it");
 }
 
+/// "**until end of turn**". The grant is a temporary effect the engine's
+/// cleanup step removes; a card that made it permanent instead would pass
+/// every test above, because they all look at the same turn it was activated.
+///
+/// The turns are advanced for real rather than by clearing `until_end_of_turn`
+/// by hand — a test that cleared it itself would pass with the engine's
+/// cleanup deleted.
+#[test]
+fn a_pump_ability_wears_off_at_end_of_turn() {
+    // (card, mana to pay, printed p/t, p/t while pumped, keyword gained)
+    const CARDS: &[(&str, &[(ManaType, u32)], (i32, i32), (i32, i32), Option<Keyword>)] = &[
+        ("Kessig Wolf", &[(ManaType::Colorless, 1), (ManaType::Red, 1)],
+         (3, 1), (3, 1), Some(Keyword::FirstStrike)),
+        ("Feral Ridgewolf", &[(ManaType::Colorless, 1), (ManaType::Red, 1)],
+         (1, 2), (3, 2), None),
+        ("Darkthicket Wolf", &[(ManaType::Colorless, 2), (ManaType::Green, 1)],
+         (2, 2), (4, 4), None),
+    ];
+
+    for &(name, mana, printed, pumped, keyword) in CARDS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        // Real turns mean real draw steps; without libraries both players deck
+        // out before the turn change lands.
+        stock_library(&mut state, &reg, P0, 10);
+        stock_library(&mut state, &reg, P1, 10);
+
+        let creature = named_permanent(&mut state, &reg, name, P0);
+        add_mana(&mut state, P0, mana);
+        let mut state = activate_only_offered_ability(&state, &reg);
+
+        assert_eq!(
+            (state.effective_power(creature, &reg), state.effective_toughness(creature, &reg)),
+            (Some(pumped.0), Some(pumped.1)), "{name}: test precondition, the ability resolved");
+        if let Some(kw) = keyword {
+            assert!(state.has_keyword(creature, kw, &reg), "{name}: and granted {kw:?}");
+        }
+
+        advance_to_next_turn(&mut state, &reg);
+
+        assert_eq!(
+            (state.effective_power(creature, &reg), state.effective_toughness(creature, &reg)),
+            (Some(printed.0), Some(printed.1)), "{name} is back to its printed size");
+        if let Some(kw) = keyword {
+            assert!(!state.has_keyword(creature, kw, &reg),
+                "{name} no longer has {kw:?} — the grant lasted until end of turn and no longer");
+        }
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // When it can be activated again (CR 602.2a)
 // ══════════════════════════════════════════════════════════════════
