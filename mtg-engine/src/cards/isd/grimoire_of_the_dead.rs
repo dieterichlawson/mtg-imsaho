@@ -68,49 +68,58 @@ impl CardBehavior for GrimoireOfTheDead {
         abilities
     }
 
+    /// "{1}, {T}, Discard a card:" — everything before the colon is cost, so
+    /// the discard is paid on activation (CR 601.2h via 602.2b), not when the
+    /// ability resolves. It used to happen in `resolve_activated_ability`,
+    /// which put it on the wrong side of the priority window: an opponent
+    /// responding to the ability still saw the card in hand, and countering
+    /// the ability took the discard back with it.
+    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        if ability_index != 0 {
+            return;
+        }
+        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
+            .iter().map(|o| o.id).collect();
+
+        match hand.len() {
+            // `activated_abilities` does not offer the ability with an empty
+            // hand, because a cost that cannot be paid cannot be chosen
+            // (CR 601.2h).
+            0 => {}
+            1 => {
+                let name = state.obj_name(hand[0]);
+                state.discard_card(hand[0], registry);
+                state.log(crate::state::LogLevel::Event,
+                    format!("Grimoire of the Dead: p{} discarded {name} to pay the cost", controller.0));
+            }
+            _ => {
+                // Which card to discard is the player's choice, made while
+                // paying (CR 601.2b).
+                state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                    player: controller,
+                    source: object_id,
+                    choice: ResolutionChoiceKind::ChooseCardFromHand {
+                        description: "Grimoire of the Dead: choose a card to discard".into(),
+                        player: controller,
+                        cards: hand,
+                        discard_immediately: true,
+                    },
+                });
+            }
+        }
+    }
+
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(object_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         match ability_index {
             0 => {
-                // {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
-                // Present the discard choice to the player.
-                let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
-                    .iter().map(|o| o.id).collect();
-
-                if hand.is_empty() {
-                    return;
-                }
-
-                if hand.len() == 1 {
-                    // Only one card in hand -- auto-discard it.
-                    let card_id = hand[0];
-                    let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.discard_card(card_id, registry);
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: p{} discarded {}", controller.0, name));
-
-                    // Add the study counter.
-                    state.add_counters(object_id, CounterType::Study, 1);
-                    let count = state.get_counter_count(object_id, CounterType::Study);
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: study counter added ({count}/3)"));
-                } else {
-                    // Multiple cards -- present choice to player.
-                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                        player: controller,
-                        source: object_id,
-                        choice: ResolutionChoiceKind::ChooseCardFromHand {
-                            description: "Grimoire of the Dead: choose a card to discard".into(),
-                            player: controller,
-                            cards: hand,
-                            discard_immediately: true,
-                        },
-                    });
-                }
+                // The discard was the cost; this is the effect.
+                state.add_counters(object_id, CounterType::Study, 1);
+                let count = state.get_counter_count(object_id, CounterType::Study);
+                state.log(crate::state::LogLevel::Event,
+                    format!("Grimoire of the Dead: study counter added ({count}/3)"));
             }
             1 => {
                 // {T}, Remove 3 study counters, sacrifice: Return all graveyard creatures.
@@ -132,14 +141,14 @@ impl CardBehavior for GrimoireOfTheDead {
 
                 let count = creatures.len();
                 for cid in creatures {
-                    let (name, is_legendary) = state.get_object(cid).map_or_else(|| (String::new(), false), |o| {
-                            let legendary = state.face_data(o.id, registry)
-                                .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
-                            (o.name.clone(), legendary)
-                        });
+                    let name = state.obj_name(cid);
                     state.move_object_under_control(cid, Zone::Battlefield, controller, registry);
+                    // No `is_legendary` stamping here any more: the legend rule
+                    // reads the active face (`state.is_legendary`), so a
+                    // reanimated legend is caught by CR 704.5j without every
+                    // card that puts one onto the battlefield remembering to
+                    // say so.
                     if let Some(obj) = state.get_object_mut(cid) {
-                        obj.is_legendary = is_legendary;
                         // They're black Zombies in addition to their other colors and types.
                         if !obj.subtypes.contains(&"Zombie".into()) {
                             obj.subtypes.push("Zombie".into());
@@ -158,11 +167,4 @@ impl CardBehavior for GrimoireOfTheDead {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {
-        // After the player chooses a card to discard, add a study counter to the Grimoire.
-        state.add_counters(self_id, CounterType::Study, 1);
-        let count = state.get_counter_count(self_id, CounterType::Study);
-        state.log(crate::state::LogLevel::Event,
-            format!("Grimoire of the Dead: study counter added ({count}/3)"));
-    }
 }

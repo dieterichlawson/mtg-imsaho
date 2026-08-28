@@ -1727,6 +1727,45 @@ fn mirror_mad_phantasm_mills_to_find_itself() {
 
 // ── Grimoire of the Dead ──────────────────────────────────────────
 
+/// "{1}, {T}, Discard a card:" — the discard is *cost*, everything before the
+/// colon, so it is paid on activation (CR 601.2h via 602.2b) and an opponent
+/// responding to the ability already sees the card in the graveyard.
+///
+/// It used to happen in `resolve_activated_ability`, on the far side of the
+/// priority window: responding to the ability found the card still in hand,
+/// and countering the ability would have taken the discard back with it.
+#[test]
+fn grimoire_discards_when_the_ability_is_activated_not_when_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grimoire = named_permanent(&mut state, &reg, "Grimoire of the Dead", P0);
+    let card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Activate WITHOUT resolving: the ability is on the stack.
+    let state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: grimoire, ability_index: 0, targets: vec![],
+            tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+        },
+        &reg,
+    );
+
+    assert!(matches!(state.stack.last(), Some(mtg_engine::state::StackEntry::Ability { .. })),
+        "test precondition: the ability is on the stack, unresolved");
+    assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard,
+        "the discard is a cost — it is already paid while the ability waits");
+    assert_eq!(state.get_counter_count(grimoire, CounterType::Study), 0,
+        "and the counter is the effect, so it is not there yet");
+
+    let mut state = state;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_counter_count(grimoire, CounterType::Study), 1,
+        "the counter arrives when the ability resolves");
+}
+
 #[test]
 fn grimoire_discard_presents_choice_and_adds_study_counter() {
     let reg = registry();
