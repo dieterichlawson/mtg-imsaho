@@ -37,7 +37,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Kruin Outlaw | `kruin_outlaw.rs` | 90 | 5 | 2 |
 | x | Caravan Vigil | `caravan_vigil.rs` | 136 | 5 | 0 |
 | x | Olivia Voldaren | `olivia_voldaren.rs` | 152 | 4 | 1 |
-|   | Graveyard Shovel | `graveyard_shovel.rs` | 131 | 5 | 0 |
+| x | Graveyard Shovel | `graveyard_shovel.rs` | 131 | 5 | 0 |
 |   | Hanweir Watchkeep | `hanweir_watchkeep.rs` | 80 | 5 | 2 |
 |   | Village Ironsmith | `village_ironsmith.rs` | 78 | 5 | 2 |
 |   | Gatstaf Shepherd | `gatstaf_shepherd.rs` | 77 | 5 | 2 |
