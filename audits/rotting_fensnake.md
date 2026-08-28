@@ -40,3 +40,23 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:31
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Zombie Snake
+**P/T**: 5/1
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/rotting_fensnake.rs` matches: {3}{B}, Zombie Snake (both subtypes), 5/1, no text, no hooks.
+
+### Tricky interactions checked
+- True vanilla; the one live wire is the Zombie subtype — Rooftop Storm's {0}, Elite Inquisitor's protection, and Zombie-watching triggers all read it, through the shared subtype accessor. Pinned by the vanilla table.
+
+### Test coverage
+- All printed characteristics (incl. both subtypes): `mtg-engine/tests/cards_vanilla_and_keywords.rs` `vanilla_creatures_have_their_printed_characteristics`
+- No rulings on Scryfall for this card.
+
+Mutation check: `power: 5 -> 4` fails the table ("Rotting Fensnake's power"). Bites.
