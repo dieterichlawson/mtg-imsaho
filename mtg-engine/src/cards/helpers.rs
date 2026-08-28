@@ -548,10 +548,20 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
     };
     let Some(behavior) = registry.get(card_id) else { return; };
 
-    // Refresh the display cache when the card declares a back face. Some DFCs
-    // (Garruk Relentless) model their back face by branching on
-    // `is_transformed` in `loyalty_abilities` / `dynamic_pt` instead of
-    // declaring `back_face_data`, so the flip itself must not depend on one.
+    // CR 701.28c: only a double-faced permanent can transform. Without this,
+    // "transform all Humans" flipped `is_transformed` on a single-faced Human
+    // — a permanent claiming to show a face it does not have. Moonmist filtered
+    // for a back face itself before asking, which made the card right and left
+    // this function willing to corrupt anything else that asked.
+    //
+    // `back_face_data` is the whole test: `every_card_with_a_back_face_declares_it`
+    // holds every card Scryfall gives a back face to declaring one, Garruk
+    // Relentless included.
+    if behavior.back_face_data().is_none() {
+        return;
+    }
+
+    // Refresh the display cache with the face now showing.
     let new_name = if was_transformed {
         Some(behavior.card_data().name)
     } else {
