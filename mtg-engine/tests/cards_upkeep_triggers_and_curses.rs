@@ -22,6 +22,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -211,6 +212,96 @@ fn endless_ranks_creates_zombie_tokens() {
         .filter(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Zombie"))
         .count();
     assert_eq!(zombie_count, 7, "Should create 2 Zombie tokens (5/2 = 2)");
+}
+
+/// Put `n` 2/2 Zombie tokens onto the battlefield under `player`.
+fn zombies_for(state: &mut mtg_engine::state::GameState, reg: &CardRegistry, player: PlayerId, n: usize) {
+    for _ in 0..n {
+        let z = state.create_token_with_subtypes(
+            "Zombie", player, 2, 2, vec![Color::Black],
+            vec![CardType::Creature], vec![], vec!["Zombie".into()], reg)[0];
+        state.get_object_mut(z).unwrap().summoning_sick = false;
+    }
+}
+
+fn zombies_controlled_by(state: &mtg_engine::state::GameState, reg: &CardRegistry, player: PlayerId) -> usize {
+    state.objects_in_zone(Zone::Battlefield, player).iter()
+        .filter(|o| state.has_subtype(o.id, "Zombie", reg))
+        .count()
+}
+
+/// "X is half the number of Zombies **you control**, rounded down."
+///
+/// Ruling: "If you control fewer than two Zombies, you won't get any tokens."
+/// The existing test covers 5 → 2 only, which a great many wrong formulas also
+/// satisfy; and it has no opponent on the board, so nothing pinned "you
+/// control".
+#[test]
+fn endless_ranks_makes_half_your_zombies_rounded_down() {
+    let reg = registry();
+    // (your Zombies, opponent's Zombies, tokens expected)
+    for (mine, theirs, expected) in [(0, 4, 0), (1, 4, 0), (2, 0, 1), (3, 0, 1), (4, 0, 2), (7, 6, 3)] {
+        let mut state = game_at_step(Step::Upkeep, P0);
+        named_permanent(&mut state, &reg, "Endless Ranks of the Dead", P0);
+        zombies_for(&mut state, &reg, P0, mine);
+        zombies_for(&mut state, &reg, P1, theirs);
+
+        fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+        assert_eq!(zombies_controlled_by(&state, &reg, P0), mine + expected,
+            "{mine} Zombies of yours and {theirs} of theirs should make {expected} tokens");
+        assert_eq!(zombies_controlled_by(&state, &reg, P1), theirs,
+            "and none of them arrive under the opponent");
+    }
+}
+
+/// "create X **2/2 black Zombie** creature tokens." The count test above
+/// would be satisfied by tokens of any size or colour.
+#[test]
+fn endless_ranks_tokens_are_two_two_black_zombies() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Endless Ranks of the Dead", P0);
+
+    zombies_for(&mut state, &reg, P0, 2);
+
+    let existing: std::collections::HashSet<ObjectId> =
+        state.objects.values().map(|o| o.id).collect();
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    let made: Vec<ObjectId> = state.objects.values()
+        .filter(|o| !existing.contains(&o.id))
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(made.len(), 1, "two Zombies make one token");
+    let token = made[0];
+    assert_eq!(state.effective_power(token, &reg), Some(2), "2/2");
+    assert_eq!(state.effective_toughness(token, &reg), Some(2), "2/2");
+    assert_eq!(state.get_object(token).unwrap().colors, vec![Color::Black], "black");
+    assert!(state.has_subtype(token, "Zombie", &reg), "Zombie");
+    assert!(state.get_object(token).unwrap().is_token, "a token");
+}
+
+/// Ruling: "The number of Zombies you control is counted when the ability
+/// resolves. If you control multiple Endless Ranks of the Dead, the tokens you
+/// get when the first ability resolves will count for the subsequent abilities."
+///
+/// Four Zombies to start. Counted at resolution: 4/2 = 2 tokens, then 6/2 = 3
+/// more, for nine Zombies. Counted once up front, both abilities would see 4
+/// and make 2 each, for eight. The numbers are chosen so those differ.
+#[test]
+fn a_second_endless_ranks_counts_the_tokens_the_first_one_made() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Endless Ranks of the Dead", P0);
+    named_permanent(&mut state, &reg, "Endless Ranks of the Dead", P0);
+    zombies_for(&mut state, &reg, P0, 4);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    assert_eq!(zombies_controlled_by(&state, &reg, P0), 9,
+        "4 -> +2 -> 6 -> +3 -> 9; eight would mean both abilities counted the \
+         same four Zombies");
 }
 
 // ── Curse of the Pierced Heart ────────────────────────────────────
