@@ -327,6 +327,11 @@ fn unburial_rites_returns_creature() {
 
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Battlefield,
         "Unburial Rites should return the creature to the battlefield");
+    assert_eq!(state.get_object(bears).unwrap().controller, P0,
+        "under the control of the player who put it there (CR 110.2a)");
+    assert!(state.get_object(bears).unwrap().summoning_sick,
+        "and as a new object (CR 400.7), so it is summoning sick — a \
+         reanimated creature cannot attack the turn it arrives");
 }
 
 /// Gnaw to the Bone gains 2 life per creature card in the controller's graveyard.

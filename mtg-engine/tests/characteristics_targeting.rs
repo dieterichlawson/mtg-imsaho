@@ -191,3 +191,37 @@ fn unburial_rites_is_not_castable_with_no_creature_card_to_return() {
         "and one appearing makes it castable — the assertion above is about the \
          target, not about the mana");
 }
+
+/// "from **your** graveyard". A creature card in an opponent's graveyard is not
+/// a legal target, and CR 608.2b makes that stick on resolution as well as at
+/// cast time: with the spell's only target illegal, the spell is countered and
+/// nothing is reanimated.
+///
+/// `legal_actions` already refused to offer the opponent's card; what this
+/// covers is the re-check, which read only the target's zone and so called any
+/// card in any graveyard legal.
+#[test]
+fn unburial_rites_cannot_reanimate_out_of_an_opponents_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P1);
+    // One of P0's own, so the spell is castable at all and the assertion below
+    // is about whose graveyard rather than about there being a target.
+    let mine = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+
+    let rites = castable_spell(&mut state, &reg, "Unburial Rites", P0);
+    let offered = engine::legal_actions(&state, &reg).actions.into_iter().any(|a| matches!(
+        a, Action::CastSpell { object_id, ref targets, .. }
+        if object_id == rites && targets == &[Target::Object(theirs)]));
+    assert!(!offered, "the opponent's creature card is not offered as a target");
+
+    let mut state = cast_onto_stack(&state, &reg, rites, vec![Target::Object(theirs)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "and submitting it anyway reanimates nothing: the spell's only target \
+         is illegal, so the spell is countered (CR 608.2b)");
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Graveyard,
+        "least of all somebody else's card");
+}

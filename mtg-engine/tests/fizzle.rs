@@ -88,6 +88,28 @@ fn a_spell_whose_only_target_became_illegal_is_countered_by_game_rules() {
 /// The table above is all single-effect spells. This is the shape where CR
 /// 608.2b bites hardest: a *second* effect that names no target at all, and
 /// still does not happen, because the spell never resolves.
+/// The same rule where the target lives in a graveyard rather than on the
+/// battlefield: "Return target creature card from your graveyard to the
+/// battlefield" (Unburial Rites), with the card exiled in response.
+///
+/// The battlefield cases above all move the target *to* a graveyard, so a
+/// re-check that only asked "is this in a graveyard" would pass every one of
+/// them for the wrong reason. This one moves it the other way.
+#[test]
+fn a_graveyard_target_that_leaves_the_graveyard_counters_the_spell() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let rites = castable_spell(&mut state, &reg, "Unburial Rites", P0);
+
+    cast_then_move_target(&mut state, &reg, rites, corpse, Zone::Exile);
+
+    assert!(!resolved(&state, rites), "the spell is countered, not resolved");
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Exile,
+        "and nothing was reanimated");
+}
+
 #[test]
 fn a_countered_spells_untargeted_rider_does_not_happen_either() {
     let reg = registry();
