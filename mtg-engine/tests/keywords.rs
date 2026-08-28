@@ -434,6 +434,51 @@ fn first_strike_kills_before_normal_damage() {
         "First striker should survive because blocker dies before dealing normal damage");
 }
 
+/// Sharpened Pitchfork grants first strike to the equipped creature, and every
+/// test of it asks `has_keyword`. First strike is not a property the creature
+/// merely has — it splits the combat damage step (CR 510.4), and whether the
+/// engine splits it for a keyword granted by *another permanent* is a separate
+/// question from whether the keyword is there.
+///
+/// Equipped to a non-Human, so only the first strike is in play and the +1/+1
+/// cannot be what saves it. Walking Corpse is a 2/2 Zombie; so is the blocker,
+/// and without first strike they would trade.
+#[test]
+fn sharpened_pitchforks_first_strike_wins_the_exchange() {
+    let reg = registry();
+    for equipped in [true, false] {
+        let mut state = game_at_step(Step::CombatDamage, P0);
+        let attacker = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+        if equipped {
+            let fork = named_permanent(&mut state, &reg, "Sharpened Pitchfork", P0);
+            state.get_object_mut(fork).unwrap().attached_to = Some(attacker);
+            assert!(!state.has_subtype(attacker, "Human", &reg),
+                "test precondition: a Zombie, so the +1/+1 is not in play");
+            assert_eq!(state.effective_toughness(attacker, &reg), Some(2),
+                "and its toughness is unchanged, so surviving is first strike's doing");
+        }
+        let blocker = ready_creature(&mut state, P1, 2, 2);
+
+        submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+        submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+        combat::deal_combat_damage(&mut state, &reg);
+        check_state_based_actions(&mut state, &reg);
+
+        assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
+            "equipped={equipped}: the blocker dies either way");
+        let attacker_zone = state.get_object(attacker).unwrap().zone;
+        if equipped {
+            assert_eq!(attacker_zone, Zone::Battlefield,
+                "the granted first strike killed the blocker before it could \
+                 deal its damage back");
+        } else {
+            assert_eq!(attacker_zone, Zone::Graveyard,
+                "without the Pitchfork the same two creatures trade — which is \
+                 what makes the case above the Pitchfork's doing");
+        }
+    }
+}
+
 // ── Flash ───────────────────────────────────────────────────────────
 
 /// Creatures with flash can be cast during the opponent's turn.
