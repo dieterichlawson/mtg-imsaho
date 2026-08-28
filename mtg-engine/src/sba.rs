@@ -313,7 +313,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             .map(|o| o.id)
             .collect();
         for id in dead_tokens {
-            state.objects.remove(&id);
+            state.cease_to_exist(id);
             took_action = true;
         }
 

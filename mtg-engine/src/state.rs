@@ -677,6 +677,52 @@ impl GameState {
         all_ids.into_iter().next().unwrap_or(ObjectId(0))
     }
 
+    /// Remove an object from the game entirely — it ceased to exist
+    /// (CR 111.7: a token outside the battlefield; CR 707.10: a copy of a
+    /// spell that left the stack).
+    ///
+    /// Dropping it from `self.objects` is most of it, because every zone but
+    /// one is derived from that map and so empties itself. The exception is a
+    /// library, whose order is a list of object ids kept alongside; an id left
+    /// there is a card that can be drawn and isn't — the draw comes up empty,
+    /// the hand doesn't grow, and a player who should have decked out doesn't.
+    pub fn cease_to_exist(&mut self, id: ObjectId) {
+        self.objects.remove(&id);
+        for player in &mut self.players {
+            player.library_order.retain(|&other| other != id);
+        }
+    }
+
+    /// Put an object into its owner's library (CR 401.1).
+    ///
+    /// A library is the one zone whose order the game tracks, and that order
+    /// lives in `PlayerState::library_order` beside the objects themselves.
+    /// `move_object` maintains the zone but not the order, so moving a card
+    /// into `Zone::Library` by hand puts it in the zone at no position in it:
+    /// never drawn, never milled, counted in no library size. Every effect
+    /// that puts a card into a library goes through here and says where it
+    /// lands — CR 701.15a and 701.17a spell out "on top" and "on the bottom"
+    /// precisely because a library has an order and an effect must pick one.
+    ///
+    /// A token put here is listed like anything else. It ceases to exist as a
+    /// state-based action (CR 111.7 / 704.5d), not the moment it arrives, and
+    /// `sba::check_state_based_actions` takes it back out of the order when it
+    /// does.
+    pub fn put_into_library(
+        &mut self,
+        id: ObjectId,
+        position: LibraryPosition,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        let Some(owner) = self.get_object(id).map(|o| o.owner) else { return };
+        self.move_object(id, Zone::Library, registry);
+        let library = &mut self.get_player_mut(owner).library_order;
+        match position {
+            LibraryPosition::Top => library.insert(0, id),
+            LibraryPosition::Bottom => library.push(id),
+        }
+    }
+
     /// Move an object to a new zone.
     /// Per MTG rules, changing zones makes it a "new object" — we increment `zone_change_count`.
     /// Move a permanent onto the battlefield under a specified controller
@@ -721,6 +767,14 @@ impl GameState {
         }
 
         let from = self.objects.get(&id).map(|o| o.zone);
+        // A library's order is kept alongside the zone, so leaving the library
+        // means leaving that order too. Doing it here rather than at the call
+        // site is the only way it cannot be forgotten: a card left listed in a
+        // library it is no longer in is drawn as a card that isn't there.
+        if from == Some(Zone::Library) {
+            let owner = self.objects.get(&id).map_or(PlayerId(0), |o| o.owner);
+            self.get_player_mut(owner).library_order.retain(|&other| other != id);
+        }
         // Capture controller before any mutation: CR 603.10c requires LTB
         // triggers to be controlled by whoever controlled the permanent
         // immediately before it left the battlefield.
@@ -2615,6 +2669,19 @@ impl PlayerState {
             Some(self.library_order.remove(0))
         }
     }
+}
+
+/// Where a card goes when an effect puts it into a library.
+///
+/// A library has an order, so no effect can put a card into one without
+/// saying where: CR 701.15a ("put ... on top of") and CR 701.17a ("on the
+/// bottom of") are separate keyword actions for that reason. Shuffling in is
+/// [`LibraryPosition::Bottom`] followed by a shuffle, which is what the
+/// shuffle makes of any position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LibraryPosition {
+    Top,
+    Bottom,
 }
 
 /// One "gain control of X for as long as you control this permanent" effect
