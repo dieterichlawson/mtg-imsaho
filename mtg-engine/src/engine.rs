@@ -386,8 +386,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             actions::abilities::activate_loyalty_ability(&mut new_state, *object_id, *ability_index,
                 targets, registry),
 
-        Action::DeclareAttackers { attackers } =>
-            actions::combat::declare_attackers(&mut new_state, attackers, registry),
+        Action::DeclareAttackers { attackers, planeswalker_attacks } =>
+            actions::combat::declare_attackers(&mut new_state, attackers, planeswalker_attacks, registry),
         Action::DeclareBlockers { assignments } =>
             actions::combat::declare_blockers(&mut new_state, assignments, registry),
 
@@ -1084,7 +1084,7 @@ fn run_game_loop_inner<F>(
             ref eligible, ref must_attack, ..
         }) = legal.combat_prompt {
             if eligible.is_empty() && must_attack.is_empty() {
-                *state = submit_action(state, &Action::DeclareAttackers { attackers: vec![] }, registry);
+                *state = submit_action(state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, registry);
                 state.priority_player = Some(state.active_player);
                 continue;
             }

@@ -75,7 +75,15 @@ pub enum Action {
     ActivateLoyaltyAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
 
     /// Declare which creatures are attacking and who they're attacking.
-    DeclareAttackers { attackers: Vec<(ObjectId, PlayerId)> },
+    /// `planeswalker_attacks` names attackers sent at a planeswalker instead
+    /// of at the player: (attacker, planeswalker). Such an attacker appears
+    /// ONLY here, not in `attackers` — the engine works out the defending
+    /// player (the planeswalker's controller, CR 508.1a).
+    DeclareAttackers {
+        attackers: Vec<(ObjectId, PlayerId)>,
+        #[serde(default)]
+        planeswalker_attacks: Vec<(ObjectId, ObjectId)>,
+    },
 
     /// Declare which creatures are blocking and what they're blocking.
     DeclareBlockers { assignments: Vec<(ObjectId, ObjectId)> },
@@ -145,6 +153,10 @@ pub enum CombatPrompt {
         /// Creatures that must attack this combat (e.g., Furor of the Bitten).
         must_attack: Vec<ObjectId>,
         defending_player: PlayerId,
+        /// Planeswalkers the defending player controls — each may be attacked
+        /// instead of the player (CR 508.1a).
+        #[serde(default)]
+        defending_planeswalkers: Vec<ObjectId>,
     },
     /// Choose blocking assignments.
     ChooseBlockers {
@@ -260,8 +272,8 @@ impl std::fmt::Display for Action {
                     write!(f, "Activate ability {ability_index} on {object_id} targeting {targets:?}{sac_str}")
                 }
             }
-            Action::DeclareAttackers { attackers } =>
-                write!(f, "Declare {} attackers", attackers.len()),
+            Action::DeclareAttackers { attackers, planeswalker_attacks } =>
+                write!(f, "Declare {} attackers", attackers.len() + planeswalker_attacks.len()),
             Action::DeclareBlockers { assignments } =>
                 write!(f, "Declare {} blockers", assignments.len()),
             Action::DiscardCards { cards } =>

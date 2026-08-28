@@ -1220,8 +1220,8 @@ impl CliPlayer {
                 format!("Tap {} for mana", Self::perm_name(view, *object_id)),
             Action::ActivateAbility { object_id, .. } =>
                 format!("Activate ability: {}", Self::perm_name(view, *object_id)),
-            Action::DeclareAttackers { attackers } => {
-                if attackers.is_empty() { "Don't attack".into() }
+            Action::DeclareAttackers { attackers, planeswalker_attacks } => {
+                if attackers.is_empty() && planeswalker_attacks.is_empty() { "Don't attack".into() }
                 else {
                     let names: Vec<String> = attackers.iter()
                         .map(|(id, _)| Self::perm_name(view, *id)).collect();
@@ -1679,13 +1679,14 @@ impl CliPlayer {
     // ── Combat ─────────────────────────────────────────────────────
 
     fn choose_attackers(view: &GameView, prompt: &CombatPrompt) -> Action {
-        let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player: defending } = prompt else {
+        let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player: defending,
+                                            defending_planeswalkers } = prompt else {
             unreachable!()
         };
         let defending = *defending;
 
         if eligible.is_empty() {
-            return Action::DeclareAttackers { attackers: vec![] };
+            return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
         }
 
         Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
@@ -1713,6 +1714,19 @@ impl CliPlayer {
                 SetForegroundColor(color), Print(tag), ResetColor);
             r += 1;
         }
+        if !defending_planeswalkers.is_empty() {
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetForegroundColor(Color::Yellow),
+                Print(" Attackable planeswalkers (use N>pwM):"), ResetColor);
+            r += 1;
+            for (i, &id) in defending_planeswalkers.iter().enumerate() {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Bold), Print(format!("  pw{i}")),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!(": {}", Self::perm_name(view, id))));
+                r += 1;
+            }
+        }
         let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
@@ -1721,11 +1735,12 @@ impl CliPlayer {
             let input = Self::read_line("  Attack (numbers/all/none)> ");
 
             if input == "none" || input == "n" {
-                return Action::DeclareAttackers { attackers: vec![] };
+                return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
             }
             if input.is_empty() || input == "all" || input == "a" {
                 return Action::DeclareAttackers {
                     attackers: eligible.iter().map(|&id| (id, defending)).collect(),
+                    planeswalker_attacks: vec![],
                 };
             }
 
@@ -1733,13 +1748,33 @@ impl CliPlayer {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .collect();
-            let indices: Vec<usize> = tokens.iter()
-                .filter_map(|s| s.parse().ok()).collect();
-            if indices.len() == tokens.len() {
-                let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len()).collect();
+            // "N" attacks the player; "N>pwM" sends attacker N at
+            // planeswalker M.
+            let mut indices: Vec<usize> = Vec::new();
+            let mut walker_attacks: Vec<(usize, usize)> = Vec::new();
+            let mut parsed = 0usize;
+            for t in &tokens {
+                if let Some((a, w)) = t.split_once(">pw") {
+                    if let (Ok(a), Ok(w)) = (a.parse::<usize>(), w.parse::<usize>()) {
+                        walker_attacks.push((a, w));
+                        parsed += 1;
+                    }
+                } else if let Ok(i) = t.parse::<usize>() {
+                    indices.push(i);
+                    parsed += 1;
+                }
+            }
+            if parsed == tokens.len() {
+                let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len())
+                    .chain(walker_attacks.iter().filter(|&&(a, w)|
+                        a >= eligible.len() || w >= defending_planeswalkers.len()).map(|&(a, _)| a))
+                    .collect();
                 if bad.is_empty() {
                     return Action::DeclareAttackers {
                         attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
+                        planeswalker_attacks: walker_attacks.iter()
+                            .map(|&(a, w)| (eligible[a], defending_planeswalkers[w]))
+                            .collect(),
                     };
                 }
                 println!("  Invalid attacker(s): {}. Valid range is 0-{}.",
@@ -2469,7 +2504,7 @@ impl CliPlayer {
                 // If we have creatures, break pass mode so the player can decide.
                 if self.pass_mode.is_some() {
                     if eligible.is_empty() {
-                        return Action::DeclareAttackers { attackers: vec![] };
+                        return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
                     }
                     // We have creatures to attack with — break pass mode.
                     self.pass_mode = None;

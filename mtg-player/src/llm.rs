@@ -2919,9 +2919,10 @@ impl LlmPlayer {
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
-            CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player } => {
+            CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player,
+                                            defending_planeswalkers } => {
                 if eligible.is_empty() {
-                    return Action::DeclareAttackers { attackers: vec![] };
+                    return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
                 }
 
                 // Build disambiguated labels so the model can tell apart two
@@ -2947,6 +2948,18 @@ impl LlmPlayer {
                     "\nPick indices in 0-{} to attack with, or empty list for no attacks. Forced attackers are auto-included.",
                     eligible.len() - 1
                 ).unwrap();
+                if !defending_planeswalkers.is_empty() {
+                    combat_text.push_str("\nDefending planeswalkers (attackable instead of the player): ");
+                    for (i, &id) in defending_planeswalkers.iter().enumerate() {
+                        let name = view.battlefield.iter().find(|p| p.object_id == id)
+                            .map_or_else(|| format!("#{}", id.0), |p| p.name.clone());
+                        write!(combat_text, "pw{i}:{name} ").unwrap();
+                    }
+                    combat_text.push_str(
+                        "\nTo send an attacker at a planeswalker, list it in planeswalker_attacks \
+                         as {\"attacker\": <attacker index>, \"planeswalker\": <pw index>} \
+                         instead of putting its index in attacker_indices.");
+                }
 
                 let full_prompt = self.build_prompt(view, &combat_text);
 
@@ -2958,6 +2971,18 @@ impl LlmPlayer {
                             "type": "array",
                             "items": {"type": "integer", "minimum": 0},
                             "description": "Indices of creatures to attack with (empty array for none)"
+                        },
+                        "planeswalker_attacks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "attacker": {"type": "integer", "minimum": 0},
+                                    "planeswalker": {"type": "integer", "minimum": 0}
+                                },
+                                "required": ["attacker", "planeswalker"]
+                            },
+                            "description": "Attackers sent at a defending planeswalker instead of the player (attacker index + pw index); omit or empty if none"
                         }
                     },
                     "required": ["thoughts", "attacker_indices"]
@@ -2986,10 +3011,26 @@ impl LlmPlayer {
                 let mut seen = std::collections::HashSet::new();
                 indices.retain(|i| seen.insert(*i));
 
+                // Planeswalker attacks: (attacker index, pw index) pairs. An
+                // attacker named here must not also attack the player.
+                let walker_attacks: Vec<(mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId)> =
+                    response["planeswalker_attacks"].as_array().map(|arr| arr.iter()
+                        .filter_map(|v| {
+                            let a = usize::try_from(v["attacker"].as_u64()?).ok()?;
+                            let w = usize::try_from(v["planeswalker"].as_u64()?).ok()?;
+                            if a < eligible.len() && w < defending_planeswalkers.len() {
+                                Some((eligible[a], defending_planeswalkers[w]))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()).unwrap_or_default();
+                indices.retain(|&i| !walker_attacks.iter().any(|&(a, _)| a == eligible[i]));
+
                 let attackers = indices.iter()
                     .map(|&i| (eligible[i], *defending_player))
                     .collect();
-                Action::DeclareAttackers { attackers }
+                Action::DeclareAttackers { attackers, planeswalker_attacks: walker_attacks }
             }
 
             CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks } => {

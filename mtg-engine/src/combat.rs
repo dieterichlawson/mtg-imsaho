@@ -10,9 +10,21 @@ use crate::types::{Keyword, Zone, ContinuousEffect};
 pub fn declare_attackers(
     state: &mut GameState,
     attackers: &[(ObjectId, PlayerId)],
+    planeswalker_attacks: &[(ObjectId, ObjectId)],
     registry: &CardRegistry,
 ) {
     let mut combat = CombatState::new();
+
+    // An attacker sent at a planeswalker still has a defending PLAYER — the
+    // planeswalker's controller (CR 508.1a) — so it joins the same list, and
+    // the walker is remembered separately for the damage step.
+    let mut attackers: Vec<(ObjectId, PlayerId)> = attackers.to_vec();
+    for &(attacker_id, walker) in planeswalker_attacks {
+        let Some(controller) = state.get_object(walker).map(|o| o.controller) else { continue };
+        attackers.push((attacker_id, controller));
+        combat.planeswalker_defenders.insert(attacker_id, walker);
+    }
+    let attackers = &attackers[..];
 
     for &(attacker_id, defending_player) in attackers {
         // Vigilance: don't tap when attacking.
@@ -282,10 +294,30 @@ fn deal_damage_step(
 
         let was_blocked = combat.blocked_attackers.contains(&attacker_id)
             || state.combat.as_ref().is_some_and(|c| c.blocked_attackers.contains(&attacker_id));
+        // An attacker sent at a planeswalker deals its unblocked/overflow
+        // damage to the walker instead of the player. If the walker is no
+        // longer on the battlefield under the defending player, there is
+        // nothing being attacked and that damage simply is not dealt
+        // (CR 510.1c) — it does NOT fall through to the player (the 2018
+        // removal of the redirect rule).
+        let attacked_walker = combat.planeswalker_defenders.get(&attacker_id).copied();
+        let walker_still_there = attacked_walker.is_some_and(|w|
+            state.get_object(w).is_some_and(|o|
+                o.zone == Zone::Battlefield && o.controller == defending_player));
+
         if blockers.is_empty() && !was_blocked {
-            // Unblocked: deal damage to defending player.
+            // Unblocked: deal damage to what it attacks.
             if attacker_power > 0 {
-                deal_damage_to_player(state, attacker_id, defending_player, attacker_power, registry);
+                match attacked_walker {
+                    Some(walker) if walker_still_there => {
+                        deal_walker_damage_with_trample_spill(
+                            state, attacker_id, walker, defending_player,
+                            attacker_power, has_trample, registry);
+                    }
+                    Some(_) => {} // attacked walker is gone: no combat damage
+                    None => deal_damage_to_player(
+                        state, attacker_id, defending_player, attacker_power, registry),
+                }
             }
         } else {
             // Blocked: distribute damage to blockers, with trample overflow.
@@ -356,9 +388,19 @@ fn deal_damage_step(
                 }
             }
 
-            // Trample: remaining damage goes to the defending player.
+            // Trample: remaining damage goes to whatever is being attacked —
+            // the defending player, or the attacked planeswalker (CR 702.19d).
             if has_trample && remaining_power > 0 {
-                deal_damage_to_player(state, attacker_id, defending_player, remaining_power, registry);
+                match attacked_walker {
+                    Some(walker) if walker_still_there => {
+                        deal_walker_damage_with_trample_spill(
+                            state, attacker_id, walker, defending_player,
+                            remaining_power, true, registry);
+                    }
+                    Some(_) => {} // attacked walker is gone: overflow lands nowhere
+                    None => deal_damage_to_player(
+                        state, attacker_id, defending_player, remaining_power, registry),
+                }
             }
         }
     }
@@ -369,6 +411,37 @@ fn deal_damage_step(
 #[must_use]
 pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
     state.subtypes_of(creature_id, registry)
+}
+
+/// Combat damage aimed at an attacked planeswalker. Without trample the whole
+/// amount hits the walker (loyalty, via the shared damage pipeline). With
+/// trample, damage beyond the walker's remaining loyalty may be assigned to
+/// its controller instead (CR 702.19i), and the engine assigns exactly
+/// lethal-to-the-walker then spills the rest, matching how it fills blockers.
+fn deal_walker_damage_with_trample_spill(
+    state: &mut GameState,
+    attacker: ObjectId,
+    walker: ObjectId,
+    defending_player: PlayerId,
+    amount: u32,
+    has_trample: bool,
+    registry: &CardRegistry,
+) {
+    let to_walker = if has_trample {
+        let loyalty = state.get_object(walker)
+            .and_then(|o| o.counters.get(&crate::types::CounterType::Loyalty).copied())
+            .unwrap_or(0);
+        amount.min(loyalty)
+    } else {
+        amount
+    };
+    if to_walker > 0 {
+        deal_damage_to_creature(state, attacker, walker, to_walker, registry);
+    }
+    let spill = amount - to_walker;
+    if spill > 0 {
+        deal_damage_to_player(state, attacker, defending_player, spill, registry);
+    }
 }
 
 /// Deal combat damage from a source creature to a target creature.
@@ -552,7 +625,7 @@ mod tests {
         state.get_object_mut(attacker).unwrap().summoning_sick = false;
 
         let defending = PlayerId(1);
-        declare_attackers(&mut state, &[(attacker, defending)], &registry);
+        declare_attackers(&mut state, &[(attacker, defending)], &[], &registry);
         declare_blockers(&mut state, &[]);
         deal_combat_damage(&mut state, &registry);
 
@@ -573,7 +646,7 @@ mod tests {
         );
 
         let defending = PlayerId(1);
-        declare_attackers(&mut state, &[(attacker, defending)], &registry);
+        declare_attackers(&mut state, &[(attacker, defending)], &[], &registry);
         declare_blockers(&mut state, &[(blocker, attacker)]);
         deal_combat_damage(&mut state, &registry);
 
@@ -614,7 +687,7 @@ mod tests {
             "Non-flyer Geist-Honored Monk should not be able to block flying Vampire Interloper");
 
         // Verify the block gets filtered out by declare_blockers_with_registry
-        declare_attackers(&mut state, &[(attacker, p1)], &registry);
+        declare_attackers(&mut state, &[(attacker, p1)], &[], &registry);
         declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &registry);
 
         // Attacker should be unblocked — damage goes to player

@@ -101,7 +101,7 @@ impl RandomPlayer {
                     .filter(|_| rng.gen_bool(0.5))
                     .map(|&id| (id, *defending_player))
                     .collect();
-                Action::DeclareAttackers { attackers }
+                Action::DeclareAttackers { attackers, planeswalker_attacks: vec![] }
             }
             CombatPrompt::ChooseBlockers { eligible_blockers, attackers, .. } => {
                 if attackers.is_empty() {

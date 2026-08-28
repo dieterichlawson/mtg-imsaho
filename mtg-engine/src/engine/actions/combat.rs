@@ -7,7 +7,7 @@ use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
 use super::super::*;
 
-pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, PlayerId)], registry: &CardRegistry) -> Applied {
+pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, PlayerId)], planeswalker_attacks: &[(ObjectId, ObjectId)], registry: &CardRegistry) -> Applied {
         // Validate declarations: only the active player's eligible
         // creatures (untapped, not summoning-sick without haste, no
         // defender/Pacifism — CR 508.1a) may attack, and only a valid
@@ -20,16 +20,33 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
             .filter(|(id, def)| eligible.contains(id) && *def == valid_defender)
             .copied()
             .collect();
+        // CR 508.1a: an attacker may instead be sent at a planeswalker the
+        // defending player controls. Same authority rule: an entry naming an
+        // ineligible attacker, a non-planeswalker, someone else's
+        // planeswalker, or an attacker already attacking the player is
+        // dropped, not trusted.
+        let planeswalker_attacks: Vec<(ObjectId, ObjectId)> = planeswalker_attacks.iter()
+            .filter(|(id, walker)| {
+                eligible.contains(id)
+                    && !attackers.iter().any(|(a, _)| a == id)
+                    && state.get_object(*walker).is_some_and(|o|
+                        o.zone == crate::types::Zone::Battlefield && o.controller == valid_defender)
+                    && state.has_card_type(*walker, crate::types::CardType::Planeswalker, registry)
+            })
+            .copied()
+            .collect();
         let attackers = &attackers[..];
-        if attackers.is_empty() {
+        if attackers.is_empty() && planeswalker_attacks.is_empty() {
             state.log(LogLevel::Debug, "No attackers declared".into());
         } else {
-            let names: Vec<String> = attackers.iter()
+            let mut names: Vec<String> = attackers.iter()
                 .map(|(id, _)| card_name(state, registry, *id))
                 .collect();
+            names.extend(planeswalker_attacks.iter().map(|(id, walker)| format!(
+                "{} -> {}", card_name(state, registry, *id), card_name(state, registry, *walker))));
             state.log(LogLevel::Event, format!("p{} declared attackers: {}", state.active_player.0, names.join(", ")));
         }
-        combat::declare_attackers(&mut *state, attackers, registry);
+        combat::declare_attackers(&mut *state, attackers, &planeswalker_attacks, registry);
 
         // CR 508.1d: a creature that is required to attack and *able* to must
         // be among the declared attackers. "Able" is `eligible_attackers` —

@@ -2863,8 +2863,14 @@ pub struct ControlEffect {
 /// Combat state, tracking attackers and blockers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CombatState {
-    /// Map of attacker `ObjectId` -> defending `PlayerId`.
+    /// Map of attacker `ObjectId` -> defending `PlayerId`. Every attacker is
+    /// in here — one attacking a planeswalker defends against its controller
+    /// (CR 508.1a), and additionally appears in `planeswalker_defenders`.
     pub attackers: HashMap<ObjectId, PlayerId>,
+    /// Attackers sent at a planeswalker rather than at the player:
+    /// attacker -> the planeswalker it attacks.
+    #[serde(default)]
+    pub planeswalker_defenders: HashMap<ObjectId, ObjectId>,
     /// Map of attacker `ObjectId` -> list of blockers assigned to it.
     pub blocker_assignments: HashMap<ObjectId, Vec<ObjectId>>,
     /// Attackers that became blocked when blockers were declared. Blocked-ness

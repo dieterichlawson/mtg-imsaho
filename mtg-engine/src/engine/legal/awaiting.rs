@@ -34,6 +34,13 @@ pub(crate) fn legal_actions_while_awaiting(
                     eligible,
                     must_attack,
                     defending_player: defending,
+                    // CR 508.1a: each attacker may be sent at the player or at
+                    // a planeswalker that player controls.
+                    defending_planeswalkers: state.objects_in_zone(crate::types::Zone::Battlefield, defending)
+                        .iter()
+                        .filter(|o| state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry))
+                        .map(|o| o.id)
+                        .collect(),
                 }),
                 castable_spells: vec![],
                 activatable_abilities: vec![],
