@@ -59,8 +59,6 @@ impl CardBehavior for CurseOfTheBloodyTome {
         // would also be wrong: once the ability is on the stack it resolves
         // whatever the turn has done since.
         let Some(cursed_player) = state.attached_player(self_id) else { return };
-        crate::engine::mill_cards(state, cursed_player, 2, registry);
-        state.log(crate::state::LogLevel::Event,
-            format!("Curse of the Bloody Tome: p{} milled 2 cards", cursed_player.0));
+        crate::engine::mill_cards(state, cursed_player, 2, "Curse of the Bloody Tome", registry);
     }
 }

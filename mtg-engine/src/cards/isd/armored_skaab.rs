@@ -36,8 +36,6 @@ impl CardBehavior for ArmoredSkaab {
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        crate::engine::mill_cards(state, controller, 4, registry);
-        state.log(crate::state::LogLevel::Event,
-            "Armored Skaab enters — milled 4 cards".to_string());
+        crate::engine::mill_cards(state, controller, 4, "Armored Skaab", registry);
     }
 }

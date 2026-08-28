@@ -52,8 +52,6 @@ impl CardBehavior for DerangedAssistant {
             None => return,
         };
         // Mill a card as part of the mana ability cost.
-        crate::engine::mill_cards(state, controller, 1, registry);
-        state.log(crate::state::LogLevel::Event,
-            "Deranged Assistant: milled a card".into());
+        crate::engine::mill_cards(state, controller, 1, "Deranged Assistant", registry);
     }
 }

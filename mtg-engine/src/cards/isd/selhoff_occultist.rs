@@ -64,7 +64,5 @@ impl CardBehavior for SelhoffOccultist {
 /// "...target player mills a card."
 fn mill_target(state: &mut GameState, chosen_targets: &[Target], registry: &CardRegistry) {
     let Some(Target::Player(pid)) = chosen_targets.first() else { return };
-    crate::engine::mill_cards(state, *pid, 1, registry);
-    state.log(crate::state::LogLevel::Event,
-        format!("Selhoff Occultist: p{} milled a card", pid.0));
+    crate::engine::mill_cards(state, *pid, 1, "Selhoff Occultist", registry);
 }

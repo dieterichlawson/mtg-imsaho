@@ -65,7 +65,6 @@ impl CardBehavior for Splinterfright {
         // Only trigger on your upkeep.
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
-        crate::engine::mill_cards(state, controller, 2, registry);
-        state.log(crate::state::LogLevel::Event, "Splinterfright: milled 2 cards".into());
+        crate::engine::mill_cards(state, controller, 2, "Splinterfright", registry);
     }
 }

@@ -93,9 +93,7 @@ impl CardBehavior for UndeadAlchemist {
 
         // mill_cards emits CreatureCardMilled, which the trigger system picks
         // up to fire our on_creature_card_milled (exile + Zombie token).
-        crate::engine::mill_cards(state, *damaged_player, *amount as usize, registry);
-        state.log(crate::state::LogLevel::Event,
-            format!("Undead Alchemist: Zombie combat damage replaced with mill ({amount})"));
+        crate::engine::mill_cards(state, *damaged_player, *amount as usize, "Undead Alchemist", registry);
         Some(Replacement::Replaced)
     }
 }

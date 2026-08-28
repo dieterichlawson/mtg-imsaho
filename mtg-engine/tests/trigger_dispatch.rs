@@ -466,7 +466,7 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     let zombie_tokens_before = count_tokens_named_by(&state, "Zombie Token", P0);
 
     // Mill 1 card from P1's library.
-    engine::mill_cards(&mut state, P1, 1, &registry);
+    engine::mill_cards(&mut state, P1, 1, "test", &registry);
     // Run trigger processing so any watcher triggers get a chance
     // to fire.
     mtg_engine::triggers::process_triggers(&mut state, &registry);

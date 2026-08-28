@@ -80,7 +80,15 @@ pub fn mill_one(state: &mut GameState, player: PlayerId, obj_id: ObjectId, regis
     state.get_player_mut(player).library_order.retain(|&id| id != obj_id);
     state.move_object(obj_id, Zone::Graveyard, registry);
 }
-pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
+/// Mill up to `count` cards, and say how many actually went (CR 701.13b: a
+/// player with fewer cards than that mills all of them and does not lose).
+///
+/// `source` names the card doing it, so there is one line and it is accurate.
+/// Six cards used to log their *intended* count next to this function's real
+/// one — "Curse of the Bloody Tome: p1 milled 2 cards" beside "p1 milled 1
+/// card" — and the card's line, the one naming the source, was the one a
+/// reader would trust.
+pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source: &str, registry: &CardRegistry) -> usize {
     let mut milled = 0;
     for _ in 0..count {
         let obj_id = {
@@ -94,8 +102,14 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registr
         milled += 1;
     }
     if milled > 0 {
-        state.log(LogLevel::Event, format!("p{} milled {} card{}", player.0, milled, if milled == 1 { "" } else { "s" }));
+        let short = if milled < count { format!(" (of {count} — library ran out)") } else { String::new() };
+        state.log(LogLevel::Event, format!(
+            "{source}: p{} milled {milled} card{}{short}",
+            player.0, if milled == 1 { "" } else { "s" }));
+    } else if count > 0 {
+        state.log(LogLevel::Event, format!("{source}: p{} has an empty library, nothing to mill", player.0));
     }
+    milled
 }
 /// Check if a player could cast any spell if they tapped all available mana sources.
 /// Used by the auto-pass check to avoid skipping turns where mana abilities are

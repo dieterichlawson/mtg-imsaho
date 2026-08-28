@@ -27,7 +27,7 @@ impl CardBehavior for DreamTwist {
 
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
-            crate::engine::mill_cards(state, *player_id, 3, registry);
+            crate::engine::mill_cards(state, *player_id, 3, "Dream Twist", registry);
         }
     }
 }

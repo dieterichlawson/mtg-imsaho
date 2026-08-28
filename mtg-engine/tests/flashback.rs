@@ -135,7 +135,7 @@ fn mill_cards_moves_to_graveyard() {
     let lib_cards = stock_library(&mut state, &reg, P1, 5);
 
     // Mill 3 cards.
-    engine::mill_cards(&mut state, P1, 3, &reg);
+    engine::mill_cards(&mut state, P1, 3, "test", &reg);
 
     // First 3 should be in graveyard, last 2 remain in library.
     for &id in &lib_cards[0..3] {
