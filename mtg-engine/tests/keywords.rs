@@ -298,6 +298,68 @@ fn lifelink_gains_life_from_creature_damage() {
         "Should gain 3 life from lifelink even when blocked");
 }
 
+/// Butcher's Cleaver grants lifelink through `ContinuousEffect::when`, and
+/// every test of it asks `has_keyword`. That the keyword is granted and that
+/// the combat damage step honours a keyword granted by *another permanent* are
+/// two different claims, and only the second is what the card promises.
+///
+/// Both arms in one test: the Human gains the life, the Zombie does not.
+#[test]
+fn butchers_cleaver_lifelink_gains_life_only_for_a_human() {
+    let reg = registry();
+    // Avacyn's Pilgrim is a 1/1 Human; Walking Corpse is a 2/2 Zombie.
+    for (creature, base_power, human) in [("Avacyn's Pilgrim", 1, true), ("Walking Corpse", 2, false)] {
+        let mut state = game_at_step(Step::CombatDamage, P0);
+        let attacker = named_permanent(&mut state, &reg, creature, P0);
+        let cleaver = named_permanent(&mut state, &reg, "Butcher's Cleaver", P0);
+        state.get_object_mut(cleaver).unwrap().attached_to = Some(attacker);
+
+        let life_before = state.get_player(P0).life;
+        let expected_damage = base_power + 3;
+        assert_eq!(state.effective_power(attacker, &reg), Some(expected_damage),
+            "{creature}: the +3/+0 is unconditional");
+
+        submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+        submit_declare_blockers(&mut state, P1, &[], &reg);
+        combat::deal_combat_damage(&mut state, &reg);
+
+        assert_eq!(state.get_player(P1).life, 20 - expected_damage,
+            "{creature}: the damage lands either way");
+        let expected_life = if human { life_before + expected_damage } else { life_before };
+        assert_eq!(state.get_player(P0).life, expected_life,
+            "{creature}: lifelink is granted only while the equipped creature is a Human");
+    }
+}
+
+/// CR 702.15a: lifelink applies to *any* damage the creature deals, not just
+/// combat damage. Skirsdag Cultist is a Human, so the Cleaver gives it
+/// lifelink, and its "deals 2 damage to any target" gains 2 life.
+#[test]
+fn butchers_cleaver_lifelink_applies_to_noncombat_damage_too() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
+    let fodder = ready_creature(&mut state, P0, 1, 1);
+    let cleaver = named_permanent(&mut state, &reg, "Butcher's Cleaver", P0);
+    state.get_object_mut(cleaver).unwrap().attached_to = Some(cultist);
+    assert!(state.has_keyword(cultist, Keyword::Lifelink, &reg),
+        "test precondition: Skirsdag Cultist is a Human, so the Cleaver grants lifelink");
+
+    let life_before = state.get_player(P0).life;
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, targets, sacrifice: Some(s), .. }
+            if *object_id == cultist && targets == &[Target::Player(P1)] && *s == fodder))
+        .expect("{R}, {T}, Sacrifice a creature: 2 damage to any target");
+    let state = resolve_activated(mtg_engine::engine::submit_action(&state, &action, &reg), &reg);
+
+    assert_eq!(state.get_player(P1).life, 18, "the 2 damage landed");
+    assert_eq!(state.get_player(P0).life, life_before + 2,
+        "lifelink is not restricted to combat damage (CR 702.15a)");
+}
+
 // ── Trample ─────────────────────────────────────────────────────────
 
 /// Trample: excess damage carries over to the defending player.
