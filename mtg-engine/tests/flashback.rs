@@ -434,6 +434,38 @@ fn desperate_ravings_draws_two_discards_one() {
         "Desperate Ravings should result in net +1 hand size (draw 2, discard 1, minus the spell)");
 }
 
+/// "Draw two cards, **then** discard a card at random" — two claims the net
+/// hand count cannot see. The discard pool is the hand *after* the draw, so a
+/// card just drawn can be the one discarded; and "at random" means the choice
+/// varies with the seed rather than being whichever card came first.
+#[test]
+fn desperate_ravings_discards_at_random_from_the_hand_after_drawing() {
+    let reg = registry();
+    let mut seen = std::collections::HashSet::new();
+
+    for seed in 0..20u64 {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
+        // An empty hand apart from the spell itself, so after casting, the
+        // hand at discard time is exactly the two cards just drawn.
+        let library = stock_library(&mut state, &reg, P0, 3);
+        let dr = castable_spell(&mut state, &reg, "Desperate Ravings", P0);
+        let state = cast_and_resolve(&state, &reg, dr, vec![]);
+
+        let discarded: Vec<_> = library.iter()
+            .filter(|id| state.get_object(**id).unwrap().zone == Zone::Graveyard)
+            .collect();
+        assert_eq!(discarded.len(), 1,
+            "seed {seed}: exactly one card is discarded, and it is one of the \
+             two just drawn — the pool is the hand after the draw");
+        seen.insert(*discarded[0]);
+    }
+
+    assert!(seen.len() > 1,
+        "twenty seeds discarded the same card every time, so the choice is \
+         not random: saw {seen:?}");
+}
+
 /// Forbidden Alchemy reveals top 4, player picks 1 for hand, rest go to graveyard.
 #[test]
 fn forbidden_alchemy_draws_and_mills() {
