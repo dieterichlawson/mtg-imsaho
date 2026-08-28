@@ -1,11 +1,11 @@
-//! CR 603.3b: a triggered ability's targets are chosen when the trigger is put
+//! CR 603.3d: a triggered ability's targets are chosen when the trigger is put
 //! onto the stack, not when it resolves.
 //!
 //! Four cards declared `target_requirement: None` and then built their own
 //! target prompt inside the resolution handler. The end result usually looked
 //! right, but it broke three rules at once:
 //!
-//! - **603.3b** — the controller got to watch opponents respond to the trigger
+//! - **603.3d** — the controller got to watch opponents respond to the trigger
 //!   before committing to a target.
 //! - **603.3c** — a trigger with no legal targets must never reach the stack.
 //!   Since it went on undeclared, that check never ran and the handler quietly

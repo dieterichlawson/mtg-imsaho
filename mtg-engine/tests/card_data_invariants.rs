@@ -307,7 +307,7 @@ fn every_triggered_ability_describes_itself() {
 
 /// A triggered ability that targets must say so.
 ///
-/// The engine chooses a trigger's targets as it goes on the stack (CR 603.3b).
+/// The engine chooses a trigger's targets as it goes on the stack (CR 603.3d).
 /// If the ability's `target_requirement` is `None` the engine pushes it
 /// untargeted, and the card is left to pick something at resolution — which is
 /// both the wrong time and invisible to the "no legal target, no trigger" rule

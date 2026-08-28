@@ -127,7 +127,7 @@ fn bloodgift_demons_trigger_resolves_even_if_the_demon_dies_in_response() {
     let demon = named_permanent(&mut state, &reg, "Bloodgift Demon", P0);
     stock_library(&mut state, &reg, P0, 1);
 
-    // The trigger goes on the stack and its target is chosen (CR 603.3b).
+    // The trigger goes on the stack and its target is chosen (CR 603.3d).
     state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
     triggers::collect_triggers(&mut state, &reg);
     assert!(state.awaiting_action.is_some(), "the target is chosen on the way to the stack");
@@ -164,7 +164,7 @@ fn bloodgift_demon_draws_and_loses_life() {
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
-    // CR 603.3b: the target is chosen as the trigger goes on the stack, so the
+    // CR 603.3d: the target is chosen as the trigger goes on the stack, so the
     // prompt comes first and the trigger resolves afterwards. (It used to be
     // the other way round — the trigger resolved and then asked, which is the
     // bug bloodgift_demon-01 reported.)

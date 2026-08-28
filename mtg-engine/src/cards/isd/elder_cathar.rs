@@ -26,7 +26,7 @@ impl CardBehavior for ElderCathar {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "put +1/+1 counters on target creature you control".into(),
-                    // CR 603.3b: the target is chosen when the trigger goes on
+                    // CR 603.3d: the target is chosen when the trigger goes on
                     // the stack, so the engine picks it — not `on_dies`.
                     target_requirement: Some(TargetRequirement::Creature),
                 },
@@ -35,7 +35,7 @@ impl CardBehavior for ElderCathar {
         }
     }
 
-    /// CR 603.3b: the target was chosen when the trigger went on the stack, so
+    /// CR 603.3d: the target was chosen when the trigger went on the stack, so
     /// it arrives in `chosen_targets`. CR 603.3c already removed the trigger if
     /// there were no legal targets, and CR 608.2b re-checked legality on the
     /// way down, neither of which happened while this selected its own target

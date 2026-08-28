@@ -27,7 +27,7 @@ impl CardBehavior for BloodgiftDemon {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "target player draws a card and loses 1 life".into(),
-                    // CR 603.3b: the target is chosen as the trigger goes on
+                    // CR 603.3d: the target is chosen as the trigger goes on
                     // the stack, so the engine picks it — with hexproof
                     // filtering — rather than `on_upkeep` prompting later.
                     target_requirement: Some(TargetRequirement::PlayerOnly),
@@ -44,7 +44,7 @@ impl CardBehavior for BloodgiftDemon {
         }
     }
 
-    /// CR 603.3b: the target arrived with the trigger. `step_trigger_scope`
+    /// CR 603.3d: the target arrived with the trigger. `step_trigger_scope`
     /// already restricted this to the controller's own upkeep.
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 113.7a: "target player draws a card and loses 1 life" is entirely

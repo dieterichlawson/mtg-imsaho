@@ -605,7 +605,7 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
         .copied()
         .unwrap_or(0);
 
-    // Fire Elder Cathar's death trigger directly. CR 603.3b: the target is
+    // Fire Elder Cathar's death trigger directly. CR 603.3d: the target is
     // chosen when the trigger goes on the stack and handed to the resolution
     // handler, so pass it the way the engine does. (This used to be `&[]`,
     // because the card selected its own target at resolution — which is the

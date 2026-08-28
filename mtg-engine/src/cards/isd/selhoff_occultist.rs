@@ -25,13 +25,13 @@ impl CardBehavior for SelhoffOccultist {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "target player mills a card".into(),
-                    // CR 603.3b: chosen when the trigger goes on the stack.
+                    // CR 603.3d: chosen when the trigger goes on the stack.
                     target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "target player mills a card".into(),
-                    // CR 603.3b: chosen when the trigger goes on the stack.
+                    // CR 603.3d: chosen when the trigger goes on the stack.
                     target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
             ],
@@ -40,7 +40,7 @@ impl CardBehavior for SelhoffOccultist {
     }
 
     /// When Selhoff Occultist itself dies, target player mills a card.
-    /// CR 603.3b: the target arrived with the trigger, chosen when it went on
+    /// CR 603.3d: the target arrived with the trigger, chosen when it went on
     /// the stack — the engine's `process_pending_trigger_pushes` auto-picks a
     /// lone legal target or prompts, and applies hexproof filtering. This used
     /// to build its own prompt at resolution, which also skipped the CR 603.3c
