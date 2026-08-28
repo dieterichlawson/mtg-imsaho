@@ -156,27 +156,79 @@ fn geist_honored_monks_defining_ability_works_outside_the_battlefield() {
     assert_eq!(state.effective_toughness(monk, &reg), Some(2));
 }
 
-/// "Enchanted creature gets +X/+X, where X is the number of creature cards in
-/// your graveyard." A characteristic-defining count, so it is recomputed as the
-/// graveyard changes rather than fixed when the Aura resolved.
+/// "Enchanted creature gets +X/+X, where X is the number of creature **cards**
+/// in your graveyard."
+///
+/// Ruling (2011-09-22): "The value of X is constantly updated as creature cards
+/// are put into or removed from your graveyard."
+///
+/// Every clause gets a step. The version this replaces added anonymous
+/// `CardId(9999)` objects with a P/T, which CR 205.1b makes creatures — so it
+/// showed the count going up and nothing else. Counting *every* card in the
+/// graveyard rather than the creature cards passed the whole suite.
 #[test]
-fn wreath_of_geists_tracks_the_graveyard_as_it_changes() {
+fn wreath_of_geists_counts_the_creature_cards_in_its_controllers_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
     let wreath = castable_spell(&mut state, &reg, "Wreath of Geists", P0);
-    state = cast_and_resolve(&state, &reg, wreath, vec![Target::Object(creature)]);
+    let mut state = cast_and_resolve(&state, &reg, wreath, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(2),
         "an empty graveyard is X = 0");
 
-    for expected in 3..=5 {
-        state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
-        assert_eq!(state.effective_power(creature, &reg), Some(expected),
-            "each creature card added to the graveyard raises X");
-        assert_eq!(state.effective_toughness(creature, &reg), Some(expected));
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    assert_eq!(state.effective_power(creature, &reg), Some(3),
+        "a creature card in the graveyard raises X");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(3));
+
+    // "creature cards" — a land card is not one.
+    named_card_in_graveyard(&mut state, &reg, "Forest", P0);
+    assert_eq!(state.effective_power(creature, &reg), Some(3),
+        "a land card in the same graveyard is not a creature card");
+
+    // CR 109.1: nor is a token, which sits in the graveyard until the next
+    // state-based-action check (CR 704.5e).
+    let token = state.create_token_with_subtypes(
+        "Zombie", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+        vec![], vec!["Zombie".into()], &reg)[0];
+    state.move_object(token, Zone::Graveyard, &reg);
+    assert_eq!(state.effective_power(creature, &reg), Some(3),
+        "a creature TOKEN in the graveyard is not a creature card");
+
+    // "…or removed from your graveyard" — the count is live, not a snapshot.
+    state.move_object(corpse, Zone::Exile, &reg);
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "the creature card left the graveyard, so X drops again");
+}
+
+/// "…in **your** graveyard" — the Aura's controller's, which is not the same
+/// player as the enchanted creature's controller once the Aura is on something
+/// an opponent controls.
+///
+/// Reading the enchanted creature's controller instead passed the whole suite.
+#[test]
+fn wreath_of_geists_counts_its_own_controllers_graveyard_not_the_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // The creature belongs to the opponent, and so does a well-stocked
+    // graveyard that must not count.
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    for _ in 0..3 {
+        named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
     }
+    // One creature card in the Aura controller's own graveyard.
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    let wreath = castable_spell(&mut state, &reg, "Wreath of Geists", P0);
+    let state = cast_and_resolve(&state, &reg, wreath, vec![Target::Object(theirs)]);
+
+    assert_eq!(state.effective_power(theirs, &reg), Some(3),
+        "X is the one creature card in the Aura controller's graveyard, not \
+         the three in the enchanted creature's controller's");
+    assert_eq!(state.effective_toughness(theirs, &reg), Some(3));
 }
 
 // ── Block restriction ──────────────────────────────────────────────
