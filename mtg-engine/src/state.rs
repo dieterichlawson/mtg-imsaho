@@ -618,13 +618,28 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let source = self.get_object(source_id);
-        let (name, power, toughness, card_id, is_legendary, obj_colors, obj_keywords, obj_card_types, obj_subtypes) = match source {
+        let (obj_name, obj_power, obj_toughness, card_id, is_legendary, obj_colors, obj_keywords, obj_card_types, obj_subtypes) = match source {
             Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.is_legendary, o.colors.clone(), o.keywords.clone(), o.card_types.clone(), o.subtypes.clone()),
             None => return ObjectId(0),
         };
-        let (colors, keywords, card_types, subtypes) = registry.card_data(card_id)
-            .map(|d| {
-                // Derive colors from mana cost.
+        // CR 706.2: a copy takes the *copiable* values — what is printed on the
+        // face now showing, plus earlier copy effects — and nothing an effect
+        // has since done to the permanent. So this reads the active face and
+        // falls back to the object's own fields only for a token, which has no
+        // face to read (the ruling's "if the copied creature is a token, the
+        // token copies the original characteristics of that token").
+        //
+        // Reading `obj.power` / `obj.toughness` instead copied a Tree of
+        // Redemption whose toughness had been exchanged with its controller's
+        // life total as the number it currently showed, rather than its printed
+        // 0/13 — the one case in this set where an effect writes those fields.
+        // `face_data` also answers with the *back* face of a transformed
+        // permanent, where `card_data(card_id)` always answered with the front.
+        let face = self.face_data(source_id, registry);
+        let (name, power, toughness, colors, keywords, card_types, subtypes) = match face {
+            Some(d) => {
+                // Colors come from the mana cost, which is where a card's
+                // colour lives (CR 105.2).
                 let mut cols = Vec::new();
                 if let Some(ref cost) = d.cost {
                     for sym in &cost.symbols {
@@ -635,9 +650,10 @@ impl GameState {
                         }
                     }
                 }
-                (cols, d.keywords.clone(), d.card_types.clone(), d.subtypes.clone())
-            })
-            .unwrap_or_else(|| (obj_colors, obj_keywords, obj_card_types, obj_subtypes));
+                (d.name.clone(), d.power, d.toughness, cols, d.keywords.clone(), d.card_types.clone(), d.subtypes.clone())
+            }
+            None => (obj_name, obj_power, obj_toughness, obj_colors, obj_keywords, obj_card_types, obj_subtypes),
+        };
 
         let all_ids = self.create_token_with_subtypes(
             &name,
