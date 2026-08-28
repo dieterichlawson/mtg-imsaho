@@ -36,7 +36,7 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         let forced_ids: Vec<crate::ids::ObjectId> = {
             let active = state.active_player;
             let mut forced = Vec::new();
-            for creature in state.objects.values() {
+            for creature in state.objects_in_id_order() {
                 if creature.zone != Zone::Battlefield || creature.controller != active
                     || !state.is_creature(creature.id, registry) || creature.tapped || creature.summoning_sick {
                     continue;

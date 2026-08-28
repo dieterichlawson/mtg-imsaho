@@ -247,7 +247,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(keep_id), PendingEffect::LegendRuleKeep { player, legend_name }) => {
             // Keep the chosen permanent, move all other legendaries with the same name to graveyard.
-            let to_remove: Vec<ObjectId> = state.objects.values()
+            let to_remove: Vec<ObjectId> = state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == crate::types::Zone::Battlefield
                     && o.controller == *player
                     && o.is_legendary

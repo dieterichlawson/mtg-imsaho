@@ -82,7 +82,7 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                 } else {
                     // Fall through to attached lookup below.
                     let mut found = (card_id, None);
-                    for attached in state.objects.values()
+                    for attached in state.objects_in_id_order().into_iter()
                         .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(object_id))
                     {
                         if let Some(ab) = registry.get(attached.card_id)
@@ -98,7 +98,7 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             } else {
                 // Walk attached auras/equipment.
                 let mut found = (card_id, None);
-                for attached in state.objects.values()
+                for attached in state.objects_in_id_order().into_iter()
                     .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(object_id))
                 {
                     if let Some(ab) = registry.get(attached.card_id)

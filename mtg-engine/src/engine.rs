@@ -307,7 +307,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             });
         }
     }
-    let activatable_abilities: Vec<crate::actions::ActivatableAbility> = ability_map
+    // Sorted: `ability_map` is a HashMap, and this list is what the player
+    // picks an ability from by position. Draining it in map order offered the
+    // same abilities under different indices on a replay of the same game.
+    let mut ability_entries: Vec<_> = ability_map.into_iter().collect();
+    ability_entries.sort_by_key(|((object_id, source_card_id, ability_index), _)| {
+        (object_id.0, source_card_id.map_or(0, |c| c.0), *ability_index)
+    });
+    let activatable_abilities: Vec<crate::actions::ActivatableAbility> = ability_entries
         .into_iter()
         .map(|((object_id, source_card_id, ability_index), g)| {
             crate::actions::ActivatableAbility {

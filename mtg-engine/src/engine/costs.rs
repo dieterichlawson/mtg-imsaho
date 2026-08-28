@@ -179,7 +179,7 @@ pub fn additional_cost_plan(
         return AdditionalCostPlan { payable: true, ..AdditionalCostPlan::default() };
     };
     let graveyard = |only_creatures: bool| {
-        state.objects.values()
+        state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Graveyard && o.owner == player && o.id != spell
                     && (!only_creatures || state.is_creature(o.id, registry))
@@ -246,7 +246,7 @@ pub(crate) fn exile_prompt(
         return None;
     }
     let gy = |only_creatures: bool| -> Vec<ObjectId> {
-        state.objects.values()
+        state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Graveyard && o.owner == player && o.id != spell
                     && (!only_creatures || state.is_creature(o.id, registry))
@@ -330,7 +330,7 @@ pub(crate) fn pay_additional_cost(
         AdditionalCost::ExileXFromGraveyard => {
             let chosen: Vec<ObjectId> = if exile_ids.is_empty() {
                 let x = exile_count.unwrap_or(0) as usize;
-                state.objects.values()
+                state.objects_in_id_order().into_iter()
                     .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != spell)
                     .map(|o| o.id)
                     .take(x)
@@ -371,7 +371,7 @@ pub fn pay_exile_creatures(
     chosen: &[ObjectId],
 ) {
     let to_exile: Vec<ObjectId> = if chosen.is_empty() {
-        let mut candidates: Vec<(ObjectId, i32)> = state.objects.values()
+        let mut candidates: Vec<(ObjectId, i32)> = state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Graveyard && o.owner == player && o.id != spell
                     && state.is_creature(o.id, registry)

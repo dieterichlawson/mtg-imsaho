@@ -535,12 +535,18 @@ fn no_card_hardcodes_a_derivable_token_name() {
 /// Cards go through the accessors that sort by id instead —
 /// `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
 #[test]
-fn no_card_iterates_the_object_map_directly() {
+fn nothing_iterates_the_object_map_in_map_order() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     // Trigger collection is held to the same rule: the order the watchers are
-    // scanned is the order simultaneous triggers go on the stack.
-    let mut stack = vec![root.join("src/cards"), root.join("src/triggers")];
+    // scanned is the order simultaneous triggers go on the stack. So is the
+    // engine's action generation, where the scan order is the order targets
+    // and abilities are offered to the player — who picks by position.
+    let mut stack = vec![
+        root.join("src/cards"),
+        root.join("src/triggers"),
+        root.join("src/engine"),
+    ];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let p = entry.path();
@@ -568,7 +574,7 @@ fn no_card_iterates_the_object_map_directly() {
         }
     }
     assert!(offenders.is_empty(),
-        "{} site(s) in card code iterate the raw object map, whose order is \
+        "{} site(s) iterate the raw object map, whose order is \
          seeded per process:\n  {}\n\n\
          Use objects_in_zone / all_objects_in_zone / objects_in_id_order, \
          which sort by id.",

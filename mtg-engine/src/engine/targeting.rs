@@ -310,7 +310,7 @@ pub(crate) fn valid_targets_for_req(
             // All cards in all graveyards. CR 109.1: a token is not a card, and
             // CR 704.5e leaves one in a graveyard until the next state-based
             // action pass, so an enumeration taken in between can see one.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Graveyard && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -318,7 +318,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCreature => {
             // Creature cards in caster's graveyard.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| {
                     o.zone == Zone::Graveyard
                         && o.owner == caster
@@ -331,7 +331,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCreatureOfSubtype(ref subtype) => {
             // Creature cards with a specific subtype in all graveyards.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| {
                     o.zone == Zone::Graveyard
                         && state.is_card(o.id)
@@ -344,7 +344,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCardOwnedByCaster => {
             // Cards in the caster's own graveyard.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Graveyard && o.owner == caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -352,7 +352,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCardOwnedByOpponent => {
             // Cards in any opponent's graveyard.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Graveyard && o.owner != caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -360,7 +360,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::ExileCard => {
             // All cards in exile owned by the caster.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Exile && o.owner == caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -379,7 +379,7 @@ pub(crate) fn valid_targets_for_req(
             // Which player is only known once the co-target is chosen, so the
             // pairing in `generate_cast_actions_with_targets` narrows this.
             // Unconstrained here, it is every graveyard card.
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Graveyard && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -573,14 +573,14 @@ pub(crate) fn generate_ability_targets(
                 .collect()
         }
         TargetRequirement::GraveyardCard => {
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Graveyard)
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
         }
         TargetRequirement::ExileCard => {
-            state.objects.values()
+            state.objects_in_id_order().into_iter()
                 .filter(|o| o.zone == Zone::Exile && o.owner == controller)
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))

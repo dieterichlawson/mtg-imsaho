@@ -1052,7 +1052,7 @@ impl GameState {
     /// offered to a player as a list, gives a different answer on a replay of
     /// the same game. Anything that cares about order goes through this or
     /// through `objects_in_zone` / `all_objects_in_zone`, which sort the same
-    /// way. `card_data_invariants::no_card_iterates_the_object_map_directly`
+    /// way. `card_data_invariants::nothing_iterates_the_object_map_in_map_order`
     /// keeps card code out of the raw map.
     #[must_use]
     pub fn objects_in_id_order(&self) -> Vec<&GameObject> {

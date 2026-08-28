@@ -43,7 +43,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 }
             }
         }
-        for attached in state.objects.values() {
+        for attached in state.objects_in_id_order() {
             // Only offer abilities granted by attachments the acting player
             // controls. Every granted activated ability in the set includes
             // sacrificing the attached source as a cost (paid in
