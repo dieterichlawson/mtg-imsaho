@@ -674,3 +674,41 @@ fn rangers_guile_wears_off_at_end_of_turn() {
         "and so is the hexproof — an effect that outlived its duration would \
          protect the creature forever");
 }
+
+// ── True vanillas ───────────────────────────────────────────────────
+
+/// The set's true vanilla creatures — no text at all, so their printed
+/// numbers ARE the whole card, and nothing else in the suite pins most of
+/// them. Oracle data fetched 2026-08-28 (note Thraben Purebloods is a Dog —
+/// the Hound-to-Dog errata).
+#[test]
+fn vanilla_creatures_have_their_printed_characteristics() {
+    // (name, mana value, subtypes, power, toughness)
+    const VANILLAS: &[(&str, u32, &[&str], i32, i32)] = &[
+        ("Kindercatch", 6, &["Spirit"], 6, 6),
+        ("Fortress Crab", 4, &["Crab"], 1, 6),
+        ("Riot Devils", 3, &["Devil"], 2, 3),
+        ("Rotting Fensnake", 4, &["Zombie", "Snake"], 5, 1),
+        ("Thraben Purebloods", 5, &["Dog"], 3, 5),
+        ("Walking Corpse", 2, &["Zombie"], 2, 2),
+    ];
+
+    let reg = registry();
+    for &(name, mv, subtypes, power, toughness) in VANILLAS {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
+
+        let data = reg.card_data(state.get_object(id).unwrap().card_id).unwrap();
+        assert_eq!(data.cost.as_ref().unwrap().mana_value(), mv, "{name}'s mana value");
+        assert!(data.oracle_text.is_empty(), "{name} is a true vanilla");
+        assert!(data.keywords.is_empty() && data.continuous_effects.is_empty()
+            && data.triggered_abilities.is_empty(),
+            "{name} must not have grown abilities its card does not print");
+
+        assert_eq!(state.effective_power(id, &reg), Some(power), "{name}'s power");
+        assert_eq!(state.effective_toughness(id, &reg), Some(toughness), "{name}'s toughness");
+        for sub in subtypes {
+            assert!(state.has_subtype(id, sub, &reg), "{name} is a {sub}");
+        }
+    }
+}

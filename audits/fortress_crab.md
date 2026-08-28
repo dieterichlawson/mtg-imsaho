@@ -40,3 +40,25 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:30
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Crab
+**P/T**: 1/6
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/fortress_crab.rs` matches: {3}{U}, Crab, 1/6, no text, no hooks.
+
+One coverage gap closed set-wide: the true vanillas had no test pinning their printed numbers (nothing referenced Fortress Crab at all — any P/T typo was invisible). Added `vanilla_creatures_have_their_printed_characteristics`, a table over all six true vanillas asserting mana value, empty text/abilities, P/T, and subtypes.
+
+### Tricky interactions checked
+- None — the numbers are the whole card. The new table also guards against a vanilla silently growing abilities.
+
+### Test coverage
+- All printed characteristics: `mtg-engine/tests/cards_vanilla_and_keywords.rs` `vanilla_creatures_have_their_printed_characteristics` (NEW)
+- No rulings on Scryfall for this card.
+
+Mutation check: `toughness: 6 -> 5` fails the table ("Fortress Crab's toughness"). Bites.

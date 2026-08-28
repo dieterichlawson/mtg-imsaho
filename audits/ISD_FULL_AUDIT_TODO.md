@@ -254,7 +254,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Spectral Rider | `spectral_rider.rs` | 24 | 1 | 0 |
 | x | Voiceless Spirit | `voiceless_spirit.rs` | 24 | 1 | 0 |
 | x | Typhoid Rats | `typhoid_rats.rs` | 23 | 1 | 0 |
-|   | Fortress Crab | `fortress_crab.rs` | 22 | 1 | 0 |
+| x | Fortress Crab | `fortress_crab.rs` | 22 | 1 | 0 |
 |   | Riot Devils | `riot_devils.rs` | 22 | 1 | 0 |
 |   | Rotting Fensnake | `rotting_fensnake.rs` | 22 | 1 | 0 |
 |   | Thraben Purebloods | `thraben_purebloods.rs` | 22 | 1 | 0 |
