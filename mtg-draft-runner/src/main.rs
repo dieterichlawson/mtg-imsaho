@@ -732,6 +732,8 @@ fn play_game(
         decklists: vec![deck_a.clone(), deck_b.clone()],
         starting_life: 20,
         starting_player: Some(starting_player),
+        // A fresh seed per game.
+        rng_seed: None,
     };
 
     let mut state = engine::setup_game(&config, registry);

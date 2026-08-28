@@ -30,7 +30,7 @@ impl CardBehavior for DesperateRavings {
             .map(|o| o.id)
             .collect();
         // "then discard a card AT RANDOM".
-        let to_discard = crate::cards::helpers::choose_at_random(&hand, 1).first().copied();
+        let to_discard = state.choose_at_random(&hand, 1).first().copied();
         if let Some(discard_id) = to_discard {
             state.discard_card(discard_id, registry);
         }

@@ -41,8 +41,7 @@ pub(crate) fn mulligan_mull(state: &mut GameState, registry: &CardRegistry) -> A
             state.put_into_library(*id, crate::state::LibraryPosition::Bottom, registry);
         }
         // Shuffle.
-        let mut rng = rand::thread_rng();
-        state.get_player_mut(player).library_order.shuffle(&mut rng);
+        crate::cards::helpers::shuffle_library(&mut *state, player);
         // Redraw seven.
         let _ = draw_cards(&mut *state, player, 7, registry);
         state.get_player_mut(player).mulligan_count += 1;

@@ -45,7 +45,6 @@ pub(crate) use targeting::{
     valid_targets_for_req,
 };
 
-use rand::seq::SliceRandom;
 
 use crate::actions::Action;
 use crate::cards::CardRegistry;
@@ -75,6 +74,10 @@ pub struct GameConfig {
     /// proper MTG rules (randomised game 1, loser-chooses for games 2+)
     /// should set this explicitly.
     pub starting_player: Option<PlayerId>,
+    /// Seed for every random decision the game makes — shuffles, coin flips,
+    /// "at random" choices. `None` draws a fresh one, so games differ; setting
+    /// it replays a game exactly.
+    pub rng_seed: Option<u64>,
 }
 
 /// Result of `legal_actions`: a list of actions plus an optional combat prompt.
@@ -434,6 +437,13 @@ pub(crate) enum Applied {
 /// chosen always elects to play first in this implementation — declining
 /// to play is a legal choice but is almost never strategically correct.
 ///
+/// One of the two places the engine reaches outside itself for randomness,
+/// and for the same reason as the other (`setup_game` seeding
+/// `GameState::rng_state`): this answers a question asked *before* there is a
+/// game to ask it of. Everything the game itself decides at random — coin
+/// flips, "at random" choices, shuffles — draws from the seeded stream on
+/// `GameState`, so a game replays exactly from its seed.
+///
 /// # Panics
 /// Panics if `num_players` is 0.
 #[must_use]
@@ -505,8 +515,16 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         state.active_player = starting;
     }
 
+    // Seed the game's randomness before anything draws from it. Without a
+    // seed from the caller, one from the OS — so an unconfigured game is a
+    // different game each time, and a configured one is the same game every
+    // time.
+    state.rng_state = config.rng_seed.unwrap_or_else(|| {
+        use rand::Rng;
+        rand::thread_rng().gen()
+    });
+
     // Create card objects for each player's deck.
-    let mut rng = rand::thread_rng();
     for (player_idx, decklist) in config.decklists.iter().enumerate() {
         let player_id = PlayerId(u8::try_from(player_idx).unwrap_or(u8::MAX));
         let mut library_ids = Vec::new();
@@ -541,7 +559,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         }
 
         // Shuffle the library.
-        library_ids.shuffle(&mut rng);
+        state.shuffle(&mut library_ids);
         state.get_player_mut(player_id).library_order = library_ids;
     }
 

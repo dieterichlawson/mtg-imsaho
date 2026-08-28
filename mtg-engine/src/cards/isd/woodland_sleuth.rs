@@ -62,7 +62,7 @@ impl CardBehavior for WoodlandSleuth {
             .collect();
 
         if !creatures.is_empty() {
-            let Some(chosen) = crate::cards::helpers::choose_at_random(&creatures, 1).first().copied()
+            let Some(chosen) = state.choose_at_random(&creatures, 1).first().copied()
             else { return };
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);

@@ -62,7 +62,7 @@ impl CardBehavior for CharmbreakerDevils {
             .map(|o| o.id)
             .collect();
         if !candidates.is_empty() {
-            let Some(chosen) = crate::cards::helpers::choose_at_random(&candidates, 1).first().copied()
+            let Some(chosen) = state.choose_at_random(&candidates, 1).first().copied()
             else { return };
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);

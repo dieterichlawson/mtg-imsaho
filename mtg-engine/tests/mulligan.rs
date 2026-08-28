@@ -32,6 +32,7 @@ fn fresh_game() -> (GameState, CardRegistry) {
         decklists: vec![test_decklist(), test_decklist()],
         starting_life: 20,
         starting_player: None,
+        rng_seed: Some(mtg_engine::state::default_rng_seed()),
     };
     let state = engine::setup_game(&config, &registry);
     (state, registry)

@@ -65,7 +65,7 @@ impl CardBehavior for MoldgrafMonstrosity {
             .collect();
 
         // "return two creature cards AT RANDOM".
-        let to_return = crate::cards::helpers::choose_at_random(&creatures_in_gy, 2);
+        let to_return = state.choose_at_random(&creatures_in_gy, 2);
         for cid in &to_return {
             let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object_under_control(*cid, Zone::Battlefield, controller, registry);

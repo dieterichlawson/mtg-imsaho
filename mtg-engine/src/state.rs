@@ -101,6 +101,24 @@ pub struct GameState {
     /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
 
+    /// Every random decision the game makes, drawn from here.
+    ///
+    /// Coin flips (CR 705.2), "at random" choices (CR 701.9c), shuffling
+    /// (CR 701.20a) and the opening roll all used to call `rand::thread_rng()`
+    /// where they stood. That has two costs. A game was not a function of its
+    /// inputs, so a bug seen once in a runner game could not be replayed. And
+    /// nothing a card decided at random could be *tested*: Creepy Doll's
+    /// "flip a coin, if you win destroy that creature" had a test that ran the
+    /// hook fifty times and asserted that at least one run destroyed
+    /// something, which is not the same claim.
+    ///
+    /// `GameState::new` starts from a fixed seed, so a state built in a test
+    /// is reproducible by default. `setup_game` overwrites it from
+    /// `GameConfig::rng_seed`, which a runner leaves as `None` to get a fresh
+    /// game each time and sets to replay one.
+    #[serde(default = "default_rng_seed")]
+    pub rng_state: u64,
+
     /// Player states, indexed by PlayerId.0.
     pub players: Vec<PlayerState>,
 
@@ -344,7 +362,65 @@ fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
     }
 }
 
+/// The seed a game starts from when nobody chose one.
+///
+/// Any fixed value would do; this one is arbitrary. What matters is that it
+/// is fixed, so a test that does not care about randomness still gets the
+/// same game every run.
+#[must_use]
+pub fn default_rng_seed() -> u64 {
+    0x2545_F491_4F6C_DD1D
+}
+
 impl GameState {
+    /// The next value from the game's random stream.
+    ///
+    /// SplitMix64: a state and an output function, both of which fit in the
+    /// `u64` that is serialised with the rest of the game. The specific
+    /// generator is not important — being *in* the game state is.
+    pub fn next_random(&mut self) -> u64 {
+        self.rng_state = self.rng_state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.rng_state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// A random number below `bound`. Panics if `bound` is 0.
+    pub fn random_below(&mut self, bound: u64) -> u64 {
+        assert!(bound > 0, "random_below needs a positive bound");
+        self.next_random() % bound
+    }
+
+    /// CR 705.2: flip a coin. True is "you win the flip".
+    pub fn flip_coin(&mut self) -> bool {
+        self.next_random() & 1 == 1
+    }
+
+    /// Shuffle in place (CR 701.20a).
+    pub fn shuffle<T>(&mut self, items: &mut [T]) {
+        // Fisher-Yates, so the shuffle is the game's own randomness rather
+        // than `SliceRandom`'s thread-local one.
+        for i in (1..items.len()).rev() {
+            let j = usize::try_from(self.random_below(i as u64 + 1)).unwrap_or(0);
+            items.swap(i, j);
+        }
+    }
+
+    /// Choose up to `n` of `candidates` at random (CR 701.9c).
+    ///
+    /// Fewer than `n` candidates yields all of them, which is what "at random"
+    /// does with a short list. Six cards say "at random" — Ghoulraiser,
+    /// Charmbreaker Devils, Make a Wish, Moldgraf Monstrosity, Woodland
+    /// Sleuth, Desperate Ravings — and this is the one place they each ask.
+    #[must_use]
+    pub fn choose_at_random(&mut self, candidates: &[ObjectId], n: usize) -> Vec<ObjectId> {
+        let mut pool = candidates.to_vec();
+        self.shuffle(&mut pool);
+        pool.truncate(n);
+        pool
+    }
+
     /// Create a new game state for a given number of players.
     #[must_use]
     pub fn new(num_players: u8) -> Self {
@@ -355,6 +431,7 @@ impl GameState {
         Self {
             objects: HashMap::new(),
             next_object_id: 1,
+            rng_state: default_rng_seed(),
             players,
             turn_number: 1,
             active_player: PlayerId(0),

@@ -33,7 +33,7 @@ impl CardBehavior for MakeAWish {
             .collect();
 
         // "Return two cards AT RANDOM from your graveyard to your hand."
-        let to_return = crate::cards::helpers::choose_at_random(&gy_cards, 2);
+        let to_return = state.choose_at_random(&gy_cards, 2);
         for card_id in &to_return {
             let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(*card_id, Zone::Hand, registry);

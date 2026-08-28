@@ -69,6 +69,7 @@ fn setup_game_leaves_printed_characteristics_on_the_card_not_the_object() {
         ],
         starting_life: 20,
         starting_player: Some(P0),
+        rng_seed: Some(mtg_engine::state::default_rng_seed()),
     };
 
     let state = engine::setup_game(&config, &registry);
@@ -112,6 +113,7 @@ fn test_built_and_game_built_objects_agree_on_characteristics() {
         ],
         starting_life: 20,
         starting_player: Some(P0),
+        rng_seed: Some(mtg_engine::state::default_rng_seed()),
     };
     let game_state = engine::setup_game(&config, &reg);
     let game_obj = game_state.objects.values()

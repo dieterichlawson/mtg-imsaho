@@ -101,6 +101,8 @@ fn main() {
             decklists: vec![deck1, deck2],
             starting_life: 20,
             starting_player: None,
+            // A fresh seed per game.
+            rng_seed: None,
         };
         let player_names = config.player_names.clone();
         let state = engine::setup_game(&config, &registry);
