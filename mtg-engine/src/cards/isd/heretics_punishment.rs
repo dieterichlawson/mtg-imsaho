@@ -89,33 +89,27 @@ impl CardBehavior for HereticsPunishment {
             Target::Illegal => None,
         }) else { return };
 
-        // Mill three cards first.
-        let player = state.get_player(controller);
-        let mill_count = std::cmp::min(3, player.library_order.len());
-        let to_mill: Vec<ObjectId> = player.library_order[..mill_count].to_vec();
+        // "…then mill three cards." Through the mill pipeline so a creature card
+        // among them emits CreatureCardMilled — moving them directly meant an
+        // opponent's Undead Alchemist ("whenever a creature card is put into an
+        // opponent's graveyard from their library") never saw the three cards
+        // this puts into *your* graveyard from *your* library. Which watchers
+        // care is the collector's decision, not the miller's.
+        //
+        // A milled card's characteristics are the card's, so the mana values
+        // read the same before and after the move (CR 400.7 makes it a new
+        // object, not a different card); this used to drain `library_order` by
+        // hand so it could read them first.
+        let milled = crate::engine::mill_cards(state, controller, 3, "Heretic's Punishment", registry);
+        let mill_count = milled.len();
 
-        // Compute highest mana value among cards to be milled before moving them.
-        let mut max_mv: u32 = 0;
-        for &card_obj_id in &to_mill {
-            let mv = state.face_data(card_obj_id, registry)
+        // "equal to the greatest mana value among them".
+        let max_mv: u32 = milled.iter()
+            .map(|&id| state.face_data(id, registry)
                 .and_then(|d| d.cost.map(|c| c.mana_value()))
-                .unwrap_or(0);
-            if mv > max_mv {
-                max_mv = mv;
-            }
-        }
-
-        // "…then mill three cards." Routed through `mill_one` so a creature
-        // card among them emits CreatureCardMilled — moving them directly meant
-        // an opponent's Undead Alchemist ("whenever a creature card is put into
-        // an opponent's graveyard from their library") never saw the three
-        // cards this puts into *your* graveyard from *your* library. Which
-        // watchers care is the collector's decision, not the miller's.
-        let milled: Vec<ObjectId> = state.get_player_mut(controller)
-            .library_order.drain(..mill_count).collect();
-        for card_id in milled {
-            crate::engine::mill_one(state, controller, card_id, registry);
-        }
+                .unwrap_or(0))
+            .max()
+            .unwrap_or(0);
 
         // Ruling: "If all three cards have a mana value of 0, no damage will be
         // dealt." Nothing is dealt rather than a zero-damage event, which

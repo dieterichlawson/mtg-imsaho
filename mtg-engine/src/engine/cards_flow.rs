@@ -88,8 +88,15 @@ pub fn mill_one(state: &mut GameState, player: PlayerId, obj_id: ObjectId, regis
 /// one — "Curse of the Bloody Tome: p1 milled 2 cards" beside "p1 milled 1
 /// card" — and the card's line, the one naming the source, was the one a
 /// reader would trust.
-pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source: &str, registry: &CardRegistry) -> usize {
-    let mut milled = 0;
+///
+/// Returns the cards that went, in the order they were milled. A caller that
+/// only wants the count reads `.len()`; the ones that ask "what did I mill" —
+/// Mindshrieker's "+X/+X where X is the milled card's mana value", Heretic's
+/// Punishment's "the greatest mana value among them" — each used to walk
+/// `library_order` and call `mill_one` themselves to find out, which is how
+/// they ended up logging their own unsourced line next to nothing at all.
+pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source: &str, registry: &CardRegistry) -> Vec<ObjectId> {
+    let mut milled_ids = Vec::new();
     for _ in 0..count {
         let obj_id = {
             let player_state = state.get_player_mut(player);
@@ -99,8 +106,9 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source:
             player_state.library_order[0]
         };
         mill_one(state, player, obj_id, registry);
-        milled += 1;
+        milled_ids.push(obj_id);
     }
+    let milled = milled_ids.len();
     if milled > 0 {
         let short = if milled < count { format!(" (of {count} — library ran out)") } else { String::new() };
         state.log(LogLevel::Event, format!(
@@ -109,7 +117,7 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source:
     } else if count > 0 {
         state.log(LogLevel::Event, format!("{source}: p{} has an empty library, nothing to mill", player.0));
     }
-    milled
+    milled_ids
 }
 /// Have `player` discard `count` cards of their choice — the whole of "target
 /// player discards two cards", including the asking.

@@ -50,26 +50,26 @@ impl CardBehavior for Mindshrieker {
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
-            // Mill one card from target player, remembering which so the
-            // mana value can be read afterwards. Routed through `mill_one` so
-            // a creature card among them emits CreatureCardMilled — moving it
-            // directly meant Undead Alchemist never saw it.
-            let Some(&milled_card_id) = state.get_player(*player_id).library_order.first() else {
-                return;
-            };
-            crate::engine::mill_one(state, *player_id, milled_card_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("p{} milled 1 card", player_id.0));
+            // "Target player mills a card." Through the mill pipeline, so a
+            // creature card among them emits CreatureCardMilled (an opponent's
+            // Undead Alchemist watches for exactly this) and so the log line
+            // names the source. This used to take the top of `library_order`,
+            // call `mill_one` by hand, and log an unsourced "p1 milled 1 card"
+            // beside it.
+            let milled = crate::engine::mill_cards(state, *player_id, 1, "Mindshrieker", registry);
 
-            // Look up the milled card's mana value.
-            let mana_value = {
-                let card_id = state.get_object(milled_card_id).map(|o| o.card_id);
-                i32::try_from(card_id.and_then(|cid| registry.get(cid))
-                    .and_then(|b| b.card_data().cost.as_ref().map(crate::types::ManaCost::mana_value))
-                    .unwrap_or(0)).unwrap_or(i32::MAX)
-            };
+            // "where X is the milled card's mana value" — so an empty library
+            // mills nothing and X never exists.
+            let Some(&milled_id) = milled.first() else { return };
+            let mana_value = i32::try_from(
+                state.face_data(milled_id, registry)
+                    .and_then(|d| d.cost.map(|c| c.mana_value()))
+                    .unwrap_or(0)
+            ).unwrap_or(i32::MAX);
 
-            // Apply +X/+X until end of turn.
+            // +0/+0 is not worth an entry in `until_end_of_turn`, and a land
+            // has no mana cost at all. CR 400.7: if the Mindshrieker has left
+            // the battlefield, the permanent this would modify is gone.
             if mana_value > 0
                 && state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield)
             {
