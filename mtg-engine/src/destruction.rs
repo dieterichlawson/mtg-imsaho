@@ -161,8 +161,18 @@ pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -
 fn regenerate(state: &mut GameState, id: ObjectId) {
     state.tap(id);
     if let Some(obj) = state.get_object_mut(id) {
+        // CR 701.15a: regenerating "removes all damage marked on it". It does
+        // not un-deal that damage. `damaged_by` is the record of who dealt
+        // damage to this creature *this turn* — a fact about the turn, which
+        // cleanup clears (CR 514.2) and regeneration does not. Clearing it
+        // here meant a creature Abattoir Ghoul damaged, that regenerated and
+        // died later the same turn, fed the Ghoul nothing.
+        //
+        // `dealt_deathtouch_damage` does go, because it is a property of the
+        // marked damage: SBA 704.5h must not destroy the creature again for
+        // damage that is no longer there.
         obj.damage_marked = 0;
-        obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
+        obj.dealt_deathtouch_damage = false;
         obj.regeneration_shields -= 1;
     }
     remove_from_combat(state, id);

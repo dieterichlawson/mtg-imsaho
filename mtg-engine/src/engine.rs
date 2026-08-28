@@ -817,17 +817,25 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::Cleanup => {
-            // Remove damage from all creatures.
-            let damaged: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield)
+            // CR 514.2: remove all damage marked on permanents, and with it
+            // the turn's record of who dealt it.
+            //
+            // Every permanent, not only those with damage still marked: a
+            // creature that regenerated has no marked damage but was still
+            // dealt some this turn, and a planeswalker's damage removes
+            // loyalty rather than marking. Filtering on `damage_marked > 0`
+            // left both carrying a `damaged_by` into the next turn, where
+            // "dealt damage by this creature **this turn**" would read it.
+            let on_battlefield: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield)
                 .iter()
-                .filter(|o| o.damage_marked > 0)
                 .map(|o| o.id)
                 .collect();
 
-            for id in damaged {
+            for id in on_battlefield {
                 let obj = state.get_object_mut(id).expect("object must exist for damage clear");
                 obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
+                obj.dealt_deathtouch_damage = false;
+                obj.damaged_by.clear();
             }
 
             // Remove "until end of turn" effects.
