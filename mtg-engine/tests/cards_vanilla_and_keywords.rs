@@ -123,6 +123,39 @@ fn spidery_grasp_untaps_and_buffs() {
     assert!(state.has_keyword(creature, Keyword::Reach, &reg));
 }
 
+/// Ruling: "Spidery Grasp can target a creature that's already untapped. It
+/// will still get +2/+4 and gain reach."
+///
+/// And "**until end of turn**": both halves are gone next turn. Making the
+/// whole effect conditional on the creature having been tapped passed the
+/// whole suite, and so did granting the pump and the reach permanently.
+#[test]
+fn spidery_grasp_works_on_an_untapped_creature_and_wears_off() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // Real turns mean real draw steps.
+    stock_library(&mut state, &reg, P0, 10);
+    stock_library(&mut state, &reg, P1, 10);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    assert!(!state.get_object(creature).unwrap().tapped, "test premise: already untapped");
+
+    let sg = castable_spell(&mut state, &reg, "Spidery Grasp", P0);
+    let mut state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(4),
+        "an untapped creature still gets +2/+4");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(6));
+    assert!(state.has_keyword(creature, Keyword::Reach, &reg), "and still gains reach");
+
+    advance_to_next_turn(&mut state, &reg);
+
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "the +2/+4 lasted until end of turn and no longer");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
+    assert!(!state.has_keyword(creature, Keyword::Reach, &reg), "and so did the reach");
+}
+
 // ── Aura enchantments ───────────────────────────────────────────────
 
 /// Dead Weight gives -2/-2, can kill a creature.
