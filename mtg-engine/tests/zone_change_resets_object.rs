@@ -101,6 +101,20 @@ fn a_token_copy_of_a_werewolf_cannot_transform() {
         "test precondition: the real card transforms under these conditions");
     assert!(!state.get_object(token).unwrap().is_transformed,
         "a token copy has only the copied face and cannot transform");
+
+    // And it must not say it did. Each werewolf used to log the flip itself,
+    // around the call that refuses one for a token — so the log announced two
+    // transforms where only the real card flipped. The announcement now lives
+    // inside `apply_transform`, on the path that actually flips.
+    let announced = state.game_log.iter()
+        .filter(|e| e.message.contains("transforms into"))
+        .count();
+    assert_eq!(announced, 1,
+        "exactly one transform happened, so the log must report exactly one; \
+         got: {:?}",
+        state.game_log.iter()
+            .filter(|e| e.message.contains("transforms into"))
+            .map(|e| e.message.clone()).collect::<Vec<_>>());
 }
 
 // -------------------------------------------------------------------------

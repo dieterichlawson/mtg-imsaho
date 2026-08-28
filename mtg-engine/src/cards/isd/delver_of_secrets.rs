@@ -132,7 +132,7 @@ impl CardBehavior for DelverOfSecrets {
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
         if top_is_instant_or_sorcery {
             state.log(LogLevel::Event,
-                format!("Delver of Secrets: reveals {top_card_name} — transforming!"));
+                format!("Delver of Secrets: reveals {top_card_name}"));
             crate::cards::helpers::apply_transform(state, self_id, registry);
         } else {
             state.log(LogLevel::Event,

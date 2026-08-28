@@ -92,15 +92,6 @@ impl CardBehavior for UlvenwaldMystics {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
-        }
-        if self.should_transform(state, self_id, registry) {
-            let old_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-            helpers::apply_transform(state, self_id, registry);
-            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(crate::state::LogLevel::Event,
-                format!("{old_name} transforms into {new_name}"));
-        }
+        helpers::werewolf_on_upkeep(self, state, self_id, registry);
     }
 }

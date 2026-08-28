@@ -86,8 +86,6 @@ impl CardBehavior for LudevicsTestSubject {
                 obj.counters.remove(&CounterType::Hatchling);
             }
             helpers::apply_transform(state, object_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                "Ludevic's Test Subject transforms into Ludevic's Abomination (13/13 Trample)!".into());
         } else {
             state.log(crate::state::LogLevel::Event,
                 format!("Ludevic's Test Subject: hatchling counter added ({new_count}/5)"));

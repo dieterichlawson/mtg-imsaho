@@ -141,9 +141,6 @@ impl CardBehavior for BloodlineKeeper {
                 // a token copy of a double-faced card. Writing the two fields
                 // directly bypassed that.
                 crate::cards::helpers::apply_transform(state, object_id, registry);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Bloodline Keeper transforms into {}",
-                        state.name_of(object_id, registry)));
             }
             _ => {}
         }

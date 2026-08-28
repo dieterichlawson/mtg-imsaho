@@ -269,8 +269,6 @@ impl CardBehavior for GarrukRelentless {
             return;
         }
         crate::cards::helpers::apply_transform(state, self_id, registry);
-        state.log(crate::state::LogLevel::Event,
-            "Garruk Relentless transforms into Garruk, the Veil-Cursed".into());
     }
 
     /// Garruk, the Veil-Cursed -1: "Sacrifice a creature. Search your library

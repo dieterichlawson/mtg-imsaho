@@ -135,8 +135,6 @@ impl CardBehavior for ScreechingBat {
 
         // Transform — uses the generic helper to update name, keywords, and subtypes.
         helpers::apply_transform(state, self_id, registry);
-        state.log(LogLevel::Event,
-            format!("Transforms into {}", state.obj_name(self_id)));
     }
 
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {

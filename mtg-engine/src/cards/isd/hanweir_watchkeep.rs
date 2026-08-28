@@ -2,7 +2,7 @@ use crate::cards::helpers;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope};
 use crate::actions::Target;
 
 /// Hanweir Watchkeep {2}{R} 1/5 Human Warrior with Defender // Bane of Hanweir 5/5 Werewolf that attacks each combat
@@ -66,15 +66,6 @@ impl CardBehavior for HanweirWatchkeep {
 
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
-        }
-        if self.should_transform(state, self_id, registry) {
-            let old_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-            helpers::apply_transform(state, self_id, registry);
-            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(crate::state::LogLevel::Event,
-                format!("{old_name} transforms into {new_name}"));
-        }
+        helpers::werewolf_on_upkeep(self, state, self_id, registry);
     }
 }

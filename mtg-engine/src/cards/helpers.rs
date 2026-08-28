@@ -298,11 +298,48 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
         behavior.back_face_data().map(|back| back.name)
     };
 
+    let old_name = state.obj_name(object_id);
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;
         if let Some(name) = new_name {
             obj.name = name;
         }
+    }
+    // The log belongs here, with the flip, and not in each card. Nineteen
+    // cards used to write their own line around this call, which meant they
+    // announced a transform on the paths where this function refuses one — a
+    // token copy of a double-faced card logged "Reckless Waif transforms into
+    // Merciless Predator" and then stayed a Waif. Several also hardcoded both
+    // face names, and one ("Transforms into Stalking Vampire") named neither
+    // the permanent nor its controller.
+    let new_name = state.obj_name(object_id);
+    state.log(crate::state::LogLevel::Event,
+        format!("{old_name} transforms into {new_name}"));
+}
+
+/// The werewolf upkeep trigger: "At the beginning of each upkeep, if <no
+/// spells were cast last turn / a player cast two or more spells last turn>,
+/// transform this creature."
+///
+/// Whether it transforms is `should_transform`, which every werewolf answers
+/// with `werewolf_should_transform`; whether it triggers at all is
+/// `werewolf_should_trigger`. What is left — the battlefield check and the
+/// flip — is the same twelve times over, so it lives here.
+///
+/// CR 603.4 makes the condition an intervening-if, re-checked on resolution,
+/// which is why `should_transform` is asked again here and not only at
+/// trigger time.
+pub fn werewolf_on_upkeep(
+    behavior: &dyn CardBehavior,
+    state: &mut GameState,
+    self_id: ObjectId,
+    registry: &CardRegistry,
+) {
+    if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
+        return;
+    }
+    if behavior.should_transform(state, self_id, registry) {
+        apply_transform(state, self_id, registry);
     }
 }
 

@@ -572,3 +572,47 @@ fn no_card_iterates_the_object_map_directly() {
          which sort by id.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// "X transforms into Y" is written once, by `helpers::apply_transform`, which
+/// is where the flip happens and where both names are known.
+///
+/// Nineteen cards used to write it themselves around that call. They said it
+/// on the paths where `apply_transform` refuses to flip (a token copy of a
+/// double-faced card, CR 111.7), several hardcoded both face names so a rename
+/// would leave the log lying, and one said only "Transforms into Stalking
+/// Vampire" without naming the permanent at all.
+#[test]
+fn no_card_announces_its_own_transform() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name == "helpers.rs" {
+            continue; // this is the one place it is written
+        }
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            if code.contains("transforms into") || code.contains("transforms back") {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} card(s) announce their own transform:\n  {}\n\n\
+         `helpers::apply_transform` logs it, and only when the flip happens.",
+        offenders.len(), offenders.join("\n  "));
+}

@@ -90,8 +90,6 @@ impl CardBehavior for CloisteredYouth {
 
         // Transform using the generic helper (updates name, keywords, subtypes, is_transformed).
         helpers::apply_transform(state, self_id, registry);
-        state.log(LogLevel::Event,
-            format!("Cloistered Youth transforms into {}", state.obj_name(self_id)));
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {

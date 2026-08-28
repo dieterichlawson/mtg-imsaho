@@ -131,8 +131,6 @@ impl CardBehavior for CivilizedScholar {
                     obj.tapped = false;
                 }
                 crate::cards::helpers::apply_transform(state, object_id, registry);
-                state.log(crate::state::LogLevel::Event,
-                    "Civilized Scholar transforms into Homicidal Brute".into());
             }
         } else {
             // Multiple cards — present choice to player.
@@ -157,8 +155,6 @@ impl CardBehavior for CivilizedScholar {
                 obj.tapped = false;
             }
             crate::cards::helpers::apply_transform(state, self_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                "Civilized Scholar transforms into Homicidal Brute".into());
         }
     }
 
@@ -193,8 +189,6 @@ impl CardBehavior for CivilizedScholar {
             // Through the helper rather than flipping the flag by hand, so
             // this cannot drift from what transforming means.
             crate::cards::helpers::apply_transform(state, self_id, _registry);
-            state.log(crate::state::LogLevel::Event,
-                "Homicidal Brute transforms back into Civilized Scholar (didn't attack)".into());
         }
     }
 

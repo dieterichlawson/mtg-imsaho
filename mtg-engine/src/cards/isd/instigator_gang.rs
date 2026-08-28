@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef, helpers};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, CreatureFilter, EffectScope, Keyword, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, CreatureFilter, EffectScope, Keyword};
 use crate::actions::Target;
 
 /// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures you control get +1/+0
@@ -56,7 +56,7 @@ impl CardBehavior for InstigatorGang {
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Wildblood Pack.".into(),
+            oracle_text: "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::Trample],
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
@@ -89,19 +89,6 @@ impl CardBehavior for InstigatorGang {
 
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
-        }
-        if self.should_transform(state, self_id, registry) {
-            let was_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
-            helpers::apply_transform(state, self_id, registry);
-            let (old_name, new_name) = if was_transformed {
-                ("Wildblood Pack", "Instigator Gang")
-            } else {
-                ("Instigator Gang", "Wildblood Pack")
-            };
-            state.log(crate::state::LogLevel::Event,
-                format!("{old_name} transforms into {new_name}"));
-        }
+        helpers::werewolf_on_upkeep(self, state, self_id, registry);
     }
 }
