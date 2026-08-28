@@ -99,7 +99,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Frightful Delusion | `frightful_delusion.rs` | 67 | 4 | 0 |
 | x | Maw of the Mire | `maw_of_the_mire.rs` | 67 | 4 | 0 |
 | x | Stensia Bloodhall | `stensia_bloodhall.rs` | 66 | 4 | 0 |
-|   | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 65 | 4 | 0 |
+| x | Ghoulcaller's Chant | `ghoulcallers_chant.rs` | 65 | 4 | 0 |
 |   | Mask of Avacyn | `mask_of_avacyn.rs` | 64 | 4 | 0 |
 |   | Mirror-Mad Phantasm | `mirror_mad_phantasm.rs` | 108 | 3 | 0 |
 |   | Nephalia Drownyard | `nephalia_drownyard.rs` | 61 | 4 | 0 |
