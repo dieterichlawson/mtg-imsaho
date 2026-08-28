@@ -385,6 +385,17 @@ fn spectral_flight_gives_plus_two_and_flying() {
         "Spectral Flight should give +2 toughness");
     assert!(state.has_keyword(creature, Keyword::Flying, &reg),
         "Spectral Flight should grant flying");
+
+    // Both halves are the Aura's, so both end when it does. The suite covers
+    // the other direction — an Aura falling off a creature that died
+    // (CR 704.5m, `enchantments.rs`) — but not what the creature is left with
+    // when the Aura is the one that goes.
+    state.move_object(sf, Zone::Graveyard, &reg);
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "with the Aura gone, so is the +2/+2");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
+    assert!(!state.has_keyword(creature, Keyword::Flying, &reg),
+        "and so is the flying");
 }
 
 /// Bug #13: Furor of the Bitten should give +2/+2 AND force attack.
