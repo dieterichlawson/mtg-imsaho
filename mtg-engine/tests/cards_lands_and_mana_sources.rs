@@ -499,6 +499,76 @@ fn runic_repetition_returns_flashback_card_from_exile() {
     assert_eq!(state.get_object(tt).unwrap().zone, Zone::Hand, "Should return flashback card to hand");
 }
 
+/// Put a named card into exile, owned by `owner`.
+fn card_in_exile(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry,
+                 name: &str, owner: PlayerId) -> ObjectId {
+    let card_id = reg.get_id_by_name(name).unwrap();
+    let id = state.create_object(card_id, owner, Zone::Exile, None, None);
+    state.get_object_mut(id).unwrap().name = name.into();
+    id
+}
+
+/// "Return target exiled card **with flashback you own** to your hand." Only
+/// the positive case was tested, which an implementation ignoring both
+/// restrictions also passes.
+#[test]
+fn runic_repetition_targets_only_your_own_exiled_flashback_cards() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = card_in_exile(&mut state, &reg, "Think Twice", P0);
+    let no_flashback = card_in_exile(&mut state, &reg, "Dissipate", P0);
+    let theirs = card_in_exile(&mut state, &reg, "Think Twice", P1);
+
+    let spell = castable_spell(&mut state, &reg, "Runic Repetition", P0);
+    let offered = offered_targets(&state, &reg, spell);
+
+    assert!(offered.contains(&mtg_engine::actions::Target::Object(mine)),
+        "your own exiled card with flashback; offered {offered:?}");
+    assert!(!offered.contains(&mtg_engine::actions::Target::Object(no_flashback)),
+        "Dissipate has no flashback, so it is not a legal target");
+    assert!(!offered.contains(&mtg_engine::actions::Target::Object(theirs)),
+        "and an opponent's exiled Think Twice is not one you own");
+}
+
+/// Scryfall ruling (2011-09-22): "An effect that gives flashback to an instant
+/// or sorcery card in your graveyard stops applying once that card has left
+/// the stack. The card won't have flashback while exiled and can't be the
+/// target of Runic Repetition (unless it naturally has flashback)."
+///
+/// Snapcaster Mage's grant is a `TemporaryEffect::GrantFlashback`, which lives
+/// on `until_end_of_turn` and so is still in that list while the card sits in
+/// exile the same turn. Pushed directly here rather than played out through
+/// Snapcaster and a flashback cast, because what is being tested is which
+/// source of "has flashback" the targeting reads, not how the grant got there.
+#[test]
+fn runic_repetition_ignores_flashback_that_was_only_granted() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let granted = card_in_exile(&mut state, &reg, "Dissipate", P0);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantFlashback {
+        target: granted,
+        cost: ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Blue),
+                                 ManaSymbol::Colored(Color::Blue)]),
+    });
+
+    let spell = castable_spell(&mut state, &reg, "Runic Repetition", P0);
+    let offered = offered_targets(&state, &reg, spell);
+
+    assert!(!offered.contains(&mtg_engine::actions::Target::Object(granted)),
+        "the grant stopped applying when the card left the stack, so it does \
+         not have flashback in exile; offered {offered:?}");
+
+    // The control: a card that naturally has flashback is offered from the
+    // same board, so the assertion above is about the grant and not about
+    // Runic Repetition finding no targets at all.
+    let natural = card_in_exile(&mut state, &reg, "Think Twice", P0);
+    let offered = offered_targets(&state, &reg, spell);
+    assert!(offered.contains(&mtg_engine::actions::Target::Object(natural)),
+        "a card that naturally has flashback still is; offered {offered:?}");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Full Moon's Rise
 // ══════════════════════════════════════════════════════════════════
