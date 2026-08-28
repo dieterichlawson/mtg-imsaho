@@ -7,11 +7,13 @@ use crate::actions::Target;
 /// Gutter Grime — {4}{G} Enchantment.
 /// Whenever a nontoken creature you control dies, put a slime counter on
 /// Gutter Grime, then create a green Ooze creature token with
-/// "This creature's power and toughness are each equal to the number of
+/// "This token's power and toughness are each equal to the number of
 /// slime counters on Gutter Grime."
 ///
-/// Tokens have dynamic P/T that tracks the current slime counter count
-/// on the source Gutter Grime enchantment (via `card_state` "`pt_source_counter`").
+/// The Ooze token's power and toughness are its own ability, not the Grime's
+/// (CR 604.3), so the token records which Gutter Grime made it and this card
+/// answers for it through `token_dynamic_pt`. Ruling: "If you control more
+/// than one Gutter Grime, each Ooze token remembers which one created it."
 pub struct GutterGrime;
 
 impl CardBehavior for GutterGrime {
@@ -60,16 +62,30 @@ impl CardBehavior for GutterGrime {
             vec!["Ooze".into()],
             registry,
         );
-        // Link the token's P/T to this Gutter Grime's slime counters.
-        // pt_source_counter = ObjectId of the Gutter Grime
-        // pt_source_counter_type = 1 means Slime counter type
+        // Ruling: "each Ooze token remembers which one created it" — so the
+        // link is to *this* Gutter Grime, not to the card.
         for token_id in token_ids {
             if let Some(token) = state.get_object_mut(token_id) {
-                token.card_state.insert("pt_source_counter".into(), self_id);
-                token.card_state.insert("pt_source_counter_type".into(), ObjectId(1));
+                token.card_state.insert(crate::cards::PT_DEFINED_BY.into(), self_id);
             }
         }
         state.log(crate::state::LogLevel::Event,
             format!("Gutter Grime: added slime counter (now {slime_count}), created */* Ooze token (dynamic P/T)"));
+    }
+
+    fn token_dynamic_pt(&self, state: &GameState, source_id: ObjectId, _token_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
+        // "This token's power and toughness are each equal to the number of
+        // slime counters on Gutter Grime." Ruling: "The power and toughness of
+        // the Ooze tokens will constantly update as Gutter Grime accumulates
+        // slime counters" — so this is read every time, never stamped on the
+        // token.
+        //
+        // `source_id` is the Gutter Grime that made this token. Ruling: "If
+        // Gutter Grime leaves the battlefield, the power and toughness of each
+        // Ooze token it created will become 0" — which falls out, because a
+        // permanent that changes zones loses its counters (CR 400.7).
+        let n = i32::try_from(state.get_counter_count(source_id, CounterType::Slime))
+            .unwrap_or(i32::MAX);
+        Some((n, n))
     }
 }

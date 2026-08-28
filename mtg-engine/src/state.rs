@@ -1377,23 +1377,32 @@ impl GameState {
         out
     }
 
+    /// CR 604.3: the P/T a token's *own* ability defines, when the ability
+    /// came from the effect that created it rather than from a card face.
+    ///
+    /// The engine holds only the link. The token records its creator under
+    /// [`crate::cards::PT_DEFINED_BY`] and that object's card says what the
+    /// numbers are, so the rule stays on the card that prints it. `None` when
+    /// the token carries no such ability, or when its creator has left the
+    /// game entirely — the token's own base P/T (0/0) is then the answer,
+    /// which is the same one its creator would give with its counters gone.
+    fn token_defined_pt(&self, obj: &GameObject, registry: &crate::cards::CardRegistry) -> Option<(i32, i32)> {
+        let source_id = *obj.card_state.get(crate::cards::PT_DEFINED_BY)?;
+        let source = self.get_object(source_id)?;
+        registry.get(source.card_id)?
+            .token_dynamic_pt(self, source_id, obj.id, registry)
+    }
+
     /// Get the effective power of a creature, including continuous effects,
     /// dynamic P/T, counters, and "until end of turn" effects.
     #[must_use]
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
-        // Check if this token has dynamic P/T tied to counter count on a source permanent
-        // (e.g., Gutter Grime Ooze tokens whose P/T = slime counters on Gutter Grime).
-        let mut power = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
-            let counter_type_val = obj.card_state.get("pt_source_counter_type")
-                .map_or(0, |v| v.0);
-            let counter_type = match counter_type_val {
-                1 => crate::types::CounterType::Slime,
-                _ => crate::types::CounterType::PlusOnePlusOne,
-            };
-            self.get_object(*source_id)
-                .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
+        // A token whose own ability defines its P/T (CR 604.3) has no card face
+        // to declare `dynamic_pt` on, so the object that created it answers.
+        let mut power = if let Some((p, _)) = self.token_defined_pt(obj, registry) {
+            p
         } else if let Some(behavior) = registry.get(obj.card_id) {
             // Check if this creature's own card has dynamic P/T (e.g.,
             // Geist-Honored Monk). Only creatures (base P/T set — CDA
@@ -1452,16 +1461,9 @@ impl GameState {
     pub fn effective_toughness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
-        // Check if this token has dynamic P/T tied to counter count on a source permanent.
-        let mut toughness = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
-            let counter_type_val = obj.card_state.get("pt_source_counter_type")
-                .map_or(0, |v| v.0);
-            let counter_type = match counter_type_val {
-                1 => crate::types::CounterType::Slime,
-                _ => crate::types::CounterType::PlusOnePlusOne,
-            };
-            self.get_object(*source_id)
-                .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
+        // See `effective_power` — the same CR 604.3 token ability.
+        let mut toughness = if let Some((_, t)) = self.token_defined_pt(obj, registry) {
+            t
         } else if let Some(behavior) = registry.get(obj.card_id) {
             // Check if this creature's own card has dynamic P/T. Same
             // creature-only guard as effective_power — see comment there.

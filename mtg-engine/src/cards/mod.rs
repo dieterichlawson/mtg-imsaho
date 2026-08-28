@@ -118,6 +118,16 @@ impl AttackInfo {
     }
 }
 
+/// `GameObject::card_state` key: the object whose ability defines this
+/// object's power and toughness (CR 604.3).
+///
+/// The one `card_state` entry the engine itself reads. Every other key is
+/// written and read by the same card; this one is written by the card that
+/// created a token and read by `GameState::effective_power` /
+/// `effective_toughness`, which do not interpret it further — they ask that
+/// object's card through [`CardBehavior::token_dynamic_pt`].
+pub const PT_DEFINED_BY: &str = "pt_defined_by";
+
 /// A mana ability definition.
 #[derive(Debug, Clone)]
 pub struct ManaAbilityDef {
@@ -501,6 +511,25 @@ pub trait CardBehavior: Send + Sync {
     /// Called by `effective_power/effective_toughness` during P/T computation.
     /// Examples: Geist-Honored Monk (creatures you control), Wreath of Geists (creatures in graveyard).
     fn dynamic_pt(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
+        None
+    }
+
+    /// [`dynamic_pt`](CardBehavior::dynamic_pt) for a *token this card's
+    /// ability created*, when the token's own ability defines its P/T
+    /// (CR 604.3) — Gutter Grime's "This token's power and toughness are each
+    /// equal to the number of slime counters on Gutter Grime."
+    ///
+    /// A token has no card face to declare `dynamic_pt` on: its `card_id` is
+    /// the token sentinel and the registry has nothing to ask. So the token
+    /// records its creator under [`PT_DEFINED_BY`] and the creator's card
+    /// answers for it. `source_id` is this card's object, `token_id` the
+    /// token.
+    ///
+    /// This used to be a `CounterType` match inside `effective_power` and
+    /// again inside `effective_toughness`, keyed off a second `card_state`
+    /// entry holding `ObjectId(1)` to mean "slime" — one card's rule written
+    /// into the engine twice, in a field typed for something else.
+    fn token_dynamic_pt(&self, _state: &GameState, _source_id: ObjectId, _token_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         None
     }
 
