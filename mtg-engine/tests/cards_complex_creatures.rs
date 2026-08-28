@@ -305,21 +305,56 @@ fn kessig_wolves_attack_the_cagebreakers_defender_and_not_just_the_next_player()
 
 // ── Galvanic Juggernaut ──────────────────────────────────────────
 
+/// "Whenever another creature dies, untap this creature." Through the trigger
+/// system, not by calling the hook: the hook is reached only if the card's
+/// `TriggerKind::AnyCreatureDies` declaration is right and the death-watch
+/// collector picks the Juggernaut up, and calling it directly tests neither.
+///
+/// This is also the card's own two lines meeting each other. "Doesn't untap
+/// during your untap step" is about the untap step alone (CR 302.6), so the
+/// Juggernaut's own trigger untaps it — which is the entire point of the card.
 #[test]
-fn galvanic_juggernaut_untaps_when_creature_dies() {
+fn galvanic_juggernaut_untaps_when_another_creature_dies() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let jug = named_permanent(&mut state, &reg, "Galvanic Juggernaut", P0);
-    // Tap it.
-    state.get_object_mut(jug).unwrap().tapped = true;
+    state.tap(jug);
+    assert!(!state.untaps_normally(jug, &reg),
+        "test setup: it is under its own \"doesn't untap\" restriction");
 
-    // A creature dies.
     let dead = ready_creature(&mut state, P1, 1, 1);
-    let behavior = reg.get(state.get_object(jug).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, jug, dead, P1, &[], 1, false, &[], &reg);
+    kill_by_damage(&mut state, &reg, dead);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
-    assert!(!state.get_object(jug).unwrap().tapped, "Galvanic Juggernaut should untap when a creature dies");
+    assert!(!state.get_object(jug).unwrap().tapped,
+        "the death untapped it, restriction and all");
+}
+
+/// The other half, which is what makes the trigger worth having: left alone,
+/// the Juggernaut stays tapped through its controller's untap step.
+///
+/// An ordinary tapped creature beside it untaps, so this shows the untap step
+/// really ran rather than being skipped.
+#[test]
+fn galvanic_juggernaut_does_not_untap_during_the_untap_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let jug = named_permanent(&mut state, &reg, "Galvanic Juggernaut", P0);
+    let other = ready_creature(&mut state, P0, 2, 2);
+    state.tap(jug);
+    state.tap(other);
+
+    // Round the table back to P0's untap step.
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_next_turn(&mut state, &reg);
+    assert_eq!(state.active_player, P0, "back to the Juggernaut's controller's turn");
+
+    assert!(!state.get_object(other).unwrap().tapped,
+        "an ordinary creature untapped, so the untap step ran");
+    assert!(state.get_object(jug).unwrap().tapped,
+        "the Juggernaut does not untap during its controller's untap step");
 }
 
 // ── Bitterheart Witch ────────────────────────────────────────────

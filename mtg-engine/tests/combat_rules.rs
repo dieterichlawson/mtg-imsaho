@@ -233,18 +233,20 @@ fn a_hasty_creature_is_forced_to_attack_the_turn_it_arrives() {
          declared as an attacker");
 }
 
-/// The third route to "unable": Galvanic Juggernaut enters tapped and does not
-/// untap, and a tapped creature cannot attack.
+/// The third route to "unable": a tapped creature cannot attack (CR 508.1a),
+/// so "attacks each combat if able" asks nothing of it.
+///
+/// Galvanic Juggernaut is the card this matters on. It does not enter tapped —
+/// it taps by attacking, and then "doesn't untap during your untap step" keeps
+/// it that way until something dies, so a tapped Juggernaut is its ordinary
+/// state rather than a contrived one.
 #[test]
 fn a_tapped_creature_is_not_forced_to_attack() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    // Place Galvanic Juggernaut (has ForceAttack + it enters tapped + PreventUntap)
     let jug = named_permanent(&mut state, &registry, "Galvanic Juggernaut", P0);
-
-    // Tap it (it enters tapped and doesn't untap).
-    state.get_object_mut(jug).unwrap().tapped = true;
+    state.tap(jug);
     state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
 
     let legal = engine::legal_actions(&state, &registry);
@@ -257,6 +259,33 @@ fn a_tapped_creature_is_not_forced_to_attack() {
         "a tapped Juggernaut is not eligible to attack");
     assert!(!must_attack.contains(&jug),
         "and cannot be forced to");
+}
+
+/// And untapped, it must. The Curse case above forces a creature from an
+/// effect on somebody else; this is the requirement a creature carries itself
+/// (`ForceAttack` scoped `OnSelf`), which is a different lookup.
+#[test]
+fn a_creature_that_forces_itself_to_attack_must_attack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let jug = named_permanent(&mut state, &registry, "Galvanic Juggernaut", P0);
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, .. }) =
+        legal.combat_prompt.as_ref()
+    else {
+        panic!("expected a ChooseAttackers prompt, got {:?}", legal.combat_prompt);
+    };
+    assert!(must_attack.contains(&jug), "\"attacks each combat if able\"");
+
+    // The player declares nothing. The requirement stands regardless.
+    let state = engine::submit_action(
+        &state, &Action::DeclareAttackers { attackers: vec![] }, &registry);
+
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&jug)),
+        "CR 508.1d: it is able and required, so it is declared as an attacker");
 }
 
 // -------------------------------------------------------------------------
