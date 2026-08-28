@@ -246,7 +246,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Chapel Geist | `chapel_geist.rs` | 25 | 1 | 0 |
 | x | Stony Silence | `stony_silence.rs` | 25 | 1 | 0 |
 | x | Abbey Griffin | `abbey_griffin.rs` | 24 | 1 | 0 |
-|   | Ambush Viper | `ambush_viper.rs` | 24 | 1 | 0 |
+| x | Ambush Viper | `ambush_viper.rs` | 24 | 1 | 0 |
 |   | Intangible Virtue | `intangible_virtue.rs` | 24 | 1 | 0 |
 |   | Kindercatch | `kindercatch.rs` | 24 | 1 | 0 |
 |   | Markov Patrician | `markov_patrician.rs` | 24 | 1 | 0 |

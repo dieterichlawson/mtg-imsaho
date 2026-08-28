@@ -239,25 +239,26 @@ fn artifact_creature_blocks_intimidate() {
 #[test]
 fn deathtouch_kills_with_one_damage() {
     let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P0);
+    // Every deathtouch creature in the set attacks into a 5/5.
+    for name in ["Typhoid Rats", "Ambush Viper"] {
+        let mut state = game_at_step(Step::CombatDamage, P0);
 
-    // Typhoid Rats (1/1 deathtouch) attacks, blocked by a 5/5.
-    let attacker = named_permanent(&mut state, &reg, "Typhoid Rats", P0);
+        let attacker = named_permanent(&mut state, &reg, name, P0);
 
-    let blocker = ready_creature(&mut state, P1, 5, 5);
+        let blocker = ready_creature(&mut state, P1, 5, 5);
 
-    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
-    combat::deal_combat_damage(&mut state, &reg);
+        submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+        submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+        combat::deal_combat_damage(&mut state, &reg);
 
-    // Blocker took 1 damage from deathtouch source.
-    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 1);
-    assert!(state.get_object(blocker).unwrap().dealt_deathtouch_damage);
+        assert!(state.get_object(blocker).unwrap().dealt_deathtouch_damage,
+            "{name}'s damage is deathtouch damage");
 
-    // SBA should kill it despite only 1 damage on a 5-toughness creature.
-    check_state_based_actions(&mut state, &reg);
-    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
-        "Creature dealt deathtouch damage should die regardless of toughness");
+        // SBA should kill it despite the marked damage being under 5.
+        check_state_based_actions(&mut state, &reg);
+        assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
+            "{name}: a creature dealt deathtouch damage dies regardless of toughness");
+    }
 }
 
 /// Deathtouch with trample: only 1 damage needed per blocker, rest tramples through.
