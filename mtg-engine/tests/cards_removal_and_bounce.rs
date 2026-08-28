@@ -316,6 +316,49 @@ fn lost_in_the_mist_needs_a_target_for_both_halves() {
 }
 
 // -------------------------------------------------------------------------
+// Smite the Monstrous
+// -------------------------------------------------------------------------
+
+/// "Creature with power **4 or greater**" is about power now, not printed
+/// power. Every existing case uses a printed value — the target table has a
+/// 5/5 and a 2/2, and `resolution_time_checks.rs` shrinks a target by writing
+/// `obj.power` directly — so an implementation reading the printed number
+/// passes all of them.
+///
+/// Both directions, since either one alone is explained by the other:
+/// a 3/3 buffed to 4 power is a legal target, and a 5/5 shrunk to 3 is not.
+#[test]
+fn smite_the_monstrous_reads_power_as_it_is_now() {
+    let reg = registry();
+
+    // Buffed up to 4: legal, and destroyed.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let small = ready_creature(&mut state, P1, 3, 3);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::ModifyPT {
+        target: small, power_mod: 1, toughness_mod: 1,
+    });
+    assert_eq!(state.effective_power(small, &reg), Some(4), "test precondition");
+
+    let smite = castable_spell(&mut state, &reg, "Smite the Monstrous", P0);
+    assert!(offered_targets(&state, &reg, smite).contains(&Target::Object(small)),
+        "printed 3 power, but 4 right now");
+    let state = cast_and_resolve(&state, &reg, smite, vec![Target::Object(small)]);
+    assert_eq!(state.get_object(small).unwrap().zone, Zone::Graveyard);
+
+    // Shrunk below 4: not offered at all.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let big = ready_creature(&mut state, P1, 5, 5);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::ModifyPT {
+        target: big, power_mod: -2, toughness_mod: 0,
+    });
+    assert_eq!(state.effective_power(big, &reg), Some(3), "test precondition");
+
+    let smite = castable_spell(&mut state, &reg, "Smite the Monstrous", P0);
+    assert!(!offered_targets(&state, &reg, smite).contains(&Target::Object(big)),
+        "printed 5 power, but 3 right now");
+}
+
+// -------------------------------------------------------------------------
 // Naturalize
 // -------------------------------------------------------------------------
 

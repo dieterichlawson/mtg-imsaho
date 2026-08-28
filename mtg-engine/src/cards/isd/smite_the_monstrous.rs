@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Smite the Monstrous — {3}{W} instant. Destroy target creature with power 4 or greater.
 pub struct SmiteTheMonstrous;
@@ -25,22 +25,13 @@ impl CardBehavior for SmiteTheMonstrous {
         TargetRequirement::CreatureWithFilter(TargetFilter::PowerAtLeast(4))
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                let obj = match state.get_object(*id) {
-                    Some(o) if o.zone == Zone::Battlefield && state.is_creature(o.id, registry) => o,
-                    _ => return false,
-                };
-                // Use effective power (accounts for buffs/debuffs/counters).
-                state.effective_power(obj.id, registry).unwrap_or(0) >= 4
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
-
+    /// No `is_valid_target`: "a creature on the battlefield with power 4 or
+    /// greater" is exactly `CreatureWithFilter(PowerAtLeast(4))`, whose filter
+    /// arm reads `state.effective_power(..)` — the same call the card's copy
+    /// made. `legal_actions` applies it when offering targets, and
+    /// `stack::is_target_legal` re-applies the zone check, the creature check
+    /// and the filter on the way down (CR 608.2b), which is what makes a
+    /// creature shrunk below 4 in response stop being a legal target.
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         crate::cards::helpers::resolve_destroy(state, targets, registry);
     }
