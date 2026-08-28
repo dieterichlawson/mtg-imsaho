@@ -128,12 +128,82 @@ pub fn for_entering(
     entering: EnteringPermanent,
     registry: &CardRegistry,
 ) -> EnteringPermanent {
+    // CR 616.1, and the ruling Essence of the Wild is written against:
+    // "Replacement effects that modify how a creature enters are applied in
+    // the following order: first control-changing effects, then copy effects,
+    // then all other effects."
+    //
+    // The order matters because a copy effect decides *what is entering*, and
+    // the rest of the effects belong to whatever that turns out to be:
+    // "Other 'enters' replacement abilities printed on the creature entering
+    // won't be applied because the creature will already be Essence of the
+    // Wild at that point (and therefore it won't have those abilities). For
+    // example, a creature that normally enters tapped will enter as an
+    // untapped Essence of the Wild."
+    //
+    // So: one pass that keeps only the copy decision, then a second pass over
+    // the same candidates for everything else — by which time the entering
+    // permanent's own abilities are read from the card it is copying.
     let fallback = entering.clone();
-    match apply(state, ReplaceableEvent::EntersBattlefield(entering), registry) {
-        Some(ReplaceableEvent::EntersBattlefield(e)) => e,
-        // A card returning `Replaced` or a different event kind for an
-        // entering permanent is a bug in that card, not a rule; entering
-        // still happens.
-        _ => fallback,
+    let after_copy = run_entering_pass(state, entering, registry, Pass::CopyOnly)
+        .unwrap_or_else(|| fallback.clone());
+    run_entering_pass(state, after_copy.clone(), registry, Pass::EverythingElse)
+        .unwrap_or(after_copy)
+}
+
+/// Which half of the entering-replacement order a pass keeps.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pass {
+    /// Keep only what a card did to `copy_of`.
+    CopyOnly,
+    /// Keep everything a card did except changing `copy_of`, which is settled.
+    EverythingElse,
+}
+
+fn run_entering_pass(
+    state: &mut GameState,
+    entering: EnteringPermanent,
+    registry: &CardRegistry,
+    pass: Pass,
+) -> Option<EnteringPermanent> {
+    let mut candidates: Vec<(ObjectId, CardId)> = state
+        .objects
+        .values()
+        .filter(|o| {
+            registry
+                .get(o.card_id)
+                .is_some_and(|b| b.replacement_zones().contains(&o.zone))
+        })
+        .map(|o| (o.id, o.card_id))
+        .collect();
+    candidates.sort_by_key(|(id, _)| id.0);
+
+    // The entering permanent's own arrival abilities, wherever it currently
+    // is — see `apply`'s note. On the second pass those abilities are the
+    // copied card's, if a copy effect decided one: a Grimgrin entering as an
+    // Essence does not have "enters tapped", because it is not a Grimgrin.
+    let own = match (pass, entering.copy_of) {
+        (Pass::EverythingElse, Some(copied)) => Some(copied),
+        _ => state.get_object(entering.object).map(|o| o.card_id),
+    };
+    if let Some(card_id) = own {
+        candidates.retain(|(id, _)| *id != entering.object);
+        candidates.insert(0, (entering.object, card_id));
     }
+
+    let mut current = EnteringPermanent { ..entering };
+    for (object, card_id) in candidates {
+        let Some(behavior) = registry.get(card_id) else { continue };
+        let asked = ReplaceableEvent::EntersBattlefield(current.clone());
+        let Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(next))) =
+            behavior.replace_event(state, object, &asked, registry)
+        else { continue };
+        current = match pass {
+            // Only the copy decision survives this pass.
+            Pass::CopyOnly => EnteringPermanent { copy_of: next.copy_of, ..current },
+            // And on the second, everything but it.
+            Pass::EverythingElse => EnteringPermanent { copy_of: current.copy_of, ..next },
+        };
+    }
+    Some(current)
 }

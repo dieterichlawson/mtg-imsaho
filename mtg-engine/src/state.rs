@@ -1183,6 +1183,20 @@ impl GameState {
         if let Some((name, power, toughness, colors, card_types, subtypes, keywords, oracle_text)) = source_data {
             let old_name = self.get_object(entering_id).map(|o| o.name.clone()).unwrap_or_default();
             if let Some(obj) = self.get_object_mut(entering_id) {
+                // CR 706.2: a copy has the copied card's copiable values, and
+                // its abilities with them. `card_id` is what every ability,
+                // trigger and replacement lookup reads, so a copy that left it
+                // alone kept its own abilities — a Village Bell-Ringer entering
+                // as an Essence of the Wild still untapped the team.
+                //
+                // The card it was printed as goes into `copy_grantor`, which is
+                // where `move_object` looks to give it back on the way out. This
+                // is the same convention `effects.rs` uses for Evil Twin's copy;
+                // this path is the one that was not following it.
+                if obj.card_id != card_id {
+                    obj.copy_grantor = Some(obj.card_id);
+                    obj.card_id = card_id;
+                }
                 obj.name.clone_from(&name);
                 obj.power = Some(power);
                 obj.toughness = Some(toughness);

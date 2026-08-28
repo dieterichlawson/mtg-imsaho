@@ -2200,6 +2200,58 @@ fn essence_does_not_override_opponent_creatures() {
     assert_eq!(state.get_object(opp_bear).unwrap().name, "Grizzly Bears");
 }
 
+/// Ruling: "a creature that would normally enter tapped will enter as an
+/// untapped Essence of the Wild" — because the copy effect is applied before
+/// the other effects that modify how it enters, and once it is an Essence it
+/// no longer has the ability that would have tapped it.
+///
+/// Grimgrin, Corpse-Born is the set's creature that enters tapped.
+#[test]
+fn a_creature_that_would_enter_tapped_enters_as_an_untapped_essence() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    let mut state = cast_and_resolve(&state, &reg, essence, vec![]);
+
+    let grimgrin = castable_spell(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let state = cast_and_resolve(&state, &reg, grimgrin, vec![]);
+
+    assert_eq!(state.get_object(grimgrin).unwrap().name, "Essence of the Wild",
+        "test premise: it entered as a copy");
+    assert!(!state.get_object(grimgrin).unwrap().tapped,
+        "\"enters tapped\" is Grimgrin's ability, and it is not Grimgrin as it enters");
+}
+
+/// Ruling: "Because creatures you control enter as copies of Essence of the
+/// Wild, any 'enters' triggered abilities printed on such creatures won't
+/// trigger."
+///
+/// Village Bell-Ringer is "When this creature enters, untap all creatures you
+/// control", and the tapped creature beside it is what shows the trigger did
+/// not happen — the Bell-Ringer arrives as an Essence, which has no such
+/// ability.
+#[test]
+fn an_enters_trigger_does_not_fire_for_a_creature_that_arrived_as_an_essence() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    let mut state = cast_and_resolve(&state, &reg, essence, vec![]);
+
+    let tapped = ready_creature(&mut state, P0, 2, 2);
+    state.tap(tapped);
+
+    let ringer = castable_spell(&mut state, &reg, "Village Bell-Ringer", P0);
+    let mut state = cast_and_resolve(&state, &reg, ringer, vec![]);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(ringer).unwrap().name, "Essence of the Wild",
+        "test premise: it entered as a copy");
+    assert!(state.get_object(tapped).unwrap().tapped,
+        "the Bell-Ringer's enters trigger is not on the thing that entered");
+}
+
 // ── Mirror-Mad Phantasm ──────────────────────────────────────────
 
 /// Mirror-Mad Phantasm: "{1}{U}: its owner shuffles it into their library, then
