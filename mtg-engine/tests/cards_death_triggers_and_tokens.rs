@@ -1252,3 +1252,33 @@ fn lumberknot_counts_each_death_once() {
     assert_eq!(state.get_counter_count(knot, CounterType::PlusOnePlusOne), 2,
         "two creatures died, so two counters — an opponent's count too");
 }
+
+/// The Spirit a death trigger leaves behind is a creature entering the
+/// battlefield, and ETB watchers see it — so Doomed Traveler dying is two
+/// triggers in sequence, its own and then somebody else's.
+///
+/// `copy_effects.rs::a_token_copy_fires_the_copied_creatures_etb_ability`
+/// covers this for `create_token_copy`. Plain tokens are a different function
+/// with its own `EnteredBattlefield` push, and nothing exercised it: every
+/// other token test in the suite checks what the token *is*, not that anything
+/// noticed it arrive.
+///
+/// Mentor of the Meek is "whenever another creature with power 2 or less
+/// enters under your control", and a 1/1 Spirit is one.
+#[test]
+fn the_spirit_a_death_trigger_leaves_is_a_creature_entering() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    let traveler = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+
+    kill_by_damage(&mut state, &reg, traveler);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(count_tokens_named(&state, "Spirit Token"), 1,
+        "test premise: the Traveler left its Spirit");
+    assert!(state.awaiting_action.is_some(),
+        "and the Mentor is asking whether to pay {{1}} for it — the token \
+         entering is an event, not just an object appearing");
+}
