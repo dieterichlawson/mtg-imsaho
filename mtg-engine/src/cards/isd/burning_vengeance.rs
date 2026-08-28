@@ -45,20 +45,20 @@ impl CardBehavior for BurningVengeance {
             && state.get_object(spell_id).is_some_and(|o| o.cast_with_flashback)
     }
 
+    /// The trigger condition is `should_trigger_on_spell_cast` above and is
+    /// not re-asked here. CR 603.2 checks a trigger's condition when the event
+    /// happens, not when the ability resolves — this is not an intervening-if
+    /// (CR 603.4), which is the one shape that gets a second look.
+    ///
+    /// Re-asking was also wrong in a way that mattered more than duplication.
+    /// It re-derived the controller from the source, and CR 603.3d fixes a
+    /// trigger's controller when it goes on the stack; had anything in this
+    /// set stolen an enchantment, the re-check would have suppressed a trigger
+    /// that should still resolve. CR 113.7a makes the same point from the
+    /// other side: the trigger is independent of Burning Vengeance once it is
+    /// on the stack, so destroying it in response still deals the 2 damage.
     fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        // CR 113.7a: the trigger is independent of Burning Vengeance once on
-        // the stack, so destroying it in response still deals the 2 damage.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
-        // Only trigger on our own spells.
-        if caster != controller {
-            return;
-        }
-        // Only trigger on spells cast from graveyard (flashback).
-        let cast_from_gy = state.get_object(spell_id)
-            .is_some_and(|o| o.cast_with_flashback);
-        if !cast_from_gy {
-            return;
-        }
+        let _ = (caster, spell_id);
         // CR 603.3d: target was chosen when the trigger went on the stack.
         let Some(target) = chosen_targets.first() else { return };
         let effect = PendingEffect::DealDamage {

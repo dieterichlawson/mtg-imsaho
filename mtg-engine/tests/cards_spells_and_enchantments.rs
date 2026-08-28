@@ -453,11 +453,73 @@ fn burning_vengeance_ignores_non_flashback() {
     // cast_with_flashback defaults to false.
 
     state.events.push(GameEvent::SpellCast { player: P0, object: spell });
-    triggers::process_triggers(&mut state, &reg);
+    // Auto-answering the target prompt matters here: this ability targets, so
+    // `process_triggers` alone leaves a trigger that DID fire sitting on
+    // `awaiting_action` with no target chosen and no damage dealt — which
+    // looks exactly like not triggering. The helper answers the prompt, so a
+    // trigger that fired would resolve and be visible.
+    process_triggers_auto_target_opponent(&mut state, &reg);
 
-    // Opponent should not have lost life.
     assert_eq!(state.get_player(P1).life, 20,
         "Burning Vengeance should NOT trigger on normal spell casts");
+    assert!(state.awaiting_action.is_none(),
+        "and no trigger is waiting to be pointed at anything");
+}
+
+/// "Whenever **you** cast a spell from your graveyard." An opponent flashing
+/// something back is not you, and neither existing test varies who casts — so
+/// an implementation that ignored the caster passed both.
+#[test]
+fn burning_vengeance_ignores_an_opponents_flashback_cast() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _bv = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
+
+    let spell = state.create_object(
+        reg.get_id_by_name("Think Twice").unwrap(), P1, Zone::Stack, None, None);
+    state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().name = "Think Twice".into();
+
+    state.events.push(GameEvent::SpellCast { player: P1, object: spell });
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, 20,
+        "P1's flashback cast is not \"you cast\", so nothing triggers");
+    assert_eq!(state.get_player(P1).life, 20);
+    assert!(state.awaiting_action.is_none(),
+        "and nothing is waiting on a target — a trigger that fired and stalled \
+         for want of one would leave both life totals untouched too");
+}
+
+/// Scryfall ruling (2025-01-24): "Burning Vengeance's triggered ability will
+/// resolve before the spell you cast from your graveyard."
+///
+/// That is CR 603.3b — the trigger goes on the stack on top of the spell that
+/// caused it — rather than anything the card does, but nothing asserted it,
+/// and the card's whole tempo rests on it.
+#[test]
+fn burning_vengeances_trigger_sits_above_the_spell_that_caused_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _bv = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
+
+    let spell = state.create_object(
+        reg.get_id_by_name("Think Twice").unwrap(), P0, Zone::Stack, None, None);
+    state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().name = "Think Twice".into();
+    state.stack.push(mtg_engine::state::StackEntry::Spell(spell));
+
+    state.events.push(GameEvent::SpellCast { player: P0, object: spell });
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    // The damage has already happened while the spell that caused it is still
+    // sitting on the stack, unresolved. That is the ruling: the trigger goes
+    // on top of the spell (CR 603.3b) and so resolves first.
+    assert_eq!(state.get_player(P1).life, 18, "the 2 damage has been dealt");
+    assert!(state.stack.iter().any(|e| matches!(e, mtg_engine::state::StackEntry::Spell(s) if *s == spell)),
+        "and the flashback spell has not resolved yet; stack is {:?}", state.stack);
 }
 
 // ── Traitorous Blood ───────────────────────────────────────────
