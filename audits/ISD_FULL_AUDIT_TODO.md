@@ -40,7 +40,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Graveyard Shovel | `graveyard_shovel.rs` | 131 | 5 | 0 |
 | x | Hanweir Watchkeep | `hanweir_watchkeep.rs` | 80 | 5 | 2 |
 | x | Village Ironsmith | `village_ironsmith.rs` | 78 | 5 | 2 |
-|   | Gatstaf Shepherd | `gatstaf_shepherd.rs` | 77 | 5 | 2 |
+| x | Gatstaf Shepherd | `gatstaf_shepherd.rs` | 77 | 5 | 2 |
 |   | Grizzled Outcasts | `grizzled_outcasts.rs` | 76 | 5 | 2 |
 |   | Tormented Pariah | `tormented_pariah.rs` | 76 | 5 | 2 |
 |   | Villagers of Estwald | `villagers_of_estwald.rs` | 76 | 5 | 2 |
