@@ -48,6 +48,15 @@ fn boneyard_wurm_pt_equals_creatures_in_graveyard() {
 
     assert_eq!(state.effective_power(wurm, &reg).unwrap(), 3);
     assert_eq!(state.effective_toughness(wurm, &reg).unwrap(), 3);
+
+    // "creature **cards** in **your** graveyard" — a land in yours and a
+    // creature card in the opponent's are each one word wrong.
+    let land = state.create_object(reg.get_id_by_name("Forest").unwrap(), P0, Zone::Graveyard, None, None);
+    state.get_object_mut(land).unwrap().name = "Forest".into();
+    let theirs = ready_creature(&mut state, P1, 1, 1);
+    state.move_object(theirs, Zone::Graveyard, &reg);
+    assert_eq!(state.effective_power(wurm, &reg).unwrap(), 3,
+        "a land is not a creature card, and their graveyard is not yours");
 }
 
 // ── Splinterfright ────────────────────────────────────────────────
