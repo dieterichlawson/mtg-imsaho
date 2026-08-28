@@ -1,15 +1,17 @@
 //! Paying for things the mana pool can't see yet.
 //!
-//! Three places where the engine decided a cost was unpayable by looking at
-//! the wrong thing: the X in an X-cost flashback, the power of a card whose
-//! P/T is a characteristic-defining ability, and the mana a player *could*
+//! Two places where the engine decided a cost was unpayable by looking at the
+//! wrong thing: the X in an X-cost flashback, and the mana a player *could*
 //! produce as opposed to what is floating right now (CR 106.4 — pools empty
 //! between steps, so at an upkeep trigger the pool is always empty).
+//!
+//! A third lived here — Corpse Lunge exiling a Boneyard Wurm — until the cost
+//! stopped recording a power at all. What it was about now sits with the rest
+//! of that card in `cards_sacrifice_and_additional_costs.rs`.
 
 mod common;
 use common::*;
 
-use mtg_engine::actions::Target;
 use mtg_engine::types::*;
 
 /// "Flashback {X}{R}{R}{R}" (Devil's Play). The flashback path autotapped for
@@ -30,33 +32,6 @@ fn an_x_cost_flashback_is_offered_when_the_non_x_part_is_payable() {
              {} payable", if n >= 3 { "" } else { "not" });
         named_permanent(&mut state, &reg, "Mountain", P0);
     }
-}
-
-/// "Exile a creature card from your graveyard. Corpse Lunge deals damage equal
-/// to the exiled card's power" — and a characteristic-defining P/T works in
-/// every zone (CR 208.2), so Boneyard Wurm's power in the graveyard is the
-/// number of creature cards there, not the 0 printed on it.
-///
-/// The additional-cost handler read the printed `power` field, so exiling a
-/// Wurm stored 0 and the spell dealt nothing.
-#[test]
-fn corpse_lunge_uses_the_exiled_cards_effective_power() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
-    assert_eq!(state.effective_power(wurm, &reg), Some(1),
-        "test precondition: the only creature card in the graveyard is the Wurm, \
-         which counts itself");
-
-    let victim = ready_creature(&mut state, P1, 3, 3);
-    let lunge = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
-    let state = cast_and_resolve(&state, &reg, lunge, vec![Target::Object(victim)]);
-
-    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Exile,
-        "the Wurm paid the additional cost");
-    assert_eq!(state.get_object(victim).unwrap().damage_marked, 1,
-        "and its effective power, not its printed 0, is the damage dealt");
 }
 
 /// "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do,

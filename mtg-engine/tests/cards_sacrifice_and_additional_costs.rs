@@ -744,18 +744,133 @@ fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Corpse Lunge");
 }
+/// "damage equal to **the exiled card's** power" — the card's power where it
+/// is, which is exile, and read when the spell resolves.
+///
+/// Boneyard Wurm is the card that can tell the difference: "power and toughness
+/// are each equal to the number of creature cards in your graveyard", and a
+/// characteristic-defining ability functions in every zone (CR 604.3). Exiling
+/// the Wurm to pay the cost takes it *out* of the graveyard, so it stops
+/// counting itself: with two other creature cards down there it is a 2/2 in
+/// exile, not the 3/3 it was in the graveyard a moment earlier.
 #[test]
-fn corpse_lunge_no_graveyard_creature_deals_no_damage() {
+fn corpse_lunge_reads_the_exiled_cards_power_where_it_now_is() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let target = ready_creature(&mut state, P1, 3, 3);
+    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    assert_eq!(state.effective_power(wurm, &reg), Some(3),
+        "test setup: in the graveyard the Wurm counts itself and the other two");
 
+    let target = ready_creature(&mut state, P1, 5, 9);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+    let state = cast_and_resolve(&state, &reg, spell,
+        vec![Target::Object(target)]);
+
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Exile,
+        "test setup: the Wurm is the card that paid the cost");
+    assert_eq!(state.effective_power(wurm, &reg), Some(2),
+        "out of the graveyard, the Wurm counts only the two cards still in it");
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 2,
+        "and that is the power the spell deals");
+}
+
+/// The limit case of the same rule: a Boneyard Wurm that is the *only* creature
+/// card in the graveyard pays the cost by leaving it, and is a 0/0 in exile
+/// with nothing left to count. Corpse Lunge deals no damage at all — and 0
+/// damage is not damage (CR 120.8), so nothing is marked.
+#[test]
+fn corpse_lunge_exiling_a_lone_boneyard_wurm_deals_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    assert_eq!(state.effective_power(wurm, &reg), Some(1),
+        "test setup: in the graveyard the Wurm counts itself");
+
+    let target = ready_creature(&mut state, P1, 3, 3);
     let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
     let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
 
-    let target_obj = state.get_object(target).unwrap();
-    assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt without graveyard creature");
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Exile,
+        "the Wurm paid the additional cost");
+    assert_eq!(state.effective_power(wurm, &reg), Some(0),
+        "and out of the graveyard there is nothing left for it to count");
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 0);
+}
+
+/// The other half of the same sentence: "the exiled card's power" is a value
+/// the spell reads as it resolves, not one it carried up from the cast. Corpse
+/// Lunge is an instant, so there is a priority window between the two — a
+/// creature card reaching the graveyard in it raises the exiled Wurm's power,
+/// and the damage with it.
+#[test]
+fn corpse_lunge_reads_the_exiled_cards_power_when_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Three creature cards down, so the Wurm is a 3/3 and the strongest thing
+    // in the graveyard — which is what the cost picks.
+    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    // Two latecomers, not one: with one, "read in the graveyard at cast time"
+    // and "read in exile at resolution" both come to 3, and the test would not
+    // be able to tell them apart.
+    let latecomers = [
+        named_permanent(&mut state, &reg, "Walking Corpse", P0),
+        named_permanent(&mut state, &reg, "Grizzly Bears", P0),
+    ];
+
+    let target = ready_creature(&mut state, P1, 5, 9);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+    let state = cast_onto_stack(&state, &reg, spell, vec![Target::Object(target)]);
+    let mut state = resolve_exile_choice_max_power(&state, &reg);
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Exile,
+        "test setup: the cost is paid as the spell is cast (CR 601.2f)");
+    assert_eq!(state.effective_power(wurm, &reg), Some(2),
+        "test setup: two creature cards left in the graveyard, and the spell \
+         is still on the stack");
+
+    // In response, two more creature cards reach the graveyard.
+    for id in latecomers {
+        state.move_object(id, Zone::Graveyard, &reg);
+    }
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 4,
+        "the Wurm was a 2/2 in exile when the spell went on the stack and a \
+         4/4 when it resolved, and the spell deals what it reads on resolution \
+         (3 would be its power back in the graveyard as the cost was paid)");
+}
+
+/// Ruling: "You must exile exactly one creature card from your graveyard to
+/// cast this spell; you cannot cast it without exiling a creature card."
+///
+/// So the answer to an empty graveyard is that the spell is not castable, not
+/// that it is castable and deals nothing. This used to force a `CastSpell`
+/// action past `legal_actions` — one the engine never offers — and pin the
+/// damage such an illegal cast happens to do at 0. A test standing on a state
+/// the engine cannot produce can pass while the rule it claims to cover is
+/// broken; here the rule is the castability, which nothing checked.
+#[test]
+fn corpse_lunge_cannot_be_cast_without_a_creature_card_to_exile() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    ready_creature(&mut state, P1, 3, 3);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+
+    // A noncreature card in the graveyard is not fuel.
+    named_card_in_graveyard(&mut state, &reg, "Forest", P0);
+    assert!(!can_cast(&state, &reg, spell),
+        "the additional cost cannot be paid, so the spell cannot be cast");
+
+    named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    assert!(can_cast(&state, &reg, spell),
+        "and with a creature card down there it can");
 }
 #[test]
 fn corpse_lunge_picks_highest_power_creature() {
