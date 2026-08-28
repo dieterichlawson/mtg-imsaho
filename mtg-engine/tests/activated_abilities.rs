@@ -302,3 +302,54 @@ fn avacynian_priests_target_that_becomes_a_human_is_no_longer_legal() {
         "the Priest still paid its {{T}} — costs are not refunded when an \
          ability is countered");
 }
+
+
+/// CR 400.7: "Return **this creature** to its owner's hand" has nothing to
+/// return once the creature has left the battlefield — the card in the
+/// graveyard is a new object. Killing the Spirit in response to its own
+/// ability used to rescue it into hand.
+///
+/// The ability still resolves: it has no targets, so nothing can make it
+/// illegal (CR 608.2b), and it does as much as it can, which is nothing.
+#[test]
+fn lantern_spirit_returns_nothing_if_it_is_already_dead() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let spirit = named_permanent(&mut state, &reg, "Lantern Spirit", P0);
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1)]);
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == spirit))
+        .expect("the ability is offered");
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    // In response, it dies.
+    state.move_object(spirit, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Graveyard,
+        "the card stays in the graveyard — the ability cannot return a \
+         permanent that is no longer on the battlefield");
+}
+
+/// "to its **owner's** hand". Hands are keyed by owner (CR 108.4), so a Spirit
+/// its opponent has taken control of goes home rather than to the thief.
+#[test]
+fn lantern_spirit_returns_to_its_owners_hand_not_the_thiefs() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P1 owns it; P0 has taken control.
+    let spirit = named_permanent(&mut state, &reg, "Lantern Spirit", P1);
+    state.change_control(spirit, P0);
+    assert_eq!(state.get_object(spirit).unwrap().owner, P1, "test precondition");
+
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1)]);
+    let state = activate_only_offered_ability(&state, &reg);
+
+    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Hand);
+    assert_eq!(state.objects_in_zone(Zone::Hand, P1).len(), 1,
+        "it is in its owner's hand");
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 0,
+        "not the hand of the player who controlled it");
+}

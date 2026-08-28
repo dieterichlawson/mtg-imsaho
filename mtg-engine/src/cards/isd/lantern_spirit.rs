@@ -46,6 +46,21 @@ impl CardBehavior for LanternSpirit {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        // CR 400.7: a permanent that has left the battlefield is a new object,
+        // and "return **this creature**" has nothing left to return. Without
+        // this, killing the Spirit in response to its own ability rescued the
+        // card out of the graveyard and into its owner's hand.
+        //
+        // The ability still resolves — it is not countered, there being no
+        // target to become illegal — it just does as much as it can, which is
+        // nothing (CR 608.2). Moldgraf Monstrosity guards its own zone change
+        // for the same reason, in the other direction.
+        if !crate::cards::helpers::still_on_battlefield(state, object_id) {
+            return;
+        }
+        // "to its **owner's** hand", which is what `move_object` does: hands are
+        // keyed by owner (CR 108.4), so a Spirit stolen with Traitorous Blood
+        // goes home rather than to the thief.
         state.move_object(object_id, Zone::Hand, registry);
     }
 }
