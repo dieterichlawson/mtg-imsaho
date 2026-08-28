@@ -301,7 +301,9 @@ fn bloodcrazed_neonate_forced_to_attack() {
 
 // ── Sturmgeist ────────────────────────────────────────────────────
 
-/// Sturmgeist's P/T equals cards in hand.
+/// "Sturmgeist's power and toughness are each equal to the number of cards in
+/// **your** hand." The opponent's hand is not it — reading theirs instead fails
+/// this, which is why P1 holds a different number.
 #[test]
 fn sturmgeist_pt_equals_hand_size() {
     let reg = registry();
@@ -309,15 +311,46 @@ fn sturmgeist_pt_equals_hand_size() {
 
     let sturmgeist = named_permanent(&mut state, &reg, "Sturmgeist", P0);
 
-    // Give P0 some cards in hand.
     for _ in 0..4 {
         state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Hand, None, None);
     }
+    for _ in 0..2 {
+        state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Hand, None, None);
+    }
 
-    let power = state.effective_power(sturmgeist, &reg).unwrap();
-    let toughness = state.effective_toughness(sturmgeist, &reg).unwrap();
-    assert_eq!(power, 4, "Sturmgeist power should equal hand size");
-    assert_eq!(toughness, 4, "Sturmgeist toughness should equal hand size");
+    assert_eq!(state.effective_power(sturmgeist, &reg), Some(4),
+        "power equals the controller's hand size");
+    assert_eq!(state.effective_toughness(sturmgeist, &reg), Some(4),
+        "and so does toughness");
+}
+
+/// Ruling (2011-09-22): "The ability that defines Sturmgeist's power and
+/// toughness works in all zones, not just the battlefield."
+///
+/// That is CR 604.3 — a characteristic-defining ability functions everywhere.
+/// Gating the card's `dynamic_pt` on `zone == Battlefield` passed the whole
+/// workspace.
+///
+/// CR 109.5: a card outside the battlefield has no controller, and its owner
+/// acts as one — which `move_object` arranges, so "your hand" keeps meaning the
+/// owner's once the card is in a graveyard.
+#[test]
+fn sturmgeists_defining_ability_works_outside_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sturmgeist = named_card_in_graveyard(&mut state, &reg, "Sturmgeist", P0);
+    assert_eq!(state.get_object(sturmgeist).unwrap().zone, Zone::Graveyard,
+        "test precondition");
+    assert_eq!(state.effective_power(sturmgeist, &reg), Some(0),
+        "an empty hand, and it is not in hand to count itself");
+
+    for _ in 0..3 {
+        state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Hand, None, None);
+    }
+    assert_eq!(state.effective_power(sturmgeist, &reg), Some(3),
+        "the defining ability still runs while the card sits in a graveyard");
+    assert_eq!(state.effective_toughness(sturmgeist, &reg), Some(3));
 }
 
 // ── Balefire Dragon ───────────────────────────────────────────────
