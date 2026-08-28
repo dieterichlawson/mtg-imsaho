@@ -90,6 +90,37 @@ impl Collector {
     }
 }
 
+/// Was this permanent on the battlefield when the event being collected
+/// happened?
+///
+/// Not the same question as "is it on the battlefield now". An ability
+/// triggers when its event occurs (CR 603.2), and the game performs state-based
+/// actions — noticing the deaths that event caused — before it puts any
+/// triggered abilities on the stack (CR 704.3). So by collection time the
+/// creature that dealt combat damage, and the watcher that saw it, may both
+/// already be in a graveyard, and both abilities triggered all the same
+/// (CR 113.7a).
+///
+/// A permanent counts as present if it is still there, or if it left the
+/// battlefield somewhere in this same batch of events. Ordering within the
+/// batch is not consulted: a batch is one resolution or one turn-based action,
+/// so a departure in it is a consequence of the event rather than something
+/// that preceded it.
+pub(crate) fn was_on_the_battlefield(
+    state: &crate::state::GameState,
+    events: &[crate::events::GameEvent],
+    id: crate::ids::ObjectId,
+) -> bool {
+    use crate::events::GameEvent as E;
+    if state.get_object(id).is_some_and(|o| o.zone == crate::types::Zone::Battlefield) {
+        return true;
+    }
+    events.iter().any(|e| match e {
+        E::LeftBattlefield { object, .. } | E::CreatureDied { object, .. } => *object == id,
+        _ => false,
+    })
+}
+
 /// Dispatch one event to whichever collector cares about it.
 pub(crate) fn for_event(
     state: &mut crate::state::GameState,

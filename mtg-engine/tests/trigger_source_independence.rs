@@ -738,3 +738,63 @@ fn an_etb_trigger_collected_for_real_survives_its_source_dying() {
     assert_eq!(lib_before - state.get_player(P0).library_order.len(), 4,
         "CR 113.7a: the Skaab's ETB mill happens even though it is already dead");
 }
+
+// The same rule one step earlier, at collection rather than dispatch: an
+// ability triggers when its event happens (CR 603.2), and the game notices the
+// deaths from combat damage before it puts the triggers on the stack (CR
+// 704.3). So a watcher that died to the same combat damage was still there
+// when the damage was dealt, and its ability triggered.
+//
+// Rakish Heir attacks into a trade while another Vampire gets through: the
+// Heir is in the graveyard by the time triggers go on the stack, and the other
+// Vampire's counter is the Heir's ability doing what it already did.
+#[test]
+fn rakish_heir_triggers_for_a_vampire_it_died_beside() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let other = named_permanent(&mut state, &reg, "Vampire Interloper", P0);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+
+    declare_combat(&mut state, &[(heir, P1, &[blocker]), (other, P1, &[])]);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert_eq!(state.get_object(heir).unwrap().zone, Zone::Graveyard,
+        "test setup: the Heir traded with its blocker");
+
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, other, CounterType::PlusOnePlusOne), 1,
+        "the Heir was on the battlefield when the damage was dealt");
+}
+
+// And the dealer's own trigger, the other half of the same gate. Balefire
+// Dragon's "it deals that much damage to each creature that player controls"
+// is the one in the set where the difference is visible on the board rather
+// than on a creature that is already dead: the Dragon tramples over its
+// blocker (Kessig Wolf Run), dies to it, and the sweep still happens.
+#[test]
+fn a_dealers_own_combat_damage_trigger_survives_the_dealer() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let dragon = named_permanent(&mut state, &reg, "Balefire Dragon", P0);
+    // Blocked by something that kills it but cannot hold all six damage back.
+    let blocker = ready_creature(&mut state, P1, 6, 5);
+    let bystander = ready_creature(&mut state, P1, 1, 1);
+    grant_keyword(&mut state, dragon, Keyword::Trample);
+
+    declare_combat(&mut state, &[(dragon, P1, &[blocker])]);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert_eq!(state.get_object(dragon).unwrap().zone, Zone::Graveyard,
+        "test setup: the Dragon died to its blocker");
+
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+
+    assert_eq!(state.get_object(bystander).unwrap().zone, Zone::Graveyard,
+        "one damage trampled through, so the Dragon dealt one to each of \
+         that player's creatures");
+}

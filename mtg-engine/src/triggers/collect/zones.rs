@@ -110,14 +110,8 @@ pub(super) fn creature_died(
     // NON-creature watcher destroyed alongside the creature it
     // watches — Gutter Grime is an enchantment — was invisible to
     // this list and lost its trigger entirely.
-    let simultaneously_dead: Vec<ObjectId> = events.iter().filter_map(|e| match e {
-        GameEvent::LeftBattlefield { object, .. } => Some(*object),
-        GameEvent::CreatureDied { object, .. } => Some(*object),
-        _ => None,
-    }).collect();
     let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects_in_id_order().into_iter()
-        .filter(|o| o.id != dead_id &&
-            (o.zone == Zone::Battlefield || simultaneously_dead.contains(&o.id)))
+        .filter(|o| o.id != dead_id && super::was_on_the_battlefield(state, events, o.id))
         .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
         .collect();
     for (watcher_id, watcher_card_id, watcher_controller, watcher_transformed) in watchers {

@@ -6,11 +6,10 @@ use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::Zone;
 
 pub(super) fn combat_damage(
     state: &mut GameState,
-    _events: &[GameEvent],
+    events: &[GameEvent],
     event: &GameEvent,
     registry: &CardRegistry,
     c: &mut Collector,
@@ -20,9 +19,11 @@ pub(super) fn combat_damage(
     if let crate::events::DamageTarget::Object(damaged_id) = target {
         let source_id = *source;
         if let Some(obj) = state.get_object(source_id) {
-            if obj.zone == Zone::Battlefield && state.is_creature(source_id, registry) {
+            if super::was_on_the_battlefield(state, events, source_id) && state.is_creature(source_id, registry) {
                 let card_id = obj.card_id;
-                let controller = obj.controller;
+                // CR 608.2g: the controller as it was, not the owner the field
+                // resets to when a permanent leaves (CR 400.7).
+                let controller = crate::cards::helpers::controller_of(state, source_id);
                 if registry.get(card_id).is_some() {
                     let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::DealsCombatDamageToCreature, false);
                     if !desc.is_empty() {
@@ -40,9 +41,9 @@ pub(super) fn combat_damage(
     if let crate::events::DamageTarget::Player(damaged_player) = target {
         let source_id = *source;
         if let Some(obj) = state.get_object(source_id) {
-            if obj.zone == Zone::Battlefield && state.is_creature(source_id, registry) {
+            if super::was_on_the_battlefield(state, events, source_id) && state.is_creature(source_id, registry) {
                 let card_id = obj.card_id;
-                let controller = obj.controller;
+                let controller = crate::cards::helpers::controller_of(state, source_id);
 
                 // Source's own combat damage trigger (requires registered card).
                 if registry.get(card_id).is_some() {
@@ -59,8 +60,8 @@ pub(super) fn combat_damage(
                 // Combat damage watchers and any-damage watchers.
                 // Includes self — cards like Rakish Heir watch their own damage.
                 let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
-                    .filter(|o| o.zone == Zone::Battlefield)
-                    .map(|o| (o.id, o.card_id, o.controller))
+                    .filter(|o| super::was_on_the_battlefield(state, events, o.id))
+                    .map(|o| (o.id, o.card_id, crate::cards::helpers::controller_of(state, o.id)))
                     .collect();
                 for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                     if registry.get(watcher_card_id).is_some() {
@@ -112,7 +113,7 @@ pub(super) fn combat_damage(
 
 pub(super) fn noncombat_damage(
     state: &mut GameState,
-    _events: &[GameEvent],
+    events: &[GameEvent],
     event: &GameEvent,
     registry: &CardRegistry,
     c: &mut Collector,
@@ -122,8 +123,8 @@ pub(super) fn noncombat_damage(
     {
         let source_id = *source;
         let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
-            .filter(|o| o.zone == Zone::Battlefield)
-            .map(|o| (o.id, o.card_id, o.controller))
+            .filter(|o| super::was_on_the_battlefield(state, events, o.id))
+            .map(|o| (o.id, o.card_id, crate::cards::helpers::controller_of(state, o.id)))
             .collect();
         for (watcher_id, watcher_card_id, watcher_controller) in watchers {
             if registry.get(watcher_card_id).is_some() {
