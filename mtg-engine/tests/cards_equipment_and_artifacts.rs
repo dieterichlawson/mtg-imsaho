@@ -174,6 +174,105 @@ fn runechanters_pike_grants_first_strike_and_power_bonus() {
     assert_eq!(state.effective_toughness(creature, &reg), Some(2));
 }
 
+/// Ruling 2011-09-22: "The value of X is constantly updated as instant cards
+/// and sorcery cards are put into or removed from your graveyard." The
+/// existing test covers cards going in; this one covers them coming out, and
+/// what does not count while they are there.
+#[test]
+fn runechanters_pike_counts_only_instants_and_sorceries_in_its_own_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pike = named_permanent(&mut state, &reg, "Runechanter's Pike", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(pike).unwrap().attached_to = Some(creature);
+
+    let bolt = reg.get_id_by_name("Lightning Bolt").unwrap();
+    let bears = reg.get_id_by_name("Grizzly Bears").unwrap();
+
+    // A creature card in the graveyard is not an instant or a sorcery.
+    state.create_object(bears, P0, Zone::Graveyard, None, None);
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "a creature card in the graveyard adds nothing");
+
+    // Nor is a token, whatever its types: "instant and sorcery *cards*"
+    // (CR 109.1), and a token sits in the graveyard until the next
+    // state-based action pass.
+    let token = state.create_token_with_subtypes(
+        "", P0, 0, 0, vec![], vec![CardType::Instant], vec![], vec![], &reg)[0];
+    state.move_object(token, Zone::Graveyard, &reg);
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "a token in the graveyard is not a card");
+
+    // Nor do an opponent's instants: the count is of *your* graveyard, and
+    // "you" is the Pike's controller.
+    state.create_object(bolt, P1, Zone::Graveyard, None, None);
+    state.create_object(bolt, P1, Zone::Graveyard, None, None);
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "an opponent's graveyard is not yours");
+
+    let mine = state.create_object(bolt, P0, Zone::Graveyard, None, None);
+    assert_eq!(state.effective_power(creature, &reg), Some(3));
+
+    // Taken back out again — flashback exiles, Ghost Quarter's search shuffles
+    // — and X follows it down.
+    state.move_object(mine, Zone::Exile, &reg);
+    assert_eq!(state.effective_power(creature, &reg), Some(2),
+        "X is updated as cards leave the graveyard, not only as they arrive");
+}
+
+/// "your graveyard" is the *Pike's* controller's, and an Equipment does not
+/// change controller when the creature it is attached to does (CR 301.5c —
+/// equip targets a creature you control, but an existing attachment survives).
+#[test]
+fn runechanters_pike_counts_its_own_controllers_graveyard_after_the_creature_is_stolen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pike = named_permanent(&mut state, &reg, "Runechanter's Pike", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(pike).unwrap().attached_to = Some(creature);
+
+    let bolt = reg.get_id_by_name("Lightning Bolt").unwrap();
+    state.create_object(bolt, P0, Zone::Graveyard, None, None);
+    state.create_object(bolt, P0, Zone::Graveyard, None, None);
+    assert_eq!(state.effective_power(creature, &reg), Some(4), "test setup: 2/2 plus two");
+
+    // An opponent takes the creature. The Pike stays theirs.
+    state.get_object_mut(creature).unwrap().controller = P1;
+    assert_eq!(state.effective_power(creature, &reg), Some(4),
+        "X still counts the Pike controller's graveyard, not the thief's");
+}
+
+/// CR 608.2b: equip does nothing if its target is no longer a creature you
+/// control when the ability resolves.
+///
+/// The engine's re-check for a `CreatureWithFilter` requirement only re-runs
+/// the filter — it accepts a target in the Stack zone and asks nothing about
+/// creature-ness — so the check at the moment of attaching is the card's, and
+/// now lives once in `helpers::resolve_equip`.
+#[test]
+fn equip_does_not_attach_to_a_creature_that_left_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pike = named_permanent(&mut state, &reg, "Runechanter's Pike", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    let mut state = mtg_engine::engine::submit_action(&state, &Action::ActivateAbility {
+        object_id: pike, ability_index: 0, targets: vec![Target::Object(creature)],
+        tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+    }, &reg);
+
+    // The creature is killed with the equip ability still on the stack.
+    state.move_object(creature, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(pike).unwrap().attached_to, None,
+        "nothing to attach to, so the Pike stays where it is");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Inquisitor's Flail
 // ══════════════════════════════════════════════════════════════════
