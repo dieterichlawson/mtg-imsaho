@@ -107,7 +107,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Ranger's Guile | `rangers_guile.rs` | 58 | 4 | 0 |
 | x | Burning Vengeance | `burning_vengeance.rs` | 74 | 3 | 1 |
 | x | Dissipate | `dissipate.rs` | 53 | 4 | 0 |
-|   | Runic Repetition | `runic_repetition.rs` | 53 | 4 | 0 |
+| x | Runic Repetition | `runic_repetition.rs` | 53 | 4 | 0 |
 |   | Bramblecrush | `bramblecrush.rs` | 50 | 4 | 0 |
 |   | Ancient Grudge | `ancient_grudge.rs` | 48 | 4 | 0 |
 |   | Ghoulraiser | `ghoulraiser.rs` | 67 | 3 | 1 |
