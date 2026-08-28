@@ -169,6 +169,60 @@ fn brimstone_volley_no_morbid_deals_3() {
         "Brimstone Volley without morbid should deal 3 damage (20 - 3 = 17)");
 }
 
+/// Morbid is a condition in the effect, so it is read when the spell
+/// **resolves** (CR 608.2) — not when it is cast. Brimstone Volley is an
+/// instant, so there is a window: cast it with nothing dead, kill something in
+/// response, and it deals 5.
+///
+/// This also runs the flag through a real death rather than setting the bool,
+/// which the two tests above do.
+#[test]
+fn brimstone_volley_reads_morbid_when_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    assert!(!state.creature_died_this_turn, "test setup: nothing has died yet");
+
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    let bv = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
+    let mut state = cast_onto_stack(&state, &reg, bv, vec![Target::Player(P1)]);
+
+    // In response, a creature dies.
+    kill_by_damage(&mut state, &reg, victim);
+    assert!(state.creature_died_this_turn, "a real death sets the flag");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, 15,
+        "morbid was false when the spell was cast and true when it resolved, \
+         so it deals 5");
+}
+
+/// "a creature died **this turn**" — a death on the previous turn does not
+/// carry over.
+#[test]
+fn brimstone_volley_forgets_a_death_from_the_previous_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    kill_by_damage(&mut state, &reg, victim);
+    assert!(state.creature_died_this_turn, "test setup");
+
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+    advance_to_next_turn(&mut state, &reg);
+    assert!(!state.creature_died_this_turn, "the turn ended and took the flag with it");
+
+    // It is the opponent's turn now; an instant is castable with priority.
+    state.priority_player = Some(P0);
+    let bv = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
+    let life_before = state.get_player(P1).life;
+    let state = cast_and_resolve(&state, &reg, bv, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_player(P1).life, life_before - 3,
+        "3 damage, not 5");
+}
+
 /// Somberwald Spider enters with +1/+1 counters when morbid.
 #[test]
 fn somberwald_spider_morbid_counters() {
