@@ -88,3 +88,65 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `cards_spells_and_enchantments.rs::spare_from_evil_does_not_protect_against_a_noncreature_source` — a Brimstone Volley's damage lands, a non-Human creature is still stopped. `cards_spells_and_enchantments.rs::spare_from_evil_grants_protection` — blocking.
+
+## Audit — 2026-08-28 19:01
+
+**Oracle text source**: Oracle cache (Scryfall API) — `scripts/oracle_lookup.py lookup "Spare from Evil"`, https://scryfall.com/card/isd/34/spare-from-evil
+**Oracle text**:
+```
+Creatures you control gain protection from non-Human creatures until end of turn.
+```
+**Type line**: Instant
+**Mana cost**: {1}{W}
+**Rulings** (2, 2011-09-22):
+- "Only creatures you control when Spare from Evil resolves will be affected. Creatures that
+  enter or that you gain control of later in the turn won't be."
+- "A 'non-Human creature' is any creature that doesn't have the creature type Human. A creature
+  that is a Human in addition to other creature types is not a non-Human creature."
+**Status**: PASS (the second ruling gained its test)
+
+### Code issues
+No issues found in `mtg-engine/src/cards/isd/spare_from_evil.rs`.
+
+`{1}{W}`, `CardType::Instant`, oracle text verbatim, no target requirement ("creatures you
+control" targets nothing).
+
+Both rulings are implemented, and the card's own comments record the bugs that got it here:
+- **Ruling 1 / CR 611.2c**: the affected creatures are snapshotted at resolution via
+  `creatures_controlled_snapshot`, so a creature entering later in the turn gets nothing —
+  the line between a pump spell and a permanent's static anthem.
+- **The filter is both halves of "non-Human creature"**:
+  `And([HasCardType(Creature), Not(HasSubtype("Human"))])`. Written as the bare `Not` it also
+  matched every instant, sorcery, artifact and land, so a Brimstone Volley could not touch the
+  protected creature — that fix predates this audit and its test survives mutation.
+- **Ruling 2** falls out of `HasSubtype` being a membership test: a Human Werewolf has Human
+  among its subtypes, so `Not(HasSubtype("Human"))` is false for it and the protection says
+  nothing about it.
+
+### Tricky interactions checked
+- **A non-Human creature cannot block the protected creature; a Human still can**: PASS.
+- **A Human-plus-other-types creature (Village Ironsmith, Human Werewolf) still can** — and the
+  same card transformed, now a Werewolf and not a Human, cannot: PASS, newly tested.
+- **A noncreature source's damage lands**: PASS.
+- **A non-Human creature's noncombat damage is prevented**: PASS (`ability_target_protection.rs`).
+- **A creature entering after resolution gets nothing**: PASS (`snapshot_anthems.rs`).
+- **The protection expires at end of turn**: `until_end_of_turn`, cleared by cleanup — the
+  mechanism tested at Past in Flames this pass.
+- **Protection's targeting half from a non-Human creature's ability**: the shared protection
+  plumbing, covered by `ability_target_protection.rs` generally.
+
+### Test coverage
+- blocking, both directions of the filter, and the multi-type ruling both ways:
+  `cards_spells_and_enchantments.rs:352 spare_from_evil_grants_protection` (extended)
+- the creature half of "non-Human creature":
+  `cards_spells_and_enchantments.rs:383 spare_from_evil_does_not_protect_against_a_noncreature_source`
+- fixed at resolution (CR 611.2c): `snapshot_anthems.rs:102 spare_from_evil_protects_only_what_was_there`
+- noncombat damage prevented: `ability_target_protection.rs:178`
+
+Mutation-checked: protecting from ALL creatures fails the Human-can-block and Ironsmith
+assertions; dropping the creature half of the filter fails the noncreature-source test. Each
+half of the `And` is pinned by its own test.
+
+### Changes made
+- `cards_spells_and_enchantments.rs`: the multi-type ruling assertions, using Village Ironsmith
+  on both faces. No code change.

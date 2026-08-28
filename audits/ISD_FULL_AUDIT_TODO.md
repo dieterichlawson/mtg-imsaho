@@ -207,7 +207,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Make a Wish | `make_a_wish.rs` | 55 | 2 | 0 |
 | x | Creeping Renaissance | `creeping_renaissance.rs` | 54 | 2 | 0 |
 | x | Laboratory Maniac | `laboratory_maniac.rs` | 54 | 2 | 0 |
-|   | Spare from Evil | `spare_from_evil.rs` | 53 | 2 | 0 |
+| x | Spare from Evil | `spare_from_evil.rs` | 53 | 2 | 0 |
 |   | Vampiric Fury | `vampiric_fury.rs` | 50 | 2 | 0 |
 |   | Hysterical Blindness | `hysterical_blindness.rs` | 48 | 2 | 0 |
 |   | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |

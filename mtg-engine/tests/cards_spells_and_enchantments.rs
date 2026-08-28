@@ -374,6 +374,18 @@ fn spare_from_evil_grants_protection() {
     state.get_object_mut(human_opp).unwrap().subtypes = vec!["Human".into()];
     assert!(mtg_engine::combat::can_block_attacker(&state, human_opp, human, &reg),
         "Human creature should still be able to block (protection only from non-Humans)");
+
+    // Ruling: "A creature that is a Human in addition to other creature types
+    // is not a non-Human creature." Village Ironsmith is a Human Werewolf, so
+    // the protection says nothing about it either.
+    let ironsmith = named_permanent(&mut state, &reg, "Village Ironsmith", P1);
+    assert!(mtg_engine::combat::can_block_attacker(&state, ironsmith, human, &reg),
+        "a Human-plus-other-types creature is not a non-Human creature");
+    // Transformed, it is an Ironfang — a Werewolf and no longer a Human — and
+    // the protection reaches it.
+    mtg_engine::cards::helpers::apply_transform(&mut state, ironsmith, &reg);
+    assert!(!mtg_engine::combat::can_block_attacker(&state, ironsmith, human, &reg),
+        "the same card on its back face is a non-Human creature");
 }
 
 /// "protection from non-Human **creatures**" — the creature half of that is not
