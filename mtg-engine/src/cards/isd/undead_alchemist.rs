@@ -9,12 +9,16 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// opponent's graveyard from their library, exile that card and create a 2/2
 /// black Zombie creature token.
 ///
-/// Ability 1 is a replacement effect: combat damage from Zombies is replaced
-/// with milling. Implemented via `replace_combat_damage_to_player`.
+/// Ability 1 is a replacement effect (`replace_event`): combat damage from a
+/// Zombie you control becomes a mill of the same size.
 ///
-/// Ability 2 (mill-watcher trigger for non-combat mill sources) is not yet
-/// implemented as a standalone trigger — currently the exile-and-token logic
-/// is inlined in the replacement effect for the combat mill path only.
+/// Ability 2 is a real trigger, not something the replacement effect does on
+/// the side. `mill_cards` emits `CreatureCardMilled` for every creature card
+/// it puts into a graveyard, whoever milled and for whatever reason, and the
+/// collector fires this card's `CreatureCardMilled` trigger for each watcher
+/// whose controller is not the milled player — which is what "an **opponent's**
+/// graveyard" means. So Curse of the Bloody Tome and Nephalia Drownyard feed
+/// it exactly as combat damage does.
 pub struct UndeadAlchemist;
 
 impl CardBehavior for UndeadAlchemist {
@@ -50,8 +54,25 @@ impl CardBehavior for UndeadAlchemist {
         registry: &CardRegistry,
     ) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
-        // Exile the milled creature card and create a 2/2 Zombie token.
-        state.move_object(milled_object, Zone::Exile, registry);
+        let name = state.obj_name(milled_object);
+
+        // "exile that card" means the card that was put into the graveyard.
+        // CR 400.7: once it leaves that graveyard it is a new object and this
+        // ability can no longer find it — so a card its owner rescued in
+        // response (Ghoulcaller's Chant is in this very set) must not be
+        // dragged out of their hand and exiled. Two Alchemists reach the same
+        // place from the other direction: per the 2011-09-22 ruling, "the
+        // first such ability to resolve will exile that creature card ...
+        // subsequent abilities won't exile the creature card, but each will
+        // create another Zombie token", and by then it is already in exile.
+        //
+        // The token is created either way. It is not conditional on the exile.
+        let still_in_a_graveyard = state.get_object(milled_object)
+            .is_some_and(|o| o.zone == Zone::Graveyard);
+        if still_in_a_graveyard {
+            state.move_object(milled_object, Zone::Exile, registry);
+        }
+
         state.create_token_with_subtypes(
             "", controller, 2, 2,
             vec![Color::Black],
@@ -60,9 +81,11 @@ impl CardBehavior for UndeadAlchemist {
             vec!["Zombie".into()],
             registry,
         );
-        let name = state.get_object(milled_object).map(|o| o.name.clone()).unwrap_or_default();
-        state.log(crate::state::LogLevel::Event,
-            format!("Undead Alchemist: exiled milled {name}, created Zombie token"));
+        state.log(crate::state::LogLevel::Event, if still_in_a_graveyard {
+            format!("Undead Alchemist: exiled {name} and created a Zombie token")
+        } else {
+            format!("Undead Alchemist: {name} was no longer in the graveyard to exile, created a Zombie token")
+        });
     }
 
     fn replace_event(
