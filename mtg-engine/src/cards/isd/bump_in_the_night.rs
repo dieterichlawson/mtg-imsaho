@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
@@ -21,23 +21,19 @@ impl CardBehavior for BumpInTheNight {
         }
     }
 
+    /// "Target opponent", not "target player" (CR 102.1). This used to be
+    /// `PlayerOnly` plus an `is_valid_target` of `*pid != caster`; the
+    /// requirement now says it, so the engine offers only opponents and
+    /// re-checks the same restriction on resolution (CR 608.2b).
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::PlayerOnly
-    }
-
-    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
-        // "Target opponent" — can only target opponents, not yourself.
-        match target {
-            Target::Player(pid) => *pid != caster,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-            Target::Object(_) => false,
-        }
+        TargetRequirement::OpponentOnly
     }
 
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
-            state.change_life(*player_id, -3);
+            // "loses 3 life", not "deals 3 damage": life loss bypasses
+            // prevention, protection and damage triggers.
+            state.lose_life(*player_id, 3);
         }
     }
 }

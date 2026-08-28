@@ -104,8 +104,14 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
         Target::Illegal => false,
         // CR 608.2b re-checks legality with the same rule that offered the
         // target in the first place, so this calls the one function rather
-        // than restating it.
-        Target::Player(pid) => crate::engine::can_target_player(state, *pid, caster, registry),
+        // than restating it — plus the requirement's own restriction, which
+        // `can_target_player` does not know about.
+        Target::Player(pid) => {
+            if matches!(inner_req, TargetRequirement::OpponentOnly) && *pid == caster {
+                return false;
+            }
+            crate::engine::can_target_player(state, *pid, caster, registry)
+        }
     }
 }
 

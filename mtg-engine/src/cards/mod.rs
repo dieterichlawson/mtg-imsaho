@@ -368,6 +368,16 @@ pub enum TargetRequirement {
     CreatureWithFilter(TargetFilter),
     /// Target a player only (Lava Axe)
     PlayerOnly,
+    /// Target an opponent of the spell's or ability's controller (Bump in the
+    /// Night, Tribute to Hunger).
+    ///
+    /// "Target opponent" is not "target player" (CR 102.1: your opponents are
+    /// the players you are not teamed with). Both cards that say it used to
+    /// declare `PlayerOnly` and then subtract themselves in an
+    /// `is_valid_target` of `*pid != caster` — the same sentence written twice,
+    /// and one the resolution-time re-check reached only because
+    /// `stack::resolve_spell` happens to consult `is_valid_target` too.
+    OpponentOnly,
     /// Target a player or planeswalker (Stensia Bloodhall)
     PlayerOrPlaneswalker,
     /// Target a spell on the stack (Counterspell)

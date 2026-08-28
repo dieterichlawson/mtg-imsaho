@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
@@ -22,18 +22,11 @@ impl CardBehavior for TributeToHunger {
         }
     }
 
+    /// "Target opponent", not "target player" (CR 102.1) — see
+    /// `TargetRequirement::OpponentOnly`. This used to be `PlayerOnly` plus an
+    /// `is_valid_target` of `*pid != caster`.
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::PlayerOnly
-    }
-
-    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
-        // "Target opponent" — can only target opponents, not self.
-        match target {
-            Target::Player(pid) => *pid != caster,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-            Target::Object(_) => false,
-        }
+        TargetRequirement::OpponentOnly
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {

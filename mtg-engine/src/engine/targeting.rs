@@ -302,6 +302,15 @@ pub(crate) fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
+        // CR 102.1: "target opponent" is every player but the controller.
+        TargetRequirement::OpponentOnly => {
+            state.players.iter()
+                .filter(|p| p.id != caster)
+                .filter(|p| can_target_player(state, p.id, caster, registry))
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
         TargetRequirement::PlayerOrPlaneswalker => {
             let mut targets: Vec<Target> = state.players.iter()
                 .filter(|p| can_target_player(state, p.id, caster, registry))
@@ -542,6 +551,16 @@ pub(crate) fn generate_ability_targets(
         }
         TargetRequirement::PlayerOnly => {
             state.players.iter()
+                .filter(|p| can_target_player(state, p.id, controller, registry))
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect()
+        }
+        // CR 602.2a: the ability's controller is the activator, so "opponent"
+        // is measured from them, not from whoever holds the source.
+        TargetRequirement::OpponentOnly => {
+            state.players.iter()
+                .filter(|p| p.id != controller)
                 .filter(|p| can_target_player(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
