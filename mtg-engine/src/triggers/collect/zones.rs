@@ -78,7 +78,7 @@ pub(super) fn creature_died(
     registry: &CardRegistry,
     c: &mut Collector,
 ) {
-    let GameEvent::CreatureDied { object, card_id, controller, damaged_by, last_known_toughness, is_token } = event else { return };
+    let GameEvent::CreatureDied { object, card_id, controller, damaged_by, last_known_toughness, is_token, subtypes } = event else { return };
     let dead_id = *object;
     let dead_card_id = *card_id;
     let dead_controller = *controller;
@@ -88,6 +88,7 @@ pub(super) fn creature_died(
         damaged_by: damaged_by.clone(),
         toughness: *last_known_toughness,
         is_token: *is_token,
+        subtypes: subtypes.clone(),
     };
 
     // 1. Self-dies trigger. Only fire if the card actually has a
@@ -126,7 +127,7 @@ pub(super) fn creature_died(
         let condition_holds = registry.get(watcher_card_id).is_some_and(|b|
             b.should_trigger_on_creature_dies(
                 state, watcher_id, dead_id, dead_controller,
-                &dead.damaged_by, dead.toughness, dead.is_token, registry));
+                &dead.damaged_by, dead.toughness, dead.is_token, &dead.subtypes, registry));
         if has_death_trigger && condition_holds {
             let desc = face_trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, watcher_transformed);
             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,

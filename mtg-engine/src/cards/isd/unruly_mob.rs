@@ -35,7 +35,7 @@ impl CardBehavior for UnrulyMob {
     /// "another creature **you control** dies" — a condition on the event, so
     /// it is read as the creature dies (CR 603.2). "Another" is the
     /// collector's: a permanent never sees its own death in the watcher scan.
-    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) -> bool {
+    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _dead_subtypes: &[String], _registry: &CardRegistry) -> bool {
         dead_controller == crate::cards::helpers::controller_of(state, self_id)
     }
 

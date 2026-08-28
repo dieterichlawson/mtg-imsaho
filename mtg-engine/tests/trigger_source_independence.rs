@@ -607,7 +607,7 @@ fn gutter_grime_makes_its_ooze_after_dying_alongside_the_creature() {
     state.move_object(creature, Zone::Graveyard, &reg);
 
     resolve_after_source_dies(&mut state, &reg, grime, TriggerEvent::CreatureDied {
-        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
     });
 
     assert_eq!(count_tokens_named_by(&state, "Ooze Token", P0), 1,
@@ -627,7 +627,7 @@ fn murder_of_crows_offers_its_draw_after_dying_alongside_the_creature() {
     state.move_object(creature, Zone::Graveyard, &reg);
 
     resolve_after_source_dies(&mut state, &reg, murder, TriggerEvent::CreatureDied {
-        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
     });
 
     assert!(state.awaiting_action.is_some(),
@@ -650,7 +650,7 @@ fn selhoff_occultist_mills_after_dying_alongside_the_creature() {
 
     resolve_after_source_dies_targeting(&mut state, &reg, occultist,
         TriggerEvent::CreatureDied {
-            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
         },
         vec![Target::Player(P1)]);
 
@@ -673,7 +673,7 @@ fn rage_thrower_deals_its_damage_after_dying_alongside_the_creature() {
 
     resolve_after_source_dies_targeting(&mut state, &reg, thrower,
         TriggerEvent::CreatureDied {
-            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
         },
         vec![Target::Player(P1)]);
 
@@ -695,7 +695,7 @@ fn a_trigger_that_counters_its_own_permanent_does_nothing_once_it_has_died() {
     state.move_object(other, Zone::Graveyard, &reg);
 
     resolve_after_source_dies(&mut state, &reg, knot, TriggerEvent::CreatureDied {
-        dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false },
+        dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
     });
 
     assert_eq!(counters_of(&state, knot, CounterType::PlusOnePlusOne), 0,

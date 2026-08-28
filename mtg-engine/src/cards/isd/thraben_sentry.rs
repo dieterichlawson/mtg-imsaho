@@ -55,7 +55,7 @@ impl CardBehavior for ThrabenSentry {
     /// event (CR 603.2). The front-face check beside it is CR 712.8d: the
     /// ability is printed on Thraben Sentry, not on Thraben Militia, so a
     /// transformed Sentry does not have it to trigger.
-    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) -> bool {
+    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _dead_subtypes: &[String], _registry: &CardRegistry) -> bool {
         let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
         !is_transformed && dead_controller == crate::cards::helpers::controller_of(state, self_id)
     }

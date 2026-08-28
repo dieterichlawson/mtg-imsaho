@@ -248,6 +248,7 @@ fn trigger_processing_survives_an_event_about_a_missing_object() {
         damaged_by: Vec::new(),
         last_known_toughness: 0,
         is_token: false,
+        subtypes: Vec::new(),
     });
 
     // Should not panic even with a nonexistent object.

@@ -676,6 +676,7 @@ pub trait CardBehavior: Send + Sync {
         _dead_damaged_by: &[ObjectId],
         _dead_toughness: i32,
         _dead_is_token: bool,
+        _dead_subtypes: &[String],
         _registry: &CardRegistry,
     ) -> bool { true }
 

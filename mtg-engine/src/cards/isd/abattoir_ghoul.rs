@@ -41,7 +41,7 @@ impl CardBehavior for AbattoirGhoul {
     /// `dead_damaged_by` comes from the death event: the zone change clears
     /// the object's own record of who damaged it (CR 400.7), so by resolution
     /// there is nothing left to read (CR 608.2g).
-    fn should_trigger_on_creature_dies(&self, _state: &GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) -> bool {
+    fn should_trigger_on_creature_dies(&self, _state: &GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _dead_subtypes: &[String], _registry: &CardRegistry) -> bool {
         dead_damaged_by.contains(&self_id)
     }
 

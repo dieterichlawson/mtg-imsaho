@@ -32,10 +32,19 @@ impl CardBehavior for VillageCannibals {
         }
     }
 
-    /// "another **Human** dies" — a condition on the event (CR 603.2), so a
-    /// Zombie dying is not this ability's event and puts nothing on the stack.
-    fn should_trigger_on_creature_dies(&self, state: &GameState, _self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, registry: &CardRegistry) -> bool {
-        state.has_subtype(dead_id, "Human", registry)
+    /// "another **Human** creature dies" — a condition on the event (CR 603.2),
+    /// so a Zombie dying is not this ability's event and puts nothing on the
+    /// stack.
+    ///
+    /// Read from the death event, not from the object. By the time anything
+    /// asks, the object has been through `move_object`, which clears
+    /// `is_transformed` (CR 400.7) — so a werewolf that died *as a Werewolf*
+    /// reads back as the Human on its front face and fed the Cannibals a
+    /// counter it had not earned. A Human token has it worse: SBA 704.5d has
+    /// taken it out of `state.objects` entirely, so it would have read as
+    /// nothing at all.
+    fn should_trigger_on_creature_dies(&self, _state: &GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, dead_subtypes: &[String], _registry: &CardRegistry) -> bool {
+        dead_subtypes.iter().any(|s| s == "Human")
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {

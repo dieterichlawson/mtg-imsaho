@@ -33,7 +33,18 @@ pub enum GameEvent {
     /// Non-combat damage dealt (e.g., triggered abilities, spells).
     NonCombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
     LifeChanged { player: PlayerId, old: i32, new_life: i32 },
-    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32, is_token: bool },
+    /// A creature died.
+    ///
+    /// Everything past `object` is last known information (CR 608.2g), captured
+    /// before the zone change rather than read back afterwards — by then the
+    /// controller has reverted to the owner, the damage record is cleared, a
+    /// transformed permanent has turned back to its front face (all CR 400.7),
+    /// and a token is about to stop existing entirely (SBA 704.5d).
+    ///
+    /// `subtypes` is the active face's, which is why "whenever another **Human**
+    /// dies" cannot read the object: a werewolf that died as a Werewolf is a
+    /// Human again by the time anything looks.
+    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32, is_token: bool, subtypes: Vec<String> },
     PlayerLost { player: PlayerId, reason: LossReason },
     GameEnded { result: GameResult },
     PriorityPassed { player: PlayerId },

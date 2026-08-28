@@ -184,7 +184,7 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
 /// last known information (CR 608.2g) — so it has to be called BEFORE the zone
 /// change, which clears the object's battlefield state. `None` for a
 /// non-creature, which announces no death.
-fn death_event(state: &GameState, id: ObjectId, registry: Option<&CardRegistry>) -> Option<GameEvent> {
+pub(crate) fn death_event(state: &GameState, id: ObjectId, registry: Option<&CardRegistry>) -> Option<GameEvent> {
     let is_creature = registry.is_some_and(|r| state.is_creature(id, r))
         || state.get_object(id).is_some_and(|o| o.power.is_some());
     if !is_creature {
@@ -196,7 +196,11 @@ fn death_event(state: &GameState, id: ObjectId, registry: Option<&CardRegistry>)
         .and_then(|r| state.effective_toughness(id, r))
         .or_else(|| state.get_object(id).and_then(|o| o.toughness))
         .unwrap_or(0);
-    Some(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token })
+    // The active face's subtypes, read while the permanent still has an active
+    // face: `move_object` clears `is_transformed` on the way out (CR 400.7), so
+    // a Werewolf that died would read back as the Human on its front.
+    let subtypes = registry.map(|r| state.subtypes_of(id, r)).unwrap_or_default();
+    Some(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token, subtypes })
 }
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.

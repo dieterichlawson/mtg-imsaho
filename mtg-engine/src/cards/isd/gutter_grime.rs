@@ -43,7 +43,7 @@ impl CardBehavior for GutterGrime {
     /// `dead_is_token` comes from the death event rather than the object: SBA
     /// 704.5d has already taken the token out of `state.objects` by the time
     /// anything asks, so its own record of itself is gone (CR 608.2g).
-    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _registry: &CardRegistry) -> bool {
+    fn should_trigger_on_creature_dies(&self, state: &GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _dead_subtypes: &[String], _registry: &CardRegistry) -> bool {
         !dead_is_token && dead_controller == crate::cards::helpers::controller_of(state, self_id)
     }
 

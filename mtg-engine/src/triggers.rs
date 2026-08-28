@@ -74,6 +74,11 @@ pub struct DeadCreature {
     pub damaged_by: Vec<ObjectId>,
     pub toughness: i32,
     pub is_token: bool,
+    /// The active face's subtypes as it died (CR 608.2g). Not readable from
+    /// the object afterwards: `move_object` clears `is_transformed`, so a
+    /// Werewolf reads back as the Human on its front face, and a token is gone
+    /// from `state.objects` altogether.
+    pub subtypes: Vec<String>,
 }
 
 /// What the trigger triggered on.
