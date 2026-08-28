@@ -133,7 +133,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Elder of Laurels | `elder_of_laurels.rs` | 71 | 3 | 0 |
 | x | Traveler's Amulet | `travelers_amulet.rs` | 70 | 3 | 0 |
 | x | Armored Skaab | `armored_skaab.rs` | 43 | 3 | 1 |
-|   | Geist of Saint Traft | `geist_of_saint_traft.rs` | 86 | 2 | 1 |
+| x | Geist of Saint Traft | `geist_of_saint_traft.rs` | 86 | 2 | 1 |
 |   | Moldgraf Monstrosity | `moldgraf_monstrosity.rs` | 84 | 2 | 1 |
 |   | Nevermore | `nevermore.rs` | 63 | 3 | 0 |
 |   | Disciple of Griselbrand | `disciple_of_griselbrand.rs` | 62 | 3 | 0 |
