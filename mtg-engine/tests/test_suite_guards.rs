@@ -1138,3 +1138,58 @@ fn nothing_rebuilds_the_card_registry_at_run_time() {
          Thread the caller's `registry: &CardRegistry` through instead.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// A `// ── Card Name ──` header in a test file has tests under it.
+///
+/// Eighteen files divide themselves this way, 134 sections in all, and the
+/// header is how a reader — or an auditor grepping for a card — decides the
+/// card is covered. Three of them were headers with nothing beneath: Village
+/// Ironsmith, Villagers of Estwald and Tormented Pariah each read as covered
+/// and were not.
+///
+/// Villagers of Estwald was the instructive one. It appears in three other
+/// test files, so it greps as thoroughly tested — but always as a *fixture*,
+/// because its back face is a Werewolf that stopped being a Human. Nothing
+/// asserted the card's own body.
+#[test]
+fn a_card_section_header_has_tests_under_it() {
+    let mut offenders = Vec::new();
+    let mut sections = 0;
+    for path in test_files() {
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+
+        // Split on header lines, then look at what follows each one.
+        let mut current: Option<String> = None;
+        let mut body = String::new();
+        for line in text.lines() {
+            let trimmed = line.trim_end();
+            let is_header = trimmed.starts_with("// ── ") && trimmed.ends_with('─');
+            if is_header {
+                if let Some(section) = current.take() {
+                    sections += 1;
+                    if !body.contains("#[test]") {
+                        offenders.push(format!("{name}: \"{section}\" has no tests under it"));
+                    }
+                }
+                current = Some(trimmed.trim_start_matches("// ── ")
+                    .trim_end_matches('─').trim().to_string());
+                body.clear();
+            } else if current.is_some() {
+                body.push_str(line);
+                body.push('\n');
+            }
+        }
+        if let Some(section) = current {
+            sections += 1;
+            if !body.contains("#[test]") {
+                offenders.push(format!("{name}: \"{section}\" has no tests under it"));
+            }
+        }
+    }
+    assert!(sections > 100, "only found {sections} section headers to check");
+    assert!(offenders.is_empty(),
+        "{} section header(s) claim coverage that is not there:\n  {}\n\n\
+         Either write the tests or drop the header.",
+        offenders.len(), offenders.join("\n  "));
+}

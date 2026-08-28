@@ -371,6 +371,40 @@ fn hanweir_watchkeep_cannot_attack_behind_its_defender() {
 
 // ── Tormented Pariah ──────────────────────────────────────────────
 
+/// The last of the three sections in this file that were headers with nothing
+/// under them. A vanilla body on both faces, so the body, the subtypes and the
+/// colour it keeps are the whole card — and its front face carries three
+/// subtypes, which is the part most easily dropped.
+#[test]
+fn tormented_pariah_is_a_red_3_2_human_warrior_that_becomes_a_red_6_4() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pariah = named_permanent(&mut state, &reg, "Tormented Pariah", P0);
+    assert_eq!(state.effective_power(pariah, &reg), Some(3));
+    assert_eq!(state.effective_toughness(pariah, &reg), Some(2));
+    assert_eq!(state.colors_of(pariah, &reg), vec![Color::Red],
+        "red from its {{3}}{{R}} cost");
+    for sub in ["Human", "Warrior", "Werewolf"] {
+        assert!(state.has_subtype(pariah, sub, &reg), "front face is a {sub}");
+    }
+
+    mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &reg);
+
+    assert_eq!(state.get_object(pariah).unwrap().name, "Rampaging Werewolf");
+    assert_eq!(state.effective_power(pariah, &reg), Some(6));
+    assert_eq!(state.effective_toughness(pariah, &reg), Some(4));
+    // CR 204.2: the back face has no mana cost, so this can only come from the
+    // colour indicator. Without one it would be colourless.
+    assert_eq!(state.colors_of(pariah, &reg), vec![Color::Red],
+        "red from its colour indicator");
+    assert!(state.has_subtype(pariah, "Werewolf", &reg));
+    for sub in ["Human", "Warrior"] {
+        assert!(!state.has_subtype(pariah, sub, &reg),
+            "the back face is a Werewolf and nothing else — not a {sub}");
+    }
+}
+
 // ── Grizzled Outcasts ─────────────────────────────────────────────
 
 /// The plainest werewolf in the set: a vanilla body on both faces, so what

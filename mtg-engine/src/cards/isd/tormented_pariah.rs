@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 use crate::actions::Target;
 
-/// Tormented Pariah {3}{R} 3/2 Human Warrior // Rampaging Werewolf 6/4 Werewolf
+/// Tormented Pariah {3}{R} 3/2 Human Warrior Werewolf // Rampaging Werewolf 6/4 Werewolf
 pub struct TormentedPariah;
 
 
@@ -40,6 +40,9 @@ impl CardBehavior for TormentedPariah {
             subtypes: vec!["Werewolf".into()],
             power: Some(6),
             toughness: Some(4),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — red.
+            color_indicator: vec![Color::Red],
             oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
