@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, Keyword, Zone, CounterType};
@@ -26,13 +26,14 @@ impl CardBehavior for OliviaVoldaren {
             toughness: Some(3),
             oracle_text: "Flying\n{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.\n{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.".into(),
             keywords: vec![Keyword::Flying],
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::LeavesBattlefield,
-                    description: "return stolen creatures to their owners".into(),
-                target_requirement: None,
-                },
-            ],
+            // No triggered abilities. "for as long as you control Olivia
+            // Voldaren" is a duration on the control-change effect (CR 611.2b),
+            // not a leaves-the-battlefield trigger, and `expire_control_effects`
+            // ends it as a state-based action. The `LeavesBattlefield` entry
+            // declared here outlived the `on_leave_battlefield` that once
+            // implemented it by hand, so every time Olivia left she put an
+            // ability on the stack that did nothing and gave both players a
+            // priority window for it.
             ..Default::default()
         }
     }
@@ -98,7 +99,13 @@ impl CardBehavior for OliviaVoldaren {
                     if *target_id == object_id { return; }
                     let on_battlefield = state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield);
                     if !on_battlefield { return; }
-                    if state.has_protection_from(*target_id, object_id, registry) { return; }
+                    // No protection re-check here. Protection stops the
+                    // targeting, which the engine already enforces at
+                    // announcement and again at resolution (CR 608.2b), and
+                    // prevents the damage, which `damage::deal_damage` already
+                    // does. Returning early on it also skipped the two things
+                    // the card grants unconditionally — the Vampire type and
+                    // the counter — neither of which protection touches.
                     let effect = crate::state::PendingEffect::DealDamage {
                         amount: 1,
                         source_id: object_id,
@@ -129,7 +136,18 @@ impl CardBehavior for OliviaVoldaren {
                     let is_vampire = state.get_object(*target_id)
                         .is_some_and(|o| o.zone == Zone::Battlefield)
                         && state.has_subtype(*target_id, "Vampire", registry);
-                    if is_vampire {
+                    // "...for as long as **you** control Olivia Voldaren." Per
+                    // the ruling, an ability activated and then answered by
+                    // taking Olivia resolves with no effect: the duration is
+                    // already over, so nothing is gained (CR 611.2b). "You" is
+                    // the player who activated the ability (CR 602.2a), which
+                    // is not always whoever holds Olivia by the time it
+                    // resolves.
+                    let activator = state.resolving_ability_activator
+                        .unwrap_or_else(|| crate::cards::helpers::controller_of(state, object_id));
+                    let still_controls_olivia = state.get_object(object_id)
+                        .is_some_and(|o| o.zone == Zone::Battlefield && o.controller == activator);
+                    if is_vampire && still_controls_olivia {
                         // "...for as long as you control Olivia Voldaren."
                         // The duration is the engine's to track: it ends when
                         // Olivia leaves the battlefield *and* when anyone else
