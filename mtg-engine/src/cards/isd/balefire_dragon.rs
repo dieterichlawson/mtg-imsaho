@@ -41,8 +41,8 @@ impl CardBehavior for BalefireDragon {
             return;
         }
 
-        let creatures: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == damaged_player)
+        let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, damaged_player).into_iter()
+            .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
 

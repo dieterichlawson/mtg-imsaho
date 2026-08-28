@@ -23,8 +23,8 @@ impl CardBehavior for RollingTemblor {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let creatures: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
+        let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+            .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
         for id in creatures {

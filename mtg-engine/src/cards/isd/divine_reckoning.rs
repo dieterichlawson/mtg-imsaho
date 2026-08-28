@@ -134,14 +134,14 @@ impl DivineReckoning {
         }
 
         // Everyone has chosen — destroy the rest.
-        let mut doomed: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
+        // Sorted by id (`all_objects_in_zone`) for a reproducible log; the
+        // destruction itself is simultaneous so the order does not affect the
+        // outcome.
+        let doomed: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+            .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .filter(|id| !kept.contains(id))
             .collect();
-        // Sorted for a reproducible log; the destruction itself is simultaneous
-        // so the order does not affect the outcome.
-        doomed.sort_by_key(|id| id.0);
         // "Destroy the rest" is one event (CR 700.2c). Destroying them one at
         // a time lets each death change the answer for the next — an Angelic
         // Overseer and the last Human its controller has are both doomed here,

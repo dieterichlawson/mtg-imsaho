@@ -29,8 +29,8 @@ impl CardBehavior for ScourgeOfGeierReach {
         let controller = state.get_object(object_id)?.controller;
         // "each creature your opponents control" — everyone who isn't you, not
         // one named opponent.
-        let opponent_creatures = i32::try_from(state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller != controller && state.is_creature(o.id, registry))
+        let opponent_creatures = i32::try_from(state.all_objects_in_zone(Zone::Battlefield).into_iter()
+            .filter(|o| o.controller != controller && state.is_creature(o.id, registry))
             .count()).unwrap_or(i32::MAX);
         // Base 3/3 + N/N where N = opponent creature count.
         Some((3 + opponent_creatures, 3 + opponent_creatures))

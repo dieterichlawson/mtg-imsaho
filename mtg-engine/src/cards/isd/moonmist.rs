@@ -29,8 +29,7 @@ impl CardBehavior for Moonmist {
         // - Front-face Humans (transform to back face)
         // - Back-face creatures that are still Human (transform back to front face,
         //   e.g., Thraben Militia is Human on its back face)
-        let humans_to_transform: Vec<(ObjectId, bool)> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield)
+        let humans_to_transform: Vec<(ObjectId, bool)> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|o| {
                 let has_human_subtype = state.has_subtype(o.id, "Human", registry);
                 // Must be a DFC (has a back face).

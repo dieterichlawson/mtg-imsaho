@@ -26,8 +26,7 @@ impl CardBehavior for Paraselene {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all enchantments on the battlefield.
-        let enchantments: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield)
+        let enchantments: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|o| {
                 state.face_data(o.id, registry)
                     .is_some_and(|d| d.card_types.contains(&CardType::Enchantment))

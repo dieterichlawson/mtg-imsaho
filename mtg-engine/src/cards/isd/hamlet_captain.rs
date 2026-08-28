@@ -55,11 +55,9 @@ impl HamletCaptain {
         };
 
         // Find other Human creatures you control.
-        let humans: Vec<ObjectId> = state.objects.values()
+        let humans: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller).into_iter()
             .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && o.controller == controller
-                    && state.is_creature(o.id, registry)
+                state.is_creature(o.id, registry)
                     && o.id != self_id
             })
             // `registry.card_data` always returns FRONT-face data, so a

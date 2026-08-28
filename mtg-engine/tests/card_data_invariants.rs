@@ -524,3 +524,51 @@ fn no_card_hardcodes_a_derivable_token_name() {
          Pass \"\" and let CR 111.4 name it.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// `GameState::objects` is a `HashMap`, and its iteration order is seeded per
+/// process. Card code that scans it directly gets a different order on every
+/// run of the same game, which shows up in three ways: a list of options
+/// offered to a player by position (Curse of the Pierced Heart's planeswalkers,
+/// Divine Reckoning's creatures), a `find`/`any` that stops at the first match,
+/// and a log that reports the same board in a different order.
+///
+/// Cards go through the accessors that sort by id instead —
+/// `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
+#[test]
+fn no_card_iterates_the_object_map_directly() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for (n, line) in text.lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") || code.starts_with("///") {
+                continue; // the accessors' own doc comments name the pattern
+            }
+            if code.contains("objects.values()")
+                || code.contains("objects.iter()")
+                || code.contains("objects.keys()")
+            {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} site(s) in card code iterate the raw object map, whose order is \
+         seeded per process:\n  {}\n\n\
+         Use objects_in_zone / all_objects_in_zone / objects_in_id_order, \
+         which sort by id.",
+        offenders.len(), offenders.join("\n  "));
+}

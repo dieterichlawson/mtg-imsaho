@@ -36,8 +36,8 @@ impl CardBehavior for PastInFlames {
         // in the turn does not gain it. Past in Flames itself is still on the
         // stack here, and the engine moves it afterwards, so it is not in its
         // own list.
-        let targets: Vec<(ObjectId, ManaCost)> = state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_card(o.id) && o.id != object_id)
+        let targets: Vec<(ObjectId, ManaCost)> = state.objects_in_zone(Zone::Graveyard, controller).into_iter()
+            .filter(|o| state.is_card(o.id) && o.id != object_id)
             .filter_map(|o| {
                 state.face_data(o.id, registry).and_then(|d| {
                     let is_instant_or_sorcery = d.card_types.contains(&CardType::Instant)

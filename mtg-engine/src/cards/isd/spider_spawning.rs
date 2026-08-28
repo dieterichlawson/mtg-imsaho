@@ -29,8 +29,8 @@ impl CardBehavior for SpiderSpawning {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         // Count creature cards in controller's graveyard (excluding this spell which is still on the stack).
-        let creature_count = state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && state.is_card(o.id) && state.is_creature(o.id, registry) && o.id != object_id)
+        let creature_count = state.objects_in_zone(Zone::Graveyard, controller).into_iter()
+            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry) && o.id != object_id)
             .count();
         for _ in 0..creature_count {
             state.create_token_with_subtypes("", controller, 1, 2, vec![Color::Green], vec![CardType::Creature], vec![Keyword::Reach], vec!["Spider".into()], registry);

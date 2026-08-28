@@ -28,8 +28,7 @@ impl CardBehavior for DesperateRavings {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         let _ = crate::engine::draw_cards(state, controller, 2, registry);
         // Discard a card at random.
-        let hand: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Hand && o.owner == controller)
+        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller).into_iter()
             .map(|o| o.id)
             .collect();
         let to_discard = hand.choose(&mut rand::thread_rng()).copied();

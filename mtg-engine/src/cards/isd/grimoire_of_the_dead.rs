@@ -122,8 +122,8 @@ impl CardBehavior for GrimoireOfTheDead {
                 // it has additional types (ruling 2011-09-22). We check card_types
                 // for Creature in addition to checking power (which is the heuristic
                 // for creatures created by the engine).
-                let creatures: Vec<ObjectId> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Graveyard && o.id != object_id && state.is_card(o.id))
+                let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Graveyard).into_iter()
+                    .filter(|o| o.id != object_id && state.is_card(o.id))
                     .filter(|o| {
                         state.is_creature(o.id, registry)
                     })

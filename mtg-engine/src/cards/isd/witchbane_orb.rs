@@ -37,10 +37,9 @@ impl CardBehavior for WitchbaneOrb {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all curses attached to the controller.
-        let curses: Vec<ObjectId> = state.objects.values()
+        let curses: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && o.attached_to_player == Some(controller)
+                o.attached_to_player == Some(controller)
                     && state.face_data(o.id, registry)
                         .is_some_and(|d| d.subtypes.iter().any(|s| s == "Curse"))
             })

@@ -28,8 +28,8 @@ impl CardBehavior for GraveyardShovel {
         }
         // "exiles a **card** from their graveyard" — CR 109.1, so a token
         // sitting in a graveyard until the next SBA check is not one.
-        let any_graveyard = state.objects.values()
-            .any(|o| o.zone == Zone::Graveyard && state.is_card(o.id));
+        let any_graveyard = state.all_objects_in_zone(Zone::Graveyard).into_iter()
+            .any(|o| state.is_card(o.id));
         if !any_graveyard {
             return vec![];
         }
@@ -53,8 +53,8 @@ impl CardBehavior for GraveyardShovel {
             Target::Player(pid) => {
                 // Only valid if the targeted player has at least one card —
                 // CR 109.1 — in their graveyard.
-                state.objects.values()
-                    .any(|o| o.zone == Zone::Graveyard && o.owner == *pid && state.is_card(o.id))
+                state.objects_in_zone(Zone::Graveyard, *pid).into_iter()
+                    .any(|o| state.is_card(o.id))
             }
             Target::Object(_) => false,
         }
@@ -65,9 +65,8 @@ impl CardBehavior for GraveyardShovel {
 
         if let Some(Target::Player(target_player)) = targets.first() {
             // Collect all cards in the targeted player's graveyard.
-            let gy_cards: Vec<Target> = state.objects.values()
-                .filter(|o| o.zone == Zone::Graveyard && o.owner == *target_player
-                    && state.is_card(o.id))
+            let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, *target_player).into_iter()
+                .filter(|o| state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .collect();
 

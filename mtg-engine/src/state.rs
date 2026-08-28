@@ -1045,6 +1045,22 @@ impl GameState {
         result
     }
 
+    /// Every object in the game, in object-id order.
+    ///
+    /// `self.objects` is a `HashMap`, and its iteration order is seeded per
+    /// process: a scan that stops at the first match, or whose result is
+    /// offered to a player as a list, gives a different answer on a replay of
+    /// the same game. Anything that cares about order goes through this or
+    /// through `objects_in_zone` / `all_objects_in_zone`, which sort the same
+    /// way. `card_data_invariants::no_card_iterates_the_object_map_directly`
+    /// keeps card code out of the raw map.
+    #[must_use]
+    pub fn objects_in_id_order(&self) -> Vec<&GameObject> {
+        let mut result: Vec<_> = self.objects.values().collect();
+        result.sort_by_key(|o| o.id);
+        result
+    }
+
     /// Get all objects in a zone (regardless of player).
     #[must_use]
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {

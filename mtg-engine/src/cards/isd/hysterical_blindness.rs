@@ -25,10 +25,9 @@ impl CardBehavior for HystericalBlindness {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Collect creature IDs controlled by opponents.
-        let opponent_creature_ids: Vec<ObjectId> = state.objects.values()
+        let opponent_creature_ids: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|obj| {
-                obj.zone == Zone::Battlefield
-                    && obj.controller != controller
+                obj.controller != controller
                     && state.is_creature(obj.id, registry) // is a creature
             })
             .map(|obj| obj.id)

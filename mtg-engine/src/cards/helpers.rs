@@ -161,8 +161,8 @@ fn stable(mut targets: Vec<Target>) -> Vec<Target> {
 /// All targetable creatures on the battlefield (respects hexproof/protection).
 #[must_use]
 pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    stable(state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
+    stable(state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .filter(|o| state.is_creature(o.id, registry))
         .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
         .collect())
@@ -171,8 +171,8 @@ pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: Play
 /// All targetable creatures on the battlefield except a specific one.
 #[must_use]
 pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    stable(state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.id != exclude)
+    stable(state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .filter(|o| state.is_creature(o.id, registry) && o.id != exclude)
         .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
         .collect())
@@ -188,8 +188,8 @@ pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: 
 /// is a legal thing to copy — using the targeting helper wrongly hid it.
 #[must_use]
 pub fn creature_choices_except(state: &GameState, exclude: ObjectId, registry: &CardRegistry) -> Vec<Target> {
-    stable(state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.id != exclude)
+    stable(state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .filter(|o| o.id != exclude)
         .filter(|o| state.is_creature(o.id, registry))
         .map(|o| Target::Object(o.id))
         .collect())
@@ -200,8 +200,8 @@ pub fn creature_choices_except(state: &GameState, exclude: ObjectId, registry: &
 pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     let mut targets = creature_targets(state, source_id, controller, registry);
     // Add planeswalkers (which have power = None, so creature_targets misses them)
-    for o in state.objects.values() {
-        if o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)
+    for o in state.all_objects_in_zone(Zone::Battlefield) {
+        if !state.is_creature(o.id, registry)
             && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
             && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
         {
@@ -221,8 +221,8 @@ pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId,
 pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     let mut targets = creature_targets_except(state, exclude, source_id, controller, registry);
     // Add planeswalkers (which have power = None, so creature_targets misses them)
-    for o in state.objects.values() {
-        if o.zone == Zone::Battlefield && !state.is_creature(o.id, registry) && o.id != exclude
+    for o in state.all_objects_in_zone(Zone::Battlefield) {
+        if !state.is_creature(o.id, registry) && o.id != exclude
             && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
             && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
         {
@@ -240,8 +240,8 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
 /// All creatures controlled by a specific player.
 #[must_use]
 pub fn creatures_controlled_by(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    stable(state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == player)
+    stable(state.objects_in_zone(Zone::Battlefield, player).into_iter()
+        .filter(|o| state.is_creature(o.id, registry))
         .map(|o| Target::Object(o.id))
         .collect())
 }

@@ -52,11 +52,9 @@ impl CardBehavior for UnbreathingHorde {
         let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Count other Zombies on the battlefield.
-        let bf_count = u32::try_from(state.objects.values()
+        let bf_count = u32::try_from(state.objects_in_zone(Zone::Battlefield, controller).into_iter()
             .filter(|o| {
-                o.zone == Zone::Battlefield
-                && o.controller == controller
-                && o.id != self_id
+                o.id != self_id
                 && Self::is_zombie(state, o.id, registry)
             })
             .count()).unwrap_or(u32::MAX);

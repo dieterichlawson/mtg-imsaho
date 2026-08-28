@@ -24,8 +24,8 @@ impl CardBehavior for BlasphemousAct {
     }
 
     fn modified_cost(&self, state: &GameState, registry: &CardRegistry) -> Option<ManaCost> {
-        let creature_count = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
+        let creature_count = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+            .filter(|o| state.is_creature(o.id, registry))
             .count();
         let reduction = creature_count.min(8); // can't reduce below {R}
         let generic = 8u32.saturating_sub(u32::try_from(reduction).unwrap_or(u32::MAX));
@@ -36,8 +36,8 @@ impl CardBehavior for BlasphemousAct {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let creatures: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
+        let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+            .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
         for id in creatures {

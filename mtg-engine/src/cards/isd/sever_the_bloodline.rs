@@ -39,8 +39,8 @@ impl CardBehavior for SeverTheBloodline {
                 let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
 
                 // Find all creatures on the battlefield with the same name.
-                let to_exile: Vec<ObjectId> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.name == name)
+                let to_exile: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+                    .filter(|o| state.is_creature(o.id, registry) && o.name == name)
                     .map(|o| o.id)
                     .collect();
 

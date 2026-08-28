@@ -129,9 +129,8 @@ impl CardBehavior for BlazingTorch {
 /// The Blazing Torch attached to `creature_id` on the battlefield.
 fn attached_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Option<ObjectId> {
     let torch_card_id = registry.get_id_by_name("Blazing Torch")?;
-    state.objects.values()
-        .find(|o| o.zone == Zone::Battlefield
-            && o.attached_to == Some(creature_id)
+    state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .find(|o| o.attached_to == Some(creature_id)
             && o.card_id == torch_card_id)
         .map(|o| o.id)
 }
@@ -140,7 +139,10 @@ fn attached_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegis
 /// sacrificed to pay this ability's cost.
 fn sacrificed_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Option<ObjectId> {
     let torch_card_id = registry.get_id_by_name("Blazing Torch")?;
-    state.objects.values()
+    // In id order rather than map order: with two Torches that were both
+    // attached to this creature at some point, `find` must not pick a
+    // different one on a replay of the same game.
+    state.objects_in_id_order().into_iter()
         .find(|o| o.card_id == torch_card_id
             && o.card_state.get("last_attached_to") == Some(&creature_id))
         .map(|o| o.id)
