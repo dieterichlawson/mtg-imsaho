@@ -43,7 +43,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Gatstaf Shepherd | `gatstaf_shepherd.rs` | 77 | 5 | 2 |
 | x | Grizzled Outcasts | `grizzled_outcasts.rs` | 76 | 5 | 2 |
 |   | Tormented Pariah | `tormented_pariah.rs` | 76 | 5 | 2 |
-|   | Villagers of Estwald | `villagers_of_estwald.rs` | 76 | 5 | 2 |
+| x | Villagers of Estwald | `villagers_of_estwald.rs` | 76 | 5 | 2 |
 |   | Reckless Waif | `reckless_waif.rs` | 75 | 5 | 2 |
 |   | Grimoire of the Dead | `grimoire_of_the_dead.rs` | 168 | 4 | 0 |
 |   | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 66 | 5 | 2 |
