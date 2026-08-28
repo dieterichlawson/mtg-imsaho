@@ -1004,35 +1004,6 @@ fn tree_of_redemption_swaps_life_and_toughness() {
         "Tree's toughness should become old life total (20)");
 }
 
-// ── Unbreathing Horde ────────────────────────────────────────────
-
-#[test]
-fn unbreathing_horde_enters_with_counters_for_zombies() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put 2 Zombie tokens on the battlefield.
-    for _ in 0..2 {
-        state.create_token_with_subtypes(
-            "Zombie", P0, 2, 2,
-            vec![Color::Black], vec![CardType::Creature], vec![],
-            vec!["Zombie".into()],
-            &reg,
-        );
-    }
-
-    // Put 1 Zombie card in graveyard.
-    let _gy_zombie = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
-
-    // Cast Unbreathing Horde — on_resolve counts graveyard BEFORE moving to battlefield.
-    let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
-    let new_state = cast_and_resolve(&state, &reg, horde, vec![]);
-
-    // Should have 3 counters (2 battlefield Zombies + 1 graveyard Zombie).
-    assert_eq!(counters_of(&new_state, horde, CounterType::PlusOnePlusOne), 3,
-        "Unbreathing Horde should enter with 3 +1/+1 counters");
-}
-
 // ── Back from the Brink ──────────────────────────────────────────
 
 #[test]
@@ -2577,7 +2548,7 @@ fn the_oozes_die_when_gutter_grime_leaves() {
 }
 
 // -------------------------------------------------------------------------
-// Unbreathing Horde — the rest
+// Unbreathing Horde
 // -------------------------------------------------------------------------
 
 /// Combat damage is prevented and a counter is removed.
@@ -2625,27 +2596,44 @@ fn still_deals_damage_to_others() {
         "Horde damage should be prevented");
 }
 
-/// ETB counter count is correct with zombies on battlefield and graveyard.
+/// "a +1/+1 counter for each other Zombie you control and each Zombie card in
+/// your graveyard", counted the two ways a permanent can be a Zombie.
+///
+/// The battlefield half says just "Zombie", so it includes tokens; the
+/// graveyard half says "Zombie card", so it must not (CR 109.1). This was two
+/// tests fifteen hundred lines apart in this file with the same assertion and
+/// nothing saying what made them different.
 #[test]
-fn enters_with_correct_counter_count() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+fn enters_with_a_counter_per_zombie_however_the_zombie_is_a_zombie() {
+    for (what, as_tokens) in [
+        ("tokens, whose subtypes live on the object", true),
+        ("cards, whose subtypes live on the registry face", false),
+    ] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Put 2 zombies on battlefield.
-    let _z1 = named_permanent(&mut state, &reg, "Walking Corpse", P0);
-    let _z2 = named_permanent(&mut state, &reg, "Diregraf Ghoul", P0);
+        if as_tokens {
+            for _ in 0..2 {
+                state.create_token_with_subtypes(
+                    "Zombie", P0, 2, 2,
+                    vec![Color::Black], vec![CardType::Creature], vec![],
+                    vec!["Zombie".into()],
+                    &reg,
+                );
+            }
+        } else {
+            let _z1 = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+            let _z2 = named_permanent(&mut state, &reg, "Diregraf Ghoul", P0);
+        }
 
-    // Put 1 zombie in graveyard.
-    let _z3 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+        let _gy_zombie = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
 
-    // Cast Unbreathing Horde — on_resolve counts graveyard before moving to battlefield.
-    let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
-    state = cast_and_resolve(&state, &reg, horde, vec![]);
+        let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
+        let state = cast_and_resolve(&state, &reg, horde, vec![]);
 
-    let counters = state.get_object(horde).unwrap().counters
-        .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
-    // 2 battlefield zombies + 1 graveyard zombie = 3 counters.
-    assert_eq!(counters, 3, "Should have 3 +1/+1 counters (2 bf + 1 gy zombies)");
+        assert_eq!(counters_of(&state, horde, CounterType::PlusOnePlusOne), 3,
+            "two battlefield Zombies ({what}) plus one Zombie card in the graveyard");
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -2653,31 +2641,26 @@ fn enters_with_correct_counter_count() {
 // -------------------------------------------------------------------------
 
 /// Bug AC (`audits/AUDIT_BUGS.md)`: Unbreathing Horde under-counts when
-/// reanimated from a graveyard. Per Scryfall ruling: "If Unbreathing
-/// Horde enters from a graveyard, it counts itself for its enter-with-
-/// counters ability."
+/// reanimated from a graveyard.
 ///
 /// Oracle (Unbreathing Horde): "This creature enters with a +1/+1
 /// counter on it for each other Zombie you control and each Zombie
 /// card in your graveyard."
 ///
-/// "Enters with X counters" is a CR 614.1c replacement effect, so the
-/// count is computed at entry timing — at which point the Horde is
-/// still in the graveyard zone (it hasn't fully entered yet) and the
-/// "Zombie cards in your graveyard" count includes the Horde itself.
+/// Ruling (2011-09-22): "If Unbreathing Horde enters from a graveyard, it will
+/// count itself when determining how many +1/+1 counters it enters with."
 ///
-/// Failure mode: `unbreathing_horde.rs` runs the
-/// `add_zombie_counters` helper from the `on_enter_battlefield`
-/// handler — i.e. AFTER the move to battlefield. By that point,
-/// `count_zombies_in_graveyard` no longer sees the Horde (it's on
-/// the battlefield), so the reanimated Horde misses one counter
-/// compared to the cast path.
+/// "Enters with X counters" is a CR 614.1c replacement effect, and CR 616.1
+/// works it out against the game state as it was BEFORE the event — at which
+/// point the Horde is still in the graveyard, and its own count includes it.
 ///
-/// We put two other Zombies in P0's graveyard alongside the Horde,
-/// then move the Horde to the battlefield (mirroring Unburial Rites
-/// reanimation), then fire the ETB handler. The fix should give the
-/// Horde three +1/+1 counters (2 other Zombies + the Horde itself);
-/// the bug gives it only two.
+/// Failure mode: the count ran from an `on_enter_battlefield` hook, i.e. AFTER
+/// the move, by which time the Horde is on the battlefield and no longer one of
+/// the "Zombie cards in your graveyard", so the reanimated Horde came in a
+/// counter short of the cast path. The test called that hook by hand to
+/// reproduce it; now that the count lives in `replace_event`, calling it proves
+/// nothing — `move_object` applies the entering replacement itself, and that is
+/// what this asks about.
 #[test]
 fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
     let registry = CardRegistry::with_all_cards();
@@ -2695,28 +2678,14 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
     let horde = state.create_object(horde_card_id, P0, Zone::Graveyard, Some(0), Some(0));
     state.get_object_mut(horde).unwrap().name = "Unbreathing Horde".into();
 
-    // Reanimate: move the Horde to the battlefield and fire its ETB
-    // handler (this mirrors what Unburial Rites does).
+    // Reanimate, the way Unburial Rites does.
     state.move_object(horde, Zone::Battlefield, &registry);
-    let behavior = registry.get(horde_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, horde, &[], &registry);
 
-    let counters = state
-        .get_object(horde)
-        .unwrap()
-        .counters
-        .get(&CounterType::PlusOnePlusOne)
-        .copied()
-        .unwrap_or(0);
-
-    assert!(
-        counters >= 3,
-        "Reanimated Unbreathing Horde should enter with at least 3 \
-         +1/+1 counters (2 other Zombies in graveyard + the Horde \
-         counts itself per the Scryfall ruling). Bug AC: \
-         on_enter_battlefield runs after the move, so the helper sees \
-         only the 2 other Zombies in the graveyard and adds 2 counters. \
-         Got: {counters}",
+    assert_eq!(
+        counters_of(&state, horde, CounterType::PlusOnePlusOne), 3,
+        "a reanimated Unbreathing Horde enters with three +1/+1 counters: the \
+         two other Zombies in the graveyard, and itself — it is still in that \
+         graveyard when CR 616.1 works the entering event out",
     );
 }
 
