@@ -68,14 +68,4 @@ impl CardBehavior for ManorGargoyle {
         state.log(crate::state::LogLevel::Event,
             "Manor Gargoyle loses defender and gains flying until end of turn".to_string());
     }
-
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => state.get_object(*id)
-                .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry)),
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
-    }
 }

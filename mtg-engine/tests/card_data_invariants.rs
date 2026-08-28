@@ -1312,3 +1312,55 @@ fn a_card_that_says_at_random_actually_randomizes() {
          tell the two apart.",
         offenders.len(), offenders.join("\n  "));
 }
+
+/// `is_valid_target` is only ever consulted for a target the card actually
+/// takes. On a card with no target requirement anywhere it is dead code that
+/// reads as a restriction — Manor Gargoyle carried one saying "any creature on
+/// the battlefield", which is not a rule this card has and would have been the
+/// wrong answer the moment it gained a targeted ability.
+///
+/// A card declares its targets in one of three ways: `target_requirement:
+/// Some(..)` on a triggered or activated ability, a `fn target_requirement`
+/// override for a spell, or a bare `TargetRequirement::` mention. If none of
+/// them appears, nothing can reach `is_valid_target`.
+#[test]
+fn no_card_defines_is_valid_target_without_taking_a_target() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let code: Vec<&str> = text.lines()
+            .map(str::trim_start)
+            .filter(|l| !l.starts_with("//"))
+            .collect();
+        let defines = code.iter().any(|l| l.contains("fn is_valid_target"));
+        if !defines {
+            continue;
+        }
+        let takes_targets = code.iter().any(|l| {
+            l.contains("target_requirement: Some")
+                || l.contains("fn target_requirement")
+                || l.contains("TargetRequirement::")
+        });
+        if !takes_targets {
+            offenders.push(path.file_name().unwrap().to_string_lossy().to_string());
+        }
+    }
+
+    assert!(offenders.is_empty(),
+        "{} card(s) define `is_valid_target` but never take a target:\n  {}\n\n\
+         Nothing calls it, so it is dead code that reads as a restriction the \
+         card does not have. Delete it.",
+        offenders.len(), offenders.join("\n  "));
+}
