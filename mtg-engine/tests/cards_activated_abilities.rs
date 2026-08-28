@@ -352,3 +352,94 @@ fn stensia_bloodhall_deals_2_damage() {
 
     assert_eq!(state.get_player(P1).life, 18, "P1 should take 2 damage (20 - 2 = 18)");
 }
+
+/// Every target the Bloodhall's ability is offered, with mana already floating.
+fn bloodhall_targets(state: &GameState, reg: &CardRegistry, bloodhall: ObjectId) -> Vec<Target> {
+    mtg_engine::engine::legal_actions(state, reg).actions.iter()
+        .filter_map(|a| match a {
+            Action::ActivateAbility { object_id, targets, .. } if *object_id == bloodhall =>
+                Some(targets.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+/// A Bloodhall with its activation cost already floating.
+fn ready_bloodhall(state: &mut GameState, reg: &CardRegistry) -> ObjectId {
+    let bloodhall = named_permanent(state, reg, "Stensia Bloodhall", P0);
+    add_mana(state, P0, &[(ManaType::Colorless, 3), (ManaType::Black, 1), (ManaType::Red, 1)]);
+    bloodhall
+}
+
+/// "target **player or planeswalker**" — not a creature. The set's other
+/// direction is covered (`damage_helper.rs`: an ability that says "another
+/// target creature" cannot resolve against a planeswalker); this is the half
+/// where the creature is the illegal one.
+#[test]
+fn stensia_bloodhall_cannot_point_at_a_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
+    let bloodhall = ready_bloodhall(&mut state, &reg);
+
+    let offered = bloodhall_targets(&state, &reg, bloodhall);
+    assert!(!offered.contains(&Target::Object(creature)),
+        "a creature is neither a player nor a planeswalker; offered {offered:?}");
+    // Both legal kinds are offered, so the assertion above is about the
+    // creature and not about the ability being unavailable.
+    assert!(offered.contains(&Target::Player(P1)), "a player is; offered {offered:?}");
+    assert!(offered.contains(&Target::Object(garruk)),
+        "and so is a planeswalker; offered {offered:?}");
+}
+
+/// CR 702.11b: a player with hexproof can't be the target of spells or
+/// abilities their opponents control. Witchbane Orb grants it, and this is the
+/// set's one activated ability that targets a player.
+#[test]
+fn stensia_bloodhall_cannot_target_a_player_with_hexproof() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Witchbane Orb", P1);
+    let bloodhall = ready_bloodhall(&mut state, &reg);
+
+    let offered = bloodhall_targets(&state, &reg, bloodhall);
+    assert!(!offered.contains(&Target::Player(P1)),
+        "P1 has hexproof from the Orb, so an opponent's ability cannot target \
+         them; offered {offered:?}");
+    // Hexproof stops opponents, not its own controller (CR 702.11b), and the
+    // Bloodhall's controller is still a legal target for their own ability.
+    assert!(offered.contains(&Target::Player(P0)),
+        "the Orb's protection is against opponents; offered {offered:?}");
+}
+
+/// Scryfall ruling (2011-09-22): "Like other lands, Stensia Bloodhall is
+/// colorless. The damage it deals is from a colorless source, even though
+/// activating its ability requires colored mana."
+///
+/// Nothing in this set gives a player protection from a color, so the ruling
+/// has no reachable consequence here — what it guards against is deriving a
+/// permanent's colour from its activation cost, which is what would make the
+/// {B}{R} in the ability turn the land black and red. So this asserts the
+/// ruling directly: the source is colourless, and the damage is attributed to
+/// the land itself.
+#[test]
+fn stensia_bloodhall_is_a_colorless_source() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bloodhall = ready_bloodhall(&mut state, &reg);
+
+    assert!(state.colors_of(bloodhall, &reg).is_empty(),
+        "the land is colourless despite {{B}}{{R}} in its ability's cost; got {:?}",
+        state.colors_of(bloodhall, &reg));
+
+    // And the damage comes from the land, not from some anonymous source.
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
+    let _ = (creature, garruk);
+    let state = activate_offered(&state, &reg, bloodhall, Some(Target::Player(P1)));
+    assert_eq!(state.get_player(P1).life, 18, "and it does deal the 2 damage");
+}
