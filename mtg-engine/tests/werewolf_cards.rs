@@ -210,7 +210,59 @@ fn gatstaf_shepherd_is_green_from_its_mana_cost() {
 
 // ── Village Ironsmith ─────────────────────────────────────────────
 
+/// First strike is on **both** faces here — unlike Kruin Outlaw, where the
+/// back face replaces it with double strike. The transform is +2/+0 and
+/// nothing else.
+#[test]
+fn village_ironsmith_keeps_first_strike_across_the_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let smith = named_permanent(&mut state, &reg, "Village Ironsmith", P0);
+    assert_eq!(state.effective_power(smith, &reg), Some(1));
+    assert_eq!(state.effective_toughness(smith, &reg), Some(1));
+    assert!(state.has_keyword(smith, Keyword::FirstStrike, &reg));
+    assert!(state.has_subtype(smith, "Human", &reg));
+
+    mtg_engine::cards::helpers::apply_transform(&mut state, smith, &reg);
+
+    assert_eq!(state.get_object(smith).unwrap().name, "Ironfang");
+    assert_eq!(state.effective_power(smith, &reg), Some(3));
+    assert_eq!(state.effective_toughness(smith, &reg), Some(1));
+    assert!(state.has_keyword(smith, Keyword::FirstStrike, &reg),
+        "Ironfang has first strike too — this is not a keyword the flip trades away");
+    assert!(!state.has_subtype(smith, "Human", &reg));
+}
+
 // ── Villagers of Estwald ──────────────────────────────────────────
+
+/// A vanilla body on both faces, so the body and the colour it keeps are the
+/// whole card. Its back face is what several other tests reach for when they
+/// need a Werewolf that stopped being a Human.
+#[test]
+fn villagers_of_estwald_is_a_green_2_3_that_becomes_a_green_4_6() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let villagers = named_permanent(&mut state, &reg, "Villagers of Estwald", P0);
+    assert_eq!(state.effective_power(villagers, &reg), Some(2));
+    assert_eq!(state.effective_toughness(villagers, &reg), Some(3));
+    assert_eq!(state.colors_of(villagers, &reg), vec![Color::Green],
+        "green from its {{2}}{{G}} cost");
+    assert!(state.has_subtype(villagers, "Human", &reg));
+
+    mtg_engine::cards::helpers::apply_transform(&mut state, villagers, &reg);
+
+    assert_eq!(state.get_object(villagers).unwrap().name, "Howlpack of Estwald");
+    assert_eq!(state.effective_power(villagers, &reg), Some(4));
+    assert_eq!(state.effective_toughness(villagers, &reg), Some(6));
+    // CR 204.2: the back face has no mana cost, so this can only come from the
+    // colour indicator. Without one it would be colourless.
+    assert_eq!(state.colors_of(villagers, &reg), vec![Color::Green],
+        "green from its colour indicator");
+    assert!(!state.has_subtype(villagers, "Human", &reg),
+        "the back face is a Werewolf and no longer a Human");
+}
 
 // ── Hanweir Watchkeep ─────────────────────────────────────────────
 

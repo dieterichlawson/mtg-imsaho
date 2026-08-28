@@ -10,12 +10,17 @@ reachable from this environment, so each one has to be established from an
 external source individually. That happens in each card's own audit — every
 card marked below is still ahead on `ISD_FULL_AUDIT_TODO.md`.
 
-Established: 2 of 20.
+Assuming the back face matches the front's colour is not available as a
+shortcut: Garruk Relentless is green and Garruk, the Veil-Cursed is
+black-green.
+
+Established: 3 of 20.
 
 | card | back face | indicator |
 |---|---|---|
 | `gatstaf_shepherd` | Gatstaf Howler | established |
 | `grizzled_outcasts` | Krallenhorde Wantons | established |
+| `villagers_of_estwald` | Howlpack of Estwald | established |
 | `bloodline_keeper` | Lord of Lineage | **not yet established** |
 | `civilized_scholar` | Homicidal Brute | **not yet established** |
 | `cloistered_youth` | Unholy Fiend | **not yet established** |
@@ -33,4 +38,3 @@ Established: 2 of 20.
 | `tormented_pariah` | Rampaging Werewolf | **not yet established** |
 | `ulvenwald_mystics` | Ulvenwald Primordials | **not yet established** |
 | `village_ironsmith` | Ironfang | **not yet established** |
-| `villagers_of_estwald` | Howlpack of Estwald | **not yet established** |
