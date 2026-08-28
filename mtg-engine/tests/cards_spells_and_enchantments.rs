@@ -766,6 +766,56 @@ fn sever_the_bloodline_exiles_all_with_same_name() {
     assert_eq!(state.get_object(bear).unwrap().zone, Zone::Battlefield, "Differently-named creature should be unaffected");
 }
 
+/// Ruling: "A double-faced creature only has the name of the face that's up.
+/// For example, if Village Ironsmith is targeted by Sever the Bloodline,
+/// Ironfang wouldn't be exiled."
+///
+/// The name has to come from the active face. `obj.name` mirrors it today, but
+/// the module doc calls that field a display cache; a rules decision reads
+/// `name_of`.
+#[test]
+fn sever_the_bloodline_reads_the_face_that_is_up() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let front = named_permanent(&mut state, &reg, "Village Ironsmith", P1);
+    let flipped = named_permanent(&mut state, &reg, "Village Ironsmith", P1);
+    mtg_engine::cards::helpers::apply_transform(&mut state, flipped, &reg);
+    assert_eq!(state.name_of(flipped, &reg), "Ironfang", "test precondition: it flipped");
+    assert_eq!(state.name_of(front, &reg), "Village Ironsmith");
+
+    let spell = castable_spell(&mut state, &reg, "Sever the Bloodline", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(front)]);
+
+    assert_eq!(state.get_object(front).unwrap().zone, Zone::Exile,
+        "the targeted Village Ironsmith is exiled");
+    assert_eq!(state.get_object(flipped).unwrap().zone, Zone::Battlefield,
+        "the one showing Ironfang has a different name, so it stays");
+}
+
+/// Ruling: "Sever the Bloodline has only one target. Other creatures with the
+/// same name will be exiled even if they have hexproof or protection."
+#[test]
+fn sever_the_bloodline_exiles_same_named_creatures_that_could_not_be_targeted() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let target = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    let hexproof = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    grant_keyword(&mut state, hexproof, Keyword::Hexproof);
+    assert!(state.has_keyword(hexproof, Keyword::Hexproof, &reg), "test precondition");
+
+    let spell = castable_spell(&mut state, &reg, "Sever the Bloodline", P0);
+    let offered = offered_targets(&state, &reg, spell);
+    assert!(!offered.contains(&Target::Object(hexproof)),
+        "test precondition: the hexproof one cannot be targeted");
+
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+    assert_eq!(state.get_object(hexproof).unwrap().zone, Zone::Exile,
+        "it is not a target, so hexproof does not save it");
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Exile);
+}
+
 // ── Angelic Overseer ───────────────────────────────────────────
 
 /// "Flying. As long as you control a Human, Angelic Overseer has hexproof and
