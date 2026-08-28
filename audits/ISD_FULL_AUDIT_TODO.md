@@ -139,7 +139,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Disciple of Griselbrand | `disciple_of_griselbrand.rs` | 62 | 3 | 0 |
 | x | Skirsdag Cultist | `skirsdag_cultist.rs` | 62 | 3 | 0 |
 | x | Kessig Cagebreakers | `kessig_cagebreakers.rs` | 80 | 2 | 1 |
-|   | Blasphemous Act | `blasphemous_act.rs` | 59 | 3 | 0 |
+| x | Blasphemous Act | `blasphemous_act.rs` | 59 | 3 | 0 |
 |   | Deranged Assistant | `deranged_assistant.rs` | 59 | 3 | 0 |
 |   | Gutter Grime | `gutter_grime.rs` | 79 | 2 | 1 |
 |   | Traitorous Blood | `traitorous_blood.rs` | 59 | 3 | 0 |
