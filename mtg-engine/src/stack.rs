@@ -52,7 +52,18 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                         | TargetRequirement::GraveyardCreature
                         | TargetRequirement::GraveyardCreatureOfSubtype(_)
                         | TargetRequirement::GraveyardCardOwnedByCaster
-                        | TargetRequirement::GraveyardCardOwnedByOpponent =>
+                        | TargetRequirement::GraveyardCardOwnedByOpponent
+                        // Memory's Journey's card slot. Missing from this list,
+                        // it fell to the battlefield-or-stack arm below and so
+                        // called every legal graveyard card illegal. No
+                        // observable difference today — the requirement is the
+                        // second half of a `TwoTargets` whose first half is a
+                        // player, so `any_legal` is satisfied by the player
+                        // either way, and the card's own guard is what skips a
+                        // card that has left the graveyard. Listed here because
+                        // the table is meant to say which zone each requirement
+                        // reads, not to be right by accident.
+                        | TargetRequirement::GraveyardCardOwnedByTargetPlayer =>
                             obj.zone == Zone::Graveyard && state.is_card(*id),
                         TargetRequirement::ExileCard =>
                             obj.zone == Zone::Exile && state.is_card(*id),
