@@ -190,30 +190,27 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
 
             // Generate actions based on targeting.
             if let Some(ref _target_req) = ab.target_requirement {
-                // Targeted ability: generate one action per valid (target, sacrifice) combo.
-                // We exclude pairs where the sacrifice IS the target — sacrificing the
-                // target makes the ability fizzle, no rational player picks that.
+                // Targeted ability: one action per (target, sacrifice) combo,
+                // including the pair where the sacrifice IS the target.
+                //
+                // That pair used to be filtered out, on the reasoning that
+                // sacrificing the target fizzles the ability and no rational
+                // player would pick it. Both halves are true and the
+                // conclusion still does not follow: CR 601.2b chooses targets
+                // before CR 601.2h pays costs, so the activation is legal, the
+                // sacrifice happens, and only the ability is countered on
+                // resolution (CR 608.2b). The sacrifice can be the entire
+                // point. Demonmail Hauberk's "Equip—Sacrifice a creature" is a
+                // free sorcery-speed sac outlet: with one creature on the
+                // battlefield, equipping it and sacrificing it is how you turn
+                // a Doomed Traveler into a Spirit, and the equip fizzling
+                // costs nothing. Filtering the pair removed the only way to do
+                // it.
                 let behavior = registry.get(source_card_id);
                 if let Some(behavior) = behavior {
                     let targets = generate_ability_targets(state, obj_id, &ab, player, registry, behavior);
                     for target in targets {
-                        let target_obj_id = match &target {
-                            crate::actions::Target::Object(id) => Some(*id),
-                            crate::actions::Target::Player(_) => None,
-                            // CR 608.2b: a target that stopped being legal is skipped.
-                            crate::actions::Target::Illegal => None,
-                        };
-                        let sacrifices_for_target: Vec<&Option<ObjectId>> = eligible_sacrifices.iter()
-                            .filter(|sac| match (sac, target_obj_id) {
-                                (Some(sac_id), Some(t_id)) => *sac_id != t_id,
-                                _ => true,
-                            })
-                            .collect();
-                        // If the sac filter eliminated every option (i.e. the only
-                        // creature available is also the target), don't generate this
-                        // target — the ability has no legal way to resolve.
-                        if sacrifices_for_target.is_empty() { continue; }
-                        for sac in sacrifices_for_target {
+                        for sac in &eligible_sacrifices {
                             actions.push(Action::ActivateAbility {
                                 object_id: obj_id,
                                 ability_index: ab.ability_index,
