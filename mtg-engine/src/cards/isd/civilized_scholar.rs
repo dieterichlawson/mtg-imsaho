@@ -146,6 +146,7 @@ impl CardBehavior for CivilizedScholar {
                     player: controller,
                     cards: hand,
                     discard_immediately: true,
+                    remaining: 1,
                 },
             });
         }

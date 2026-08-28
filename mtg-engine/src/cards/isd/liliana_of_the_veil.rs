@@ -250,6 +250,7 @@ impl LilianaOfTheVeil {
                     player,
                     cards: hand,
                     discard_immediately: false,
+                    remaining: 1,
                 },
             });
             return;

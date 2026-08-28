@@ -2673,6 +2673,21 @@ pub enum ResolutionChoiceKind {
         /// the last player has chosen. Discarding as we go would let a discard
         /// trigger fire, and be seen, while a later player is still choosing.
         discard_immediately: bool,
+        /// How many cards this player still has to discard, counting this
+        /// one. "Target player discards two cards" is one choice with
+        /// `remaining: 2`; the engine re-presents it against the refreshed
+        /// hand until the count runs out or the hand does.
+        ///
+        /// Brain Weevil used to chain its second discard itself, keeping the
+        /// target player between the two in `card_state` — a
+        /// `String -> ObjectId` map — as `ObjectId(player.0 as u64)`, read
+        /// back with an `unwrap_or(u8::MAX)` that would have named a player
+        /// who does not exist. Discarding N cards is not one card's problem.
+        ///
+        /// Only meaningful with `discard_immediately`: the CR 101.4 path,
+        /// where several players each choose one card and they leave together,
+        /// always collects exactly one per player.
+        remaining: usize,
     },
     /// Choose one card from a revealed set to keep (Forbidden Alchemy).
     ChooseFromRevealed {

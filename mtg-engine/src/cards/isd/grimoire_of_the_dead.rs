@@ -104,6 +104,7 @@ impl CardBehavior for GrimoireOfTheDead {
                         player: controller,
                         cards: hand,
                         discard_immediately: true,
+                        remaining: 1,
                     },
                 });
             }

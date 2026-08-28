@@ -111,6 +111,86 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source:
     }
     milled
 }
+/// Have `player` discard `count` cards of their choice — the whole of "target
+/// player discards two cards", including the asking.
+///
+/// A player with fewer cards than that discards all of them (CR 701.8a: you do
+/// as much as you can). Where there is nothing to decide — one card left, or
+/// none — no prompt is raised; where there is, the choice is the discarding
+/// player's, and the engine comes back for the next one when it is answered.
+///
+/// Returns the number of cards it could not ask for, which is zero unless the
+/// hand ran out before the prompt was raised. The rest of the count travels
+/// with the choice, in `ChooseCardFromHand::remaining`.
+///
+/// Brain Weevil used to do this itself: discard one, then chain the second
+/// from `on_discard_choice`, keeping the target player between the two in
+/// `card_state` as `ObjectId(player.0 as u64)`. Discarding N cards is a rules
+/// action, not one card's problem.
+pub fn discard_cards(
+    state: &mut GameState,
+    player: PlayerId,
+    count: usize,
+    source_id: ObjectId,
+    source: &str,
+    registry: &CardRegistry,
+) {
+    if count == 0 {
+        return;
+    }
+    let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
+        .iter().map(|o| o.id).collect();
+
+    if hand.is_empty() {
+        state.log(LogLevel::Event,
+            format!("{source}: p{} has no cards to discard", player.0));
+        return;
+    }
+    // With no more cards than the count, every one of them goes and there is
+    // nothing to decide — asking would be a prompt with one answer.
+    if hand.len() <= count {
+        for card in &hand {
+            let name = state.obj_name(*card);
+            state.discard_card(*card, registry);
+            state.log(LogLevel::Event,
+                format!("{source}: p{} discarded {name}", player.0));
+            notify_discard(state, source_id, *card, registry);
+        }
+        if hand.len() < count {
+            state.log(LogLevel::Event, format!(
+                "{source}: p{} discarded {} of {count} — their hand ran out",
+                player.0, hand.len()));
+        }
+        return;
+    }
+    state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+        player,
+        source: source_id,
+        choice: crate::state::ResolutionChoiceKind::ChooseCardFromHand {
+            description: format!("{source}: choose a card to discard{}",
+                if count > 1 { format!(" ({count} to go)") } else { String::new() }),
+            player,
+            cards: hand,
+            discard_immediately: true,
+            remaining: count,
+        },
+    });
+}
+
+/// Tell the source card that a card was discarded for it — Civilized Scholar
+/// wants to know whether it was a creature.
+pub(crate) fn notify_discard(
+    state: &mut GameState,
+    source_id: ObjectId,
+    discarded: ObjectId,
+    registry: &CardRegistry,
+) {
+    let source_card_id = state.get_object(source_id).map(|o| o.card_id);
+    if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
+        behavior.on_discard_choice(state, source_id, discarded, registry);
+    }
+}
+
 /// Check if a player could cast any spell if they tapped all available mana sources.
 /// Used by the auto-pass check to avoid skipping turns where mana abilities are
 /// the only listed actions but the player has castable spells.

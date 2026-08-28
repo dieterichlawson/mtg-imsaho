@@ -20,7 +20,7 @@ mod effects;
 mod mana_sources;
 mod targeting;
 
-pub use cards_flow::{draw_cards, mill_cards, mill_one};
+pub use cards_flow::{discard_cards, draw_cards, mill_cards, mill_one};
 pub use effects::apply_pending_effect;
 pub use costs::{
     AdditionalCostPlan, CastMethod, SpellCost, additional_cost_plan, alternative_costs,
@@ -31,7 +31,7 @@ pub use mana_sources::{
 };
 pub use targeting::can_be_targeted_by;
 
-pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, legal_discard_actions};
+pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, legal_discard_actions, notify_discard};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};
 pub(crate) use mana_sources::{
     activatable_mana_abilities, execute_tap_plan_and_pay,

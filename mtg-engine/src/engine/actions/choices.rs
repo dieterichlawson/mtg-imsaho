@@ -49,6 +49,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                                 player: controller,
                                 cards: hand,
                                 discard_immediately: true,
+                                remaining: 1,
                             },
                         });
                         return Applied::ReturnNow;
@@ -83,7 +84,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         }
                     }
                 }
-                (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, .. },
+                (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, remaining, player, description, .. },
                  ResolvedChoice::ChosenCard(discard_id)) => {
                     // CR 101.4: when several players are each choosing a
                     // card to discard, the source collects the choices and
@@ -96,9 +97,16 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     }
                     // Notify the source card about the discard (e.g., Civilized Scholar
                     // checks if the discarded card was a creature to trigger transform).
-                    let source_card_id = state.get_object(choice_source).map(|o| o.card_id);
-                    if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
-                        behavior.on_discard_choice(&mut *state, choice_source, *discard_id, registry);
+                    notify_discard(&mut *state, choice_source, *discard_id, registry);
+                    // "Discards two cards" is one choice with a count on it,
+                    // so come back for the rest — unless the card's own hook
+                    // has already asked the player something else, in which
+                    // case that question is mid-flight and this one waits for
+                    // the chain to unwind.
+                    if *discard_immediately && *remaining > 1 && state.awaiting_action.is_none() {
+                        let source = description.split(':').next().unwrap_or("Discard").to_string();
+                        crate::engine::discard_cards(
+                            &mut *state, *player, remaining - 1, choice_source, &source, registry);
                     }
                 }
                 (ResolutionChoiceKind::ChooseFromRevealed { revealed, .. },

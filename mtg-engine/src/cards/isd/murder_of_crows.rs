@@ -77,6 +77,7 @@ impl CardBehavior for MurderOfCrows {
                     player: controller,
                     cards: hand,
                     discard_immediately: true,
+                    remaining: 1,
                 },
             });
         }
