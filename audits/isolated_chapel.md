@@ -66,3 +66,82 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 - Entering tapped or untapped by the condition: `cards_lands_and_mana_sources.rs`, `enters_tapped.rs`
+## Full audit — 2026-08-28
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/242/isolated-chapel?utm_source=api
+**Type line**: `Land` — no mana cost
+**Oracle text**:
+```
+This land enters tapped unless you control a Plains or a Swamp.
+{T}: Add {W} or {B}.
+```
+
+**Rulings fetched**: none published for this card.
+
+**Status**: ISSUE
+
+
+No rulings are cached for this card and none surfaced.
+
+### Code issues
+No behavioural bug. Card data matches exactly — Land with no mana cost, oracle
+text verbatim, `has_subtype("Plains") || has_subtype("Swamp")`, and mana
+abilities adding {W} and {B}. The enters-tapped clause is a replacement effect
+through `replace_event` and `helpers::enters_tapped_unless` (CR 614.1c/d), and
+the condition is scoped to "you control".
+
+**One comment corrected.** The doc comment used the pre-errata templating —
+"Isolated Chapel enters the battlefield tapped unless you control a Plains or a
+Swamp" — while the card's own `oracle_text` field carries the current wording,
+"This land enters tapped unless…". The same drift I found on Hinterland Harbor.
+Aligning a doc comment to the file's own data is internal consistency rather
+than a rules judgement, so it is safe to do for a card whose text I have
+fetched; Sulfur Falls and Woodland Cemetery still have it and get it in their
+own audits.
+
+The `enters_tapped` phantom-API comment was already corrected across all five
+check lands during the Hinterland Harbor audit.
+
+### Tests
+Added this card's row to the `AUDITED` table in
+`enters_tapped_replacement.rs`, which is how each check land picks up the two
+tests the shared sweeps do not cover:
+
+- an opponent's Plains or Swamp does not satisfy "you control" — every older
+  test put the qualifying basic on the land's own side, so a condition that
+  scanned the whole battlefield would have passed all of them;
+- it taps for {W} *and* {B}, not two of the same, which the shared
+  "two mana abilities" count would not catch.
+
+Three rows now: Clifftop Retreat, Hinterland Harbor, Isolated Chapel. Sulfur
+Falls and Woodland Cemetery join as they are audited — the table only holds
+cards whose oracle text someone has actually read.
+
+### Tricky interactions checked
+- Enters untapped with your Plains, and with your Swamp: pass
+  (`cards_lands_and_mana_sources.rs:94`, which sweeps both companions)
+- Enters tapped with neither: pass
+- An opponent's Plains or Swamp does not satisfy it: pass
+- Another check land does not satisfy it — none has a basic land subtype: pass
+- No untapped window before anyone gets priority: pass
+- No ETB trigger on the stack: pass
+- The condition is read at entry and not re-read afterwards: pass
+- Taps for {W} or {B}: pass
+
+### Test coverage
+- Untapped with either companion / tapped with neither:
+  `cards_lands_and_mana_sources.rs:86`, `:94`; `enters_tapped_replacement.rs:48`,
+  `:61`
+- Two mana abilities exposed: `cards_lands_and_mana_sources.rs:107`
+- No untapped window; no stack entry; condition fixed at entry; check lands do
+  not satisfy each other: `enters_tapped_replacement.rs:79`, `:93`, `:117`,
+  `:139`
+- **NEW ROW** opponent's land does not satisfy "you control":
+  `enters_tapped_replacement.rs::a_check_land_is_not_satisfied_by_an_opponents_land`
+- **NEW ROW** taps for both of its colours:
+  `enters_tapped_replacement.rs::an_audited_check_land_taps_for_both_of_its_colours`
+
+Mutation-checked against this card: scanning the whole battlefield, dropping
+the Swamp half of the condition, and making both abilities produce white each
+fail the test that should catch them.
+
