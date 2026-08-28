@@ -1895,3 +1895,48 @@ fn keywords_say_what_scryfall_says() {
     assert_covers(checked, 100, "have a keyword list in the oracle cache");
     assert_none(&offenders, "declare the keywords the oracle cache gives them");
 }
+
+/// Every flashback cost is the cost the card prints.
+///
+/// "Flashback {5}{B}{B}" is a printed cost like any other, and the one the
+/// engine charges lives in `CardData::flashback_cost` where nothing compared
+/// it with the text. Turning Sever the Bloodline's flashback into {4}{B}{B}
+/// passed the whole suite: a flashback test pays what the card asks and then
+/// checks the card was cast and exiled, so it cannot notice the ask changing.
+#[test]
+fn flashback_costs_are_the_costs_the_oracle_text_prints() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(data) = reg.card_data(id) else { continue };
+
+        // "Flashback {5}{B}{B} (You may cast this card...)" — the cost runs to
+        // the reminder text or the end of the line.
+        let printed = data.oracle_text.lines()
+            .find_map(|line| line.trim().strip_prefix("Flashback "))
+            .map(|rest| {
+                rest.split_whitespace()
+                    .take_while(|w| w.starts_with('{'))
+                    .collect::<String>()
+            });
+        match (&printed, &data.flashback_cost) {
+            (None, None) => {}
+            (Some(want), Some(got)) => {
+                checked += 1;
+                if &got.to_string() != want {
+                    offenders.push(format!(
+                        "{name}: prints flashback {want:?}, charges {:?}", got.to_string()));
+                }
+            }
+            (Some(want), None) => offenders.push(format!(
+                "{name}: prints flashback {want:?} but declares no flashback_cost")),
+            (None, Some(got)) => offenders.push(format!(
+                "{name}: declares flashback_cost {:?} but prints no Flashback", got.to_string())),
+        }
+    }
+
+    assert_covers(checked, 20, "print a flashback cost");
+    assert_none(&offenders, "charge the flashback cost their oracle text prints");
+}
