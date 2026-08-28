@@ -150,7 +150,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Sever the Bloodline | `sever_the_bloodline.rs` | 56 | 3 | 0 |
 | x | Harvest Pyre | `harvest_pyre.rs` | 54 | 3 | 0 |
 | x | Kessig Wolf | `kessig_wolf.rs` | 54 | 3 | 0 |
-|   | Manor Skeleton | `manor_skeleton.rs` | 54 | 3 | 0 |
+| x | Manor Skeleton | `manor_skeleton.rs` | 54 | 3 | 0 |
 |   | Silverchase Fox | `silverchase_fox.rs` | 53 | 3 | 0 |
 |   | Moonmist | `moonmist.rs` | 97 | 2 | 0 |
 |   | Bonds of Faith | `bonds_of_faith.rs` | 51 | 3 | 0 |
