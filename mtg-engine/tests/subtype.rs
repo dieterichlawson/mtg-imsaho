@@ -429,19 +429,23 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
     );
 }
 
-/// Bug 31-003 (`audits/AUDIT_BUGS.md)`: Urgent Exorcism's
-/// `is_valid_target` is registry-only, so Spirit tokens (Midnight
-/// Haunting, Doomed Traveler, Mausoleum Guard, Geist-Honored Monk) are
+/// Bug 31-003 (`audits/AUDIT_BUGS.md)`: Urgent Exorcism's "Spirit or
+/// enchantment" filter was registry-only, so Spirit tokens (Midnight
+/// Haunting, Doomed Traveler, Mausoleum Guard, Geist-Honored Monk) were
 /// untargetable.
 ///
 /// Oracle (Urgent Exorcism): "Destroy target Spirit or enchantment."
 ///
-/// Failure mode: `urgent_exorcism.rs` calls
-/// `registry.card_data(obj.card_id)` and asks the registry whether the
-/// object is a Spirit or enchantment. Tokens have `card_id: CardId(0)`,
-/// so the registry lookup returns None, and the filter rejects every
-/// token. The fix is the Bug AT pattern: also consult the instance
-/// `obj.subtypes` and `obj.card_types`.
+/// Failure mode: the card asked `registry.card_data(obj.card_id)` whether the
+/// object was a Spirit or an enchantment. Tokens have `card_id: CardId(0)`, so
+/// the registry lookup returned None and the filter rejected every token.
+///
+/// Checked through `legal_actions`, which is where the target is actually
+/// offered (CR 601.2c). Calling the card's `is_valid_target` directly, as this
+/// test used to, does not reach the filter at all: the requirement is
+/// `PermanentWithFilter(SubtypeOrCardType { .. })` and it is
+/// `matches_target_filter` that has to union the token's own subtypes with any
+/// registry face.
 #[test]
 fn bug_31_003_urgent_exorcism_targets_spirit_token() {
     let registry = CardRegistry::with_all_cards();
@@ -462,31 +466,23 @@ fn bug_31_003_urgent_exorcism_targets_spirit_token() {
     if let Some(obj) = state.get_object_mut(token) {
         obj.summoning_sick = false;
     }
-    assert!(
-        state
-            .get_object(token)
-            .unwrap()
-            .subtypes
-            .iter()
-            .any(|s| s == "Spirit"),
-        "Test setup: Spirit token should have 'Spirit' in obj.subtypes"
-    );
 
-    let exorcism_card_id = registry.get_id_by_name("Urgent Exorcism").unwrap();
-    let behavior = registry.get(exorcism_card_id).unwrap();
-    let is_valid = behavior.is_valid_target(
-        &state,
-        P0,
-        &Target::Object(token),
-        &registry,
-    );
+    state.priority_player = Some(P0);
+    let exorcism = castable_spell(&mut state, &registry, "Urgent Exorcism", P0);
 
+    let offered = offered_targets(&state, &registry, exorcism);
     assert!(
-        is_valid,
+        offered.contains(&Target::Object(token)),
         "Urgent Exorcism should be able to target a Spirit TOKEN. \
-         Bug 31-003: the card-side filter only checks \
-         registry.card_data(), which returns None for tokens, so the \
-         token is wrongly rejected."
+         Bug 31-003: a registry-only filter returns nothing for a token, so \
+         the token is wrongly rejected. offered: {offered:?}"
+    );
+
+    // And it destroys it, so the row is not just "the engine offered it".
+    let state = cast_and_resolve(&state, &registry, exorcism, vec![Target::Object(token)]);
+    assert!(
+        state.get_object(token).is_none_or(|o| o.zone != Zone::Battlefield),
+        "the Spirit token should be destroyed"
     );
 }
 
