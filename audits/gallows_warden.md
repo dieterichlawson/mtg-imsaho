@@ -41,3 +41,25 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 Static-ability behaviour is exercised through the shared continuous-effects tests in `continuous_effects.rs` and `snapshot_anthems.rs`.
 
+
+## Audit — 2026-08-28 19:52
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+Other Spirit creatures you control get +0/+1.
+**Type line**: Creature — Spirit
+**P/T**: 3/3
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/gallows_warden.rs` matches: {4}{W}, Spirit, 3/3, Flying, `ModifyPT { power: 0, toughness: 1, scope: GlobalOther(ControlledByYou AND HasSubtype("Spirit")) }` — the same shape as Battleground Geist with the buff on the toughness side.
+
+### Tricky interactions checked
+- "Other" excludes itself; only your Spirits; Spirit tokens included via the `has_subtype` accessor union; static re-evaluation (newcomers picked up, leavers dropped). Same analysis as Battleground Geist (220/249). PASS
+- Toughness-specific: the +0/+1 feeds `effective_toughness`, which the SBA lethal-damage check reads — a Spirit with 3 damage marked and boosted toughness 4 lives, and dies to the re-check if the Warden leaves. Engine-generic (same mechanism the Angelic Overseer ruling test pins). PASS
+
+### Test coverage
+- All four claims (other / Spirit / you control / +0/+1): `mtg-engine/tests/cards_evasion_and_graveyard_pt.rs` `a_spirit_lord_buffs_other_spirits_you_control_and_nothing_else`
+- No rulings on Scryfall for this card.
+
+Mutation check: swapping the grant to +1/+0 fails the table test ("Gallows Warden: your own Spirit is buffed"). Bites.
