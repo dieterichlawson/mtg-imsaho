@@ -5,7 +5,6 @@ use crate::cards::CardRegistry;
 use crate::combat;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
-use crate::types::Zone;
 use super::super::*;
 
 pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, PlayerId)], registry: &CardRegistry) -> Applied {
@@ -32,33 +31,23 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         }
         combat::declare_attackers(&mut *state, attackers, registry);
 
-        // Collect forced attackers (creatures with "attacks each combat if able" aura).
-        let forced_ids: Vec<crate::ids::ObjectId> = {
-            let active = state.active_player;
-            let mut forced = Vec::new();
-            for creature in state.objects_in_id_order() {
-                if creature.zone != Zone::Battlefield || creature.controller != active
-                    || !state.is_creature(creature.id, registry) || creature.tapped || creature.summoning_sick {
-                    continue;
-                }
-                if state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature.id)) {
-                    continue; // already attacking
-                }
-                // Check for Defender — can't be forced to attack.
-                if state.has_keyword(creature.id, crate::types::Keyword::Defender, registry) {
-                    continue;
-                }
-                // Respect "can't attack" effects (e.g. Bonds of Faith).
-                if !state.can_attack(creature.id, registry) {
-                    continue;
-                }
-                // Check for forced attack effects (e.g., Furor of the Bitten).
-                if state.must_attack(creature.id, registry) {
-                    forced.push(creature.id);
-                }
-            }
-            forced
-        };
+        // CR 508.1d: a creature that is required to attack and *able* to must
+        // be among the declared attackers. "Able" is `eligible_attackers` —
+        // the same list the declaration above was validated against, and the
+        // same one `legal_actions` filters to build the prompt's `must_attack`.
+        //
+        // This used to roll its own eligibility check, and the copy had
+        // drifted: it stopped at `summoning_sick` where `eligible_attackers`
+        // asks `!summoning_sick || has_keyword(Haste)`. So a hasty creature
+        // under Curse of the Nightly Hunt was listed in the prompt as having
+        // to attack, and then allowed to stay home.
+        let forced_ids: Vec<crate::ids::ObjectId> = eligible.iter()
+            .copied()
+            .filter(|&id| {
+                !state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&id))
+                    && state.must_attack(id, registry)
+            })
+            .collect();
 
         // Add forced attackers to combat.
         if !forced_ids.is_empty() {
