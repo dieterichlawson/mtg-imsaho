@@ -42,6 +42,12 @@ impl CardBehavior for GatstafShepherd {
             toughness: Some(3),
             oracle_text: "Intimidate\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::Intimidate],
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — green. Without it the
+            // Howler is colorless, and its own intimidate ("except by artifact
+            // creatures and/or creatures that share a color with it") lets
+            // nothing but artifacts block.
+            color_indicator: vec![Color::Green],
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,

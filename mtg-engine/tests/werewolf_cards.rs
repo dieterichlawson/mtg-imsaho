@@ -163,6 +163,51 @@ fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
         "Gatstaf Shepherd should not have Intimidate");
 }
 
+/// CR 204.2: a transforming back face has no mana cost, so its colors come
+/// from the color indicator printed beside its type line. Gatstaf Howler's is
+/// green.
+///
+/// This is not decoration. The Howler's own intimidate reads "except by
+/// artifact creatures and/or creatures that share a color with it", and with
+/// the back face colorless nothing shares a color with it — only artifact
+/// creatures could ever block, which is a strictly better card than the one
+/// printed.
+#[test]
+fn gatstaf_howler_is_green_and_its_intimidate_lets_green_through() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let howler = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, howler, &reg);
+    assert_eq!(state.get_object(howler).unwrap().name, "Gatstaf Howler", "test setup");
+
+    assert_eq!(state.colors_of(howler, &reg), vec![Color::Green],
+        "the back face is green by its color indicator, not colorless");
+
+    // A green creature shares a color and may block; a black one may not.
+    let green = named_permanent(&mut state, &reg, "Darkthicket Wolf", P1);
+    let black = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    assert_eq!(state.colors_of(green, &reg), vec![Color::Green], "test setup");
+    assert_eq!(state.colors_of(black, &reg), vec![Color::Black], "test setup");
+
+    assert!(mtg_engine::combat::can_block_attacker(&state, green, howler, &reg),
+        "a green creature shares a color with the Howler and can block it");
+    assert!(!mtg_engine::combat::can_block_attacker(&state, black, howler, &reg),
+        "a black creature shares no color with it and cannot");
+}
+
+/// And the front face, which does have a mana cost, still takes its color from
+/// that cost — the indicator belongs to the back face only (CR 204.2).
+#[test]
+fn gatstaf_shepherd_is_green_from_its_mana_cost() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
+
+    assert_eq!(state.colors_of(shepherd, &reg), vec![Color::Green],
+        "a {{1}}{{G}} cost makes the front face green");
+}
+
 // ── Village Ironsmith ─────────────────────────────────────────────
 
 // ── Villagers of Estwald ──────────────────────────────────────────

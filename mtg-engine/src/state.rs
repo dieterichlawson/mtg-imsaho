@@ -2198,6 +2198,11 @@ impl GameState {
     #[must_use]
     pub fn printed_colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
         if let Some(data) = self.face_data(id, registry) {
+            // CR 204.2: a face with no mana cost says its colors with a color
+            // indicator instead — every transforming back face in the set.
+            if !data.color_indicator.is_empty() {
+                return data.color_indicator;
+            }
             let mut cols = Vec::new();
             if let Some(cost) = data.cost {
                 for sym in &cost.symbols {
@@ -2229,7 +2234,19 @@ impl GameState {
     #[must_use]
     pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
         let mut cols = self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default();
-        if let Some(cost) = self.face_data(id, registry).and_then(|d| d.cost) {
+        let face = self.face_data(id, registry);
+        // CR 204.2: a face with no mana cost states its colors with a color
+        // indicator. Reading the cost alone made every transformed permanent
+        // colorless, which Gatstaf Howler's intimidate reads directly.
+        if let Some(indicator) = face.as_ref().map(|d| d.color_indicator.clone()).filter(|i| !i.is_empty()) {
+            for c in indicator {
+                if !cols.contains(&c) {
+                    cols.push(c);
+                }
+            }
+            return cols;
+        }
+        if let Some(cost) = face.and_then(|d| d.cost) {
             for sym in &cost.symbols {
                 if let crate::types::ManaSymbol::Colored(c) = sym {
                     if !cols.contains(c) {

@@ -35,11 +35,7 @@ impl CardBehavior for WardOfRed {
             power: None,
             toughness: None,
             oracle_text: "You have protection from red.".into(),
-            keywords: vec![],
-            flashback_cost: None,
-            continuous_effects: vec![],
-            additional_cost: None,
-            triggered_abilities: vec![],
+            ..Default::default()
         }
     }
 

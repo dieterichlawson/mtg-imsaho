@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use crate::actions::Target;
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, CardType, Supertype, Keyword, ContinuousEffect, ManaType, Zone};
+use crate::types::{ManaCost, CardType, Color, Supertype, Keyword, ContinuousEffect, ManaType, Zone};
 
 /// Put an activated ability on the stack (CR 602.2a).
 ///
@@ -84,6 +84,19 @@ pub struct CardData {
     pub triggered_abilities: Vec<TriggeredAbilityDef>,
     /// Additional cost required to cast this spell (beyond mana).
     pub additional_cost: Option<AdditionalCost>,
+    /// CR 204: the colors a face has when its mana cost cannot say them.
+    ///
+    /// A transforming double-faced card's back face has no mana cost, so its
+    /// color comes from the dot printed beside its type line — Gatstaf Howler
+    /// is green, Garruk, the Veil-Cursed is black and green. Deriving color
+    /// from the cost alone left every transformed permanent colorless, which
+    /// is not a cosmetic difference: Gatstaf Howler's own intimidate reads
+    /// "except by artifact creatures and/or creatures that share a color with
+    /// it", and nothing shares a color with a colorless creature.
+    ///
+    /// Empty on a face that has a mana cost — that face's colors come from the
+    /// cost, and CR 204.2 does not put an indicator on such a card.
+    pub color_indicator: Vec<Color>,
 }
 
 /// The attack a "whenever this attacks" trigger is about, snapshotted when
