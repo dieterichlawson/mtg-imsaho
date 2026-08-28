@@ -14,13 +14,14 @@ Assuming the back face matches the front's colour is not available as a
 shortcut: Garruk Relentless is green and Garruk, the Veil-Cursed is
 black-green.
 
-Established: 5 of 20.
+Established: 6 of 20.
 
 | card | back face | indicator |
 |---|---|---|
 | `gatstaf_shepherd` | Gatstaf Howler | Green |
 | `grizzled_outcasts` | Krallenhorde Wantons | Green |
 | `reckless_waif` | Merciless Predator | Red |
+| `thraben_sentry` | Thraben Militia | White |
 | `tormented_pariah` | Rampaging Werewolf | Red |
 | `villagers_of_estwald` | Howlpack of Estwald | Green |
 | `bloodline_keeper` | Lord of Lineage | **not yet established** |
@@ -35,6 +36,5 @@ Established: 5 of 20.
 | `ludevics_test_subject` | Ludevic's Abomination | **not yet established** |
 | `mayor_of_avabruck` | Howlpack Alpha | **not yet established** |
 | `screeching_bat` | Stalking Vampire | **not yet established** |
-| `thraben_sentry` | Thraben Militia | **not yet established** |
 | `ulvenwald_mystics` | Ulvenwald Primordials | **not yet established** |
 | `village_ironsmith` | Ironfang | **not yet established** |

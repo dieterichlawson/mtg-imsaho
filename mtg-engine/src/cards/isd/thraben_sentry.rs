@@ -41,6 +41,9 @@ impl CardBehavior for ThrabenSentry {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(5),
             toughness: Some(4),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — white.
+            color_indicator: vec![Color::White],
             oracle_text: "Trample".into(),
             keywords: vec![Keyword::Trample],
             ..Default::default()

@@ -504,6 +504,14 @@ fn thraben_sentry_transforms_when_creature_dies() {
         (state.effective_power(sentry, &reg), state.effective_toughness(sentry, &reg)),
         (Some(5), Some(4)),
         "Thraben Militia is a 5/4 — its back face's printed size (CR 712.8)");
+    // CR 204.2: the back face has no mana cost, so this can only come from the
+    // colour indicator. Without one it would be colourless.
+    assert_eq!(state.colors_of(sentry, &reg), vec![Color::White],
+        "Thraben Militia is white by its colour indicator");
+    assert!(state.has_keyword(sentry, Keyword::Trample, &reg),
+        "and it has trample");
+    assert!(!state.has_keyword(sentry, Keyword::Vigilance, &reg),
+        "but not the front face's vigilance");
 }
 
 #[test]
@@ -519,6 +527,51 @@ fn thraben_sentry_does_not_transform_when_opponent_creature_dies() {
 
     // Should NOT transform.
     assert!(!state.get_object(sentry).unwrap().is_transformed);
+}
+
+/// Ruling: "If multiple creatures you control die simultaneously, Thraben
+/// Sentry's ability will trigger that many times. Only the first one to
+/// resolve will cause it to transform."
+///
+/// Both halves matter and they are separate claims: the ability is a
+/// leaves-the-battlefield trigger that looks back at each death, so two deaths
+/// put two copies on the stack — and the second, resolving against a Sentry
+/// that is now Thraben Militia, must not flip it back.
+#[test]
+fn two_simultaneous_deaths_trigger_twice_and_transform_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
+    let a = ready_creature(&mut state, P0, 1, 1);
+    let b = ready_creature(&mut state, P0, 1, 1);
+
+    mtg_engine::destruction::try_destroy_all(&mut state, &[a, b], &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    assert_eq!(state.stack.len(), 2,
+        "two creatures died, so the ability triggered twice");
+
+    // The first to resolve asks, and is answered yes.
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(), "the first trigger asks");
+    let mut state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia",
+        "the first one transforms it");
+    assert_eq!(state.stack.len(), 1, "the second trigger is still there");
+
+    // The second resolves against a Sentry that is already a Militia.
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    assert!(state.awaiting_action.is_none(),
+        "the second does not ask again — there is nothing left for it to do");
+    assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia",
+        "and above all it does not flip back");
+    assert_eq!(state.stack.len(), 0);
 }
 
 // -------------------------------------------------------------------------
