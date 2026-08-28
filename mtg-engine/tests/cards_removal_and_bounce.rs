@@ -162,6 +162,10 @@ fn targeted_removal_offers_the_targets_its_text_allows() {
          "'target noncreature permanent'"),
         ("Urgent Exorcism", Candidate::Named("Chapel Geist"), Candidate::Creature(3, 3),
          "'target Spirit or enchantment' — the Geist is a Spirit"),
+        // Both halves of "Spirit or enchantment" get a row: the Spirit half
+        // above passes even if the enchantment half is missing from the filter.
+        ("Urgent Exorcism", Candidate::Enchantment, Candidate::Creature(3, 3),
+         "'target Spirit or enchantment' — Pacifism is an enchantment"),
         ("Maw of the Mire", Candidate::Land, Candidate::Creature(3, 3),
          "'target land'"),
     ];
