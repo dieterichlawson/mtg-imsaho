@@ -394,8 +394,59 @@ fn a_creature_that_cant_block_this_turn_is_rejected_as_a_blocker() {
     let nc = castable_spell(&mut state, &reg, "Nightbird's Clutches", P0);
     state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(blocker)]);
 
+    assert!(!state.can_block(blocker, &reg),
+        "the question with the name answers it: `can_block` covers a \
+         \"can't block this turn\" effect as well as a static ability");
     assert!(!combat::eligible_blockers(&state, P1, &reg).contains(&blocker),
         "it is no longer offered as a blocker");
     assert!(blockers_accepted_for(&mut state, &reg, attacker, blocker).is_empty(),
         "and submitting it anyway must not block either");
+}
+
+/// "**Up to two** target creatures can't block this turn" — both of them, and
+/// only them. The existing tests all use one target, which a card that stopped
+/// after the first would pass.
+#[test]
+fn nightbirds_clutches_stops_both_of_its_targets_and_no_one_else() {
+    use mtg_engine::actions::Target;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let first = ready_creature(&mut state, P1, 3, 3);
+    let second = ready_creature(&mut state, P1, 3, 3);
+    let bystander = ready_creature(&mut state, P1, 3, 3);
+
+    let nc = castable_spell(&mut state, &reg, "Nightbird's Clutches", P0);
+    let mut state = cast_and_resolve(&state, &reg, nc,
+        vec![Target::Object(first), Target::Object(second)]);
+
+    assert!(!state.can_block(first, &reg), "the first target can't block");
+    assert!(!state.can_block(second, &reg), "and so can't the second");
+    assert!(state.can_block(bystander, &reg), "the untargeted creature still can");
+    assert!(blockers_accepted_for(&mut state, &reg, attacker, second).is_empty(),
+        "and the second target is refused at the declaration too");
+}
+
+/// "can't block **this turn**". The restriction is an until-end-of-turn effect
+/// and goes away with the turn, so the same creature blocks fine on the next
+/// one.
+#[test]
+fn nightbirds_clutches_wears_off_at_end_of_turn() {
+    use mtg_engine::actions::Target;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let blocker = ready_creature(&mut state, P1, 3, 3);
+    let nc = castable_spell(&mut state, &reg, "Nightbird's Clutches", P0);
+    let mut state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(blocker)]);
+    assert!(!state.can_block(blocker, &reg), "test setup: stopped for this turn");
+
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+    advance_to_next_turn(&mut state, &reg);
+
+    assert!(state.can_block(blocker, &reg), "and free again on the next one");
 }
