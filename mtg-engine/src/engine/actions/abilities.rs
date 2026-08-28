@@ -145,14 +145,22 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             // we pay only the non-X portion here; the X generic is paid
             // later via the ChooseXFunding flow (CR 602.1: the cost is
             // announced & paid before the ability resolves).
+            //
+            // Same offer/submit rule as the cast path: the pool has to prove
+            // it can pay before anything is deducted — `auto_pay` drains as
+            // it goes, so a failed payment cannot simply be unwound. An
+            // unfunded activation is refused, not a panic (CR 601.2h via
+            // 602.2b).
             let has_x_cost = ab.cost.has_x();
-            if has_x_cost {
-                let non_x_cost = ab.cost.without_x();
-                mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &non_x_cost)
-                    .expect("legal_actions should have verified mana availability");
-            } else {
-                mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &ab.cost)
-                    .expect("legal_actions should have verified mana availability");
+            let pay = if has_x_cost { ab.cost.without_x() } else { ab.cost.clone() };
+            if !mana::can_pay(&state.get_player(player).mana_pool, &pay) {
+                state.log(crate::state::LogLevel::Debug, format!(
+                    "activation refused, submitted funding cannot pay {pay:?} (CR 601.2h)"));
+                return Applied::ReturnNow;
+            }
+            mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &pay)
+                .expect("can_pay just verified this");
+            if !has_x_cost {
                 state.last_activated_x_value = None;
             }
 

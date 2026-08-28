@@ -364,3 +364,60 @@ fn an_exile_cost_cannot_be_paid_from_an_opponents_graveyard() {
     assert_eq!(state.get_object(spell).unwrap().zone, Zone::Hand,
         "the cast did not happen");
 }
+
+/// CR 601.2h: a cast whose submitted funding (pool + tap plan) cannot pay the
+/// mana cost is refused with the state untouched. The engine used to panic
+/// here ("legal_actions should have verified mana availability") — but neither
+/// client submits a whole offered action, so the submit path must speak for
+/// itself.
+#[test]
+fn a_cast_submitted_without_funding_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0, "precondition: broke");
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: bears, targets: vec![], sacrifice: None,
+            exile_count: None, exile_ids: vec![], alternative_cost: None,
+            tap_plan: vec![],
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Hand,
+        "an unfunded cast is refused, not executed (and not a panic)");
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0, "nothing was drained");
+}
+
+/// The activation twin: an ability whose mana cost the pool cannot cover is
+/// refused before anything is deducted or tapped (CR 601.2h via 602.2b).
+#[test]
+fn an_activation_submitted_without_funding_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    // Gavony Township's second ability costs {2}{G}{W}, {T}.
+    let township = named_permanent(&mut state, &reg, "Gavony Township", P0);
+    let creature = ready_creature(&mut state, P0, 1, 1);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0, "precondition: broke");
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: township, ability_index: 1, targets: vec![],
+            tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+        },
+        &reg,
+    );
+
+    assert!(!state.get_object(township).unwrap().tapped,
+        "the refused activation must not tap the Township");
+    assert!(state.get_object(creature).unwrap().counters.is_empty(),
+        "and no counters were handed out");
+}

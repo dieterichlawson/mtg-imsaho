@@ -201,6 +201,27 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
 
         // Eager path: non-X spells and X-cost spells with max_x == 0.
         // Execute tap_plan, pay mana, pay additional costs, move to stack.
+        //
+        // Neither client submits a whole offered action, so the funding has to
+        // prove itself before anything is tapped or paid: an unfundable cast
+        // is refused with the state untouched (CR 601.2h), not a panic
+        // mid-payment. The tap plan is rehearsed on a scratch copy because
+        // what it produces can depend on state it also changes (Deranged
+        // Assistant milling its own cost away), and `auto_pay` drains the
+        // pool as it goes, so a failed payment cannot simply be unwound.
+        {
+            let mut probe = state.clone();
+            for &(source_id, ability_index) in tap_plan {
+                activate_mana_source(&mut probe, source_id, ability_index, registry);
+            }
+            let pay = if has_x { cost.without_x() } else { cost.clone() };
+            if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
+                state.log(crate::state::LogLevel::Debug, format!(
+                    "{}: cast refused, submitted funding cannot pay the cost (CR 601.2h)",
+                    card_name(&state, registry, object_id)));
+                return Applied::ReturnNow;
+            }
+        }
         for &(source_id, ability_index) in tap_plan {
             activate_mana_source(&mut *state, source_id, ability_index, registry);
         }
