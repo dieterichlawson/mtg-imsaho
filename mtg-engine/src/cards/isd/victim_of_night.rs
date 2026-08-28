@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Victim of Night — {B}{B} instant. Destroy target non-Vampire, non-Werewolf, non-Zombie creature.
 pub struct VictimOfNight;
@@ -21,22 +21,19 @@ impl CardBehavior for VictimOfNight {
         }
     }
 
+    /// The three exclusions are one filter, applied when the target is chosen
+    /// (CR 601.2c) and again on resolution (CR 608.2b), creature-ness included.
+    /// This card also carried an `is_valid_target` reading
+    /// `!["Vampire", "Werewolf", "Zombie"].iter().any(|st| state.has_subtype(..))`;
+    /// `NotSubtypes` is `!types.iter().any(|t| state.subtypes_of(..).contains(t))`,
+    /// and `has_subtype` is membership in exactly the union `subtypes_of`
+    /// returns — the same question, asked twice.
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::CreatureWithFilter(TargetFilter::NotSubtypes(vec!["Vampire".into(), "Werewolf".into(), "Zombie".into()]))
-    }
-
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                let Some(obj) = state.get_object(*id) else { return false; };
-                if obj.zone != Zone::Battlefield || !state.is_creature(obj.id, registry) { return false; }
-                !["Vampire", "Werewolf", "Zombie"].iter()
-                    .any(|st| state.has_subtype(obj.id, st, registry))
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
+        TargetRequirement::CreatureWithFilter(TargetFilter::NotSubtypes(vec![
+            "Vampire".into(),
+            "Werewolf".into(),
+            "Zombie".into(),
+        ]))
     }
 
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
