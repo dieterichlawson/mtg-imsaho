@@ -28,6 +28,6 @@ impl CardBehavior for InfernalPlunge {
 
         // The creature sacrifice happens at cast time (as an additional cost).
         // On resolution, just add {R}{R}{R}.
-        state.get_player_mut(controller).mana_pool.add(ManaType::Red, 3);
+        state.add_mana(controller, ManaType::Red, 3);
     }
 }

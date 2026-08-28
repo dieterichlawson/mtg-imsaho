@@ -2203,6 +2203,14 @@ impl GameState {
         self.change_life(player, amount);
     }
 
+    /// Add mana to a player's pool and announce it (CR 106.4). Every source of
+    /// mana — mana abilities and mana-producing spells alike — goes through
+    /// here so the `ManaAdded` event is never skipped.
+    pub fn add_mana(&mut self, player: crate::ids::PlayerId, mana_type: crate::types::ManaType, amount: u32) {
+        self.get_player_mut(player).mana_pool.add(mana_type, amount);
+        self.events.push(crate::events::GameEvent::ManaAdded { player, mana_type, amount });
+    }
+
     /// `change_life` with a negative amount. Note this is life LOSS, which is
     /// not damage — it bypasses protection, prevention and damage triggers.
     pub fn lose_life(&mut self, player: crate::ids::PlayerId, amount: i32) {

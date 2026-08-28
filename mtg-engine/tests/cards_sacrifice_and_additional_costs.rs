@@ -1252,6 +1252,13 @@ fn adds_three_red_mana() {
     let red_after = state.get_player(P0).mana_pool.get(ManaType::Red);
     assert_eq!(red_after - red_before, 3,
         "Infernal Plunge should add RRR on resolution");
+
+    // The addition is announced like any other mana source's (CR 106.4) —
+    // a spell adding mana must not bypass the ManaAdded event.
+    assert!(state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::ManaAdded { player: p, mana_type: ManaType::Red, amount: 3 }
+            if *p == P0)),
+        "Infernal Plunge's mana should be announced with a ManaAdded event");
 }
 
 /// Legal actions show one `CastSpell` per eligible creature to sacrifice.

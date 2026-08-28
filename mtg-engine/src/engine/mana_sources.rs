@@ -1,5 +1,4 @@
 use crate::cards::CardRegistry;
-use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::mana;
 use crate::state::{GameState, LogLevel};
@@ -186,12 +185,7 @@ pub fn activate_mana_source(
         state.tap(source_id);
     }
     for &(mana_type, amount) in &ability.produced {
-        state.get_player_mut(controller).mana_pool.add(mana_type, amount);
-        state.events.push(GameEvent::ManaAdded {
-            player: controller,
-            mana_type,
-            amount,
-        });
+        state.add_mana(controller, mana_type, amount);
     }
     behavior.on_activate_mana_ability(state, source_id, ability_index, registry);
 
