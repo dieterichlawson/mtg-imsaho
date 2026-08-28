@@ -35,6 +35,8 @@ use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::ids::{CardId, PlayerId};
 use mtg_engine::sba::check_state_based_actions;
+use mtg_engine::state::StackEntry;
+use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 // ══════════════════════════════════════════════════════════════════
@@ -582,6 +584,76 @@ fn elder_cathar_gives_one_counter_to_non_human() {
 
     assert_eq!(state.get_counter_count(bears, CounterType::PlusOnePlusOne), 1,
         "Non-Human should get only 1 +1/+1 counter from Elder Cathar");
+}
+
+/// "put a +1/+1 counter on target **creature you control**."
+///
+/// The Cathar is in the graveyard by the time its own death trigger goes on
+/// the stack, and leaving the battlefield resets `controller` to `owner`
+/// (CR 400.7). So a Cathar whose owner and controller agree cannot tell a
+/// correct read of the *last known* controller (CR 608.2g) from a read of the
+/// reset field — both give the same answer. Here they disagree.
+#[test]
+fn elder_cathar_counters_a_creature_its_last_controller_controlled() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ec = named_permanent(&mut state, &reg, "Elder Cathar", P0);
+    state.get_object_mut(ec).unwrap().owner = P1;
+
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+
+    state.get_object_mut(ec).unwrap().damage_marked = 2;
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_counter_count(mine, CounterType::PlusOnePlusOne), 1,
+        "'you' is the Cathar's last known controller, not its owner");
+    assert_eq!(state.get_counter_count(theirs, CounterType::PlusOnePlusOne), 0,
+        "'target creature you control' never reaches an opponent's creature");
+}
+
+/// "If that creature **is** a Human, put two +1/+1 counters on it instead."
+///
+/// That is read as the ability resolves, not when its target was chosen — CR
+/// 603.3d locks the target in, not the target's characteristics. The existing
+/// werewolf test transforms before the trigger exists, which a check made at
+/// either moment would pass; this one transforms in between, where only a
+/// resolution-time check gives the right answer.
+#[test]
+fn elder_cathars_human_check_is_made_on_resolution() {
+    for (transformed_in_response, expected) in [(false, 2), (true, 1)] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let ec = named_permanent(&mut state, &reg, "Elder Cathar", P0);
+        let card_id = state.get_object(ec).unwrap().card_id;
+        // Tormented Pariah's front face is a Human Werewolf; its back face,
+        // Rampaging Werewolf, is not a Human.
+        let pariah = named_permanent(&mut state, &reg, "Tormented Pariah", P0);
+        assert!(state.has_subtype(pariah, "Human", &reg),
+            "test precondition: the front face is a Human");
+
+        // The target is locked in while the Pariah is still a Human.
+        state.stack.push(StackEntry::Trigger(PendingTrigger {
+            source: TriggerSource {
+                chosen_targets: vec![Target::Object(pariah)],
+                ..TriggerSource::new(ec, card_id, P0, "Elder Cathar")
+            },
+            event: TriggerEvent::SelfDies,
+        }));
+        state.move_object(ec, Zone::Graveyard, &reg);
+
+        if transformed_in_response {
+            mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &reg);
+        }
+        triggers::resolve_next_trigger(&mut state, &reg);
+
+        assert_eq!(state.get_counter_count(pariah, CounterType::PlusOnePlusOne), expected,
+            "transformed in response = {transformed_in_response}: the Human \
+             check reads the face that is live when the ability resolves");
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
