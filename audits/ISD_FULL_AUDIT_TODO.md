@@ -236,7 +236,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Elite Inquisitor | `elite_inquisitor.rs` | 31 | 1 | 0 |
 | x | Night Revelers | `night_revelers.rs` | 30 | 1 | 0 |
 | x | Grave Bramble | `grave_bramble.rs` | 28 | 1 | 0 |
-|   | Stitched Drake | `stitched_drake.rs` | 28 | 1 | 0 |
+| x | Stitched Drake | `stitched_drake.rs` | 28 | 1 | 0 |
 |   | Invisible Stalker | `invisible_stalker.rs` | 27 | 1 | 0 |
 |   | One-Eyed Scarecrow | `one_eyed_scarecrow.rs` | 27 | 1 | 0 |
 |   | Rooftop Storm | `rooftop_storm.rs` | 27 | 1 | 0 |
