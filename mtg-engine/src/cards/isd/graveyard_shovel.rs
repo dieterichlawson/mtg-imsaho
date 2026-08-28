@@ -61,8 +61,6 @@ impl CardBehavior for GraveyardShovel {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
-
         if let Some(Target::Player(target_player)) = targets.first() {
             // Collect all cards in the targeted player's graveyard.
             let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, *target_player).into_iter()
@@ -75,24 +73,13 @@ impl CardBehavior for GraveyardShovel {
             }
 
             if gy_cards.len() == 1 {
-                // Only one card — auto-exile it.
-                if let Target::Object(card_id) = &gy_cards[0] {
-                    let is_creature = state.get_object(*card_id)
-                        .is_some_and(|o| {
-                            state.face_data(o.id, registry)
-                                .map_or(state.is_creature(o.id, registry), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                        });
-                    let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.move_object(*card_id, Zone::Exile, registry);
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Graveyard Shovel: p{} exiled {} from graveyard", target_player.0, name));
-
-                    if is_creature {
-                        state.change_life(controller, 2);
-                        state.log(crate::state::LogLevel::Event,
-                            format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
-                    }
-                }
+                // One card, so the choice is forced — but it is the same
+                // effect, so it runs through the same code. This branch used
+                // to be a second copy of it that tested "creature card" a
+                // different way and wrote the life total with `change_life`
+                // instead of `gain_life`; two copies of one effect is two
+                // places for it to drift.
+                self.resolve_card_effect(state, object_id, "", &gy_cards[0], registry);
             } else {
                 // Multiple cards — targeted player chooses which to exile.
                 state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
@@ -121,7 +108,7 @@ impl CardBehavior for GraveyardShovel {
             format!("Graveyard Shovel: exiled {name} from graveyard"));
 
         if was_creature {
-            let controller = crate::cards::helpers::controller_of(state, source_id);
+            let controller = crate::cards::helpers::ability_controller(state, source_id);
             state.gain_life(controller, 2);
             state.log(crate::state::LogLevel::Event,
                 format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));

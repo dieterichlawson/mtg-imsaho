@@ -160,3 +160,63 @@ fn cannot_target_player_with_empty_graveyard() {
     assert!(ability_actions.is_empty(),
         "Should not be able to target P1 (empty graveyard)");
 }
+
+/// "you gain 2 life" — "you" is the player who activated the ability
+/// (CR 602.2a), not whoever controls the Shovel by the time it resolves.
+///
+/// The Shovel changing hands in response used to redirect the life gain to the
+/// new controller, because the card read the source's controller at resolution.
+#[test]
+fn the_life_goes_to_whoever_activated_it_not_whoever_holds_the_shovel() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    // In response, P1 takes the Shovel.
+    state.change_control(shovel, P1);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile,
+        "test precondition: the card was exiled");
+    assert_eq!(state.get_player(P0).life, 22,
+        "the activator gains the life");
+    assert_eq!(state.get_player(P1).life, 20,
+        "and the player who took the Shovel gains nothing");
+}
+
+/// The same, through the choice the targeted player makes: the rest of the
+/// effect happens after the choice is answered, and it is still the same
+/// ability, so its "you" is still the activator.
+#[test]
+fn the_life_still_goes_to_the_activator_after_the_choice() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    let creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let _instant = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P1);
+
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    state.change_control(shovel, P1);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(creature))),
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile,
+        "test precondition: the chosen card was exiled");
+    assert_eq!(state.get_player(P0).life, 22,
+        "the activator gains the life, even though the choice was answered later");
+    assert_eq!(state.get_player(P1).life, 20,
+        "and the player who took the Shovel gains nothing");
+}
