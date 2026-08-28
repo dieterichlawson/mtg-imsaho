@@ -44,6 +44,30 @@ impl CardBehavior for HereticsPunishment {
         }
     }
 
+    /// "Choose any target" — and CR 608.2b asks again on resolution whether it
+    /// is still one. A permanent that has left the battlefield is not.
+    ///
+    /// This lives here rather than inside `resolve_activated_ability` because
+    /// here is where the engine asks: `stack.rs`'s ability arm calls
+    /// `is_valid_target` for each target, substitutes `Target::Illegal`, and
+    /// counters the ability outright when every target is illegal — which is
+    /// this card's ruling in as many words: "the entire ability won't resolve.
+    /// No cards will be put into your graveyard, and no damage will be dealt."
+    ///
+    /// The card used to answer that question itself, at the top of its
+    /// resolution handler. It got the right answer, but it was the only card in
+    /// the set enforcing target zone legality from inside its resolution rather
+    /// than through this hook, and being a step later it would have been the
+    /// wrong place the moment the ability gained a second target.
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        match target {
+            Target::Object(id) => state.get_object(*id)
+                .is_some_and(|o| o.zone == Zone::Battlefield),
+            Target::Player(_) => true,
+            Target::Illegal => false,
+        }
+    }
+
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         // CR 602.2a: an activated ability's controller is the player who
         // activated it, which the engine records; CR 608.2g falls back to the
@@ -54,28 +78,14 @@ impl CardBehavior for HereticsPunishment {
         // CR 113.7a.
         let controller = crate::cards::helpers::ability_controller(state, object_id);
 
-        // Check target legality. If target is illegal, the ability fizzles.
-        if let Some(target) = targets.first() {
-            let target_legal = match target {
-                Target::Object(target_id) => {
-                    state.get_object(*target_id)
-                        .is_some_and(|o| o.zone == Zone::Battlefield)
-                }
-                Target::Player(_) => true,
-                // Ruling (2011-09-22): "If the targeted permanent or player is
-                // an illegal target by the time the ability resolves, the
-                // entire ability won't resolve. No cards will be put into your
-                // graveyard, and no damage will be dealt."
-                Target::Illegal => false,
-            };
-            if !target_legal {
-                state.log(crate::state::LogLevel::Event,
-                    "Heretic's Punishment ability fizzles — target is illegal".to_string());
-                return;
-            }
-        } else {
-            return;
-        }
+        // Legality was settled before this ran — see `is_valid_target`. An
+        // ability with no target at all is not something this card can produce,
+        // but the engine hands resolution a slice, so read it as one.
+        let Some(damage_target) = targets.first().and_then(|t| match t {
+            Target::Object(id) => Some(crate::events::DamageTarget::Object(*id)),
+            Target::Player(pid) => Some(crate::events::DamageTarget::Player(*pid)),
+            Target::Illegal => None,
+        }) else { return };
 
         // Mill three cards first.
         let player = state.get_player(controller);
@@ -105,16 +115,10 @@ impl CardBehavior for HereticsPunishment {
             crate::engine::mill_one(state, controller, card_id, registry);
         }
 
-        // Deal damage to target equal to highest mana value.
+        // Ruling: "If all three cards have a mana value of 0, no damage will be
+        // dealt." Nothing is dealt rather than a zero-damage event, which
+        // damage watchers would otherwise see.
         if max_mv > 0 {
-            let target = targets.first().unwrap();
-            let damage_target = match target {
-                Target::Object(target_id) => crate::events::DamageTarget::Object(*target_id),
-                Target::Player(player_id) => crate::events::DamageTarget::Player(*player_id),
-                    // CR 608.2b: a target that is no longer legal is not
-                    // dealt damage at all.
-                    Target::Illegal => return,
-            };
             crate::damage::deal_damage(state, object_id, damage_target, max_mv,
                 crate::damage::DamageKind::NonCombat, registry);
         }
