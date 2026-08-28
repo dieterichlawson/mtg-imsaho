@@ -473,15 +473,16 @@ fn rage_thrower_deals_2_on_death() {
 /// rule, three cards, and the only thing that separates them is which death
 /// counts — so that is the only thing the table says.
 ///
-/// The Village Cannibals rows are a matched pair: the same setup, one death
-/// that qualifies and one that does not. Without the second row the test would
-/// pass for a card that counted every death.
+/// The rows come in matched pairs where the card has a condition: the same
+/// setup, one death that qualifies and one that does not. Without the second
+/// of each pair the test would pass for a card that counted every death.
 #[test]
 fn a_death_watcher_counts_the_deaths_its_text_names() {
     // (watcher, victim — a named card or a vanilla 1/1, victim's controller,
     //  counters expected, what the row is testing)
     const CASES: &[(&str, Option<&str>, PlayerId, u32, &str)] = &[
         ("Unruly Mob", None, P0, 1, "another creature you control dying"),
+        ("Unruly Mob", None, P1, 0, "an opponent's creature dying is not one you control"),
         ("Lumberknot", None, P1, 1, "any creature dying, an opponent's included"),
         ("Village Cannibals", Some("Doomed Traveler"), P1, 1, "a Human dying"),
         ("Village Cannibals", Some("Walking Corpse"), P1, 0, "a Zombie dying is not a Human dying"),
@@ -1089,4 +1090,41 @@ fn murder_of_crows_does_not_trigger_on_its_own_death() {
         "test precondition: the Crows died");
     assert!(state.awaiting_action.is_none(),
         "the Crows' own death is not 'another creature', so no draw is offered");
+}
+
+/// Unruly Mob's only ruling, given twice by Scryfall (2016 and 2021): "If
+/// Unruly Mob and another creature you control die simultaneously (perhaps
+/// because they were both attacking or blocking), Unruly Mob won't be on the
+/// battlefield as its triggered ability resolves. It can't be saved by the
+/// +1/+1 counter that would have been put on it."
+///
+/// Both halves. The ability *does* trigger — the Mob was on the battlefield
+/// when the other creature died (CR 603.10a) — and it resolves without doing
+/// anything, because a permanent that has left cannot take a counter
+/// (CR 121.1). A 1/1 Mob that could be saved would still be on the
+/// battlefield here.
+#[test]
+fn unruly_mob_is_not_saved_by_its_own_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mob = named_permanent(&mut state, &reg, "Unruly Mob", P0);
+    let ally = ready_creature(&mut state, P0, 1, 1);
+
+    // Both die at once, as they would trading in combat.
+    mtg_engine::destruction::try_destroy_all(&mut state, &[mob, ally], &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(mob).unwrap().zone, Zone::Graveyard,
+        "test setup: the Mob died alongside it");
+
+    triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(),
+        "the ability triggered — the Mob was there when the other creature died");
+
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(mob).unwrap().zone, Zone::Graveyard,
+        "and it is not saved by the counter that would have been put on it");
+    assert_eq!(state.get_counter_count(mob, CounterType::PlusOnePlusOne), 0,
+        "which is not put on it at all");
 }
