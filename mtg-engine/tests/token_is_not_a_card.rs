@@ -212,6 +212,68 @@ fn mindshrieker_milled_creature_triggers_undead_alchemist() {
         "and creates a 2/2 Zombie token");
 }
 
+/// "exile **that card**" — the card that was put into the graveyard. CR 400.7
+/// makes it a new object the moment it leaves, so an owner who rescues it in
+/// response (Ghoulcaller's Chant is in this set) must not have it dragged back
+/// out and exiled. The token is not conditional on the exile and is still made.
+#[test]
+fn undead_alchemist_does_not_exile_a_card_that_left_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let alchemist = named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let milled = state.create_object(
+        reg.get_id_by_name("Walking Corpse").unwrap(), P1, Zone::Graveyard, Some(2), Some(2));
+
+    let zombies_before = state.objects_in_zone(Zone::Battlefield, P0).iter()
+        .filter(|o| o.is_token).count();
+
+    // Its owner gets it back before the trigger resolves.
+    state.move_object(milled, Zone::Hand, &reg);
+
+    reg.get(state.get_object(alchemist).unwrap().card_id).unwrap()
+        .on_creature_card_milled(&mut state, alchemist, milled, P1, &reg);
+
+    assert_eq!(state.get_object(milled).unwrap().zone, Zone::Hand,
+        "the ability lost track of the card when it changed zones (CR 400.7) — \
+         it must not reach into its owner's hand");
+    assert_eq!(state.objects_in_zone(Zone::Battlefield, P0).iter().filter(|o| o.is_token).count(),
+        zombies_before + 1,
+        "but the token is not conditional on the exile");
+}
+
+/// Ruling: "Whenever a creature card is put into an opponent's graveyard from
+/// their library, the triggered ability of each Undead Alchemist you control
+/// will trigger. The first such ability to resolve will exile that creature
+/// card and create a Zombie token. Subsequent abilities won't exile the
+/// creature card, but each will create another Zombie token."
+#[test]
+fn two_undead_alchemists_each_make_a_token_and_only_one_exiles() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let a = named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let b = named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let milled = state.create_object(
+        reg.get_id_by_name("Walking Corpse").unwrap(), P1, Zone::Graveyard, Some(2), Some(2));
+
+    let zombies_before = state.objects_in_zone(Zone::Battlefield, P0).iter()
+        .filter(|o| o.is_token).count();
+    let behavior = reg.get(state.get_object(a).unwrap().card_id).unwrap();
+
+    behavior.on_creature_card_milled(&mut state, a, milled, P1, &reg);
+    assert_eq!(state.get_object(milled).unwrap().zone, Zone::Exile,
+        "the first to resolve exiles it");
+
+    behavior.on_creature_card_milled(&mut state, b, milled, P1, &reg);
+    assert_eq!(state.get_object(milled).unwrap().zone, Zone::Exile,
+        "the second finds it already gone and leaves it there");
+
+    assert_eq!(state.objects_in_zone(Zone::Battlefield, P0).iter().filter(|o| o.is_token).count(),
+        zombies_before + 2,
+        "but each ability still creates a Zombie token");
+}
+
 /// CR 109.1: a token is not a card. Every ISD card whose text counts or picks
 /// "creature **cards** in your graveyard" has to skip a token sitting there.
 ///
