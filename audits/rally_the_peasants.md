@@ -76,3 +76,52 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 `snapshot_anthems.rs`, `flashback.rs` — the fixed set, and the off-colour flashback cast.
+
+## Audit — 2026-08-28 19:17
+
+**Oracle text source**: Oracle cache (Scryfall API) — `scripts/oracle_lookup.py lookup "Rally the Peasants"`, https://scryfall.com/card/isd/28/rally-the-peasants
+**Oracle text**:
+```
+Creatures you control get +2/+0 until end of turn.
+Flashback {2}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+```
+**Type line**: Instant
+**Mana cost**: {2}{W}   **Keywords**: Flashback
+**Rulings**: 7, all the generic flashback ones.
+**Status**: PASS
+
+### Code issues
+No issues found in `mtg-engine/src/cards/isd/rally_the_peasants.rs`.
+
+`{2}{W}`, `CardType::Instant`, `flashback_cost: Some({2}{R})` — the off-colour flashback that is
+this card's whole design — oracle text verbatim, no target requirement.
+
+`on_resolve` is the unfiltered version of the anthem family audited at Vampiric Fury: snapshot
+`creatures_controlled_snapshot(controller)` at resolution (CR 611.2c), one
+`ModifyPT { +2, +0 }` per id into `until_end_of_turn`.
+
+### Tricky interactions checked
+- **+2/+0, toughness unchanged; yours only**: PASS.
+- **Fixed at resolution — a creature entering later gets nothing**: PASS, a row in the shared
+  anthem table.
+- **Off-colour flashback**: castable for {2}{R} from the graveyard with no white mana at all;
+  the cost is pinned by the registry-wide sweep against the printed text.
+- **Instant, so the flashback cast is one too**: engine-side.
+- **Cast twice in a turn (hand, then flashback)**: two separate resolutions, two snapshots, and
+  a creature present for both gets +4/+0 — two independent effects. Not separately tested;
+  follows from the effect list.
+- **Exiled after the flashback cast**: engine-side, tested generically.
+
+### Test coverage
+- +2/+0 on yours, toughness and opponent untouched:
+  `cards_vanilla_and_keywords.rs:49 rally_the_peasants_buffs_all_your_creatures`
+- fixed at resolution: `snapshot_anthems.rs:48` (table row)
+- the flashback cost matches the printed text:
+  `card_data_invariants.rs:1907 flashback_costs_are_the_costs_the_oracle_text_prints`
+- offered from the graveyard: `flashback.rs:32` (pool-wide sweep)
+
+Mutation-checked: +2/+2 fails the toughness assertion; charging {2}{W} for the flashback fails
+the cost sweep by name.
+
+### Changes made
+None — code and coverage were both right.
