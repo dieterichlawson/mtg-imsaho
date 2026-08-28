@@ -40,3 +40,24 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:32
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Zombie
+**P/T**: 2/2
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/walking_corpse.rs` matches: {1}{B}, Zombie, 2/2, no text, no hooks.
+
+### Tricky interactions checked
+- True vanilla whose Zombie subtype does a lot of fixture work across the suite: Rooftop Storm's {0} cast, Diregraf Captain-style lords, Elite Inquisitor's protection, Grave Bramble's damage-arm test, and the skaab exile fuel all read it through the shared accessor. Pinned by the vanilla table.
+
+### Test coverage
+- All printed characteristics: `mtg-engine/tests/cards_vanilla_and_keywords.rs` `vanilla_creatures_have_their_printed_characteristics`
+- Extensive incidental coverage as the stock Zombie fixture (`cards_rule_modifiers.rs`, `cards_graveyard_interaction.rs`, `ability_target_protection.rs`, ...).
+- No rulings on Scryfall for this card.
+
+Mutation check: emptying `subtypes` fails the table ("Walking Corpse is a Zombie"). Bites.

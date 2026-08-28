@@ -258,4 +258,4 @@ bugs but it is not this. This list is the per-card pass.
 | x | Riot Devils | `riot_devils.rs` | 22 | 1 | 0 |
 | x | Rotting Fensnake | `rotting_fensnake.rs` | 22 | 1 | 0 |
 | x | Thraben Purebloods | `thraben_purebloods.rs` | 22 | 1 | 0 |
-|   | Walking Corpse | `walking_corpse.rs` | 22 | 1 | 0 |
+| x | Walking Corpse | `walking_corpse.rs` | 22 | 1 | 0 |
