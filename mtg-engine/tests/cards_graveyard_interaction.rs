@@ -100,6 +100,108 @@ fn ghoulraiser_returns_zombie_from_graveyard() {
     assert_eq!(new_state.get_object(zombie).unwrap().zone, Zone::Hand);
 }
 
+/// Put a Ghoulraiser onto the battlefield and let its enters trigger resolve.
+fn ghoulraiser_enters(state: &mut mtg_engine::state::GameState,
+                      reg: &mtg_engine::cards::CardRegistry) -> ObjectId {
+    let raiser = named_permanent(state, reg, "Ghoulraiser", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: raiser, controller: P0,
+    });
+    triggers::process_triggers(state, reg);
+    raiser
+}
+
+/// "return a **Zombie card**" — the restriction, in both of its parts. The
+/// existing test puts only a Zombie in the graveyard, so an implementation
+/// that returned any card at all passes it.
+#[test]
+fn ghoulraiser_returns_only_a_zombie_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let not_a_zombie = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    // CR 109.1: a token in a graveyard is not a card, however Zombie it is.
+    let token = *state.create_token_with_subtypes(
+        "Zombie Token", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+        vec![], vec!["Zombie".into()], &reg)
+        .first().expect("token created");
+    state.move_object(token, Zone::Graveyard, &reg);
+
+    ghoulraiser_enters(&mut state, &reg);
+
+    assert_eq!(state.get_object(not_a_zombie).unwrap().zone, Zone::Graveyard,
+        "a Bear is not a Zombie card");
+    assert_eq!(state.get_object(token).map(|o| o.zone), Some(Zone::Graveyard),
+        "and a Zombie token is not a Zombie *card*");
+    assert!(state.objects_in_zone(Zone::Hand, P0).is_empty(),
+        "so nothing came back at all");
+}
+
+/// A Ghoulraiser that died with its own trigger on the stack is itself a
+/// Zombie card in that graveyard, so it is one of the candidates. The card's
+/// comment says so; nothing checked it — the removal-in-response test has a
+/// second Zombie sitting there to be found instead.
+#[test]
+fn a_dead_ghoulraiser_can_return_itself() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let raiser = named_permanent(&mut state, &reg, "Ghoulraiser", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: raiser, controller: P0,
+    });
+    triggers::collect_triggers(&mut state, &reg);
+    // Removal resolves first: the Ghoulraiser is in the graveyard, and it is
+    // the only Zombie card there.
+    state.move_object(raiser, Zone::Graveyard, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(raiser).unwrap().zone, Zone::Hand,
+        "the only Zombie card in the graveyard was the Ghoulraiser itself");
+}
+
+/// "at random" — with more than one candidate the choice has to vary. The
+/// suite-wide guard only checks that this card reaches an RNG at all.
+#[test]
+fn ghoulraiser_picks_at_random_among_several_zombies() {
+    let reg = registry();
+    let mut seen = std::collections::HashSet::new();
+
+    for _ in 0..40 {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let candidates: Vec<ObjectId> = ["Walking Corpse", "Diregraf Ghoul", "Makeshift Mauler"]
+            .iter()
+            .map(|n| named_card_in_graveyard(&mut state, &reg, n, P0))
+            .collect();
+
+        ghoulraiser_enters(&mut state, &reg);
+
+        let returned: Vec<ObjectId> = candidates.iter().copied()
+            .filter(|c| state.get_object(*c).unwrap().zone == Zone::Hand)
+            .collect();
+        assert_eq!(returned.len(), 1, "exactly one card comes back, not all of them");
+        seen.insert(state.get_object(returned[0]).unwrap().name.clone());
+    }
+
+    assert!(seen.len() > 1,
+        "40 entries always returned the same Zombie, so the choice is not \
+         random; saw {seen:?}");
+}
+
+/// An empty graveyard, and one with no Zombie cards in it, both mean the
+/// trigger does as much as it can — which is nothing — without erroring.
+#[test]
+fn ghoulraiser_with_nothing_to_return_does_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let raiser = ghoulraiser_enters(&mut state, &reg);
+
+    assert_eq!(state.get_object(raiser).unwrap().zone, Zone::Battlefield);
+    assert!(state.objects_in_zone(Zone::Hand, P0).is_empty(),
+        "an empty graveyard returns nothing");
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Caravan Vigil
 // ═══════════════════════════════════════════════════════════════════
