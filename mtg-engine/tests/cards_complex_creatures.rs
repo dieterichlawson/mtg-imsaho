@@ -1653,6 +1653,10 @@ fn moldgraf_monstrosity_returns_creatures_on_death() {
     let gy2 = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(gy2).unwrap().name = "Creature 2".into();
     state.move_object(gy2, Zone::Graveyard, &reg);
+    // A non-creature card in the same graveyard. "two CREATURE cards" was never
+    // a claim this test could fail while everything there was a creature:
+    // returning any card at all passed the whole workspace.
+    let gy_noncreature = named_card_in_graveyard(&mut state, &reg, "Doom Blade", P0);
 
     // Die for real — the trigger resolves with the card already in the
     // graveyard, which is the only place "exile it" can apply.
@@ -1668,6 +1672,9 @@ fn moldgraf_monstrosity_returns_creatures_on_death() {
     // Both graveyard creatures should be on the battlefield.
     assert_eq!(state.get_object(gy1).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(gy2).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(gy_noncreature).unwrap().zone, Zone::Graveyard,
+        "'two creature cards' — the instant stays where it is, and it is not \
+         one of the two that came back");
 }
 
 // ── Liliana of the Veil ──────────────────────────────────────────
