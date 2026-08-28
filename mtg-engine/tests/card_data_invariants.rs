@@ -1256,3 +1256,59 @@ fn oracle_text_says_what_scryfall_says() {
         "{} card face(s) state oracle text the fetched cache disagrees with:\n\n{}\n",
         offenders.len(), offenders.join("\n\n"));
 }
+
+/// "at random" is a rules instruction, not flavour: CR 104.3c and the shuffle
+/// rules treat a random choice as genuinely random, and a player may not be
+/// able to know or influence it. An implementation that picks the first
+/// eligible object satisfies every ordinary test for the card — the tests set
+/// up one candidate, so a fixed choice and a random one are indistinguishable
+/// — and only shows up as a game that always makes the same "random" pick.
+///
+/// So: if a card's own oracle text says "at random", its file has to reach for
+/// an RNG somewhere. That is a weak check on its own, but it is the one that
+/// catches the silent case, and the per-card tests check the distribution.
+#[test]
+fn a_card_that_says_at_random_actually_randomizes() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        // The oracle_text field is itself checked against Scryfall by the card
+        // data guards, so keying off it does not launder a wrong assumption.
+        let says_at_random = text.lines().any(|l| {
+            let c = l.trim_start();
+            !c.starts_with("//") && c.contains("oracle_text") && c.contains("at random")
+        });
+        if !says_at_random {
+            continue;
+        }
+        let randomizes = ["shuffle(", "choose(", "choose_multiple(", "gen_range", "gen_bool"]
+            .iter()
+            .any(|needle| text.lines().any(|l| {
+                let c = l.trim_start();
+                !c.starts_with("//") && c.contains(needle)
+            }));
+        if !randomizes {
+            offenders.push(name);
+        }
+    }
+
+    assert!(offenders.is_empty(),
+        "{} card(s) say \"at random\" in their oracle text but never reach for \
+         an RNG:\n  {}\n\n\
+         A fixed choice is not a random one, and no single-candidate test can \
+         tell the two apart.",
+        offenders.len(), offenders.join("\n  "));
+}
