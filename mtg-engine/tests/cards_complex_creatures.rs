@@ -2215,11 +2215,14 @@ fn essence_does_not_override_opponent_creatures() {
 fn mirror_mad_phantasm_mills_to_find_itself() {
     let reg = registry();
 
-    // Several runs, because a single shuffle could put the Phantasm on top and
-    // mill nothing at all.
+    // Twenty shuffles, one per seed, because a single shuffle could put the
+    // Phantasm on top and mill nothing at all. Naming the seeds is what makes
+    // "at least one of these milled something" a fact about the card rather
+    // than a coin toss the test happens to win.
     let mut saw_a_mill = false;
-    for _ in 0..20 {
+    for seed in 0..20u64 {
         let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
         let phantasm = named_permanent(&mut state, &reg, "Mirror-Mad Phantasm", P0);
 
         let library: Vec<_> = ["Grizzly Bears", "Lightning Bolt", "Doom Blade", "Divination"]
@@ -2253,7 +2256,7 @@ fn mirror_mad_phantasm_mills_to_find_itself() {
         assert!(!still_in_library.contains(&phantasm),
             "the Phantasm left the library for the battlefield");
     }
-    assert!(saw_a_mill, "20 shuffles never once put a card above the Phantasm");
+    assert!(saw_a_mill, "none of the 20 seeded shuffles put a card above the Phantasm");
 }
 
 /// Scryfall ruling (2011-09-22): "You can only activate the ability if you
@@ -2570,102 +2573,144 @@ fn trigger_does_not_fire_on_combat_damage_to_player() {
         "Should NOT trigger on combat damage to player");
 }
 
-/// The `on_deals_combat_damage_to_creature` hook calls `try_destroy` on win.
+/// "Flip a coin. If you win the flip, destroy that creature." Both outcomes,
+/// named rather than sampled: the game's randomness lives on `GameState`, so
+/// a test says which way the coin went.
+///
+/// This used to run the hook fifty times in a loop and assert that at least
+/// one run destroyed something — a claim about the coin, not about the card.
 #[test]
-fn on_deals_combat_damage_to_creature_calls_destroy() {
+fn creepy_doll_destroys_the_creature_when_it_wins_the_flip() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
 
-    // Call the hook directly many times to verify it can destroy.
-    // (Due to randomness, we call it many times and check that at least one destroys.)
-    let card_id = state.get_object(doll).unwrap().card_id;
-    let behavior = reg.get(card_id).unwrap();
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(target),
+        amount: 1,
+    });
+    rig_next_coin_flip(&mut state, true);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
-    let mut any_destroyed = false;
-    for _ in 0..50 {
-        let mut test_state = state.clone();
-        behavior.on_deals_combat_damage_to_creature(&mut test_state, doll, target, 1, &reg);
-        if test_state.get_object(target).is_some_and(|o| o.zone != Zone::Battlefield) {
-            any_destroyed = true;
-            break;
-        }
-    }
-    assert!(any_destroyed, "Creepy Doll should eventually destroy the target creature");
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Graveyard,
+        "a 3/3 survives one damage; the coin is what killed it");
+}
+
+#[test]
+fn creepy_doll_destroys_nothing_when_it_loses_the_flip() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(target),
+        amount: 1,
+    });
+    rig_next_coin_flip(&mut state, false);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Battlefield);
+}
+
+/// CR 113.7a: the ability is on the stack and no longer the Doll's problem.
+/// Indestructible does not make the Doll unsacrificeable — Grimgrin eats one
+/// at instant speed — and the ability resolves regardless.
+#[test]
+fn creepy_dolls_flip_happens_even_if_the_doll_is_gone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(target),
+        amount: 1,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    // Sacrificed in response, with its trigger already on the stack.
+    mtg_engine::destruction::sacrifice(&mut state, doll, &reg);
+    rig_next_coin_flip(&mut state, true);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Graveyard,
+        "the ability exists independently of its source");
+}
+
+/// Ruling: "If the combat damage Creepy Doll deals to a creature is lethal,
+/// you'll still flip a coin. If the creature is still on the battlefield
+/// (perhaps because it regenerated), it could be destroyed a second time."
+///
+/// So the flip is not skipped for a creature that is already dying, and the
+/// destroy it produces is a *second* destruction — one a second regeneration
+/// shield would have to answer separately.
+#[test]
+fn creepy_doll_can_destroy_a_creature_that_regenerated_from_its_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 2, 1);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
+
+    // It took the Doll's damage and regenerated from it: one shield spent,
+    // damage cleared, still on the battlefield.
+    state.get_object_mut(target).unwrap().regeneration_shields = 1;
+    mtg_engine::destruction::try_destroy(&mut state, target, &reg);
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Battlefield,
+        "test setup: it regenerated");
+    assert_eq!(state.get_object(target).unwrap().regeneration_shields, 0);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(target),
+        amount: 1,
+    });
+    rig_next_coin_flip(&mut state, true);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Graveyard,
+        "the trigger's destroy is a second one, and there is no shield left");
+}
+
+/// Indestructible answers the trigger's destroy like any other (CR 702.12b),
+/// and the log has to say so rather than announcing a kill that did not happen.
+#[test]
+fn creepy_doll_cannot_destroy_an_indestructible_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let other_doll = named_permanent(&mut state, &reg, "Creepy Doll", P1);
+    attacks_blocked_by(&mut state, doll, P1, &[other_doll]);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(other_doll),
+        amount: 1,
+    });
+    rig_next_coin_flip(&mut state, true);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(other_doll).unwrap().zone, Zone::Battlefield);
+    assert!(state.game_log.iter().any(|e| e.message.contains("could not destroy")),
+        "the log says what happened, not what was attempted");
 }
 
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
 
-/// Bug: When Creepy Doll deals lethal combat damage to a creature
-/// AND wins the coin flip, the creature should be destroyed by the
-/// triggered ability even if it could regenerate from the lethal damage.
-/// The ruling says these are separate events.
-/// Note: This is hard to test deterministically due to the coin flip.
-/// We test the simpler case: Creepy Doll's trigger fires even when
-/// the creature already has lethal damage.
-#[test]
-fn bug_creepy_doll_trigger_with_lethal_damage() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let doll = named_permanent(&mut state, &registry, "Creepy Doll", P0);
-    let target = ready_creature(&mut state, P1, 2, 1); // 1 toughness, will take lethal from 1 dmg
-
-    // Simulate combat damage: Doll deals 1 to target (lethal for 1 toughness)
-    if let Some(obj) = state.get_object_mut(target) {
-        obj.damage_marked = 1;
-        obj.damaged_by.push(doll);
-    }
-
-    // Give target a regeneration shield (to survive lethal damage)
-    if let Some(obj) = state.get_object_mut(target) {
-        obj.regeneration_shields = 1;
-    }
-
-    // The trigger should still fire (it's a separate "destroy" effect)
-    let behavior = registry.get(state.get_object(doll).unwrap().card_id).unwrap();
-    behavior.on_deals_combat_damage_to_creature(&mut state, doll, target, 1, &registry);
-
-    // After the trigger (which calls try_destroy on a coin flip win),
-    // the creature may survive (regeneration absorbs the destroy) or die.
-    // The key question is whether the trigger FIRES at all — it should.
-    // We can't control the coin flip, but we can verify the trigger ran
-    // by checking if try_destroy was called (regeneration shield consumed).
-    let _shields_after = state.get_object(target).unwrap().regeneration_shields;
-
-    // If the coin flip was won AND try_destroy was called, the shield is consumed.
-    // If the coin flip was lost, shields remain at 1.
-    // Either way, the trigger should have fired. We verify by running SBAs
-    // and checking the creature survived via regeneration.
-    // Run the trigger multiple times to get at least one coin flip win.
-    // If try_destroy is called on a win, the regeneration shield is consumed.
-    // We reset and retry until we get a win (statistically guaranteed in ~10 tries).
-    let mut won_at_least_once = false;
-    for _ in 0..20 {
-        // Reset target state
-        if let Some(obj) = state.get_object_mut(target) {
-            obj.regeneration_shields = 1;
-            obj.damage_marked = 1;
-            obj.zone = Zone::Battlefield;
-        }
-
-        behavior.on_deals_combat_damage_to_creature(&mut state, doll, target, 1, &registry);
-
-        let shields = state.get_object(target).unwrap().regeneration_shields;
-        if shields == 0 {
-            // Coin flip was won, try_destroy was called, regeneration was consumed
-            won_at_least_once = true;
-            break;
-        }
-    }
-
-    assert!(won_at_least_once,
-        "After 20 attempts, Creepy Doll should have won at least one coin flip and called try_destroy");
-}
 
 // -------------------------------------------------------------------------
 // Gutter Grime — the rest
