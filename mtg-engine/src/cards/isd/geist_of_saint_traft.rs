@@ -36,7 +36,7 @@ impl CardBehavior for GeistOfSaintTraft {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
         let Some(source_card_id) = state.get_object(self_id).map(|o| o.card_id) else { return };
 
@@ -52,24 +52,7 @@ impl CardBehavior for GeistOfSaintTraft {
             registry,
         );
 
-        // "that's tapped and attacking" — attacking the player Geist is
-        // attacking, which the trigger already knows. Re-deriving it as
-        // `state.opponent(controller)` is the same answer only while there are
-        // exactly two players and no planeswalkers to attack.
-        let defender = attack.defending_player;
-        for token_id in token_ids {
-            // "tapped and attacking" — the token arrives that way; nothing
-            // tapped it.
-            state.arrives_tapped(token_id);
-            if let Some(obj) = state.get_object_mut(token_id) {
-                obj.summoning_sick = false; // It's attacking, so summoning sickness doesn't matter.
-            }
-
-            // Add the token to combat as an attacker.
-            if let Some(ref mut combat) = state.combat {
-                combat.attackers.insert(token_id, defender);
-            }
-
+        for &token_id in &token_ids {
             // Register a delayed triggered ability (CR 603.7) to exile the
             // Angel at end of combat. It will be drained onto the stack by
             // triggers::collect_triggers on StepStarted { EndCombat }, giving
@@ -82,6 +65,16 @@ impl CardBehavior for GeistOfSaintTraft {
                 description: "exile the Angel token".into(),
             });
         }
+
+        // "that's tapped and attacking" — CR 508.4b, and this card's
+        // 2020-08-07 ruling: "You choose which player or planeswalker the
+        // Angel token is attacking. It doesn't have to be attacking the same
+        // player or planeswalker that Geist of Saint Traft is attacking." The
+        // shared helper asks when there is a real choice (another opponent, or
+        // a planeswalker an opponent controls) and sends the Angel at the only
+        // opponent silently when there is not.
+        crate::cards::helpers::tokens_enter_combat_attacking(
+            state, self_id, controller, &token_ids, registry);
 
         state.log(crate::state::LogLevel::Event,
             "Geist of Saint Traft: created a 4/4 Angel token tapped and attacking".into());

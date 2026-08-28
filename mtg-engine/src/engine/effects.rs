@@ -285,6 +285,61 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // another awaiting_action prompt for the next target choice).
             crate::triggers::process_pending_trigger_pushes(state, registry);
         }
+        (chosen, PendingEffect::TokenAttacks { token_id, remaining, source_id }) => {
+            // CR 508.4b: send a token that entered the battlefield attacking
+            // at the player or planeswalker its controller chose.
+            let token_name = state.obj_name(*token_id);
+            match chosen {
+                Target::Player(pid) => {
+                    if let Some(combat) = &mut state.combat {
+                        combat.attackers.insert(*token_id, *pid);
+                    }
+                    state.log(LogLevel::Event,
+                        format!("{token_name} is attacking p{}", pid.0));
+                }
+                Target::Object(walker_id) => {
+                    // Attacking a planeswalker: the attacker still defends
+                    // against the walker's controller (CR 508.1a), and the
+                    // walker is recorded in `planeswalker_defenders`, which is
+                    // where the combat damage step looks.
+                    let walker_controller = state.get_object(*walker_id).map(|o| o.controller);
+                    let walker_name = state.obj_name(*walker_id);
+                    if let (Some(wc), Some(combat)) = (walker_controller, state.combat.as_mut()) {
+                        combat.attackers.insert(*token_id, wc);
+                        combat.planeswalker_defenders.insert(*token_id, *walker_id);
+                    }
+                    state.log(LogLevel::Event,
+                        format!("{token_name} is attacking {walker_name}"));
+                }
+                Target::Illegal => {}
+            }
+            // One choice per token (the rulings' "each token"): raise the
+            // next. No player receives priority between these prompts, so the
+            // option list cannot have changed, but it is recomputed rather
+            // than carried. A single-option board auto-applies straight back
+            // into this arm, so the whole chain runs silently there.
+            if let Some((&next, rest)) = remaining.split_first() {
+                if let Some(controller) = state.get_object(next).map(|o| o.controller) {
+                    let options =
+                        crate::cards::helpers::token_attack_options(state, controller, registry);
+                    let source_name = state.obj_name(*source_id);
+                    crate::cards::helpers::present_target_choice(
+                        state,
+                        *source_id,
+                        controller,
+                        options,
+                        crate::state::PendingEffect::TokenAttacks {
+                            token_id: next,
+                            remaining: rest.to_vec(),
+                            source_id: *source_id,
+                        },
+                        &format!("{source_name}: choose which player or planeswalker the token is attacking"),
+                        false,
+                        registry,
+                    );
+                }
+            }
+        }
         _ => {}
     }
 }

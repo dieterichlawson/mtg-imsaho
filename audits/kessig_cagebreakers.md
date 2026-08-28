@@ -149,3 +149,34 @@ Source restored from `/tmp/kc2.bak` after each.
 ### Suite
 
 `cargo test --workspace --no-fail-fast` exit 0, 1468 passing (was 1467). `cargo check --workspace --all-targets` clean, zero warnings.
+
+## Follow-up — 2026-08-28 — the deferred token attack-target choice, implemented
+
+**Status**: ISSUE (fixed) — the "Documented, not implemented" ruling-2 entry
+is closed.
+
+The full audit recorded ruling 2 — "You choose which player or planeswalker
+each token is attacking as it's created" — as "the identical gap recorded in
+the Geist of Saint Traft audit... Deferred there and deferred here, so the two
+land together." They land here: both cards now route through
+`helpers::tokens_enter_combat_attacking` (CR 508.4b), which asks the
+controller once per token when there is a real choice (another opponent, or a
+planeswalker an opponent controls) and sends every token at the only opponent
+silently when there is not. The per-token chain runs through
+`PendingEffect::TokenAttacks`; a walker choice records the token in
+`planeswalker_defenders` against the walker's controller (CR 508.1a). See the
+Geist of Saint Traft entry of the same date for the mechanism.
+
+### Test coverage
+- Two Wolves, one sent at Liliana and one at the player, independently:
+  `planeswalker_combat.rs::each_kessig_wolf_chooses_its_own_defender` (new)
+- Two live opponents prompt per token:
+  `cards_complex_creatures.rs::kessig_wolves_attack_the_cagebreakers_defender_and_not_just_the_next_player`
+  (rewritten to answer the prompt)
+- Two-player, no walkers: no prompt — the pre-existing tests pass unchanged.
+
+### Mutations run
+- Severing the per-token chain (first Wolf asked, rest silently skipped):
+  fails `each_kessig_wolf_chooses_its_own_defender` and only it.
+- Walker choice without the `planeswalker_defenders` entry: fails both new
+  walker tests.

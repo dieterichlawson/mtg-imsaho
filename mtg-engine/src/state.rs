@@ -3223,6 +3223,16 @@ pub enum PendingEffect {
     CardEffect { source_id: ObjectId, key: String },
 
     AttachTargetToPendingTrigger,
+
+    /// CR 508.4b: a token put onto the battlefield attacking was never
+    /// declared as an attacker; its controller chooses which player or
+    /// planeswalker it is attacking as it's created. The chosen target is a
+    /// `Target::Player` (an opponent) or a `Target::Object` (a planeswalker an
+    /// opponent controls). `remaining` carries the tokens still to be asked
+    /// about — a multi-token creation (Kessig Cagebreakers) chains one choice
+    /// per token, per its ruling ("You declare which player or planeswalker
+    /// **each** token is attacking"). `source_id` names the prompt.
+    TokenAttacks { token_id: ObjectId, remaining: Vec<ObjectId>, source_id: ObjectId },
 }
 
 /// Game result.

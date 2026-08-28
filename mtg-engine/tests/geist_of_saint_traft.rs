@@ -255,6 +255,7 @@ fn the_angel_token_attacks_whoever_geist_is_attacking() {
 /// defender sends the Angel at the wrong player.
 #[test]
 fn the_angel_attacks_geists_defender_and_not_just_the_next_player() {
+    use mtg_engine::actions::{Action, Target};
     use mtg_engine::cards::AttackInfo;
     use mtg_engine::ids::PlayerId;
     const P2: PlayerId = PlayerId(2);
@@ -278,12 +279,31 @@ fn the_angel_attacks_geists_defender_and_not_just_the_next_player() {
     reg.get(card_id).unwrap()
         .on_attacks(&mut state, geist, AttackInfo::new(geist, P2), &[], &reg);
 
+    // With two live opponents there is a real choice, so the ruling's first
+    // sentence applies: "You choose which player or planeswalker the Angel
+    // token is attacking." The controller is asked rather than the engine
+    // assuming Geist's own defender.
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player, choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "the token's controller chooses");
+            options.clone()
+        }
+        other => panic!("expected an attack-target choice, got {other:?}"),
+    };
+    assert!(options.contains(&Target::Player(P1)) && options.contains(&Target::Player(P2)),
+        "both opponents are legal; got {options:?}");
+
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Player(P2))),
+    }, &reg);
+
     let angel = state.objects.values()
         .find(|o| o.is_token && o.name.contains("Angel") && o.controller == P0)
         .map(|o| o.id)
         .expect("Geist should have spawned an Angel token");
 
     assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P2),
-        "the Angel attacks whoever Geist is attacking, which the trigger \
-         already knows — not whoever happens to be the next player");
+        "the Angel attacks the player its controller chose");
 }

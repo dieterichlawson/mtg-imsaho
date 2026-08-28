@@ -33,7 +33,7 @@ impl CardBehavior for KessigCagebreakers {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
         // Count creature cards in graveyard.
         let creature_count = state.objects_in_zone(Zone::Graveyard, controller)
@@ -46,36 +46,27 @@ impl CardBehavior for KessigCagebreakers {
         if creature_count == 0 {
             return;
         }
-        // "tapped and attacking" — attacking whoever this creature was declared
-        // attacking, which the trigger already carries. Re-deriving it from
-        // `state.combat` is wrong the moment the Cagebreakers has left combat
-        // before the trigger resolves (it can be killed in response), and the
-        // `state.opponent(controller)` fallback invents a defender that is only
-        // right in a two-player game with no planeswalkers.
-        let defending_player = attack.defending_player;
-
+        let mut all_tokens: Vec<crate::ids::ObjectId> = Vec::new();
         for _ in 0..creature_count {
-            let token_ids = state.create_token_with_subtypes(
+            all_tokens.extend(state.create_token_with_subtypes(
                 "", controller, 2, 2,
                 vec![Color::Green],
                 vec![CardType::Creature],
                 vec![],
                 vec!["Wolf".into()],
                 registry,
-            );
-            // Tapped and attacking.
-            for token_id in token_ids {
-                // "a 2/2 green Wolf creature token that's tapped and
-                // attacking" — the token arrives that way; nothing tapped it.
-                state.arrives_tapped(token_id);
-                if let Some(obj) = state.get_object_mut(token_id) {
-                    obj.summoning_sick = false;
-                }
-                if let Some(combat) = &mut state.combat {
-                    combat.attackers.insert(token_id, defending_player);
-                }
-            }
+            ));
         }
+
+        // "a 2/2 green Wolf creature token that's tapped and attacking" —
+        // CR 508.4b, and this card's 2011-09-22 ruling: "You declare which
+        // player or planeswalker each token is attacking as you put it onto
+        // the battlefield. It doesn't have to be the same player or
+        // planeswalker Kessig Cagebreakers is attacking." The shared helper
+        // asks once per token when there is a real choice and sends every Wolf
+        // at the only opponent silently when there is not.
+        crate::cards::helpers::tokens_enter_combat_attacking(
+            state, self_id, controller, &all_tokens, registry);
         state.log(crate::state::LogLevel::Event,
             format!("Kessig Cagebreakers created {creature_count} Wolf tokens tapped and attacking"));
     }

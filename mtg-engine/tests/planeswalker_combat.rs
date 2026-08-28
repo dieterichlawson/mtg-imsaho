@@ -209,3 +209,113 @@ fn illegal_walker_attacks_are_dropped_on_submit() {
 fn loyalty_of(state: &mtg_engine::state::GameState, id: mtg_engine::ids::ObjectId) -> u32 {
     state.get_object(id).unwrap().counters.get(&CounterType::Loyalty).copied().unwrap_or(0)
 }
+
+// ── Tokens created "tapped and attacking" choose their defender ──────
+//
+// CR 508.4b, and the matching rulings on both cards (Geist of Saint Traft
+// 2020-08-07, Kessig Cagebreakers 2011-09-22): "You choose which player or
+// planeswalker the token is attacking. It doesn't have to be attacking the
+// same player or planeswalker [the creature] is attacking." With a single
+// opponent and no planeswalkers there is only one legal choice and nothing is
+// asked — which is what every pre-planeswalker test of these cards exercises.
+
+fn answer_attack_target(
+    state: &mtg_engine::state::GameState,
+    chosen: mtg_engine::actions::Target,
+    reg: &mtg_engine::cards::CardRegistry,
+) -> mtg_engine::state::GameState {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => assert!(options.contains(&chosen), "{chosen:?} not among {options:?}"),
+        other => panic!("expected an attack-target choice, got {other:?}"),
+    }
+    mtg_engine::engine::submit_action(state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(chosen)),
+    }, reg)
+}
+
+/// Geist's Angel may be sent at a planeswalker the defending player controls,
+/// and its combat damage then removes loyalty rather than life.
+#[test]
+fn geists_angel_can_be_sent_at_a_planeswalker() {
+    use mtg_engine::actions::Target;
+    use mtg_engine::cards::AttackInfo;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+    attacks_unblocked(&mut state, geist, P1);
+
+    let card_id = state.get_object(geist).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
+
+    // The walker makes it a real choice: the player or their planeswalker.
+    let state = answer_attack_target(&state, Target::Object(liliana), &reg);
+    let mut state = state;
+
+    let angel = find_token_named(&state, "Angel Token").expect("the Angel exists");
+    assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P1),
+        "the Angel still defends against the walker's controller (CR 508.1a)");
+    assert_eq!(
+        state.combat.as_ref().and_then(|c| c.planeswalker_defenders.get(&angel).copied()),
+        Some(liliana),
+        "and the walker is what it is attacking");
+
+    combat::deal_combat_damage(&mut state, &reg);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, 18,
+        "only Geist's 2 reached the player; the Angel's 4 went to the walker");
+    assert_ne!(state.get_object(liliana).map(|o| o.zone), Some(Zone::Battlefield),
+        "3 loyalty - 4 damage: Liliana died to the loyalty SBA");
+}
+
+/// Kessig Cagebreakers' ruling says "each token": with two Wolves and a
+/// walker on the defending side, the controller is asked once per Wolf and
+/// the answers are independent.
+#[test]
+fn each_kessig_wolf_chooses_its_own_defender() {
+    use mtg_engine::actions::Target;
+    use mtg_engine::cards::AttackInfo;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let cage = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+    for _ in 0..2 {
+        let c = ready_creature(&mut state, P0, 2, 2);
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+    attacks_unblocked(&mut state, cage, P1);
+
+    let card_id = state.get_object(cage).unwrap().card_id;
+    reg.get(card_id).unwrap()
+        .on_attacks(&mut state, cage, AttackInfo::new(cage, P1), &[], &reg);
+
+    // First Wolf at the walker, second at the player.
+    let state = answer_attack_target(&state, Target::Object(liliana), &reg);
+    let state = answer_attack_target(&state, Target::Player(P1), &reg);
+
+    assert!(state.awaiting_action.is_none(), "two tokens, two answers, done");
+    let combat = state.combat.as_ref().unwrap();
+    let wolves: Vec<_> = state.objects.values()
+        .filter(|o| o.is_token && o.name == "Wolf Token")
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(wolves.len(), 2);
+    assert!(wolves.iter().all(|w| combat.attackers.get(w) == Some(&P1)),
+        "both Wolves defend against the walker's controller");
+    let at_walker: Vec<_> = wolves.iter()
+        .filter(|w| combat.planeswalker_defenders.get(w) == Some(&liliana))
+        .collect();
+    assert_eq!(at_walker.len(), 1,
+        "exactly one Wolf is attacking Liliana; the other attacks the player");
+}

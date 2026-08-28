@@ -338,6 +338,77 @@ pub fn present_optional_target_choice(
     present_target_choice(state, source_id, controller, targets, effect, description, true, registry);
 }
 
+/// The players and planeswalkers a token created "tapped and attacking" may
+/// be sent at (CR 508.4b): each opponent of the token's controller still in
+/// the game, and each planeswalker such an opponent controls. This is not
+/// targeting — hexproof and protection say nothing about being attacked — so
+/// nothing here consults `can_be_targeted_by`.
+pub fn token_attack_options(
+    state: &GameState,
+    controller: PlayerId,
+    registry: &CardRegistry,
+) -> Vec<Target> {
+    let mut options: Vec<Target> = state
+        .all_objects_in_zone(Zone::Battlefield)
+        .iter()
+        .filter(|o| {
+            o.controller != controller
+                && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
+        })
+        .map(|o| Target::Object(o.id))
+        .collect();
+    for p in &state.players {
+        if p.id != controller && !p.lost {
+            options.push(Target::Player(p.id));
+        }
+    }
+    stable(options)
+}
+
+/// Put freshly created tokens onto the battlefield tapped and attacking
+/// (Geist of Saint Traft's Angel, Kessig Cagebreakers' Wolves).
+///
+/// CR 508.4b, and both cards' 2011/2020 rulings: the tokens were never
+/// *declared* as attackers — no `AttackersDeclared` event, no attack triggers,
+/// no `attacked_on_turn` stamp — and their controller chooses which player or
+/// planeswalker each one is attacking as it is created. The choice runs
+/// through `present_target_choice`, whose mandatory single-option auto-apply
+/// means a two-player board with no planeswalkers asks nothing and sends every
+/// token at the only opponent — the pre-planeswalker behaviour, now as the
+/// degenerate case of the rule rather than the whole of it. With several legal
+/// options the controller is asked once per token, chained through
+/// `PendingEffect::TokenAttacks`.
+pub fn tokens_enter_combat_attacking(
+    state: &mut GameState,
+    source_id: ObjectId,
+    controller: PlayerId,
+    token_ids: &[ObjectId],
+    registry: &CardRegistry,
+) {
+    let Some((&first, rest)) = token_ids.split_first() else { return };
+    for &token_id in token_ids {
+        // "tapped and attacking" — the token arrives that way; nothing tapped
+        // it. Summoning sickness restricts *declaring* attackers (CR 302.6),
+        // which never happened, so it does not apply.
+        state.arrives_tapped(token_id);
+        if let Some(obj) = state.get_object_mut(token_id) {
+            obj.summoning_sick = false;
+        }
+    }
+    let options = token_attack_options(state, controller, registry);
+    let source_name = state.obj_name(source_id);
+    present_target_choice(
+        state,
+        source_id,
+        controller,
+        options,
+        PendingEffect::TokenAttacks { token_id: first, remaining: rest.to_vec(), source_id },
+        &format!("{source_name}: choose which player or planeswalker the token is attacking"),
+        false,
+        registry,
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Target collection helpers
 //

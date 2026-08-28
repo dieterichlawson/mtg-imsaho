@@ -176,3 +176,47 @@ delayed exile carries its own description, "exile the Angel token".
 
 Suite after: 1461 passing, exit 0, zero warnings.
 
+
+## Follow-up — 2026-08-28 — the deferred token attack-target choice, implemented
+
+**Status**: ISSUE (fixed) — the deferral recorded under ruling 2 is closed.
+
+The full audit recorded: "The ruling's first sentence — *you choose* which
+player or planeswalker the Angel attacks — is not modelled: the card sends it
+at Geist's defender... a chooser would be new plumbing for a case this pool
+cannot reach. Recorded, not built." Planeswalker combat has since been
+implemented (Garruk Relentless and Liliana of the Veil are attackable), so the
+case is reachable and the plumbing now exists.
+
+### What changed
+- `helpers::tokens_enter_combat_attacking` — the shared CR 508.4b mechanism
+  for a token put onto the battlefield tapped and attacking: it arrives
+  tapped, is never declared (no `attacked_on_turn` stamp, no attack triggers),
+  and its controller chooses which player or planeswalker it is attacking.
+  The legal options are every surviving opponent plus every planeswalker an
+  opponent controls (`helpers::token_attack_options`); with exactly one option
+  — a two-player board with no walkers — `present_target_choice`'s mandatory
+  single-option auto-apply asks nothing, so the pre-existing behaviour is the
+  degenerate case of the rule rather than a special case beside it.
+- `PendingEffect::TokenAttacks` carries the chain: one choice per token, the
+  next raised as each is answered, with no priority window in between.
+- A choice of a planeswalker inserts the attacker against the walker's
+  controller (CR 508.1a) and records the walker in `planeswalker_defenders`,
+  which is where the combat damage step already looks.
+- Geist's `on_attacks` no longer reads `attack.defending_player` at all: the
+  answer comes from the choice (or the sole option), not from an assumed
+  default.
+
+### Test coverage
+- The Angel sent at Liliana, loyalty damage, walker dies to the SBA:
+  `planeswalker_combat.rs::geists_angel_can_be_sent_at_a_planeswalker` (new)
+- Two live opponents prompt the controller, who may pick either:
+  `geist_of_saint_traft.rs::the_angel_attacks_geists_defender_and_not_just_the_next_player`
+  (rewritten — it now answers the prompt the ruling requires instead of
+  asserting a default)
+- Two-player, no walkers: no prompt, Angel at the only opponent — the
+  pre-existing tests pass unchanged through the auto-apply path.
+
+### Mutations run
+- Walker choice recorded without the `planeswalker_defenders` entry: fails
+  both new walker tests.

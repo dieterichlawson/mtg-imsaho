@@ -297,10 +297,27 @@ fn kessig_wolves_attack_the_cagebreakers_defender_and_not_just_the_next_player()
     reg.get(card_id).unwrap()
         .on_attacks(&mut state, cage, AttackInfo::new(cage, P2), &[], &reg);
 
+    // With two live opponents there is a real choice, so the ruling applies:
+    // "You declare which player or planeswalker each token is attacking as
+    // you put it onto the battlefield." The controller is asked rather than
+    // the engine assuming the Cagebreakers' own defender.
+    match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player, choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "the token's controller chooses");
+            assert!(options.contains(&Target::Player(P1)) && options.contains(&Target::Player(P2)),
+                "both opponents are legal; got {options:?}");
+        }
+        other => panic!("expected an attack-target choice, got {other:?}"),
+    }
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Player(P2))),
+    }, &reg);
+
     let wolf = find_token_named(&state, "Wolf Token").expect("should have created a Wolf token");
     assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&wolf).copied()), Some(P2),
-        "the Wolf attacks whoever the Cagebreakers is attacking, which the \
-         trigger already knows — not whoever happens to be the next player");
+        "the Wolf attacks the player its controller chose");
 }
 
 // ── Galvanic Juggernaut ──────────────────────────────────────────
