@@ -357,10 +357,15 @@ fn slayer_of_the_wicked_sees_instance_vampire() {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Festerhide Boar's morbid counters are "enters with" -- a replacement
-/// effect. Mentor of the Meek should see the Boar as 5/5 (with counters),
-/// not 3/3 (base). This means Mentor should NOT trigger.
+/// effect (CR 614.1c), so the Boar is 5/5 from the first moment anything can
+/// look at it; there is no window in which it is a 3/3 that then grows.
 /// Oracle: "This creature enters with two +1/+1 counters on it if a
 /// creature died this turn."
+///
+/// (An earlier version of this comment claimed a Mentor of the Meek
+/// interaction, but a 3/3 base is over Mentor's "power 2 or less" either way —
+/// no ETB watcher in this pool can tell 3/3-then-counters from
+/// enters-as-5/5. The effective power at entry is the honest observable.)
 #[test]
 fn festerhide_boar_morbid_counters_visible_to_etb_checks() {
     let reg = registry();

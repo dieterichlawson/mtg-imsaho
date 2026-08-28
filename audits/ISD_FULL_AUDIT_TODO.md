@@ -210,7 +210,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Spare from Evil | `spare_from_evil.rs` | 53 | 2 | 0 |
 | x | Vampiric Fury | `vampiric_fury.rs` | 50 | 2 | 0 |
 | x | Hysterical Blindness | `hysterical_blindness.rs` | 48 | 2 | 0 |
-|   | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |
+| x | Festerhide Boar | `festerhide_boar.rs` | 46 | 2 | 0 |
 |   | Somberwald Spider | `somberwald_spider.rs` | 43 | 2 | 0 |
 |   | Parallel Lives | `parallel_lives.rs` | 42 | 2 | 0 |
 |   | Spider Spawning | `spider_spawning.rs` | 42 | 2 | 0 |
