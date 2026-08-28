@@ -771,10 +771,11 @@ fn x_equals_3_gives_plus_3() {
     assert_eq!(power, 5,
         "Creature should have 2 + 3 = 5 power (got {power})");
 
-    // Check trample keyword.
-    let has_trample = state.until_end_of_turn.iter()
-        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == creature && *keyword == Keyword::Trample));
-    assert!(has_trample, "Creature should have trample");
+    // Asked through the accessor, not by finding the `until_end_of_turn`
+    // entry: the entry existing and the engine honouring it are two different
+    // claims, and only the second is what the card promises.
+    assert!(state.has_keyword(creature, Keyword::Trample, &reg),
+        "Creature should have trample");
 
     // All mana should be spent.
     assert!(state.get_player(P0).mana_pool.is_empty(),
@@ -811,7 +812,60 @@ fn x_equals_0_gives_trample_only() {
     assert_eq!(power, 2, "Creature should still have 2 power with X=0");
 
     // Should still have trample.
-    let has_trample = state.until_end_of_turn.iter()
-        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == creature && *keyword == Keyword::Trample));
-    assert!(has_trample, "Creature should have trample even with X=0");
+    assert!(state.has_keyword(creature, Keyword::Trample, &reg),
+        "Creature should have trample even with X=0");
+}
+
+/// "**Target creature**" — no "you control". An opponent's creature is a legal
+/// target, which is how the card is used to push a blocker through or to make
+/// an opponent's creature trample over its own team in a fight it will lose.
+#[test]
+fn kessig_wolf_run_can_pump_an_opponents_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+
+    let offered = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index: 1, targets, .. }
+            if object_id == wolf_run && targets == vec![Target::Object(theirs)]));
+    assert!(offered, "an opponent's creature is a legal target");
+}
+
+/// CR 608.2b: a target that has left the battlefield is illegal, and the
+/// ability is countered by game rules — no pump, no trample.
+#[test]
+fn kessig_wolf_run_does_nothing_when_its_target_is_gone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+
+    let action = Action::ActivateAbility {
+        object_id: wolf_run,
+        ability_index: 1,
+        targets: vec![Target::Object(creature)],
+        tap_plan: vec![],
+        sacrifice: None,
+        x_value: None,
+        source_card_id: None,
+    };
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    // In response, the creature dies.
+    state.move_object(creature, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::ModifyPT { target, .. }
+        | mtg_engine::state::TemporaryEffect::GrantKeyword { target, .. }
+        if *target == creature)),
+        "the ability is countered, so neither the pump nor the trample is \
+         applied to a creature that is no longer there");
 }
