@@ -59,13 +59,19 @@ impl CardBehavior for NightTerrors {
                     false,
                     registry,
                 );
-                return; // Don't move spell yet — awaiting choice.
+                // Nothing more to do here: the choice is pending, and the
+                // engine leaves the spell on the stack until it is answered.
+                return;
             }
         }
     }
 
-    /// "...exile a nonland card from it." Moving the chosen card to exile and
-    /// finishing this spell's own resolution is Night Terrors' business.
+    /// "...Exile that card." Moving the chosen card is all this does. The
+    /// spell's own trip to the graveyard is the engine's —
+    /// `engine::finish_spell_resolution_if_idle` runs once the choice chain
+    /// empties (CR 608.2m: the graveyard is the last step of resolution). This
+    /// comment used to claim the cleanup as the card's business, which is both
+    /// untrue and the one thing card code must never do.
     fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
         let name = state.obj_name(*id);
