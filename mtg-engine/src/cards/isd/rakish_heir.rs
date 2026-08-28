@@ -31,22 +31,29 @@ impl CardBehavior for RakishHeir {
         }
     }
 
-    fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {
-        // Whenever a Vampire YOU control deals combat damage to a player.
-        // CR 113.7a: the Heir trading with a blocker in the same combat damage
-        // step does not counter this — the Vampire still gets its counter.
-        // CR 608.2g: "you" is the Heir's last known controller. Reading
-        // `o.controller` off the object gave the owner once the Heir had left
-        // the battlefield, which is exactly the case the comment above is
-        // about — a Heir that traded with a blocker in the same damage step
-        // would have compared the attacking Vampire against the wrong player.
+    /// CR 603.2: "whenever a **Vampire you control** deals combat damage to a
+    /// player" is a condition on the event, answered as the damage is dealt.
+    /// Asking it at resolution instead meant every creature's combat damage —
+    /// an opponent's, a non-Vampire's — put a Heir trigger on the stack that
+    /// then did nothing.
+    ///
+    /// CR 608.2g: "you" is the Heir's last known controller. Reading
+    /// `o.controller` off the object gave the owner once the Heir had left the
+    /// battlefield — the case where a Heir trades with a blocker in the same
+    /// combat damage step, and would have compared the attacking Vampire
+    /// against the wrong player.
+    fn should_trigger_on_damage_to_player(&self, state: &GameState, self_id: ObjectId, source_id: ObjectId, _damaged_player: PlayerId, registry: &CardRegistry) -> bool {
         let controller = crate::cards::helpers::controller_of(state, self_id);
-        // The Vampire that dealt the damage has to be one you control, and
-        // still be there for the counter to go on it.
-        let source_is_yours = state.get_object(source_id)
-            .is_some_and(|o| o.zone == Zone::Battlefield && o.controller == controller);
-        if source_is_yours && state.has_subtype(source_id, "Vampire", registry) {
-            // Put a +1/+1 counter on THAT Vampire (the source).
+        state.get_object(source_id).is_some_and(|o| o.controller == controller)
+            && state.has_subtype(source_id, "Vampire", registry)
+    }
+
+    fn on_any_combat_damage_to_player(&self, state: &mut GameState, _self_id: ObjectId, source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
+        // Whether this triggered was settled above. What is left is CR 121.1:
+        // the counter goes on the Vampire only if it is still on the
+        // battlefield. Trading with a blocker in the same combat damage step
+        // costs it the counter; CR 113.7a means the *Heir* trading does not.
+        if state.get_object(source_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
         }
     }
