@@ -57,7 +57,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Brain Weevil | `brain_weevil.rs` | 131 | 4 | 0 |
 | x | Mikaeus, the Lunarch | `mikaeus_the_lunarch.rs` | 131 | 4 | 0 |
 | x | Runechanter's Pike | `runechanters_pike.rs` | 86 | 5 | 0 |
-|   | Claustrophobia | `claustrophobia.rs` | 56 | 5 | 1 |
+| x | Claustrophobia | `claustrophobia.rs` | 56 | 5 | 1 |
 |   | Mentor of the Meek | `mentor_of_the_meek.rs` | 101 | 4 | 1 |
 |   | Splinterfright | `splinterfright.rs` | 71 | 4 | 2 |
 |   | Back from the Brink | `back_from_the_brink.rs` | 120 | 4 | 0 |
