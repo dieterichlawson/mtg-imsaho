@@ -193,7 +193,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Stromkirk Noble | `stromkirk_noble.rs` | 45 | 2 | 1 |
 | x | Unruly Mob | `unruly_mob.rs` | 44 | 2 | 1 |
 | x | Bloodcrazed Neonate | `bloodcrazed_neonate.rs` | 43 | 2 | 1 |
-|   | Mausoleum Guard | `mausoleum_guard.rs` | 43 | 2 | 1 |
+| x | Mausoleum Guard | `mausoleum_guard.rs` | 43 | 2 | 1 |
 |   | Village Cannibals | `village_cannibals.rs` | 43 | 2 | 1 |
 |   | Lumberknot | `lumberknot.rs` | 42 | 2 | 1 |
 |   | Falkenrath Marauders | `falkenrath_marauders.rs` | 41 | 2 | 1 |

@@ -92,7 +92,47 @@ fn creatures_that_leave_spirits_behind_leave_the_right_number() {
         for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit Token") {
             assert_eq!((o.power, o.toughness), (Some(1), Some(1)), "{name}'s Spirits are 1/1");
             assert!(o.keywords.contains(&Keyword::Flying), "{name}'s Spirits fly");
+            // "1/1 **white** **Spirit** creature tokens" — the two halves the
+            // count and the P/T cannot speak for. Colour is what a "destroy
+            // target white creature" would read, and the subtype is what
+            // Urgent Exorcism's "target Spirit" reads.
+            assert_eq!(o.colors, vec![Color::White], "{name}'s Spirits are white");
+            assert!(o.subtypes.iter().any(|s| s == "Spirit"),
+                "{name}'s Spirits are Spirits, not just named like them");
+            assert!(o.card_types.contains(&CardType::Creature),
+                "{name}'s Spirits are creature tokens");
         }
+    }
+}
+
+/// "Create two ... tokens" — under the ability's controller, which CR 608.2g
+/// makes the Guard's LAST KNOWN controller rather than the owner its object
+/// reverts to on the way to the graveyard (CR 400.7, CR 404.3).
+///
+/// The Guard is owned by P1 and controlled by P0, because with the two the
+/// same a test cannot tell those two reads apart. This is the reason the card
+/// calls `controller_of` rather than reading the field.
+#[test]
+fn mausoleum_guard_leaves_its_spirits_to_whoever_controlled_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let guard = named_permanent(&mut state, &reg, "Mausoleum Guard", P0);
+    state.get_object_mut(guard).unwrap().owner = P1;
+
+    kill_by_damage(&mut state, &reg, guard);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(guard).unwrap().zone, Zone::Graveyard,
+        "test premise: the card itself goes to its owner's graveyard");
+    let spirits: Vec<_> = state.objects.values()
+        .filter(|o| o.is_token && o.name == "Spirit Token")
+        .collect();
+    assert_eq!(spirits.len(), 2);
+    for s in spirits {
+        assert_eq!(s.controller, P0,
+            "the tokens are the ability controller's, not the card owner's");
+        assert_eq!(s.owner, P0, "and a token's owner is whoever it was created under (CR 111.2)");
     }
 }
 
