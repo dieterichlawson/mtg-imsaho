@@ -46,6 +46,7 @@ pub fn push_ability(
     ability_index: usize,
     behavior_card_id: CardId,
     targets: &[Target],
+    target_requirement: Option<TargetRequirement>,
 ) {
     let Some(activator) = state.get_object(object_id).map(|o| o.controller) else { return };
     state.stack.push(crate::state::StackEntry::Ability {
@@ -55,6 +56,7 @@ pub fn push_ability(
         targets: targets.to_vec(),
         activator,
         x_value: state.last_activated_x_value,
+        target_requirement,
         sacrificed: state.last_activated_sacrifice,
     });
 }
@@ -302,7 +304,7 @@ impl TriggeredAbilityDef {
 
 /// Typed filter for creature or permanent targeting restrictions.
 /// Used instead of stringly-typed filters for compile-time safety.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TargetFilter {
     /// No additional restriction beyond the base type.
     Any,
@@ -377,7 +379,7 @@ impl std::fmt::Display for TargetFilter {
 }
 
 /// Describes what targets a spell needs when cast.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TargetRequirement {
     /// No targets needed (vanilla creatures, Divination, etc.)
     None,

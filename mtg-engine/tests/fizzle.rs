@@ -697,3 +697,40 @@ fn heretics_punishment_mills_nothing_when_its_target_is_gone() {
         "and no damage is dealt");
 }
 
+
+/// The same for an ability whose card does *not* restate its own targeting
+/// restriction — which is most of them, and was the hole.
+///
+/// Silverchase Fox's "{1}{W}, Sacrifice this creature: Exile target
+/// enchantment" used to guard the target inside its own resolution: the
+/// ability resolved, found the enchantment gone and did nothing. The board
+/// ended up right by the wrong route, and any ability without such a guard did
+/// not even manage that. With the requirement riding on the stack entry, the
+/// engine counters the ability by game rules — and the difference is visible,
+/// because a resolution here would exile the enchantment out of the graveyard.
+#[test]
+fn an_abilitys_declared_requirement_is_rechecked_when_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let fox = named_permanent(&mut state, &reg, "Silverchase Fox", P0);
+    let enchantment = named_permanent(&mut state, &reg, "Glorious Anthem", P1);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1), (ManaType::White, 1)]);
+
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == fox && targets == &[Target::Object(enchantment)]))
+        .expect("the ability, targeting the enchantment");
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+    assert_eq!(state.get_object(fox).unwrap().zone, Zone::Graveyard,
+        "test premise: the Fox is sacrificed as a cost, so its ability list is \
+         gone before the ability resolves");
+
+    // In response, the enchantment is destroyed.
+    state.move_object(enchantment, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(enchantment).unwrap().zone, Zone::Graveyard,
+        "the enchantment is no longer a legal target for \"target enchantment\", \
+         so the ability is countered by game rules and exiles nothing");
+}

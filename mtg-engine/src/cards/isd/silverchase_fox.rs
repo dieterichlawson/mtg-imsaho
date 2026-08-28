@@ -42,12 +42,17 @@ impl CardBehavior for SilverchaseFox {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+        // No zone guard: CR 608.2b is the engine's, and it re-checks the
+        // target against the `PermanentWithFilter` above before this is
+        // called — an enchantment that left the battlefield in response is an
+        // illegal target and the ability is countered by game rules, rather
+        // than resolving and quietly exiling the card out of the graveyard.
+        // The guard used to live here, which made the ability resolve and do
+        // nothing: the right board state by the wrong route.
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                let exiled_name = state.obj_name(*target_id);
-                state.move_object(*target_id, Zone::Exile, registry);
-                state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {exiled_name}"));
-            }
+            let exiled_name = state.obj_name(*target_id);
+            state.move_object(*target_id, Zone::Exile, registry);
+            state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {exiled_name}"));
         }
     }
 }

@@ -497,7 +497,7 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         // Grimgrin's "creature the defending player controls" survived the
         // creature changing controller in response.
         let any_legal = trigger.source.chosen_targets.iter().any(|t| {
-            crate::stack::is_target_legal(state, t, &target_req, controller, registry)
+            crate::stack::is_target_legal(state, t, &target_req, controller, Some(trigger.source.id), registry)
                 && registry.get(card_id)
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });

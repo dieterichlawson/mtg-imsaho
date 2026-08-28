@@ -5,12 +5,12 @@ use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
 /// Check if a target is still legal at resolution time.
-pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
+pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, source_id: Option<crate::ids::ObjectId>, registry: &crate::cards::CardRegistry) -> bool {
     use crate::cards::TargetRequirement;
 
     // ModalChoice: legal if legal under any mode.
     if let TargetRequirement::ModalChoice(ref modes) = target_req {
-        return modes.iter().any(|mode_req| is_target_legal(state, target, mode_req, caster, registry));
+        return modes.iter().any(|mode_req| is_target_legal(state, target, mode_req, caster, source_id, registry));
     }
 
     // TwoTargets: the same shape. This is asked one target at a time, with no
@@ -28,8 +28,8 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
     // (CR 601.2c); what CR 608.2b re-checks is whether the target is still
     // there and still targetable. So: legal under either slot.
     if let TargetRequirement::TwoTargets(ref first, ref second) = target_req {
-        return is_target_legal(state, target, first, caster, registry)
-            || is_target_legal(state, target, second, caster, registry);
+        return is_target_legal(state, target, first, caster, source_id, registry)
+            || is_target_legal(state, target, second, caster, source_id, registry);
     }
 
     // Unwrap nested requirements (UpToTargets — every target shares the inner
@@ -106,7 +106,7 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                         // whose characteristics changed in response (e.g. a
                         // creature that became black vs a Nonblack filter)
                         // is no longer legal (CR 608.2b).
-                        if !crate::engine::matches_target_filter(state, obj, filter, caster, None, registry) {
+                        if !crate::engine::matches_target_filter(state, obj, filter, caster, source_id, registry) {
                             return false;
                         }
                     }
@@ -150,7 +150,7 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, sacrificed } => {
+        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed } => {
             state.stack.pop();
             state.last_activated_x_value = x_value;
             state.last_activated_sacrifice = sacrificed;
@@ -178,10 +178,21 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             // source in response.
             let controller = activator;
             let behavior = registry.get(behavior_card_id);
+            // Three ways a target stops being legal, and the entry now
+            // carries what it needs for all three: it can stop being
+            // targetable at all (hexproof, protection); it can stop
+            // satisfying the requirement the ability declared, which rides on
+            // the stack entry because the source may be gone by now; and it
+            // can stop satisfying whatever the card additionally restated in
+            // `is_valid_target`. Only the first and third were checked, so an
+            // ability whose card restated nothing resolved against a target
+            // that no longer matched its own wording.
             let targets: Vec<Target> = targets.into_iter()
                 .map(|t| match t {
                     Target::Object(id)
                         if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
+                            || !target_requirement.as_ref().is_none_or(|req|
+                                    is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
                             || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) =>
                             Target::Illegal,
                     other => other,
@@ -224,7 +235,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     if !targets.is_empty() {
         let behavior = registry.get(card_id);
         let legal = |t: &Target| {
-            if !is_target_legal(state, t, &target_req, caster, registry) {
+            if !is_target_legal(state, t, &target_req, caster, Some(object_id), registry) {
                 return false;
             }
             // Also re-check card-specific validity (e.g., "power 4 or greater").

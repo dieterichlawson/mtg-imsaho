@@ -190,6 +190,7 @@ pub fn activate_via_hooks(
     targets: &[Target],
 ) {
     let Some(card_id) = state.get_object(object_id).map(|o| o.card_id) else { return };
+    let mut target_requirement = None;
     if let Some(behavior) = registry.get(card_id) {
         // The costs the ability declares, paid the way `submit_action` pays
         // them — before the ability goes on the stack (CR 601.2h via 602.2b).
@@ -202,6 +203,9 @@ pub fn activate_via_hooks(
         if let Some(ab) = behavior.activated_abilities(state, object_id, registry)
             .into_iter().find(|a| a.ability_index == ability_index)
         {
+            // Read before the cost is paid, for the same reason the engine
+            // does: a `SacrificeThis` takes the source's ability list with it.
+            target_requirement = ab.target_requirement.clone();
             if ab.requires_tap {
                 if let Some(obj) = state.get_object_mut(object_id) { obj.tapped = true; }
             }
@@ -229,7 +233,7 @@ pub fn activate_via_hooks(
         }
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
-    mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets);
+    mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets, target_requirement);
 }
 
 /// Activating an ability only puts it on the stack (CR 602.2a); it resolves

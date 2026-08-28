@@ -34,10 +34,20 @@ pub(crate) fn put_ability_on_stack(
     targets: &[Target],
     registry: &CardRegistry,
 ) {
+    // Read what the ability asks of its target *before* the cost is paid:
+    // `SacrificeThis` removes the source, and a card's `activated_abilities`
+    // is then gone with it. CR 608.2b re-checks the target against this on
+    // resolution, so it rides on the stack entry (CR 601.2c).
+    let target_requirement = registry.get(behavior_card_id)
+        .and_then(|b| b.activated_abilities(state, object_id, registry)
+            .into_iter()
+            .find(|a| a.ability_index == ability_index)
+            .and_then(|a| a.target_requirement));
+
     if let Some(behavior) = registry.get(behavior_card_id) {
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
-    crate::cards::push_ability(state, object_id, ability_index, behavior_card_id, targets);
+    crate::cards::push_ability(state, object_id, ability_index, behavior_card_id, targets, target_requirement);
 }
 
 pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], tap_plan: &[(ObjectId, usize)], sacrifice: Option<ObjectId>, source_card_id: Option<crate::ids::CardId>, registry: &CardRegistry) -> Applied {

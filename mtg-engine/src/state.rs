@@ -20,6 +20,18 @@ pub enum StackEntry {
         targets: Vec<crate::actions::Target>,
         activator: PlayerId,
         x_value: Option<u32>,
+        /// What the ability asks of its target, captured when it went on the
+        /// stack (CR 601.2c).
+        ///
+        /// CR 608.2b re-checks a target against the same requirement that
+        /// offered it, and for an ability that requirement cannot be looked up
+        /// again on resolution: paying a `SacrificeThis` cost has already
+        /// removed the source, and with it the ability list. Before this rode
+        /// on the entry, the ability arm re-checked only hexproof and
+        /// protection plus whatever the card restated in its own
+        /// `is_valid_target` — so an ability whose card restated nothing
+        /// resolved against a target that had stopped satisfying it.
+        target_requirement: Option<crate::cards::TargetRequirement>,
         /// The creature sacrificed to pay this ability's cost, if any.
         ///
         /// Disciple of Griselbrand's "you gain life equal to the sacrificed
