@@ -225,7 +225,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Altar's Reap | `altars_reap.rs` | 35 | 2 | 0 |
 | x | Infernal Plunge | `infernal_plunge.rs` | 34 | 2 | 0 |
 | x | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 34 | 2 | 0 |
-|   | Midnight Haunting | `midnight_haunting.rs` | 32 | 2 | 0 |
+| x | Midnight Haunting | `midnight_haunting.rs` | 32 | 2 | 0 |
 |   | Skaab Ruinator | `skaab_ruinator.rs` | 31 | 2 | 0 |
 |   | Think Twice | `think_twice.rs` | 29 | 2 | 0 |
 |   | Angelic Overseer | `angelic_overseer.rs` | 37 | 1 | 0 |
