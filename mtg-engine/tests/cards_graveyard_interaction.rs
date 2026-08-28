@@ -328,6 +328,40 @@ fn mulch_puts_lands_in_hand_and_rest_in_graveyard() {
 // Purify the Grave
 // ═══════════════════════════════════════════════════════════════════
 
+/// "Exile target **card** from **a** graveyard" — any card type, in anybody's
+/// graveyard, the caster's own included. The test below takes an opponent's
+/// creature card, which is also what "exile target creature card from an
+/// opponent's graveyard" would allow; this one takes the caster's own land.
+#[test]
+fn purify_the_grave_exiles_any_card_from_any_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let own_land = named_card_in_graveyard(&mut state, &reg, "Forest", P0);
+    let their_creature = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+
+    let purify = castable_spell(&mut state, &reg, "Purify the Grave", P0);
+
+    // The offer is where the scope lives — the cast handler takes the targets
+    // it is given, so resolving one proves only that the card exiles what it
+    // was pointed at.
+    let offers: Vec<Vec<Target>> = mtg_engine::engine::legal_actions(&state, &reg).actions
+        .into_iter()
+        .filter_map(|a| match a {
+            Action::CastSpell { object_id, targets, .. } if object_id == purify => Some(targets),
+            _ => None,
+        })
+        .collect();
+    assert!(offers.contains(&vec![Target::Object(own_land)]),
+        "a land in the caster's own graveyard is offered: \"a graveyard\", and \
+         \"card\" rather than \"creature card\". Offered: {offers:?}");
+    assert!(offers.contains(&vec![Target::Object(their_creature)]),
+        "and so is the opponent's creature card");
+
+    let new_state = cast_and_resolve(&state, &reg, purify, vec![Target::Object(own_land)]);
+    assert_eq!(new_state.get_object(own_land).unwrap().zone, Zone::Exile);
+}
+
 #[test]
 fn purify_the_grave_exiles_card_from_graveyard() {
     let reg = registry();

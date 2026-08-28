@@ -446,6 +446,43 @@ fn feeling_of_dread_taps_creature() {
         "Feeling of Dread should tap the target creature");
 }
 
+/// A spell cast from a graveyard is not in that graveyard any more, so it can
+/// never be one of its own targets.
+///
+/// CR 601.2a moves the card to the stack; CR 601.2c chooses targets after
+/// that. Purify the Grave — "Exile target card from a graveyard", flashback
+/// {W} — is the card that can ask, and it was offered a cast targeting itself.
+/// Memory's Journey, flashback {G} with a graveyard-card slot, can ask the
+/// same question.
+#[test]
+fn a_spell_cast_from_a_graveyard_is_not_offered_as_its_own_target() {
+    use mtg_engine::actions::Action;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = reg.get_id_by_name("Purify the Grave").expect("in the registry");
+    let purify = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+    state.get_object_mut(purify).unwrap().name = "Purify the Grave".into();
+    // Something else to point at, so "no self-target offered" is not just
+    // "nothing offered".
+    let other = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 2)]);
+
+    let offers: Vec<Vec<Target>> = engine::legal_actions(&state, &reg).actions.into_iter()
+        .filter_map(|a| match a {
+            Action::CastSpell { object_id, targets, .. } if object_id == purify => Some(targets),
+            _ => None,
+        })
+        .collect();
+
+    assert!(offers.contains(&vec![Target::Object(other)]),
+        "the other graveyard card is offered");
+    assert!(!offers.contains(&vec![Target::Object(purify)]),
+        "but the spell itself is not: by the time targets are chosen it is on \
+         the stack, not in a graveyard (CR 601.2a/c). Offered: {offers:?}");
+}
+
 /// Ruling: "If Feeling of Dread targets two creatures, and one of them is an
 /// illegal target by the time Feeling of Dread resolves, the other creature
 /// will still be tapped."
