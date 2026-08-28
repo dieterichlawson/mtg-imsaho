@@ -77,6 +77,85 @@ fn geist_honored_monk_dynamic_pt_and_tokens() {
     assert_eq!(state.effective_toughness(monk, &reg), Some(3));
 }
 
+/// "create two 1/1 white **Spirit** creature tokens **with flying**." The test
+/// above counts three creatures, which two colourless vanilla 1/1s would also
+/// satisfy. This pins what the tokens actually are.
+#[test]
+fn geist_honored_monk_makes_two_flying_white_spirits() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    stock_library(&mut state, &reg, P0, 5);
+
+    let monk = castable_spell(&mut state, &reg, "Geist-Honored Monk", P0);
+    let mut state = cast_and_resolve(&state, &reg, monk, vec![]);
+    triggers::process_triggers(&mut state, &reg);
+
+    let tokens: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == P0 && o.id != monk)
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(tokens.len(), 2, "two tokens, not one and not three");
+
+    for t in tokens {
+        assert_eq!(state.effective_power(t, &reg), Some(1), "1/1");
+        assert_eq!(state.effective_toughness(t, &reg), Some(1), "1/1");
+        assert!(state.has_subtype(t, "Spirit", &reg), "Spirit");
+        assert!(state.has_keyword(t, Keyword::Flying, &reg), "with flying");
+        assert_eq!(state.get_object(t).unwrap().colors, vec![Color::White], "white");
+    }
+}
+
+/// "equal to the number of creatures **you control**" — an opponent's board
+/// does not feed it, and the count is a characteristic-defining ability, so it
+/// tracks the battlefield rather than being fixed when the Monk resolved.
+#[test]
+fn geist_honored_monks_count_is_yours_alone_and_keeps_up() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let monk = named_permanent(&mut state, &reg, "Geist-Honored Monk", P0);
+    assert_eq!(state.effective_power(monk, &reg), Some(1),
+        "alone on the battlefield it still counts itself (ruling: \"its second \
+         ability will count itself\")");
+
+    for _ in 0..3 {
+        ready_creature(&mut state, P1, 2, 2);
+    }
+    assert_eq!(state.effective_power(monk, &reg), Some(1),
+        "three creatures the opponent controls change nothing");
+
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    assert_eq!(state.effective_power(monk, &reg), Some(2), "one of mine does");
+    assert_eq!(state.effective_toughness(monk, &reg), Some(2));
+
+    state.move_object(mine, Zone::Graveyard, &reg);
+    assert_eq!(state.effective_power(monk, &reg), Some(1),
+        "and it drops again when that creature leaves — the count is recomputed, \
+         not snapshotted");
+}
+
+/// Ruling: "The ability that defines Geist-Honored Monk's power and toughness
+/// works in all zones, not just the battlefield." That is CR 604.3 — a
+/// characteristic-defining ability functions everywhere, including in a
+/// graveyard, where CR 109.5 makes "you" the card's owner because a card
+/// outside the battlefield has no controller.
+#[test]
+fn geist_honored_monks_defining_ability_works_outside_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let monk = named_card_in_graveyard(&mut state, &reg, "Geist-Honored Monk", P0);
+    assert_eq!(state.get_object(monk).unwrap().zone, Zone::Graveyard, "test precondition");
+    assert_eq!(state.effective_power(monk, &reg), Some(0),
+        "no creatures on the battlefield, and it is not there to count itself");
+
+    ready_creature(&mut state, P0, 2, 2);
+    ready_creature(&mut state, P0, 2, 2);
+    assert_eq!(state.effective_power(monk, &reg), Some(2),
+        "the defining ability still runs while the card sits in a graveyard");
+    assert_eq!(state.effective_toughness(monk, &reg), Some(2));
+}
+
 /// "Enchanted creature gets +X/+X, where X is the number of creature cards in
 /// your graveyard." A characteristic-defining count, so it is recomputed as the
 /// graveyard changes rather than fixed when the Aura resolved.
