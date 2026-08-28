@@ -238,6 +238,59 @@ fn gruesome_deformity_grants_intimidate() {
         "Gruesome Deformity should grant intimidate");
 }
 
+/// The colour intimidate compares is the **enchanted creature's**, not the
+/// Aura's. Gruesome Deformity is black; put it on a white creature and it is
+/// white creatures that can block, not black ones.
+///
+/// `keywords.rs` covers the intimidate rule itself, but through a creature
+/// that prints the keyword and with `obj.colors` written by hand. This is the
+/// board where reading the Aura's colour instead of its host's gives exactly
+/// the opposite answer.
+#[test]
+fn gruesome_deformity_reads_the_creatures_colour_not_its_own() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // Doomed Traveler is {W}; the Aura is {B}.
+    let attacker = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+    let gd_id = reg.get_id_by_name("Gruesome Deformity").unwrap();
+    let gd = state.create_object(gd_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(gd).unwrap().name = "Gruesome Deformity".into();
+    state.get_object_mut(gd).unwrap().attached_to = Some(attacker);
+
+    let white_blocker = named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    let black_blocker = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+
+    assert!(mtg_engine::combat::can_block_attacker(&state, white_blocker, attacker, &reg),
+        "a white creature shares a colour with the white creature it is blocking");
+    assert!(!mtg_engine::combat::can_block_attacker(&state, black_blocker, attacker, &reg),
+        "a black creature does not — the Aura's own colour is not the question");
+}
+
+/// A colourless creature shares a colour with nothing (CR 105.1: colourless is
+/// not a colour), so the Aura leaves it blockable only by artifact creatures.
+#[test]
+fn gruesome_deformity_on_a_colourless_creature_leaves_only_artifacts() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // One-Eyed Scarecrow costs {3}: an artifact creature, and colourless.
+    let attacker = named_permanent(&mut state, &reg, "One-Eyed Scarecrow", P0);
+    let gd_id = reg.get_id_by_name("Gruesome Deformity").unwrap();
+    let gd = state.create_object(gd_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(gd).unwrap().name = "Gruesome Deformity".into();
+    state.get_object_mut(gd).unwrap().attached_to = Some(attacker);
+    assert!(state.colors_of(attacker, &reg).is_empty(), "test setup: it is colourless");
+
+    let artifact_blocker = named_permanent(&mut state, &reg, "One-Eyed Scarecrow", P1);
+    let black_blocker = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+
+    assert!(mtg_engine::combat::can_block_attacker(&state, artifact_blocker, attacker, &reg),
+        "an artifact creature can block it whatever its colour");
+    assert!(!mtg_engine::combat::can_block_attacker(&state, black_blocker, attacker, &reg),
+        "and nothing else can, because there is no colour to share");
+}
+
 /// Claustrophobia taps the creature and keeps it tapped.
 #[test]
 fn claustrophobia_taps_creature() {
