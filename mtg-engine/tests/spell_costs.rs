@@ -265,6 +265,41 @@ fn rooftop_storms_free_cast_reaches_a_zombie_cast_from_the_graveyard() {
          the Ruinator is castable for {{0}}");
 }
 
+/// Ruling: "You must still pay any mandatory additional costs, such as exiling
+/// a creature card from your graveyard for Makeshift Mauler." Paying {0}
+/// replaces the MANA cost only (CR 601.2b) — with no creature card in the
+/// graveyard the Mauler stays uncastable however free the mana is, and a
+/// {0} cast that does happen still exiles.
+#[test]
+fn rooftop_storms_zero_does_not_waive_a_mandatory_additional_cost() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Rooftop Storm", P0);
+    let mauler = spell_in_hand(&mut state, &reg, "Makeshift Mauler", P0);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0);
+
+    assert!(!can_cast(&state, &reg, mauler),
+        "no creature card in the graveyard: {{0}} pays the mana, not the exile");
+
+    let fodder = named_card_in_graveyard(&mut state, &reg, "Doomed Traveler", P0);
+    assert!(can_cast(&state, &reg, mauler), "with fodder the free cast is legal");
+
+    // Submit the OFFERED action (it carries the {0} alternative cost), then
+    // answer the exile prompt and resolve.
+    let offered = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, mtg_engine::actions::Action::CastSpell { object_id, .. } if *object_id == mauler))
+        .expect("the free cast is offered");
+    let state = mtg_engine::engine::submit_action(&state, &offered, &reg);
+    let mut state = resolve_exile_choice_max_power(&state, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Exile,
+        "the additional cost was really paid on the {{0}} cast");
+    assert_eq!(state.get_object(mauler).unwrap().zone, Zone::Battlefield,
+        "and the Mauler resolved");
+}
+
 // ---------------------------------------------------------------------------
 // Mana value is not the total cost
 // ---------------------------------------------------------------------------
