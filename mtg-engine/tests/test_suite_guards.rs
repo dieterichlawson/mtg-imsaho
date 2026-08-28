@@ -1525,3 +1525,46 @@ fn randomness_comes_from_the_game_state() {
          its seed:\n  {}",
         offenders.join("\n  "));
 }
+
+/// No card asks whether a permanent is on the battlefield just before putting
+/// a counter on it.
+///
+/// CR 121.1 is `GameState::add_counters`' job — it refuses anything not on the
+/// battlefield, which is what makes "a creature that died in the same combat
+/// damage step gets nothing" true for every card at once. Nine cards asked it
+/// again first, and an audit pass found them one at a time over ten cards
+/// before this guard existed.
+///
+/// The guard is narrow on purpose. A battlefield check in front of something
+/// else — untapping (Galvanic Juggernaut), transforming (the werewolves'
+/// shared upkeep helper), raising a prompt (Thraben Sentry) — is load-bearing,
+/// because those verbs do not refuse a permanent that has left.
+#[test]
+fn no_card_re_checks_the_battlefield_before_adding_counters() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") {
+            continue;
+        }
+        let lines: Vec<&str> = text.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || !l.contains("zone == Zone::Battlefield") {
+                continue;
+            }
+            // What does this guard actually protect? Skip its comments and
+            // blank lines to find the first statement inside it.
+            let next = lines[n + 1..].iter()
+                .map(|s| s.trim())
+                .find(|s| !s.is_empty() && !s.starts_with("//"));
+            if next.is_some_and(|s| s.starts_with("state.add_counters(")) {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "`add_counters` already refuses a permanent that is not on the \
+         battlefield (CR 121.1); asking again is a second copy of the rule \
+         that can fall out of step with it:\n  {}",
+        offenders.join("\n  "));
+}

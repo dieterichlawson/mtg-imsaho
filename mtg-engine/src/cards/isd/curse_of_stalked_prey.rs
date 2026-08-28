@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 
 /// Curse of Stalked Prey — {1}{R} Enchantment — Aura Curse.
 /// Enchant player.
@@ -62,8 +62,6 @@ impl CardBehavior for CurseOfStalkedPrey {
         // CR 113.7a: destroying the Curse in response does not counter this —
         // the trigger exists independently of it, and nothing here reads the
         // Curse at all.
-        if state.get_object(source_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
-        }
+        state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
     }
 }

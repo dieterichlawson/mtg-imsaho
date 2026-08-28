@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 
 /// Stromkirk Patrol — {4}{B} 4/3 Vampire.
 /// Whenever Stromkirk Patrol deals combat damage to a player, put a +1/+1 counter on it.
@@ -32,8 +32,8 @@ impl CardBehavior for StromkirkPatrol {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        if state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        }
+        // `add_counters` is where CR 121.1 says a Patrol that has left the
+        // battlefield is not there to take one.
+        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
     }
 }

@@ -133,3 +133,14 @@ damage helper twice in a row and the earlier event was re-processed, giving two
 counters instead of one. Both damage events now go into a single batch, which
 is how a combat damage step deals them anyway.
 
+
+## Audit — 2026-08-28 18:17
+
+**Follow-up to the audit above, not a re-audit.**
+
+Swept out with eight other cards: the `if ... zone == Zone::Battlefield` in front of
+`add_counters` was a second copy of CR 121.1, which `GameState::add_counters` enforces for every
+card. Behaviour is unchanged — mutation-checking the guard on each card showed it never fired.
+
+`test_suite_guards.rs::no_card_re_checks_the_battlefield_before_adding_counters` now fails the
+build if one comes back.
