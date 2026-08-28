@@ -652,6 +652,16 @@ fn simultaneous_triggers_are_ordered_by_their_controller() {
     };
     assert_eq!(options.len(), 2, "both Ghouls' triggers are offered");
 
+    // The runner-facing surface: while the prompt is up, `legal_actions`
+    // enumerates one ChosenIndex answer per offered trigger, which is what
+    // the CLI, LLM and random players pick from.
+    let legal = mtg_engine::engine::legal_actions(&state, &registry);
+    let index_answers = legal.actions.iter().filter(|a| matches!(a,
+        mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(..),
+        })).count();
+    assert_eq!(index_answers, 2, "one enumerated answer per trigger");
+
     // Answer the prompt. With only one trigger left afterwards there is no
     // choice to offer, so a pair needs exactly one answer.
     order_triggers_front_first(&mut state, &registry);
