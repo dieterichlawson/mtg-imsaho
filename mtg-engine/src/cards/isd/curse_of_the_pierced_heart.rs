@@ -24,7 +24,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
-                    description: "deal 1 damage to enchanted player".into(),
+                    description: "deals 1 damage to enchanted player or a planeswalker they control".into(),
                 target_requirement: None,
                 },
             ],
@@ -59,15 +59,26 @@ impl CardBehavior for CurseOfThePiercedHeart {
         // implements CR 603.2 for every Curse at once. Re-checking it here
         // would also be wrong: once the ability is on the stack it resolves
         // whatever the turn has done since.
-        let Some(controller) = state.get_object(self_id).map(|o| o.controller) else { return };
+        if state.get_object(self_id).is_none() { return }
+        // CR 608.2g: the ability is controlled by whoever controlled the Curse
+        // when it triggered. Reading `o.controller` gave the wrong answer for a
+        // Curse that had already left the battlefield, because leaving resets
+        // `controller` to `owner` — and the comment above is precisely about
+        // that case.
+        let controller = state.last_known_controller(self_id);
         let Some(cursed_player) = state.attached_player(self_id) else { return };
 
         // Check if the cursed player controls any planeswalkers.
         // `obj.card_types` is empty for non-token permanents, so reading it
         // directly made "or a planeswalker that player controls" dead code for
         // every real planeswalker. `has_card_type` reads the active face.
-        let planeswalkers: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == cursed_player)
+        //
+        // Through `objects_in_zone`, which sorts by id, rather than
+        // `state.objects.values()`, which is a HashMap iterator in arbitrary
+        // order: the controller picks from `options` by position, so an
+        // unstable order makes the same game replay differently.
+        let planeswalkers: Vec<Target> = state.objects_in_zone(Zone::Battlefield, cursed_player)
+            .iter()
             .map(|o| o.id)
             .filter(|id| state.has_card_type(*id, CardType::Planeswalker, registry))
             .map(Target::Object)

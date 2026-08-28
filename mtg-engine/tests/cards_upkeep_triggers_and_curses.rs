@@ -21,6 +21,8 @@
 mod common;
 
 use common::*;
+use mtg_engine::actions::Target;
+use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 // ── Boneyard Wurm ─────────────────────────────────────────────────
@@ -185,6 +187,66 @@ fn curse_of_pierced_heart_deals_damage_on_upkeep() {
 
     assert_eq!(state.get_player(P1).life, 19, "Curse should deal 1 damage to P1");
     assert_eq!(state.get_player(P0).life, 20, "P0 should be unaffected");
+}
+
+/// "…to that player **or** a planeswalker that player controls" — the choice
+/// is offered by position, so the options must be in a fixed order. Built from
+/// `state.objects.values()` they came out in HashMap order, which is seeded
+/// per process: the same game replayed twice offered the same planeswalkers
+/// under different indices.
+#[test]
+fn curse_of_pierced_heart_offers_its_options_in_a_stable_order() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+
+    let lily = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
+    let curse = attach_curse_to_player(&mut state, &reg, "Curse of the Pierced Heart", P0, P1);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+    }) = &state.awaiting_action else {
+        panic!("the Curse must ask which of the two planeswalkers, or the \
+                player, takes the damage; got {:?}", state.awaiting_action);
+    };
+    let _ = curse;
+    let mut expected = vec![Target::Object(lily), Target::Object(garruk)];
+    expected.sort_by_key(|t| match t { Target::Object(id) => id.0, _ => 0 });
+    assert_eq!(options[0], Target::Player(P1),
+        "the enchanted player is the first option");
+    assert_eq!(&options[1..], &expected[..],
+        "the planeswalkers must be offered in object-id order, not map order");
+}
+
+/// CR 608.2g: the ability is controlled by whoever controlled the Curse when
+/// it triggered. Leaving the battlefield resets `controller` to `owner`, so a
+/// Curse destroyed in response to its own trigger (CR 113.7a) must not hand
+/// the choice to its owner.
+#[test]
+fn curse_of_pierced_heart_asks_its_last_controller_after_it_leaves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+
+    let _lily = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    // Owned by P1, controlled by P0 — the two differ, which is the only way to
+    // tell which of them the code read.
+    let curse = attach_curse_to_player(&mut state, &reg, "Curse of the Pierced Heart", P0, P1);
+    state.get_object_mut(curse).unwrap().owner = P1;
+
+    // Destroyed with the trigger already on the stack.
+    state.move_object(curse, Zone::Graveyard, &reg);
+
+    let behavior = reg.get(state.get_object(curse).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, curse, &[], &reg);
+
+    let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action else {
+        panic!("the trigger still resolves after the Curse is destroyed; \
+                got {:?}", state.awaiting_action);
+    };
+    assert_eq!(*player, P0,
+        "the player who controlled the Curse chooses, not its owner");
 }
 
 // ── Curse of Death's Hold ─────────────────────────────────────────
