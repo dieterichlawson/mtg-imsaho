@@ -143,9 +143,14 @@ audits.
   not satisfy each other: `enters_tapped_replacement.rs:79`, `:93`, `:117`,
   `:139`
 - **NEW** an opponent's land does not satisfy "you control":
-  `enters_tapped_replacement.rs:152`
+  `enters_tapped_replacement.rs::a_check_land_is_not_satisfied_by_an_opponents_land`
 - **NEW** it taps for {R} or {W}, not two of the same:
-  `enters_tapped_replacement.rs:184`
+  `enters_tapped_replacement.rs::an_audited_check_land_taps_for_both_of_its_colours`
+
+*(Both were written Clifftop-scoped and generalised during the Hinterland
+Harbor audit into a small `AUDITED` table, one row per check land whose oracle
+text has actually been fetched. Named rather than line-numbered here, since the
+lines will move as rows are added.)*
 
 Mutation-checked: scanning the whole battlefield instead of your own, dropping
 the Plains half of the condition, and making both abilities produce red each
