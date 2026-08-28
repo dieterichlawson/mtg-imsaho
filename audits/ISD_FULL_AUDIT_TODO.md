@@ -66,7 +66,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Skeletal Grimace | `skeletal_grimace.rs` | 64 | 5 | 0 |
 | x | Ghost Quarter | `ghost_quarter.rs` | 104 | 4 | 0 |
 | x | Woodland Sleuth | `woodland_sleuth.rs` | 79 | 4 | 1 |
-|   | Elder Cathar | `elder_cathar.rs` | 75 | 4 | 1 |
+| x | Elder Cathar | `elder_cathar.rs` | 75 | 4 | 1 |
 |   | Snapcaster Mage | `snapcaster_mage.rs` | 68 | 4 | 1 |
 |   | Witchbane Orb | `witchbane_orb.rs` | 60 | 4 | 1 |
 |   | Demonmail Hauberk | `demonmail_hauberk.rs` | 82 | 4 | 0 |
