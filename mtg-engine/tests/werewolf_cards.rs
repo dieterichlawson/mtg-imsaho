@@ -776,6 +776,41 @@ fn terror_of_kruin_pass_needs_two_blockers_itself() {
          'can't be blocked'");
 }
 
+/// Ruling: "If Kruin Outlaw somehow transforms after blockers have been
+/// declared but before combat ends, any Werewolves you control that are
+/// blocked by a single creature will remain blocked."
+///
+/// Menace is a restriction on *declaring* blockers (CR 509.1b), so a block
+/// already declared is not re-examined. CR 509.2 also makes blocked-ness
+/// permanent for the combat.
+#[test]
+fn transforming_after_blockers_leaves_a_single_blocker_in_place() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // The Outlaw is on its front face, so nothing has menace yet.
+    let outlaw = named_permanent(&mut state, &reg, "Kruin Outlaw", P0);
+    assert!(!state.get_object(outlaw).unwrap().is_transformed, "test setup");
+
+    let pack_mate = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(pack_mate).unwrap().subtypes = vec!["Werewolf".into()];
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+
+    assert_eq!(blockers_accepted(&mut state, &reg, pack_mate, P1, &[blocker]), 1,
+        "test precondition: one blocker is legal before the transform");
+
+    // Now it flips, and every Werewolf P0 controls gains menace.
+    mtg_engine::cards::helpers::apply_transform(&mut state, outlaw, &reg);
+    assert!(state.has_keyword(pack_mate, Keyword::Menace, &reg),
+        "test precondition: the Werewolf has menace now");
+
+    let combat = state.combat.as_ref().unwrap();
+    assert_eq!(combat.blocker_assignments[&pack_mate], vec![blocker],
+        "the block was declared legally and menace does not undo it");
+    assert!(combat.blocked_attackers.contains(&pack_mate),
+        "CR 509.2: it stays a blocked creature for the rest of this combat");
+}
+
 /// The restriction is the Menace keyword, so it shows up in `has_keyword` and
 /// not only in the blocker validation.
 #[test]
