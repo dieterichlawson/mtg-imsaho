@@ -346,20 +346,61 @@ fn purify_the_grave_exiles_card_from_graveyard() {
 // Grasp of Phantoms
 // ═══════════════════════════════════════════════════════════════════
 
+/// "Put target creature on top of its **owner's** library." Two words carry the
+/// whole card, so the setup makes both of them wrong to get right: the library
+/// already has cards in it (an empty one puts top and bottom in the same
+/// place), and the creature is owned by one player while another controls it —
+/// a stolen creature goes home, not to the thief's library.
 #[test]
-fn grasp_of_phantoms_puts_creature_on_top_of_library() {
+fn grasp_of_phantoms_puts_creature_on_top_of_its_owners_library() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
+    let already_there = stock_library(&mut state, &reg, P1, 2);
+    let thiefs_library = stock_library(&mut state, &reg, P0, 2);
+
+    // Owned by P1, controlled by P0 — Grasp is cast by the controller.
     let target_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.get_object_mut(target_creature).unwrap().controller = P0;
 
     let grasp = castable_spell(&mut state, &reg, "Grasp of Phantoms", P0);
     let new_state = cast_and_resolve(&state, &reg, grasp, vec![Target::Object(target_creature)]);
 
-    // Creature should be in library.
     assert_eq!(new_state.get_object(target_creature).unwrap().zone, Zone::Library);
-    // It should be on top of the library.
-    assert_eq!(new_state.get_player(P1).library_order[0], target_creature);
+    assert_eq!(new_state.get_player(P1).library_order,
+        vec![target_creature, already_there[0], already_there[1]],
+        "on top of the owner's library, above what was already in it");
+    assert_eq!(new_state.get_player(P0).library_order, thiefs_library,
+        "and the controller's library is untouched");
+}
+
+/// A token put on top of a library ceases to exist (CR 111.7, SBA 704.5d), so
+/// nothing arrives there: the library is no deeper than it was, and the next
+/// draw is the real card that was already on top. The library's order is a
+/// list of object ids kept alongside the zone, so a vanished token left listed
+/// there is a card that can be drawn and isn't — the draw comes up empty, the
+/// hand doesn't grow, and a player who should have decked out doesn't.
+#[test]
+fn grasp_of_phantoms_puts_no_phantom_on_the_library_when_it_bounces_a_token() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let real_card = stock_library(&mut state, &reg, P1, 1)[0];
+    let token = state.create_token_with_subtypes(
+        "", P1, 1, 1,
+        vec![Color::White], vec![CardType::Creature], vec![], vec!["Spirit".into()],
+        &reg,
+    )[0];
+
+    let grasp = castable_spell(&mut state, &reg, "Grasp of Phantoms", P0);
+    let mut state = cast_and_resolve(&state, &reg, grasp, vec![Target::Object(token)]);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    assert!(state.get_object(token).is_none(), "the token ceased to exist");
+    assert_eq!(state.get_player(P1).library_order, vec![real_card],
+        "the library holds the one real card, with no phantom on top of it");
+    assert_eq!(state.get_player_mut(P1).draw_top_card(), Some(real_card),
+        "so the next draw is that real card");
 }
 
 // ═══════════════════════════════════════════════════════════════════

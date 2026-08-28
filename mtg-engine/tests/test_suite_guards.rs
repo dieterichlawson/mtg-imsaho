@@ -636,6 +636,53 @@ fn only_the_untap_helper_untaps_a_permanent() {
         offenders.join("\n  "));
 }
 
+/// Nothing outside `state.rs` adds a card to a library's order or takes one
+/// out of it.
+///
+/// A library is the one zone with an order, and that order lives in
+/// `PlayerState::library_order` beside the objects themselves. Every other
+/// zone is derived from `state.objects` and so cannot disagree with itself;
+/// this one is two halves that a caller has to keep in step. Both halves now
+/// live in `state.rs`: `put_into_library` does the zone change and the
+/// position together — and makes the position an argument the caller has to
+/// name, rather than whichever of `insert(0, ..)` or `push(..)` came to hand —
+/// while `move_object` takes a card out of the order as it leaves the library,
+/// where it cannot be forgotten. A card listed in a library it is not in is a
+/// card that can be drawn and isn't.
+#[test]
+fn only_the_library_helper_puts_a_card_into_a_library() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        // `state.rs` implements `put_into_library`. Nothing else adds.
+        if rel == "state.rs" {
+            continue;
+        }
+        let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
+        for (n, line) in text[..test_mod].lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || !l.contains("library_order") {
+                continue;
+            }
+            // `drain` is not removal from a library: Forbidden Alchemy and
+            // Mulch take the revealed cards out of the order while they are
+            // still in the zone, which is how "look at the top four" is
+            // modelled. `shuffle` reorders and adds nothing.
+            if l.contains(".insert(") || l.contains(".push(") || l.contains(".extend(")
+                || l.contains(".retain(")
+            {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "a card entering a library goes through `GameState::put_into_library`, \
+         which does the zone change and the position together (CR 401.1), and \
+         one leaving it is taken out of the order by `move_object`; editing \
+         `library_order` at the call site leaves the two halves free to \
+         disagree:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// Nothing outside the loyalty-cost machinery takes loyalty counters off a
 /// planeswalker.
 ///
