@@ -71,7 +71,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Witchbane Orb | `witchbane_orb.rs` | 60 | 4 | 1 |
 | x | Demonmail Hauberk | `demonmail_hauberk.rs` | 82 | 4 | 0 |
 | x | Geist-Honored Monk | `geist_honored_monk.rs` | 56 | 4 | 1 |
-|   | Manor Gargoyle | `manor_gargoyle.rs` | 81 | 4 | 0 |
+| x | Manor Gargoyle | `manor_gargoyle.rs` | 81 | 4 | 0 |
 |   | Silver-Inlaid Dagger | `silver_inlaid_dagger.rs` | 81 | 4 | 0 |
 |   | Undead Alchemist | `undead_alchemist.rs` | 101 | 3 | 1 |
 |   | Butcher's Cleaver | `butchers_cleaver.rs` | 80 | 4 | 0 |
