@@ -223,7 +223,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Boneyard Wurm | `boneyard_wurm.rs` | 36 | 2 | 0 |
 | x | Gnaw to the Bone | `gnaw_to_the_bone.rs` | 36 | 2 | 0 |
 | x | Altar's Reap | `altars_reap.rs` | 35 | 2 | 0 |
-|   | Infernal Plunge | `infernal_plunge.rs` | 34 | 2 | 0 |
+| x | Infernal Plunge | `infernal_plunge.rs` | 34 | 2 | 0 |
 |   | Moan of the Unhallowed | `moan_of_the_unhallowed.rs` | 34 | 2 | 0 |
 |   | Midnight Haunting | `midnight_haunting.rs` | 32 | 2 | 0 |
 |   | Skaab Ruinator | `skaab_ruinator.rs` | 31 | 2 | 0 |
