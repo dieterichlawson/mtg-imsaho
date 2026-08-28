@@ -31,19 +31,33 @@ use mtg_engine::types::*;
 /// Maniac out, the game is already over when `draw_cards` returns.
 #[test]
 fn laboratory_maniac_replaces_the_empty_draw_loss_for_its_controller() {
-    // (who controls a Lab Maniac, who draws from empty, does the drawer lose,
-    //  does the drawer's opponent lose)
-    const CASES: &[(Option<PlayerId>, PlayerId, bool, bool, &str)] = &[
+    // (who controls a Lab Maniac and where it is, who draws from empty, does
+    //  the drawer lose, does the drawer's opponent lose)
+    const CASES: &[(Option<(PlayerId, Zone)>, PlayerId, bool, bool, &str)] = &[
         (None, P0, true, false, "no Lab Maniac: the drawer loses"),
-        (Some(P0), P0, false, true, "its controller wins instead, so the opponent loses"),
-        (Some(P0), P1, true, false, "it does nothing for the opponent"),
+        (Some((P0, Zone::Battlefield)), P0, false, true,
+            "its controller wins instead, so the opponent loses"),
+        (Some((P0, Zone::Battlefield)), P1, true, false,
+            "it does nothing for the opponent"),
+        // The ability is the permanent's, so it does nothing from anywhere
+        // else. `replacement_zones` is what says so, and this card is where
+        // getting it wrong is loudest: a Maniac in the graveyard would win the
+        // game from there. The positive direction — Dearly Departed, which
+        // declares the graveyard — is `replacement_effects.rs`.
+        (Some((P0, Zone::Graveyard)), P0, true, false,
+            "a Maniac in the graveyard is not on the battlefield"),
+        (Some((P0, Zone::Hand)), P0, true, false,
+            "nor is one in hand"),
     ];
 
-    for &(maniac_controller, drawer, drawer_loses, opponent_loses, why) in CASES {
+    for &(maniac, drawer, drawer_loses, opponent_loses, why) in CASES {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        if let Some(p) = maniac_controller {
-            named_permanent(&mut state, &reg, "Laboratory Maniac", p);
+        if let Some((p, zone)) = maniac {
+            let m = named_permanent(&mut state, &reg, "Laboratory Maniac", p);
+            if zone != Zone::Battlefield {
+                state.move_object(m, zone, &reg);
+            }
         }
         let opponent = state.opponent(drawer);
 
