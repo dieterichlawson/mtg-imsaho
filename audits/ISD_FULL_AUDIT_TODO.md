@@ -168,7 +168,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Curse of the Nightly Hunt | `curse_of_the_nightly_hunt.rs` | 40 | 3 | 0 |
 | x | Feeling of Dread | `feeling_of_dread.rs` | 40 | 3 | 0 |
 | x | Nightbird's Clutches | `nightbirds_clutches.rs` | 39 | 3 | 0 |
-|   | Unburial Rites | `unburial_rites.rs` | 39 | 3 | 0 |
+| x | Unburial Rites | `unburial_rites.rs` | 39 | 3 | 0 |
 |   | Purify the Grave | `purify_the_grave.rs` | 38 | 3 | 0 |
 |   | Travel Preparations | `travel_preparations.rs` | 38 | 3 | 0 |
 |   | Abattoir Ghoul | `abattoir_ghoul.rs` | 57 | 2 | 1 |
