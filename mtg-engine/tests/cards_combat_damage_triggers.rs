@@ -355,18 +355,54 @@ fn sturmgeists_defining_ability_works_outside_the_battlefield() {
 
 // ── Balefire Dragon ───────────────────────────────────────────────
 
-/// Balefire Dragon deals combat damage amount to all opponent's creatures.
+/// "it deals **that much** damage to each creature **that player** controls."
+///
+/// Both quantities come from the damage that was actually dealt, not from the
+/// Dragon: the amount is 4 here rather than the Dragon's printed 6, so an
+/// implementation reading `effective_power` would be caught, and only the
+/// damaged player's creatures are hit.
 #[test]
 fn balefire_dragon_sweeps_opponent_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     let dragon = named_permanent(&mut state, &reg, "Balefire Dragon", P0);
-    let opp_creature1 = ready_creature(&mut state, P1, 3, 4);
-    let opp_creature2 = ready_creature(&mut state, P1, 2, 2);
-    let own_creature = ready_creature(&mut state, P0, 1, 1); // should NOT be damaged
+    let opp_creature1 = ready_creature(&mut state, P1, 3, 9);
+    let opp_creature2 = ready_creature(&mut state, P1, 2, 9);
+    let own_creature = ready_creature(&mut state, P0, 1, 9); // should NOT be damaged
 
-    // Dragon deals 6 combat damage to P1.
+    // Four, not the Dragon's six: what got through is what the ability deals.
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: dragon,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 4,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(opp_creature1).unwrap().damage_marked, 4);
+    assert_eq!(state.get_object(opp_creature2).unwrap().damage_marked, 4);
+    assert_eq!(state.get_object(own_creature).unwrap().damage_marked, 0,
+        "\"each creature that player controls\" is the damaged player's, not everyone's");
+}
+
+/// Ruling (2018-12-07): "The damage dealt by Balefire Dragon's triggered
+/// ability isn't combat damage."
+///
+/// Inquisitor's Flail says the difference out loud — "If another creature
+/// would deal **combat damage** to equipped creature, it deals double that
+/// damage instead" — so a defending creature wearing one takes 6 from the
+/// trigger, not 12. Anything that treated the sweep as combat damage would
+/// double it, and the sweep is the Dragon's whole card.
+#[test]
+fn balefire_dragons_sweep_is_not_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let dragon = named_permanent(&mut state, &reg, "Balefire Dragon", P0);
+    let victim = ready_creature(&mut state, P1, 3, 20);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P1);
+    state.get_object_mut(flail).unwrap().attached_to = Some(victim);
+
     state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
         source: dragon,
         target: mtg_engine::events::DamageTarget::Player(P1),
@@ -374,11 +410,8 @@ fn balefire_dragon_sweeps_opponent_creatures() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    // Opponent's creatures should each have 6 damage.
-    assert_eq!(state.get_object(opp_creature1).unwrap().damage_marked, 6);
-    assert_eq!(state.get_object(opp_creature2).unwrap().damage_marked, 6);
-    // Own creature should be untouched.
-    assert_eq!(state.get_object(own_creature).unwrap().damage_marked, 0);
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 6,
+        "the Flail doubles combat damage, and this is not combat damage");
 }
 
 // ── Curiosity ─────────────────────────────────────────────────────
