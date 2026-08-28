@@ -86,7 +86,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Night Terrors | `night_terrors.rs` | 75 | 4 | 0 |
 | x | Selhoff Occultist | `selhoff_occultist.rs` | 70 | 3 | 2 |
 | x | Avacynian Priest | `avacynian_priest.rs` | 74 | 4 | 0 |
-|   | Clifftop Retreat | `clifftop_retreat.rs` | 73 | 4 | 0 |
+| x | Clifftop Retreat | `clifftop_retreat.rs` | 73 | 4 | 0 |
 |   | Hinterland Harbor | `hinterland_harbor.rs` | 73 | 4 | 0 |
 |   | Isolated Chapel | `isolated_chapel.rs` | 73 | 4 | 0 |
 |   | Sulfur Falls | `sulfur_falls.rs` | 73 | 4 | 0 |
