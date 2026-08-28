@@ -997,6 +997,55 @@ fn no_equipment_attaches_itself_by_hand() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// Paying a mana cost is the engine's: `pay_cost_with_sources` (or
+/// `plan_autotap_for_cost` and `execute_tap_plan_and_pay`, which are the same
+/// thing in two steps). Both tap lands for the mana, which CR 601.2g requires
+/// and a player expects — "you may pay {1}" with an empty pool and four
+/// untapped Plains has to be payable.
+///
+/// Mentor of the Meek walked the mana pool by hand instead — colorless first,
+/// then WUBRG — spending a floating unit if it found one and quietly doing
+/// nothing if it did not. Saying "yes" with lands untapped paid nothing and
+/// drew nothing. Screeching Bat, the set's other "you may pay", has always
+/// gone through the engine.
+#[test]
+fn no_card_spends_mana_out_of_the_pool_by_hand() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            // Reaching past the pool's API into its map. `mana_pool.add` is
+            // how a mana ability produces mana and is not this; reading the
+            // pool (`mana_pool.get`) to decide whether to offer something is
+            // not this either.
+            if code.contains("mana_pool.mana") {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} site(s) reach into a mana pool's map by hand:\n  {}\n\n\
+         Use `engine::pay_cost_with_sources`, which taps lands for the mana \
+         (CR 601.2g) rather than only spending what happens to be floating.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

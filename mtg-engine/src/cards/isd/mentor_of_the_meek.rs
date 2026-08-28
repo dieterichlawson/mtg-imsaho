@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, ManaType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Mentor of the Meek — {2}{W} 2/2 Human Soldier.
 /// Whenever another creature with power 2 or less enters the battlefield
@@ -45,7 +45,7 @@ impl CardBehavior for MentorOfTheMeek {
         state.effective_power(entered_id, registry).is_some_and(|p| p <= 2)
     }
 
-    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
+    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
         // The whole condition — another creature you control, power 2 or less —
         // was already checked at dispatch time in `should_trigger_on_creature_
@@ -53,7 +53,6 @@ impl CardBehavior for MentorOfTheMeek {
         // a creature that entered with power 2 and was pumped in response
         // still triggered, and one that entered with power 3 and shrank did
         // not (CR 603.2).
-        let _ = (entered_controller, entered_id, registry);
         // "You may pay {1}" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
@@ -65,31 +64,26 @@ impl CardBehavior for MentorOfTheMeek {
         });
     }
 
+    /// "you may pay {1}. If you do, draw a card."
+    ///
+    /// Paying may involve tapping lands for the mana (CR 601.2g via 608.2g),
+    /// which is what `engine::pay_cost_with_sources` does. This used to walk
+    /// the mana pool by hand — colorless first, then WUBRG — and spend a
+    /// floating unit if it found one. With an empty pool and four untapped
+    /// Plains, saying "yes" quietly paid nothing and drew nothing. Screeching
+    /// Bat, the set's other "you may pay", has always gone through the engine.
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
+            state.log(LogLevel::Event, "Mentor of the Meek: chose not to pay {1}".into());
             return;
         }
         let controller = crate::cards::helpers::controller_of(state, self_id);
-        // Pay {1} (prefer colorless, then any color).
-        let player = state.get_player_mut(controller);
-        let paid;
-        if player.mana_pool.get(ManaType::Colorless) >= 1 {
-            *player.mana_pool.mana.entry(ManaType::Colorless).or_insert(0) -= 1;
-            paid = true;
-        } else {
-            let mut found = false;
-            for mt in &[ManaType::White, ManaType::Blue, ManaType::Black, ManaType::Red, ManaType::Green] {
-                if player.mana_pool.get(*mt) >= 1 {
-                    *player.mana_pool.mana.entry(*mt).or_insert(0) -= 1;
-                    found = true;
-                    break;
-                }
-            }
-            paid = found;
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        if !crate::engine::pay_cost_with_sources(state, controller, &cost, registry) {
+            state.log(LogLevel::Event, "Mentor of the Meek: could not pay {1}".into());
+            return;
         }
-        if paid {
-            let _ = crate::engine::draw_cards(state, controller, 1, registry);
-            state.log(LogLevel::Event, "Mentor of the Meek: paid {1}, drew a card".into());
-        }
+        let _ = crate::engine::draw_cards(state, controller, 1, registry);
+        state.log(LogLevel::Event, "Mentor of the Meek: paid {1}, drew a card".into());
     }
 }

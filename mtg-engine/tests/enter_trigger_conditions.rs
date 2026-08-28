@@ -14,6 +14,9 @@
 //!
 //! Reading the condition at dispatch fixes both, and stops a trigger that
 //! shouldn't exist from taking up a priority window on the way.
+//!
+//! The second half of the file is the other end of the same card: what
+//! happens once the trigger resolves and the "you may pay {1}" is answered.
 
 mod common;
 
@@ -139,4 +142,99 @@ fn shrinking_after_entry_does_not_create_a_trigger() {
     assert_eq!(enter_watch_triggers(&state, mentor), 0,
         "it entered as a 5/4 and never triggered; shrinking it afterwards \
          cannot retroactively satisfy the condition");
+}
+
+// -------------------------------------------------------------------------
+// "...you may pay {1}. If you do, draw a card."
+// -------------------------------------------------------------------------
+
+/// Paying may involve tapping lands for the mana (CR 601.2g via 608.2g). The
+/// card used to walk the mana pool by hand and spend a floating unit if it
+/// found one, so with an empty pool and untapped Plains, saying "yes" paid
+/// nothing and drew nothing.
+#[test]
+fn mentor_taps_lands_to_pay_its_one() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    let plains = named_permanent(&mut state, &reg, "Plains", P0);
+    stock_library(&mut state, &reg, P0, 3);
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0, "test setup: nothing floating");
+
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let behavior = reg.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &reg);
+    behavior.on_yes_no_choice(&mut state, mentor, true, &reg);
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 1,
+        "the {{1}} is paid by tapping a land, and the card is drawn");
+    assert!(state.get_object(plains).unwrap().tapped, "which is where the mana came from");
+}
+
+/// Ruling 2025-01-24: "While resolving the triggered ability of Mentor of the
+/// Meek, you can't pay {1} multiple times to draw more than one card." One
+/// question, one answer, one card.
+#[test]
+fn mentor_draws_one_card_however_much_mana_is_available() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    for _ in 0..5 {
+        named_permanent(&mut state, &reg, "Plains", P0);
+    }
+    stock_library(&mut state, &reg, P0, 5);
+
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let behavior = reg.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &reg);
+
+    // Answered through the engine, so the prompt is consumed the way it is in
+    // a real game and anything asked again would still be sitting there.
+    let state = mtg_engine::engine::submit_action(&state, &mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
+    }, &reg);
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 1,
+        "one card, not one per available mana");
+    assert!(state.awaiting_action.is_none(), "and it does not ask again");
+}
+
+/// "You **may** pay" — declining is an answer, and it costs nothing.
+#[test]
+fn mentor_declining_costs_nothing_and_draws_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    let plains = named_permanent(&mut state, &reg, "Plains", P0);
+    stock_library(&mut state, &reg, P0, 3);
+
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let behavior = reg.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &reg);
+    behavior.on_yes_no_choice(&mut state, mentor, false, &reg);
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 0, "no draw");
+    assert!(!state.get_object(plains).unwrap().tapped, "and nothing was tapped for it");
+}
+
+/// Saying yes with nothing to pay with draws nothing — "if you do" was not
+/// satisfied — and does not leave the game in a half-paid state.
+#[test]
+fn mentor_saying_yes_with_no_mana_available_draws_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    stock_library(&mut state, &reg, P0, 3);
+
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let behavior = reg.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &reg);
+    behavior.on_yes_no_choice(&mut state, mentor, true, &reg);
+
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), 0,
+        "no mana anywhere, so the cost is unpaid and the draw does not happen");
 }
