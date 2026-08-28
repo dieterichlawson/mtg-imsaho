@@ -124,6 +124,23 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
         };
 
         if let Some(ab) = ability {
+            // CR 601.2c via 602.2b: an activated ability chooses its targets as
+            // it is activated, and they must be legal ones. Same reason as the
+            // cast path — `legal_actions` enumerates only legal sets, and the
+            // clients build their own action from per-slot choices — and same
+            // placement: before any cost is paid, so a refusal leaves the state
+            // untouched rather than charging for an activation that did not
+            // happen.
+            let req = ab.target_requirement.clone().unwrap_or(crate::cards::TargetRequirement::None);
+            let legal = registry.get(behavior_card_id).is_some_and(|b|
+                crate::engine::targeting::targets_are_legal(
+                    state, &req, targets, player, object_id, b, registry));
+            if !legal {
+                state.log(crate::state::LogLevel::Debug, format!(
+                    "activation refused, illegal targets {targets:?} (CR 601.2c)"));
+                return Applied::ReturnNow;
+            }
+
             // Pay mana cost (with X-cost support). For X-cost abilities
             // we pay only the non-X portion here; the X generic is paid
             // later via the ChooseXFunding flow (CR 602.1: the cost is
