@@ -48,6 +48,10 @@ fn scourge_of_geier_reach_counts_only_opponents_creatures() {
     ready_creature(&mut state, P1, 1, 1);
     ready_creature(&mut state, P1, 2, 2);
     assert_eq!(pt(&state), (5, 5), "two creatures across the table make it a 5/5");
+
+    // "each **creature**" — an opponent's land is not one.
+    named_permanent(&mut state, &reg, "Forest", P1);
+    assert_eq!(pt(&state), (5, 5), "an opponent's noncreature permanent is not counted");
 }
 
 // ── Army of the Damned ──────────────────────────────────────────
