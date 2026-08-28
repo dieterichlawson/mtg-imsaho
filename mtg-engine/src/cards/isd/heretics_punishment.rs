@@ -55,10 +55,12 @@ impl CardBehavior for HereticsPunishment {
     /// No cards will be put into your graveyard, and no damage will be dealt."
     ///
     /// The card used to answer that question itself, at the top of its
-    /// resolution handler. It got the right answer, but it was the only card in
-    /// the set enforcing target zone legality from inside its resolution rather
-    /// than through this hook, and being a step later it would have been the
-    /// wrong place the moment the ability gained a second target.
+    /// resolution handler. It got the right answer, but a step too late: with
+    /// two targets, one of them illegal, the engine calls the handler and the
+    /// early return there would have thrown away the legal half.
+    ///
+    /// Elder of Laurels, Kessig Wolf Run and Silverchase Fox share the pattern
+    /// (Kessig Wolf Run has since been moved here too).
     fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)

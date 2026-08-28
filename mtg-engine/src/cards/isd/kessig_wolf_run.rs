@@ -53,23 +53,34 @@ impl CardBehavior for KessigWolfRun {
         }
     }
 
+    /// "Target creature" — and CR 608.2b asks again on resolution whether it is
+    /// still one. A creature that has left the battlefield is not.
+    ///
+    /// This is the hook `stack.rs`'s ability arm calls before deciding whether
+    /// to counter the ability, so answering here counters it outright rather
+    /// than resolving into a no-op. The check used to sit inside the resolution
+    /// handler, which reached the same answer for this card's single target but
+    /// would have been the wrong place for two.
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        matches!(target, Target::Object(id)
+            if state.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield))
+    }
+
     fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let x = i32::try_from(state.last_activated_x_value.unwrap_or(0)).unwrap_or(i32::MAX);
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
-                    target: *target_id,
-                    power_mod: x,
-                    toughness_mod: 0,
-                });
-                state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantKeyword {
-                    target: *target_id,
-                    keyword: Keyword::Trample,
-                });
-                let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.log(crate::state::LogLevel::Event,
-                    format!("Kessig Wolf Run gives {name} +{x}/+0 and trample until end of turn"));
-            }
-        }
+        // Legality was settled before this ran — see `is_valid_target`.
+        let Some(Target::Object(target_id)) = targets.first() else { return };
+        state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
+            target: *target_id,
+            power_mod: x,
+            toughness_mod: 0,
+        });
+        state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantKeyword {
+            target: *target_id,
+            keyword: Keyword::Trample,
+        });
+        let name = state.obj_name(*target_id);
+        state.log(crate::state::LogLevel::Event,
+            format!("Kessig Wolf Run gives {name} +{x}/+0 and trample until end of turn"));
     }
 }
