@@ -45,3 +45,91 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 ### Test coverage
 - Token creation and the transform gate: `cards_transforming_permanents.rs`, `subtype.rs`
 - The back face's size: `cards_transforming_permanents.rs:every_transformed_dfc_is_its_back_faces_printed_size`
+## Full audit — 2026-08-27
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/90/bloodline-keeper-lord-of-lineage?utm_source=api
+**Type line**: `Creature — Vampire` — {2}{B}{B}, 3/3
+**Oracle text**:
+```
+Flying
+{T}: Create a 2/2 black Vampire creature token with flying.
+{B}: Transform this creature. Activate only if you control five or more Vampires.
+```
+**Back face**: Lord of Lineage — `Creature — Vampire`, 5/5
+```
+Flying
+Other Vampire creatures you control get +2/+2.
+{T}: Create a 2/2 black Vampire creature token with flying.
+```
+
+**Rulings fetched**:
+- [2016-07-13] For more information on double-faced cards, see the Shadows over Innistrad mechanics article (http://magic.wizards.com/en/articles/archive/feature/shadows-over-innistrad-mechanics).
+
+**Status**: ISSUE (fixed)
+
+### Code issues
+
+**A token copy could transform, which CR 111.7 forbids.**
+
+- Oracle text says: `{B}: Transform this creature. Activate only if you control five or more Vampires.`
+- Code did:
+  ```rust
+  1 => {
+      // Transform into Lord of Lineage.
+      if let Some(obj) = state.get_object_mut(object_id) {
+          obj.is_transformed = true;
+          obj.name = "Lord of Lineage".into();
+      }
+      ...
+  }
+  ```
+
+CR 111.7: a token that is a copy of a double-faced card is not itself
+double-faced — it has only the copied face — so it cannot transform. The engine
+knows this and enforces it in `helpers::apply_transform`, which refuses for
+`o.is_token` and carries a comment citing the rule. Setting `is_transformed` and
+the name by hand went straight around it.
+
+Reachable: **Cackling Counterpart** ("Create a token that's a copy of target
+creature you control") makes exactly such a token of Bloodline Keeper, and the
+token was also *offered* the transform ability in the first place.
+
+Fixed on both sides — the ability is not offered to a token, and the flip goes
+through `apply_transform`, which is where "what transforming means" belongs. The
+log now reads the resulting name from the face rather than hardcoding "Lord of
+Lineage".
+
+### Rulings checked
+
+The only published ruling is a link to a mechanics article, with no rules
+content.
+
+### Tricky interactions checked
+
+- **"Activate only if you control five or more Vampires"** — counted over the
+  controller's battlefield by subtype, and the Keeper counts itself, which is
+  correct: it is a Vampire. So four other Vampires suffice. PASS.
+- **The count uses `has_subtype`**, which sees a runtime-granted Vampire type as
+  well as a printed one — right here, because Olivia Voldaren's grant genuinely
+  makes a creature a Vampire for this purpose. (This is the opposite of the copy
+  case in Evil Twin, where the grant must *not* carry.) PASS.
+- **Both faces have `{T}`: create a 2/2 black Vampire with flying** — offered
+  regardless of `is_transformed`, and only the transform ability is front-face
+  only. PASS.
+- **The token is a 2/2 black Vampire with flying**, created through
+  `create_token_with_subtypes` so it carries the Vampire type — which matters,
+  since each token raises the count toward five and is pumped by the back face's
+  anthem. PASS.
+- **"Other Vampire creatures you control get +2/+2"** — `GlobalOther`, so Lord of
+  Lineage does not pump itself. PASS.
+- **The transform has no once-per-turn or sorcery-speed restriction** — matching
+  the oracle text, which gives neither. PASS.
+- **`should_transform` returns false** — this is not a Werewolf; it flips only
+  through its own activated ability. PASS.
+
+### Test coverage
+
+- a token copy is neither offered the transform nor able to perform it: `copy_effects.rs::a_token_copy_of_bloodline_keeper_cannot_transform` (new, mutation-checked).
+- transforms at five Vampires and gains the anthem: `cards_transforming_permanents.rs:540`.
+- back-face anthem and token creation: `cards_transforming_permanents.rs`.
+

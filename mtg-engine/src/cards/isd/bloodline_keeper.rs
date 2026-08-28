@@ -86,7 +86,12 @@ impl CardBehavior for BloodlineKeeper {
         });
 
         // Front face only: {B}: Transform (requires 5+ Vampires).
-        if !is_transformed {
+        //
+        // CR 111.7: a token that is a copy of a double-faced card is not itself
+        // double-faced — it has only the copied face — so it cannot transform.
+        // Cackling Counterpart makes exactly such a token of this card, and it
+        // used to be offered a transform ability that could not mean anything.
+        if !is_transformed && !obj.is_token {
             let vampire_count = Self::count_vampires(state, controller, registry);
             if vampire_count >= 5 {
                 abilities.push(ActivatedAbilityDef {
@@ -130,13 +135,15 @@ impl CardBehavior for BloodlineKeeper {
                     format!("{face_name}: created a 2/2 Vampire token with flying"));
             }
             1 => {
-                // Transform into Lord of Lineage.
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.is_transformed = true;
-                    obj.name = "Lord of Lineage".into();
-                }
+                // Through the shared helper rather than setting the flag and
+                // the name by hand: `apply_transform` is where "what
+                // transforming means" lives, including the CR 111.7 refusal for
+                // a token copy of a double-faced card. Writing the two fields
+                // directly bypassed that.
+                crate::cards::helpers::apply_transform(state, object_id, registry);
                 state.log(crate::state::LogLevel::Event,
-                    "Bloodline Keeper transforms into Lord of Lineage".into());
+                    format!("Bloodline Keeper transforms into {}",
+                        state.name_of(object_id, registry)));
             }
             _ => {}
         }

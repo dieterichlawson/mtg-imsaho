@@ -364,3 +364,41 @@ fn a_copy_of_a_token_still_takes_the_tokens_printed_characteristics() {
     assert!(!state.get_object(twin).unwrap().is_token,
         "copying a token does not make Evil Twin a token");
 }
+
+/// CR 111.7: a token that is a copy of a double-faced card is not itself
+/// double-faced — it has only the copied face — so it cannot transform.
+///
+/// `apply_transform` enforces this for every DFC at once, but Bloodline
+/// Keeper's `{B}: Transform` set `is_transformed` and the name by hand and so
+/// went around it. Cackling Counterpart makes exactly such a token.
+#[test]
+fn a_token_copy_of_bloodline_keeper_cannot_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
+
+    // A token copy of it, as Cackling Counterpart would make.
+    let ids = state.create_token_with_subtypes(
+        "Bloodline Keeper", P0, 3, 3, vec![Color::Black], vec![CardType::Creature],
+        vec![Keyword::Flying], vec!["Vampire".into()], &reg);
+    let token = ids[0];
+    state.get_object_mut(token).unwrap().card_id =
+        state.get_object(keeper).unwrap().card_id;
+
+    // Five Vampires so the ability's own condition is satisfied.
+    for _ in 0..4 {
+        let v = ready_creature(&mut state, P0, 1, 1);
+        state.get_object_mut(v).unwrap().subtypes = vec!["Vampire".into()];
+    }
+
+    let behavior = reg.get(state.get_object(token).unwrap().card_id).unwrap();
+    let abilities = behavior.activated_abilities(&state, token, &reg);
+    assert!(abilities.iter().all(|a| !a.description.contains("Transform")),
+        "a token copy is not offered a transform it could not perform");
+
+    // And even driven directly, it does not flip.
+    behavior.resolve_activated_ability(&mut state, token, 1, &[], &reg);
+    assert!(!state.get_object(token).unwrap().is_transformed,
+        "CR 111.7: a token copy of a DFC cannot transform");
+}

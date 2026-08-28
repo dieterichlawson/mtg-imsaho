@@ -25,7 +25,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Bitterheart Witch | `bitterheart_witch.rs` | 167 | 6 | 1 |
 | x | Curse of Oblivion | `curse_of_oblivion.rs` | 140 | 6 | 2 |
 | x | Charmbreaker Devils | `charmbreaker_devils.rs` | 119 | 5 | 3 |
-|   | Bloodline Keeper | `bloodline_keeper.rs` | 148 | 6 | 0 |
+| x | Bloodline Keeper | `bloodline_keeper.rs` | 148 | 6 | 0 |
 |   | Divine Reckoning | `divine_reckoning.rs` | 146 | 6 | 0 |
 |   | Moorland Haunt | `moorland_haunt.rs` | 132 | 6 | 0 |
 |   | Trepanation Blade | `trepanation_blade.rs` | 139 | 5 | 1 |
