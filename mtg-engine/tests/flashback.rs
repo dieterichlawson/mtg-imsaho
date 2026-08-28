@@ -528,3 +528,130 @@ fn runic_repetition_clears_the_flashback_flag_on_the_returned_card() {
          normal cast sends the card back to exile on resolution."
     );
 }
+
+// ─────────────────────────────────────────────────────────────────
+// A *granted* flashback — Snapcaster Mage
+// ─────────────────────────────────────────────────────────────────
+//
+// Everything above tests flashback printed on the card. A granted one takes a
+// different route through the engine at every step: the cost comes from a
+// `GrantFlashback` entry rather than `data.flashback_cost`, it lasts only
+// until end of turn, and the card carries no flashback of its own to fall back
+// on. Each of these is the granted twin of a printed-flashback test above.
+
+/// Put Mulch — {1}{G} sorcery, no flashback of its own — in P0's graveyard and
+/// hand its Snapcaster grant back, through the real ETB trigger.
+fn mulch_with_a_granted_flashback(
+    reg: &CardRegistry,
+    state: &mut mtg_engine::state::GameState,
+) -> ObjectId {
+    let mulch = named_card_in_graveyard(state, reg, "Mulch", P0);
+    let snap = castable_spell(state, reg, "Snapcaster Mage", P0);
+    let mut next = cast_onto_stack(state, reg, snap, vec![]);
+    mtg_engine::stack::resolve_top_of_stack(&mut next, reg);
+    mtg_engine::triggers::process_triggers(&mut next, reg);
+    *state = next;
+    mulch
+}
+
+/// "...gains flashback **until end of turn**." That is the only durational
+/// clause on the card, and a grant that outlived the turn would look correct
+/// in every other test here.
+#[test]
+fn a_granted_flashback_is_gone_next_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // Two turn cycles of draw steps ahead: without libraries both players deck
+    // out, the game ends, and *every* action disappears — which would make
+    // this test pass against a grant that never expired.
+    stock_library(&mut state, &reg, P0, 10);
+    stock_library(&mut state, &reg, P1, 10);
+    let mulch = mulch_with_a_granted_flashback(&reg, &mut state);
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    assert!(can_cast(&state, &reg, mulch),
+        "test precondition: the grant is live on the turn it was made");
+
+    // Two turns, back round to P0's own main phase. Stopping after one would
+    // land in P1's turn, where P0 could not cast a sorcery whatever the grant
+    // said — and the test would pass against a grant that never expired.
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_next_turn(&mut state, &reg);
+    advance_to_step(&mut state, &reg, Step::PrecombatMain);
+    assert_eq!(state.active_player, P0, "test precondition: back in P0's turn");
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    assert!(!mtg_engine::engine::legal_actions(&state, &reg).actions.is_empty(),
+        "test precondition: the game is still running, so 'cannot cast' below \
+         means the grant expired and not that there is nothing to do");
+
+    assert!(!can_cast(&state, &reg, mulch),
+        "the grant lasted until end of turn, so Mulch is an ordinary card in \
+         the graveyard again");
+}
+
+/// Ruling: "You must still follow any timing restrictions and permissions,
+/// including those based on the card's type. For instance, you can cast a
+/// sorcery using flashback only when you could normally cast a sorcery."
+///
+/// This is the trap the card is famous for: Snapcaster has flash, so it can
+/// enter on an opponent's turn, and a sorcery it grants flashback to cannot be
+/// cast before the grant expires.
+#[test]
+fn a_granted_flashback_on_a_sorcery_still_obeys_sorcery_timing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mulch = mulch_with_a_granted_flashback(&reg, &mut state);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+
+    assert!(can_cast(&state, &reg, mulch),
+        "test precondition: castable in P0's own main phase");
+
+    // Same grant, same mana, a step where no sorcery may be cast.
+    advance_to_step(&mut state, &reg, Step::EndStep);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+
+    assert!(!can_cast(&state, &reg, mulch),
+        "a sorcery cast via flashback still needs sorcery timing — the grant \
+         is not a permission to cast it whenever");
+}
+
+/// Ruling: "A spell cast using flashback will always be exiled afterward,
+/// whether it resolves, is countered, or leaves the stack in some other way."
+/// Tested above for a printed flashback cost; the granted path sets the same
+/// flag from a different branch, so it needs its own case.
+#[test]
+fn a_spell_cast_with_a_granted_flashback_is_exiled_after_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mulch = mulch_with_a_granted_flashback(&reg, &mut state);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+
+    let cast = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == mulch))
+        .expect("Mulch is castable from the graveyard on its granted flashback");
+    let mut state = mtg_engine::engine::submit_action(&state, &cast, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(mulch).unwrap().zone, Zone::Exile,
+        "cast via flashback, so it is exiled rather than returning to the \
+         graveyard — and the flag is set on the granted branch too");
+}
+
+/// "target instant or sorcery card in **your** graveyard." CR 404.3 puts a
+/// card in its owner's graveyard, so an opponent's is out of reach.
+#[test]
+fn snapcaster_cannot_reach_an_instant_in_an_opponents_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Think Twice", P1);
+    let snap = castable_spell(&mut state, &reg, "Snapcaster Mage", P0);
+    let mut state = cast_onto_stack(&state, &reg, snap, vec![]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert!(!state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == theirs)),
+        "the only instant in the game is in the opponent's graveyard, which is \
+         not \"your graveyard\" — so the trigger had no legal target at all");
+}
