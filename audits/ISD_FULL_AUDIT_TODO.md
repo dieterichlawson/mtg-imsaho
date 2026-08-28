@@ -217,7 +217,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Diregraf Ghoul | `diregraf_ghoul.rs` | 41 | 2 | 0 |
 | x | Rally the Peasants | `rally_the_peasants.rs` | 41 | 2 | 0 |
 | x | Desperate Ravings | `desperate_ravings.rs` | 40 | 2 | 0 |
-|   | Rolling Temblor | `rolling_temblor.rs` | 38 | 2 | 0 |
+| x | Rolling Temblor | `rolling_temblor.rs` | 38 | 2 | 0 |
 |   | Scourge of Geier Reach | `scourge_of_geier_reach.rs` | 38 | 2 | 0 |
 |   | Avacyn's Pilgrim | `avacyns_pilgrim.rs` | 36 | 2 | 0 |
 |   | Boneyard Wurm | `boneyard_wurm.rs` | 36 | 2 | 0 |

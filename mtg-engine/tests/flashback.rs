@@ -343,6 +343,10 @@ fn rolling_temblor_damages_non_flyers() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let non_flyer = ready_creature(&mut state, P1, 3, 4);
+    // "**each** creature without flying" — the caster's own included. Both
+    // damaged creatures being the opponent's would let a version that hit
+    // only opponents pass.
+    let own_non_flyer = ready_creature(&mut state, P0, 3, 4);
 
     // Create a creature with flying.
     let flyer_card_id = reg.get_id_by_name("Chapel Geist").unwrap();
@@ -360,6 +364,8 @@ fn rolling_temblor_damages_non_flyers() {
         "Non-flyer should take 2 damage from Rolling Temblor");
     assert_eq!(state.get_object(flyer).unwrap().damage_marked, 0,
         "Flyer should take 0 damage from Rolling Temblor");
+    assert_eq!(state.get_object(own_non_flyer).unwrap().damage_marked, 2,
+        "\"each creature\" is everybody's — the caster's own take it too");
 }
 
 /// Unburial Rites returns a creature card from graveyard to battlefield.
