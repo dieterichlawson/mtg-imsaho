@@ -184,6 +184,146 @@ fn fiend_hunter_returns_exiled_on_death() {
         "Exiled creature should return to the battlefield when Fiend Hunter dies");
 }
 
+/// Answer every pending resolution choice by picking `pick`, running triggers
+/// between each. Fiend Hunter can raise two in a row — the trigger's target
+/// (CR 603.3d) and then its "you may".
+fn answer_choices_with(
+    mut state: mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    pick: mtg_engine::ids::ObjectId,
+) -> mtg_engine::state::GameState {
+    for _ in 0..4 {
+        if state.awaiting_action.is_none() { break; }
+        state = engine::submit_action(&state, &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(pick))),
+        }, reg);
+        triggers::process_triggers(&mut state, reg);
+    }
+    state
+}
+
+/// Ruling: "If a token is exiled this way, it won't return to the
+/// battlefield."
+///
+/// The Hunter says "return the exiled **card**", and a token is not a card
+/// (CR 111.1). It never gets that far here — CR 704.5d makes a token that is
+/// not on the battlefield cease to exist, so by the time the Hunter leaves
+/// there is nothing left to look for.
+#[test]
+fn fiend_hunter_does_not_return_an_exiled_token() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let token = state.create_token_with_subtypes("", P1, 2, 2, vec![Color::Black],
+        vec![CardType::Creature], vec![], vec!["Zombie".into()], &reg)[0];
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: hunter, controller: P0 });
+    triggers::process_triggers(&mut state, &reg);
+    let mut state = answer_choices_with(state, &reg, token);
+    assert_eq!(state.get_object(token).map(|o| o.zone), Some(Zone::Exile),
+        "test precondition: the token was exiled");
+
+    check_state_based_actions(&mut state, &reg);
+    assert!(state.get_object(token).is_none(),
+        "CR 704.5d: a token that is not on the battlefield ceases to exist");
+
+    // Now the Hunter leaves.
+    state.get_object_mut(hunter).unwrap().damage_marked = 99;
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(hunter).unwrap().zone, Zone::Graveyard,
+        "test precondition: the Hunter left the battlefield");
+    assert!(state.get_object(token).is_none(),
+        "the token does not come back — the Hunter returns a card, and there \
+         is no longer anything there at all");
+}
+
+/// Ruling: "If Fiend Hunter leaves the battlefield before its first ability
+/// has resolved, its second ability will trigger and do nothing. Then its
+/// first ability will resolve and exile the target creature indefinitely."
+///
+/// The order is the whole point: the leave trigger goes on the stack above the
+/// enters trigger, so it resolves first, when nothing has been exiled yet.
+#[test]
+fn fiend_hunter_killed_in_response_exiles_the_creature_for_good() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let victim = ready_creature(&mut state, P1, 3, 3);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+
+    // The enters trigger goes on the stack, target locked (CR 603.3d).
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: hunter, controller: P0 });
+    triggers::collect_triggers(&mut state, &reg);
+    assert_eq!(state.stack.len(), 1, "test precondition: the enters trigger is on the stack");
+
+    // In response, the Hunter is destroyed. Its leave trigger goes on top.
+    state.get_object_mut(hunter).unwrap().damage_marked = 99;
+    check_state_based_actions(&mut state, &reg);
+    triggers::collect_triggers(&mut state, &reg);
+    assert_eq!(state.stack.len(), 2,
+        "the leave trigger fires and goes above the enters trigger");
+
+    triggers::process_triggers(&mut state, &reg);
+    let mut state = answer_choices_with(state, &reg, victim);
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Exile,
+        "the leave trigger resolved first and found nothing exiled; the enters \
+         trigger then exiled the creature with nothing left to return it");
+}
+
+/// Ruling: "Once the exiled creature returns, it's considered a new object
+/// with no relation to the object that it was. Auras attached to the exiled
+/// creature will be put into their owners' graveyards. Equipment attached to
+/// the exiled creature will become unattached and remain on the battlefield.
+/// Any counters on the exiled creature will cease to exist."
+#[test]
+fn fiend_hunter_returns_a_new_object() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let victim = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    state.add_counters(victim, CounterType::PlusOnePlusOne, 2);
+    let aura = named_permanent(&mut state, &reg, "Dead Weight", P0);
+    state.get_object_mut(aura).unwrap().attached_to = Some(victim);
+    let gear = named_permanent(&mut state, &reg, "Butcher's Cleaver", P1);
+    state.get_object_mut(gear).unwrap().attached_to = Some(victim);
+
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: hunter, controller: P0 });
+    triggers::process_triggers(&mut state, &reg);
+    let mut state = answer_choices_with(state, &reg, victim);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(aura).unwrap().zone, Zone::Graveyard,
+        "CR 704.5m: the Aura has nothing to enchant and goes to its owner's graveyard");
+    assert_eq!(state.get_object(gear).unwrap().zone, Zone::Battlefield,
+        "CR 704.5n: the Equipment stays on the battlefield");
+    assert_eq!(state.get_object(gear).unwrap().attached_to, None,
+        "and becomes unattached");
+
+    // The Hunter leaves; the creature comes back as a new object.
+    state.get_object_mut(hunter).unwrap().damage_marked = 99;
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+        "test precondition: it returned");
+    assert_eq!(counters_of(&state, victim, CounterType::PlusOnePlusOne), 0,
+        "its counters ceased to exist — what returned is a new object");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Nightbird's Clutches — can't block this turn
 // ══════════════════════════════════════════════════════════════════
