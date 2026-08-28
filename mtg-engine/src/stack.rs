@@ -96,6 +96,34 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                         return false;
                     }
 
+                    // The graveyard requirements say more than a zone, and the
+                    // table above says only the zone. "Return target creature
+                    // card from **your** graveyard" (Unburial Rites) and
+                    // "return target **Zombie** creature card from your
+                    // graveyard" (Ghoulcaller's Chant) were re-checked as
+                    // "some card in some graveyard" — so a target the engine
+                    // would never have offered, an opponent's creature card,
+                    // survived the re-check and was reanimated. Each clause is
+                    // the one `targeting.rs` generates against.
+                    let graveyard_ok = match inner_req {
+                        TargetRequirement::GraveyardCard => true,
+                        TargetRequirement::GraveyardCreature =>
+                            obj.owner == caster && state.is_creature(*id, registry),
+                        TargetRequirement::GraveyardCreatureOfSubtype(subtype) =>
+                            obj.owner == caster
+                                && state.is_creature(*id, registry)
+                                && state.has_subtype(*id, subtype, registry),
+                        TargetRequirement::GraveyardCardOwnedByCaster => obj.owner == caster,
+                        TargetRequirement::GraveyardCardOwnedByOpponent => obj.owner != caster,
+                        // Whose graveyard is named by this spell's *other*
+                        // target (Memory's Journey), which this function is
+                        // asked one target at a time and cannot see. The card
+                        // checks it on resolution.
+                        TargetRequirement::GraveyardCardOwnedByTargetPlayer => true,
+                        _ => true,
+                    };
+                    if !graveyard_ok { return false; }
+
                     // Check TargetFilter for requirements that carry one.
                     let filter = match inner_req {
                         TargetRequirement::CreatureWithFilter(f) | TargetRequirement::PermanentWithFilter(f) => Some(f),
