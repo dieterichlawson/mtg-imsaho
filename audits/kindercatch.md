@@ -40,3 +40,24 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 A vanilla creature has no behaviour to exercise beyond that.
 
+
+## Audit — 2026-08-28 20:25
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Spirit
+**P/T**: 6/6
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/kindercatch.rs` matches: {3}{G}{G}{G}, Spirit, 6/6, no text, no behavior hooks. The empty `oracle_text` is allowed by `card_data_invariants.rs` for exactly this shape (vanilla creature).
+
+### Tricky interactions checked
+- None of its own. It is a Spirit, so both Spirit lords buff it (shared `HasSubtype` path), and its mana value 6 is what Mindshrieker's tests read.
+
+### Test coverage
+- P/T pinned as the Heartless Summoning shrink fixture (6/6 -> 5/5): `cards_rule_modifiers.rs` `heartless_summoning_shrinks_the_creatures_it_cheapens`
+- Mana value 6 pinned by Mindshrieker's mill tests: `cards_activated_abilities.rs`
+- No rulings on Scryfall for this card.
+
+Mutation check: `power: 6 -> 5` fails the Heartless Summoning test. Bites.

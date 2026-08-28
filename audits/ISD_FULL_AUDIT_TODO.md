@@ -248,7 +248,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Abbey Griffin | `abbey_griffin.rs` | 24 | 1 | 0 |
 | x | Ambush Viper | `ambush_viper.rs` | 24 | 1 | 0 |
 | x | Intangible Virtue | `intangible_virtue.rs` | 24 | 1 | 0 |
-|   | Kindercatch | `kindercatch.rs` | 24 | 1 | 0 |
+| x | Kindercatch | `kindercatch.rs` | 24 | 1 | 0 |
 |   | Markov Patrician | `markov_patrician.rs` | 24 | 1 | 0 |
 |   | Moon Heron | `moon_heron.rs` | 24 | 1 | 0 |
 |   | Spectral Rider | `spectral_rider.rs` | 24 | 1 | 0 |
