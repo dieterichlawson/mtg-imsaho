@@ -967,6 +967,43 @@ fn a_card_enumerating_a_graveyard_excludes_tokens() {
         offenders.join("\n  "));
 }
 
+/// A card never deals *combat* damage.
+///
+/// CR 510.1: combat damage is assigned and dealt by the combat damage step.
+/// A card's own effect — "this creature deals 2 damage to any target",
+/// "deals 3 damage to target creature" — is never combat damage, however much
+/// the source is a creature, and the difference is not cosmetic: it decides
+/// whether `CombatDamageDealt` or `NonCombatDamageDealt` is emitted, and so
+/// whether every "whenever ~ deals combat damage" trigger in the set fires.
+///
+/// Six card files deal damage today and all six pass `NonCombat`. Skirsdag
+/// Cultist's audit found that flipping one of them to `Combat` failed no test,
+/// which is what this is for.
+#[test]
+fn a_card_never_deals_combat_damage() {
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") {
+                continue;
+            }
+            if l.contains("DamageKind::Combat") {
+                offenders.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "CR 510.1: combat damage is the combat damage step's, and a card's own \
+         effect is never combat damage — passing `DamageKind::Combat` emits \
+         `CombatDamageDealt` and fires every combat-damage trigger in the \
+         set:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// A card reaches randomness through `cards::helpers`, not `rand` directly.
 ///
 /// "At random" and "flip a coin" are rules (CR 104.3, CR 705.2), and seven

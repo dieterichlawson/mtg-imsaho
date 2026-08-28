@@ -535,6 +535,16 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
 
     assert_eq!(state.get_player(P1).life, 18, "Opponent should be at 18 life");
     assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Graveyard);
+
+    // CR 510.1: an ability's damage is not combat damage, whatever the source
+    // is. Which event is emitted decides whether every "whenever ~ deals combat
+    // damage" trigger in the set fires, and nothing checked it.
+    assert!(state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::NonCombatDamageDealt { .. })),
+        "the ability's damage is non-combat damage");
+    assert!(!state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::CombatDamageDealt { .. })),
+        "and emphatically not combat damage — nobody was in combat");
 }
 #[test]
 fn skirsdag_cultist_cannot_activate_without_creature() {
