@@ -222,7 +222,7 @@ fn think_twice_draws_from_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    stock_library(&mut state, &reg, P0, 1);
+    stock_library(&mut state, &reg, P0, 2);
 
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
