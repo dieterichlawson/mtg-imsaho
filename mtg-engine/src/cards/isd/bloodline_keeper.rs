@@ -46,6 +46,9 @@ impl CardBehavior for BloodlineKeeper {
             subtypes: vec!["Vampire".into()],
             power: Some(5),
             toughness: Some(5),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — black.
+            color_indicator: vec![Color::Black],
             oracle_text: "Flying\nOther Vampire creatures you control get +2/+2.\n{T}: Create a 2/2 black Vampire creature token with flying.".into(),
             keywords: vec![Keyword::Flying],
             continuous_effects: vec![

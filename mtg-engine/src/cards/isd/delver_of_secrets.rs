@@ -52,6 +52,9 @@ impl CardBehavior for DelverOfSecrets {
             subtypes: vec!["Human".into(), "Insect".into()],
             power: Some(3),
             toughness: Some(2),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — blue.
+            color_indicator: vec![Color::Blue],
             oracle_text: "Flying".into(),
             keywords: vec![Keyword::Flying],
             ..Default::default()

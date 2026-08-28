@@ -56,6 +56,9 @@ impl CardBehavior for InstigatorGang {
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — red.
+            color_indicator: vec![Color::Red],
             oracle_text: "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::Trample],
             continuous_effects: vec![

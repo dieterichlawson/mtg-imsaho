@@ -41,6 +41,9 @@ impl CardBehavior for HanweirWatchkeep {
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — red.
+            color_indicator: vec![Color::Red],
             oracle_text: "This creature attacks each combat if able.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack { scope: EffectScope::OnSelf },

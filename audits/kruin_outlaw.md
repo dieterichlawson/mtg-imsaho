@@ -164,3 +164,24 @@ No issues in the card. Both faces match the fetched text and the one ruling hold
 - trigger snapshot: `trigger_snapshots.rs:132`
 - transform mid-combat leaves a declared block alone: `werewolf_cards.rs` `transforming_after_blockers_leaves_a_single_blocker_in_place` (NEW, mutation-checked)
 
+
+## Follow-up — 2026-08-28 — back-face colour indicator established
+
+**Colour source**: external, fetched this session — a web search over the Scryfall and mtg.wtf results returned that "Terror of Kruin Pass has a color indicator that shows it is red". Not from memory.
+**Status**: ISSUE (fixed)
+
+### Code issue
+- CR 204.2: a back face has no mana cost, so its colour comes from the printed
+  colour indicator. `back_face_data` declared none, so a transformed permanent
+  was **colourless** — it dodged protection, intimidate, and every
+  "non-colour" filter in the set. This was the class opened under Gatstaf
+  Shepherd; this card's full audit predated the colour-indicator sweep, and
+  `audits/BACK_FACE_COLORS.md` carried it as "not yet established" until now.
+- Fixed: `color_indicator: vec![Color::Red]` on the back face (Terror of Kruin Pass is red).
+
+### Test coverage
+- The colour is pinned, with the other nineteen back faces, by
+  `card_data_invariants.rs::every_back_face_declares_the_colour_its_indicator_prints`,
+  whose table also fails the build on any declared back face it does not name.
+  Mutation-checked by emptying Ironfang's indicator, which fails the sweep by
+  name.

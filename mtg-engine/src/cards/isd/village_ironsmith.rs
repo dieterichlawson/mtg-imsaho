@@ -41,6 +41,9 @@ impl CardBehavior for VillageIronsmith {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(1),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — red.
+            color_indicator: vec![Color::Red],
             oracle_text: "First strike\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![Keyword::FirstStrike],
             triggered_abilities: vec![

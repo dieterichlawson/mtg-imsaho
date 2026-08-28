@@ -41,6 +41,9 @@ impl CardBehavior for CloisteredYouth {
             subtypes: vec!["Horror".into()],
             power: Some(3),
             toughness: Some(3),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — black.
+            color_indicator: vec![Color::Black],
             oracle_text: "At the beginning of your end step, you lose 1 life.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {

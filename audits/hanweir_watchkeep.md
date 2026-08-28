@@ -155,3 +155,24 @@ So a summoning-sick or tapped Bane is not forced, and a Defender creature could 
 - summoning-sick and tapped Banes are not forced: `werewolf_cards.rs` `bane_of_hanweir_is_not_forced_when_it_cannot_attack` (NEW, mutation-checked against dropping the ability checks)
 - the front face cannot attack behind Defender: `werewolf_cards.rs` `hanweir_watchkeep_cannot_attack_behind_its_defender` (NEW)
 
+
+## Follow-up — 2026-08-28 — back-face colour indicator established
+
+**Colour source**: external, fetched this session — a web search over the Scryfall and mtg.wtf results returned that "The Bane of Hanweir has a color indicator of Red and is a Creature — Werewolf". Not from memory.
+**Status**: ISSUE (fixed)
+
+### Code issue
+- CR 204.2: a back face has no mana cost, so its colour comes from the printed
+  colour indicator. `back_face_data` declared none, so a transformed permanent
+  was **colourless** — it dodged protection, intimidate, and every
+  "non-colour" filter in the set. This was the class opened under Gatstaf
+  Shepherd; this card's full audit predated the colour-indicator sweep, and
+  `audits/BACK_FACE_COLORS.md` carried it as "not yet established" until now.
+- Fixed: `color_indicator: vec![Color::Red]` on the back face (Bane of Hanweir is red).
+
+### Test coverage
+- The colour is pinned, with the other nineteen back faces, by
+  `card_data_invariants.rs::every_back_face_declares_the_colour_its_indicator_prints`,
+  whose table also fails the build on any declared back face it does not name.
+  Mutation-checked by emptying Ironfang's indicator, which fails the sweep by
+  name.

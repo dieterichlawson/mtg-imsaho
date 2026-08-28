@@ -232,3 +232,24 @@ but it is the same effect.
 - back-face +1 deathtouch Wolf, −1 sacrifice-and-tutor (both the single-creature and chosen paths), −3 count and trample: `cards_transforming_permanents.rs:643-860`, now transforming through `helpers::apply_transform` rather than hand-setting the flag and the name.
 - front-face 0 fight-back and loyalty loss: `damage_pipeline.rs`, `damage_helper.rs`.
 
+
+## Follow-up — 2026-08-28 — back-face colour indicator established
+
+**Colour source**: external, fetched this session — a web search over the mtg.wtf, Scryfall and judge-blog results returned that "Garruk, the Veil-Cursed has a color indicator showing it is black and green", and that the card's colour identity is green-black for Commander because of it. Not from memory.
+**Status**: ISSUE (fixed)
+
+### Code issue
+- CR 204.2: a back face has no mana cost, so its colour comes from the printed
+  colour indicator. `back_face_data` declared none, so a transformed permanent
+  was **colourless** — it dodged protection, intimidate, and every
+  "non-colour" filter in the set. This was the class opened under Gatstaf
+  Shepherd; this card's full audit predated the colour-indicator sweep, and
+  `audits/BACK_FACE_COLORS.md` carried it as "not yet established" until now.
+- Fixed: `color_indicator: vec![Color::Black, Color::Green]` on the back face (Garruk, the Veil-Cursed is black and green).
+
+### Test coverage
+- The colour is pinned, with the other nineteen back faces, by
+  `card_data_invariants.rs::every_back_face_declares_the_colour_its_indicator_prints`,
+  whose table also fails the build on any declared back face it does not name.
+  Mutation-checked by emptying Ironfang's indicator, which fails the sweep by
+  name.

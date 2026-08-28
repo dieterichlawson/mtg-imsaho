@@ -51,6 +51,9 @@ impl CardBehavior for GarrukRelentless {
             card_types: vec![CardType::Planeswalker],
             supertypes: vec![Supertype::Legendary],
             subtypes: vec!["Garruk".into()],
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — black and green.
+            color_indicator: vec![Color::Black, Color::Green],
             oracle_text: "+1: Create a 1/1 black Wolf creature token with deathtouch.\n−1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.\n−3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.".into(),
             ..Default::default()
         })

@@ -51,6 +51,9 @@ impl CardBehavior for ScreechingBat {
             subtypes: vec!["Vampire".into()],
             power: Some(5),
             toughness: Some(5),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — black.
+            color_indicator: vec![Color::Black],
             oracle_text: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {

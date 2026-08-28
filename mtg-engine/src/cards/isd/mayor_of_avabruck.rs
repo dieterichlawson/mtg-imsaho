@@ -51,6 +51,9 @@ impl CardBehavior for MayorOfAvabruck {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — green.
+            color_indicator: vec![Color::Green],
             oracle_text: "Each other creature you control that's a Werewolf or a Wolf gets +1/+1.\nAt the beginning of your end step, create a 2/2 green Wolf creature token.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {

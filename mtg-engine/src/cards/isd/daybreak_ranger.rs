@@ -42,6 +42,9 @@ impl CardBehavior for DaybreakRanger {
             subtypes: vec!["Werewolf".into()],
             power: Some(4),
             toughness: Some(4),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — green.
+            color_indicator: vec![Color::Green],
             oracle_text: "{R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {

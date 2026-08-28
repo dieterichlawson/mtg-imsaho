@@ -62,6 +62,9 @@ impl CardBehavior for CivilizedScholar {
             subtypes: vec!["Human".into(), "Mutant".into()],
             power: Some(5),
             toughness: Some(1),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — red.
+            color_indicator: vec![Color::Red],
             oracle_text: "At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {

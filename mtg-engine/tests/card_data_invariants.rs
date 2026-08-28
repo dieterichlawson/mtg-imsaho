@@ -454,6 +454,82 @@ fn every_card_with_a_back_face_declares_it() {
     assert_none(&offenders, "declare the back face the oracle cache gives them");
 }
 
+/// CR 204.2: a back face has no mana cost, so its colour comes from the
+/// printed colour indicator. A back face declared without one is colourless —
+/// it dodges protection, intimidate, and every "non-<colour>" filter in the
+/// set — which is a live bug, not a cosmetic one.
+///
+/// Every colour below was established from an external source during that
+/// card's audit (see `audits/BACK_FACE_COLORS.md`); none is derivable from the
+/// front face's cost — Garruk Relentless is mono-green and Garruk, the
+/// Veil-Cursed is black-green. The oracle cache does not carry indicators, so
+/// this table is the checked-in record of those lookups.
+#[test]
+fn every_back_face_declares_the_colour_its_indicator_prints() {
+    // (front-face card name, back-face name, colour indicator)
+    let expected: &[(&str, &str, &[Color])] = &[
+        ("Bloodline Keeper", "Lord of Lineage", &[Color::Black]),
+        ("Civilized Scholar", "Homicidal Brute", &[Color::Red]),
+        ("Cloistered Youth", "Unholy Fiend", &[Color::Black]),
+        ("Daybreak Ranger", "Nightfall Predator", &[Color::Green]),
+        ("Delver of Secrets", "Insectile Aberration", &[Color::Blue]),
+        ("Garruk Relentless", "Garruk, the Veil-Cursed", &[Color::Black, Color::Green]),
+        ("Gatstaf Shepherd", "Gatstaf Howler", &[Color::Green]),
+        ("Grizzled Outcasts", "Krallenhorde Wantons", &[Color::Green]),
+        ("Hanweir Watchkeep", "Bane of Hanweir", &[Color::Red]),
+        ("Instigator Gang", "Wildblood Pack", &[Color::Red]),
+        ("Kruin Outlaw", "Terror of Kruin Pass", &[Color::Red]),
+        ("Ludevic's Test Subject", "Ludevic's Abomination", &[Color::Blue]),
+        ("Mayor of Avabruck", "Howlpack Alpha", &[Color::Green]),
+        ("Reckless Waif", "Merciless Predator", &[Color::Red]),
+        ("Screeching Bat", "Stalking Vampire", &[Color::Black]),
+        ("Thraben Sentry", "Thraben Militia", &[Color::White]),
+        ("Tormented Pariah", "Rampaging Werewolf", &[Color::Red]),
+        ("Ulvenwald Mystics", "Ulvenwald Primordials", &[Color::Green]),
+        ("Village Ironsmith", "Ironfang", &[Color::Red]),
+        ("Villagers of Estwald", "Howlpack of Estwald", &[Color::Green]),
+    ];
+
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut covered = HashSet::new();
+    for (front, back_name, colors) in expected {
+        let Some(behavior) = reg.get_id_by_name(front).and_then(|id| reg.get(id)) else {
+            offenders.push(format!("{front}: not in the registry"));
+            continue;
+        };
+        let Some(back) = behavior.back_face_data() else {
+            offenders.push(format!("{front}: declares no back_face_data()"));
+            continue;
+        };
+        covered.insert(back.name.clone());
+        if back.name != *back_name {
+            offenders.push(format!(
+                "{front}: back face is {:?}, expected {back_name:?}", back.name));
+        }
+        if back.color_indicator != *colors {
+            offenders.push(format!(
+                "{back_name}: colour indicator is {:?}, the printed indicator is {colors:?}",
+                back.color_indicator));
+        }
+    }
+
+    // The table must stay complete: any declared back face missing from it is
+    // a face whose colour nobody has established.
+    for name in reg.all_names() {
+        let behavior = reg.get_id_by_name(name).and_then(|id| reg.get(id)).unwrap();
+        if let Some(back) = behavior.back_face_data() {
+            if !covered.contains(&back.name) {
+                offenders.push(format!(
+                    "{name}: back face {:?} has no row in this table — establish its \
+                     colour indicator from an external source", back.name));
+            }
+        }
+    }
+
+    assert_none(&offenders, "declare the colour indicator their back face prints");
+}
+
 /// CR 111.4: "If the spell or ability doesn't specify the name of the token,
 /// its name is the same as its subtype(s) plus the word 'Token.'"
 ///
