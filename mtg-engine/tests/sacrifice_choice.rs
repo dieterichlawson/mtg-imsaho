@@ -198,6 +198,79 @@ fn disciple_of_griselbrand_player_picks_highest_toughness_sacrifice() {
     assert_eq!(new_state.get_object(small).unwrap().zone, Zone::Battlefield);
 }
 
+/// Ruling (2011-09-22): "The amount of life you gain is equal to the toughness
+/// of the creature as it last existed on the battlefield, not its toughness in
+/// the graveyard."
+///
+/// Which creature is "the sacrificed creature" is settled when the cost is paid
+/// (CR 601.2h); the ability resolves later, and players get priority in
+/// between. The card used to read the *most recent* `CreatureDied` event, so
+/// anything that died in that window answered for the creature that actually
+/// paid: sacrificing a 1/1 while the opponent killed a 5/9 in response gained
+/// nine life.
+#[test]
+fn disciple_of_griselbrand_reads_the_creature_that_paid_not_the_last_one_to_die() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let paid_with = ready_creature(&mut state, P0, 1, 1);
+    let bystander = ready_creature(&mut state, P0, 5, 9);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let act = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, sacrifice: Some(s), .. }
+            if *object_id == disciple && *s == paid_with))
+        .expect("sacrificing the 1/1 is on offer")
+        .clone();
+    let mut state = engine::submit_action(&state, &act, &reg);
+    let life_before = state.get_player(P0).life;
+
+    // In the window between paying the cost and the ability resolving,
+    // something else dies — and it is bigger.
+    mtg_engine::destruction::try_destroy(&mut state, bystander, &reg);
+    assert_eq!(state.get_object(bystander).unwrap().zone, Zone::Graveyard,
+        "test setup: the bystander died after the cost was paid");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life - life_before, 1,
+        "one life, for the 1/1 that paid the cost — not nine for the 5/9 that \
+         happened to die most recently");
+}
+
+/// The other half of the same ruling: "the toughness of the creature **as it
+/// last existed on the battlefield**, not its toughness in the graveyard."
+///
+/// A creature with a +1/+1 counter is bigger on the battlefield than the card
+/// that lands in the graveyard, which CR 400.7 makes a new object printed as
+/// itself. Reading the graveyard object's toughness instead of the
+/// `CreatureDied` event's `last_known_toughness` passed the whole workspace.
+#[test]
+fn disciple_of_griselbrand_gains_the_toughness_it_had_on_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let fodder = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    state.add_counters(fodder, CounterType::PlusOnePlusOne, 3);
+    assert_eq!(state.effective_toughness(fodder, &reg), Some(5),
+        "test setup: a 2/2 with three +1/+1 counters is a 5/5 on the battlefield");
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    let legal = engine::legal_actions(&state, &reg);
+    let act = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, sacrifice: Some(s), .. }
+            if *object_id == disciple && *s == fodder))
+        .expect("sacrificing the Walking Corpse is on offer")
+        .clone();
+    let life_before = state.get_player(P0).life;
+    let state = resolve_activated(engine::submit_action(&state, &act, &reg), &reg);
+
+    assert_eq!(state.get_player(P0).life - life_before, 5,
+        "five life — what it was on the battlefield, not the 2 the card in the \
+         graveyard is printed with");
+}
+
 #[test]
 fn disciple_of_griselbrand_can_sacrifice_itself() {
     // Disciple is its own valid sacrifice — gain 1 life from its 1 toughness
@@ -390,4 +463,5 @@ fn hauberk_can_sacrifice_the_creature_it_is_equipping_to_move_itself() {
     assert_eq!(after.effective_power(other, &reg), Some(7), "3 + 4");
     assert_eq!(after.effective_toughness(other, &reg), Some(5), "3 + 2");
 }
+
 
