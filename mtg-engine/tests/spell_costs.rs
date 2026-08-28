@@ -262,3 +262,42 @@ fn rooftop_storms_free_cast_reaches_a_zombie_cast_from_the_graveyard() {
         "CR 601.2f: the alternative cost applies to the graveyard cast too, so \
          the Ruinator is castable for {{0}}");
 }
+
+// ---------------------------------------------------------------------------
+// Mana value is not the total cost
+// ---------------------------------------------------------------------------
+
+/// Blasphemous Act ruling: "The mana value of the spell is determined only by
+/// its mana cost, no matter what the total cost to cast the spell was."
+///
+/// Its {8}{R} can be reduced all the way to {R}, so it is the card where the
+/// two numbers come apart most. Everything that reads a mana value reads
+/// `card_data().cost`, and nothing may start routing that through
+/// `cost_to_cast` — Mindshrieker's "+X/+X where X is the mana value of that
+/// card" is the reader that would show it.
+#[test]
+fn a_cost_reduction_does_not_change_a_cards_mana_value() {
+    use mtg_engine::actions::Target;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
+    // Nine more creatures: with ten on the battlefield the Act costs {R}.
+    for _ in 0..9 {
+        ready_creature(&mut state, P0, 1, 1);
+    }
+    assert_eq!(mana_value(&state, &reg, "Blasphemous Act", P0, CastMethod::Normal), 1,
+        "test precondition: ten creatures reduce the total cost to {{R}}");
+
+    let act = reg.get_id_by_name("Blasphemous Act").unwrap();
+    let lib_card = state.create_object(act, P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order = vec![lib_card];
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    let state = activate_offered(&state, &reg, shrieker, Some(Target::Player(P1)));
+
+    assert_eq!(state.effective_power(shrieker, &reg), Some(1 + 9),
+        "the milled Act's mana value is its printed {{8}}{{R}} = 9, not the \
+         {{R}} it would have cost to cast with ten creatures out");
+}
