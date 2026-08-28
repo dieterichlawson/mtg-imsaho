@@ -14,15 +14,24 @@
 //! The fix: `legal_actions` enumerates one `Action::ActivateAbility` per
 //! (target, sacrifice) combo, mirroring how `CastSpell` handles spell-side
 //! sacrifice costs. The apply path uses the explicit sacrifice rather than
-//! auto-picking. The (target, sacrifice) pairs where sacrifice == target are
-//! filtered out so the player can never accidentally pick a fizzling combo.
+//! auto-picking.
 //!
-//! These tests pin all of those properties.
+//! A second filter was layered on top of that fix: pairs where sacrifice ==
+//! target were hidden, so the player "could never accidentally pick a fizzling
+//! combo". That went too far. CR 601.2b chooses targets before CR 601.2h pays
+//! costs, so sacrificing the creature you targeted is a legal activation — the
+//! sacrifice happens and only the ability is countered on resolution (CR
+//! 608.2b). Sometimes the sacrifice is the whole point: Demonmail Hauberk's
+//! "Equip—Sacrifice a creature" is a free sorcery-speed sac outlet, and with a
+//! single creature on the battlefield the hidden pair was the only way to use
+//! it. Hiding a legal play is not the engine's call.
+//!
+//! These tests pin the real property — the player picks the sacrifice, and
+//! every legal pair is offered.
 
 mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::types::*;
@@ -33,9 +42,9 @@ use mtg_engine::types::*;
 
 #[test]
 fn hauberk_legal_actions_enumerate_target_sacrifice_combos() {
-    // 3 creatures + Hauberk on board. The engine should enumerate one
-    // ActivateAbility per (target, sacrifice) pair where target != sacrifice.
-    // 3 targets × 2 valid sacrifices = 6 combos.
+    // 3 creatures + Hauberk on board. One ActivateAbility per (target,
+    // sacrifice) pair — 3 targets × 3 sacrifices = 9 combos, including the
+    // three where the sacrifice is the target.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
@@ -57,18 +66,12 @@ fn hauberk_legal_actions_enumerate_target_sacrifice_combos() {
         } else { None }
     }).collect();
 
-    assert_eq!(combos.len(), 6, "should enumerate 3 targets × 2 sacrifices = 6 combos, got {combos:?}");
+    assert_eq!(combos.len(), 9, "should enumerate 3 targets × 3 sacrifices = 9 combos, got {combos:?}");
 
-    // Check no combo has target == sacrifice.
-    for (t, s) in &combos {
-        assert_ne!(t, s, "no combo should have target == sacrifice (would fizzle)");
-    }
-
-    // Check we cover every (target, non-target sacrifice) pair.
+    // Every pair, the self-sacrificing ones included.
     for &t in &[a, b, c] {
-        for &s in &[a, b, c] {
-            if t == s { continue; }
-            assert!(combos.contains(&(t, s)), "missing combo (target={}, sac={})", t.0, s.0);
+        for &sac in &[a, b, c] {
+            assert!(combos.contains(&(t, sac)), "missing combo (target={}, sac={})", t.0, sac.0);
         }
     }
 }
@@ -105,55 +108,55 @@ fn hauberk_explicit_sacrifice_attaches_correctly() {
 }
 
 #[test]
-fn hauberk_with_only_one_creature_offers_no_legal_actions() {
-    // Hauberk + 1 creature: the only creature is also the only valid target.
-    // After filtering combos where target == sac, there's nothing left, so
-    // the ability should NOT appear in legal actions.
+fn hauberk_with_one_creature_is_a_free_sacrifice_outlet() {
+    // Hauberk + exactly one creature. The only target is also the only
+    // creature that can pay, so the activation must sacrifice the creature it
+    // targeted. That is legal (CR 601.2b before 601.2h) and it is the reason
+    // to play this card next to a Doomed Traveler: the equip fizzles, the
+    // sacrifice is what you wanted.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
-    let _solo = ready_creature(&mut state, P0, 2, 2);
+    let solo = ready_creature(&mut state, P0, 2, 2);
 
     let legal = engine::legal_actions(&state, &reg);
-    let any_hauberk = legal.actions.iter().any(|a| matches!(a,
-        Action::ActivateAbility { object_id, .. } if *object_id == hauberk));
-    assert!(!any_hauberk,
-        "Demonmail Hauberk should not be activatable with only one creature \
-         (it would have to sacrifice the same creature it's trying to equip)");
+    let action = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == hauberk))
+        .expect("equip is activatable: a creature is on the battlefield to pay the cost")
+        .clone();
+    assert!(matches!(&action,
+        Action::ActivateAbility { targets, sacrifice: Some(sac), .. }
+            if targets == &[Target::Object(solo)] && *sac == solo),
+        "the only pair available targets and sacrifices the one creature: {action:?}");
+
+    let after = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
+
+    assert_eq!(after.get_object(solo).unwrap().zone, Zone::Graveyard,
+        "the cost was paid — that is the point of the activation");
+    assert_eq!(after.get_object(hauberk).unwrap().attached_to, None,
+        "and the equip found no legal target on resolution, so it attached to \
+         nothing (CR 608.2b)");
 }
 
 #[test]
-fn hauberk_does_not_offer_combo_where_target_equals_sacrifice() {
-    // Even with multiple creatures, no combo should ever set target == sacrifice.
-    // This is the regression case for the original bug.
+fn hauberk_offers_the_pair_that_sacrifices_its_own_target() {
+    // With several creatures the self-sacrificing pair is not the useful one,
+    // but it is legal, so it is offered. The player decides whether a
+    // fizzling equip is worth a sacrifice; the engine does not decide for them.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
-    let _a = ready_creature(&mut state, P0, 1, 1);
-    let _b = ready_creature(&mut state, P0, 2, 2);
+    let a = ready_creature(&mut state, P0, 1, 1);
+    let b = ready_creature(&mut state, P0, 2, 2);
     let _c = ready_creature(&mut state, P0, 3, 3);
 
     let legal = engine::legal_actions(&state, &reg);
-    let mut examined = 0;
-    for act in &legal.actions {
-        if let Action::ActivateAbility { object_id, targets, sacrifice, .. } = act {
-            if *object_id != hauberk { continue; }
-            let target_id = match targets.first() {
-                Some(Target::Object(id)) => *id,
-                _ => continue,
-            };
-            examined += 1;
-            assert_ne!(
-                Some(target_id), *sacrifice,
-                "engine offered a target=sacrifice combo, which would fizzle"
-            );
-        }
-    }
-    // Without this the loop body could never run and the test would pass by
-    // examining nothing at all.
-    assert!(examined >= 6,
-        "three creatures should give at least 3 targets x 2 other sacrifices = 6 \
-         combos to check, examined {examined}");
+    let offers = |t: ObjectId, sac: ObjectId| legal.actions.iter().any(|act| matches!(act,
+        Action::ActivateAbility { object_id, targets, sacrifice: Some(s), .. }
+            if *object_id == hauberk && targets == &[Target::Object(t)] && *s == sac));
+
+    assert!(offers(a, a), "target and sacrifice the same creature is a legal activation");
+    assert!(offers(a, b), "and so is the ordinary pair");
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -249,50 +252,36 @@ fn skirsdag_cultist_explicit_sacrifice() {
 }
 
 #[test]
-fn skirsdag_cultist_combo_count_excludes_self_targeting_sacrifices() {
+fn skirsdag_cultist_enumerates_every_target_sacrifice_pair() {
     // Setup: cultist + fodder + opp creature + 1 untapped Red mana floating.
-    // "Any target" damage: legal targets are cultist, fodder, opp creature,
-    // P0 (you), and P1 (opp) — 5 targets total.
-    // Sacrifices: cultist or fodder — 2 options.
-    // Naive enumeration would be 5 × 2 = 10 combos, but for the two
-    // own-creature targets we filter out the matching sacrifice (target ==
-    // sacrifice would fizzle). So:
-    //   target=cultist:    sac in {fodder}        = 1
-    //   target=fodder:     sac in {cultist}        = 1
-    //   target=opp_creature: sac in {cultist, fodder} = 2
-    //   target=P0:         sac in {cultist, fodder} = 2
-    //   target=P1:         sac in {cultist, fodder} = 2
-    //   total = 8
+    // "Any target": cultist, fodder, opp creature, P0 and P1 — 5 targets.
+    // Sacrifices: cultist or fodder — 2 options. Every pair is legal, so
+    // 5 × 2 = 10. The two pairs that sacrifice the creature they target used
+    // to be hidden; they fizzle the damage, which is the player's business.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
+    let fodder = ready_creature(&mut state, P0, 1, 1);
     let _target = ready_creature(&mut state, P1, 3, 3);
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
     let legal = engine::legal_actions(&state, &reg);
     let count = legal.actions.iter().filter(|a| matches!(a,
         Action::ActivateAbility { object_id, .. } if *object_id == cultist)).count();
-    assert_eq!(count, 8,
-        "expected 8 (target, sacrifice) combos for cultist after filtering out self-fizzles");
+    assert_eq!(count, 10, "expected 5 targets × 2 sacrifices = 10 combos");
 
-    // And confirm the two filtered-out combos really aren't there.
-    for act in &legal.actions {
-        if let Action::ActivateAbility { object_id, targets, sacrifice, .. } = act {
-            if *object_id != cultist { continue; }
-            if let Some(Target::Object(t)) = targets.first() {
-                assert_ne!(Some(*t), *sacrifice,
-                    "no combo should target and sacrifice the same creature");
-            }
-        }
-    }
+    // Including the self-sacrificing one.
+    assert!(legal.actions.iter().any(|act| matches!(act,
+        Action::ActivateAbility { object_id, targets, sacrifice: Some(s), .. }
+            if *object_id == cultist && targets == &[Target::Object(fodder)] && *s == fodder)),
+        "targeting the fodder and sacrificing it is legal, so it is offered");
 }
 
 #[test]
-fn skirsdag_cultist_targeting_own_creature_excludes_fizzling_combo() {
-    // If the player targets their own creature (e.g. to ping a creature with
-    // 2 toughness for free) and uses cultist's ability, sacrificing that same
-    // creature would fizzle the damage. The combo must be filtered out.
+fn skirsdag_cultist_may_sacrifice_the_creature_it_targeted() {
+    // The activation is legal even though the damage will fizzle: the cost is
+    // paid on activation (CR 601.2h), so the creature dies either way, and
+    // whether that trade is worth making is the player's judgement.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
@@ -300,23 +289,17 @@ fn skirsdag_cultist_targeting_own_creature_excludes_fizzling_combo() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
     let legal = engine::legal_actions(&state, &reg);
-    for act in &legal.actions {
-        if let Action::ActivateAbility { object_id, targets, sacrifice, .. } = act {
-            if *object_id != cultist { continue; }
-            if let Some(Target::Object(t)) = targets.first() {
-                assert_ne!(Some(*t), *sacrifice,
-                    "no combo should have target == sacrifice");
-            }
-        }
-    }
-
-    // Check the specific case: target=own_creature, sacrifice=own_creature.
-    let bad_combo = legal.actions.iter().any(|a| matches!(a,
+    let action = legal.actions.iter().find(|a| matches!(a,
         Action::ActivateAbility { object_id, targets, sacrifice: Some(s), .. }
             if *object_id == cultist
             && targets == &[Target::Object(own_creature)]
-            && *s == own_creature));
-    assert!(!bad_combo, "should not offer cultist targeting and sacrificing the same creature");
+            && *s == own_creature))
+        .expect("targeting and sacrificing the same creature is a legal activation")
+        .clone();
+
+    let after = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
+    assert_eq!(after.get_object(own_creature).unwrap().zone, Zone::Graveyard,
+        "the sacrifice is a cost, so it happens whatever becomes of the damage");
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -372,30 +355,39 @@ fn disciple_appears_when_mana_is_already_in_the_pool() {
 /// The engine only checks that ANY creature exists (including the
 /// creature being equipped), not that a DIFFERENT creature can be sacrificed.
 #[test]
-fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
-    let registry = CardRegistry::with_all_cards();
+fn hauberk_can_sacrifice_the_creature_it_is_equipping_to_move_itself() {
+    // The card's one ruling, in as many words: "You can sacrifice the creature
+    // Demonmail Hauberk is equipping in order to equip it to another
+    // creature."
+    //
+    // This test used to assert the opposite of what it is now: that equip is
+    // unavailable with a single creature on the battlefield, reasoning from
+    // this same ruling. The ruling grants a permission — you *may* sacrifice
+    // the equipped creature — and says nothing about a minimum board. Reading
+    // a restriction out of it cost the card its use as a sacrifice outlet.
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
+    let hauberk = named_permanent(&mut state, &reg, "Demonmail Hauberk", P0);
+    let equipped = ready_creature(&mut state, P0, 2, 2);
+    let other = ready_creature(&mut state, P0, 3, 3);
 
-    // Place Demonmail Hauberk (equipment)
-    let hauberk = named_permanent(&mut state, &registry, "Demonmail Hauberk", P0);
+    // Start with the Hauberk already on `equipped`.
+    state.get_object_mut(hauberk).unwrap().attached_to = Some(equipped);
 
-    // Place exactly ONE creature — the one we'd want to equip
-    let _creature = ready_creature(&mut state, P0, 3, 3);
+    let legal = engine::legal_actions(&state, &reg);
+    let action = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, targets, sacrifice: Some(s), .. }
+            if *object_id == hauberk && targets == &[Target::Object(other)] && *s == equipped))
+        .expect("equip `other`, paying by sacrificing the creature currently equipped")
+        .clone();
 
-    // With only 1 creature, equipping Demonmail Hauberk means sacrificing
-    // that creature to equip... nothing. This should not be available.
-    // (Per the ruling, you CAN sacrifice the equipped creature to equip
-    // another, but with only 1 creature there's no valid target to equip TO.)
-    let legal = engine::legal_actions(&state, &registry);
-    let can_equip = legal.actions.iter().any(|a| {
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == hauberk)
-    });
+    let after = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
 
-    // Actually, per the ruling: "You can sacrifice the creature Demonmail Hauberk
-    // is equipping in order to equip it to another creature." So with 1 creature,
-    // the equip ability should NOT be available (no target to equip to after sacrifice).
-    // The engine checks if ANY creature exists, which is true, so it shows the ability.
-    // BUG: Equip available with only 1 creature
-    assert!(!can_equip,
-        "Demonmail Hauberk equip should not be available with only 1 creature (no equip target after sacrifice)");
+    assert_eq!(after.get_object(equipped).unwrap().zone, Zone::Graveyard,
+        "the equipped creature paid the cost");
+    assert_eq!(after.get_object(hauberk).unwrap().attached_to, Some(other),
+        "and the Hauberk moved to the creature it targeted");
+    assert_eq!(after.effective_power(other, &reg), Some(7), "3 + 4");
+    assert_eq!(after.effective_toughness(other, &reg), Some(5), "3 + 2");
 }
+
