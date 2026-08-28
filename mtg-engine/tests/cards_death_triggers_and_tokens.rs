@@ -116,6 +116,12 @@ fn village_bell_ringer_untaps_creatures() {
     let opp = ready_creature(&mut state, P1, 1, 1);
     state.get_object_mut(opp).unwrap().tapped = true;
 
+    // A tapped non-creature of your own: "untap all CREATURES you control" is
+    // a claim about what kind of permanent, and without one here, untapping
+    // every permanent you control passed the whole suite.
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    state.get_object_mut(land).unwrap().tapped = true;
+
     // Cast Village Bell-Ringer (flash creature, castable anytime).
     let vbr = castable_spell(&mut state, &reg, "Village Bell-Ringer", P0);
 
@@ -131,6 +137,35 @@ fn village_bell_ringer_untaps_creatures() {
         "P0's second creature should also be untapped");
     assert!(state.get_object(opp).unwrap().tapped,
         "Opponent's creature should NOT be untapped");
+    assert!(state.get_object(land).unwrap().tapped,
+        "and neither should your own land — it untaps creatures");
+}
+
+/// Ruling (2011-09-22): "Untapping an attacking creature doesn't remove it from
+/// combat."
+///
+/// CR 506.4 lists what takes a creature out of combat, and being untapped is
+/// not on it. Adding a `remove_from_combat` call beside the untap passed the
+/// whole workspace.
+#[test]
+fn village_bell_ringer_leaves_an_untapped_attacker_in_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    assert!(state.get_object(attacker).unwrap().tapped,
+        "test precondition: attacking taps it (CR 508.1f)");
+
+    let vbr = castable_spell(&mut state, &reg, "Village Bell-Ringer", P0);
+    state = cast_and_resolve(&state, &reg, vbr, vec![]);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert!(!state.get_object(attacker).unwrap().tapped,
+        "the attacker is untapped");
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker)),
+        "and it is still attacking — untapping is not one of the ways CR 506.4 \
+         removes a creature from combat");
 }
 
 /// Slayer of the Wicked destroys a Vampire, Werewolf, or Zombie on ETB.
