@@ -155,6 +155,7 @@ const AUDITED: &[(&str, [&str; 2], [ManaType; 2])] = &[
     ("Clifftop Retreat",  ["Mountain", "Plains"], [ManaType::Red, ManaType::White]),
     ("Hinterland Harbor", ["Forest", "Island"],   [ManaType::Green, ManaType::Blue]),
     ("Isolated Chapel",   ["Plains", "Swamp"],   [ManaType::White, ManaType::Black]),
+    ("Sulfur Falls",      ["Island", "Mountain"], [ManaType::Blue, ManaType::Red]),
 ];
 
 /// "unless **you control** a Forest or an Island." An opponent's is not yours,
