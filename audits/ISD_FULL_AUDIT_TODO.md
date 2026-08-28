@@ -178,7 +178,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Furor of the Bitten | `furor_of_the_bitten.rs` | 35 | 3 | 0 |
 | x | Silent Departure | `silent_departure.rs` | 35 | 3 | 0 |
 | x | Dead Weight | `dead_weight.rs` | 34 | 3 | 0 |
-|   | Gruesome Deformity | `gruesome_deformity.rs` | 34 | 3 | 0 |
+| x | Gruesome Deformity | `gruesome_deformity.rs` | 34 | 3 | 0 |
 |   | Sensory Deprivation | `sensory_deprivation.rs` | 34 | 3 | 0 |
 |   | Brimstone Volley | `brimstone_volley.rs` | 33 | 3 | 0 |
 |   | Dream Twist | `dream_twist.rs` | 33 | 3 | 0 |
