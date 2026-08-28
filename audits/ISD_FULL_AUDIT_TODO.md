@@ -179,7 +179,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Silent Departure | `silent_departure.rs` | 35 | 3 | 0 |
 | x | Dead Weight | `dead_weight.rs` | 34 | 3 | 0 |
 | x | Gruesome Deformity | `gruesome_deformity.rs` | 34 | 3 | 0 |
-|   | Sensory Deprivation | `sensory_deprivation.rs` | 34 | 3 | 0 |
+| x | Sensory Deprivation | `sensory_deprivation.rs` | 34 | 3 | 0 |
 |   | Brimstone Volley | `brimstone_volley.rs` | 33 | 3 | 0 |
 |   | Dream Twist | `dream_twist.rs` | 33 | 3 | 0 |
 |   | Galvanic Juggernaut | `galvanic_juggernaut.rs` | 53 | 2 | 1 |
