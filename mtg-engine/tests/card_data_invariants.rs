@@ -842,6 +842,79 @@ fn no_card_conflates_its_controller_with_still_being_on_the_battlefield() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// CR 602.2a: an activated ability's controller is the player who activated
+/// it, not whoever controls the source when it resolves. The engine records
+/// the activator on the stack entry and `helpers::ability_controller` reads it
+/// back, falling through to the source's last known controller (CR 608.2g).
+///
+/// Reading `o.controller` off the source inside `resolve_activated_ability` is
+/// wrong twice over. An opponent who takes the permanent in response — with
+/// Traitorous Blood, say — collects the effect: Bloodline Keeper's token,
+/// Civilized Scholar's card, Skirsdag High Priest's 5/5 Demon. And the
+/// `None => return` these sites all carried threw the effect away entirely if
+/// the source had left, which CR 113.7a says it must not.
+///
+/// Eleven cards were converted when `ability_controller` was introduced and
+/// seven were missed, because nothing failed the build over it.
+#[test]
+fn no_card_reads_its_controller_off_the_source_when_an_ability_resolves() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    let mut scanned = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name == "helpers.rs" {
+            continue; // where ability_controller lives
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let mut current_fn = String::new();
+        for (n, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if let Some(rest) = code.strip_prefix("fn ") {
+                current_fn = rest.split('(').next().unwrap_or("").to_string();
+            }
+            if current_fn != "resolve_activated_ability" || code.starts_with("//") {
+                continue;
+            }
+            if !code.contains("o.controller") {
+                continue;
+            }
+            scanned += 1;
+            // Whose controller? Only the ability's own source is this rule; a
+            // read off a *target* is that target's controller and belongs
+            // where it is.
+            let subject_is_source = lines[n.saturating_sub(1)].contains("state.get_object(object_id)")
+                || lines[n.saturating_sub(1)].contains("state.get_object(self_id)");
+            // A comparison against a controller already in hand is a different
+            // question again.
+            let is_comparison = code.contains("o.controller ==") || code.contains("== o.controller");
+            if subject_is_source && !is_comparison {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(scanned >= 2,
+        "only {scanned} controller read(s) inside resolve_activated_ability — \
+         this invariant has stopped covering anything");
+    assert!(offenders.is_empty(),
+        "{} site(s) read the source's current controller while an activated \
+         ability resolves:\n  {}\n\n\
+         Use `helpers::ability_controller`, which answers CR 602.2a.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

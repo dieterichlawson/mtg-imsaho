@@ -45,10 +45,14 @@ impl CardBehavior for HereticsPunishment {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(object_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        // CR 602.2a: an activated ability's controller is the player who
+        // activated it, which the engine records; CR 608.2g falls back to the
+        // source's last known controller. Reading `o.controller` here gave the
+        // *current* controller, so an opponent taking the permanent in
+        // response to the ability collected the effect — and `None => return`
+        // threw the whole effect away if the source had left, against
+        // CR 113.7a.
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // Check target legality. If target is illegal, the ability fizzles.
         if let Some(target) = targets.first() {
