@@ -154,7 +154,7 @@ fn every_werewolf_uses_the_same_transform_condition() {
         let mut state = game_at_step(Step::Upkeep, P0);
         state.num_spells_cast_last_turn.insert(P0, 2);
         let id = named_permanent(&mut state, &reg, name, P0);
-        state.get_object_mut(id).unwrap().is_transformed = true;
+        mtg_engine::cards::helpers::apply_transform(&mut state, id, &reg);
         assert!(reg.get(state.get_object(id).unwrap().card_id).unwrap()
             .should_transform(&state, id, &reg),
             "{name}: a player cast two or more spells last turn, so it turns back");

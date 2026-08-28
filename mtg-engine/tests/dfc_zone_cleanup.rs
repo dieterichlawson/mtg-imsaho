@@ -96,9 +96,13 @@ fn every_transformed_dfc_shows_its_front_face_after_leaving_the_battlefield() {
     }
 }
 
-/// Garruk Relentless transforms through a state trigger that writes
-/// `is_transformed` and `name` directly rather than through `apply_transform`,
-/// so the reset has to hold for that path too.
+/// The reset has to hold for a flipped state however it was reached, so this
+/// one writes `is_transformed` and `name` by hand on purpose — every other
+/// test goes through `apply_transform`.
+///
+/// (The comment here used to justify that by saying Garruk transforms this way
+/// himself. He does not: `garruk_relentless.rs` calls `apply_transform` like
+/// everything else. The hand-written state is still the point of the test.)
 #[test]
 fn garruk_name_resets_after_zone_change() {
     let reg = registry();

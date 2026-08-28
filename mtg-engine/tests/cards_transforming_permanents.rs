@@ -212,8 +212,7 @@ fn unholy_fiend_drains_life_at_end_step() {
 
     let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
     // Pre-transform.
-    state.get_object_mut(youth).unwrap().is_transformed = true;
-    state.get_object_mut(youth).unwrap().name = "Unholy Fiend".into();
+    mtg_engine::cards::helpers::apply_transform(&mut state, youth, &reg);
 
     let life_before = state.players[0].life;
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
@@ -319,10 +318,7 @@ fn stalking_vampire_transforms_back_when_player_pays() {
     let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
 
     // Transform to Stalking Vampire first.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.is_transformed = true;
-        obj.name = "Stalking Vampire".into();
-    }
+    mtg_engine::cards::helpers::apply_transform(&mut state, bat, &reg);
 
     // Add mana for the upkeep transform cost: {2}{B}{B}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
@@ -387,10 +383,7 @@ fn screeching_bat_regains_flying_on_transform_back() {
 
     // Start already on the back face. Flipping `is_transformed` is the whole
     // of it — the characteristics accessors read the active face.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.is_transformed = true;
-        obj.name = "Stalking Vampire".into();
-    }
+    mtg_engine::cards::helpers::apply_transform(&mut state, bat, &reg);
 
     // Add mana and transform back.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
@@ -1235,7 +1228,7 @@ fn every_transformed_dfc_is_its_back_faces_printed_size() {
             (Some(fp), Some(ft)),
             "{name}: front face is printed {fp}/{ft}");
 
-        state.get_object_mut(id).unwrap().is_transformed = true;
+        mtg_engine::cards::helpers::apply_transform(&mut state, id, &reg);
         assert_eq!(
             (state.effective_power(id, &reg), state.effective_toughness(id, &reg)),
             (Some(bp), Some(bt)),

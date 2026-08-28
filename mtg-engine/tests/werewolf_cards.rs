@@ -127,9 +127,12 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
     let mut state = game_at_step(Step::Upkeep, P0);
     let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
 
-    // Manually transform to werewolf side
-    state.get_object_mut(waif).unwrap().is_transformed = true;
-    state.get_object_mut(waif).unwrap().name = "Merciless Predator".into();
+    // Through the engine's own transform, so the object ends up in the state a
+    // real flip leaves it in rather than one the test invented — setting
+    // `is_transformed` and `name` by hand walks straight past everything
+    // `apply_transform` decides, including its CR 111.7 refusal for tokens.
+    mtg_engine::cards::helpers::apply_transform(&mut state, waif, &reg);
+    assert_eq!(state.get_object(waif).unwrap().name, "Merciless Predator", "test setup");
 
     // Set up: a player cast 2 spells last turn
     state.num_spells_cast_last_turn.insert(P0, 2);
@@ -142,6 +145,38 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
     assert_eq!(state.effective_power(waif, &reg).unwrap(), 1);
 }
 
+/// The body and the colour it keeps, both faces. Three subtypes on the front,
+/// one on the back.
+#[test]
+fn reckless_waif_is_a_red_1_1_human_rogue_that_becomes_a_red_3_2() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    assert_eq!(state.effective_power(waif, &reg), Some(1));
+    assert_eq!(state.effective_toughness(waif, &reg), Some(1));
+    assert_eq!(state.colors_of(waif, &reg), vec![Color::Red],
+        "red from its {{R}} cost");
+    for sub in ["Human", "Rogue", "Werewolf"] {
+        assert!(state.has_subtype(waif, sub, &reg), "front face is a {sub}");
+    }
+
+    mtg_engine::cards::helpers::apply_transform(&mut state, waif, &reg);
+
+    assert_eq!(state.get_object(waif).unwrap().name, "Merciless Predator");
+    assert_eq!(state.effective_power(waif, &reg), Some(3));
+    assert_eq!(state.effective_toughness(waif, &reg), Some(2));
+    // CR 204.2: the back face has no mana cost, so this can only come from the
+    // colour indicator. Without one it would be colourless.
+    assert_eq!(state.colors_of(waif, &reg), vec![Color::Red],
+        "red from its colour indicator");
+    assert!(state.has_subtype(waif, "Werewolf", &reg));
+    for sub in ["Human", "Rogue"] {
+        assert!(!state.has_subtype(waif, sub, &reg),
+            "the back face is a Werewolf and nothing else — not a {sub}");
+    }
+}
+
 // ── Gatstaf Shepherd ──────────────────────────────────────────────
 
 #[test]
@@ -151,7 +186,7 @@ fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
     let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
 
     // Transform to werewolf
-    state.get_object_mut(shepherd).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(&mut state, shepherd, &reg);
     assert!(state.has_keyword(shepherd, Keyword::Intimidate, &reg));
 
     // Set up transform back
@@ -512,8 +547,7 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
     let mut state = game_at_step(Step::EndStep, P1);
     let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
     // Transform to Howlpack Alpha
-    state.get_object_mut(mayor).unwrap().is_transformed = true;
-    state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
 
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
@@ -547,8 +581,7 @@ fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
     // Transform to Howlpack Alpha
-    state.get_object_mut(mayor).unwrap().is_transformed = true;
-    state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
 
     // Create a token that is both a Werewolf and a Wolf (2/2 base)
     let dual_id = state.create_token_with_subtypes(
@@ -588,7 +621,7 @@ fn nightfall_predator_has_fight_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
-    state.get_object_mut(ranger).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
 
     let abilities = reg.get(state.get_object(ranger).unwrap().card_id).unwrap()
         .activated_abilities(&state, ranger, &reg);
@@ -603,8 +636,7 @@ fn nightfall_predator_can_fight_own_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
-    state.get_object_mut(ranger).unwrap().is_transformed = true;
-    state.get_object_mut(ranger).unwrap().name = "Nightfall Predator".into();
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
 
     // Own creature to fight.
     let own_creature = ready_creature(&mut state, P0, 2, 2);
@@ -697,7 +729,7 @@ fn wildblood_pack_buffs_itself_plus_3() {
     let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
 
     // Transform to Wildblood Pack.
-    state.get_object_mut(gang).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(&mut state, gang, &reg);
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 5);
 
     // Declare Wildblood Pack as attacker — should buff itself +3/+0.
@@ -826,7 +858,7 @@ fn transformed_werewolf_has_werewolf_subtype_not_human() {
         "Front face should have Human subtype");
 
     // Transform
-    state.get_object_mut(waif).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(&mut state, waif, &reg);
 
     // Back face: Werewolf subtype, not Human
     assert!(state.matches_filter(waif,
@@ -863,8 +895,8 @@ fn multiple_werewolves_transform_back_together() {
     let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
 
     // Manually transform to werewolf side
-    state.get_object_mut(waif).unwrap().is_transformed = true;
-    state.get_object_mut(shepherd).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(&mut state, waif, &reg);
+    mtg_engine::cards::helpers::apply_transform(&mut state, shepherd, &reg);
 
     // A player cast 2 spells last turn
     state.num_spells_cast_last_turn.insert(P1, 2);
@@ -882,7 +914,7 @@ fn werewolf_side_stays_if_one_spell_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
-    state.get_object_mut(waif).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(&mut state, waif, &reg);
 
     // Only 1 spell cast last turn: not enough to transform back
     state.num_spells_cast_last_turn.insert(P0, 1);

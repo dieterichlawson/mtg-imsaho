@@ -41,7 +41,7 @@ fn upkeep_stack_entries(state: &mut GameState, reg: &CardRegistry, object: Objec
 /// Put a werewolf on the battlefield already transformed to its back face.
 fn transformed(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
     let id = named_permanent(state, reg, name, owner);
-    state.get_object_mut(id).unwrap().is_transformed = true;
+    mtg_engine::cards::helpers::apply_transform(state, id, reg);
     id
 }
 
