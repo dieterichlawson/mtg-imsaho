@@ -115,7 +115,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Smite the Monstrous | `smite_the_monstrous.rs` | 47 | 4 | 0 |
 | x | Urgent Exorcism | `urgent_exorcism.rs` | 47 | 4 | 0 |
 | x | Rebuke | `rebuke.rs` | 46 | 4 | 0 |
-|   | Victim of Night | `victim_of_night.rs` | 45 | 4 | 0 |
+| x | Victim of Night | `victim_of_night.rs` | 45 | 4 | 0 |
 |   | Unbreathing Horde | `unbreathing_horde.rs` | 89 | 3 | 0 |
 |   | Bump in the Night | `bump_in_the_night.rs` | 43 | 4 | 0 |
 |   | Mindshrieker | `mindshrieker.rs` | 88 | 3 | 0 |
