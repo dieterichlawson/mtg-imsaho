@@ -113,27 +113,47 @@ fn night_revelers_has_haste_with_opponent_human() {
 
 // ── Elite Inquisitor ────────────────────────────────────────────
 
-/// Elite Inquisitor has protection from Vampires, Werewolves, Zombies.
-/// Combat damage from those subtypes is prevented.
+/// Elite Inquisitor has protection from Vampires, Werewolves, and Zombies —
+/// combat damage from those subtypes is prevented, and only from those.
+///
+/// Every attacker here has toughness 3+: the Inquisitor has FIRST STRIKE, so a
+/// smaller attacker dies before it ever swings and the row passes with the
+/// protection deleted. (The original version of this test attacked with a 3/1
+/// Markov Patrician, which is exactly that vacuity.) The Spider row is the
+/// control: a subtype outside the list whose damage must land.
+///
+/// Villagers of Estwald is listed untransformed on purpose: since the Shadows
+/// over Innistrad update, werewolf DFC front faces are "Human Werewolf", so
+/// protection from Werewolves applies to BOTH faces.
 #[test]
 fn elite_inquisitor_protection_prevents_damage() {
     let reg = registry();
-    let mut state = game_at_step(Step::CombatDamage, P1);
+    // (attacker, transform it first?, damage prevented?, why)
+    const ATTACKERS: &[(&str, bool, bool, &str)] = &[
+        ("Bloodline Keeper", false, true, "a 3/3 Vampire"),
+        ("Villagers of Estwald", false, true, "front face is Human WEREWOLF"),
+        ("Villagers of Estwald", true, true, "back face is a Werewolf"),
+        ("Somberwald Spider", false, false, "a Spider is not on the list"),
+    ];
 
-    let inquisitor = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+    for &(name, transform, prevented, why) in ATTACKERS {
+        let mut state = game_at_step(Step::CombatDamage, P1);
+        let inquisitor = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+        let attacker = named_permanent(&mut state, &reg, name, P1);
+        if transform {
+            mtg_engine::cards::helpers::apply_transform(&mut state, attacker, &reg);
+        }
 
-    // Create a Vampire attacker.
-    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+        attacks_blocked_by(&mut state, attacker, P0, &[inquisitor]);
+        mtg_engine::combat::deal_combat_damage(&mut state, &reg);
 
-    // Set up combat: vampire attacks, inquisitor blocks.
-    attacks_blocked_by(&mut state, vampire, P0, &[inquisitor]);
-
-    // Deal combat damage.
-    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
-
-    // Elite Inquisitor should take no damage from the Vampire.
-    let inq_obj = state.get_object(inquisitor).unwrap();
-    assert_eq!(inq_obj.damage_marked, 0, "Elite Inquisitor should not take damage from Vampires (protection)");
+        let marked = state.get_object(inquisitor).unwrap().damage_marked;
+        if prevented {
+            assert_eq!(marked, 0, "{name}: {why} — damage should be prevented");
+        } else {
+            assert!(marked > 0, "{name}: {why} — damage should land");
+        }
+    }
 }
 
 /// Elite Inquisitor's protection prevents Zombies from blocking it.
