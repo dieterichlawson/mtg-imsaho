@@ -25,10 +25,15 @@ impl CardBehavior for ForbiddenAlchemy {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        // Remove top 4 cards from library_order (they stay in Zone::Library but aren't drawable).
-        let player = state.get_player_mut(controller);
-        let count = std::cmp::min(4, player.library_order.len());
-        let revealed: Vec<ObjectId> = player.library_order.drain(..count).collect();
+        // "Look at the top four cards of your library" — looking moves
+        // nothing (CR 701.16a), so they stay in the library and stay in its
+        // order until the choice is answered. This used to drain them out of
+        // `library_order` while leaving their zone as `Library`, which left
+        // the library's two halves disagreeing for as long as the prompt was
+        // open. Every one of them leaves in the answer, and `move_object`
+        // takes each out of the order then.
+        let library = &state.get_player(controller).library_order;
+        let revealed: Vec<ObjectId> = library.iter().take(4).copied().collect();
 
         if revealed.is_empty() {
             // No cards to reveal.

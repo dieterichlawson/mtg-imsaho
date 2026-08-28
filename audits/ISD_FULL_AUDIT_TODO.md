@@ -199,7 +199,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Falkenrath Marauders | `falkenrath_marauders.rs` | 41 | 2 | 1 |
 | x | Doomed Traveler | `doomed_traveler.rs` | 39 | 2 | 1 |
 | x | Stromkirk Patrol | `stromkirk_patrol.rs` | 39 | 2 | 1 |
-|   | Forbidden Alchemy | `forbidden_alchemy.rs` | 58 | 2 | 0 |
+| x | Forbidden Alchemy | `forbidden_alchemy.rs` | 58 | 2 | 0 |
 |   | Paraselene | `paraselene.rs` | 58 | 2 | 0 |
 |   | Shimmering Grotto | `shimmering_grotto.rs` | 58 | 2 | 0 |
 |   | Army of the Damned | `army_of_the_damned.rs` | 55 | 2 | 0 |

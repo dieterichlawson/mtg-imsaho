@@ -480,6 +480,37 @@ fn forbidden_alchemy_draws_and_mills() {
         "Library should have 1 card remaining after revealing 4 from 5");
 }
 
+/// Ruling: "If you have fewer than four cards in your library, you'll look at
+/// all the cards there and put one into your hand and the rest into your
+/// graveyard."
+///
+/// Three shapes, and the middle one is the only one the tests above reach:
+/// with one card there is nothing to decide and no prompt, with two there is,
+/// and with none the spell resolves having looked at nothing.
+#[test]
+fn forbidden_alchemy_looks_at_what_is_there_when_the_library_is_short() {
+    for (stocked, expect_prompt) in [(0usize, false), (1, false), (2, true)] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let library = stock_library(&mut state, &reg, P0, stocked);
+        let fa = castable_spell(&mut state, &reg, "Forbidden Alchemy", P0);
+        let state = cast_and_resolve(&state, &reg, fa, vec![]);
+
+        assert_eq!(state.awaiting_action.is_some(), expect_prompt,
+            "{stocked} card(s): a choice is only asked when there is one to make");
+
+        if stocked == 1 {
+            assert_eq!(state.get_object(library[0]).unwrap().zone, Zone::Hand,
+                "the one card there goes to hand without asking");
+        }
+        if stocked == 0 {
+            assert_eq!(state.get_object(fa).unwrap().zone, Zone::Graveyard,
+                "and with an empty library the spell simply finishes");
+        }
+    }
+}
+
 /// Feeling of Dread taps a target creature.
 #[test]
 fn feeling_of_dread_taps_creature() {
