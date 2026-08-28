@@ -491,28 +491,41 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
 /// `is_valid_target`. Nothing in this set turns a creature into a
 /// non-creature, so no card can stage this; the state is built directly, which
 /// is the only way to hold an engine rule that the card pool never reaches.
+///
+/// Both shapes of "target creature" ask the same question and both have to
+/// re-ask it. `CreatureWithFilter` got the re-check when the seven duplicates
+/// were collapsed; bare `Creature` — "target creature" with no further
+/// restriction, which is most of them — was left taking it on trust.
 #[test]
 fn a_target_creature_that_stopped_being_a_creature_is_no_longer_legal() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // (card, the requirement it declares)
+    const SPELLS: &[(&str, &str)] = &[
+        ("Ranger's Guile", "CreatureWithFilter(YouControl)"),
+        ("Traitorous Blood", "Creature"),
+    ];
 
-    let creature = ready_creature(&mut state, P0, 2, 2);
-    let guile = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
-    let mut state = cast_onto_stack(&state, &reg, guile, vec![Target::Object(creature)]);
+    for &(card, requirement) in SPELLS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // An anonymous object is a creature by virtue of carrying a P/T
-    // (CR 205.1b, and `card_types_of` says so); taking that away is the
-    // shortest honest way to make it stop being one.
-    state.get_object_mut(creature).unwrap().power = None;
-    state.get_object_mut(creature).unwrap().toughness = None;
-    assert!(!state.is_creature(creature, &reg), "test precondition");
+        let creature = ready_creature(&mut state, P0, 2, 2);
+        let spell = castable_spell(&mut state, &reg, card, P0);
+        let mut state = cast_onto_stack(&state, &reg, spell, vec![Target::Object(creature)]);
 
-    state.events.clear();
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+        // An anonymous object is a creature by virtue of carrying a P/T
+        // (CR 205.1b, and `card_types_of` says so); taking that away is the
+        // shortest honest way to make it stop being one.
+        state.get_object_mut(creature).unwrap().power = None;
+        state.get_object_mut(creature).unwrap().toughness = None;
+        assert!(!state.is_creature(creature, &reg), "test precondition");
 
-    assert!(!resolved(&state, guile),
-        "the only target is no longer a creature, so the spell is countered by \
-         game rules");
+        state.events.clear();
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert!(!resolved(&state, spell),
+            "{card} declares {requirement}; its only target is no longer a \
+             creature, so the spell is countered by game rules");
+    }
 }
 
 /// Ranger's Guile is what the test above simulates by hand, and the reason the

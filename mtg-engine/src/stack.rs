@@ -85,7 +85,12 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                     // Seven cards each put it back in their own
                     // `is_valid_target`; four of them are there for a further
                     // restriction anyway, but the preamble was doing this job.
-                    if matches!(inner_req, TargetRequirement::CreatureWithFilter(_))
+                    //
+                    // Bare `Creature` asks exactly the same question and was
+                    // left out of it, so "target creature" with no further
+                    // restriction was the one wording the re-check took on
+                    // trust.
+                    if matches!(inner_req, TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_))
                         && !state.is_creature(*id, registry)
                     {
                         return false;
