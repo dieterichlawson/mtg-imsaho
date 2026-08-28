@@ -74,7 +74,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Manor Gargoyle | `manor_gargoyle.rs` | 81 | 4 | 0 |
 | x | Silver-Inlaid Dagger | `silver_inlaid_dagger.rs` | 81 | 4 | 0 |
 | x | Undead Alchemist | `undead_alchemist.rs` | 101 | 3 | 1 |
-|   | Butcher's Cleaver | `butchers_cleaver.rs` | 80 | 4 | 0 |
+| x | Butcher's Cleaver | `butchers_cleaver.rs` | 80 | 4 | 0 |
 |   | Curse of Stalked Prey | `curse_of_stalked_prey.rs` | 55 | 4 | 1 |
 |   | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 80 | 4 | 0 |
 |   | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 79 | 4 | 0 |
