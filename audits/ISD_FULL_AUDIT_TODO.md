@@ -91,7 +91,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Isolated Chapel | `isolated_chapel.rs` | 73 | 4 | 0 |
 | x | Sulfur Falls | `sulfur_falls.rs` | 73 | 4 | 0 |
 | x | Woodland Cemetery | `woodland_cemetery.rs` | 73 | 4 | 0 |
-|   | Inquisitor's Flail | `inquisitors_flail.rs` | 70 | 4 | 0 |
+| x | Inquisitor's Flail | `inquisitors_flail.rs` | 70 | 4 | 0 |
 |   | Cobbled Wings | `cobbled_wings.rs` | 69 | 4 | 0 |
 |   | Gavony Township | `gavony_township.rs` | 69 | 4 | 0 |
 |   | Lost in the Mist | `lost_in_the_mist.rs` | 68 | 4 | 0 |
