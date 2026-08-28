@@ -8,17 +8,6 @@ mod common;
 use common::*;
 use mtg_engine::types::*;
 
-/// The blanket prevention Moonmist puts up: everything except Wolves and
-/// Werewolves stops dealing combat damage this turn. Built here the way the
-/// card builds it, so the test exercises the same filter.
-fn moonmist_prevention() -> mtg_engine::state::TemporaryEffect {
-    mtg_engine::state::TemporaryEffect::PreventCombatDamageExcept {
-        filter: CreatureFilter::Or(vec![
-            CreatureFilter::HasSubtype("Wolf".into()),
-            CreatureFilter::HasSubtype("Werewolf".into()),
-        ]),
-    }
-}
 /// After Moonmist resolves, the flag is set.
 #[test]
 fn sets_prevention_flag() {
@@ -49,16 +38,24 @@ fn moonmist_prevents_combat_damage_from_everything_but_wolves() {
 
     /// Runs one combat, with or without Moonmist's prevention, and reports
     /// (life lost by P1, damage on the attacker, damage on the blocker).
-    fn combat(reg: &mtg_engine::cards::CardRegistry, wolf: bool, blocked: bool,
+    fn combat(reg: &mtg_engine::cards::CardRegistry, attacker_card: Option<&str>, blocked: bool,
               prevented: bool) -> (i32, u32, u32) {
         let mut state = game_at_step(Step::CombatDamage, P0);
         if prevented {
-            state.until_end_of_turn.push(moonmist_prevention());
+            // The real card, not a hand-built copy of its effect: a helper that
+            // rebuilds the filter tests the filter and not Moonmist, and a card
+            // that stopped naming Werewolves would still pass every row.
+            //
+            // Ruling: "Moonmist will prevent combat damage dealt by a creature
+            // that isn't a Werewolf or a Wolf even if that creature wasn't on
+            // the battlefield ... when Moonmist resolved." The spell resolves
+            // before the attacker exists, which is that ruling.
+            let moonmist = castable_spell(&mut state, reg, "Moonmist", P0);
+            state = cast_and_resolve(&state, reg, moonmist, vec![]);
         }
-        let attacker = if wolf {
-            named_permanent(&mut state, reg, "Darkthicket Wolf", P0)
-        } else {
-            ready_creature(&mut state, P0, 3, 3)
+        let attacker = match attacker_card {
+            Some(name) => named_permanent(&mut state, reg, name, P0),
+            None => ready_creature(&mut state, P0, 3, 3),
         };
         let blocker = ready_creature(&mut state, P1, 2, 2);
         if blocked {
@@ -75,24 +72,28 @@ fn moonmist_prevents_combat_damage_from_everything_but_wolves() {
     }
 
     // Unblocked non-Wolf: no damage to the player — but it would have dealt some.
-    assert_eq!(combat(&reg, false, false, true).0, 0,
+    assert_eq!(combat(&reg, None, false, true).0, 0,
         "a non-Wolf attacker deals no combat damage to the player");
-    assert!(combat(&reg, false, false, false).0 > 0,
+    assert!(combat(&reg, None, false, false).0 > 0,
         "control: without Moonmist that same attacker does get through");
 
     // Blocked non-Wolf: neither side takes damage, and both would have.
-    let (_, attacker_dmg, blocker_dmg) = combat(&reg, false, true, true);
+    let (_, attacker_dmg, blocker_dmg) = combat(&reg, None, true, true);
     assert_eq!((attacker_dmg, blocker_dmg), (0, 0),
         "neither a non-Wolf attacker nor its non-Wolf blocker deals damage");
-    let (_, attacker_dmg, blocker_dmg) = combat(&reg, false, true, false);
+    let (_, attacker_dmg, blocker_dmg) = combat(&reg, None, true, false);
     assert!(attacker_dmg > 0 && blocker_dmg > 0,
         "control: without Moonmist the same block trades damage both ways \
          (got attacker {attacker_dmg}, blocker {blocker_dmg}) — if either is 0 \
          the combat was not set up, and the assertion above proves nothing");
 
-    // A Wolf is exempt.
-    assert!(combat(&reg, true, false, true).0 > 0,
-        "a Wolf still deals its combat damage through Moonmist");
+    // "other than Werewolves **and Wolves**" — both exceptions, and both need
+    // a row: a filter naming only Wolves passed every assertion above.
+    for exempt in ["Darkthicket Wolf", "Village Ironsmith"] {
+        assert!(combat(&reg, Some(exempt), false, true).0 > 0,
+            "{exempt} is one of the two types Moonmist spares, so it still \
+             deals its combat damage");
+    }
 }
 
 /// Moonmist transforms a front-face Human DFC to its back face.
