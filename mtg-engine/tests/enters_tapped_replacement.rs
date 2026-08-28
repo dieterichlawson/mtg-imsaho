@@ -147,6 +147,60 @@ fn check_lands_do_not_satisfy_each_other() {
          enters tapped");
 }
 
+/// "unless **you control** a Mountain or a Plains." An opponent's is not
+/// yours, and no test put the qualifying land on the other side of the board —
+/// a condition that scanned the whole battlefield would have passed every
+/// existing case.
+///
+/// Scoped to Clifftop Retreat: it is the check land whose oracle text was
+/// fetched for this audit, and the procedure forbids judging the other four
+/// against wording I have not read. Their own audits cover them.
+#[test]
+fn clifftop_retreat_is_not_satisfied_by_an_opponents_land() {
+    let reg = registry();
+    for basic in ["Mountain", "Plains"] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        play_land(&mut state, &reg, basic, P1);
+        let id = play_land(&mut state, &reg, "Clifftop Retreat", P0);
+
+        assert!(state.get_object(id).unwrap().tapped,
+            "an opponent's {basic} is not one you control, so the Retreat \
+             enters tapped");
+    }
+
+    // And the same basic on your own side does satisfy it, so the assertion
+    // above is about *whose* it is and not about the basic being absent.
+    for basic in ["Mountain", "Plains"] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        play_land(&mut state, &reg, basic, P0);
+        let id = play_land(&mut state, &reg, "Clifftop Retreat", P0);
+
+        assert!(!state.get_object(id).unwrap().tapped,
+            "your own {basic} does satisfy it");
+    }
+}
+
+/// "{T}: Add {R} **or** {W}." The shared sweep counts two mana abilities,
+/// which a land exposing "Add {R}" twice would also satisfy. This pins the
+/// colours for the one check land whose text this audit fetched.
+#[test]
+fn clifftop_retreat_taps_for_red_or_white() {
+    let reg = registry();
+    let state = game_at_step(Step::PrecombatMain, P0);
+    let card_id = reg.get_id_by_name("Clifftop Retreat").unwrap();
+    let behavior = reg.get(card_id).unwrap();
+
+    let produced: Vec<Vec<(ManaType, u32)>> = behavior
+        .mana_abilities(&state, mtg_engine::ids::ObjectId(0))
+        .into_iter()
+        .map(|a| a.produced)
+        .collect();
+
+    assert_eq!(produced.len(), 2, "two mana abilities");
+    assert!(produced.contains(&vec![(ManaType::Red, 1)]), "one adds {{R}}: {produced:?}");
+    assert!(produced.contains(&vec![(ManaType::White, 1)]), "the other adds {{W}}: {produced:?}");
+}
+
 /// "This creature enters tapped" holds however it enters — cast, reanimated,
 /// or put onto the battlefield by anything else (CR 614.1c).
 ///
