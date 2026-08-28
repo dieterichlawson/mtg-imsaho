@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::{ManaCost, Zone, CardType, ManaType};
 
 /// Hinterland Harbor — Land.
-/// Hinterland Harbor enters the battlefield tapped unless you control a Forest or an Island.
+/// This land enters tapped unless you control a Forest or an Island.
 /// {T}: Add {G} or {U}.
 pub struct HinterlandHarbor;
 
@@ -33,7 +33,10 @@ impl CardBehavior for HinterlandHarbor {
             card_types: vec![CardType::Land],
             oracle_text: "This land enters tapped unless you control a Forest or an Island.\n{T}: Add {G} or {U}.".into(),
             // "Enters tapped unless ..." is a replacement effect (CR 614.1d),
-            // declared via `enters_tapped` — not a triggered ability.,
+            // not a triggered ability. It is declared by `replace_event`
+            // below, which hands the condition to
+            // `helpers::enters_tapped_unless`. (This comment used to name a
+            // `CardData` field that has never existed.)
             ..Default::default()
         }
     }
