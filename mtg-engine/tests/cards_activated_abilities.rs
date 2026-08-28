@@ -12,7 +12,11 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
+use mtg_engine::ids::ObjectId;
+use mtg_engine::sba::check_state_based_actions;
+use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 // ══════════════════════════════════════════════════════════════════
 // Elder of Laurels
@@ -35,6 +39,102 @@ fn elder_of_laurels_pumps_by_creature_count() {
     // Target should get +3/+3 (3 creatures controlled).
     assert_eq!(state.effective_power(target, &reg), Some(5));
     assert_eq!(state.effective_toughness(target, &reg), Some(5));
+}
+
+/// Put the Elder's ability on the stack without resolving it, so the board can
+/// change underneath it.
+fn activate_without_resolving(
+    state: &GameState,
+    reg: &CardRegistry,
+    elder: ObjectId,
+    target: ObjectId,
+) -> GameState {
+    let legal = mtg_engine::engine::legal_actions(state, reg);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id: o, targets, .. }
+            if *o == elder && targets.contains(&Target::Object(target))))
+        .expect("the Elder's ability is offered at that target")
+        .clone();
+    mtg_engine::engine::submit_action(state, &action, reg)
+}
+
+/// Ruling: "The number of creatures you control is counted as the ability
+/// resolves."
+///
+/// The count moves between activation and resolution, so a test where the
+/// board holds still cannot tell the two apart.
+#[test]
+fn elder_of_laurels_counts_creatures_when_the_ability_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
+    let target = ready_creature(&mut state, P0, 2, 2);
+    let doomed = ready_creature(&mut state, P0, 1, 1);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 3), (ManaType::Green, 1)]);
+
+    // Three creatures when the ability is announced.
+    let mut state = activate_without_resolving(&state, &reg, elder, target);
+
+    // In response, one of them dies. Two are left when it resolves.
+    mtg_engine::destruction::try_destroy(&mut state, doomed, &reg);
+    check_state_based_actions(&mut state, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.effective_power(target, &reg), Some(4),
+        "X is two — the count when the ability resolved, not the three there \
+         were when it was announced");
+}
+
+/// Ruling: "Once the ability has resolved, the bonus won't change if the number
+/// of creatures you control changes later in the turn."
+///
+/// The bonus is a fixed number recorded at resolution, not a live count.
+#[test]
+fn elder_of_laurels_bonus_does_not_follow_the_creature_count() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
+    let target = ready_creature(&mut state, P0, 2, 2);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 3), (ManaType::Green, 1)]);
+
+    let mut state = activate_offered(&state, &reg, elder, Some(Target::Object(target)));
+    assert_eq!(state.effective_power(target, &reg), Some(4),
+        "test precondition: two creatures, so +2/+2");
+
+    // Two more creatures arrive, and the Elder itself leaves.
+    ready_creature(&mut state, P0, 1, 1);
+    ready_creature(&mut state, P0, 1, 1);
+    mtg_engine::destruction::try_destroy(&mut state, elder, &reg);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.effective_power(target, &reg), Some(4),
+        "the bonus was fixed when the ability resolved and does not move with \
+         the board");
+}
+
+/// The Elder destroyed in response to its own ability: the ability still
+/// resolves (CR 113.7a), "you" is the player who last controlled it
+/// (CR 608.2g), and it is no longer one of the creatures that player controls.
+#[test]
+fn elder_of_laurels_killed_in_response_no_longer_counts_itself() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let elder = named_permanent(&mut state, &reg, "Elder of Laurels", P0);
+    let target = ready_creature(&mut state, P0, 2, 2);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 3), (ManaType::Green, 1)]);
+
+    let mut state = activate_without_resolving(&state, &reg, elder, target);
+
+    mtg_engine::destruction::try_destroy(&mut state, elder, &reg);
+    check_state_based_actions(&mut state, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.effective_power(target, &reg), Some(3),
+        "the ability still resolves, and X is one: the Elder is no longer a \
+         creature its controller controls");
 }
 
 // ══════════════════════════════════════════════════════════════════
