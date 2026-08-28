@@ -297,6 +297,34 @@ fn night_terrors_takes_nothing_from_a_hand_of_lands() {
     assert_eq!(state.get_object(forest).unwrap().zone, Zone::Hand);
 }
 
+/// Ruling: "If you target yourself with this spell, you must reveal your
+/// entire hand to the other players just as any other player would."
+///
+/// "Target player" carries no restriction, so you are a legal target — and
+/// "you choose" still means the spell's controller, which here is the same
+/// person. Exiling a card out of your own hand is a real, if unusual, line.
+#[test]
+fn night_terrors_can_target_its_own_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let forest = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let terrors = castable_spell(&mut state, &reg, "Night Terrors", P0);
+
+    assert!(mtg_engine::engine::legal_actions(&state, &reg).actions.iter().any(|a|
+        matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == terrors && targets == &[Target::Player(P0)])),
+        "you are a legal target for your own Night Terrors");
+
+    let state = cast_and_resolve(&state, &reg, terrors, vec![Target::Player(P0)]);
+
+    assert_eq!(state.get_object(bear).unwrap().zone, Zone::Exile,
+        "the nonland card leaves your own hand");
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Hand,
+        "and the land is still not a legal choice");
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Woodland Sleuth
 // ═══════════════════════════════════════════════════════════════════
