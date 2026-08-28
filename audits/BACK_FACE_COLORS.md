@@ -8,18 +8,20 @@ treated as colorless, which is wrong for every card below.
 `data/oracle_cache.json` does not record back-face colors and Scryfall is not
 reachable from this environment, so each one has to be established from an
 external source individually. That happens in each card's own audit — every
-card below is still ahead on `ISD_FULL_AUDIT_TODO.md`.
+card marked below is still ahead on `ISD_FULL_AUDIT_TODO.md`.
+
+Established: 2 of 20.
 
 | card | back face | indicator |
 |---|---|---|
 | `gatstaf_shepherd` | Gatstaf Howler | established |
+| `grizzled_outcasts` | Krallenhorde Wantons | established |
 | `bloodline_keeper` | Lord of Lineage | **not yet established** |
 | `civilized_scholar` | Homicidal Brute | **not yet established** |
 | `cloistered_youth` | Unholy Fiend | **not yet established** |
 | `daybreak_ranger` | Nightfall Predator | **not yet established** |
 | `delver_of_secrets` | Insectile Aberration | **not yet established** |
 | `garruk_relentless` | Garruk, the Veil-Cursed | **not yet established** |
-| `grizzled_outcasts` | Krallenhorde Wantons | **not yet established** |
 | `hanweir_watchkeep` | Bane of Hanweir | **not yet established** |
 | `instigator_gang` | Wildblood Pack | **not yet established** |
 | `kruin_outlaw` | Terror of Kruin Pass | **not yet established** |

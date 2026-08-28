@@ -321,6 +321,37 @@ fn hanweir_watchkeep_cannot_attack_behind_its_defender() {
 
 // ── Grizzled Outcasts ─────────────────────────────────────────────
 
+/// The plainest werewolf in the set: a vanilla body on both faces, so what
+/// there is to get wrong is the body itself and the colour it keeps.
+///
+/// Its section here was an empty header — the card was only ever exercised
+/// incidentally, by the two tests that flip several werewolves at once.
+#[test]
+fn grizzled_outcasts_is_a_green_4_4_that_becomes_a_green_7_7() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let outcasts = named_permanent(&mut state, &reg, "Grizzled Outcasts", P0);
+    assert_eq!(state.effective_power(outcasts, &reg), Some(4));
+    assert_eq!(state.effective_toughness(outcasts, &reg), Some(4));
+    assert_eq!(state.colors_of(outcasts, &reg), vec![Color::Green],
+        "green from its {{4}}{{G}} cost");
+    assert!(state.has_subtype(outcasts, "Human", &reg), "Human on the front face");
+
+    mtg_engine::cards::helpers::apply_transform(&mut state, outcasts, &reg);
+
+    assert_eq!(state.get_object(outcasts).unwrap().name, "Krallenhorde Wantons");
+    assert_eq!(state.effective_power(outcasts, &reg), Some(7));
+    assert_eq!(state.effective_toughness(outcasts, &reg), Some(7));
+    // CR 204.2: the back face has no mana cost, so this can only come from the
+    // colour indicator. Without one it would be colourless.
+    assert_eq!(state.colors_of(outcasts, &reg), vec![Color::Green],
+        "green from its colour indicator");
+    assert!(!state.has_subtype(outcasts, "Human", &reg),
+        "the back face is a Werewolf and no longer a Human");
+    assert!(state.has_subtype(outcasts, "Werewolf", &reg));
+}
+
 // ── Mayor of Avabruck ─────────────────────────────────────────────
 
 #[test]

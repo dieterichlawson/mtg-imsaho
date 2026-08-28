@@ -40,6 +40,9 @@ impl CardBehavior for GrizzledOutcasts {
             subtypes: vec!["Werewolf".into()],
             power: Some(7),
             toughness: Some(7),
+            // CR 204.2: the back face has no mana cost, so its color is the
+            // indicator printed beside its type line — green.
+            color_indicator: vec![Color::Green],
             oracle_text: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             triggered_abilities: vec![
                 TriggeredAbilityDef {
