@@ -200,6 +200,101 @@ fn tribute_to_hunger_opponent_sacs_and_gain_life() {
     assert_eq!(state.get_player(P0).life, initial_life + 4,
         "Should have gained life equal to sacrificed creature's toughness");
 }
+/// "Target opponent sacrifices a creature **of their choice**." The choice is
+/// the opponent's, not the caster's, and with more than one creature it has to
+/// actually be presented to them. The existing test gives the opponent one
+/// creature, where there is nothing to choose and the prompt never appears.
+#[test]
+fn tribute_to_hunger_lets_the_opponent_pick_which_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let small = ready_creature(&mut state, P1, 1, 1);
+    let big = ready_creature(&mut state, P1, 5, 5);
+    let life = state.get_player(P0).life;
+
+    let spell = castable_spell(&mut state, &reg, "Tribute to Hunger", P0);
+    let mut state = cast_onto_stack(&state, &reg, spell, vec![Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action else {
+        panic!("the opponent has two creatures, so they must be asked which to \
+                sacrifice; got {:?}", state.awaiting_action);
+    };
+    assert_eq!(*player, P1, "the choice belongs to the opponent, not the caster");
+
+    let options = pending_choice_options(&state);
+    assert!(options.contains(&Target::Object(small)) && options.contains(&Target::Object(big)),
+        "both of the opponent's creatures are choosable: {options:?}");
+
+    // They keep the big one.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(small))),
+    }, &reg);
+
+    assert_eq!(state.get_object(small).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(big).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_player(P0).life, life + 1,
+        "life equal to the toughness of the creature they actually chose");
+}
+
+/// Ruling 2024-11-08: "Use the sacrificed creature's toughness as it last
+/// existed on the battlefield to determine how much life to gain."
+///
+/// So the number is its toughness *including* whatever was modifying it, read
+/// before it leaves — not its printed toughness, and not zero because it is
+/// already in the graveyard by the time the life is added.
+#[test]
+fn tribute_to_hunger_gains_life_for_the_toughness_it_last_had() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    state.add_counters(creature, CounterType::PlusOnePlusOne, 3);
+    assert_eq!(state.effective_toughness(creature, &reg), Some(5), "test setup");
+    let life = state.get_player(P0).life;
+
+    let spell = castable_spell(&mut state, &reg, "Tribute to Hunger", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_player(P0).life, life + 5,
+        "5, the toughness it last had on the battlefield — not its printed 2");
+}
+
+/// A sacrifice is not a destruction, so indestructible does not stop it
+/// (CR 701.17a), and the creature does not get to regenerate.
+#[test]
+fn tribute_to_hunger_takes_an_indestructible_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 4, 4);
+    state.get_object_mut(creature).unwrap().keywords.push(Keyword::Indestructible);
+
+    let spell = castable_spell(&mut state, &reg, "Tribute to Hunger", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "sacrifice is not destruction; indestructible does not apply");
+}
+
+/// The creature is chosen, not targeted — only the opponent is a target — so
+/// hexproof has nothing to say about it (CR 702.11b is about targeting).
+#[test]
+fn tribute_to_hunger_can_take_a_hexproof_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(creature).unwrap().keywords.push(Keyword::Hexproof);
+
+    let spell = castable_spell(&mut state, &reg, "Tribute to Hunger", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "the creature is chosen by its controller, never targeted");
+}
+
 #[test]
 fn tribute_to_hunger_no_creatures_does_nothing() {
     let reg = registry();

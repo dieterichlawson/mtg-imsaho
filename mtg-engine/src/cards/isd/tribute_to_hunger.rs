@@ -37,13 +37,13 @@ impl CardBehavior for TributeToHunger {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
-
-        // Target opponent — use the target if provided, otherwise pick the opponent.
-        let opponent = match targets.first() {
-            Some(Target::Player(pid)) => *pid,
-            _ => state.opponent(controller),
-        };
+        // "Target opponent" — the opponent is the one the caster chose, and
+        // there is no other. This used to fall back to `state.opponent(controller)`
+        // for anything else, which invents a target the caster never declared;
+        // the rule for a target that stopped being legal is CR 608.2b, the
+        // spell does not resolve at all, and `stack::resolve_spell` applies it
+        // before this is ever called.
+        let Some(&Target::Player(opponent)) = targets.first() else { return };
 
         // Get opponent's creatures.
         let opp_creatures: Vec<Target> = crate::cards::helpers::creatures_controlled_by(state, opponent, registry);
