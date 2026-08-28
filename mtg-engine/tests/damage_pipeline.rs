@@ -176,3 +176,54 @@ fn damage_does_not_reduce_effective_toughness() {
     check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
 }
+
+/// CR 120.8: "If a source would deal 0 damage, it does not deal damage at
+/// all." Nothing that would trigger on damage being dealt triggers, and
+/// nothing that reads what damaged a creature sees the source.
+///
+/// The rule lives in `deal_damage`'s guard rather than in each card. Harvest
+/// Pyre reaches it with a real zero — its X is the number of cards exiled, and
+/// X=0 is a legal cast — and used to carry a `count > 0` guard of its own,
+/// which meant the card was right and the rule was untested.
+#[test]
+fn zero_damage_is_not_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let source = ready_creature(&mut state, P0, 2, 2);
+    let target = ready_creature(&mut state, P1, 3, 3);
+
+    state.events.clear();
+    deal_damage(&mut state, source, DamageTarget::Object(target), 0, DamageKind::NonCombat, &reg);
+
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 0);
+    assert!(state.get_object(target).unwrap().damaged_by.is_empty(),
+        "a creature dealt no damage was not damaged by anything");
+    assert!(!state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::NonCombatDamageDealt { .. })),
+        "and no damage event is emitted for anything to trigger on");
+
+    // The same through a card: Harvest Pyre cast for X=0.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let victim = ready_creature(&mut state, P1, 3, 3);
+    let pyre = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+    let mut state = engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::CastSpell {
+            object_id: pyre,
+            targets: vec![Target::Object(victim)],
+            sacrifice: None, exile_count: Some(0), exile_ids: vec![],
+            alternative_cost: None, tap_plan: vec![],
+        },
+        &reg,
+    );
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 0);
+    assert!(state.get_object(victim).unwrap().damaged_by.is_empty(),
+        "X=0 deals no damage, so nothing damaged it");
+    assert!(state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::SpellResolved { object } if *object == pyre)),
+        "the spell still resolves — it is not countered, it just does nothing");
+}
