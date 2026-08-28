@@ -116,6 +116,44 @@ fn equipping_grants_the_printed_bonus() {
     }
 }
 
+/// "Equipped creature has flying." Flying is not an end in itself — the whole
+/// of what the card does is change who may block. Every existing test stopped
+/// at `has_keyword`, which is true of an implementation whose granted keywords
+/// never reach the blocking rules, so this runs the consequence: a ground
+/// creature wearing the Wings cannot be blocked by a ground creature, and can
+/// be again the moment the Wings leave the battlefield (CR 509.1b).
+#[test]
+fn cobbled_wings_flying_reaches_the_blocking_rules() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let ground_blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let wings = named_permanent(&mut state, &reg, "Cobbled Wings", P0);
+
+    assert!(mtg_engine::combat::can_block_attacker(&state, ground_blocker, attacker, &reg),
+        "test precondition: a ground creature blocks a ground creature");
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state = equip(&state, &reg, wings, attacker);
+
+    assert!(!mtg_engine::combat::can_block_attacker(&state, ground_blocker, attacker, &reg),
+        "the Wings grant flying, so a creature with neither flying nor reach \
+         can no longer block");
+
+    // The grant lives on the Equipment, not on the creature, so destroying it
+    // takes the flying with it. Two independent mechanisms hold this up and
+    // either alone is enough, which is worth writing down because it makes the
+    // obvious single-line mutations of this assertion vacuous: `walk_effects`
+    // skips a source that is not on the battlefield, and `move_object` clears
+    // `attached_to` on the way out so `EffectScope::Attached` matches nothing.
+    state.move_object(wings, Zone::Graveyard, &reg);
+    assert!(!state.has_keyword(attacker, Keyword::Flying, &reg),
+        "flying came from the Wings and goes with them");
+    assert!(mtg_engine::combat::can_block_attacker(&state, ground_blocker, attacker, &reg),
+        "with the Wings gone the ground blocker can block again");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Mask of Avacyn — {2} Equipment. +1/+2 and hexproof. Equip {3}.
 // ══════════════════════════════════════════════════════════════════
