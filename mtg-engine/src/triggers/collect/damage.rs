@@ -65,8 +65,22 @@ pub(super) fn combat_damage(
                 for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                     if registry.get(watcher_card_id).is_some() {
                         // AnyCombatDamageToPlayer watchers.
+                        //
+                        // CR 603.2: the watcher's own condition on WHO dealt
+                        // the damage and to WHOM — the same gate its
+                        // AnyDamageToPlayer twin below has always had. Without
+                        // it, "whenever a creature deals combat damage to
+                        // ENCHANTED PLAYER" and "whenever a VAMPIRE YOU
+                        // CONTROL deals combat damage" put a trigger on the
+                        // stack for every creature's combat damage to every
+                        // player, and did nothing when it resolved. A trigger
+                        // that should not have triggered is not free: it is a
+                        // stack object with a priority window around it.
                         let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCombatDamageToPlayer, false);
-                        if !desc.is_empty() {
+                        if !desc.is_empty()
+                            && registry.get(watcher_card_id).is_some_and(|b|
+                                b.should_trigger_on_damage_to_player(state, watcher_id, source_id, *damaged_player, registry))
+                        {
                             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,
                                 TriggerEvent::AnyCombatDamageToPlayer {
                                     dealer: source_id,
