@@ -47,7 +47,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Reckless Waif | `reckless_waif.rs` | 75 | 5 | 2 |
 | x | Grimoire of the Dead | `grimoire_of_the_dead.rs` | 168 | 4 | 0 |
 | x | Curse of the Bloody Tome | `curse_of_the_bloody_tome.rs` | 66 | 5 | 2 |
-|   | Thraben Sentry | `thraben_sentry.rs` | 86 | 5 | 1 |
+| x | Thraben Sentry | `thraben_sentry.rs` | 86 | 5 | 1 |
 |   | Ludevic's Test Subject | `ludevics_test_subject.rs` | 100 | 5 | 0 |
 |   | Hamlet Captain | `hamlet_captain.rs` | 88 | 4 | 2 |
 |   | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 88 | 4 | 2 |
