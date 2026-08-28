@@ -552,6 +552,57 @@ fn skirsdag_cultist_cannot_activate_without_creature() {
     let has_activate = actions.actions.iter().any(|a| matches!(a, Action::ActivateAbility { .. }));
     assert!(has_activate, "Should be able to activate (cultist counts as sacrifice fodder)");
 }
+/// "{1}{U}, {T}: Create a 2/2 blue Homunculus creature token, then sacrifice a
+/// creature."
+///
+/// Ruling (2018-12-07): "The creature you sacrifice for the ability of
+/// Stitcher's Apprentice could be the Homunculus you've just created. It could
+/// also be Stitcher's Apprentice itself."
+///
+/// So the offered list is the whole claim: both of those, and — CR 701.16b, you
+/// can only sacrifice what you control — nothing of the opponent's. Offering
+/// every creature on the battlefield instead passed the whole suite.
+#[test]
+fn stitchers_apprentice_offers_every_creature_you_control_and_only_those() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let apprentice = named_permanent(&mut state, &reg, "Stitcher's Apprentice", P0);
+    let theirs = ready_creature(&mut state, P1, 3, 3);
+
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Colorless, 1)]);
+    let state = activate(&state, &reg, apprentice, 0, vec![]);
+
+    let token = state.objects.values()
+        .find(|o| o.zone == Zone::Battlefield && o.is_token)
+        .map(|o| o.id)
+        .expect("the token is created before the sacrifice is chosen");
+
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player, choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => {
+            assert_eq!(*player, P0, "the ability's controller chooses");
+            options.clone()
+        }
+        other => panic!("a creature has to be chosen to sacrifice, got {other:?}"),
+    };
+
+    assert!(options.contains(&Target::Object(token)),
+        "the Homunculus it just created is one of them");
+    assert!(options.contains(&Target::Object(apprentice)),
+        "and so is Stitcher's Apprentice itself");
+    assert!(!options.contains(&Target::Object(theirs)),
+        "CR 701.16b: you sacrifice only what you control");
+
+    // "then sacrifice a creature" — not "you may". Declining is not on offer.
+    let actions = mtg_engine::engine::legal_actions(&state, &reg).actions;
+    assert!(!actions.iter().any(|a| matches!(a,
+        Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(None) })),
+        "the sacrifice is mandatory, so there is nothing to decline; got {actions:?}");
+}
+
+/// The other half: choosing one actually sacrifices it.
 #[test]
 fn stitchers_apprentice_creates_token_then_sacrifices() {
     let reg = registry();
@@ -559,24 +610,16 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
 
     let apprentice = named_permanent(&mut state, &reg, "Stitcher's Apprentice", P0);
 
-    // Add mana for the activation cost ({1}{U}).
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Colorless, 1)]);
 
-    // Count creatures before activation.
-    let creatures_before: Vec<_> = state.objects.values()
+    let creatures_before = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
-        .collect();
-    assert_eq!(creatures_before.len(), 1, "Only the apprentice on the battlefield");
+        .count();
+    assert_eq!(creatures_before, 1, "only the apprentice on the battlefield");
 
     let state = activate(&state, &reg, apprentice, 0, vec![]);
+    assert!(state.awaiting_action.is_some(), "a creature has to be chosen");
 
-    // After activation: a 2/2 token was created, but now the controller must choose
-    // which creature to sacrifice. With 2 creatures (apprentice + token), a choice
-    // is presented.
-    assert!(state.awaiting_action.is_some(), "Should be awaiting sacrifice choice");
-
-    // Find the token to sacrifice it.
     let token_id = state.objects.values()
         .find(|o| o.zone == Zone::Battlefield && o.is_token && o.power.is_some())
         .map(|o| o.id)
@@ -590,36 +633,45 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
         &reg,
     );
 
-    // After choosing to sacrifice the token, only the apprentice remains.
-    let creatures_after: Vec<_> = state.objects.values()
+    assert_eq!(state.get_object(token_id).unwrap().zone, Zone::Graveyard,
+        "the chosen creature is the one sacrificed");
+    let creatures_after = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
-        .collect();
-    assert_eq!(creatures_after.len(), 1, "Should have 1 creature on battlefield after create + sacrifice");
+        .count();
+    assert_eq!(creatures_after, 1, "create + sacrifice leaves the count where it started");
 }
+
+/// "a 2/2 **blue** Homunculus creature token" — read through the accessors, so
+/// this is the token's characteristics and not the raw fields it happened to be
+/// built with. Its colour had no assertion at all: making it black passed the
+/// whole suite.
 #[test]
-fn stitchers_apprentice_token_is_2_2_homunculus() {
+fn stitchers_apprentice_token_is_a_two_two_blue_homunculus() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let apprentice = named_permanent(&mut state, &reg, "Stitcher's Apprentice", P0);
-    // Add a second creature so the apprentice doesn't sacrifice the token immediately.
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
+    // Something else to sacrifice, so the token survives to be inspected.
+    let fodder = ready_creature(&mut state, P0, 1, 1);
 
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Colorless, 1)]);
     let state = activate(&state, &reg, apprentice, 0, vec![]);
 
-    // Find the token (is_token == true).
     let token = state.objects.values()
-        .find(|o| o.zone == Zone::Battlefield && o.is_token && o.power.is_some());
-    assert!(token.is_some(), "A token should exist on the battlefield");
-    let token = token.unwrap();
-    assert_eq!(token.power, Some(2), "Token should have power 2");
-    assert_eq!(token.toughness, Some(2), "Token should have toughness 2");
-    assert_eq!(token.name, "Homunculus Token",
+        .find(|o| o.zone == Zone::Battlefield && o.is_token && o.power.is_some())
+        .map(|o| o.id)
+        .expect("a token should exist on the battlefield");
+    assert_ne!(token, fodder, "test setup: the fodder is not a token");
+
+    assert_eq!(state.effective_power(token, &reg), Some(2));
+    assert_eq!(state.effective_toughness(token, &reg), Some(2));
+    assert!(state.colors_of(token, &reg).contains(&Color::Blue), "blue");
+    assert!(state.has_subtype(token, "Homunculus", &reg), "a Homunculus");
+    assert!(state.is_creature(token, &reg), "a creature token");
+    assert_eq!(state.get_object(token).unwrap().name, "Homunculus Token",
         "CR 111.4: an unnamed token is its subtypes plus \"Token\"");
 }
+
 #[test]
 fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     let reg = registry();
