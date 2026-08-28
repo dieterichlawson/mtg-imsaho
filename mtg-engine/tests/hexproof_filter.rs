@@ -229,18 +229,17 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
 /// Oracle (Witchbane Orb): "You have hexproof. (You can't be the target
 /// of spells or abilities your opponents control, ...)"
 ///
-/// Failure mode: `falkenrath_noble.rs` builds the target list with
-/// `state.players.iter().map(|p| Target::Player(p.id))`. No filter on
-/// `state.player_has_hexproof`. The Bitterheart Witch handler shows the
-/// correct shape (`bitterheart_witch.rs`).
+/// Failure mode, since fixed: `falkenrath_noble.rs` built the target list
+/// itself with `state.players.iter().map(|p| Target::Player(p.id))` and no
+/// filter on `state.player_has_hexproof`.
 ///
-/// NOTE: the same missing `player_has_hexproof` filter exists in
-/// Bloodgift Demon (`bloodgift_demon.rs`),
-/// Selhoff Occultist (`selhoff_occultist.rs`), and
-/// Rage Thrower (`rage_thrower.rs`). All four cards use the
-/// identical `state.players.iter()` pattern with no hexproof check.
-/// One test covers the shared defect; the other three cards need
-/// the same one-line fix.
+/// The note that used to sit here said the same defect remained in Bloodgift
+/// Demon, Selhoff Occultist and Rage Thrower, and that "the other three cards
+/// need the same one-line fix". None of the four hand-rolls a target list any
+/// more: each declares a `TargetRequirement` and lets the engine choose, and
+/// `stack.rs::is_target_legal` filters player hexproof there. Prose cannot
+/// notice when it goes out of date, so the claim is now
+/// `every_player_targeting_trigger_leaves_targeting_to_the_engine` below.
 #[test]
 fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -281,6 +280,64 @@ fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
          consulting player_has_hexproof. awaiting_action = {:?}",
         state.awaiting_action,
     );
+}
+
+/// What keeps player-hexproof working is that these cards do not choose their
+/// own targets: each declares a `TargetRequirement`, and the engine's
+/// `is_target_legal` refuses a player with hexproof that the ability's
+/// controller does not control (CR 702.11b).
+///
+/// A card that went back to enumerating `state.players` itself would slip past
+/// that, which is how Bug 0F-003 happened in the first place.
+#[test]
+fn every_player_targeting_trigger_leaves_targeting_to_the_engine() {
+    use mtg_engine::cards::TargetRequirement;
+    let reg = registry();
+
+    let mut checked = 0;
+    for name in ["Falkenrath Noble", "Bloodgift Demon", "Selhoff Occultist", "Rage Thrower"] {
+        let id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown {name}"));
+        let data = reg.card_data(id).unwrap();
+        assert!(!data.triggered_abilities.is_empty(), "{name} has a trigger");
+        for ability in &data.triggered_abilities {
+            assert!(
+                matches!(ability.target_requirement,
+                    Some(TargetRequirement::PlayerOnly | TargetRequirement::PlayerOrPlaneswalker)),
+                "{name}'s \"{}\" trigger must declare a player target requirement so the \
+                 engine picks the target and applies player hexproof; it declares {:?}",
+                ability.description, ability.target_requirement);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 6, "only {checked} player-targeting triggers — this has stopped covering the set");
+}
+
+/// The behavioural half for Bloodgift Demon, whose trigger is on an upkeep
+/// rather than a death: with Witchbane Orb out, the opponent is not a legal
+/// target, so the Demon's controller is the only one left and the engine takes
+/// it without asking.
+#[test]
+fn bloodgift_demon_cannot_target_a_player_with_witchbane_orb() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    named_permanent(&mut state, &reg, "Witchbane Orb", P1);
+    named_permanent(&mut state, &reg, "Bloodgift Demon", P0);
+    stock_library(&mut state, &reg, P0, 1);
+    let their_life = state.get_player(P1).life;
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert!(state.awaiting_action.is_none(),
+        "one legal target is not a choice: {:?}", state.awaiting_action);
+    assert_eq!(state.get_player(P1).life, their_life,
+        "the player with hexproof was never a candidate");
+    assert_eq!(state.get_player(P0).life, 19,
+        "so the Demon's controller took it themselves");
+    assert_eq!(
+        state.objects.values().filter(|o| o.zone == Zone::Hand && o.owner == P0).count(), 1,
+        "and drew the card");
 }
 
 /// Bug H (`audits/AUDIT_BUGS.md)`: Into the Maw of Hell's first-target
