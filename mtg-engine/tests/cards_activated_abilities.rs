@@ -209,9 +209,68 @@ fn skirsdag_high_priest_is_offered_only_with_morbid_and_two_helpers() {
                 .collect();
             assert_eq!(demons.len(), 1, "one Demon token");
             assert_eq!((demons[0].power, demons[0].toughness), (Some(5), Some(5)), "a 5/5");
+            assert_eq!(demons[0].colors, vec![Color::Black], "a *black* Demon");
+            assert!(demons[0].subtypes.iter().any(|t| t == "Demon"), "with the Demon type");
             assert!(demons[0].keywords.contains(&Keyword::Flying), "with flying");
         }
     }
+}
+
+/// Ruling 2020-08-07: "Unlike Skirsdag High Priest itself, the two other
+/// creatures you tap to activate its ability aren't required to have been
+/// under your control continuously since the beginning of your most recent
+/// turn."
+///
+/// Summoning sickness (CR 302.6) restricts the {T} *symbol* in a creature's
+/// own cost. The two helpers are tapped by the Priest's cost, which is not
+/// that, so a creature that arrived this turn can pay it. The Priest itself
+/// still cannot — its own {T} is a {T} symbol — and that half is in
+/// `tap_cost_legality.rs`.
+#[test]
+fn skirsdag_high_priests_helpers_may_be_summoning_sick() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
+    let sick_a = sick_creature(&mut state, P0, 1, 1);
+    let sick_b = sick_creature(&mut state, P0, 1, 1);
+
+    assert!(offers_ability_of(&state, &reg, priest),
+        "two creatures that arrived this turn can still be tapped for the cost");
+
+    let after = activate_offered(&state, &reg, priest, None);
+    assert!(after.get_object(sick_a).unwrap().tapped);
+    assert!(after.get_object(sick_b).unwrap().tapped);
+    assert_eq!(count_tokens_named_by(&after, "Demon Token", P0), 1);
+}
+
+/// CR 602.2a: the ability's controller is the player who activated it. An
+/// opponent who takes the Priest with the ability already on the stack does
+/// not get the Demon — the activator does.
+///
+/// The card used to read `o.controller` off the Priest at resolution, so the
+/// token followed the permanent.
+#[test]
+fn skirsdag_high_priests_demon_goes_to_whoever_activated_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.creature_died_this_turn = true;
+
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
+    ready_creature(&mut state, P0, 1, 1);
+    ready_creature(&mut state, P0, 1, 1);
+
+    // P0 activates; the ability is on the stack.
+    let mut state = activate_onto_stack(&state, &reg, priest, None);
+    // P1 takes the Priest in response.
+    state.get_object_mut(priest).unwrap().controller = P1;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(count_tokens_named_by(&state, "Demon Token", P0), 1,
+        "the Demon belongs to the player who activated the ability (CR 602.2a)");
+    assert_eq!(count_tokens_named_by(&state, "Demon Token", P1), 0,
+        "and not to whoever controls the Priest when it resolves");
 }
 
 // ══════════════════════════════════════════════════════════════════
