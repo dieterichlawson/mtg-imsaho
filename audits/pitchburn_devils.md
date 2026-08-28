@@ -50,3 +50,69 @@ the oracle phrasing (see `ISD_AUDIT_PROGRESS.md`). Step 9 anti-patterns: clean.
 
 ### Test coverage
 - The death damage and planeswalker targeting: `damage_helper.rs:an_ability_that_picks_any_target_on_resolution_offers_a_planeswalker`, `cards_morbid_and_ltb.rs`
+
+## Audit — 2026-08-28 17:44
+
+**Oracle text source**: Oracle cache (Scryfall API) — `scripts/oracle_lookup.py lookup "Pitchburn Devils"`, https://scryfall.com/card/isd/156/pitchburn-devils. Community knowledge via WebSearch (MTG Salvation, "Phage and Pitchburn Devils").
+**Oracle text**:
+```
+When this creature dies, it deals 3 damage to any target.
+```
+**Type line**: Creature — Devil
+**Mana cost**: {4}{R}   **P/T**: 3/3
+**Rulings** (1, 2020-06-23): "If your life total is brought to 0 or less at the same time that
+Pitchburn Devils is dealt lethal damage, you lose the game before the ability goes on the
+stack."
+**Status**: PASS (one rule-level test gap closed)
+
+### Code issues
+No issues found in `mtg-engine/src/cards/isd/pitchburn_devils.rs`.
+
+`{4}{R}`, `Creature`, `subtypes: ["Devil"]`, 3/3, oracle text verbatim. The trigger is declared
+`TriggerKind::SelfDies` with `target_requirement: Some(TargetRequirement::AnyTarget)` — a
+*targeted* trigger, so the target is chosen as the ability goes on the stack (CR 603.3d) rather
+than picked on resolution. `on_dies` reads `chosen_targets.first()` and hands the damage to
+`apply_pending_effect` with `source_id: object_id`, so the source of the damage is the Devils
+and `damaged_by` records it.
+
+### Tricky interactions checked
+- **"any target" is creature, player, or planeswalker (CR 115.4a)**: PASS, and tested — the
+  planeswalker case is `damage_helper.rs`.
+- **Target chosen when the trigger goes on the stack, not on resolution**: PASS. The declared
+  `target_requirement` is what makes the engine prompt at push time; the community discussion
+  turns on exactly this ("at the time your Devils' triggered ability goes on the stack, which
+  is when you have to choose a target for it").
+- **A creature that died in the same event is not an offerable target**: PASS by construction —
+  the `AnyTarget` scan reads the battlefield, and a simultaneously-dead creature is already in a
+  graveyard when targets are chosen.
+- **The Devils is in the graveyard when its own ability resolves**: PASS (CR 113.7a). The card
+  asks nothing about where it is.
+- **The target becomes illegal in response**: PASS — the trigger is countered by game rules
+  (CR 608.2b) and deals no damage at all.
+- **APNAP with two death triggers**: the collector files by controller, active player first
+  (CR 603.3b). Not specific to this card; not tested here.
+- **The ruling about losing at 0 life simultaneously**: this is SBA ordering (CR 704.3) — the
+  player loses before any trigger is put on the stack. **NOT TESTED**, and not modelled in a way
+  a test could distinguish: the engine ends the game on the loss, so nothing observable
+  separates "the trigger never went on the stack" from "the game ended first".
+
+### Test coverage
+- 3 damage to a chosen player: `cards_death_triggers_and_tokens.rs:294 pitchburn_devils_deals_3_on_death`
+- 3 damage to a chosen creature: `cards_morbid_and_ltb.rs:1234 pitchburn_devils_choice_with_targets`
+- a planeswalker is among the offered targets: `damage_helper.rs:82 an_ability_that_picks_any_target_on_resolution_offers_a_planeswalker`
+- the requirement matches the printed "any target": `card_data_invariants.rs:1944` (registry sweep)
+- the target is re-checked when the trigger resolves:
+  `fizzle.rs:684 a_triggered_abilitys_target_is_rechecked_when_it_resolves` (NEW)
+- the 0-life ruling: NOT TESTED (see above)
+
+The new test is the first one in `fizzle.rs` for a *triggered* ability — the file covered spells
+and one activated ability, and CR 608.2b applies to all three.
+
+**The first version of it was vacuous and the mutation caught it.** It killed the target in
+response, and damage aimed at a creature in a graveyard lands nowhere whether the trigger was
+countered or not, so it passed with the re-check deleted. It now grants the target hexproof
+instead: still on the battlefield, still somewhere the damage could have gone, no longer legal.
+Disabling `triggers.rs`'s `if !any_legal` now fails it.
+
+### Changes made
+- `fizzle.rs`: one new test. No code change — the card is correct.

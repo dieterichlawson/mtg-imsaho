@@ -756,3 +756,54 @@ fn an_abilitys_declared_requirement_is_rechecked_when_it_resolves() {
         "the enchantment is no longer a legal target for \"target enchantment\", \
          so the ability is countered by game rules and exiles nothing");
 }
+
+/// CR 608.2b applies to a triggered ability like any other, and this file had
+/// no case for one — spells, and one activated ability, but nothing that
+/// triggered.
+///
+/// Pitchburn Devils is the shape that shows it: "When this creature dies, it
+/// deals 3 damage to any target", so the target is chosen as the trigger goes
+/// on the stack (CR 603.3d) and there is a priority window before it resolves.
+///
+/// The target gains hexproof in that window rather than dying in it. Killing
+/// it instead proves nothing: damage aimed at a creature in a graveyard lands
+/// nowhere whether the trigger was countered or not, so the test passes with
+/// the re-check deleted. It has to stop being *legal* while staying somewhere
+/// the damage could still have gone.
+#[test]
+fn a_triggered_abilitys_target_is_rechecked_when_it_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let devils = named_permanent(&mut state, &reg, "Pitchburn Devils", P0);
+    // 4/4, so it survives the three damage and the marked damage is what the
+    // assertion reads.
+    let victim = ready_creature(&mut state, P1, 4, 4);
+
+    kill_by_damage(&mut state, &reg, devils);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    let mut state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
+        },
+        &reg,
+    );
+    assert!(!state.stack.is_empty(), "test setup: the trigger is on the stack, targeted");
+
+    // In response, it becomes untargetable by its opponent's abilities.
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: victim,
+        keyword: Keyword::Hexproof,
+    });
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield,
+        "test premise: it is still there to be damaged");
+    assert_eq!(state.get_object(victim).unwrap().damage_marked, 0,
+        "it is no longer a legal target, so the trigger is countered by game \
+         rules and deals no damage");
+    assert_eq!(state.get_player(P1).life, 20,
+        "and the damage does not go somewhere else for want of its target");
+}
