@@ -36,17 +36,14 @@ impl CardBehavior for DemonmailHauberk {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // Equip ability is on the equipment itself (no power = not a creature).
         if obj.zone == Zone::Battlefield && !state.is_creature(obj.id, registry) {
-            let controller = obj.controller;
-            // The equip cost is "Sacrifice a creature." After paying this cost, there
-            // must still be a creature to equip to. Require at least 2 creatures: one
-            // to sacrifice as the cost, and one remaining to be the equip target.
-            let creature_count = state.objects_in_zone(Zone::Battlefield, controller)
-                .iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .count();
-            if creature_count < 2 {
-                return vec![];
-            }
+            // Nothing here counts creatures. Whether "Sacrifice a creature"
+            // can be paid, and which creatures may pay it, is the engine's
+            // question (CR 601.2h) — it enumerates one action per (target,
+            // sacrifice) pair and drops the ability when no creature can pay.
+            // This used to demand two creatures on the battlefield, on the
+            // reasoning that one must be left over to equip. That is not a
+            // rule: with a single creature you may still equip it and
+            // sacrifice it, and the sacrifice is often the point.
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "Equip—Sacrifice a creature".into(),
