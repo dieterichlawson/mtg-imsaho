@@ -167,6 +167,57 @@ fn slayer_of_the_wicked_destroys_zombie() {
         "Walking Corpse (Zombie) should be destroyed by Slayer of the Wicked");
 }
 
+/// Ruling (2011-09-22): "If you control the only Vampire, Werewolf, or Zombie,
+/// you must target it with Slayer of the Wicked's ability. You choose whether
+/// or not to destroy the target when the ability resolves."
+///
+/// Both halves, and neither had a test. Restricting the trigger's filter to
+/// creatures you *don't* control passed the whole workspace, and so did
+/// destroying the target before the "you may" prompt was even raised — the
+/// existing test only ever answers yes.
+#[test]
+fn slayer_of_the_wicked_must_target_your_own_zombie_and_may_spare_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // The only Vampire, Werewolf or Zombie on the battlefield is P0's own.
+    let mine = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    // A creature of the opponent's that is none of the three, so "the only one"
+    // is a claim about the filter and not about an empty board.
+    let theirs = ready_creature(&mut state, P1, 3, 3);
+
+    let slayer = castable_spell(&mut state, &reg, "Slayer of the Wicked", P0);
+    state = cast_and_resolve(&state, &reg, slayer, vec![]);
+    triggers::process_triggers(&mut state, &reg);
+
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, optional, .. }, ..
+        }) => {
+            assert!(*optional, "'you may destroy' — the decision is still to come");
+            options.clone()
+        }
+        other => panic!("Slayer should be asking whether to destroy, got {other:?}"),
+    };
+    assert_eq!(options, vec![Target::Object(mine)],
+        "you must target your own Zombie when it is the only one; the \
+         opponent's non-Zombie is not a legal target");
+
+    // And then decline.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(None) },
+        &reg,
+    );
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Battlefield,
+        "'you may' — declining leaves your own Zombie alive");
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Battlefield,
+        "and nothing else was touched either");
+    assert!(state.awaiting_action.is_none(), "the trigger is finished");
+}
+
 /// Fiend Hunter exiles an opponent's creature on ETB.
 #[test]
 fn fiend_hunter_exiles_on_etb() {
