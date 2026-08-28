@@ -50,7 +50,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Thraben Sentry | `thraben_sentry.rs` | 86 | 5 | 1 |
 | x | Ludevic's Test Subject | `ludevics_test_subject.rs` | 100 | 5 | 0 |
 | x | Hamlet Captain | `hamlet_captain.rs` | 88 | 4 | 2 |
-|   | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 88 | 4 | 2 |
+| x | Reaper from the Abyss | `reaper_from_the_abyss.rs` | 88 | 4 | 2 |
 |   | Skirsdag High Priest | `skirsdag_high_priest.rs` | 137 | 4 | 0 |
 |   | Tribute to Hunger | `tribute_to_hunger.rs` | 92 | 5 | 0 |
 |   | Morkrut Banshee | `morkrut_banshee.rs` | 66 | 5 | 1 |
