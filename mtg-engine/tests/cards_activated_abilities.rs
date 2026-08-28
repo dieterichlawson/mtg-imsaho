@@ -171,17 +171,104 @@ fn mindshrieker_pumps_by_the_milled_cards_mana_value() {
         let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
         let card_id = reg.get_id_by_name(card_name).unwrap();
         let lib_card = state.create_object(card_id, P1, Zone::Library, None, None);
-        state.get_player_mut(P1).library_order = vec![lib_card];
+        // A second card underneath, so "mills **a** card" is a claim about
+        // how many. With one card in the library, milling two looks the same.
+        let next_card = state.create_object(
+            reg.get_id_by_name("Kindercatch").unwrap(), P1, Zone::Library, None, None);
+        state.get_player_mut(P1).library_order = vec![lib_card, next_card];
 
         add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
         let state = activate_offered(&state, &reg, shrieker, Some(Target::Player(P1)));
 
         assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Graveyard,
             "{card_name} is milled");
+        assert_eq!(state.get_object(next_card).unwrap().zone, Zone::Library,
+            "and only the top card: the one under it stays put");
         assert_eq!(state.effective_power(shrieker, &reg), Some(1 + mana_value),
             "{card_name} has mana value {mana_value}, so Mindshrieker is 1+{mana_value}");
         assert_eq!(state.effective_toughness(shrieker, &reg), Some(1 + mana_value));
     }
+}
+
+/// "**until end of turn**". The pump is a temporary effect, and it has to be
+/// the engine's cleanup step that takes it away — making the ability add the
+/// bonus to the object's own P/T instead broke nothing in the whole suite.
+#[test]
+fn mindshrieker_pump_wears_off_at_end_of_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
+    let card_id = reg.get_id_by_name("Kindercatch").unwrap();
+    let lib_card = state.create_object(card_id, P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order = vec![lib_card];
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    let mut state = activate_offered(&state, &reg, shrieker, Some(Target::Player(P1)));
+    assert_eq!(state.effective_power(shrieker, &reg), Some(7),
+        "Kindercatch's mana value is 6, so the 1/1 is a 7/7 for the turn");
+
+    advance_to_next_turn(&mut state, &reg);
+
+    assert_eq!(state.effective_power(shrieker, &reg), Some(1),
+        "the +6/+6 lasted until end of turn and no longer");
+    assert_eq!(state.effective_toughness(shrieker, &reg), Some(1));
+}
+
+/// "**This creature** gets +X/+X." CR 400.7: a permanent that has left the
+/// battlefield is a new object, so there is nothing left for the ability to
+/// pump — but the mill happens regardless, because that half targets a player.
+///
+/// The ability is put on the stack and the Mindshrieker removed in response,
+/// which is the only way to reach this: by the time it resolves the source is
+/// gone. Dropping the card's battlefield check fails no other test.
+#[test]
+fn mindshrieker_that_left_the_battlefield_still_mills_but_pumps_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
+    let card_id = reg.get_id_by_name("Kindercatch").unwrap();
+    let lib_card = state.create_object(card_id, P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order = vec![lib_card];
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id: o, targets, .. }
+            if *o == shrieker && targets.contains(&Target::Player(P1))))
+        .expect("the ability is offered")
+        .clone();
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    // In response, the Mindshrieker dies.
+    state.move_object(shrieker, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Graveyard,
+        "'target player mills a card' does not need the source to still be there");
+    assert!(!state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::ModifyPT { target, .. } if *target == shrieker)),
+        "and there is no permanent left to give +6/+6 to");
+}
+
+/// "Target player **mills a card**" with nothing to mill: no card goes, and X
+/// never exists, so nothing is pumped either.
+#[test]
+fn mindshrieker_pumps_nothing_when_the_library_is_empty() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
+    state.get_player_mut(P1).library_order.clear();
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    let state = activate_offered(&state, &reg, shrieker, Some(Target::Player(P1)));
+
+    assert_eq!(state.effective_power(shrieker, &reg), Some(1),
+        "no card was milled, so there is no mana value to read");
+    assert!(state.awaiting_action.is_none(),
+        "and the ability finished rather than stalling on a choice");
 }
 
 // ══════════════════════════════════════════════════════════════════
