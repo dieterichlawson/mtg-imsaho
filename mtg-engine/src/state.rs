@@ -818,6 +818,20 @@ impl GameState {
                 obj.cast_with_flashback = false;
             }
 
+            // CR 107.3b: X is a value chosen for one particular cast. It means
+            // something in exactly two places — on the stack while that cast is
+            // resolving, and on the permanent that cast produced — and nowhere
+            // else. A permanent that leaves and comes back is a new object that
+            // was never cast at all (CR 400.7), so its X is 0.
+            //
+            // Without this, Mikaeus, the Lunarch cast for X=5, killed, and
+            // reanimated came back with five +1/+1 counters: `x_value` sat on
+            // the object through the graveyard and its enters-with-counters
+            // replacement read it again on the way back in.
+            if !matches!(to, Zone::Battlefield | Zone::Stack) {
+                obj.x_value = None;
+            }
+
             // Set summoning sickness and clear stale state when entering the battlefield.
             if to == Zone::Battlefield && from != Zone::Battlefield {
                 obj.card_state.clear();

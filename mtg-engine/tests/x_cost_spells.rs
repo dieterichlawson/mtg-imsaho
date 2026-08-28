@@ -84,6 +84,41 @@ fn x_is_what_is_left_after_the_printed_cost_is_paid() {
     }
 }
 
+/// CR 107.3b: a permanent that was not cast has X = 0, and CR 400.7 makes a
+/// permanent that leaves and comes back a new object — one that was never cast
+/// at all. So a Mikaeus cast for X=3, killed, and reanimated arrives with no
+/// counters, as a 0/0, and dies to state-based action.
+///
+/// `x_value` used to sit on the object through the graveyard, so the
+/// enters-with-counters replacement read the *old* cast's X on the way back
+/// in and the reanimated Mikaeus came back a 3/3.
+#[test]
+fn a_reanimated_x_creature_does_not_remember_the_x_it_was_cast_for() {
+    let reg = registry();
+    let (mut state, mikaeus) = cast_for_max_x(&reg, "Mikaeus, the Lunarch", &Mana::Lands("Plains", 4));
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 3, "test setup");
+
+    // It dies...
+    mtg_engine::destruction::try_destroy(&mut state, mikaeus, &reg);
+    assert_eq!(state.get_object(mikaeus).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(mikaeus).unwrap().x_value, None,
+        "the X went with the object it was chosen for");
+
+    // ...and something puts it back.
+    state.move_object(mikaeus, Zone::Battlefield, &reg);
+    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 0,
+        "X is 0 for a permanent that was not cast (CR 107.3b)");
+    assert_eq!(
+        (state.effective_power(mikaeus, &reg), state.effective_toughness(mikaeus, &reg)),
+        (Some(0), Some(0)),
+        "so it is the printed 0/0");
+
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(mikaeus).unwrap().zone, Zone::Graveyard,
+        "and a 0/0 does not stay (CR 704.5f)");
+}
+
 /// The X a spell was cast for is the X its effect uses. Devil's Play deals
 /// that much damage; Mikaeus arrives with that many +1/+1 counters
 /// (CR 107.3e — X in a resolving spell's text is the value chosen for it).
