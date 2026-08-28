@@ -43,7 +43,7 @@ pub(super) fn entered_battlefield(
     // that a creature entered. Only collect if the watcher's zone matches
     // the trigger's allowed zones (via CardBehavior::trigger_zones).
     if state.is_creature(*object, registry) {
-        let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects.values()
+        let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects_in_id_order().into_iter()
             .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
             .map(|o| (o.id, o.card_id, o.controller, o.zone))
             .collect();
@@ -115,7 +115,7 @@ pub(super) fn creature_died(
         GameEvent::CreatureDied { object, .. } => Some(*object),
         _ => None,
     }).collect();
-    let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
+    let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects_in_id_order().into_iter()
         .filter(|o| o.id != dead_id &&
             (o.zone == Zone::Battlefield || simultaneously_dead.contains(&o.id)))
         .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
@@ -167,7 +167,7 @@ pub(super) fn creature_card_milled(
     let milled_obj = *object;
     let milled_player = *milled_player;
     // Find watchers on the battlefield with CreatureCardMilled triggers.
-    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
         .filter(|o| o.zone == Zone::Battlefield)
         .map(|o| (o.id, o.card_id, o.controller))
         .collect();

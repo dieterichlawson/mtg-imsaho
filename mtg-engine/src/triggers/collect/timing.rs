@@ -35,7 +35,7 @@ pub(super) fn step_started(
         _ => None,
     };
     if let Some(kind) = trigger_kind {
-        let permanents: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
+        let permanents: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
             .collect();
@@ -85,7 +85,7 @@ pub(super) fn spell_cast(
 ) {
     let GameEvent::SpellCast { player: caster, object: spell_id } = event else { return };
     {
-        let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+        let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| (o.id, o.card_id, o.controller))
             .collect();

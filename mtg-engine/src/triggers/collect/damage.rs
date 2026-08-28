@@ -58,7 +58,7 @@ pub(super) fn combat_damage(
 
                 // Combat damage watchers and any-damage watchers.
                 // Includes self — cards like Rakish Heir watch their own damage.
-                let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
                     .filter(|o| o.zone == Zone::Battlefield)
                     .map(|o| (o.id, o.card_id, o.controller))
                     .collect();
@@ -107,7 +107,7 @@ pub(super) fn noncombat_damage(
     // AnyDamageToPlayer watchers for non-combat damage.
     {
         let source_id = *source;
-        let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+        let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| (o.id, o.card_id, o.controller))
             .collect();

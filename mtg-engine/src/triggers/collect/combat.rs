@@ -31,7 +31,7 @@ pub(super) fn attackers_declared(
             }
         }
         // Also check equipment/auras attached to the attacker.
-        let attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+        let attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield && o.attached_to == Some(*attacker_id))
             .map(|o| (o.id, o.card_id, o.controller))
             .collect();
@@ -50,7 +50,7 @@ pub(super) fn attackers_declared(
         // Attack-watchers: notify permanents that care about any creature attacking.
         // Note: the attacker is NOT excluded — cards like Instigator Gang
         // ("attacking creatures you control get +1/+0") must see their own attack.
-        let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
+        let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
             .collect();
@@ -95,7 +95,7 @@ pub(super) fn blockers_declared(
             }
         }
         // Also check equipment/auras attached to the blocker.
-        let attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+        let attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield && o.attached_to == Some(*blocker_id))
             .map(|o| (o.id, o.card_id, o.controller))
             .collect();
@@ -130,7 +130,7 @@ pub(super) fn blockers_declared(
             }
         }
         // Check equipment/auras on the attacker for BecomesBlocked triggers.
-        let att_attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+        let att_attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
             .filter(|o| o.zone == Zone::Battlefield && o.attached_to == Some(*attacker_id))
             .map(|o| (o.id, o.card_id, o.controller))
             .collect();

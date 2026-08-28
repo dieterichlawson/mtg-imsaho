@@ -14,6 +14,16 @@ mod zones;
 /// Accumulates triggers in APNAP order (CR 603.3b): the active player's
 /// triggers go on the stack first, then each other player's.
 ///
+/// Within one player's group the order is the order the watchers were
+/// scanned, and every scan goes through `objects_in_id_order` so that order is
+/// object id — fixed, and the same on a replay. Scanning `state.objects`
+/// directly put simultaneous triggers on the stack in HashMap order, which is
+/// seeded per process.
+///
+/// CR 603.3b actually lets a player with several simultaneous triggers choose
+/// the order to put them on the stack, and this does not ask. Object id is a
+/// deterministic stand-in for that choice, not the choice itself.
+///
 /// Every arm used to spell this out as `if controller == active_player {
 /// ap.push(t) } else { nap.push(t) }` — twenty-one times.
 pub(crate) struct Collector {

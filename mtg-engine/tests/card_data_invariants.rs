@@ -536,9 +536,11 @@ fn no_card_hardcodes_a_derivable_token_name() {
 /// `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
 #[test]
 fn no_card_iterates_the_object_map_directly() {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    let mut stack = vec![src];
+    // Trigger collection is held to the same rule: the order the watchers are
+    // scanned is the order simultaneous triggers go on the stack.
+    let mut stack = vec![root.join("src/cards"), root.join("src/triggers")];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let p = entry.path();
@@ -614,5 +616,58 @@ fn no_card_announces_its_own_transform() {
     assert!(offenders.is_empty(),
         "{} card(s) announce their own transform:\n  {}\n\n\
          `helpers::apply_transform` logs it, and only when the flip happens.",
+        offenders.len(), offenders.join("\n  "));
+}
+
+/// An ability's "you" is its source's controller, and CR 608.2g says that is
+/// the *last known* controller once the source has left the battlefield —
+/// which `helpers::controller_of` answers.
+///
+/// Reading `o.controller` off the source instead is wrong in exactly the case
+/// cards keep commenting about (CR 113.7a, "the ability still resolves if the
+/// source is destroyed in response"), because leaving the battlefield resets
+/// `controller` to `owner`. Curse of the Pierced Heart handed the choice to
+/// the owner; Curiosity offered the draw to the owner. The `PlayerId(0)`
+/// fallback these sites carried also silently named a real player.
+///
+/// Comparisons of one object's controller against another's are a different
+/// question and are not what this looks for.
+#[test]
+fn no_card_reads_its_sources_controller_by_hand() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name == "helpers.rs" {
+            continue; // where controller_of lives
+        }
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            // The two idioms that mean "the controller of this ability's
+            // source": a PlayerId(0) fallback, or an unwrap.
+            let hand_rolled = code.contains("|o| o.controller")
+                && (code.contains("PlayerId(0)") || code.contains(".unwrap()"));
+            if hand_rolled {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} site(s) read a source's controller by hand:\n  {}\n\n\
+         Use `helpers::controller_of`, which answers CR 608.2g.",
         offenders.len(), offenders.join("\n  "));
 }
