@@ -121,6 +121,18 @@ fn heartless_summoning_shrinks_the_creatures_it_cheapens() {
 
     assert_eq!(state.effective_power(creature, &reg).unwrap(), 5);
     assert_eq!(state.effective_toughness(creature, &reg).unwrap(), 5);
+
+    // "Creatures YOU control" — an opponent's creature keeps its full size.
+    let theirs = named_permanent(&mut state, &reg, "Kindercatch", P1);
+    assert_eq!(state.effective_power(theirs, &reg).unwrap(), 6);
+    assert_eq!(state.effective_toughness(theirs, &reg).unwrap(), 6);
+
+    // The famous half: a 1-toughness creature you control has toughness 0 and
+    // dies to state-based actions the moment anyone looks (CR 704.5f).
+    let small = named_permanent(&mut state, &reg, "Doomed Traveler", P0); // 1/1
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(small).unwrap().zone, Zone::Graveyard,
+        "a 1/1 under your own Heartless Summoning does not survive");
 }
 
 /// Static cost modifiers, and the spells they do and do not reach. A cost

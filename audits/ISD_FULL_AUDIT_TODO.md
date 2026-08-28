@@ -231,7 +231,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Angelic Overseer | `angelic_overseer.rs` | 37 | 1 | 0 |
 | x | Battleground Geist | `battleground_geist.rs` | 35 | 1 | 0 |
 | x | Gallows Warden | `gallows_warden.rs` | 35 | 1 | 0 |
-|   | Heartless Summoning | `heartless_summoning.rs` | 33 | 1 | 0 |
+| x | Heartless Summoning | `heartless_summoning.rs` | 33 | 1 | 0 |
 |   | Orchard Spirit | `orchard_spirit.rs` | 33 | 1 | 0 |
 |   | Elite Inquisitor | `elite_inquisitor.rs` | 31 | 1 | 0 |
 |   | Night Revelers | `night_revelers.rs` | 30 | 1 | 0 |
