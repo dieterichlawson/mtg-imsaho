@@ -24,13 +24,57 @@ fn geist_creates_angel_on_attack() {
     attacks_unblocked(&mut state, geist, P1);
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
-    // Should have created an Angel token on the battlefield, tapped and attacking.
+    // "a 4/4 white Angel creature token with flying that's tapped and
+    // attacking" — every adjective, read through the accessors. The colour and
+    // the flying had no assertion at all: a black Angel, or one without
+    // flying, passed the whole workspace.
     let angel = state.objects.values()
         .find(|o| o.name == "Angel Token" && o.zone == Zone::Battlefield)
+        .map(|o| o.id)
         .expect("Angel token should be on the battlefield");
-    assert_eq!(angel.power, Some(4));
-    assert_eq!(angel.toughness, Some(4));
-    assert!(angel.tapped, "Angel should be tapped");
+    assert_eq!(state.effective_power(angel, &reg), Some(4));
+    assert_eq!(state.effective_toughness(angel, &reg), Some(4));
+    assert!(state.colors_of(angel, &reg).contains(&Color::White), "white");
+    assert!(state.has_subtype(angel, "Angel", &reg), "an Angel");
+    assert!(state.is_creature(angel, &reg), "a creature token");
+    assert!(state.has_keyword(angel, Keyword::Flying, &reg), "with flying");
+    assert!(state.get_object(angel).unwrap().tapped, "Angel should be tapped");
+    assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P1),
+        "and attacking");
+}
+
+/// Ruling (2020-08-07): "Although the Angel is an attacking creature, it was
+/// never declared as an attacking creature. This means that abilities that
+/// trigger whenever a creature attacks won't trigger when it enters the
+/// battlefield attacking."
+///
+/// No card in this pool triggers on *another* creature attacking, so the
+/// observable half is the stamp the engine keeps for "was declared as an
+/// attacker" (CR 508.1) — `attacked_on_turn`, which `state.attacked_this_turn`
+/// reads and Civilized Scholar's end-step trigger depends on. Geist gets it
+/// from `declare_attackers`; the Angel, inserted into `combat.attackers` by the
+/// card, must not.
+#[test]
+fn the_angel_is_attacking_but_was_never_declared_an_attacker() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+    state.get_object_mut(geist).unwrap().summoning_sick = false;
+    // Through the engine's declaration path, not `attacks_unblocked`: the stamp
+    // this test is about is made by `combat::declare_attackers`, and a
+    // hand-built `CombatState` never has it — for either creature.
+    submit_declare_attackers(&mut state, &[(geist, P1)], &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    let angel = find_token_named(&state, "Angel Token").expect("Angel should exist");
+
+    assert!(state.attacked_this_turn(geist),
+        "Geist was declared as an attacker (CR 508.1)");
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&angel)),
+        "the Angel is an attacking creature");
+    assert!(!state.attacked_this_turn(angel),
+        "but it was never DECLARED one — it was put onto the battlefield attacking");
 }
 
 #[test]
