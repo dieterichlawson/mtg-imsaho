@@ -710,6 +710,16 @@ pub trait CardBehavior: Send + Sync {
     /// `yes` is true if the player chose yes, false if they declined.
     fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, _registry: &CardRegistry) {}
 
+    /// Called when the player declines an optional `ChooseTarget` this source
+    /// offered — the counterpart of `resolve_card_effect` for "none of them".
+    ///
+    /// Declining used to be silent, so a card could not tell the difference
+    /// between a choice it never offered and one the player turned down. That
+    /// matters wherever declining is not the same as doing nothing: a search
+    /// of a hidden zone may legally find nothing (CR 701.19b) and the library
+    /// is still shuffled, because the search happened (CR 701.19a).
+    fn on_declined_choice(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.

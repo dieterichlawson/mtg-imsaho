@@ -66,6 +66,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                  ResolvedChoice::ChosenTarget(chosen)) => {
                     if let Some(t) = chosen {
                         apply_pending_effect(&mut *state, t, effect, registry);
+                    } else {
+                        // "None of them" is an answer, not an absence of one.
+                        let source_card_id = state.get_object(choice_source).map(|o| o.card_id);
+                        if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
+                            behavior.on_declined_choice(&mut *state, choice_source, registry);
+                        }
                     }
                     // If this was an "enters as a copy" choice (Evil Twin)
                     // and the player declined, the copy never resolves —
@@ -116,6 +122,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                  ResolvedChoice::ChosenCard(chosen_id)) => {
                     crate::cards::helpers::finish_library_search(
                         &mut *state, *searcher, *chosen_id, *destination, *tapped, registry);
+                }
+                // CR 701.19b: the player searched and chose to find nothing.
+                // CR 701.19a: they searched, so they still shuffle.
+                (ResolutionChoiceKind::ChooseFromLibrary { searcher, .. },
+                 ResolvedChoice::ChosenTarget(None)) => {
+                    let searcher = *searcher;
+                    state.log(LogLevel::Event, format!("p{}: found nothing", searcher.0));
+                    crate::cards::helpers::shuffle_library(&mut *state, searcher);
                 }
                 (ResolutionChoiceKind::ChooseCardType { options, controller, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
