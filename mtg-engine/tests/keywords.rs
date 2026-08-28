@@ -69,17 +69,19 @@ fn non_vigilance_taps_on_attack() {
 
 // ── Defender ────────────────────────────────────────────────────────
 
-/// Creatures with defender cannot attack.
+/// Creatures with defender cannot attack — every defender in the set.
 #[test]
 fn defender_cannot_attack() {
     let reg = registry();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    for name in ["Grave Bramble", "One-Eyed Scarecrow"] {
+        let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let defender = named_permanent(&mut state, &reg, "Grave Bramble", P0);
+        let defender = named_permanent(&mut state, &reg, name, P0);
 
-    let eligible = combat::eligible_attackers(&state, P0, &reg);
-    assert!(!eligible.contains(&defender),
-        "Creature with defender should not be eligible to attack");
+        let eligible = combat::eligible_attackers(&state, P0, &reg);
+        assert!(!eligible.contains(&defender),
+            "{name} has defender and should not be eligible to attack");
+    }
 }
 
 /// Creatures with defender CAN still block.
