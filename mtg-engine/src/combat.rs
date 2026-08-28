@@ -458,15 +458,10 @@ pub fn can_block_at_all(state: &GameState, blocker_id: ObjectId, registry: &Card
     if blocker.zone != Zone::Battlefield || blocker.tapped || !state.is_creature(blocker_id, registry) {
         return false;
     }
-    // `can_block` is the "can't block" query (Vampire Interloper, and Bonds of
-    // Faith's conditional form).
-    if !state.can_block(blocker_id, registry) {
-        return false;
-    }
-    // "Can't block this turn" (e.g., Nightbird's Clutches).
-    !state.until_end_of_turn.iter().any(|e| matches!(e,
-        crate::state::TemporaryEffect::CantBlock { target } if *target == blocker_id
-    ))
+    // `can_block` is the whole "can't block" question — a static ability
+    // (Vampire Interloper, Bonds of Faith) or a "can't block this turn" effect
+    // (Nightbird's Clutches, Crossway Vampire).
+    state.can_block(blocker_id, registry)
 }
 
 /// Check if a blocker can legally block a specific attacker: the blanket

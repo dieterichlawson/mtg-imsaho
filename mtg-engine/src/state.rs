@@ -1594,10 +1594,22 @@ impl GameState {
         !self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::PreventAttack { .. }), registry)
     }
 
-    /// Check if a creature is prevented from blocking.
+    /// Whether anything says this creature can't block.
+    ///
+    /// Both halves: a printed or granted static ability (Vampire Interloper,
+    /// Bonds of Faith) and a "can't block this turn" effect (Nightbird's
+    /// Clutches, Crossway Vampire). This used to answer only the first, and
+    /// `combat::can_block_at_all` scanned `until_end_of_turn` for the second
+    /// itself — so the question with the name lived in one place and the
+    /// answer in two, and anything that asked `can_block` directly got half of
+    /// it.
     #[must_use]
     pub fn can_block(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        !self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::PreventBlock { .. }), registry)
+        if self.has_effect(creature_id, &|e| matches!(e, ContinuousEffect::PreventBlock { .. }), registry) {
+            return false;
+        }
+        !self.until_end_of_turn.iter().any(|e| matches!(e,
+            TemporaryEffect::CantBlock { target } if *target == creature_id))
     }
 
     /// CR 508.1d: whether an effect requires this creature to attack if able
