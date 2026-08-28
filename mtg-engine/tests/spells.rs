@@ -4,6 +4,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::Target;
+use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
@@ -39,16 +40,18 @@ fn lightning_bolt_kills_creature() {
 
 /// Direct-damage spells that hit a player drain that player's life by the
 /// spell's stated amount. Lightning Bolt's creature-target behavior is
-/// covered separately above; per-spell edge cases (flashback on Bump in
-/// the Night, morbid on Brimstone Volley, creature-only on Geistflame)
-/// have their own tests.
+/// covered separately above; per-spell edge cases (morbid on Brimstone Volley,
+/// creature-only on Geistflame) have their own tests.
+///
+/// Bump in the Night used to be a row here. It says "Target opponent loses 3
+/// life", which is life loss and not damage (CR 119.3 vs CR 120) — a different
+/// event, with different interactions — so it has its own test below.
 #[test]
 fn direct_damage_spells_drain_player_life() {
     let reg = registry();
     for (name, damage) in [
         ("Lightning Bolt",    3u32),
         ("Lava Axe",          5),
-        ("Bump in the Night", 3),
         ("Brimstone Volley",  3),
     ] {
         let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -57,6 +60,53 @@ fn direct_damage_spells_drain_player_life() {
         assert_eq!(state.get_player(P1).life, 20 - damage as i32,
             "{name} should deal {damage} damage to the targeted player");
     }
+}
+
+/// "Target opponent loses 3 life." Life loss, not damage: no damage event is
+/// emitted, so nothing that watches for damage sees it, and none of the damage
+/// pipeline's prevention or protection applies.
+///
+/// It sat in the damage table above, whose failure message read "should deal 3
+/// damage to the targeted player" — which is what this card does not do.
+#[test]
+fn bump_in_the_night_makes_an_opponent_lose_life_rather_than_dealing_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bump = castable_spell(&mut state, &reg, "Bump in the Night", P0);
+    let state = cast_and_resolve(&state, &reg, bump, vec![Target::Player(P1)]);
+
+    assert_eq!(state.get_player(P1).life, 17, "the opponent loses 3 life");
+    assert!(!state.events.iter().any(|e| matches!(e,
+        GameEvent::NonCombatDamageDealt { .. } | GameEvent::CombatDamageDealt { .. })),
+        "losing life is not being dealt damage, so no damage event is emitted");
+}
+
+/// "Target OPPONENT loses 3 life" — the caster is not a legal target, on the
+/// way up (CR 601.2c) or on the way down (CR 608.2b).
+///
+/// The engine never offers it, so the resolution half is driven directly, the
+/// way `the_resolution_recheck_uses_the_same_player_targeting_rule` does for a
+/// hexproof player.
+#[test]
+fn bump_in_the_night_cannot_be_pointed_at_its_own_caster() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bump = castable_spell(&mut state, &reg, "Bump in the Night", P0);
+
+    let offered = offered_targets(&state, &reg, bump);
+    assert!(offered.contains(&Target::Player(P1)), "the opponent is offered");
+    assert!(!offered.contains(&Target::Player(P0)),
+        "the caster is not: 'target opponent' is not 'target player'");
+
+    let mut state = cast_onto_stack(&state, &reg, bump, vec![Target::Player(P0)]);
+    let own_life = state.get_player(P0).life;
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, own_life,
+        "its only target is illegal on resolution, so the spell is countered \
+         by game rules and no life is lost");
 }
 
 /// CR 307.1: a sorcery may be cast only during its controller's main phase,
