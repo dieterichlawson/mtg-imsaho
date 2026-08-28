@@ -415,6 +415,18 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
          branch and only sees ['Vampire'], so it ignores the registry's \
          Human subtype."
     );
+
+    // And the bite survives the flip. CR 712.8a: transforming does not make a
+    // new object, so a type-changing effect that applied to it still applies.
+    // Moonmist used to `clone_from` the back face's subtypes over
+    // `obj.subtypes` — the vector that holds runtime grants — so Olivia's
+    // "Vampire" was thrown away by the very spell the bite was supposed to
+    // survive.
+    assert!(
+        state.has_subtype(shepherd, "Vampire", &registry),
+        "Olivia's 'becomes a Vampire in addition to its other types' is a \
+         continuous effect on the same object; transforming does not undo it"
+    );
 }
 
 /// Bug 31-003 (`audits/AUDIT_BUGS.md)`: Urgent Exorcism's

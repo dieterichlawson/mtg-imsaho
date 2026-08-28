@@ -29,51 +29,33 @@ impl CardBehavior for Moonmist {
         // - Front-face Humans (transform to back face)
         // - Back-face creatures that are still Human (transform back to front face,
         //   e.g., Thraben Militia is Human on its back face)
-        let humans_to_transform: Vec<(ObjectId, bool)> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        // Tokens are excluded here as well as inside `apply_transform`: a
+        // token copy of a double-faced card is not itself double-faced and
+        // cannot transform (CR 111.7), so it must not be counted either.
+        let humans: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|o| {
                 let has_human_subtype = state.has_subtype(o.id, "Human", registry);
                 // Must be a DFC (has a back face).
                 let has_back_face = registry.get(o.card_id)
                     .and_then(super::super::CardBehavior::back_face_data)
                     .is_some();
-                has_human_subtype && has_back_face
+                has_human_subtype && has_back_face && !o.is_token
             })
-            .map(|o| (o.id, o.is_transformed))
+            .map(|o| o.id)
             .collect();
 
-        let count = humans_to_transform.len();
-        for (hid, was_transformed) in &humans_to_transform {
-            if let Some(obj) = state.get_object_mut(*hid) {
-                obj.is_transformed = !obj.is_transformed;
-            }
-            if let Some(behavior) = state.get_object(*hid).and_then(|o| registry.get(o.card_id)) {
-                if *was_transformed {
-                    // Was on back face → transform to front face. Restore front face data.
-                    let front = behavior.card_data();
-                    if let Some(obj) = state.get_object_mut(*hid) {
-                        obj.name.clone_from(&front.name);
-                        obj.power = front.power;
-                        obj.toughness = front.toughness;
-                        obj.keywords.clone_from(&front.keywords);
-                        obj.subtypes.clone_from(&front.subtypes);
-                    }
-                } else {
-                    // Was on front face → transform to back face. Apply back face data.
-                    if let Some(back) = behavior.back_face_data() {
-                        if let Some(obj) = state.get_object_mut(*hid) {
-                            obj.name.clone_from(&back.name);
-                            if let Some(p) = back.power {
-                                obj.power = Some(p);
-                            }
-                            if let Some(t) = back.toughness {
-                                obj.toughness = Some(t);
-                            }
-                            obj.keywords.clone_from(&back.keywords);
-                            obj.subtypes.clone_from(&back.subtypes);
-                        }
-                    }
-                }
-            }
+        // Through `apply_transform`, the one place that knows what transforming
+        // means. This loop used to flip `is_transformed` by hand and then copy
+        // the face's name, power, toughness, keywords and subtypes onto the
+        // object — which broke the characteristics model three ways. `obj.power`
+        // and `obj.subtypes` hold runtime *grants*, not printed values, so
+        // `clone_from`ing a face over them threw away everything granted to that
+        // permanent (Olivia Voldaren's "Vampire", Grimoire of the Dead's types,
+        // any until-end-of-turn keyword) and pinned its P/T against later
+        // effects. It also skipped the CR 111.7 refusal for token copies.
+        let count = humans.len();
+        for hid in humans {
+            crate::cards::helpers::apply_transform(state, hid, registry);
         }
 
         if count > 0 {
