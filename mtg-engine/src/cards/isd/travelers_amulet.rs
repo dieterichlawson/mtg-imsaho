@@ -57,7 +57,6 @@ impl CardBehavior for TravelersAmulet {
             state, object_id, controller, basic_lands,
             Zone::Hand, false, false,
             "Traveler's Amulet: choose a basic land card",
-            registry,
         );
     }
 }

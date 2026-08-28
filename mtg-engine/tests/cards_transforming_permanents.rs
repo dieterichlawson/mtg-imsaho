@@ -687,6 +687,10 @@ fn garruk_back_face_sacrifice_to_tutor() {
     assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
         "Sacrificed creature should be in graveyard");
 
+    // CR 701.19b: the find is offered rather than taken, even with one
+    // creature card in the library.
+    let state = answer_library_search(&state, &reg, Some(lib_creature));
+
     // Library creature should now be in hand.
     assert_eq!(state.get_object(lib_creature).unwrap().zone, Zone::Hand,
         "Tutored creature should be in hand");
@@ -763,6 +767,8 @@ fn garruk_back_face_tutor_shuffles_library() {
 
         let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
         behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
+        // CR 701.19b: the find is offered rather than taken.
+        let state = answer_library_search(&state, &reg, Some(lib_ids[0]));
 
         let after = state.get_player(P0).library_order.clone();
         assert!(!after.contains(&lib_ids[0]),

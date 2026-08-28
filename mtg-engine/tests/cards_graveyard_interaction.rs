@@ -121,6 +121,15 @@ fn caravan_vigil_offers_the_battlefield_only_if_a_creature_died() {
         let vigil = castable_spell(&mut state, &reg, "Caravan Vigil", P0);
         let mut state = cast_and_resolve(&state, &reg, vigil, vec![]);
 
+        // CR 701.19b: the find is offered, not taken — even with one basic.
+        state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenTarget(Some(Target::Object(forest))),
+            },
+            &reg,
+        );
+
         if died {
             assert!(state.awaiting_action.is_some(),
                 "with a creature dead this turn, the morbid choice has to be offered");
@@ -135,6 +144,48 @@ fn caravan_vigil_offers_the_battlefield_only_if_a_creature_died() {
                 "the land goes to hand");
         }
     }
+}
+
+/// CR 701.19b: "If a player is searching a hidden zone for cards with stated
+/// characteristics ... that player isn't required to find some or all of those
+/// cards even if they're present in that zone."
+///
+/// So the one basic land in the library is offered, not taken — and CR 701.19a
+/// still shuffles, because the search happened either way.
+#[test]
+fn caravan_vigil_may_search_and_find_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // A library with one basic land and enough other cards that a shuffle is
+    // visible in the order.
+    let forest = stock_library(&mut state, &reg, P0, 1)[0];
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    for _ in 0..8 {
+        let id = state.create_object(bears_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(id);
+    }
+
+    let vigil = castable_spell(&mut state, &reg, "Caravan Vigil", P0);
+    let state = cast_and_resolve(&state, &reg, vigil, vec![]);
+
+    let before: Vec<_> = state.get_player(P0).library_order.clone();
+    assert!(state.awaiting_action.is_some(),
+        "the only basic land is offered, not taken for the player");
+
+    // Decline it.
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Library,
+        "declining leaves the land in the library");
+    assert!(state.awaiting_action.is_none(),
+        "and there is no morbid question, because nothing was found");
+    assert_ne!(state.get_player(P0).library_order, before,
+        "CR 701.19a: the search happened, so the library is shuffled anyway");
 }
 
 // ═══════════════════════════════════════════════════════════════════

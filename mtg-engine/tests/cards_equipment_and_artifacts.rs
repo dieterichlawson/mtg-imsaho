@@ -43,6 +43,8 @@ fn travelers_amulet_finds_basic_land() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
     let new_state = activate(&state, &reg, amulet, 0, vec![]);
+    // CR 701.19b: the search stops and asks, even with one candidate.
+    let new_state = answer_library_search(&new_state, &reg, Some(forest));
 
     // Amulet should be in graveyard (sacrificed).
     assert_eq!(
@@ -57,6 +59,40 @@ fn travelers_amulet_finds_basic_land() {
         Zone::Hand,
         "Forest should have been moved to hand"
     );
+}
+
+/// The same rule through the shared search helper: a mandatory search of a
+/// hidden zone may still come back with nothing (CR 701.19b), and the library
+/// is shuffled either way (CR 701.19a). The helper used to take the only
+/// matching card for the player.
+#[test]
+fn a_mandatory_library_search_may_still_find_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let amulet = named_permanent(&mut state, &reg, "Traveler's Amulet", P0);
+    let forest_card_id = reg.get_id_by_name("Forest").unwrap();
+    let forest = state.create_object(forest_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(forest).unwrap().name = "Forest".into();
+    state.get_player_mut(P0).library_order.push(forest);
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    for _ in 0..8 {
+        let id = state.create_object(bears_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(id);
+    }
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let state = activate(&state, &reg, amulet, 0, vec![]);
+    let before: Vec<_> = state.get_player(P0).library_order.clone();
+    assert!(state.awaiting_action.is_some(),
+        "the only basic land is offered, not taken");
+
+    let state = answer_library_search(&state, &reg, None);
+
+    assert_eq!(state.get_object(forest).unwrap().zone, Zone::Library,
+        "declining leaves the land in the library");
+    assert_ne!(state.get_player(P0).library_order, before,
+        "the search happened, so the library is shuffled anyway");
 }
 
 // ══════════════════════════════════════════════════════════════════

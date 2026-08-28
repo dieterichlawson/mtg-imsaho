@@ -527,7 +527,6 @@ pub fn search_library(
     tapped: bool,
     optional: bool,
     description: &str,
-    registry: &CardRegistry,
 ) {
     // "You MAY search" is a real decision even when only one card qualifies,
     // or when nothing does — the player is entitled to decline, and a player
@@ -551,30 +550,36 @@ pub fn search_library(
         return;
     }
 
-    // Mandatory search from here on. CR 701.19: the search happened whether or
-    // not anything was found, so the shuffle happens too.
-    match candidates.len() {
-        0 => {
-            state.log(crate::state::LogLevel::Event,
-                format!("{}: no matching card found in library", state.obj_name(source_id)));
-            shuffle_library(state, searcher);
-        }
-        1 => finish_library_search(state, searcher, candidates[0], destination, tapped, registry),
-        _ => {
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: searcher,
-                source: source_id,
-                choice: ResolutionChoiceKind::ChooseFromLibrary {
-                    description: description.to_string(),
-                    options: candidates,
-                    searcher,
-                    source_id,
-                    destination,
-                    tapped,
-                },
-            });
-        }
+    // Mandatory search from here on. CR 701.19a: the search happened whether or
+    // not anything was found, so the shuffle happens either way.
+    //
+    // CR 701.19b: a player searching a hidden zone "isn't required to find some
+    // or all of those cards even if they're present in that zone". Mandatory
+    // means the player must search and shuffle — not that they must take a
+    // card. So the choice is offered even when exactly one card qualifies,
+    // where this used to take it for them.
+    if candidates.is_empty() {
+        // Nothing to offer, so nothing to decline. Debug level on purpose: a
+        // player who searched and came back with nothing is not obliged to say
+        // whether there was anything to find, and this line would say it for
+        // them.
+        state.log(crate::state::LogLevel::Debug,
+            format!("{}: no matching card in library", state.obj_name(source_id)));
+        shuffle_library(state, searcher);
+        return;
     }
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: searcher,
+        source: source_id,
+        choice: ResolutionChoiceKind::ChooseFromLibrary {
+            description: description.to_string(),
+            options: candidates,
+            searcher,
+            source_id,
+            destination,
+            tapped,
+        },
+    });
 }
 
 /// Move a found card out of the library to its destination, then shuffle.

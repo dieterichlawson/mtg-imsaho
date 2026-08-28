@@ -805,3 +805,23 @@ pub fn joins_the_attack(state: &mut GameState, attacker: ObjectId, defender: Pla
     combat.attackers.insert(attacker, defender);
     combat.blocker_assignments.insert(attacker, Vec::new());
 }
+
+/// Answer a pending library-search prompt: take `found`, or fail to find.
+///
+/// CR 701.19b lets a player searching a hidden zone come back with nothing
+/// even when a match is there, so every search stops and asks — including a
+/// mandatory one with exactly one candidate, which used to be taken for the
+/// player. Tests that drive a search have to answer it.
+pub fn answer_library_search(
+    state: &GameState,
+    registry: &CardRegistry,
+    found: Option<ObjectId>,
+) -> GameState {
+    assert!(state.awaiting_action.is_some(),
+        "expected a pending library-search choice; there is none");
+    let choice = match found {
+        Some(id) => mtg_engine::actions::ResolvedChoice::ChosenCard(id),
+        None => mtg_engine::actions::ResolvedChoice::ChosenTarget(None),
+    };
+    mtg_engine::engine::submit_action(state, &Action::ResolveChoice { choice }, registry)
+}

@@ -203,6 +203,11 @@ pub(crate) fn legal_actions_while_awaiting(
                     .map(|&id| Action::ResolveChoice {
                         choice: ResolvedChoice::ChosenCard(id),
                     })
+                    // CR 701.19b: searching a hidden zone never forces a find,
+                    // so "take none of them" is always one of the answers.
+                    .chain(std::iter::once(Action::ResolveChoice {
+                        choice: ResolvedChoice::ChosenTarget(None),
+                    }))
                     .collect(),
                 ResolutionChoiceKind::ChooseCardType { options, .. } => options
                     .iter()

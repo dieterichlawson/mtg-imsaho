@@ -294,7 +294,6 @@ impl CardBehavior for GarrukRelentless {
             state, source_id, controller, creature_options,
             Zone::Hand, false, false,
             "Garruk, the Veil-Cursed: choose a creature card from your library",
-            registry,
         );
     }
 }

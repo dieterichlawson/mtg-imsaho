@@ -73,43 +73,56 @@ impl CardBehavior for CaravanVigil {
             .copied()
             .collect();
 
-        // The search is general; morbid — "you may put that card onto the
-        // battlefield instead" — is this card's text and is asked AFTER the
-        // land is chosen, so the choice routes back here rather than letting
-        // the engine finish the search. Previously the multi-land branch went
-        // through the engine's finisher, which put the land in hand and never
-        // offered morbid at all.
-        match basic_lands.len() {
-            0 => {
-                state.log(LogLevel::Event, "Caravan Vigil: no basic land found in library".into());
-                crate::cards::helpers::shuffle_library(state, controller);
-            }
-            1 => Self::finish_search(state, object_id, basic_lands[0], controller, registry),
-            _ => {
-                let options: Vec<Target> = basic_lands.iter().copied().map(Target::Object).collect();
-                state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                    player: controller,
-                    source: object_id,
-                    choice: ResolutionChoiceKind::ChooseTarget {
-                        description: "Caravan Vigil: choose a basic land card".into(),
-                        options,
-                        optional: false,
-                        effect: crate::state::PendingEffect::CardEffect {
-                            source_id: object_id,
-                            key: String::new(),
-                        },
-                    },
-                });
-            }
+        // Morbid — "you may put that card onto the battlefield instead" — is
+        // this card's own text and is asked AFTER the land is chosen, which is
+        // why the choice routes back here rather than through the shared
+        // `search_library`, whose finisher moves the card straight to a fixed
+        // destination and would never offer morbid at all.
+        //
+        // CR 701.19b: a player searching a hidden zone "isn't required to find
+        // some or all of those cards even if they're present in that zone".
+        // The search is mandatory; taking a card is not. So the list is offered
+        // as an optional choice even when exactly one basic land qualifies —
+        // this used to take that land for the player — and declining still
+        // shuffles, because the search happened (CR 701.19a).
+        if basic_lands.is_empty() {
+            // Debug on purpose: a player who searched and came back with
+            // nothing need not say whether there was anything to find, and an
+            // Event-level line would say it for them.
+            state.log(LogLevel::Debug, "Caravan Vigil: no basic land in library".into());
+            crate::cards::helpers::shuffle_library(state, controller);
+            return;
         }
+        let options: Vec<Target> = basic_lands.iter().copied().map(Target::Object).collect();
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: object_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Caravan Vigil: choose a basic land card (or none)".into(),
+                options,
+                optional: true,
+                effect: crate::state::PendingEffect::CardEffect {
+                    source_id: object_id,
+                    key: String::new(),
+                },
+            },
+        });
     }
 
-    /// The chosen land — hand it to the same finisher the single-land case
-    /// uses, so morbid is offered either way.
+    /// The chosen land. Declining is handled by `on_declined_choice` — the
+    /// search still happened, so the library is still shuffled.
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(land_id) = target else { return };
         let controller = crate::cards::helpers::controller_of(state, source_id);
         Self::finish_search(state, source_id, *land_id, controller, registry);
+    }
+
+    /// CR 701.19a: the search happened whether or not a card was found, so the
+    /// shuffle happens too.
+    fn on_declined_choice(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+        let controller = crate::cards::helpers::controller_of(state, self_id);
+        state.log(LogLevel::Event, "Caravan Vigil: found nothing".into());
+        crate::cards::helpers::shuffle_library(state, controller);
     }
 
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {

@@ -632,6 +632,8 @@ fn bug_bf_travelers_amulet_shuffles_library_after_search() {
     let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
     activate_via_hooks(&mut state, &registry, amulet, 0, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    // CR 701.19b: the search stops and asks, even with one candidate.
+    state = answer_library_search(&state, &registry, Some(forest));
 
     // Forest should have moved to hand.
     assert_eq!(

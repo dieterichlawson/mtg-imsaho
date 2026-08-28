@@ -96,7 +96,6 @@ impl CardBehavior for GhostQuarter {
                 state, object_id, target_controller, basic_lands,
                 Zone::Battlefield, false, true,
                 "Ghost Quarter: you may search for a basic land card",
-                registry,
             );
         }
     }
