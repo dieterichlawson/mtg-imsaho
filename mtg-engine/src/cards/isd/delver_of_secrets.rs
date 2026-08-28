@@ -126,10 +126,7 @@ impl CardBehavior for DelverOfSecrets {
             return;
         }
         // Player reveals the top card. Only transform if it's an instant or sorcery.
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         let top_card_id = state.get_player(controller).library_order.first().copied();
         let top_card_name = top_card_id.map_or_else(|| "a card".into(), |id| state.obj_name(id));
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);

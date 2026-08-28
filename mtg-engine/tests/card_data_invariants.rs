@@ -842,22 +842,46 @@ fn no_card_conflates_its_controller_with_still_being_on_the_battlefield() {
         offenders.len(), offenders.join("\n  "));
 }
 
-/// CR 602.2a: an activated ability's controller is the player who activated
-/// it, not whoever controls the source when it resolves. The engine records
-/// the activator on the stack entry and `helpers::ability_controller` reads it
-/// back, falling through to the source's last known controller (CR 608.2g).
+/// A card resolving one of its own abilities must not read `o.controller` off
+/// its source.
 ///
-/// Reading `o.controller` off the source inside `resolve_activated_ability` is
-/// wrong twice over. An opponent who takes the permanent in response — with
-/// Traitorous Blood, say — collects the effect: Bloodline Keeper's token,
-/// Civilized Scholar's card, Skirsdag High Priest's 5/5 Demon. And the
-/// `None => return` these sites all carried threw the effect away entirely if
-/// the source had left, which CR 113.7a says it must not.
+/// Two rules say so, and they agree. CR 608.2g: an ability that resolves after
+/// its source has left the battlefield uses the source's *last known*
+/// controller — and leaving the battlefield resets `controller` to `owner`, so
+/// the field being read is not that. CR 602.2a: an *activated* ability's
+/// controller is the player who activated it, which is not the source's
+/// controller either if someone took the permanent in response.
+/// `helpers::controller_of` answers the first, `helpers::ability_controller`
+/// the second (and falls through to the first).
 ///
-/// Eleven cards were converted when `ability_controller` was introduced and
-/// seven were missed, because nothing failed the build over it.
+/// Twenty-five sites read the raw field. Most carried a comment saying exactly
+/// the rule they were breaking — "triggered ability resolves even if source
+/// has left the battlefield", "'your' means last-known controller, not owner"
+/// — above a `match` that returned the owner. Moldgraf Monstrosity's is a dies
+/// trigger, so its source is *always* in the graveyard by the time it reads
+/// the field, and "return two creature cards from your graveyard" looked in
+/// the owner's. And every one of them paired the read with `None => return`,
+/// throwing the whole effect away if the source had gone, against CR 113.7a.
+///
+/// Exempt are the hooks that answer "what is true of this permanent right
+/// now" rather than resolving anything: a static or replacement effect and a
+/// trigger *condition* are evaluated while the source is on the battlefield
+/// (CR 113.6), where the two answers coincide, and the enters-tapped check on
+/// the dual lands runs on the land as it enters.
 #[test]
-fn no_card_reads_its_controller_off_the_source_when_an_ability_resolves() {
+fn no_card_reads_its_controller_off_its_own_source_while_resolving() {
+    const FUNCTIONS_ON_THE_BATTLEFIELD: &[&str] = &[
+        "replace_event", "activated_abilities", "continuous_effects",
+        "is_valid_target", "dynamic_pt", "should_trigger",
+        "should_trigger_on_blocks", "should_trigger_on_becomes_blocked",
+        "should_trigger_on_spell_cast", "state_trigger_condition",
+        "should_transform", "pay_activation_cost", "mana_abilities",
+        "card_data", "back_face_data", "step_trigger_scope", "loyalty_abilities",
+        // The dual lands' "unless you control a Mountain or a Plains" check,
+        // run as the land itself enters (CR 614.1c).
+        "controller_has_matching_land",
+    ];
+
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
     let mut files = Vec::new();
     let mut stack = vec![src];
@@ -875,7 +899,7 @@ fn no_card_reads_its_controller_off_the_source_when_an_ability_resolves() {
     for path in files {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         if name == "helpers.rs" {
-            continue; // where ability_controller lives
+            continue; // where both helpers live
         }
         let text = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = text.lines().collect();
@@ -885,33 +909,36 @@ fn no_card_reads_its_controller_off_the_source_when_an_ability_resolves() {
             if let Some(rest) = code.strip_prefix("fn ") {
                 current_fn = rest.split('(').next().unwrap_or("").to_string();
             }
-            if current_fn != "resolve_activated_ability" || code.starts_with("//") {
-                continue;
-            }
-            if !code.contains("o.controller") {
+            if code.starts_with("//") || !code.contains("o.controller") {
                 continue;
             }
             scanned += 1;
+            if FUNCTIONS_ON_THE_BATTLEFIELD.contains(&current_fn.as_str()) {
+                continue;
+            }
             // Whose controller? Only the ability's own source is this rule; a
-            // read off a *target* is that target's controller and belongs
-            // where it is.
-            let subject_is_source = lines[n.saturating_sub(1)].contains("state.get_object(object_id)")
-                || lines[n.saturating_sub(1)].contains("state.get_object(self_id)");
+            // read off a *target* is that target's business, and Ghost Quarter
+            // makes one.
+            let prev = lines[n.saturating_sub(1)];
+            let subject_is_source = prev.contains("state.get_object(object_id)")
+                || prev.contains("state.get_object(self_id)");
             // A comparison against a controller already in hand is a different
-            // question again.
+            // question again — Olivia Voldaren checks one against the recorded
+            // activator.
             let is_comparison = code.contains("o.controller ==") || code.contains("== o.controller");
             if subject_is_source && !is_comparison {
-                offenders.push(format!("{name}:{}: {}", n + 1, code));
+                offenders.push(format!("{name}:{}: fn {current_fn}: {code}", n + 1));
             }
         }
     }
-    assert!(scanned >= 2,
-        "only {scanned} controller read(s) inside resolve_activated_ability — \
-         this invariant has stopped covering anything");
+    assert!(scanned >= 20,
+        "only {scanned} controller read(s) in src/cards — this invariant has \
+         stopped covering anything");
     assert!(offenders.is_empty(),
-        "{} site(s) read the source's current controller while an activated \
-         ability resolves:\n  {}\n\n\
-         Use `helpers::ability_controller`, which answers CR 602.2a.",
+        "{} site(s) read the source's own `controller` field while resolving:\n  {}\n\n\
+         Use `helpers::ability_controller` for an activated ability (CR 602.2a) \
+         and `helpers::controller_of` everywhere else (CR 608.2g). Neither \
+         needs a `None => return`, which CR 113.7a forbids anyway.",
         offenders.len(), offenders.join("\n  "));
 }
 

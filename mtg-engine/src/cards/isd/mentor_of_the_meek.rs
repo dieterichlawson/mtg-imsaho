@@ -46,10 +46,7 @@ impl CardBehavior for MentorOfTheMeek {
     }
 
     fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // The whole condition — another creature you control, power 2 or less —
         // was already checked at dispatch time in `should_trigger_on_creature_
         // enters`. Re-checking power here would be wrong, not just redundant:
@@ -72,10 +69,7 @@ impl CardBehavior for MentorOfTheMeek {
         if !yes {
             return;
         }
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // Pay {1} (prefer colorless, then any color).
         let player = state.get_player_mut(controller);
         let paid;

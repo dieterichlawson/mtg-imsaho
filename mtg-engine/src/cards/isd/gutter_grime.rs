@@ -36,10 +36,7 @@ impl CardBehavior for GutterGrime {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // Must be our creature.
         if dead_controller != controller {
             return;

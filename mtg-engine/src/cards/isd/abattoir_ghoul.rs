@@ -37,10 +37,7 @@ impl CardBehavior for AbattoirGhoul {
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // CR 603.6d: triggered ability resolves even if source has left
         // the battlefield (e.g. simultaneous death in combat).
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // Check if the dead creature was dealt damage by Abattoir Ghoul this turn.
         // Use the captured damaged_by (before zone change cleared it).
         if !dead_damaged_by.contains(&self_id) {

@@ -40,10 +40,7 @@ impl CardBehavior for MoldgrafMonstrosity {
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.10c: "your" means last-known controller, not owner.
-        let controller = match state.get_object(object_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // "Exile it" applies to the card in the graveyard, and only there.
         // Two Monstrosities dying together each put a trigger on the stack;

@@ -48,10 +48,7 @@ impl CardBehavior for BurningVengeance {
     fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 113.7a: the trigger is independent of Burning Vengeance once on
         // the stack, so destroying it in response still deals the 2 damage.
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::controller_of(state, self_id);
         // Only trigger on our own spells.
         if caster != controller {
             return;

@@ -105,10 +105,7 @@ impl CardBehavior for GarrukRelentless {
     }
 
     fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
 
         match ability_index {
             // ── Front face abilities ─────────────────────────────────────
