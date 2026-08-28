@@ -450,6 +450,14 @@ fn gutter_grime_creates_ooze_on_creature_death() {
 
     // Should have created an Ooze token.
     assert_eq!(count_tokens_named(&state, "Ooze Token"), 1, "Should have created 1 Ooze token");
+
+    // "create a **green Ooze creature** token" — every word of it.
+    let ooze = find_token_named(&state, "Ooze Token").unwrap();
+    assert_eq!(state.colors_of(ooze, &reg), vec![Color::Green], "the Ooze is green");
+    assert!(state.is_creature(ooze, &reg), "and a creature");
+    assert!(state.has_subtype(ooze, "Ooze", &reg), "and an Ooze");
+    assert_eq!(state.get_object(ooze).unwrap().controller, P0,
+        "under the Gutter Grime's controller");
 }
 
 // ── Heretic's Punishment ─────────────────────────────────────────
@@ -2651,10 +2659,14 @@ fn every_ooze_is_sized_by_the_current_slime_count() {
             "and one Ooze per death");
 
         // Every Ooze, including the ones made earlier, is the current size.
+        // CR 111.4 names a token after its subtypes plus "Token", so these are
+        // "Ooze Token" — a filter on "Ooze" matches nothing and asserts
+        // nothing.
         let oozes: Vec<_> = state.objects.values()
-            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze")
+            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze Token")
             .map(|o| o.id)
             .collect();
+        assert_eq!(oozes.len(), expected as usize);
         for ooze in oozes {
             assert_eq!(state.effective_power(ooze, &reg), Some(expected as i32),
                 "with {expected} slime counter(s), every Ooze is {expected}/{expected}");
@@ -2700,6 +2712,68 @@ fn gutter_grime_counts_only_your_own_nontoken_creatures() {
             "controller=p{}, is_token={is_token}", controller.0);
         assert_eq!(count_tokens_named(&state, "Ooze Token"), usize::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
+    }
+}
+
+/// Ruling: "If you control more than one Gutter Grime, each Ooze token
+/// remembers which one created it. The power and toughness of that Ooze will
+/// be equal to the number of slime counters on that Gutter Grime only."
+///
+/// The two Grimes have to be at different counts for the claim to bite, so the
+/// second one arrives a death late.
+#[test]
+fn each_ooze_counts_the_slime_on_the_gutter_grime_that_made_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let kill_one = |state: &mut mtg_engine::state::GameState| {
+        let creature = ready_creature(state, P0, 2, 2);
+        kill_by_damage(state, &reg, creature);
+        triggers::process_triggers(state, &reg);
+    };
+    let oozes_of = |state: &mtg_engine::state::GameState, grime: ObjectId| -> Vec<ObjectId> {
+        let mut ids: Vec<ObjectId> = state.objects.values()
+            .filter(|o| o.is_token && o.zone == Zone::Battlefield
+                && o.card_state.get(mtg_engine::cards::PT_DEFINED_BY) == Some(&grime))
+            .map(|o| o.id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    };
+
+    let first = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    kill_one(&mut state);
+    let second = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    kill_one(&mut state);
+
+    assert_eq!(counters_of(&state, first, CounterType::Slime), 2);
+    assert_eq!(counters_of(&state, second, CounterType::Slime), 1,
+        "the second Grime missed the first death");
+    assert_eq!(oozes_of(&state, first).len(), 2);
+    assert_eq!(oozes_of(&state, second).len(), 1);
+
+    for ooze in oozes_of(&state, first) {
+        assert_eq!(state.effective_power(ooze, &reg), Some(2),
+            "an Ooze from the first Grime counts its two slime counters");
+        assert_eq!(state.effective_toughness(ooze, &reg), Some(2));
+    }
+    for ooze in oozes_of(&state, second) {
+        assert_eq!(state.effective_power(ooze, &reg), Some(1),
+            "and one from the second counts only that Grime's one");
+        assert_eq!(state.effective_toughness(ooze, &reg), Some(1));
+    }
+
+    // Losing one Grime is felt only by its own Oozes.
+    let seconds_oozes = oozes_of(&state, second);
+    let firsts_oozes = oozes_of(&state, first);
+    state.move_object(first, Zone::Graveyard, &reg);
+    for ooze in firsts_oozes {
+        assert_eq!(state.effective_power(ooze, &reg), Some(0),
+            "its own Oozes lose their counters with it");
+    }
+    for ooze in seconds_oozes {
+        assert_eq!(state.effective_power(ooze, &reg), Some(1),
+            "the other Grime's Ooze is untouched");
     }
 }
 
