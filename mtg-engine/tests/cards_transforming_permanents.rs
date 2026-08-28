@@ -752,16 +752,93 @@ fn mikaeus_distributes_counters() {
 
     let other1 = ready_creature(&mut state, P0, 2, 2);
     let other2 = ready_creature(&mut state, P0, 1, 1);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
 
     // Use ability 1: remove a counter, give +1/+1 to each other creature.
     activate_via_hooks(&mut state, &reg, mikaeus, 1, &[]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Mikaeus should have lost a counter.
-    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 1);
+    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 1,
+        "the removed counter is the cost, and \"each OTHER creature\" is not \
+         Mikaeus — so it is down one and gained none");
     // Other creatures should each have a counter.
     assert_eq!(state.get_counter_count(other1, CounterType::PlusOnePlusOne), 1);
     assert_eq!(state.get_counter_count(other2, CounterType::PlusOnePlusOne), 1);
+    assert_eq!(state.get_counter_count(theirs, CounterType::PlusOnePlusOne), 0,
+        "\"each other creature YOU control\" — an opponent's creature gets nothing");
+}
+
+/// "{T}, Remove a +1/+1 counter from Mikaeus: ..." — the removal is a cost, so
+/// a Mikaeus down to its last counter pays it, becomes a 0/0, and is gone to
+/// state-based action (CR 704.5f) before the ability resolves. The ability is
+/// on the stack independently of it (CR 113.7a), so the rest of the team still
+/// gets their counters.
+#[test]
+fn mikaeus_can_pay_its_last_counter_and_die_before_the_ability_resolves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    let friend = ready_creature(&mut state, P0, 2, 2);
+
+    // Ability 1 specifically — `activate_onto_stack` would take whichever is
+    // offered first, and with a counter on it both are.
+    let mut state = mtg_engine::engine::submit_action(&state, &Action::ActivateAbility {
+        object_id: mikaeus, ability_index: 1, targets: vec![],
+        tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+    }, &reg);
+    // The cost is paid, so Mikaeus is a 0/0 with its ability still on the stack.
+    assert_eq!(state.get_counter_count(mikaeus, CounterType::PlusOnePlusOne), 0);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(mikaeus).unwrap().zone, Zone::Graveyard,
+        "a 0/0 does not stay on the battlefield");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_counter_count(friend, CounterType::PlusOnePlusOne), 1,
+        "the ability resolves without its source (CR 113.7a)");
+}
+
+/// CR 601.2h: a cost that cannot be paid cannot be chosen. With no +1/+1
+/// counters on it, only the first ability is on offer.
+#[test]
+fn mikaeus_second_ability_needs_a_counter_to_remove() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    ready_creature(&mut state, P0, 2, 2);
+
+    let offered = |s: &mtg_engine::state::GameState| -> usize {
+        mtg_engine::engine::legal_actions(s, &reg).actions.iter()
+            .filter(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == mikaeus))
+            .count()
+    };
+    assert_eq!(offered(&state), 1, "no counters, so only \"{{T}}: put a counter\"");
+
+    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    assert_eq!(offered(&state), 2, "with a counter to remove, both are payable");
+}
+
+/// CR 602.2h: one tap pays one cost. Both of Mikaeus's abilities need {T}, so
+/// using either one takes the other off the table until it untaps.
+#[test]
+fn mikaeus_only_gets_one_of_its_two_tap_abilities_per_untap() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 2);
+    ready_creature(&mut state, P0, 2, 2);
+
+    let state = mtg_engine::engine::submit_action(&state, &Action::ActivateAbility {
+        object_id: mikaeus, ability_index: 1, targets: vec![],
+        tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+    }, &reg);
+    assert!(state.get_object(mikaeus).unwrap().tapped, "the {{T}} was paid");
+    assert!(!offers_ability_of(&state, &reg, mikaeus),
+        "a tapped Mikaeus cannot pay {{T}} again for the other ability");
 }
 
 // -------------------------------------------------------------------------
