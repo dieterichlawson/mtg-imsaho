@@ -715,8 +715,8 @@ fn opponent_cannot_target_hexproof_player() {
     // P0 has Witchbane Orb.
     let _orb = named_permanent(&mut state, &reg, "Witchbane Orb", P0);
 
-    // P1 tries to cast a player-targeting spell (like Bump in the Night) at P0.
-    // Bump in the Night: {B} Sorcery - Target player loses 3 life.
+    // P1 tries to cast a player-targeting spell at P0.
+    // Bump in the Night: {B} Sorcery — "Target opponent loses 3 life."
     let bump = castable_spell(&mut state, &reg, "Bump in the Night", P1);
 
     let actions = mtg_engine::engine::legal_actions(&state, &reg);

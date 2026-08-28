@@ -108,6 +108,11 @@ fn a_cards_target_filter_matches_its_wording() {
           a Vampire, and its subtypes are on the object, not in the registry"),
         ("Tribute to Hunger", Candidate::Opponent, Candidate::Caster,
          "'target opponent' is not 'target player'"),
+        // Both "target opponent" cards get a row: what this catches is a card
+        // wired to the wrong requirement, which is per-card even though the
+        // restriction itself is now stated once, in `OpponentOnly`.
+        ("Bump in the Night", Candidate::Opponent, Candidate::Caster,
+         "'target opponent' is not 'target player'"),
     ];
 
     for (name, accept, reject, why) in cases {

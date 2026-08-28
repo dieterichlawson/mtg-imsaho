@@ -734,7 +734,7 @@ fn the_resolution_recheck_uses_the_same_player_targeting_rule() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     named_permanent(&mut state, &reg, "Witchbane Orb", P1);
 
-    // Bump in the Night: "Target player loses 3 life." P0 casts it at P1, who
+    // Bump in the Night: "Target opponent loses 3 life." P0 casts it at P1, who
     // has hexproof — the engine would never offer this, so drive it directly.
     let bump = castable_spell(&mut state, &reg, "Bump in the Night", P0);
     let mut state = cast_onto_stack(&state, &reg, bump, vec![Target::Player(P1)]);
