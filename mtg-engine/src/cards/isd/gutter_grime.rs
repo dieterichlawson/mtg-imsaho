@@ -53,8 +53,7 @@ impl CardBehavior for GutterGrime {
         }
         // Put a slime counter on Gutter Grime.
         state.add_counters(self_id, CounterType::Slime, 1);
-        let slime_count = state.get_object(self_id)
-            .map_or(1, |o| *o.counters.get(&CounterType::Slime).unwrap_or(&0));
+        let slime_count = state.get_counter_count(self_id, CounterType::Slime);
         // Create the Ooze token with base 0/0 and dynamic P/T linked to this Gutter Grime.
         let token_ids = state.create_token_with_subtypes(
             "", controller, 0, 0,

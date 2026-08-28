@@ -173,6 +173,24 @@ pub fn activate_via_hooks(
 ) {
     let Some(card_id) = state.get_object(object_id).map(|o| o.card_id) else { return };
     if let Some(behavior) = registry.get(card_id) {
+        // The costs the ability declares, paid the way `submit_action` pays
+        // them — before the ability goes on the stack (CR 601.2h via 602.2b).
+        // This helper used to pay only `pay_activation_cost`, the card-level
+        // hook, so an ability whose cost is declared rather than hand-written
+        // (a tap, `counter_cost`) went on the stack for free and every test
+        // through this path measured the effect without the cost.
+        //
+        // Mana is the exception: it comes from a pool these tests do not fill.
+        if let Some(ab) = behavior.activated_abilities(state, object_id, registry)
+            .into_iter().find(|a| a.ability_index == ability_index)
+        {
+            if ab.requires_tap {
+                if let Some(obj) = state.get_object_mut(object_id) { obj.tapped = true; }
+            }
+            if let Some((counter_type, amount)) = ab.counter_cost {
+                state.remove_counters(object_id, counter_type, amount);
+            }
+        }
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
     mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets);

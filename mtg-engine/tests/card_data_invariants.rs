@@ -683,6 +683,59 @@ fn no_card_reads_its_sources_controller_by_hand() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// Counters are game objects' state, not a card's private bookkeeping, so
+/// every card reaches them through the engine: `state.add_counters`,
+/// `state.remove_counters`, `state.get_counter_count`.
+///
+/// Four cards used to reach into `obj.counters` directly, and the shortcuts
+/// were not free. `add_counters` refuses to put a counter on a permanent that
+/// has left the battlefield (CR 121.1) — a hand-rolled `entry().or_insert(0)`
+/// does not, and it also leaves a zero-valued entry behind where the pipeline
+/// drops the key. Worse, a card that removes a counter by hand at resolution
+/// is almost always removing it on the wrong side of the priority window: if
+/// the removal is a cost it belongs in `ActivatedAbilityDef::counter_cost`,
+/// which the engine pays on activation and checks for payability first
+/// (CR 601.2h, CR 602.2b). Mikaeus, the Lunarch did exactly that.
+///
+/// `enters_with_counters` builds a list of counters for an ETB replacement
+/// effect rather than touching an object, so `e.counters` is not this.
+#[test]
+fn no_card_reaches_into_the_counter_map_by_hand() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let ops = ["get(", "entry(", "remove(", "insert(", "contains_key(", "get_mut("];
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") || code.starts_with("///") {
+                continue;
+            }
+            let Some(rest) = code.split_once(".counters.").map(|(_, r)| r) else { continue };
+            if ops.iter().any(|op| rest.starts_with(op)) {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} site(s) reach into an object's counter map by hand:\n  {}\n\n\
+         Use `state.add_counters` / `state.remove_counters` / \
+         `state.get_counter_count`, and declare a counter that is part of an \
+         activation cost as `ActivatedAbilityDef::counter_cost`.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

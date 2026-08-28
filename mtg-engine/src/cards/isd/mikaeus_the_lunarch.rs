@@ -73,21 +73,27 @@ impl CardBehavior for MikaeusTheLunarch {
             counter_cost: None,
         });
 
-        // Ability 1: {T}, Remove a +1/+1 counter: Put a +1/+1 counter on each other creature.
-        let has_counter = state.get_counter_count(object_id, CounterType::PlusOnePlusOne) > 0;
-        if has_counter {
-            abilities.push(ActivatedAbilityDef {
-                ability_index: 1,
-                description: "{T}, Remove a +1/+1 counter: +1/+1 counter on each other creature you control".into(),
-                cost: ManaCost::free(),
-                requires_tap: true,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: None,
-                once_per_turn: false,
-                sorcery_speed_only: false,
-                counter_cost: None,
-            });
-        }
+        // Ability 1: {T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1
+        // counter on each other creature you control.
+        //
+        // Everything before the colon is cost (CR 602.2b), so the removal is
+        // declared as `counter_cost` and paid on activation. It used to be
+        // done by hand in `resolve_activated_ability`, which put it on the
+        // wrong side of the priority window — an opponent responding still saw
+        // the counter on Mikaeus, and countering the ability handed it back.
+        // Declaring it also lets the engine enforce CR 601.2h; the card no
+        // longer hides the ability itself when there is no counter to remove.
+        abilities.push(ActivatedAbilityDef {
+            ability_index: 1,
+            description: "{T}, Remove a +1/+1 counter: +1/+1 counter on each other creature you control".into(),
+            cost: ManaCost::free(),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::None,
+            target_requirement: None,
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: Some((CounterType::PlusOnePlusOne, 1)),
+        });
 
         abilities
     }
@@ -106,13 +112,7 @@ impl CardBehavior for MikaeusTheLunarch {
                     "Mikaeus, the Lunarch: +1/+1 counter added".into());
             }
             1 => {
-                // Remove a +1/+1 counter from Mikaeus.
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    let count = obj.counters.entry(CounterType::PlusOnePlusOne).or_insert(0);
-                    if *count > 0 {
-                        *count -= 1;
-                    }
-                }
+                // The counter removal was the cost, paid on activation.
                 // Put a +1/+1 counter on each other creature you control.
                 let other_creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()

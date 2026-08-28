@@ -246,10 +246,8 @@ impl CardBehavior for GarrukRelentless {
     /// CR 603.8: "When Garruk Relentless has two or fewer loyalty counters on
     /// him, transform him." The threshold is this card's text.
     fn state_trigger_condition(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        state.get_object(object_id).is_some_and(|o| {
-            !o.is_transformed
-                && *o.counters.get(&CounterType::Loyalty).unwrap_or(&0) <= 2
-        })
+        state.get_object(object_id).is_some_and(|o| !o.is_transformed)
+            && state.get_counter_count(object_id, CounterType::Loyalty) <= 2
     }
 
     fn state_trigger_description(&self) -> String {
