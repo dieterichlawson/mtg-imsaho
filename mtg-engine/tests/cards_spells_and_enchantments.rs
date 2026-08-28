@@ -98,6 +98,12 @@ fn night_revelers_has_haste_with_opponent_human() {
     assert!(!state.has_keyword(revelers, Keyword::Haste, &reg),
         "Night Revelers should not have haste without opponent Human");
 
+    // "an OPPONENT controls a Human" — your own Human grants nothing.
+    let own_human = named_permanent(&mut state, &reg, "Champion of the Parish", P0);
+    assert!(!state.has_keyword(revelers, Keyword::Haste, &reg),
+        "your own Human does not give Night Revelers haste");
+    state.move_object(own_human, Zone::Graveyard, &reg);
+
     // Add a Human creature to the opponent.
     let human = named_permanent(&mut state, &reg, "Champion of the Parish", P1);
 

@@ -40,3 +40,29 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 Static-ability behaviour is exercised through the shared continuous-effects tests in `continuous_effects.rs` and `snapshot_anthems.rs`.
 
+
+## Audit — 2026-08-28 20:02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: This creature has haste as long as an opponent controls a Human.
+**Type line**: Creature — Vampire
+**P/T**: 4/4
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/night_revelers.rs` matches: {4}{R}, Vampire, 4/4, `ContinuousEffect::when(OpponentControlsSubtype("Human"), GrantKeyword { Haste, OnSelf })`.
+
+One test gap closed: the test toggled haste with the OPPONENT'S Human but never checked that the controller's own Human grants nothing — the flipped-condition mutation passed. Added the own-Human row.
+
+### Tricky interactions checked
+- "an opponent controls" — own Humans excluded (`OpponentControlsSubtype` walks the opponent's battlefield only). Now tested.
+- Human tokens count (`has_subtype` accessor union). PASS
+- Haste is continuous: a Human appearing after the Revelers entered grants haste immediately, and the attack-legality check consults `has_keyword(Haste)` at declare time (engine-generic: `keywords.rs::haste_overrides_summoning_sickness`, `control_change.rs`). PASS
+- Losing haste mid-turn (Human dies before combat): condition re-evaluated per query; can no longer attack. Covered by the toggling assertions.
+
+### Test coverage
+- Haste toggling incl. own-Human row: `mtg-engine/tests/cards_spells_and_enchantments.rs` `night_revelers_has_haste_with_opponent_human` (extended this audit)
+- Haste -> can attack while summoning-sick: `keywords.rs` (engine-generic)
+- No rulings on Scryfall for this card.
+
+Mutation check: flipping the condition to `YouControlSubtype`: previously PASSED (gap recorded above); with the own-Human row it FAILS. Bites now.
