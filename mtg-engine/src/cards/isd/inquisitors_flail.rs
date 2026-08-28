@@ -1,8 +1,8 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope};
 
 /// Inquisitor's Flail — {2} Artifact — Equipment.
 /// If equipped creature would deal combat damage, it deals double that damage instead.
@@ -41,22 +41,7 @@ impl CardBehavior for InquisitorsFlail {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-        if obj.zone == Zone::Battlefield && !state.is_creature(obj.id, registry) {
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "Equip {2}".into(),
-                cost: ManaCost::new(vec![ManaSymbol::Generic(2)]),
-                requires_tap: false,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
-                once_per_turn: false,
-                sorcery_speed_only: true,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+        crate::cards::helpers::equip_for_generic(state, object_id, registry, 2)
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {

@@ -1,8 +1,8 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, Keyword, EffectScope, Zone};
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, Keyword, EffectScope};
 
 /// Cobbled Wings — {2} Artifact — Equipment.
 /// Equipped creature has flying. Equip {1}.
@@ -24,27 +24,7 @@ impl CardBehavior for CobbledWings {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        // Gate on `power.is_none()` so the equip ability is only returned when the
-        // engine queries the equipment itself, not the creature it's attached to.
-        // The legal_actions attached-iteration loop calls activated_abilities on every
-        // attached object with the *creature's* object_id; without this filter, the
-        // equip ability would be duplicated and the duplicate variant would misroute
-        // the equip ability to mutate the creature's attached_to field.
-        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)) {
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "Equip {1}".into(),
-                cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                requires_tap: false,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
-                once_per_turn: false,
-                sorcery_speed_only: true,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+        crate::cards::helpers::equip_for_generic(state, object_id, registry, 1)
     }
 
     /// Equip targets only creatures you control.

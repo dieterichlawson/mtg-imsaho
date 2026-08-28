@@ -1,8 +1,8 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, Keyword, EffectScope, EffectCondition, Zone};
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, Keyword, EffectScope, EffectCondition};
 
 /// Sharpened Pitchfork — {2} Artifact — Equipment.
 /// Equipped creature has first strike.
@@ -40,22 +40,7 @@ impl CardBehavior for SharpenedPitchfork {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        // Gate on power.is_none() — see Cobbled Wings for Bug AJ explanation.
-        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)) {
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "Equip {1}".into(),
-                cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                requires_tap: false,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
-                once_per_turn: false,
-                sorcery_speed_only: true,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+        crate::cards::helpers::equip_for_generic(state, object_id, registry, 1)
     }
 
     /// CR 702.6b: equip attaches to "target creature you control".

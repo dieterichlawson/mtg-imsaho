@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::events::DamageTarget;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
@@ -47,42 +47,33 @@ impl CardBehavior for BlazingTorch {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let Some(obj) = state.get_object(object_id) else { return vec![]; };
-
-        if obj.zone != Zone::Battlefield {
+        if state.get_object(object_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return vec![];
         }
 
-        if !state.is_creature(obj.id, registry) {
-            // Called with the equipment's own ID — return the equip ability.
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "Equip {1}".into(),
-                cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                requires_tap: false,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
-                once_per_turn: false,
-                sorcery_speed_only: true,
-                counter_cost: None,
-            }]
-        } else {
-            // Called with a creature's ID (the equipment is attached to it).
-            // Grant the creature "{T}, Sacrifice Blazing Torch: deal 2 damage to any target."
-            vec![ActivatedAbilityDef {
-                ability_index: 1,
-                description: "{T}, Sacrifice Blazing Torch: Deal 2 damage to any target".into(),
-                cost: ManaCost::free(),
-                requires_tap: true,
-                // The Torch is not the object the ability is activated on, so
-                // `SacrificeCost` cannot say it; `pay_activation_cost` does.
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::AnyTarget),
-                once_per_turn: false,
-                sorcery_speed_only: false,
-                counter_cost: None,
-            }]
+        // Asked about the Torch itself: its own equip ability. The helper
+        // returns nothing when asked about a creature, which is how the two
+        // cases below stay apart.
+        let equip = crate::cards::helpers::equip_for_generic(state, object_id, registry, 1);
+        if !equip.is_empty() {
+            return equip;
         }
+
+        // Asked about the creature the Torch is attached to: the ability the
+        // Torch grants it.
+        vec![ActivatedAbilityDef {
+            ability_index: 1,
+            description: "{T}, Sacrifice Blazing Torch: Deal 2 damage to any target".into(),
+            cost: ManaCost::free(),
+            requires_tap: true,
+            // The Torch is not the object the ability is activated on, so
+            // `SacrificeCost` cannot say it; `pay_activation_cost` does.
+            sacrifice_cost: SacrificeCost::None,
+            target_requirement: Some(TargetRequirement::AnyTarget),
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: None,
+        }]
     }
 
     /// "{T}, Sacrifice Blazing Torch:" — the sacrifice is a cost, so it is paid

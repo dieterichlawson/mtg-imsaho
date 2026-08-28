@@ -1,8 +1,8 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggeredAbilityDef, TriggerKind};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, TriggeredAbilityDef, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope};
 
 /// Wooden Stake — {2} Artifact — Equipment.
 /// Equipped creature gets +1/+0.
@@ -49,24 +49,7 @@ impl CardBehavior for WoodenStake {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        // CR 301.5c: an Equipment that is also a creature can't equip. The
-        // comment here used to point at Cobbled Wings for the reasoning, which
-        // no longer explains it.
-        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && !state.is_creature(o.id, registry)) {
-            vec![ActivatedAbilityDef {
-                ability_index: 0,
-                description: "Equip {1}".into(),
-                cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
-                requires_tap: false,
-                sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
-                once_per_turn: false,
-                sorcery_speed_only: true,
-                counter_cost: None,
-            }]
-        } else {
-            vec![]
-        }
+        crate::cards::helpers::equip_for_generic(state, object_id, registry, 1)
     }
 
     /// CR 702.6b: equip attaches to "target creature you control".

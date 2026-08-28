@@ -1323,6 +1323,13 @@ fn a_card_that_says_at_random_actually_randomizes() {
 /// Some(..)` on a triggered or activated ability, a `fn target_requirement`
 /// override for a spell, or a bare `TargetRequirement::` mention. If none of
 /// them appears, nothing can reach `is_valid_target`.
+///
+/// Except that a card can also get a targeted ability from a shared helper —
+/// the eleven Equipment cards get equip, which targets a creature you control,
+/// from `helpers::equip_ability`. Scanning the card file alone called every one
+/// of them dead the moment that duplication was factored out, so the scan
+/// follows one hop: any `helpers.rs` function whose body mentions
+/// `TargetRequirement::` hands its targets to whoever calls it.
 #[test]
 fn no_card_defines_is_valid_target_without_taking_a_target() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
@@ -1337,8 +1344,52 @@ fn no_card_defines_is_valid_target_without_taking_a_target() {
     }
     files.sort();
 
+    // Helper functions that themselves declare a target requirement. A card
+    // that calls one takes targets just as surely as one that spells the
+    // requirement out.
+    let helpers_src = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards/helpers.rs")).unwrap();
+    let mut helper_bodies: Vec<(String, String)> = Vec::new();
+    for line in helpers_src.lines() {
+        if let Some(rest) = line.trim_start().strip_prefix("pub fn ") {
+            if let Some(name) = rest.split(['(', '<']).next() {
+                helper_bodies.push((name.to_string(), String::new()));
+            }
+        }
+        if let Some(last) = helper_bodies.last_mut() {
+            last.1.push_str(line);
+            last.1.push('\n');
+        }
+    }
+    // A helper that only calls another targeting helper is targeting too —
+    // `equip_for_generic` names no requirement of its own, it defers to
+    // `equip_ability`. Grow the set until it stops growing.
+    let mut targeting_helpers: Vec<String> = Vec::new();
+    loop {
+        let before = targeting_helpers.len();
+        for (name, body) in &helper_bodies {
+            if targeting_helpers.contains(name) {
+                continue;
+            }
+            if body.contains("TargetRequirement::")
+                || targeting_helpers.iter().any(|h| body.contains(&format!("{h}(")))
+            {
+                targeting_helpers.push(name.clone());
+            }
+        }
+        if targeting_helpers.len() == before {
+            break;
+        }
+    }
+    assert!(!targeting_helpers.is_empty(),
+        "found no targeting helpers — the scan below would then be the old \
+         card-file-only one, silently");
+
     let mut offenders = Vec::new();
     for path in files {
+        if path.file_name().is_some_and(|n| n == "helpers.rs") {
+            continue;
+        }
         let text = std::fs::read_to_string(&path).unwrap();
         let code: Vec<&str> = text.lines()
             .map(str::trim_start)
@@ -1352,6 +1403,7 @@ fn no_card_defines_is_valid_target_without_taking_a_target() {
             l.contains("target_requirement: Some")
                 || l.contains("fn target_requirement")
                 || l.contains("TargetRequirement::")
+                || targeting_helpers.iter().any(|h| l.contains(&format!("{h}(")))
         });
         if !takes_targets {
             offenders.push(path.file_name().unwrap().to_string_lossy().to_string());

@@ -91,6 +91,85 @@ pub fn equip_target_is_legal(
     }
 }
 
+/// What an equip ability costs. CR 702.6a lets equip take any cost; in this set
+/// that is mana everywhere except Demonmail Hauberk, whose cost is a sacrifice.
+pub enum EquipCost {
+    Mana(crate::types::ManaCost),
+    SacrificeACreature,
+}
+
+/// Equip's index among a card's activated abilities. Every Equipment declares
+/// it first; Blazing Torch is the only one with a second ability, and that one
+/// is granted to the equipped creature rather than being the Equipment's own.
+pub const EQUIP_ABILITY_INDEX: usize = 0;
+
+/// The equip keyword ability (CR 702.6a-b): "[cost]: Attach this permanent to
+/// target creature you control. Activate only as a sorcery."
+///
+/// Eleven Equipment cards each spelled this `ActivatedAbilityDef` out in full.
+/// The costs genuinely differ; nothing else did, which meant eleven cards had
+/// to independently agree on `sorcery_speed_only`, `once_per_turn`, the target
+/// requirement, and the gate below — and any future rule about equip would
+/// have eleven places to be added to. `resolve_equip` and
+/// `equip_target_is_legal` above were already shared; this is the third and
+/// last piece.
+///
+/// The gate is CR 301.5c — an Equipment that's also a creature can't equip a
+/// creature — and it is load-bearing for a second, engine-shaped reason:
+/// `legal_actions` asks each attached object for its abilities using the
+/// *equipped creature's* id, so without it every equip ability would be
+/// offered a second time, keyed to the creature that is wearing it.
+#[must_use]
+pub fn equip_ability(
+    state: &GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+    cost: EquipCost,
+) -> Vec<crate::cards::ActivatedAbilityDef> {
+    use crate::cards::{ActivatedAbilityDef, SacrificeCost, TargetFilter, TargetRequirement};
+
+    let on_battlefield = state.get_object(object_id)
+        .is_some_and(|o| o.zone == Zone::Battlefield);
+    if !on_battlefield || state.is_creature(object_id, registry) {
+        return vec![];
+    }
+
+    // The printed reminder text is the cost, so it is rendered from the cost
+    // rather than repeated as a string a card could get out of step with.
+    let (description, mana, sacrifice_cost) = match cost {
+        EquipCost::Mana(c) => (format!("Equip {c}"), c, SacrificeCost::None),
+        EquipCost::SacrificeACreature => (
+            "Equip—Sacrifice a creature".to_string(),
+            crate::types::ManaCost::free(),
+            SacrificeCost::SacrificeCreature,
+        ),
+    };
+
+    vec![ActivatedAbilityDef {
+        ability_index: EQUIP_ABILITY_INDEX,
+        description,
+        cost: mana,
+        requires_tap: false,
+        sacrifice_cost,
+        target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
+        once_per_turn: false,
+        sorcery_speed_only: true,
+        counter_cost: None,
+    }]
+}
+
+/// `equip_ability` for the common case: a mana cost of `n` generic.
+#[must_use]
+pub fn equip_for_generic(
+    state: &GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+    n: u32,
+) -> Vec<crate::cards::ActivatedAbilityDef> {
+    equip_ability(state, object_id, registry,
+        EquipCost::Mana(crate::types::ManaCost::new(vec![crate::types::ManaSymbol::Generic(n)])))
+}
+
 /// Resolve a curse aura: attach to a target player and move to battlefield.
 pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Target], registry: &CardRegistry) -> bool {
     if let Some(Target::Player(player_id)) = targets.first() {
