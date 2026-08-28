@@ -37,13 +37,13 @@ use mtg_engine::types::*;
 /// table has to state.
 #[test]
 fn token_making_spells_make_the_tokens_they_print() {
-    // (spell, token name, power, toughness, keywords)
-    const SPELLS: &[(&str, &str, i32, i32, &[Keyword])] = &[
-        ("Midnight Haunting", "Spirit Token", 1, 1, &[Keyword::Flying]),
-        ("Moan of the Unhallowed", "Zombie Token", 2, 2, &[]),
+    // (spell, token name, power, toughness, color, subtype, keywords)
+    const SPELLS: &[(&str, &str, i32, i32, Color, &str, &[Keyword])] = &[
+        ("Midnight Haunting", "Spirit Token", 1, 1, Color::White, "Spirit", &[Keyword::Flying]),
+        ("Moan of the Unhallowed", "Zombie Token", 2, 2, Color::Black, "Zombie", &[]),
     ];
 
-    for &(spell_name, token_name, power, toughness, keywords) in SPELLS {
+    for &(spell_name, token_name, power, toughness, color, subtype, keywords) in SPELLS {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -58,6 +58,13 @@ fn token_making_spells_make_the_tokens_they_print() {
         for o in state.objects.values().filter(|o| o.is_token && o.name == token_name) {
             assert_eq!((o.power, o.toughness), (Some(power), Some(toughness)),
                 "{spell_name}'s tokens are {power}/{toughness}");
+            // The printed color and creature type — what "destroy target
+            // black creature" and "target Zombie" would read.
+            assert_eq!(o.colors, vec![color], "{spell_name}'s tokens are {color:?}");
+            assert!(o.subtypes.iter().any(|s| s == subtype),
+                "{spell_name}'s tokens have the {subtype} subtype");
+            assert!(o.card_types.contains(&CardType::Creature),
+                "{spell_name}'s tokens are creature tokens");
             for kw in keywords {
                 assert!(o.keywords.contains(kw), "{spell_name}'s tokens have {kw:?}");
             }
