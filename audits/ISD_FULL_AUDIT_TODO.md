@@ -121,7 +121,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Mindshrieker | `mindshrieker.rs` | 88 | 3 | 0 |
 | x | Wreath of Geists | `wreath_of_geists.rs` | 41 | 4 | 0 |
 | x | Cellar Door | `cellar_door.rs` | 84 | 3 | 0 |
-|   | Geistcatcher's Rig | `geistcatchers_rig.rs` | 58 | 3 | 1 |
+| x | Geistcatcher's Rig | `geistcatchers_rig.rs` | 58 | 3 | 1 |
 |   | Stitcher's Apprentice | `stitchers_apprentice.rs` | 82 | 3 | 0 |
 |   | Full Moon's Rise | `full_moons_rise.rs` | 81 | 3 | 0 |
 |   | Slayer of the Wicked | `slayer_of_the_wicked.rs` | 56 | 3 | 1 |
