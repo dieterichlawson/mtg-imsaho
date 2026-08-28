@@ -97,15 +97,14 @@ fn defender_can_block() {
 
 // ── Haste ───────────────────────────────────────────────────────────
 
-/// Creatures with haste can attack the turn they enter (no summoning sickness).
+/// Creatures with haste can attack the turn they enter (CR 302.6).
+///
+/// Granted haste, on a creature that has none printed.
 #[test]
 fn haste_overrides_summoning_sickness() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    // Simulate a creature with haste that just entered (summoning_sick = true).
-    // Use a creature object with haste keyword.
-    // We don't have a haste creature card yet, so manually set the keyword.
     let creature = sick_creature(&mut state, P0, 3, 1);
     assert!(state.get_object(creature).unwrap().summoning_sick);
 
@@ -124,6 +123,32 @@ fn haste_overrides_summoning_sickness() {
     let eligible = combat::eligible_attackers(&state, P0, &reg);
     assert!(eligible.contains(&creature),
         "Creature with haste should be able to attack despite summoning sickness");
+}
+
+/// The same for haste a card is *printed* with, which is a different road to
+/// the same answer: `has_keyword` deliberately ignores `obj.keywords` for a
+/// card with a registry entry, so a printed keyword is read off the active
+/// face and nothing an effect wrote.
+///
+/// The test above used to say "we don't have a haste creature card yet" and
+/// granted the keyword instead. Manor Skeleton is printed with it, and no test
+/// asked whether that reached combat.
+#[test]
+fn printed_haste_overrides_summoning_sickness() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let skeleton = named_permanent(&mut state, &reg, "Manor Skeleton", P0);
+    // `named_permanent` clears summoning sickness; this one just arrived.
+    state.get_object_mut(skeleton).unwrap().summoning_sick = true;
+    let plain = sick_creature(&mut state, P0, 1, 1);
+
+    assert!(state.has_keyword(skeleton, Keyword::Haste, &reg),
+        "Manor Skeleton is printed with haste");
+    assert!(combat::eligible_attackers(&state, P0, &reg).contains(&skeleton),
+        "so it can attack the turn it arrives");
+    assert!(!combat::eligible_attackers(&state, P0, &reg).contains(&plain),
+        "test control: a creature without haste in the same position cannot");
 }
 
 // ── Hexproof ────────────────────────────────────────────────────────
