@@ -163,30 +163,38 @@ fn footprint(
 fn a_trigger_whose_target_became_illegal_changes_nothing() {
     type Sabotage = fn(&mut mtg_engine::state::GameState, ObjectId, &mtg_engine::cards::CardRegistry);
 
-    // (card, where its target sits, the event, what makes the target illegal, why)
-    let cases: &[(&str, bool, fn(ObjectId) -> TriggerEvent, Sabotage, &str)] = &[
-        ("Angel of Flight Alabaster", true, |_| TriggerEvent::Upkeep,
+    // (card, where its target sits, who starts out controlling it, the event,
+    //  what makes the target illegal, why)
+    let cases: &[(&str, bool, PlayerId, fn(ObjectId) -> TriggerEvent, Sabotage, &str)] = &[
+        ("Angel of Flight Alabaster", true, P1, |_| TriggerEvent::Upkeep,
          |state, id, reg| state.move_object(id, Zone::Exile, reg),
          "the Spirit card it named was exiled out of the graveyard"),
-        ("Snapcaster Mage", true, |_| TriggerEvent::SelfEntered,
+        ("Snapcaster Mage", true, P1, |_| TriggerEvent::SelfEntered,
          |state, id, reg| state.move_object(id, Zone::Exile, reg),
          "the instant it named was exiled out of the graveyard"),
-        ("Grimgrin, Corpse-Born", false, |src| TriggerEvent::Attacks { attacker: src, defending_player: P1 },
+        ("Grimgrin, Corpse-Born", false, P1, |src| TriggerEvent::Attacks { attacker: src, defending_player: P1 },
          |state, id, _| state.get_object_mut(id).unwrap().keywords.push(Keyword::Hexproof),
          "an opponent's creature with hexproof can't be targeted (CR 702.11b)"),
-        ("Morkrut Banshee", false, |_| TriggerEvent::SelfEntered,
+        ("Morkrut Banshee", false, P1, |_| TriggerEvent::SelfEntered,
          |state, id, _| state.get_object_mut(id).unwrap().keywords.push(Keyword::Hexproof),
          "same, on an enters-the-battlefield trigger"),
-        ("Reaper from the Abyss", false, |_| TriggerEvent::EndStep,
+        ("Reaper from the Abyss", false, P1, |_| TriggerEvent::EndStep,
          |state, id, reg| state.move_object(id, Zone::Hand, reg),
          "a creature in hand is not on the battlefield to be destroyed"),
-        ("Reaper from the Abyss", false, |_| TriggerEvent::EndStep,
+        ("Reaper from the Abyss", false, P1, |_| TriggerEvent::EndStep,
          |state, id, _| state.get_object_mut(id).unwrap().subtypes.push("Demon".into()),
          "'target non-Demon creature' stopped being true of it — the card's own \
           restriction, not the generic half"),
+        // The only case here whose target starts under the trigger controller:
+        // "target creature *you control*" is the one restriction that a change
+        // of control breaks, and none of the five above can be broken that way.
+        ("Elder Cathar", false, P0, |_| TriggerEvent::SelfDies,
+         |state, id, _| state.get_object_mut(id).unwrap().controller = P1,
+         "'target creature you control' stopped being true of it — the target \
+          changed controller in response (CR 608.2b)"),
     ];
 
-    for &(name, target_in_graveyard, event_of, sabotage, why) in cases {
+    for &(name, target_in_graveyard, target_controller, event_of, sabotage, why) in cases {
         let reg = registry();
         let mut state = game_at_step(Step::EndStep, P0);
         state.creature_died_this_turn = true; // for the morbid ones
@@ -196,7 +204,7 @@ fn a_trigger_whose_target_became_illegal_changes_nothing() {
         let target = if target_in_graveyard {
             named_card_in_graveyard(&mut state, &reg, "Think Twice", P0)
         } else {
-            ready_creature(&mut state, P1, 4, 4)
+            ready_creature(&mut state, target_controller, 4, 4)
         };
 
         state.stack.push(StackEntry::Trigger(PendingTrigger {
