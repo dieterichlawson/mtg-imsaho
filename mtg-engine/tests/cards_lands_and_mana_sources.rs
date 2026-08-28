@@ -573,6 +573,102 @@ fn runic_repetition_ignores_flashback_that_was_only_granted() {
 // Full Moon's Rise
 // ══════════════════════════════════════════════════════════════════
 
+/// "Werewolf creatures you control get +1/+0 and have trample."
+///
+/// The static half of the card, which had no test at all — this file listed
+/// Full Moon's Rise in its index and then carried an empty section under the
+/// heading. Removing the +1/+0, swapping trample for another keyword, and
+/// widening the filter to every creature you control each passed the whole
+/// workspace.
+///
+/// Three creatures, because "my Werewolf got bigger" alone is also true of an
+/// enchantment that pumps everything.
+#[test]
+fn full_moons_rise_buffs_only_werewolves_you_control() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let mine_other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let theirs = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P1);
+    assert!(state.has_subtype(mine, "Werewolf", &reg) && state.has_subtype(theirs, "Werewolf", &reg),
+        "test precondition: both are Werewolves");
+
+    // Before: a 2/2 with no trample.
+    assert_eq!(state.effective_power(mine, &reg), Some(2));
+    assert!(!state.has_keyword(mine, Keyword::Trample, &reg));
+
+    let _rise = named_permanent(&mut state, &reg, "Full Moon's Rise", P0);
+
+    assert_eq!(state.effective_power(mine, &reg), Some(3),
+        "your Werewolf gets +1/+0");
+    assert_eq!(state.effective_toughness(mine, &reg), Some(2),
+        "and only power — it is +1/+0, not +1/+1");
+    assert!(state.has_keyword(mine, Keyword::Trample, &reg),
+        "and trample");
+
+    assert_eq!(state.effective_power(mine_other, &reg), Some(2),
+        "a creature of yours that is not a Werewolf gets nothing");
+    assert!(!state.has_keyword(mine_other, Keyword::Trample, &reg));
+
+    assert_eq!(state.effective_power(theirs, &reg), Some(2),
+        "'you control' — the opponent's Werewolf gets nothing");
+    assert!(!state.has_keyword(theirs, Keyword::Trample, &reg));
+}
+
+/// Ruling (2011-09-22): "In order to regenerate Werewolves involved in combat,
+/// you must sacrifice Full Moon's Rise before combat damage is assigned. This
+/// means they will lose the +1/+0 and trample bonuses before combat damage
+/// assignment."
+///
+/// The trade is the whole point of the card: the shields arrive and the buff
+/// leaves, because the enchantment that was granting it is gone.
+#[test]
+fn sacrificing_full_moons_rise_trades_the_buff_for_the_shields() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let werewolf = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let rise = named_permanent(&mut state, &reg, "Full Moon's Rise", P0);
+
+    assert_eq!(state.effective_power(werewolf, &reg), Some(3), "buffed while it is out");
+    assert!(state.has_keyword(werewolf, Keyword::Trample, &reg));
+
+    activate_via_hooks(&mut state, &reg, rise, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(werewolf).unwrap().regeneration_shields > 0,
+        "the Werewolf is regenerating");
+    assert_eq!(state.effective_power(werewolf, &reg), Some(2),
+        "and has lost the +1/+0, because the enchantment granting it was sacrificed");
+    assert!(!state.has_keyword(werewolf, Keyword::Trample, &reg),
+        "and the trample with it");
+}
+
+/// "Regenerate all **Werewolf** creatures **you control**." The same two
+/// restrictions as the static half, on the other ability — regenerating every
+/// creature you control passed the whole workspace.
+#[test]
+fn full_moons_rise_shields_only_werewolves_you_control() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let mine_other = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let theirs = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P1);
+    let rise = named_permanent(&mut state, &reg, "Full Moon's Rise", P0);
+
+    activate_via_hooks(&mut state, &reg, rise, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(mine).unwrap().regeneration_shields > 0,
+        "your Werewolf regenerates");
+    assert_eq!(state.get_object(mine_other).unwrap().regeneration_shields, 0,
+        "your Zombie does not");
+    assert_eq!(state.get_object(theirs).unwrap().regeneration_shields, 0,
+        "and neither does the opponent's Werewolf");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Stony Silence
 // ══════════════════════════════════════════════════════════════════
@@ -939,3 +1035,4 @@ fn kessig_wolf_run_does_nothing_when_its_target_is_gone() {
         "the ability is countered, so neither the pump nor the trample is \
          applied to a creature that is no longer there");
 }
+
