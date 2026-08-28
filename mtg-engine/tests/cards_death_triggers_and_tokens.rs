@@ -343,6 +343,95 @@ fn falkenrath_noble_drains_on_any_death() {
         "P0 should gain 1 life from Falkenrath Noble's trigger");
 }
 
+/// Ruling: "If Rage Thrower dies at the same time as another creature, its
+/// ability will trigger."
+///
+/// That is a question about *collection*, not about resolution — whether a
+/// permanent already in the same batch of deaths is still a death-watcher
+/// (CR 603.10a). `trigger_source_independence.rs` covers the resolution half by
+/// pushing the trigger onto the stack by hand; this kills both creatures with
+/// one state-based action pass and lets the collector decide.
+#[test]
+fn rage_thrower_triggers_when_it_dies_alongside_another_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let victim = ready_creature(&mut state, P0, 1, 1);
+
+    // Both lethally damaged, so one SBA pass takes both.
+    state.get_object_mut(thrower).unwrap().damage_marked = 2; // it is a 4/2
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(thrower).unwrap().zone, Zone::Graveyard,
+        "test setup: the Thrower died too");
+
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, 18,
+        "the other creature's death still triggers the Thrower it died beside");
+}
+
+/// "Whenever **another** creature dies" — so the Thrower dying on its own is
+/// not a death it watches. The word is the only restriction on the trigger.
+#[test]
+fn rage_thrower_does_not_trigger_on_its_own_death_alone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let life_before = state.get_player(P1).life;
+
+    kill_by_damage(&mut state, &reg, thrower);
+    process_triggers_auto_target_opponent(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, life_before,
+        "its own death is not another creature's");
+}
+
+/// "target player **or planeswalker**". Damage to a planeswalker removes that
+/// many loyalty counters (CR 120.3c) rather than touching anyone's life.
+#[test]
+fn rage_thrower_can_throw_its_damage_at_a_planeswalker() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let walker = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    let loyalty_before = counters_of(&state, walker, CounterType::Loyalty);
+    let life_before = state.get_player(P1).life;
+
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    kill_by_damage(&mut state, &reg, victim);
+    triggers::process_triggers(&mut state, &reg);
+
+    // The offer is where the requirement lives — the choice handler takes the
+    // target it is given, so submitting one proves only that the damage lands
+    // where it was pointed.
+    let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+    }) = state.awaiting_action.clone() else {
+        panic!("expected a target choice, got {:?}", state.awaiting_action);
+    };
+    assert!(options.contains(&Target::Object(walker)),
+        "the planeswalker is offered as a target: {options:?}");
+
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(walker))),
+        },
+        &reg,
+    );
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, walker, CounterType::Loyalty), loyalty_before - 2,
+        "two loyalty counters come off the planeswalker");
+    assert_eq!(state.get_player(P1).life, life_before,
+        "and its controller's life is untouched");
+}
+
 /// Rage Thrower deals 2 damage to the opponent when another creature dies.
 #[test]
 fn rage_thrower_deals_2_on_death() {
