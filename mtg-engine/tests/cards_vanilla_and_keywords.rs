@@ -86,6 +86,40 @@ fn hysterical_blindness_debuffs_opponents() {
         "Toughness should be unaffected");
     assert_eq!(state.effective_power(mine, &reg), Some(2),
         "Your own creatures should be unaffected");
+
+    // Ruling 1: "Creatures that enter ... later in the turn will be
+    // unaffected" — the set was fixed when it resolved (CR 611.2c).
+    let late = ready_creature(&mut state, P1, 5, 5);
+    assert_eq!(state.effective_power(late, &reg), Some(5),
+        "a creature the opponent plays afterwards is not in the set");
+}
+
+/// Ruling 2: "Hysterical Blindness's effect will continue to apply to a
+/// creature even if you (or a teammate) gains control of that creature later
+/// in the turn."
+///
+/// Reachable in this pool: Traitorous Blood is "Gain control of target
+/// creature until end of turn". The effect is keyed to the creature, not to
+/// who controls it, so stealing the debuffed creature does not shake the
+/// debuff off.
+#[test]
+fn hysterical_blindness_follows_a_creature_you_steal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let theirs = ready_creature(&mut state, P1, 5, 5);
+
+    let hb = castable_spell(&mut state, &reg, "Hysterical Blindness", P0);
+    let mut state = cast_and_resolve(&state, &reg, hb, vec![]);
+    assert_eq!(state.effective_power(theirs, &reg), Some(1), "test premise: debuffed");
+
+    let tb = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let state = cast_and_resolve(&state, &reg, tb, vec![Target::Object(theirs)]);
+
+    assert_eq!(state.get_object(theirs).unwrap().controller, P0,
+        "test premise: you control it now");
+    assert_eq!(state.effective_power(theirs, &reg), Some(1),
+        "the -4/-0 continues to apply to the creature under its new controller");
 }
 
 /// Ranger's Guile gives +1/+1 and hexproof until end of turn.
