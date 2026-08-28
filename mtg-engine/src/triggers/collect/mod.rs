@@ -20,9 +20,12 @@ mod zones;
 /// directly put simultaneous triggers on the stack in HashMap order, which is
 /// seeded per process.
 ///
-/// CR 603.3b actually lets a player with several simultaneous triggers choose
-/// the order to put them on the stack, and this does not ask. Object id is a
-/// deterministic stand-in for that choice, not the choice itself.
+/// CR 603.3b lets a player with several simultaneous triggers choose the
+/// order to put them on the stack. The collector itself does not ask — it
+/// only buckets — but `process_pending_trigger_pushes` does, whenever one
+/// player's group holds two distinguishable triggers; the id order here is
+/// just the stable order the *offer* is made in, and the front-first order
+/// for interchangeable copies.
 ///
 /// Every arm used to spell this out as `if controller == active_player {
 /// ap.push(t) } else { nap.push(t) }` — twenty-one times.

@@ -272,6 +272,13 @@ pub(crate) fn legal_actions_while_awaiting(
                         choice: ResolvedChoice::ChosenIndex(i, name.clone()),
                     })
                     .collect(),
+                ResolutionChoiceKind::ChooseTriggerOrder { options, .. } => options
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| Action::ResolveChoice {
+                        choice: ResolvedChoice::ChosenIndex(i, name.clone()),
+                    })
+                    .collect(),
                 ResolutionChoiceKind::ChooseXFunding { .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { .. } => {
                     // Structured prompt — can't be enumerated as a flat
@@ -287,7 +294,8 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseCardFromHand { description, .. }
                 | ResolutionChoiceKind::ChooseCardName { description, .. }
                 | ResolutionChoiceKind::ChooseXFunding { description, .. }
-                | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. } => {
+                | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. }
+                | ResolutionChoiceKind::ChooseTriggerOrder { description, .. } => {
                     description.clone()
                 }
                 ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),

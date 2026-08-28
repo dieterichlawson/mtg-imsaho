@@ -586,6 +586,12 @@ pub fn named_card_in_graveyard(
 /// `triggers::process_triggers`) appeared in ~15 tests.
 pub fn fire_step_trigger(state: &mut GameState, step: Step, registry: &CardRegistry) {
     state.events.push(mtg_engine::events::GameEvent::StepStarted { step });
+    // Several distinguishable triggers for one player raise a CR 603.3b
+    // ordering prompt before anything reaches the stack; tests driving a step
+    // through this helper don't care about that order, so take them
+    // front-first. A test that does care answers the prompt itself.
+    mtg_engine::triggers::collect_triggers(state, registry);
+    order_triggers_front_first(state, registry);
     mtg_engine::triggers::process_triggers(state, registry);
 }
 
@@ -904,4 +910,25 @@ pub fn rig_next_coin_flip(state: &mut GameState, win: bool) {
         }
     }
     panic!("no seed in the first thousand flips {win}");
+}
+
+/// Answer pending CR 603.3b trigger-order prompts by taking the first offered
+/// trigger each time, until something else (or nothing) is awaiting. For a
+/// test that does not care about the order, this reproduces the pre-choice
+/// front-first ordering; a test that *does* care answers the prompt itself.
+pub fn order_triggers_front_first(state: &mut GameState, registry: &CardRegistry) {
+    while let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder { options, .. },
+        ..
+    }) = &state.awaiting_action
+    {
+        let label = options[0].clone();
+        *state = mtg_engine::engine::submit_action(
+            state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(0, label),
+            },
+            registry,
+        );
+    }
 }

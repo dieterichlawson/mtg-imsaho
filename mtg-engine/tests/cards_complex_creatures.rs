@@ -2936,6 +2936,11 @@ fn each_ooze_counts_the_slime_on_the_gutter_grime_that_made_it() {
     let kill_one = |state: &mut mtg_engine::state::GameState| {
         let creature = ready_creature(state, P0, 2, 2);
         kill_by_damage(state, &reg, creature);
+        // With both Grimes out, one death raises two distinguishable
+        // triggers, so CR 603.3b asks their order before anything reaches the
+        // stack. Immaterial here: each Grime acts only on itself.
+        triggers::collect_triggers(state, &reg);
+        order_triggers_front_first(state, &reg);
         triggers::process_triggers(state, &reg);
     };
     let oozes_of = |state: &mtg_engine::state::GameState, grime: ObjectId| -> Vec<ObjectId> {

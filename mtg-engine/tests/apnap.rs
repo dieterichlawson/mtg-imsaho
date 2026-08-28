@@ -34,6 +34,12 @@ fn process_triggers_with_choices(state: &mut GameState, reg: &CardRegistry) {
         if safety > 100 { break; }
         safety += 1;
 
+        // CR 603.3b: a player with several distinguishable simultaneous
+        // triggers is asked for their stack order. These tests are about
+        // APNAP between players, not about that order, so take them
+        // front-first.
+        order_triggers_front_first(state, reg);
+
         // First, clear any outstanding stack-time target choice by picking
         // the opponent (or the first legal option).
         if state.awaiting_action.is_some() {

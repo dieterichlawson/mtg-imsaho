@@ -370,76 +370,138 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
 pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegistry) {
     while state.awaiting_action.is_none() {
         // Process AP queue first, then NAP.
-        let trigger = if !state.pending_trigger_pushes_ap.is_empty() {
-            state.pending_trigger_pushes_ap.remove(0)
-        } else if !state.pending_trigger_pushes_nap.is_empty() {
-            state.pending_trigger_pushes_nap.remove(0)
-        } else {
+        let ap_queue = !state.pending_trigger_pushes_ap.is_empty();
+        if !ap_queue && state.pending_trigger_pushes_nap.is_empty() {
             return;
-        };
+        }
 
-        // Look up the target requirement for this trigger.
-        let card_id = trigger.source.card_id;
-        let target_req = target_requirement(registry, card_id, trigger.event.kind());
-
-        let Some(req) = target_req else {
-            // Untargeted: push directly onto the stack.
-            state.stack.push(StackEntry::Trigger(trigger));
-            continue;
-        };
-
-        // Compute valid targets via the same helper as spell casting.
-        let source_id = trigger.source.id;
-        let controller = trigger.source.controller;
-        let Some(behavior) = registry.get(card_id) else {
-            // Card behavior not found — skip the trigger (shouldn't happen).
-            continue;
-        };
-        let valid_targets = crate::engine::valid_targets_for_req(
-            state, controller, source_id, &req, behavior, registry,
-        );
-
-        match valid_targets.len() {
-            0 => {
-                // CR 603.3c: a triggered ability with no legal targets is
-                // removed from the stack (i.e., never goes on it).
-                state.log(crate::state::LogLevel::Event,
-                    format!("Trigger removed: no legal targets ({})", trigger.display_name(registry)));
-            }
-            1 => {
-                // Auto-pick the single legal target.
-                let target = valid_targets[0].clone();
-                let mut t = trigger;
-                t.source.chosen_targets = vec![target];
-                state.stack.push(StackEntry::Trigger(t));
-            }
-            _ => {
-                // Multiple legal targets: prompt the player. Stash the trigger
-                // back at the front of its queue, set up awaiting_action, and
-                // return. When the player chooses, AttachTargetToPendingTrigger
-                // will pop the trigger, attach the target, and re-enter here.
-                let is_ap = controller == state.active_player;
-                if is_ap {
-                    state.pending_trigger_pushes_ap.insert(0, trigger.clone());
-                } else {
-                    state.pending_trigger_pushes_nap.insert(0, trigger.clone());
-                }
-                let description = format!(
-                    "{}: choose target",
-                    trigger.display_name_with_state(registry, Some(state))
-                );
+        // CR 603.3b: a player whose abilities triggered simultaneously puts
+        // them on the stack in any order — the order is that player's choice,
+        // not the collector's scan order. The front trigger's controller owns
+        // the front of the queue; their group is every queued trigger they
+        // control (in a two-player game that is the whole queue).
+        //
+        // Several instances of the same ability from the same source — two
+        // Thraben Sentry triggers from two simultaneous deaths — are
+        // interchangeable: no ordering of them is distinguishable, so they
+        // are taken front-first without a prompt. The prompt is raised only
+        // when the group holds two triggers that differ by source or by
+        // ability.
+        {
+            let queue = if ap_queue {
+                &state.pending_trigger_pushes_ap
+            } else {
+                &state.pending_trigger_pushes_nap
+            };
+            let controller = queue[0].source.controller;
+            let indices: Vec<usize> = queue.iter().enumerate()
+                .filter(|(_, t)| t.source.controller == controller)
+                .map(|(i, _)| i)
+                .collect();
+            let first = &queue[indices[0]];
+            let distinguishable = indices.iter().any(|&i| {
+                queue[i].source.id != first.source.id
+                    || queue[i].source.description != first.source.description
+            });
+            if indices.len() >= 2 && distinguishable {
+                let options: Vec<String> = indices.iter()
+                    .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
+                    .collect();
+                let source = first.source.id;
                 state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                     player: controller,
-                    source: source_id,
-                    choice: crate::state::ResolutionChoiceKind::ChooseTarget {
-                        description,
-                        options: valid_targets,
-                        optional: false,
-                        effect: crate::state::PendingEffect::AttachTargetToPendingTrigger,
+                    source,
+                    choice: crate::state::ResolutionChoiceKind::ChooseTriggerOrder {
+                        description: "Your abilities triggered together: choose the next one \
+                                      to put on the stack (ones put on later resolve first)"
+                            .into(),
+                        options,
+                        ap_queue,
+                        indices,
                     },
                 });
                 return;
             }
+        }
+
+        let trigger = if ap_queue {
+            state.pending_trigger_pushes_ap.remove(0)
+        } else {
+            state.pending_trigger_pushes_nap.remove(0)
+        };
+        push_one_pending_trigger(state, trigger, registry);
+    }
+}
+
+/// Put one pending trigger onto the stack: directly when it is untargeted,
+/// with its single legal target attached when there is exactly one
+/// (CR 603.3d), with a target prompt when there are several, and not at all
+/// when there are none (CR 603.3c).
+pub(crate) fn push_one_pending_trigger(
+    state: &mut GameState,
+    trigger: PendingTrigger,
+    registry: &CardRegistry,
+) {
+    // Look up the target requirement for this trigger.
+    let card_id = trigger.source.card_id;
+    let target_req = target_requirement(registry, card_id, trigger.event.kind());
+
+    let Some(req) = target_req else {
+        // Untargeted: push directly onto the stack.
+        state.stack.push(StackEntry::Trigger(trigger));
+        return;
+    };
+
+    // Compute valid targets via the same helper as spell casting.
+    let source_id = trigger.source.id;
+    let controller = trigger.source.controller;
+    let Some(behavior) = registry.get(card_id) else {
+        // Card behavior not found — skip the trigger (shouldn't happen).
+        return;
+    };
+    let valid_targets = crate::engine::valid_targets_for_req(
+        state, controller, source_id, &req, behavior, registry,
+    );
+
+    match valid_targets.len() {
+        0 => {
+            // CR 603.3c: a triggered ability with no legal targets is
+            // removed from the stack (i.e., never goes on it).
+            state.log(crate::state::LogLevel::Event,
+                format!("Trigger removed: no legal targets ({})", trigger.display_name(registry)));
+        }
+        1 => {
+            // Auto-pick the single legal target.
+            let target = valid_targets[0].clone();
+            let mut t = trigger;
+            t.source.chosen_targets = vec![target];
+            state.stack.push(StackEntry::Trigger(t));
+        }
+        _ => {
+            // Multiple legal targets: prompt the player. Stash the trigger
+            // back at the front of its queue, set up awaiting_action, and
+            // return. When the player chooses, AttachTargetToPendingTrigger
+            // will pop the trigger, attach the target, and re-enter here.
+            let is_ap = controller == state.active_player;
+            if is_ap {
+                state.pending_trigger_pushes_ap.insert(0, trigger.clone());
+            } else {
+                state.pending_trigger_pushes_nap.insert(0, trigger.clone());
+            }
+            let description = format!(
+                "{}: choose target",
+                trigger.display_name_with_state(registry, Some(state))
+            );
+            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: source_id,
+                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                    description,
+                    options: valid_targets,
+                    optional: false,
+                    effect: crate::state::PendingEffect::AttachTargetToPendingTrigger,
+                },
+            });
         }
     }
 }

@@ -169,6 +169,45 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.log(LogLevel::Event, format!("p{}: found nothing", searcher.0));
                     crate::cards::helpers::shuffle_library(&mut *state, searcher);
                 }
+                (ResolutionChoiceKind::ChooseTriggerOrder { options, ap_queue, indices, .. },
+                 ResolvedChoice::ChosenIndex(index, _)) => {
+                    // CR 603.3b: the chosen trigger goes on the stack next.
+                    // The answer indexes the offered options, which map to
+                    // positions in the pending queue the prompt recorded — no
+                    // player received priority in between, so the queue is as
+                    // it was.
+                    let Some(&queue_index) = indices.get(*index) else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} triggers offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
+                    let queue = if *ap_queue {
+                        &mut state.pending_trigger_pushes_ap
+                    } else {
+                        &mut state.pending_trigger_pushes_nap
+                    };
+                    if queue_index >= queue.len() {
+                        state.log(LogLevel::Debug,
+                            "choice refused, the trigger queue no longer holds that entry".into());
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    let trigger = queue.remove(queue_index);
+                    state.log(LogLevel::Event, format!(
+                        "p{}: put {} on the stack", trigger.source.controller.0,
+                        trigger.display_name(registry)));
+                    crate::triggers::push_one_pending_trigger(&mut *state, trigger, registry);
+                    // The rest of the queue — including a re-prompt for the
+                    // remaining group, or a target choice the pushed trigger
+                    // raised — continues from here.
+                    if state.awaiting_action.is_none() {
+                        crate::triggers::process_pending_trigger_pushes(&mut *state, registry);
+                    }
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
                 (ResolutionChoiceKind::ChooseCardType { options, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
                     // An index past the end used to fall through

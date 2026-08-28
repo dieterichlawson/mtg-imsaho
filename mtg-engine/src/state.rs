@@ -3062,6 +3062,25 @@ pub enum ResolutionChoiceKind {
         options: Vec<String>,
         controller: PlayerId,
     },
+    /// CR 603.3b: a player whose abilities triggered simultaneously puts them
+    /// on the stack in any order. Answered by `ChosenIndex`: the chosen
+    /// trigger goes on the stack *next*, so of the group the one chosen last
+    /// resolves first. Raised only when the group holds at least two
+    /// distinguishable triggers — several instances of the same ability from
+    /// the same source are interchangeable and are not worth a prompt.
+    ChooseTriggerOrder {
+        description: String,
+        /// Display names of the triggers still to be ordered, parallel to
+        /// `indices`.
+        options: Vec<String>,
+        /// Which pending queue the group lives in (AP or NAP). No player
+        /// receives priority while this prompt is up, so the queue cannot
+        /// change underneath it.
+        ap_queue: bool,
+        /// Positions of the group's triggers in that queue, parallel to
+        /// `options`.
+        indices: Vec<usize>,
+    },
     /// Divide permanents into two piles (Liliana of the Veil -6).
     /// The choosing player selects a subset to form pile 1; the rest form pile 2.
     /// After division, the target player chooses which pile to sacrifice.

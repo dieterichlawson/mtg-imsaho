@@ -110,3 +110,34 @@ One found in this card, and it turned out to be set-wide.
 - damage to a planeswalker does not trigger: NOT TESTED as such — it holds structurally, because the collectors only match `DamageTarget::Player`, and there is no `DamageTarget::Object` path to an `AnyDamageToPlayer` watcher to test against.
 - one draw regardless of amount: NOT TESTED — `_amount` is unused, so there is no branch to exercise.
 
+
+## Follow-up — 2026-08-28 — CR 603.3b trigger ordering, implemented
+
+**Status**: the "implementing the real thing is a feature" note is closed.
+
+The audit note recorded that CR 603.3b lets a player with several simultaneous
+triggers choose the order they go on the stack, and that the collector did not
+ask — object id was "a deterministic stand-in for that choice, not the choice
+itself". The choice now exists:
+
+- `process_pending_trigger_pushes` raises a
+  `ResolutionChoiceKind::ChooseTriggerOrder` prompt whenever one player's
+  group of pending triggers holds at least two *distinguishable* entries —
+  differing by source or by ability. The chosen trigger goes on the stack
+  next; with several remaining the prompt is raised again, so an n-trigger
+  group takes n−1 answers.
+- Truly interchangeable copies — the same ability from the same source, e.g.
+  Thraben Sentry's two triggers from two simultaneous deaths — are taken
+  front-first without a prompt: no ordering of them is distinguishable, the
+  same doctrine as auto-taking a mandatory choice's only option.
+- The prompt is answered by `ChosenIndex` through the same generic index
+  plumbing the card-type and pile choices use, so both clients render it with
+  no client changes.
+
+`trigger_dispatch.rs::simultaneous_triggers_auto_order_no_prompt`, which
+asserted the stand-in ("auto-ordering is the right default"), is rewritten as
+`simultaneous_triggers_are_ordered_by_their_controller`: two Abattoir Ghouls
+watching one death raise the prompt, one answer settles the pair, both
+triggers reach the stack and both fire. Mutation-checked: suppressing the
+prompt fails it. Tests that drive multi-trigger steps and do not care about
+the order answer front-first through `common::order_triggers_front_first`.

@@ -436,6 +436,11 @@ fn rakish_heir_counter_on_other_vampire_combat_damage() {
         amount: 1,
     });
     triggers::process_triggers(&mut state, &reg);
+    // The Noble's own trigger and the Heir's are distinguishable simultaneous
+    // triggers for one player, so CR 603.3b asks their order; it is
+    // immaterial here — both counters land on the Noble either way.
+    order_triggers_front_first(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
 
     // Stromkirk Noble gets +1/+1 from its own trigger AND +1/+1 from Rakish Heir.
     assert_eq!(counters_of(&state, other_vamp, CounterType::PlusOnePlusOne), 2,

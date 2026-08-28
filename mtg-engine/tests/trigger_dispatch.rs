@@ -603,16 +603,20 @@ fn snapcaster_prompts_for_target_with_multiple_legal_targets() {
         "With multiple legal targets, the engine must prompt at stack-queue time");
 }
 
-/// CR 603.3b technically requires the active player to choose the
-/// stack order of their simultaneous triggers. In practice, MTG Arena
-/// (and most other digital implementations) auto-orders by default —
-/// only prompting when a player explicitly opts in via settings.
+/// CR 603.3b: a player whose abilities triggered simultaneously puts them on
+/// the stack in any order — the order is that player's choice. An earlier
+/// version of this test asserted the opposite ("auto-ordering is the right
+/// default"), which was the deterministic stand-in the Curiosity audit
+/// flagged: object id is not the choice, it only imitates one.
 ///
-/// For an AI-driven engine, auto-ordering is the right default. This
-/// test verifies that simultaneous triggers from the same controller
-/// go on the stack deterministically, with no prompt.
+/// Two Abattoir Ghouls watching the same death are two distinguishable
+/// triggers (different sources), so the engine asks. Both are put on the
+/// stack in the order chosen, and both still fire. Truly interchangeable
+/// copies — the same source, the same ability — are taken without a prompt,
+/// which `two_simultaneous_deaths_trigger_twice_and_transform_once` (Thraben
+/// Sentry) exercises.
 #[test]
-fn simultaneous_triggers_auto_order_no_prompt() {
+fn simultaneous_triggers_are_ordered_by_their_controller() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -633,21 +637,37 @@ fn simultaneous_triggers_auto_order_no_prompt() {
     let had_triggers = mtg_engine::triggers::collect_triggers(&mut state, &registry);
     assert!(had_triggers, "Test setup: should have had triggers after creature death");
 
+    // The order is P0's choice, so the engine asks before anything reaches
+    // the stack.
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player,
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder { options, .. },
+            ..
+        }) => {
+            assert_eq!(*player, P0, "the triggers' controller chooses");
+            options.clone()
+        }
+        other => panic!("expected a CR 603.3b ordering prompt, got {other:?}"),
+    };
+    assert_eq!(options.len(), 2, "both Ghouls' triggers are offered");
+
+    // Answer the prompt. With only one trigger left afterwards there is no
+    // choice to offer, so a pair needs exactly one answer.
+    order_triggers_front_first(&mut state, &registry);
+    assert!(state.awaiting_action.is_none(), "one answer settles a pair");
+
     let ap_count = state.stack.iter().filter(|e| {
         matches!(e, mtg_engine::state::StackEntry::Trigger(t) if t.controller() == P0)
     }).count();
-    assert!(
-        ap_count >= 2,
-        "Test setup: expected 2+ simultaneous P0 triggers, got {ap_count}",
-    );
+    assert_eq!(ap_count, 2, "both triggers went on the stack in the chosen order");
 
-    // No prompt — untargeted triggers were auto-ordered onto the stack.
-    assert!(
-        state.awaiting_action.is_none(),
-        "Simultaneous untargeted triggers should be auto-ordered without prompting. \
-         awaiting_action = {:?}",
-        state.awaiting_action,
-    );
+    // And both still fire: each Ghoul's ability gains 5 (the victim's
+    // toughness) for P0.
+    let life_before = state.get_player(P0).life;
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+    assert_eq!(state.get_player(P0).life, life_before + 10,
+        "two Abattoir Ghoul triggers, 5 life each");
 }
 
 /// Bug Q (`audits/AUDIT_BUGS.md)`: Dearly Departed's "each Human
