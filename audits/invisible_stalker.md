@@ -41,3 +41,30 @@ consistency (P/T exactly on creatures, subtypes implying their card type, every
 declared keyword printed on the card, no field declared twice).
 Static-ability behaviour is exercised through the shared continuous-effects tests in `continuous_effects.rs` and `snapshot_anthems.rs`.
 
+
+## Audit — 2026-08-28 20:06
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.)
+This creature can't be blocked.
+**Type line**: Creature — Human Rogue
+**P/T**: 1/1
+**Status**: PASS
+
+### Code issues
+No issues found. `mtg-engine/src/cards/isd/invisible_stalker.rs` matches: {1}{U}, Human Rogue, 1/1, `Keyword::Hexproof`, `CantBeBlocked { OnSelf }`.
+
+### Tricky interactions checked
+- Hexproof is one-sided: opponents' spells/abilities can't target it, the controller's can (auras, Travel Preparations). Both directions tested with the Stalker itself. PASS
+- Hexproof does not stop untargeted effects: Blasphemous Act / "each creature" sweeps still hit it (no targeting). Engine-generic — `is_target_legal` only gates Target-carrying actions. PASS
+- "Can't be blocked" enforced in the shared `can_block_attacker` (offer and submit alike); a 5/5 vanilla cannot block it. PASS
+- It is a Human: counts for Champion of the Parish, Elite Inquisitor's condition checks, etc. (subtype data). PASS
+
+### Test coverage
+- Hexproof vs opponent + own-targeting allowed: `mtg-engine/tests/keywords.rs` `hexproof_prevents_opponent_targeting`
+- Unblockable: `mtg-engine/tests/cards_morbid_and_ltb.rs` `invisible_stalker_unblockable`
+- No rulings on Scryfall for this card.
+
+Mutation checks:
+- Emptying `keywords` (Hexproof): `hexproof_prevents_opponent_targeting` FAILS. Bites.
+- Emptying `continuous_effects` (CantBeBlocked): `invisible_stalker_unblockable` FAILS. Bites.
