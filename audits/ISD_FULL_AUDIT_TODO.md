@@ -170,7 +170,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Nightbird's Clutches | `nightbirds_clutches.rs` | 39 | 3 | 0 |
 | x | Unburial Rites | `unburial_rites.rs` | 39 | 3 | 0 |
 | x | Purify the Grave | `purify_the_grave.rs` | 38 | 3 | 0 |
-|   | Travel Preparations | `travel_preparations.rs` | 38 | 3 | 0 |
+| x | Travel Preparations | `travel_preparations.rs` | 38 | 3 | 0 |
 |   | Abattoir Ghoul | `abattoir_ghoul.rs` | 57 | 2 | 1 |
 |   | Ghostly Possession | `ghostly_possession.rs` | 37 | 3 | 0 |
 |   | Rage Thrower | `rage_thrower.rs` | 57 | 2 | 1 |
