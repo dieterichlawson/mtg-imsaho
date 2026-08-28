@@ -160,7 +160,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Ghoulcaller's Bell | `ghoulcallers_bell.rs` | 49 | 3 | 0 |
 | x | Prey Upon | `prey_upon.rs` | 49 | 3 | 0 |
 | x | Cackling Counterpart | `cackling_counterpart.rs` | 47 | 3 | 0 |
-|   | Moment of Heroism | `moment_of_heroism.rs` | 47 | 3 | 0 |
+| x | Moment of Heroism | `moment_of_heroism.rs` | 47 | 3 | 0 |
 |   | Grasp of Phantoms | `grasp_of_phantoms.rs` | 46 | 3 | 0 |
 |   | Balefire Dragon | `balefire_dragon.rs` | 65 | 2 | 1 |
 |   | Corpse Lunge | `corpse_lunge.rs` | 44 | 3 | 0 |
