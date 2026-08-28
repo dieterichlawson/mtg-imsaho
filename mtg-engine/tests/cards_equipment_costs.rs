@@ -158,6 +158,61 @@ fn cobbled_wings_flying_reaches_the_blocking_rules() {
 // Mask of Avacyn — {2} Equipment. +1/+2 and hexproof. Equip {3}.
 // ══════════════════════════════════════════════════════════════════
 
+/// Scryfall ruling (2011-09-22): "If Mask of Avacyn somehow becomes attached
+/// to a creature an opponent controls, that creature can't be the target of
+/// spells or abilities **you** control."
+///
+/// Hexproof is relative to the creature's controller (CR 702.11b), not to
+/// whoever controls the thing granting it. Equip can only ever point at a
+/// creature you control, so the only way here is a control change afterwards —
+/// `change_control` is the engine's documented way to do that, used directly
+/// so the test is about the Mask and not about Traitorous Blood's trample and
+/// haste riders.
+#[test]
+fn mask_of_avacyn_turns_against_you_when_the_creature_changes_hands() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let mask = named_permanent(&mut state, &reg, "Mask of Avacyn", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+    let mut state = equip(&state, &reg, mask, creature);
+
+    // A removal spell in each player's hand, so "offered" and "not offered"
+    // are both observable from the same board.
+    let mine = castable_spell(&mut state, &reg, "Doom Blade", P0);
+    let theirs = castable_spell(&mut state, &reg, "Doom Blade", P1);
+
+    // While P0 controls both, the Mask protects the creature from P1.
+    assert!(!offered_targets(&state, &reg, theirs).contains(&Target::Object(creature)),
+        "test precondition: the opponent cannot target it");
+    state.priority_player = Some(P0);
+    assert!(offered_targets(&state, &reg, mine).contains(&Target::Object(creature)),
+        "test precondition: its own controller can");
+
+    // P1 takes the creature. The Mask stays where it is, still attached.
+    state.change_control(creature, P1);
+    assert_eq!(state.get_object(mask).unwrap().attached_to, Some(creature),
+        "the Equipment does not fall off when the creature changes hands");
+    assert_eq!(state.get_object(mask).unwrap().controller, P0,
+        "and P0 still controls the Mask itself");
+
+    // The grant follows the Equipment, not its controller.
+    assert!(state.has_keyword(creature, Keyword::Hexproof, &reg),
+        "the creature still has hexproof");
+    assert_eq!(state.effective_power(creature, &reg), Some(3), "and still +1/+2");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(4));
+
+    // The ruling: it now points the other way.
+    state.priority_player = Some(P0);
+    assert!(!offered_targets(&state, &reg, mine).contains(&Target::Object(creature)),
+        "P0 controls the Mask but is now an opponent of the creature's \
+         controller, so P0 cannot target it");
+    state.priority_player = Some(P1);
+    assert!(offered_targets(&state, &reg, theirs).contains(&Target::Object(creature)),
+        "and P1, who now controls it, can");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Wooden Stake — {2} Equipment. +1/+0; destroy Vampires on block. Equip {1}.
 // ══════════════════════════════════════════════════════════════════
