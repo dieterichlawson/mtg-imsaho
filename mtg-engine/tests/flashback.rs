@@ -282,6 +282,31 @@ fn travel_preparations_adds_counter() {
         "Travel Preparations should add a +1/+1 counter");
 }
 
+/// Ruling: "If Travel Preparations targets two creatures, and one of them is
+/// an illegal target by the time Travel Preparations resolves, you'll still
+/// put a +1/+1 counter on the other creature."
+///
+/// CR 608.2b: only a spell whose targets are *all* illegal is countered, and
+/// the instruction skips the ones that are.
+#[test]
+fn travel_preparations_counters_the_creature_that_is_still_there() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let leaving = ready_creature(&mut state, P0, 2, 2);
+    let staying = ready_creature(&mut state, P0, 2, 2);
+
+    let tp = castable_spell(&mut state, &reg, "Travel Preparations", P0);
+    let mut state = cast_onto_stack(&state, &reg, tp,
+        vec![Target::Object(leaving), Target::Object(staying)]);
+
+    state.move_object(leaving, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(counters_of(&state, staying, CounterType::PlusOnePlusOne), 1,
+        "the surviving target still gets its counter");
+}
+
 /// Rolling Temblor deals 2 damage to each creature without flying.
 /// Flyers are unaffected.
 #[test]
@@ -444,6 +469,45 @@ fn feeling_of_dread_taps_creature() {
 
     assert!(state.get_object(creature).unwrap().tapped,
         "Feeling of Dread should tap the target creature");
+}
+
+/// Ruling: "You can't target the same creature twice to put two +1/+1 counters
+/// on it."
+///
+/// CR 601.2c — the same target can't be chosen twice for one instance of the
+/// word "target", and "each of **up to two target creatures**" is one
+/// instance. The engine's own action list already honours it (it enumerates
+/// combinations), but both clients build their `CastSpell` from a per-slot
+/// choice rather than picking a whole offered action, and neither checked:
+/// an LLM answering `[0, 0]` doubled the counters.
+#[test]
+fn travel_preparations_cannot_target_the_same_creature_twice() {
+    use mtg_engine::actions::Action;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let other = ready_creature(&mut state, P0, 2, 2);
+    let prep = castable_spell(&mut state, &reg, "Travel Preparations", P0);
+
+    let offers: Vec<Vec<Target>> = engine::legal_actions(&state, &reg).actions.into_iter()
+        .filter_map(|a| match a {
+            Action::CastSpell { object_id, targets, .. } if object_id == prep => Some(targets),
+            _ => None,
+        })
+        .collect();
+    assert!(offers.contains(&vec![Target::Object(creature), Target::Object(other)]),
+        "test setup: two distinct creatures are offered together");
+    assert!(!offers.iter().any(|t| t.len() == 2 && t[0] == t[1]),
+        "no offered cast names the same creature twice. Offered: {offers:?}");
+
+    // And the same list submitted by hand gets one counter, not two.
+    let state = cast_and_resolve(&state, &reg, prep,
+        vec![Target::Object(creature), Target::Object(creature)]);
+
+    assert_eq!(counters_of(&state, creature, CounterType::PlusOnePlusOne), 1,
+        "one instance of \"target\" means one counter, however the action was built");
 }
 
 /// A spell cast from a graveyard is not in that graveyard any more, so it can
