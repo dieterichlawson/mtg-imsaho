@@ -27,17 +27,9 @@ impl CardBehavior for DemonmailHauberk {
     }
 
 
+    /// CR 702.6b: equip attaches to "target creature you control".
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        // Equip can only target creatures you control.
-        match target {
-            Target::Object(id) => {
-                state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster)
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
+        crate::cards::helpers::equip_target_is_legal(state, caster, target, registry)
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
@@ -71,12 +63,8 @@ impl CardBehavior for DemonmailHauberk {
         }
     }
 
-    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         // Attach equipment to the target creature.
-        if let Some(Target::Object(creature_id)) = targets.first() {
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.attached_to = Some(*creature_id);
-            }
-        }
+        crate::cards::helpers::resolve_equip(state, object_id, targets, registry);
     }
 }

@@ -99,11 +99,7 @@ impl CardBehavior for BlazingTorch {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if ability_index == 0 {
             // Equip: attach to target creature.
-            if let Some(Target::Object(creature_id)) = targets.first() {
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.attached_to = Some(*creature_id);
-                }
-            }
+            crate::cards::helpers::resolve_equip(state, object_id, targets, registry);
         } else if ability_index == 1 {
             // Per ruling: "The source of the damage is Blazing Torch, not the
             // equipped creature." The Torch was sacrificed to pay the cost, so

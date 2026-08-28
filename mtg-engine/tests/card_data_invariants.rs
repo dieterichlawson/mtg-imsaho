@@ -942,6 +942,61 @@ fn no_card_reads_its_controller_off_its_own_source_while_resolving() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// Equip is one rules action (CR 702.6b) and it was written out eleven times,
+/// once per Equipment in the set: four identical lines to set `attached_to`,
+/// and above them a byte-identical `is_valid_target` in ten of them.
+///
+/// The duplication was not free. The engine's CR 608.2b re-check runs
+/// `is_target_legal` plus the card's own `is_valid_target`, and for
+/// `CreatureWithFilter` the former only re-runs the *filter* — it accepts a
+/// target in the Stack zone and asks nothing about creature-ness. So the
+/// legality check at the moment of attaching was each card's to remember, with
+/// no shared place for it or for CR 301.5c (an Equipment that is also a
+/// creature does not become attached) to live.
+///
+/// `helpers::resolve_equip` is that place. Auras have had `helpers::resolve_aura`
+/// all along; this is its counterpart.
+#[test]
+fn no_equipment_attaches_itself_by_hand() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name == "helpers.rs" {
+            continue; // where resolve_aura and resolve_equip live
+        }
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            // Player attachment is a different question: Bitterheart Witch
+            // puts a Curse onto the battlefield attached to a player straight
+            // out of a library, which is CR 303.4h rather than a curse spell
+            // resolving, and has its own "can this player be enchanted" check.
+            if code.contains("attached_to = Some") {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "{} card(s) attach a permanent to a creature by hand:\n  {}\n\n\
+         Use `helpers::resolve_equip` (CR 702.6b) or `helpers::resolve_aura`, \
+         which check the target is still legal where the attachment happens.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

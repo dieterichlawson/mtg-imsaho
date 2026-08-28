@@ -28,16 +28,9 @@ impl CardBehavior for RunechantersPike {
     }
 
 
+    /// CR 702.6b: equip attaches to "target creature you control".
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                state.get_object(*id)
-                    .is_some_and(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster)
-            }
-            Target::Player(_) => false,
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-        }
+        crate::cards::helpers::equip_target_is_legal(state, caster, target, registry)
     }
 
     /// Dynamic P/T: +X/+0 where X = instant/sorcery count in controller's graveyard.
@@ -76,11 +69,7 @@ impl CardBehavior for RunechantersPike {
         }
     }
 
-    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
-        if let Some(Target::Object(creature_id)) = targets.first() {
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.attached_to = Some(*creature_id);
-            }
-        }
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_equip(state, object_id, targets, registry);
     }
 }

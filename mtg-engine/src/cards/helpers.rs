@@ -30,6 +30,67 @@ pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]
     false
 }
 
+/// Resolve an equip ability: attach the Equipment to the target creature.
+///
+/// CR 702.6b: "Equip [cost] means '[cost]: Attach this permanent to target
+/// creature you control. Activate only as a sorcery.'" That is the whole of
+/// it, and it was written out eleven times — once per Equipment in the set,
+/// four identical lines each, with no shared place for the two rules that are
+/// not in those four lines to live.
+///
+/// The first is target legality on resolution (CR 608.2b): the engine's
+/// re-check runs `is_target_legal` and the card's own `is_valid_target`, and
+/// for `CreatureWithFilter` the former only re-runs the *filter* — it accepts
+/// a target in the Stack zone and asks nothing about creature-ness. So the
+/// check is re-run here, where the attachment actually happens, rather than
+/// trusted to have happened.
+///
+/// The second is CR 301.5c: an Equipment that is also a creature does not
+/// become attached. Nothing in this set animates an Equipment, so this has
+/// never mattered — but it is one line, and the alternative is eleven cards
+/// that would each need it if anything ever did.
+pub fn resolve_equip(
+    state: &mut GameState,
+    equipment_id: ObjectId,
+    targets: &[Target],
+    registry: &CardRegistry,
+) -> bool {
+    let Some(Target::Object(creature_id)) = targets.first() else { return false };
+    let controller = controller_of(state, equipment_id);
+    if !equip_target_is_legal(state, controller, &Target::Object(*creature_id), registry) {
+        return false;
+    }
+    // CR 301.5c: an Equipment that's also a creature can't equip a creature.
+    if state.is_creature(equipment_id, registry) {
+        return false;
+    }
+    if let Some(obj) = state.get_object_mut(equipment_id) {
+        obj.attached_to = Some(*creature_id);
+    }
+    true
+}
+
+/// Whether `target` is something an equip ability could attach to: a creature
+/// on the battlefield that the equipping player controls (CR 702.6b).
+///
+/// Ten Equipment cards carried this as a byte-identical `is_valid_target`.
+#[must_use]
+pub fn equip_target_is_legal(
+    state: &GameState,
+    caster: PlayerId,
+    target: &Target,
+    registry: &CardRegistry,
+) -> bool {
+    match target {
+        Target::Object(id) => state.get_object(*id).is_some_and(|o| {
+            o.zone == Zone::Battlefield && state.is_creature(o.id, registry) && o.controller == caster
+        }),
+        // Equip attaches to a creature, never a player, and CR 608.2b skips a
+        // target that stopped being legal.
+        Target::Player(_) | Target::Illegal => false,
+    }
+}
+
 /// Resolve a curse aura: attach to a target player and move to battlefield.
 pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Target], registry: &CardRegistry) -> bool {
     if let Some(Target::Player(player_id)) = targets.first() {
