@@ -1205,3 +1205,50 @@ fn village_cannibals_reads_the_face_the_werewolf_died_on() {
             "{why}");
     }
 }
+
+/// "Whenever **a** creature dies" — Lumberknot's text, which is not "another",
+/// so its own death is one of them. Falkenrath Noble and Selhoff Occultist say
+/// "this creature or another creature dies" and declare `SelfDies` beside the
+/// watcher kind for it; Lumberknot declared only the watcher kind, and
+/// `AnyCreatureDies` means another creature — the death-watch scan skips the
+/// one that died.
+///
+/// No board changes for this: the counter goes on a Lumberknot that is already
+/// in the graveyard and CR 121.1 puts it nowhere, which is why the whole
+/// difference is the stack. So the stack is what this asserts.
+#[test]
+fn lumberknot_triggers_on_its_own_death_too() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let knot = named_permanent(&mut state, &reg, "Lumberknot", P0);
+    kill_by_damage(&mut state, &reg, knot);
+    triggers::collect_triggers(&mut state, &reg);
+
+    assert_eq!(state.stack.len(), 1,
+        "a creature died, and Lumberknot was one of them: {:?}", state.stack);
+
+    triggers::process_triggers(&mut state, &reg);
+    assert_eq!(state.get_counter_count(knot, CounterType::PlusOnePlusOne), 0,
+        "and it resolves doing nothing — there is no Lumberknot to counter");
+}
+
+/// The other half, so the pair says which deaths it counts rather than "all of
+/// them": a second creature dying gives one counter per death, and both
+/// Lumberknots on the battlefield see it.
+#[test]
+fn lumberknot_counts_each_death_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let knot = named_permanent(&mut state, &reg, "Lumberknot", P0);
+    let a = ready_creature(&mut state, P1, 1, 1);
+    let b = ready_creature(&mut state, P1, 1, 1);
+
+    mtg_engine::destruction::try_destroy_all(&mut state, &[a, b], &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_counter_count(knot, CounterType::PlusOnePlusOne), 2,
+        "two creatures died, so two counters — an opponent's count too");
+}
