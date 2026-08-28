@@ -77,7 +77,7 @@ bugs but it is not this. This list is the per-card pass.
 | x | Butcher's Cleaver | `butchers_cleaver.rs` | 80 | 4 | 0 |
 | x | Curse of Stalked Prey | `curse_of_stalked_prey.rs` | 55 | 4 | 1 |
 | x | Into the Maw of Hell | `into_the_maw_of_hell.rs` | 80 | 4 | 0 |
-|   | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 79 | 4 | 0 |
+| x | Sharpened Pitchfork | `sharpened_pitchfork.rs` | 79 | 4 | 0 |
 |   | Endless Ranks of the Dead | `endless_ranks_of_the_dead.rs` | 72 | 3 | 2 |
 |   | Hollowhenge Scavenger | `hollowhenge_scavenger.rs` | 52 | 4 | 1 |
 |   | Falkenrath Noble | `falkenrath_noble.rs` | 71 | 3 | 2 |
