@@ -232,6 +232,11 @@ fn main() {
                     eprintln!("  - {msg}");
                     mtg_player::game_log::write(file!(), line!(), "INVARIANT", msg);
                 }
+                eprintln!("last game log entries:");
+                let tail = game_state.game_log.len().saturating_sub(20);
+                for entry in &game_state.game_log[tail..] {
+                    eprintln!("  | {}", entry.message);
+                }
                 std::process::exit(2);
             }
         }

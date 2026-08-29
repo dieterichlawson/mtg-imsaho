@@ -6,6 +6,12 @@
 # Usage: scripts/fuzz.sh [GAMES_PER_PAIR] [START_SEED]
 #   GAMES_PER_PAIR  seeded games per deck pairing (default 100)
 #   START_SEED      first seed (default 1); seeds run consecutively
+#   FUZZ_DECKS      space-separated deck files to pair up instead of the
+#                   default set (e.g. FUZZ_DECKS="decks/gw-humans.txt ...")
+#
+# The default deck set is decks/coverage/ — ten decks that together contain
+# every castable card the engine implements (pinned by
+# mtg-engine/tests/deck_coverage.rs), so the campaign can reach every card.
 #
 # Exit code 0 = every game finished clean. Failing games leave their output
 # in logs/fuzz-<date>/ and are summarized at the end; a failure replays with:
@@ -22,7 +28,12 @@ OUT="logs/fuzz-$(date +%Y%m%d-%H%M%S)"
 cargo build --release -p mtg-runner || exit 1
 mkdir -p "$OUT"
 
-DECKS=(decks/gw-humans.txt decks/rb-vampires.txt decks/ub-zombies.txt decks/ug-spider-spawning.txt)
+if [ -n "${FUZZ_DECKS:-}" ]; then
+  # shellcheck disable=SC2206 -- word-splitting the list is the interface
+  DECKS=($FUZZ_DECKS)
+else
+  DECKS=(decks/coverage/*.txt)
+fi
 
 total=0
 failures=0

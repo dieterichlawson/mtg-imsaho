@@ -1,5 +1,7 @@
 /target
 *.txt
+# Deck lists are data, not run output — track them despite *.txt above.
+!/decks/**/*.txt
 *.log
 /results.json
 # Audit-calibration run state: the seeded-bug answer key and score sheets
