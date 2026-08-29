@@ -70,6 +70,16 @@ impl CliPlayer {
     ) -> bool {
         match mode {
             PassMode::UntilNextTurn { activated_turn } => {
+                // A land drop is never auto-passed. Every other clause here
+                // requires a LATER turn than the f-press, so an f pressed on
+                // your own turn before your main phase (say, at an upkeep
+                // response prompt) used to skip your whole turn, land drop
+                // included (issue #39). Once per turn and free, a land play
+                // is always worth stopping for.
+                if legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })) {
+                    return true;
+                }
+
                 // Break at our precombat main on a later turn.
                 if view.active_player == view.you
                     && view.turn_number > *activated_turn
