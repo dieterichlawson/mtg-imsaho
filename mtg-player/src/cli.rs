@@ -1299,11 +1299,49 @@ impl CliPlayer {
     // ── Input ──────────────────────────────────────────────────────
 
     fn read_line(prompt: &str) -> String {
+        // A cooked-mode read while the terminal is still raw silently
+        // swallows keystrokes ('\r' never ends the line, nothing echoes) —
+        // the concede prompt ate three keypresses this way (issue #42).
+        // Force cooked mode for the read; callers re-enable raw themselves.
+        let _ = terminal::disable_raw_mode();
         print!("{prompt}");
         io::stdout().flush().unwrap();
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         input.trim().to_string()
+    }
+
+    /// A y/n confirmation that answers on a single keypress: `y` confirms,
+    /// `n` or Esc declines, anything else visibly re-prompts. Runs in raw
+    /// mode with explicit echo, so a stray keystroke can never sit
+    /// invisibly in a line buffer (issue #42).
+    fn confirm_yn(prompt: &str) -> bool {
+        let mut out = stdout();
+        let _ = execute!(out, Print(prompt));
+        let _ = out.flush();
+        let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
+        let _ = terminal::enable_raw_mode();
+        let answer = loop {
+            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+                match code {
+                    KeyCode::Char('y' | 'Y') => { let _ = execute!(stdout(), Print("y")); break true; }
+                    KeyCode::Char('n' | 'N') | KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = terminal::disable_raw_mode();
+                        std::process::exit(0);
+                    }
+                    _ => {
+                        let _ = execute!(stdout(), Print("\r\n  Please answer y or n. "), Print(prompt.trim_start()));
+                        let _ = stdout().flush();
+                    }
+                }
+            }
+        };
+        if !was_raw {
+            let _ = terminal::disable_raw_mode();
+        }
+        let _ = execute!(stdout(), Print("\r\n"));
+        answer
     }
 
     /// Read a line of input, but detect '/' immediately (without Enter)
@@ -1731,7 +1769,10 @@ impl CliPlayer {
         let _ = out.flush();
 
         loop {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            // Clear the row before re-prompting: a rejected entry's characters
+            // otherwise stay on screen and visually merge with the next
+            // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Attack (numbers/all/none)> ");
 
             if input == "none" || input == "n" {
@@ -1842,7 +1883,8 @@ impl CliPlayer {
         let _ = out.flush();
 
         loop {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            // Same stale-row clearing as the attack prompt (issue #35).
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Block (blocker:attacker / enter=none)> ");
 
             if input.is_empty() {
@@ -2464,8 +2506,7 @@ impl Player for CliPlayer {
                             let action = &legal_actions[*action_idx];
                             if matches!(action, Action::Concede) {
                                 let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
-                                let confirm = Self::read_line("  Are you sure you want to concede? (y/n)> ");
-                                if confirm.to_lowercase() != "y" {
+                                if !Self::confirm_yn("  Are you sure you want to concede? (y/n)> ") {
                                     continue;
                                 }
                             }
