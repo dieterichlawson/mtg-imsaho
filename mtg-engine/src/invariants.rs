@@ -356,6 +356,69 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
         }
     }
 
+    // CR 704.5h: a creature dealt damage by a deathtouch source since the
+    // last SBA check is destroyed, however small the damage. Regeneration
+    // clears the marked damage, so a saved creature doesn't trip this.
+    for obj in state.objects_in_id_order() {
+        if obj.zone == Zone::Battlefield
+            && state.is_creature(obj.id, registry)
+            && obj.dealt_deathtouch_damage
+            && obj.damage_marked > 0
+            && !obj.entering_copy_source
+            && !state.has_keyword(obj.id, Keyword::Indestructible, registry)
+        {
+            v.push(format!(
+                "{} ({}) alive with deathtouch damage marked on it",
+                obj.id.0, obj.name
+            ));
+        }
+    }
+
+    // CR 704.5i: a planeswalker with 0 loyalty is in its owner's graveyard,
+    // not on the battlefield.
+    for obj in state.objects_in_id_order() {
+        if obj.zone == Zone::Battlefield
+            && state.has_card_type(obj.id, crate::types::CardType::Planeswalker, registry)
+            && obj.counters.get(&crate::types::CounterType::Loyalty).copied().unwrap_or(0) == 0
+        {
+            v.push(format!("planeswalker {} ({}) alive at 0 loyalty", obj.id.0, obj.name));
+        }
+    }
+
+    // CR 704.5j: no player controls two legendary permanents with the same
+    // name once state-based actions have settled. The keep-choice is itself
+    // a prompt, and the legend rule holds off while another prompt is
+    // pending — so this is only claimable when nothing is being asked.
+    if state.awaiting_action.is_none() {
+        let mut seen = std::collections::HashSet::new();
+        for obj in state.objects_in_id_order() {
+            if obj.zone != Zone::Battlefield || !state.is_legendary(obj.id, registry) {
+                continue;
+            }
+            let name = state.name_of(obj.id, registry);
+            if !seen.insert((obj.controller, name.clone())) {
+                v.push(format!(
+                    "p{} controls two legendary permanents named {}",
+                    obj.controller.0, name
+                ));
+            }
+        }
+    }
+
+    // CR 704.5n: +1/+1 and -1/-1 counters annihilate in pairs; nothing
+    // holds both once SBAs have settled.
+    for obj in state.objects_in_id_order() {
+        if obj.zone == Zone::Battlefield
+            && obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied().unwrap_or(0) > 0
+            && obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).copied().unwrap_or(0) > 0
+        {
+            v.push(format!(
+                "{} ({}) holds both +1/+1 and -1/-1 counters",
+                obj.id.0, obj.name
+            ));
+        }
+    }
+
     // CR 704.5m/n: an Aura on the battlefield is attached, and attached to
     // something that is there.
     for obj in state.objects_in_id_order() {
@@ -375,8 +438,9 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
         }
     }
 
-    // Equipment is attached to a battlefield permanent or not attached at
-    // all — unlike an Aura it may sit unattached, but never on a ghost.
+    // Equipment is attached to a battlefield creature or not attached at
+    // all — unlike an Aura it may sit unattached, but never on a ghost, and
+    // never on a non-creature (CR 704.5p unattaches it).
     for obj in state.objects_in_id_order() {
         if obj.zone != Zone::Battlefield || !state.has_subtype(obj.id, "Equipment", registry) {
             continue;
@@ -384,6 +448,8 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
         if let Some(host) = obj.attached_to {
             if !state.get_object(host).is_some_and(|h| h.zone == Zone::Battlefield) {
                 v.push(format!("Equipment {} ({}) attached to {} which is not on the battlefield", obj.id.0, obj.name, host.0));
+            } else if !state.is_creature(host, registry) {
+                v.push(format!("Equipment {} ({}) attached to non-creature {}", obj.id.0, obj.name, host.0));
             }
         }
     }
