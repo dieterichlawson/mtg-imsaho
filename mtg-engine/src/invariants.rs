@@ -30,9 +30,9 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
 
     // Object identity: the map key is the object's id, and the id allocator
     // is ahead of every id it has handed out.
-    for (&key, obj) in &state.objects {
-        if obj.id != key {
-            v.push(format!("object {} stored under key {}", obj.id.0, key.0));
+    for obj in state.objects_in_id_order() {
+        if !state.objects.get(&obj.id).is_some_and(|o| std::ptr::eq(o, obj)) {
+            v.push(format!("object {} not stored under its own id", obj.id.0));
         }
         if obj.id.0 >= state.next_object_id {
             v.push(format!(
@@ -81,7 +81,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                 }
             }
         }
-        for obj in state.objects.values() {
+        for obj in state.objects_in_id_order() {
             if obj.zone == Zone::Library && obj.owner == p.id && !seen.contains(&obj.id) {
                 v.push(format!("p{}: {} ({}) in library zone but not in library_order", p.id.0, obj.id.0, obj.name));
             }
@@ -89,7 +89,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
     }
 
     // Nothing is attached to a permanent and to a player at once.
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.attached_to.is_some() && obj.attached_to_player.is_some() {
             v.push(format!("{} ({}) attached to both an object and a player", obj.id.0, obj.name));
         }
@@ -109,7 +109,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
             }
         }
     }
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.zone != Zone::Stack {
             continue;
         }
@@ -154,7 +154,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // CR 704.5d: a token anywhere but the battlefield has ceased to exist.
     // (The stack is allowed for a token copy of a spell.)
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.is_token && obj.zone != Zone::Battlefield && obj.zone != Zone::Stack {
             v.push(format!("token {} ({}) still exists in {:?}", obj.id.0, obj.name, obj.zone));
         }
@@ -162,7 +162,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // CR 400.7: leaving the battlefield made it a new object, so
     // battlefield-only markings are gone.
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.zone == Zone::Battlefield {
             continue;
         }
@@ -190,7 +190,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
     // CR 704.5f/g/h: a creature that should be dead is dead. Marked damage at
     // or past toughness kills anything not indestructible; zero or less
     // toughness kills even that.
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.zone != Zone::Battlefield || !state.is_creature(obj.id, registry) {
             continue;
         }
@@ -209,7 +209,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // CR 704.5m/n: an Aura on the battlefield is attached, and attached to
     // something that is there.
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.zone != Zone::Battlefield || !state.has_subtype(obj.id, "Aura", registry) {
             continue;
         }
@@ -228,7 +228,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // Equipment is attached to a battlefield permanent or not attached at
     // all — unlike an Aura it may sit unattached, but never on a ghost.
-    for obj in state.objects.values() {
+    for obj in state.objects_in_id_order() {
         if obj.zone != Zone::Battlefield || !state.has_subtype(obj.id, "Equipment", registry) {
             continue;
         }

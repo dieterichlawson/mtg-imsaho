@@ -654,7 +654,10 @@ fn only_the_library_helper_puts_a_card_into_a_library() {
     let mut offenders = Vec::new();
     for (rel, text) in crate_sources() {
         // `state.rs` implements `put_into_library`. Nothing else adds.
-        if rel == "state.rs" {
+        // `invariants.rs` audits the order against the zone — it takes
+        // `&GameState` and cannot edit anything; its violation messages
+        // name `library_order` on lines that also push onto its own list.
+        if rel == "state.rs" || rel == "invariants.rs" {
             continue;
         }
         let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
