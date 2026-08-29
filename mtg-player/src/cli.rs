@@ -1217,6 +1217,24 @@ impl CliPlayer {
             .unwrap_or_else(|| format!("{id}"))
     }
 
+    /// " targeting X" for an action's chosen targets, or "" when untargeted.
+    /// The legal-action list pre-expands one entry per target, so a label
+    /// that omits the target renders identical menu lines whose choice
+    /// silently decides who gets hit — twice a self-hit in real games
+    /// (issue #36).
+    fn targets_suffix(view: &GameView, targets: &[Target]) -> String {
+        if targets.is_empty() {
+            return String::new();
+        }
+        let names: Vec<String> = targets.iter().map(|t| match t {
+            Target::Object(id) => Self::perm_name(view, *id),
+            Target::Player(pid) =>
+                if *pid == view.you { "you".into() } else { "opponent".into() },
+            Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
+        }).collect();
+        format!(" targeting {}", names.join(", "))
+    }
+
     fn format_action(view: &GameView, action: &Action) -> String {
         match action {
             Action::PassPriority => "Pass priority".into(),
@@ -1241,8 +1259,9 @@ impl CliPlayer {
             }
             Action::ActivateManaAbility { object_id, .. } =>
                 format!("Tap {} for mana", Self::perm_name(view, *object_id)),
-            Action::ActivateAbility { object_id, .. } =>
-                format!("Activate ability: {}", Self::perm_name(view, *object_id)),
+            Action::ActivateAbility { object_id, targets, .. } =>
+                format!("Activate ability: {}{}", Self::perm_name(view, *object_id),
+                    Self::targets_suffix(view, targets)),
             Action::DeclareAttackers { attackers, planeswalker_attacks } => {
                 if attackers.is_empty() && planeswalker_attacks.is_empty() { "Don't attack".into() }
                 else {
@@ -1273,8 +1292,9 @@ impl CliPlayer {
                 format!("Bottom {}", names.join(", "))
             }
             Action::Concede => "Concede".into(),
-            Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
-                format!("Activate loyalty ability {} on {}", ability_index, Self::perm_name(view, *object_id)),
+            Action::ActivateLoyaltyAbility { object_id, ability_index, targets } =>
+                format!("Activate loyalty ability {} on {}{}", ability_index,
+                    Self::perm_name(view, *object_id), Self::targets_suffix(view, targets)),
             Action::ResolveChoice { choice } => {
                 use mtg_engine::actions::ResolvedChoice;
                 match choice {
