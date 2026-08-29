@@ -1045,3 +1045,35 @@ fn each_forced_attacker_is_dragged_in_independently() {
     assert!(combat.attackers.contains_key(&n2), "and the undeclared one is forced in");
     assert_eq!(combat.attackers.len(), 2);
 }
+
+/// CR 509.1b: a creature without flying or reach can't block a flyer. The
+/// prompt must not offer the pairing, and a submitted illegal pair is
+/// refused with a visible log line — never silently (a block that vanished
+/// without a trace cost real games; playtest issue #40).
+#[test]
+fn an_illegal_flying_block_is_refused_loudly_and_never_offered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    grant_keyword(&mut state, attacker, Keyword::Flying);
+    let grounded = ready_creature(&mut state, P1, 1, 1);
+
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
+
+    // The prompt's legal_blocks must exclude the grounded creature vs the flyer.
+    state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::actions::CombatPrompt::ChooseBlockers { legal_blocks, .. }) = legal.combat_prompt
+    else { panic!("expected a blocker prompt") };
+    assert_eq!(legal_blocks.get(&grounded).map(Vec::as_slice), Some(&[][..]),
+        "a vanilla 1/1 has no legal blocks against a lone flyer");
+
+    // Submitting the illegal pair anyway: refused, and the refusal is logged.
+    submit_declare_blockers(&mut state, P1, &[(grounded, attacker)], &reg);
+    assert!(state.combat.as_ref().is_some_and(|c|
+        c.blocker_assignments.get(&attacker).is_some_and(Vec::is_empty)
+        && !c.blocked_attackers.contains(&attacker)),
+        "the flyer stays unblocked");
+    assert!(state.game_log.iter().any(|e| e.message.contains("ignored illegal block")),
+        "the drop is visible in the game log, not silent");
+}

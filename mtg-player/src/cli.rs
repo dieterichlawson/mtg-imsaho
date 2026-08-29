@@ -1787,7 +1787,7 @@ impl CliPlayer {
     }
 
     fn choose_blockers(view: &GameView, prompt: &CombatPrompt) -> Action {
-        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, .. } = prompt else {
+        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, legal_blocks } = prompt else {
             unreachable!()
         };
 
@@ -1819,8 +1819,23 @@ impl CliPlayer {
             Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
         r += 1;
         for (i, &id) in eligible_blockers.iter().enumerate() {
+            // Which attackers this creature may legally block (CR 509.1b —
+            // evasion like flying is per-pairing, so say it up front).
+            let legal: Vec<String> = legal_blocks.get(&id)
+                .map(|atts| attacker_ids.iter().enumerate()
+                    .filter(|(_, a)| atts.contains(a))
+                    .map(|(ai, _)| ai.to_string())
+                    .collect())
+                .unwrap_or_default();
+            let note = if legal.len() == attacker_ids.len() {
+                String::new()
+            } else if legal.is_empty() {
+                " (can block: none)".to_string()
+            } else {
+                format!(" (can block: {})", legal.join(" "))
+            };
             let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(format!("  {}: {}", i, Self::perm_name(view, id))));
+                Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
             r += 1;
         }
         let _ = execute!(out, cursor::MoveTo(col, r));
@@ -1835,22 +1850,38 @@ impl CliPlayer {
             }
 
             let mut assignments = Vec::new();
-            let mut valid = true;
+            let mut error: Option<String> = None;
             for pair in input.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
                 let parts: Vec<&str> = pair.split(':').collect();
-                if parts.len() != 2 { valid = false; break; }
+                if parts.len() != 2 {
+                    error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
+                    break;
+                }
                 match (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
                     (Ok(b), Ok(a)) if b < eligible_blockers.len() && a < attacker_ids.len() => {
-                        assignments.push((eligible_blockers[b], attacker_ids[a]));
+                        let (blocker, attacker) = (eligible_blockers[b], attacker_ids[a]);
+                        // CR 509.1b: refuse an illegal pairing here, loudly —
+                        // the engine would drop it, and a silently vanished
+                        // block cost real games (issue #40).
+                        if !legal_blocks.get(&blocker).is_some_and(|atts| atts.contains(&attacker)) {
+                            error = Some(format!(
+                                "{} can't legally block {} (evasion or a blocking restriction).",
+                                Self::perm_name(view, blocker), Self::perm_name(view, attacker)));
+                            break;
+                        }
+                        assignments.push((blocker, attacker));
                     }
-                    _ => { valid = false; break; }
+                    _ => {
+                        error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
+                        break;
+                    }
                 }
             }
 
-            if valid {
-                return Action::DeclareBlockers { assignments };
+            match error {
+                None => return Action::DeclareBlockers { assignments },
+                Some(msg) => println!("  {msg}"),
             }
-            println!("  Invalid. Use '0->0 1->1' format.");
         }
     }
 }
