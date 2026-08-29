@@ -813,3 +813,25 @@ fn removing_a_creature_from_combat_clears_every_record_of_it() {
     assert!(!combat.planeswalker_defenders.contains_key(&attacker));
     assert!(!combat.dealt_first_strike.contains(&attacker));
 }
+
+/// CR 506.4d: an attacking creature whose controller changes is removed
+/// from combat — the thief gets the creature, and the attack simply ends.
+/// Before this, a stolen attacker stayed in combat under its new controller
+/// and dealt its combat damage for the old controller's attack.
+#[test]
+fn a_creature_that_changes_controller_leaves_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    attacks_unblocked(&mut state, attacker, P1);
+
+    state.change_control(attacker, P1);
+
+    let combat = state.combat.as_ref().unwrap();
+    assert!(!combat.attackers.contains_key(&attacker),
+        "a stolen creature is no longer an attacker (CR 506.4d)");
+
+    combat::deal_combat_damage(&mut state, &reg);
+    assert_eq!(state.get_player(P1).life, 20,
+        "and it deals no combat damage for its old controller's attack");
+}

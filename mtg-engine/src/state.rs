@@ -1937,7 +1937,15 @@ impl GameState {
     /// anything — see [`GameState::arrives_tapped`].
     pub fn tap(&mut self, id: ObjectId) {
         match self.get_object_mut(id) {
-            Some(obj) if !obj.tapped => obj.tapped = true,
+            // CR 110.5: tapped is a status of permanents. An effect resolving
+            // through last-known information can name an object that has
+            // since left the battlefield (Claustrophobia's enters-tap after
+            // the enchanted creature bounced itself); tapping applies to
+            // nothing then — the object in its new zone is a new object, and
+            // a card in a hand cannot be tapped.
+            Some(obj) if obj.zone == crate::types::Zone::Battlefield && !obj.tapped => {
+                obj.tapped = true;
+            }
             _ => return,
         }
         self.events.push(crate::events::GameEvent::Tapped { object: id });
@@ -1973,10 +1981,40 @@ impl GameState {
     /// in-play permanent; assigning `obj.controller` directly skips the
     /// summoning-sickness reset and is a bug.
     pub fn change_control(&mut self, id: ObjectId, new_controller: PlayerId) {
-        if let Some(obj) = self.get_object_mut(id) {
-            if obj.controller != new_controller {
+        let changed = match self.get_object_mut(id) {
+            Some(obj) if obj.controller != new_controller => {
                 obj.controller = new_controller;
                 obj.summoning_sick = true;
+                true
+            }
+            _ => false,
+        };
+        // CR 506.4d: an attacking or blocking creature whose controller
+        // changes is removed from combat — a stolen attacker deals no combat
+        // damage for its old controller's attack.
+        if changed {
+            self.remove_from_combat(id);
+        }
+    }
+
+    /// Remove a creature from the current combat (if any) — regeneration
+    /// (CR 701.15c), control changes (CR 506.4d), and anything else that
+    /// pulls a creature out of combat.
+    ///
+    /// Every piece of combat bookkeeping that names the creature goes with
+    /// it — a removed attacker left in `blocked_attackers` is a creature the
+    /// combat state says was blocked but never says attacked. (CR 509.2's
+    /// "blocked forever" is about an attacker whose *blockers* leave; a
+    /// creature removed from combat is not an attacker at all, CR 506.4c.)
+    pub fn remove_from_combat(&mut self, id: ObjectId) {
+        if let Some(ref mut combat) = self.combat {
+            combat.attackers.remove(&id);
+            combat.blocker_assignments.remove(&id);
+            combat.blocked_attackers.remove(&id);
+            combat.planeswalker_defenders.remove(&id);
+            combat.dealt_first_strike.remove(&id);
+            for blockers in combat.blocker_assignments.values_mut() {
+                blockers.retain(|&b| b != id);
             }
         }
     }

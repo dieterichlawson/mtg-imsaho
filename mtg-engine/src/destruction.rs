@@ -227,21 +227,8 @@ pub fn destroy_sba(state: &mut GameState, id: ObjectId, registry: &CardRegistry)
 
 /// Remove a creature from the current combat (if any).
 /// Used by regeneration and other effects that pull a creature out of combat.
-///
-/// Every piece of combat bookkeeping that names the creature goes with it —
-/// a removed attacker left in `blocked_attackers` is a creature the combat
-/// state says was blocked but never says attacked. (CR 509.2's "blocked
-/// forever" is about an attacker whose *blockers* leave; a creature removed
-/// from combat is not an attacker at all, CR 506.4c.)
+/// The implementation lives on `GameState` so `change_control` (CR 506.4d)
+/// can reach it too.
 pub fn remove_from_combat(state: &mut GameState, id: ObjectId) {
-    if let Some(ref mut combat) = state.combat {
-        combat.attackers.remove(&id);
-        combat.blocker_assignments.remove(&id);
-        combat.blocked_attackers.remove(&id);
-        combat.planeswalker_defenders.remove(&id);
-        combat.dealt_first_strike.remove(&id);
-        for blockers in combat.blocker_assignments.values_mut() {
-            blockers.retain(|&b| b != id);
-        }
-    }
+    state.remove_from_combat(id);
 }
