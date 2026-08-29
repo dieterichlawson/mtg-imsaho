@@ -1,0 +1,15 @@
+# Accepted surviving mutants: judged equivalent or defensive-only, with
+# reasons recorded in reports/mutation-testing.md. The weekly-mutants
+# workflow strips line:col before comparing, so entries here omit them.
+mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCard in is_target_legal
+mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCreatureOfSubtype(subtype) in is_target_legal
+mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedByCaster in is_target_legal
+mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedByOpponent in is_target_legal
+mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedByTargetPlayer in is_target_legal
+mtg-engine/src/stack.rs: replace && with || in is_target_legal
+mtg-engine/src/stack.rs: replace != with == in is_target_legal
+mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::Battlefield with true in attackers_declared
+mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::Battlefield with true in blockers_declared
+mtg-engine/src/combat.rs: replace > with >= in declare_blockers_with_registry
+mtg-engine/src/combat.rs: replace || with && in deal_damage_step
+mtg-engine/src/destruction.rs: replace || with && in death_event

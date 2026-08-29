@@ -2,6 +2,9 @@
 *.txt
 # Deck lists are data, not run output — track them despite *.txt above.
 !/decks/**/*.txt
+# The accepted-survivor list is reviewed reference data the weekly-mutants
+# workflow compares against, not run output.
+!/reports/mutants-accepted.txt
 *.log
 /results.json
 # Audit-calibration run state: the seeded-bug answer key and score sheets

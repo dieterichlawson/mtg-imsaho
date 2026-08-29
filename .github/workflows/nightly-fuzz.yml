@@ -2,9 +2,10 @@
 # random-vs-random games over the coverage decks (scripts/fuzz.sh).
 #
 # Seeds derive from the day number so every night explores new games, and
-# each shard gets a disjoint range. A failing game fails its shard and
-# uploads the replayable failure logs as an artifact; reproduce locally with
-# the command printed at the top of scripts/fuzz.sh.
+# each shard gets a disjoint range. A failing game fails its shard, uploads
+# the replayable failure logs as an artifact, and files one GitHub issue per
+# failing seed (labeled phase:fuzz, deduped on pair+seed, capped per shard)
+# per docs/plans/bug-pipeline.md.
 name: nightly-fuzz
 
 on:
@@ -19,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   fuzz:
@@ -49,6 +51,49 @@ jobs:
           START=$(( DAY * 1000000 + ${{ matrix.shard }} * 25000 + 1 ))
           echo "shard ${{ matrix.shard }}: $GAMES games/pair starting at seed $START"
           FUZZ_JOBS=$(nproc) ./scripts/fuzz.sh "$GAMES" "$START"
+
+      - name: File issues for failing seeds
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # One issue per failing seed (docs/plans/bug-pipeline.md). The
+          # pair+seed in the title is the dedupe key; cap at 5 per shard so
+          # a systemic breakage doesn't flood the tracker.
+          filed=0
+          for log in logs/fuzz-*/*.txt; do
+            [ -e "$log" ] || continue
+            base=$(basename "$log" .txt)
+            case "$base" in *-replay-*) continue ;; esac
+            [ "$filed" -ge 5 ] && { echo "cap reached; remaining failures are in the artifact"; break; }
+            seed="${base##*-seed}"; rest="${base%-seed*}"
+            d1="${rest%%-vs-*}"; d2="${rest##*-vs-}"
+            symptom=$(grep -m1 -E 'INVARIANT VIOLATION|panicked' "$log" || head -1 "$log" || echo "game failed")
+            title="[fuzz] $d1-vs-$d2 seed $seed: $(echo "$symptom" | cut -c1-120)"
+            if [ -n "$(gh issue list --state open --search "\"$base\" in:title" --json number --jq '.[0].number // empty')" ]; then
+              echo "dedupe: open issue already covers $base"
+              continue
+            fi
+            body=$(printf '%s\n' \
+              "**Found-by**: phase:fuzz — nightly-fuzz shard ${{ matrix.shard }}, run $RUN_URL" \
+              "" \
+              "**Repro**:" \
+              '```' \
+              "cargo build --release -p mtg-runner" \
+              "target/release/mtg-runner --p1 random --p2 random \\" \
+              "  --deck1 decks/coverage/$d1.txt --deck2 decks/coverage/$d2.txt \\" \
+              "  --seed $seed --check-invariants" \
+              '```' \
+              "" \
+              "**Evidence** (first 40 lines of the failure log; full log in the run artifact):" \
+              '```' \
+              "$(head -40 "$log")" \
+              '```')
+            gh issue create --title "$title" --body "$body" --label bug --label phase:fuzz \
+              && filed=$((filed + 1))
+          done
+          echo "filed $filed issues"
 
       - name: Upload failure logs
         if: failure()
