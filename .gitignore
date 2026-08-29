@@ -7,6 +7,10 @@
 # Audit-calibration run state: the seeded-bug answer key and score sheets
 # (see docs/plans/audit-calibration.md). Regenerated per run.
 /audits/calibration/
+# cargo-mutants run output; survivors worth keeping get summarized into
+# reports/, the raw outcomes live in the weekly-mutants CI artifacts.
+mutants.out/
+mutants.out.old/
 /reports/coverage/
 # Agent-produced staging markdown is ephemeral transport; validate
 # scripts expect a clean worktree and ignore this directory.
