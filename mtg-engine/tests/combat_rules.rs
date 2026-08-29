@@ -784,3 +784,32 @@ fn a_forced_attacker_may_be_declared_at_a_planeswalker() {
     assert!(!combat.planeswalker_defenders.contains_key(&bystander),
         "and it attacks the player, not the walker");
 }
+
+/// A creature removed from combat (regeneration, CR 701.15c) leaves no
+/// bookkeeping behind: not in `attackers`, not a `blocker_assignments` key,
+/// not in `blocked_attackers`, `planeswalker_defenders`, or
+/// `dealt_first_strike`. Coverage-deck fuzzing found a regenerated blocked
+/// attacker still listed in `blocked_attackers` — a creature the combat
+/// state said was blocked but never said attacked.
+#[test]
+fn removing_a_creature_from_combat_clears_every_record_of_it() {
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+    state.combat.as_mut().unwrap().dealt_first_strike.insert(attacker);
+
+    {
+        let combat = state.combat.as_ref().unwrap();
+        assert!(combat.blocked_attackers.contains(&attacker), "setup: it was blocked");
+    }
+
+    mtg_engine::destruction::remove_from_combat(&mut state, attacker);
+
+    let combat = state.combat.as_ref().unwrap();
+    assert!(!combat.attackers.contains_key(&attacker));
+    assert!(!combat.blocker_assignments.contains_key(&attacker));
+    assert!(!combat.blocked_attackers.contains(&attacker), "no stale blocked-ness");
+    assert!(!combat.planeswalker_defenders.contains_key(&attacker));
+    assert!(!combat.dealt_first_strike.contains(&attacker));
+}
