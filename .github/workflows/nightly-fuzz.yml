@@ -1,0 +1,60 @@
+# Nightly fuzzing campaign: ten shards of seeded, invariant-checked
+# random-vs-random games over the coverage decks (scripts/fuzz.sh).
+#
+# Seeds derive from the day number so every night explores new games, and
+# each shard gets a disjoint range. A failing game fails its shard and
+# uploads the replayable failure logs as an artifact; reproduce locally with
+# the command printed at the top of scripts/fuzz.sh.
+name: nightly-fuzz
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      games_per_pair:
+        description: Games per deck pairing, per shard
+        default: "200"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: fuzz-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Run campaign shard
+        run: |
+          GAMES="${{ inputs.games_per_pair || '200' }}"
+          # Day-derived base so each night plays new seeds; 25k-wide shard
+          # ranges keep shards disjoint for any GAMES up to that width.
+          DAY=$(( $(date +%s) / 86400 ))
+          START=$(( DAY * 1000000 + ${{ matrix.shard }} * 25000 + 1 ))
+          echo "shard ${{ matrix.shard }}: $GAMES games/pair starting at seed $START"
+          FUZZ_JOBS=$(nproc) ./scripts/fuzz.sh "$GAMES" "$START"
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures-shard-${{ matrix.shard }}
+          path: logs/fuzz-*/
+          if-no-files-found: ignore
+          retention-days: 14
