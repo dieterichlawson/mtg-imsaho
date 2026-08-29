@@ -258,7 +258,19 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         // Rule 704.5j: Legend rule — if a player controls two or more legendary
         // permanents with the same name, that player chooses one of them, and
         // the rest are put into their owners' graveyards.
-        {
+        //
+        // This is the one state-based action that needs a player's answer,
+        // and only one choice can be pending at a time. While a prompt is
+        // already waiting (this one included — the engine's SBA loop
+        // re-checks before the player can answer), hold off rather than
+        // raise it again: re-presenting the same keep-choice over its own
+        // pending prompt reported an action taken every check, forever — a
+        // livelock with no decision points, found by seeded fuzzing
+        // (rb-vampires vs ub-zombies, seed 74, two Grimgrins). Every other
+        // state-based action — deaths, loss, the game ending — still runs
+        // in that window; a concede during a combat prompt has to end the
+        // game.
+        if state.awaiting_action.is_none() {
             use std::collections::HashMap as Map;
             let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
             let battlefield: Vec<(crate::ids::ObjectId, crate::ids::PlayerId, String)> =

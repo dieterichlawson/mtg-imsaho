@@ -199,6 +199,47 @@ fn bug_grimoire_legend_rule_not_applied() {
         "Legend rule should leave only 1 Grimgrin. Found: {grimgrin_count}");
 }
 
+/// The legend rule raises a keep-choice and returns — and the engine's SBA
+/// loop calls `check_state_based_actions` again before anyone can answer.
+/// The re-check used to find the same duplicates, re-present the same
+/// choice, and report an action taken, every time: an infinite loop with no
+/// decision points (found by seeded fuzzing — rb-vampires vs ub-zombies,
+/// seed 74, two Grimgrins). While a choice is pending, an SBA re-check must
+/// be a no-op (CR 704.3: SBAs are checked when a player is about to receive
+/// priority, and a player waiting on a choice is not).
+#[test]
+fn a_pending_legend_choice_stops_the_sba_loop() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let keeper = named_permanent(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+    let _double = named_permanent(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+
+    assert!(check_state_based_actions(&mut state, &registry),
+        "the first check applies the legend rule");
+    assert!(state.awaiting_action.is_some(), "and raises the keep-choice");
+
+    // The engine's `while check_state_based_actions` loop calls again while
+    // the choice is still pending. This must not count as an action, or the
+    // loop never reaches the player.
+    assert!(!check_state_based_actions(&mut state, &registry),
+        "a re-check while the choice is pending is a no-op");
+    assert!(state.awaiting_action.is_some(), "and leaves the pending choice standing");
+
+    // Answering the choice settles the board to one Grimgrin.
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(keeper))),
+        },
+        &registry,
+    );
+    let grimgrins = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
+        .count();
+    assert_eq!(grimgrins, 1, "the kept Grimgrin survives alone");
+}
+
 /// Bug: When a board wipe destroys both a Human and Angelic Overseer
 /// simultaneously, the SBA processes them sequentially. The Human
 /// might die first, causing Overseer to lose indestructible before
