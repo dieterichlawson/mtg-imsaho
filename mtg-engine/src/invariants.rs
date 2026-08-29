@@ -190,8 +190,28 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
     // CR 704.5f/g/h: a creature that should be dead is dead. Marked damage at
     // or past toughness kills anything not indestructible; zero or less
     // toughness kills even that.
+    //
+    // Exception: a permanent whose "enters as a copy" choice is still being
+    // made (Evil Twin). The engine models CR 614.1d as a brief window where
+    // the printed 0/0 sits on the battlefield exempt from state-based
+    // actions until the copy choice concludes — `entering_copy_source` is
+    // that exemption, and the checker honors it exactly as sba.rs does. The
+    // window cannot outlive the turn the permanent entered, so a guard still
+    // armed on a creature past its summoning sickness is a leak, not a
+    // window — that gets its own violation below.
     for obj in state.objects_in_id_order() {
-        if obj.zone != Zone::Battlefield || !state.is_creature(obj.id, registry) {
+        if obj.zone == Zone::Battlefield && obj.entering_copy_source && !obj.summoning_sick {
+            v.push(format!(
+                "{} ({}) still exempt from SBAs long after its copy-entry window",
+                obj.id.0, obj.name
+            ));
+        }
+    }
+    for obj in state.objects_in_id_order() {
+        if obj.zone != Zone::Battlefield
+            || !state.is_creature(obj.id, registry)
+            || obj.entering_copy_source
+        {
             continue;
         }
         let Some(toughness) = state.effective_toughness(obj.id, registry) else { continue };

@@ -168,7 +168,16 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                          state.printed_subtypes_of(o.id, registry),
                          kw, state.printed_colors_of(o.id, registry), legendary)
                     }
-                    None => return,
+                    None => {
+                        // The chosen creature no longer exists (a token that
+                        // ceased). The copy never applies — disarm the SBA
+                        // copy-guard so the printed 0/0 can die rather than
+                        // sitting exempt forever.
+                        if let Some(obj) = state.get_object_mut(*source_id) {
+                            obj.entering_copy_source = false;
+                        }
+                        return;
+                    }
                 };
 
             // CR 706.2: whatever card's copy effect this is, that card may have
