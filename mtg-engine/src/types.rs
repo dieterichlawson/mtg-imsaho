@@ -154,15 +154,20 @@ impl std::fmt::Display for ManaCost {
 }
 
 /// Floating mana a player has available.
+///
+/// A `BTreeMap` rather than a `HashMap` because the pool gets iterated —
+/// displayed, cloned into funding options, drained type by type — and a
+/// `HashMap`'s iteration order is seeded per process, so the same seeded
+/// game replayed would show (and could spend) mana in a different order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManaPool {
-    pub mana: HashMap<ManaType, u32>,
+    pub mana: std::collections::BTreeMap<ManaType, u32>,
 }
 
 impl ManaPool {
     #[must_use]
     pub fn new() -> Self {
-        Self { mana: HashMap::new() }
+        Self { mana: std::collections::BTreeMap::new() }
     }
 
     pub fn add(&mut self, mana_type: ManaType, amount: u32) {

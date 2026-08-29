@@ -86,7 +86,7 @@ impl FundingGroup {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FundingOptions {
     /// Floating mana per type at the moment of prompting.
-    pub pool: HashMap<ManaType, u32>,
+    pub pool: BTreeMap<ManaType, u32>,
     /// Groups of eligible tap sources, sorted by (category, name).
     pub groups: Vec<FundingGroup>,
     /// Ceiling on X = pool total + sum of group contributions.
@@ -262,7 +262,7 @@ pub fn build_options(
     player: PlayerId,
     registry: &CardRegistry,
 ) -> FundingOptions {
-    let pool: HashMap<ManaType, u32> = state.get_player(player).mana_pool.mana.clone();
+    let pool: BTreeMap<ManaType, u32> = state.get_player(player).mana_pool.mana.clone();
     let pool_total: u32 = pool.values().sum();
 
     // Bucket-building scratch: key -> (category, mana_per_tap, colors, source_ids).
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn validate_accepts_empty_response() {
         let options = FundingOptions {
-            pool: HashMap::new(),
+            pool: BTreeMap::new(),
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 3)],
             max_x: 3,
         };
@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn validate_rejects_unknown_group() {
         let options = FundingOptions {
-            pool: HashMap::new(),
+            pool: BTreeMap::new(),
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 2)],
             max_x: 2,
         };
@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn validate_rejects_non_multiple_of_per_tap() {
         let options = FundingOptions {
-            pool: HashMap::new(),
+            pool: BTreeMap::new(),
             groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
             max_x: 2,
         };
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn validate_rejects_tap_overflow() {
         let options = FundingOptions {
-            pool: HashMap::new(),
+            pool: BTreeMap::new(),
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 2)],
             max_x: 2,
         };
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_pool_overdraw() {
-        let mut pool = HashMap::new();
+        let mut pool = BTreeMap::new();
         pool.insert(ManaType::Black, 1);
         let options = FundingOptions {
             pool,
@@ -553,7 +553,7 @@ mod tests {
     #[test]
     fn validate_rejects_exceeds_max_x() {
         // Constructed scenario: group max = 1 but response says 2 via pool.
-        let mut pool = HashMap::new();
+        let mut pool = BTreeMap::new();
         pool.insert(ManaType::Black, 3);
         let options = FundingOptions {
             pool,
