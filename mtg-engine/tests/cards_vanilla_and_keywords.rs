@@ -424,6 +424,30 @@ fn claustrophobia_still_taps_if_the_aura_is_destroyed_in_response() {
         "\"doesn't untap\" is a static ability of a permanent that is no longer there");
 }
 
+/// The mirror case: the CREATURE leaves before the enters trigger resolves.
+/// CR 110.5 makes tapped a status of permanents — the card that returned to
+/// its owner's hand is a new object (CR 400.7) and cannot be tapped there.
+/// Coverage-deck fuzzing caught Lantern Spirit sitting tapped in its
+/// owner's hand after bouncing itself in response to Claustrophobia's
+/// enters trigger.
+#[test]
+fn claustrophobia_taps_nothing_if_the_creature_left_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    let cl = castable_spell(&mut state, &reg, "Claustrophobia", P0);
+    let mut state = cast_and_resolve(&state, &reg, cl, vec![Target::Object(creature)]);
+    assert_eq!(state.get_object(cl).unwrap().attached_to, Some(creature), "test setup");
+
+    // The creature bounces to hand with the enters trigger still to resolve.
+    state.move_object(creature, Zone::Hand, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert!(!state.get_object(creature).unwrap().tapped,
+        "a card in hand has no tap status (CR 110.5)");
+}
+
 /// Ruling 2015-06-22: "Claustrophobia can target and enchant a tapped or
 /// untapped creature." Nothing about the ability asks.
 #[test]
