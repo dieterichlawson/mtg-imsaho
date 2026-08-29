@@ -500,3 +500,103 @@ mod stony_silence_submits {
         assert_eq!(state.get_player(P0).mana_pool.total(), 3, "no mana was charged");
     }
 }
+
+// ── The composite requirements, branch by branch ────────────────────────
+//
+// The full-sweep mutation run (issues #26–#34) showed `targets_are_legal`'s
+// composite arms under-pinned: each mutant below weakened one clause and no
+// test noticed. Each test here submits the exact shape that clause refuses.
+
+/// TwoTargets: BOTH halves must be legal — one legal half must not carry an
+/// illegal partner (`&&`→`||` between the halves survived).
+///
+/// Prey Upon is (creature you control, creature you don't control); handing
+/// it two of the caster's own creatures fails the second half only.
+#[test]
+fn a_two_target_cast_with_one_illegal_half_does_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    let also_mine = ready_creature(&mut state, P0, 3, 3);
+
+    let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
+    let state = cast_onto_stack(&state, &reg, prey,
+        vec![Target::Object(mine), Target::Object(also_mine)]);
+
+    assert_eq!(state.get_object(prey).unwrap().zone, Zone::Hand,
+        "the second slot wants an opponent's creature; the cast is refused");
+    assert!(state.stack.is_empty());
+    assert_eq!(state.get_object(mine).unwrap().damage_marked, 0, "no fight happened");
+}
+
+/// UpToTargets: "up to two" refuses three, however legal each one is.
+#[test]
+fn an_up_to_two_cast_with_three_targets_does_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = ready_creature(&mut state, P1, 1, 1);
+    let b = ready_creature(&mut state, P1, 1, 1);
+    let c = ready_creature(&mut state, P1, 1, 1);
+
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    let state = cast_onto_stack(&state, &reg, dread,
+        vec![Target::Object(a), Target::Object(b), Target::Object(c)]);
+
+    assert_eq!(state.get_object(dread).unwrap().zone, Zone::Hand,
+        "three targets for an up-to-two spell is refused");
+    assert!(!state.get_object(a).unwrap().tapped && !state.get_object(c).unwrap().tapped,
+        "nobody was tapped");
+}
+
+/// UpToTargets: a count within the limit still needs every member legal.
+#[test]
+fn an_up_to_two_cast_with_an_illegal_member_does_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = ready_creature(&mut state, P1, 1, 1);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    let state = cast_onto_stack(&state, &reg, dread,
+        vec![Target::Object(a), Target::Object(land)]);
+
+    assert_eq!(state.get_object(dread).unwrap().zone, Zone::Hand,
+        "a land in a tap-target-creatures list refuses the whole cast");
+    assert!(!state.get_object(a).unwrap().tapped);
+}
+
+/// A single-target spell takes exactly one target — not two (CR 601.2c).
+#[test]
+fn a_single_target_cast_with_two_targets_does_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = ready_creature(&mut state, P1, 2, 2);
+    let b = ready_creature(&mut state, P1, 2, 2);
+
+    let victim = castable_spell(&mut state, &reg, "Victim of Night", P0);
+    let state = cast_onto_stack(&state, &reg, victim,
+        vec![Target::Object(a), Target::Object(b)]);
+
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Hand,
+        "two targets for a one-target spell is refused");
+    assert_eq!(state.get_object(a).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(b).unwrap().zone, Zone::Battlefield);
+}
+
+/// Both halves of single-target legality must hold: a target passing the
+/// generic requirement but failing the card's own `is_valid_target` is
+/// refused (Victim of Night can't target a Zombie).
+#[test]
+fn a_cast_failing_only_the_cards_own_target_check_does_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let zombie = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+
+    let victim = castable_spell(&mut state, &reg, "Victim of Night", P0);
+    let state = cast_onto_stack(&state, &reg, victim, vec![Target::Object(zombie)]);
+
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Hand,
+        "a Zombie passes the generic creature requirement but fails the \
+         card's non-Vampire/Werewolf/Zombie clause; the cast is refused");
+    assert_eq!(state.get_object(zombie).unwrap().zone, Zone::Battlefield);
+}
