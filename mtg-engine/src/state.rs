@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize};
 
@@ -2861,29 +2861,35 @@ pub struct ControlEffect {
 }
 
 /// Combat state, tracking attackers and blockers.
+///
+/// Ordered collections (`BTreeMap`/`BTreeSet`), not hashed ones: combat
+/// damage is dealt and prompts are built by iterating these, and a
+/// `HashMap`'s per-process iteration order made the same seeded game deal
+/// its damage — and offer its blocker choices — in a different order on
+/// each replay.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CombatState {
     /// Map of attacker `ObjectId` -> defending `PlayerId`. Every attacker is
     /// in here — one attacking a planeswalker defends against its controller
     /// (CR 508.1a), and additionally appears in `planeswalker_defenders`.
-    pub attackers: HashMap<ObjectId, PlayerId>,
+    pub attackers: std::collections::BTreeMap<ObjectId, PlayerId>,
     /// Attackers sent at a planeswalker rather than at the player:
     /// attacker -> the planeswalker it attacks.
     #[serde(default)]
-    pub planeswalker_defenders: HashMap<ObjectId, ObjectId>,
+    pub planeswalker_defenders: std::collections::BTreeMap<ObjectId, ObjectId>,
     /// Map of attacker `ObjectId` -> list of blockers assigned to it.
-    pub blocker_assignments: HashMap<ObjectId, Vec<ObjectId>>,
+    pub blocker_assignments: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
     /// Attackers that became blocked when blockers were declared. Blocked-ness
     /// is permanent for the combat (CR 509.2): an attacker whose blockers all
     /// leave combat is still blocked (deals no combat damage without trample),
     /// which `blocker_assignments` alone can't express once its list empties.
     #[serde(default)]
-    pub blocked_attackers: HashSet<ObjectId>,
+    pub blocked_attackers: std::collections::BTreeSet<ObjectId>,
     /// Creatures that had first/double strike when first-strike combat damage
     /// was dealt (CR 510.5): they don't deal damage again in the regular
     /// combat damage step unless they have double strike.
     #[serde(default)]
-    pub dealt_first_strike: HashSet<ObjectId>,
+    pub dealt_first_strike: std::collections::BTreeSet<ObjectId>,
 }
 
 impl CombatState {
