@@ -436,3 +436,34 @@ fn blocked_trample_overflow_lands_nowhere_when_the_walker_left() {
     assert_eq!(state.get_player(P1).life, 20,
         "and the overflow at the departed walker is not dealt");
 }
+
+/// CR 508.1a: one declaration can send some creatures at the defending
+/// player and another at that player's planeswalker; the walker entry must
+/// not be dropped just because other attackers exist. (The submit path
+/// drops a walker entry whose attacker is *already attacking the player* —
+/// that dedup must compare against the entry's own attacker, not "anyone".)
+#[test]
+fn attacking_a_walker_alongside_attacks_on_the_player() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let at_player = ready_creature(&mut state, P0, 2, 2);
+    let at_walker = ready_creature(&mut state, P0, 2, 2);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::DeclareAttackers {
+            attackers: vec![(at_player, P1)],
+            planeswalker_attacks: vec![(at_walker, liliana)],
+        },
+        &reg,
+    );
+
+    let combat = state.combat.as_ref().expect("combat is under way");
+    assert!(combat.attackers.contains_key(&at_player),
+        "the attack on the player was declared");
+    assert_eq!(combat.planeswalker_defenders.get(&at_walker), Some(&liliana),
+        "the walker attack survives alongside attacks on the player");
+}

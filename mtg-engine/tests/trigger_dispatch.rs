@@ -1096,3 +1096,67 @@ fn death_watch_triggers_fire_on_creature_death() {
         "Unruly Mob should gain a +1/+1 counter when another creature you control dies"
     );
 }
+
+/// `TriggerKind::AnyCreatureAttacks`: the attack-watcher scan must reach
+/// battlefield permanents — and only those. No Innistrad card currently
+/// declares this trigger kind (Instigator Gang's anthem is a continuous
+/// effect), so a watcher is registered alongside the real set; without a
+/// positive case the whole scan could silently invert its zone filter.
+/// Its trigger pays its controller a life, so which copy fired is visible
+/// after the trigger resolves.
+struct AttackKlaxon;
+
+impl mtg_engine::cards::CardBehavior for AttackKlaxon {
+    fn card_data(&self) -> mtg_engine::cards::CardData {
+        mtg_engine::cards::CardData {
+            name: "Attack Klaxon".into(),
+            cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1)])),
+            card_types: vec![CardType::Enchantment],
+            oracle_text: "Whenever a creature attacks, you gain 1 life.".into(),
+            triggered_abilities: vec![mtg_engine::cards::TriggeredAbilityDef {
+                kind: mtg_engine::cards::TriggerKind::AnyCreatureAttacks,
+                description: "you gain 1 life".into(),
+                target_requirement: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn on_any_creature_attacks(
+        &self,
+        state: &mut mtg_engine::state::GameState,
+        self_id: ObjectId,
+        _attacker_id: ObjectId,
+        _attacker_controller: PlayerId,
+        _registry: &CardRegistry,
+    ) {
+        if let Some(controller) = state.get_object(self_id).map(|o| o.controller) {
+            state.get_player_mut(controller).life += 1;
+        }
+    }
+}
+
+#[test]
+fn an_attack_watcher_hears_the_attack_from_the_battlefield_only() {
+    let mut reg = CardRegistry::with_all_cards();
+    let klaxon = reg.register(Box::new(AttackKlaxon));
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    // One copy on the battlefield under P1, one in P0's graveyard: whose
+    // life moves says which copy the scan collected.
+    let on_battlefield = state.create_object(klaxon, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(on_battlefield).unwrap().name = "Attack Klaxon".into();
+    let in_graveyard = state.create_object(klaxon, P0, Zone::Graveyard, None, None);
+    state.get_object_mut(in_graveyard).unwrap().name = "Attack Klaxon".into();
+
+    let p0_life = state.get_player(P0).life;
+    let p1_life = state.get_player(P1).life;
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, p1_life + 1,
+        "the battlefield watcher heard the attack exactly once");
+    assert_eq!(state.get_player(P0).life, p0_life,
+        "the graveyard copy stays silent");
+}
