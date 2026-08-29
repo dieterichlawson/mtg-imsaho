@@ -774,3 +774,33 @@ fn blazing_torch_targets_as_the_creature_and_damages_as_the_torch() {
         "the damage's source is the Torch, an artifact, so protection from \
          artifacts prevents all of it");
 }
+
+/// An attack trigger on an Equipment fires only when the creature it is
+/// attached to attacks — a Blade on a bystander stays quiet when some other
+/// creature attacks. Kills a mutation-testing survivor that flipped the
+/// `attached_to == attacker` comparison in trigger collection.
+#[test]
+fn an_equipment_on_a_bystander_does_not_trigger_for_someone_elses_attack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let bystander = ready_creature(&mut state, P0, 2, 2);
+    let blade = named_permanent(&mut state, &reg, "Trepanation Blade", P0);
+    state.get_object_mut(blade).unwrap().attached_to = Some(bystander);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    attacks_unblocked(&mut state, attacker, P1);
+
+    // Give the defender a library the Blade would mill if it (wrongly) fired.
+    let land_id = reg.get_id_by_name("Swamp").unwrap();
+    let mut lib = Vec::new();
+    for _ in 0..3 {
+        lib.push(state.create_object(land_id, P1, Zone::Library, None, None));
+    }
+    state.get_player_mut(P1).library_order = lib;
+
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).library_order.len(), 3,
+        "no mill: the equipped creature did not attack");
+}

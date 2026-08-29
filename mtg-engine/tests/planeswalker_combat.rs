@@ -387,3 +387,52 @@ fn combat_damage_to_a_walker_is_not_combat_damage_to_a_player() {
         0,
         "so 'deals combat damage to a player' did not trigger");
 }
+
+/// CR 510.1c + CR 702.19: trample overflow past a planeswalker's loyalty
+/// goes nowhere when the walker has already left — the 2018 removal of the
+/// redirect rule means it does NOT fall through to the player. Both the
+/// unblocked and the blocked-overflow paths. Kills the mutation-testing
+/// survivors that replaced `walker_still_there` guards with `true`.
+#[test]
+fn trample_overflow_lands_nowhere_when_the_walker_left() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let trampler = ready_creature(&mut state, P0, 6, 6);
+    grant_keyword(&mut state, trampler, Keyword::Trample);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+
+    submit_attack_on_walker(&mut state, trampler, liliana, &reg);
+    state.move_object(liliana, Zone::Graveyard, &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, 20,
+        "unblocked damage at a departed walker is simply not dealt");
+}
+
+/// The blocked variant of the same rule: lethal to the blocker, and the
+/// trample overflow that would have hit the walker lands nowhere.
+#[test]
+fn blocked_trample_overflow_lands_nowhere_when_the_walker_left() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let trampler = ready_creature(&mut state, P0, 6, 6);
+    grant_keyword(&mut state, trampler, Keyword::Trample);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+
+    submit_attack_on_walker(&mut state, trampler, liliana, &reg);
+    let blocker = ready_creature(&mut state, P1, 1, 1);
+    combat::declare_blockers(&mut state, &[(blocker, trampler)]);
+
+    state.move_object(liliana, Zone::Graveyard, &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
+        "the blocker still takes its lethal share");
+    assert_eq!(state.get_player(P1).life, 20,
+        "and the overflow at the departed walker is not dealt");
+}

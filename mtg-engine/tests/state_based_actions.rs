@@ -639,3 +639,24 @@ fn no_target_lets_the_0_0_die() {
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
         "an Evil Twin with nothing to copy dies to SBA");
 }
+
+/// CR 603.8: a state-triggered ability doesn't trigger again while it waits
+/// on the stack — `state_trigger_on_stack` is the guard. Garruk Relentless
+/// at 2 loyalty triggers once; a second SBA check while the trigger is
+/// pending must not push a duplicate.
+#[test]
+fn a_state_trigger_on_the_stack_does_not_retrigger() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_permanent(&mut state, &registry, "Garruk Relentless", P0);
+    state.get_object_mut(garruk).unwrap()
+        .counters.insert(mtg_engine::types::CounterType::Loyalty, 2);
+
+    check_state_based_actions(&mut state, &registry);
+    assert_eq!(state.pending_triggers.len(), 1, "the transform trigger fires once");
+
+    check_state_based_actions(&mut state, &registry);
+    assert_eq!(state.pending_triggers.len(), 1,
+        "and does not fire again while it is pending (CR 603.8)");
+}

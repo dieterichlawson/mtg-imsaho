@@ -881,3 +881,132 @@ fn an_attack_trigger_resolves_in_the_combat_it_triggered_in() {
     assert_eq!(min_p1_life, 20 - 2 - 4,
         "the Angel is created during THIS combat and its 4 damage lands with Geist's 2");
 }
+
+// ── Gaps found by mutation testing (cargo-mutants, 2026-08-29) ──────
+// Each test below kills at least one mutant that survived the first
+// engine-core run; see reports/mutation-testing.md.
+
+/// CR 509.1a: only an untapped creature the defending player controls can
+/// block. Every clause of `eligible_blockers`' filter, asserted separately —
+/// mutants flipping any `&&` to `||` here survived the whole suite.
+#[test]
+fn eligible_blockers_is_untapped_creatures_of_the_defender_only() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let ready = ready_creature(&mut state, P1, 2, 2);
+    let tapped = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(tapped).unwrap().tapped = true;
+    let attackers_own = ready_creature(&mut state, P0, 2, 2);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+
+    let eligible = combat::eligible_blockers(&state, P1, &reg);
+    assert!(eligible.contains(&ready), "an untapped creature of the defender blocks");
+    assert!(!eligible.contains(&tapped), "a tapped creature cannot block (CR 509.1a)");
+    assert!(!eligible.contains(&attackers_own), "the attacker's creatures don't block for the defender");
+    assert!(!eligible.contains(&land), "a land is not a creature");
+}
+
+/// CR 510.5: a first-strike blocker deals its damage in the first combat
+/// damage step — a small attacker dies before it ever strikes back.
+#[test]
+fn a_first_strike_blocker_kills_before_the_attacker_strikes_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    grant_keyword(&mut state, blocker, Keyword::FirstStrike);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    combat::deal_combat_damage(&mut state, &reg);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Graveyard,
+        "first strike killed the attacker in the first damage step");
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
+        "so the attacker never dealt its damage");
+}
+
+/// CR 510.5: a creature with plain first strike deals damage in the first
+/// step and NOT again in the regular step; the vanilla blocker still deals
+/// its own damage in the regular step.
+#[test]
+fn a_plain_first_striker_deals_its_damage_exactly_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    grant_keyword(&mut state, attacker, Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 2, 5);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2,
+        "2 once, not 2 in each of the two damage steps");
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 2,
+        "the surviving blocker strikes back in the regular step");
+}
+
+/// CR 702.4b: double strike deals damage in both combat damage steps.
+#[test]
+fn a_double_striker_deals_damage_in_both_steps() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    grant_keyword(&mut state, attacker, Keyword::DoubleStrike);
+    attacks_unblocked(&mut state, attacker, P1);
+
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, 20 - 4,
+        "2 in the first-strike step and 2 in the regular step");
+}
+
+/// CR 510.1c: "lethal damage" counts the damage already marked. A blocker
+/// that came into the damage step wounded needs less, and the excess is free
+/// to kill the next blocker in order.
+#[test]
+fn lethal_assignment_counts_damage_already_marked() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let wounded = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(wounded).unwrap().damage_marked = 1;
+    let fresh = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[wounded, fresh]);
+
+    combat::deal_combat_damage(&mut state, &reg);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(wounded).unwrap().zone, Zone::Graveyard,
+        "1 more damage was lethal for the wounded blocker");
+    assert_eq!(state.get_object(fresh).unwrap().zone, Zone::Graveyard,
+        "leaving 2 of the 3 power to kill the second blocker");
+}
+
+/// The forced-attack sweep must skip exactly the creatures already declared —
+/// not "any creature when another is declared". Two creatures that attack
+/// each combat if able, one declared by the player: the other is still
+/// dragged in.
+#[test]
+fn each_forced_attacker_is_dragged_in_independently() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let n1 = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    let n2 = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    for id in [n1, n2] {
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    let new_state = engine::submit_action(
+        &state,
+        &Action::DeclareAttackers { attackers: vec![(n1, P1)], planeswalker_attacks: vec![] },
+        &reg,
+    );
+
+    let combat = new_state.combat.as_ref().unwrap();
+    assert!(combat.attackers.contains_key(&n1), "the declared one attacks");
+    assert!(combat.attackers.contains_key(&n2), "and the undeclared one is forced in");
+    assert_eq!(combat.attackers.len(), 2);
+}
