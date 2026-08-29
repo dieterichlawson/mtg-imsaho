@@ -835,3 +835,49 @@ fn a_creature_that_changes_controller_leaves_combat() {
     assert_eq!(state.get_player(P1).life, 20,
         "and it deals no combat damage for its old controller's attack");
 }
+
+/// CR 500.2: a step ends only when the stack is empty. A trigger put on the
+/// stack during attacker declaration (Geist of Saint Traft's "create a 4/4
+/// Angel tapped and attacking") used to ride the game loop's fallback
+/// step-advances through the rest of combat, cleanup, and into the NEXT
+/// turn before resolving — the Angel arrived a turn late, attacking on the
+/// wrong turn. Found by seeded coverage fuzzing (br vs wu, seed 290).
+///
+/// Driven through the real game loop: if the trigger resolves in the combat
+/// it triggered in, the defender takes Geist's 2 plus the Angel's 4.
+#[test]
+fn an_attack_trigger_resolves_in_the_combat_it_triggered_in() {
+    let reg = registry();
+    let mut state = game_at_step(Step::BeginCombat, P0);
+    let geist = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+
+    let land_id = reg.get_id_by_name("Forest").unwrap();
+    for p in 0..2u8 {
+        let mut lib = Vec::new();
+        for _ in 0..20 {
+            let id = state.create_object(land_id, mtg_engine::ids::PlayerId(p), Zone::Library, None, None);
+            lib.push(id);
+        }
+        state.players[p as usize].library_order = lib;
+    }
+
+    let mut min_p1_life = 20;
+    engine::run_game_loop(&mut state, &reg, |gs, _player, legal| {
+        min_p1_life = min_p1_life.min(gs.get_player(P1).life);
+        if gs.turn_number >= 2 {
+            return Action::Concede;
+        }
+        if let Some(prompt) = &legal.combat_prompt {
+            return match prompt {
+                mtg_engine::actions::CombatPrompt::ChooseAttackers { .. } =>
+                    Action::DeclareAttackers { attackers: vec![(geist, P1)], planeswalker_attacks: vec![] },
+                mtg_engine::actions::CombatPrompt::ChooseBlockers { .. } =>
+                    Action::DeclareBlockers { assignments: vec![] },
+            };
+        }
+        Action::PassPriority
+    });
+
+    assert_eq!(min_p1_life, 20 - 2 - 4,
+        "the Angel is created during THIS combat and its 4 damage lands with Geist's 2");
+}

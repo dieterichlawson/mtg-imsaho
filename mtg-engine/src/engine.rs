@@ -1055,9 +1055,27 @@ fn run_game_loop_inner<F>(
             break;
         }
 
+        // CR 500.2: a step ends only when the stack is empty. Every fallback
+        // below that would advance the step must first resolve what is on the
+        // stack — a trigger put on the stack during a combat declaration used
+        // to ride through the rest of combat, cleanup, and into the NEXT
+        // turn's combat before resolving (Geist of Saint Traft's attack
+        // trigger created its Angel a turn late, attacking its own
+        // controller's opponent-of-the-moment; found by seeded fuzzing,
+        // br vs wu coverage decks, seed 290).
+        let advance_or_resolve = |state: &mut GameState, registry: &CardRegistry| {
+            if state.stack.is_empty() {
+                advance_step(state, registry);
+            } else {
+                let mut new_state = state.clone();
+                stack::resolve_top_of_stack(&mut new_state, registry);
+                *state = new_state;
+            }
+        };
+
         // If no one has priority and there's no awaiting action, advance step.
         if state.priority_player.is_none() && state.awaiting_action.is_none() {
-            advance_step(state, registry);
+            advance_or_resolve(state, registry);
             continue;
         }
 
@@ -1069,13 +1087,13 @@ fn run_game_loop_inner<F>(
         } else if let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action {
             *player
         } else if let Some(p) = state.priority_player { p } else {
-            advance_step(state, registry);
+            advance_or_resolve(state, registry);
             continue;
         };
 
         let legal = legal_actions(state, registry);
         if legal.actions.is_empty() && legal.combat_prompt.is_none() {
-            advance_step(state, registry);
+            advance_or_resolve(state, registry);
             continue;
         }
 
@@ -1107,7 +1125,7 @@ fn run_game_loop_inner<F>(
             auto_pass_count += 1;
             if auto_pass_count > MAX_AUTO_PASSES {
                 // Safety: break infinite auto-pass loops.
-                advance_step(state, registry);
+                advance_or_resolve(state, registry);
                 auto_pass_count = 0;
                 continue;
             }
