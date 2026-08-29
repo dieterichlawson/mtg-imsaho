@@ -923,8 +923,43 @@ fn a_first_strike_blocker_kills_before_the_attacker_strikes_back() {
 
     assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Graveyard,
         "first strike killed the attacker in the first damage step");
-    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
+    let blocker_obj = state.get_object(blocker).unwrap();
+    assert_eq!(blocker_obj.zone, Zone::Battlefield,
+        "the blocker survives — it struck first, so the attacker never dealt \
+         its damage (a dead blocker's cleared damage_marked would hide this)");
+    assert_eq!(blocker_obj.damage_marked, 0,
         "so the attacker never dealt its damage");
+}
+
+/// CR 509.2 + 506.4c: an attacker that became blocked stays blocked even if
+/// its only blocker is *removed from combat* (regeneration, CR 701.15c, or a
+/// control change, CR 506.4d) before the damage step — it deals no combat
+/// damage to anyone. A blocker that merely dies stays in the assignment
+/// snapshot and is skipped by the zone check; removal from combat is the
+/// path that empties the assignment while the attacker stays blocked.
+#[test]
+fn a_blocked_attacker_whose_blocker_left_combat_hits_nobody() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    // The blocker leaves combat before the damage step (as regeneration or
+    // a control change would do): the attacker's assignment empties, but it
+    // remains a blocked creature.
+    mtg_engine::destruction::remove_from_combat(&mut state, blocker);
+    assert!(state.combat.as_ref().is_some_and(
+        |c| c.blocker_assignments.get(&attacker).is_some_and(Vec::is_empty)
+            && c.blocked_attackers.contains(&attacker)));
+
+    let p1_life = state.get_player(P1).life;
+    combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, p1_life,
+        "a blocked attacker with no blockers left deals no damage at all");
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
+        "a creature removed from combat receives no combat damage either");
 }
 
 /// CR 510.5: a creature with plain first strike deals damage in the first
