@@ -55,6 +55,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | choices the engine must not make for a player | `auto_pick.rs`, `sacrifice_choice.rs` |
 | what the player is shown | `harness_display.rs` |
 | characteristics (the `state.rs` layer) | `characteristics_invariant.rs`, `characteristics_card_sweep.rs`, `card_data_invariants.rs`, `subtype.rs`, `keywords.rs`, `enchantments.rs` |
+| fuzzing reach (every card in a coverage deck) | `deck_coverage.rs` |
 
 **Is it "does this card do what its oracle text says"?**
 That is the exception. Those go in a `cards_*.rs` file, grouped by what the
