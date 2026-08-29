@@ -123,6 +123,19 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
             {
                 found.push("no legal actions and no prompt: the game is stuck".into());
             }
+            // Save/resume soundness: the state survives a serialization
+            // round-trip with nothing lost. Compared as JSON values, not
+            // bytes — HashMap-keyed fields serialize in per-instance order.
+            // (Strided: it serializes everything.)
+            if actions % 32 == 0 {
+                let v1 = serde_json::to_value(gs).expect("state serializes");
+                let reloaded: GameState =
+                    serde_json::from_value(v1.clone()).expect("save deserializes");
+                let v2 = serde_json::to_value(&reloaded).expect("reloaded state serializes");
+                if v1 != v2 {
+                    found.push("state does not survive a serialization round-trip".into());
+                }
+            }
             for msg in found {
                 violations.push(format!(
                     "seed {seed}, action {actions}, turn {}, step {:?}: {msg}",

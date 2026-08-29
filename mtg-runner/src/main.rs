@@ -224,6 +224,26 @@ fn main() {
                 extra.push("no legal actions and no prompt: the game is stuck".to_string());
             }
 
+            // Serialization round-trip: --save/--resume depend on a state
+            // surviving serialize → deserialize with nothing lost. Compared
+            // as JSON values, not bytes — HashMap-keyed fields serialize in
+            // per-instance order. Checked on a stride because it serializes
+            // the whole state.
+            if action_count % 8 == 0 {
+                match serde_json::to_value(game_state) {
+                    Ok(v1) => match serde_json::from_value::<GameState>(v1.clone()) {
+                        Ok(reloaded) => match serde_json::to_value(&reloaded) {
+                            Ok(v2) if v2 != v1 => extra.push(
+                                "state does not survive a serialization round-trip".to_string()),
+                            Ok(_) => {}
+                            Err(e) => extra.push(format!("reloaded state failed to serialize: {e}")),
+                        },
+                        Err(e) => extra.push(format!("state failed to deserialize from its own save: {e}")),
+                    },
+                    Err(e) => extra.push(format!("state failed to serialize: {e}")),
+                }
+            }
+
             let all: Vec<String> = violations.into_iter().chain(extra).collect();
             if !all.is_empty() {
                 eprintln!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
