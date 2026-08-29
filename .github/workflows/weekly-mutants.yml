@@ -1,0 +1,87 @@
+# Weekly mutation testing over the engine core (cargo-mutants).
+#
+# Measures test-suite strength: each mutant is a small deliberate bug, and a
+# mutant no test catches ("missed") marks behavior the suite does not
+# constrain. Per-card files (src/cards/isd/) are out of scope — they are
+# audited and acceptance-tested card by card — so the mutants target the
+# rules engine itself.
+#
+# Missed mutants are findings, not failures: shards stay green and publish
+# their outcome lists as artifacts (missed.txt is the survivors report).
+# A shard goes red only when cargo-mutants itself cannot run (e.g. the
+# unmutated baseline fails to build or test).
+name: weekly-mutants
+
+on:
+  schedule:
+    - cron: "0 8 * * 6"
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: Total shards (must match the matrix length)
+        default: "10"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: mutants-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install cargo-mutants
+        run: command -v cargo-mutants || cargo install cargo-mutants
+
+      - name: Run mutants shard
+        run: |
+          SHARDS="${{ inputs.shards || '10' }}"
+          set +e
+          ANTHROPIC_API_KEY=dummy cargo mutants -p mtg-engine \
+            -e isd \
+            --shard ${{ matrix.shard }}/"$SHARDS" \
+            --timeout 300 \
+            -- -p mtg-engine
+          status=$?
+          set -e
+          missed=$(wc -l < mutants.out/missed.txt 2>/dev/null || echo 0)
+          caught=$(wc -l < mutants.out/caught.txt 2>/dev/null || echo 0)
+          {
+            echo "### Mutants shard ${{ matrix.shard }}/$SHARDS"
+            echo "- caught: $caught"
+            echo "- missed (survivors): $missed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Exit 2 = missed mutants found: a finding, not a failure.
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+            exit "$status"
+          fi
+
+      - name: Upload outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: |
+            mutants.out/missed.txt
+            mutants.out/caught.txt
+            mutants.out/timeout.txt
+            mutants.out/unviable.txt
+            mutants.out/outcomes.json
+          if-no-files-found: ignore
+          retention-days: 30
