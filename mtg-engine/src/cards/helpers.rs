@@ -56,6 +56,12 @@ pub fn resolve_equip(
     registry: &CardRegistry,
 ) -> bool {
     let Some(Target::Object(creature_id)) = targets.first() else { return false };
+    // CR 701.3c: attaching does nothing if the object to attach is no longer
+    // on the battlefield — an Equipment destroyed in response to its own
+    // equip ability must not become "attached" from its graveyard.
+    if !state.get_object(equipment_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+        return false;
+    }
     let controller = controller_of(state, equipment_id);
     if !equip_target_is_legal(state, controller, &Target::Object(*creature_id), registry) {
         return false;

@@ -273,6 +273,34 @@ fn equip_does_not_attach_to_a_creature_that_left_in_response() {
         "nothing to attach to, so the Pike stays where it is");
 }
 
+/// CR 701.3c: attaching does nothing if the object to attach has left the
+/// battlefield. An Equipment destroyed in response to its own equip ability
+/// must not end up "attached" from the graveyard — coverage-deck fuzzing
+/// found Blazing Torch equipped from its grave after an Ancient Grudge.
+#[test]
+fn equip_does_not_attach_an_equipment_that_left_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let pike = named_permanent(&mut state, &reg, "Runechanter's Pike", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    let mut state = mtg_engine::engine::submit_action(&state, &Action::ActivateAbility {
+        object_id: pike, ability_index: 0, targets: vec![Target::Object(creature)],
+        tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+    }, &reg);
+
+    // The Equipment itself is destroyed with the equip ability on the stack.
+    state.move_object(pike, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let pike_obj = state.get_object(pike).unwrap();
+    assert_eq!(pike_obj.zone, Zone::Graveyard);
+    assert_eq!(pike_obj.attached_to, None,
+        "a dead Equipment attaches to nothing (CR 701.3c)");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Trepanation Blade
 // ══════════════════════════════════════════════════════════════════
