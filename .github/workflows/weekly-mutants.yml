@@ -109,8 +109,9 @@ jobs:
             "" \
             "**Repro**: re-run any listed mutant with" \
             '```' \
-            "cargo mutants -p mtg-engine -F '<substring of the mutant line>' -- -p mtg-engine" \
+            "cargo mutants -p mtg-engine -F 'PART-OF-MUTANT-LINE' -- -p mtg-engine" \
             '```' \
+            "where PART-OF-MUTANT-LINE is a distinctive substring of the mutant's line, e.g. \"token_dynamic_pt\"." \
             "" \
             "**Evidence** — survivors not on \`reports/mutants-accepted.txt\`:" \
             '```' \
