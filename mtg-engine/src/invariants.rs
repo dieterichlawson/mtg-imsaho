@@ -121,6 +121,45 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
         }
     }
 
+    // Event processing never runs ahead of the events that exist, and no
+    // battlefield stamp names a turn that hasn't happened.
+    if state.trigger_event_index > state.events.len() {
+        v.push(format!(
+            "trigger_event_index {} past the {} events that exist",
+            state.trigger_event_index, state.events.len()
+        ));
+    }
+    for obj in state.objects_in_id_order() {
+        if let Some(t) = obj.attacked_on_turn {
+            if t > state.turn_number {
+                v.push(format!("{} ({}) attacked on future turn {}", obj.id.0, obj.name, t));
+            }
+        }
+    }
+
+    // Nothing in this pool uses the command zone; an object landing there is
+    // a move to the wrong zone, not a mechanic.
+    for obj in state.objects_in_id_order() {
+        if obj.zone == Zone::Command {
+            v.push(format!("{} ({}) in the unused command zone", obj.id.0, obj.name));
+        }
+    }
+
+    // The attachment graph is acyclic: nothing attached to itself, and no
+    // Equipment/Aura ring where following `attached_to` never reaches a
+    // host that stands on its own.
+    for obj in state.objects_in_id_order() {
+        let mut seen = std::collections::HashSet::new();
+        let mut cur = obj.id;
+        while let Some(next) = state.get_object(cur).and_then(|o| o.attached_to) {
+            if !seen.insert(cur) {
+                v.push(format!("{} ({}) sits in an attachment cycle", obj.id.0, obj.name));
+                break;
+            }
+            cur = next;
+        }
+    }
+
     // Combat bookkeeping only ever names declared attackers. (Dead attackers
     // stay in the maps as snapshots; these are subset checks, not liveness
     // checks.)
@@ -175,6 +214,12 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
         if obj.attached_to.is_some() || obj.attached_to_player.is_some() {
             v.push(format!("{} ({}) still attached in {:?}", obj.id.0, obj.name, obj.zone));
         }
+        if !obj.counters.is_empty() {
+            v.push(format!("{} ({}) still has counters in {:?}", obj.id.0, obj.name, obj.zone));
+        }
+        if obj.regeneration_shields != 0 {
+            v.push(format!("{} ({}) keeps a regeneration shield in {:?}", obj.id.0, obj.name, obj.zone));
+        }
     }
 
     // CR 704.5a/b/c: loss conditions have been applied.
@@ -224,6 +269,90 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
                 "{} ({}) alive with {} damage on toughness {}",
                 obj.id.0, obj.name, obj.damage_marked, toughness
             ));
+        }
+    }
+
+    // Combat state exists only during the steps that use it: it is created
+    // when attackers are declared and cleared as the end-of-combat step
+    // begins.
+    if state.combat.is_some()
+        && !matches!(state.step,
+            crate::types::Step::DeclareAttackers
+            | crate::types::Step::DeclareBlockers
+            | crate::types::Step::CombatDamage)
+    {
+        v.push(format!("combat state present in step {:?}", state.step));
+    }
+
+    // CR 508.1a / 506.4d: an attacker still on the battlefield is controlled
+    // by the active player — a creature whose controller changed left combat
+    // the moment it changed hands. The same for a live blocker and the
+    // defending player of the attack it blocks.
+    if let Some(combat) = &state.combat {
+        for (&attacker, &defender) in &combat.attackers {
+            if let Some(o) = state.get_object(attacker) {
+                if o.zone == Zone::Battlefield && o.controller != state.active_player {
+                    v.push(format!(
+                        "attacker {} ({}) is controlled by p{}, not the active player",
+                        attacker.0, o.name, o.controller.0
+                    ));
+                }
+            }
+            for &blocker in combat.blocker_assignments.get(&attacker).into_iter().flatten() {
+                if let Some(b) = state.get_object(blocker) {
+                    if b.zone == Zone::Battlefield && b.controller != defender {
+                        v.push(format!(
+                            "blocker {} ({}) is controlled by p{}, not the defending player p{}",
+                            blocker.0, b.name, b.controller.0, defender.0
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // CR 603.3b: every triggered ability that has been collected is on the
+    // stack (or waiting on a choice) before any player holds priority.
+    if state.awaiting_action.is_none() && state.priority_player.is_some() {
+        let waiting = state.pending_triggers.len()
+            + state.pending_trigger_pushes_ap.len()
+            + state.pending_trigger_pushes_nap.len();
+        if waiting != 0 {
+            v.push(format!(
+                "{waiting} collected trigger(s) still queued while a player holds priority"
+            ));
+        }
+    }
+
+    // A battlefield creature has a power and a toughness — state-based
+    // actions compare against them, so a creature with neither is one the
+    // death rules cannot see.
+    for obj in state.objects_in_id_order() {
+        if obj.zone == Zone::Battlefield && state.is_creature(obj.id, registry) {
+            if state.effective_power(obj.id, registry).is_none()
+                || state.effective_toughness(obj.id, registry).is_none()
+            {
+                v.push(format!("creature {} ({}) has no power/toughness", obj.id.0, obj.name));
+            }
+        }
+    }
+
+    // Only Auras and Equipment attach to objects, and only planeswalkers
+    // carry loyalty.
+    for obj in state.objects_in_id_order() {
+        if obj.zone != Zone::Battlefield {
+            continue;
+        }
+        if obj.attached_to.is_some()
+            && !state.has_subtype(obj.id, "Aura", registry)
+            && !state.has_subtype(obj.id, "Equipment", registry)
+        {
+            v.push(format!("{} ({}) attached to an object but is no Aura or Equipment", obj.id.0, obj.name));
+        }
+        if obj.counters.get(&crate::types::CounterType::Loyalty).copied().unwrap_or(0) > 0
+            && !state.has_card_type(obj.id, crate::types::CardType::Planeswalker, registry)
+        {
+            v.push(format!("{} ({}) holds loyalty counters but is no planeswalker", obj.id.0, obj.name));
         }
     }
 
