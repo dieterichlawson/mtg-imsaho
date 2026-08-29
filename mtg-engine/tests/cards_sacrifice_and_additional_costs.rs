@@ -1331,3 +1331,77 @@ fn divine_reckonings_choice_list_is_in_a_stable_order() {
     assert_eq!(offered, mine, "offered in ascending object-id order");
     assert!(!offered.contains(&theirs), "and only creatures this player controls");
 }
+
+/// The GAME LOOP delivers the exile-cost prompt to the player. A structured
+/// prompt (ChooseExileFromGraveyard, ChooseXFunding) enumerates no flat
+/// actions, and the loop's "no legal actions" fallback used to skip the
+/// callback entirely: the cast sat stranded mid-payment and the unanswered
+/// choice poisoned every later spell's cleanup — resolved cards piled up
+/// orphaned in the stack zone (coverage fuzzing, ug vs wb, seed 550).
+#[test]
+fn the_game_loop_delivers_the_exile_cost_prompt() {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::state::ResolutionChoiceKind;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gy_creature = ready_creature(&mut state, P0, 4, 4);
+    state.move_object(gy_creature, Zone::Graveyard, &reg);
+    let target = ready_creature(&mut state, P1, 5, 5);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    // Libraries so nobody decks out while the loop runs.
+    let land_id = reg.get_id_by_name("Swamp").unwrap();
+    for p in 0..2u8 {
+        let mut lib = Vec::new();
+        for _ in 0..10 {
+            let id = state.create_object(land_id, mtg_engine::ids::PlayerId(p), Zone::Library, None, None);
+            lib.push(id);
+        }
+        state.players[p as usize].library_order = lib;
+    }
+
+    let mut prompt_seen = false;
+    engine::run_game_loop(&mut state, &reg, |gs, _player, legal| {
+        // Answer the structured exile-cost prompt — reaching here IS the fix.
+        if let Some(ResolutionChoiceKind::ChooseExileFromGraveyard { options, min, .. }) =
+            legal.resolution_prompt.as_ref()
+        {
+            prompt_seen = true;
+            let chosen: Vec<_> = options.iter().take(*min).copied().collect();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
+        }
+        if gs.turn_number >= 2 {
+            return Action::Concede;
+        }
+        if let Some(cast) = legal.actions.iter().find(|a|
+            matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))
+        {
+            if let Action::CastSpell { .. } = cast {
+                let mut cast = cast.clone();
+                if let Action::CastSpell { ref mut targets, .. } = cast {
+                    *targets = vec![Target::Object(target)];
+                }
+                return cast;
+            }
+        }
+        if let Some(prompt) = &legal.combat_prompt {
+            return match prompt {
+                mtg_engine::actions::CombatPrompt::ChooseAttackers { .. } =>
+                    Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] },
+                mtg_engine::actions::CombatPrompt::ChooseBlockers { .. } =>
+                    Action::DeclareBlockers { assignments: vec![] },
+            };
+        }
+        Action::PassPriority
+    });
+
+    assert!(prompt_seen, "the loop must hand the exile-cost prompt to the player");
+    assert_eq!(state.get_object(gy_creature).unwrap().zone, Zone::Exile,
+        "the cost was paid through the loop");
+    assert_eq!(state.get_object(spell).unwrap().zone, Zone::Graveyard,
+        "and the spell finished resolving instead of stranding on the stack");
+}

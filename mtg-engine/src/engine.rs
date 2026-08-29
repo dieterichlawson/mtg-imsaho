@@ -1092,7 +1092,19 @@ fn run_game_loop_inner<F>(
         };
 
         let legal = legal_actions(state, registry);
-        if legal.actions.is_empty() && legal.combat_prompt.is_none() {
+        // A structured prompt (X-funding, exile-from-graveyard costs)
+        // enumerates no flat actions — the player builds the response from
+        // `resolution_prompt` directly. Skipping the callback for "no legal
+        // actions" walked away from every such prompt: the cast was left
+        // stranded mid-payment, the unanswered choice stood for the rest of
+        // the game, and every later spell's cleanup saw "a choice is
+        // pending" and left the resolved card orphaned in the stack zone
+        // (found by seeded fuzzing: Corpse Lunge's exile cost, ug vs wb
+        // coverage decks, seed 550).
+        if legal.actions.is_empty()
+            && legal.combat_prompt.is_none()
+            && legal.resolution_prompt.is_none()
+        {
             advance_or_resolve(state, registry);
             continue;
         }

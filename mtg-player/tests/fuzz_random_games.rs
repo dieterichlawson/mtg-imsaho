@@ -60,6 +60,9 @@ fn deck_b() -> Decklist {
         ("Moan of the Unhallowed", 2),
         ("Victim of Night", 2),
         ("Forbidden Alchemy", 2),
+        // A structured (non-enumerated) cost prompt, so the game loop's
+        // prompt delivery stays exercised by the in-suite battery.
+        ("Corpse Lunge", 2),
     ])
 }
 
