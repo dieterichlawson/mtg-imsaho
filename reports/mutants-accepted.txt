@@ -8,6 +8,7 @@ mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedB
 mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedByTargetPlayer in is_target_legal
 mtg-engine/src/stack.rs: replace && with || in is_target_legal
 mtg-engine/src/stack.rs: replace != with == in is_target_legal
+mtg-engine/src/stack.rs: replace == with != in is_target_legal
 mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::Battlefield with true in attackers_declared
 mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::Battlefield with true in blockers_declared
 mtg-engine/src/combat.rs: replace > with >= in declare_blockers_with_registry

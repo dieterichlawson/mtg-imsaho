@@ -17,22 +17,26 @@ does real work here), **26 missed**. Catch rate on viable mutants: **88%**.
 
 ## The 26 survivors, triaged
 
-**Killed by new tests (16):**
+**Killed by new tests:**
 
 | Survivors | Gap | New test |
 |---|---|---|
 | `eligible_blockers` 3× `&&`→`\|\|` | no test asserted each clause of "untapped creature of the defender" separately | `combat_rules.rs::eligible_blockers_is_untapped_creatures_of_the_defender_only` |
-| `deal_damage_step` first-strike conditions (296, 306, 308, 345) | the two-step damage flow was tested for attackers, never for a first-strike *blocker*, a plain first-striker's once-only, or double strike's twice | `a_first_strike_blocker_kills_before_the_attacker_strikes_back`, `a_plain_first_striker_deals_its_damage_exactly_once`, `a_double_striker_deals_damage_in_both_steps` |
+| `deal_damage_step` 306 first-strike gate | the two-step damage flow was tested for attackers, never for a plain first-striker's once-only or double strike's twice | `a_plain_first_striker_deals_its_damage_exactly_once`, `a_double_striker_deals_damage_in_both_steps` |
+| `deal_damage_step` 345 blocker first-strike gate | the first-strike-blocker test passed *vacuously* under this mutant — the dead blocker's `damage_marked` clears on the zone change, so asserting it zero proved nothing (caught by the verification run below) | `a_first_strike_blocker_kills_before_the_attacker_strikes_back`, strengthened to assert the blocker survived |
+| `deal_damage_step` 308 blocked-ness check | nothing pinned CR 509.2's "blocked forever": a blocker *removed from combat* (regeneration, control change) empties the assignment while the attacker stays blocked; a blocker that merely dies stays in the snapshot, so the obvious repro never reaches this branch (caught by the verification run below) | `combat_rules.rs::a_blocked_attacker_whose_blocker_left_combat_hits_nobody` |
 | `deal_damage_step` 371 `-`→`+` | lethal-damage calculation ignored damage already marked | `lethal_assignment_counts_damage_already_marked` |
 | `walker_still_there` guards ×2 (312, 395) | no test for trample overflow at a *departed* planeswalker (CR 510.1c: it lands nowhere, not on the player) | `planeswalker_combat.rs::trample_overflow_lands_nowhere_when_the_walker_left` (+ blocked variant) |
 | `sba.rs` 213 `&&`→`\|\|` | a state trigger already on the stack could re-trigger unpinned | `state_based_actions.rs::a_state_trigger_on_the_stack_does_not_retrigger` |
-| `engine/actions/combat.rs` 31 `==`→`!=` | forced-attacker dedup untested with a mix of declared and undeclared forced creatures | `combat_rules.rs::each_forced_attacker_is_dragged_in_independently` |
-| `triggers/collect/combat.rs` 54 `==`→`!=` | no negative test that an Equipment on a *bystander* stays quiet | `cards_equipment_and_artifacts.rs::an_equipment_on_a_bystander_does_not_trigger_for_someone_elses_attack` |
+| `engine/actions/combat.rs` 31 `==`→`!=` | the walker-attack dedup ("drop an entry whose attacker already attacks the player") only diverges when one declaration mixes attacks on the player and on a walker; the forced-attacker test never touched this filter (caught by the verification run below) | `planeswalker_combat.rs::attacking_a_walker_alongside_attacks_on_the_player` |
+| `triggers/collect/combat.rs` 54 `==`→`!=` | the equipment-bystander test asserts a *negative*, which an inverted zone filter also satisfies — and no Innistrad card declares `AnyCreatureAttacks`, so the watcher scan had no positive coverage at all (caught by the verification run below) | `trigger_dispatch.rs::an_attack_watcher_hears_the_attack_from_the_battlefield_only` (registers a test-only watcher card) |
 
-**Accepted, with reasons (10):**
+**Accepted, with reasons (16 mutants, 13 normalized lines in `reports/mutants-accepted.txt`):**
 
-- `stack.rs` graveyard re-check arms (8 mutants — deleted arms and
-  operator flips in `is_target_legal`'s graveyard requirements). These
+- `stack.rs` graveyard re-check arms (10 mutants — deleted arms and
+  operator flips in `is_target_legal`'s graveyard requirements, including
+  the zone-table `==`→`!=` at 67, whose in-code comment already documents
+  the masking). These
   clauses re-check properties of a graveyard card that are *immutable* —
   its owner, its printed creature-ness, its printed subtype — so a target
   the engine legally offered can never become illegal on those axes, and
@@ -68,8 +72,26 @@ does real work here), **26 missed**. Catch rate on viable mutants: **88%**.
 
 ## Verification
 
-A re-run of the same 320 mutants after the nine new tests was in progress
-when the session's container restarted; partially observed results matched
-expectations (survivors seen up to that point were all from the accepted
-list). The re-run is repeated to completion and this section updated with
-the final count — the target state is exactly the 10 accepted survivors.
+Re-running the same 320 mutants after the nine new tests: **203 caught,
+12 timed out, 85 unviable, 19 missed** (319 recorded — the final mutant's
+log write hit a full disk; the unrecorded one, `stack.rs:67` `==`→`!=`,
+is in the accepted graveyard-arm family above). Some baseline "unviable"
+outcomes shifted to "caught" between runs — build-order sensitivity in
+cargo-mutants, not a suite change.
+
+The instrument audited itself: four of the baseline's claimed kills were
+false, and the 19 survivors exposed them. Two tests passed vacuously under
+their mutants (345: cleared `damage_marked` after a zone change; 54: a
+negative assertion an inverted filter also satisfies), one targeted the
+wrong condition (31), and one gap needed a path no test drove (308:
+removal from combat vs. death). All four are re-fixed with tests verified
+to FAIL under manual application of their exact mutants — a check worth
+keeping: a mutation-motivated test isn't done until it has been watched
+killing its mutant.
+
+Final state: the 15 remaining recorded survivors (plus the one unrecorded)
+are exactly the accepted list. One caveat on the accepted-list format: the
+workflow strips line:col, so an accepted line like "`\|\|`→`&&` in
+deal_damage_step" masks *any* such mutant in that function (296 accepted,
+but a regression re-surfacing 345 would be masked too). The price of
+edit-stable comparisons; the per-line reasons above are the record.
