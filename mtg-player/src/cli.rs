@@ -1191,6 +1191,19 @@ impl CliPlayer {
             .or_else(|| view.stack.iter()
                 .find(|s| s.object_id == id)
                 .map(|s| s.name.clone()))
+            // Cards a choice can name live beyond the battlefield/hand/stack:
+            // the library (search effects), graveyards (flashback, reanimation),
+            // and the revealed-names map the view builds for pending choices.
+            // Falling through to the raw obj#NN id made the look-at-top-N
+            // picker unreadable (issue #38).
+            .or_else(|| view.your_library_cards.iter()
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
+            .or_else(|| view.graveyards.iter()
+                .flat_map(|(_, cards)| cards.iter())
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
+            .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
     }
 
