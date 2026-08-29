@@ -320,3 +320,95 @@ fn ghost_quarter_shuffles_the_library_after_the_search() {
         "twenty seeds all left the library in the same order, so it is not \
          being shuffled: {:?}", orders.first());
 }
+
+// ── The auto-tap planner's contract ─────────────────────────────────────
+//
+// The full mutation sweep (issues #26–#34) left arithmetic inside
+// `compute_autotap`/`try_auto_pay` unpinned. The planner's contract, not
+// its heuristics: a plan pays the cost with the right colors, taps no
+// more sources than the cost has pips, spends floating mana before
+// tapping, and an unpayable cost is simply not offered.
+
+/// {G} with three Forests taps exactly one — a plan never burns extra
+/// sources.
+#[test]
+fn the_autotap_plan_taps_no_more_than_the_cost_needs() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for _ in 0..3 {
+        named_permanent(&mut state, &reg, "Forest", P0);
+    }
+    spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|c| c.name == "Avacyn's Pilgrim")
+        .expect("a {G} creature with three Forests up is castable");
+    assert_eq!(cs.tap_plan.len(), 1, "one pip, one tap: {:?}", cs.tap_plan);
+}
+
+/// {2}{U} with exactly Island+Swamp+Plains routes the Island to the {U}
+/// pip and fills generic from the rest.
+#[test]
+fn the_autotap_plan_routes_colored_pips_to_matching_sources() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let island = named_permanent(&mut state, &reg, "Island", P0);
+    named_permanent(&mut state, &reg, "Swamp", P0);
+    named_permanent(&mut state, &reg, "Plains", P0);
+    spell_in_hand(&mut state, &reg, "Forbidden Alchemy", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|c| c.name == "Forbidden Alchemy")
+        .expect("{2}{U} is payable from Island+Swamp+Plains");
+    assert_eq!(cs.tap_plan.len(), 3, "three pips, three taps");
+    assert!(cs.tap_plan.iter().any(|(id, _)| *id == island),
+        "the only blue source must be in the plan");
+}
+
+/// A cost the battlefield cannot pay is not offered at all.
+#[test]
+fn an_unpayable_cost_is_not_offered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Plains", P0);
+    spell_in_hand(&mut state, &reg, "Midnight Haunting", P0); // {1}{W}
+
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.castable_spells.iter().any(|c| c.name == "Midnight Haunting"),
+        "{{1}}{{W}} with a single Plains is short one mana");
+}
+
+/// Floating mana is spent before anything is tapped.
+#[test]
+fn floating_mana_is_spent_before_tapping() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    add_mana(&mut state, P0, &[(ManaType::Green, 1)]);
+    spell_in_hand(&mut state, &reg, "Avacyn's Pilgrim", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|c| c.name == "Avacyn's Pilgrim")
+        .expect("castable from the floating {G} alone");
+    assert!(cs.tap_plan.is_empty(),
+        "the floating {{G}} pays the whole cost; the Forest stays untapped: {:?}",
+        cs.tap_plan);
+}
+
+/// One floating {W} is one {W}: it cannot pay both pips of {1}{W}{W}.
+/// (Pins the pool-deduction bookkeeping inside the planner — an inflated
+/// simulated pool would offer the cast anyway.)
+#[test]
+fn floating_mana_is_not_double_counted_across_pips() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    spell_in_hand(&mut state, &reg, "Chapel Geist", P0); // {1}{W}{W}
+
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.castable_spells.iter().any(|c| c.name == "Chapel Geist"),
+        "one floating {{W}} and no lands cannot pay {{1}}{{W}}{{W}}");
+}
