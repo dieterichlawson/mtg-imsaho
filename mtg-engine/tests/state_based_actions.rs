@@ -660,3 +660,34 @@ fn a_state_trigger_on_the_stack_does_not_retrigger() {
     assert_eq!(state.pending_triggers.len(), 1,
         "and does not fire again while it is pending (CR 603.8)");
 }
+
+/// CR 704.3 + 704.5g: state-based actions repeat until none apply, and each
+/// check reads marked damage against the creature's CURRENT toughness. So
+/// when an anthem source dies of combat damage, a creature it was boosting
+/// that had non-lethal damage marked shrinks and dies on the repeated check
+/// — the classic Goblin King ruling. (Playtest issue #41 expected the
+/// opposite; this test pins the correct behavior.)
+#[test]
+fn a_creature_shrunk_by_its_anthems_death_dies_of_its_marked_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    // Mayor of Avabruck: "Other Human creatures you control get +1/+1."
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(2),
+        "1/1 Human boosted to 2/2 by the Mayor");
+
+    // Each has 1 damage marked: lethal for the 1/1 Mayor, not (yet) for the
+    // boosted 2/2 Pilgrim.
+    state.get_object_mut(mayor).unwrap().damage_marked = 1;
+    state.get_object_mut(pilgrim).unwrap().damage_marked = 1;
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(mayor).unwrap().zone, Zone::Graveyard,
+        "the Mayor dies of its lethal damage on the first check");
+    assert_eq!(state.get_object(pilgrim).unwrap().zone, Zone::Graveyard,
+        "the repeated check finds the now-1/1 Pilgrim with 1 damage marked \
+         and destroys it too (CR 704.3: checks repeat; damage stays marked)");
+}

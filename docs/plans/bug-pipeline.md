@@ -8,7 +8,7 @@ the fixer never hunts.
 
 | Phase | What it runs | Label | Filed by |
 |---|---|---|---|
-| Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) + the reporter routine's local campaign | `phase:fuzz` | the workflow (per failing seed) and the "Nightly fuzz reporter" routine |
+| Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) | `phase:fuzz` | the workflow (per failing seed) |
 | Weekly mutants | `weekly-mutants` workflow (~2,365 engine-core mutants) | `phase:mutants` | the workflow (new survivors beyond `reports/mutants-accepted.txt`) |
 | Nightly playtest | "Nightly playtest crew" routine (LLM self-play via the CLI) | `phase:playtest` | the routine |
 

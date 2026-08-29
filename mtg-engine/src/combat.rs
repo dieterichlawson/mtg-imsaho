@@ -83,12 +83,23 @@ pub fn declare_blockers_with_registry(
     // that are actually attacking may be blocked (CR 509.1a). In a two-player
     // game the defender is the non-active player.
     let defender = state.opponent(state.active_player);
-    let valid: Vec<_> = assignments.iter()
-        .filter(|&&(_, attacker)| state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker)))
-        .filter(|&&(blocker, _)| state.get_object(blocker).is_some_and(|o| o.controller == defender))
-        .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
-        .copied()
-        .collect();
+    let mut valid: Vec<(ObjectId, ObjectId)> = Vec::new();
+    for &(blocker, attacker) in assignments {
+        let is_attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker));
+        let defenders_creature = state.get_object(blocker).is_some_and(|o| o.controller == defender);
+        if is_attacking && defenders_creature && can_block_attacker(state, blocker, attacker, registry) {
+            valid.push((blocker, attacker));
+        } else {
+            // A submitted pair the rules refuse (CR 509.1) is dropped — but
+            // never silently: a block that vanishes without a trace cost
+            // real games before the log said anything (issue #40). The
+            // prompt's `legal_blocks` is the up-front source of truth; this
+            // line is the audit trail for anything that slips past it.
+            state.log(crate::state::LogLevel::Info, format!(
+                "ignored illegal block: {} can't block {}",
+                state.obj_name(blocker), state.obj_name(attacker)));
+        }
+    }
 
     // Minimum blocker enforcement: for attackers with menace or MinimumBlockers
     // effects, verify they have enough blockers. If not, remove the block

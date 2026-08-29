@@ -183,7 +183,13 @@ fn main() {
     let save_file_ref = save_file.clone();
     let player_names_ref = player_names.clone();
     // Always save to a hot-reload temp file so 'rr' can work without --save.
-    let hot_reload_path = "/tmp/mtg-hot-reload.json".to_string();
+    // The path is per-process: a shared fixed path let concurrent runners
+    // clobber each other's snapshots, silently swapping a hot-reloaded
+    // player into a different game (playtest issue #37).
+    let hot_reload_path = std::env::temp_dir()
+        .join(format!("mtg-hot-reload-{}.json", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
     let hot_reload_ref = hot_reload_path.clone();
 
     // Per-owner count of non-token objects, captured at the first decision

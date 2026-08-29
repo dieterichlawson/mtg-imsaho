@@ -1191,6 +1191,19 @@ impl CliPlayer {
             .or_else(|| view.stack.iter()
                 .find(|s| s.object_id == id)
                 .map(|s| s.name.clone()))
+            // Cards a choice can name live beyond the battlefield/hand/stack:
+            // the library (search effects), graveyards (flashback, reanimation),
+            // and the revealed-names map the view builds for pending choices.
+            // Falling through to the raw obj#NN id made the look-at-top-N
+            // picker unreadable (issue #38).
+            .or_else(|| view.your_library_cards.iter()
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
+            .or_else(|| view.graveyards.iter()
+                .flat_map(|(_, cards)| cards.iter())
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
+            .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
     }
 
@@ -1299,11 +1312,49 @@ impl CliPlayer {
     // ── Input ──────────────────────────────────────────────────────
 
     fn read_line(prompt: &str) -> String {
+        // A cooked-mode read while the terminal is still raw silently
+        // swallows keystrokes ('\r' never ends the line, nothing echoes) —
+        // the concede prompt ate three keypresses this way (issue #42).
+        // Force cooked mode for the read; callers re-enable raw themselves.
+        let _ = terminal::disable_raw_mode();
         print!("{prompt}");
         io::stdout().flush().unwrap();
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         input.trim().to_string()
+    }
+
+    /// A y/n confirmation that answers on a single keypress: `y` confirms,
+    /// `n` or Esc declines, anything else visibly re-prompts. Runs in raw
+    /// mode with explicit echo, so a stray keystroke can never sit
+    /// invisibly in a line buffer (issue #42).
+    fn confirm_yn(prompt: &str) -> bool {
+        let mut out = stdout();
+        let _ = execute!(out, Print(prompt));
+        let _ = out.flush();
+        let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
+        let _ = terminal::enable_raw_mode();
+        let answer = loop {
+            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+                match code {
+                    KeyCode::Char('y' | 'Y') => { let _ = execute!(stdout(), Print("y")); break true; }
+                    KeyCode::Char('n' | 'N') | KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = terminal::disable_raw_mode();
+                        std::process::exit(0);
+                    }
+                    _ => {
+                        let _ = execute!(stdout(), Print("\r\n  Please answer y or n. "), Print(prompt.trim_start()));
+                        let _ = stdout().flush();
+                    }
+                }
+            }
+        };
+        if !was_raw {
+            let _ = terminal::disable_raw_mode();
+        }
+        let _ = execute!(stdout(), Print("\r\n"));
+        answer
     }
 
     /// Read a line of input, but detect '/' immediately (without Enter)
@@ -1731,7 +1782,10 @@ impl CliPlayer {
         let _ = out.flush();
 
         loop {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            // Clear the row before re-prompting: a rejected entry's characters
+            // otherwise stay on screen and visually merge with the next
+            // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Attack (numbers/all/none)> ");
 
             if input == "none" || input == "n" {
@@ -1787,7 +1841,7 @@ impl CliPlayer {
     }
 
     fn choose_blockers(view: &GameView, prompt: &CombatPrompt) -> Action {
-        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, .. } = prompt else {
+        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, legal_blocks } = prompt else {
             unreachable!()
         };
 
@@ -1819,15 +1873,31 @@ impl CliPlayer {
             Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
         r += 1;
         for (i, &id) in eligible_blockers.iter().enumerate() {
+            // Which attackers this creature may legally block (CR 509.1b —
+            // evasion like flying is per-pairing, so say it up front).
+            let legal: Vec<String> = legal_blocks.get(&id)
+                .map(|atts| attacker_ids.iter().enumerate()
+                    .filter(|(_, a)| atts.contains(a))
+                    .map(|(ai, _)| ai.to_string())
+                    .collect())
+                .unwrap_or_default();
+            let note = if legal.len() == attacker_ids.len() {
+                String::new()
+            } else if legal.is_empty() {
+                " (can block: none)".to_string()
+            } else {
+                format!(" (can block: {})", legal.join(" "))
+            };
             let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(format!("  {}: {}", i, Self::perm_name(view, id))));
+                Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
             r += 1;
         }
         let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
         loop {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            // Same stale-row clearing as the attack prompt (issue #35).
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Block (blocker:attacker / enter=none)> ");
 
             if input.is_empty() {
@@ -1835,22 +1905,38 @@ impl CliPlayer {
             }
 
             let mut assignments = Vec::new();
-            let mut valid = true;
+            let mut error: Option<String> = None;
             for pair in input.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
                 let parts: Vec<&str> = pair.split(':').collect();
-                if parts.len() != 2 { valid = false; break; }
+                if parts.len() != 2 {
+                    error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
+                    break;
+                }
                 match (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
                     (Ok(b), Ok(a)) if b < eligible_blockers.len() && a < attacker_ids.len() => {
-                        assignments.push((eligible_blockers[b], attacker_ids[a]));
+                        let (blocker, attacker) = (eligible_blockers[b], attacker_ids[a]);
+                        // CR 509.1b: refuse an illegal pairing here, loudly —
+                        // the engine would drop it, and a silently vanished
+                        // block cost real games (issue #40).
+                        if !legal_blocks.get(&blocker).is_some_and(|atts| atts.contains(&attacker)) {
+                            error = Some(format!(
+                                "{} can't legally block {} (evasion or a blocking restriction).",
+                                Self::perm_name(view, blocker), Self::perm_name(view, attacker)));
+                            break;
+                        }
+                        assignments.push((blocker, attacker));
                     }
-                    _ => { valid = false; break; }
+                    _ => {
+                        error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
+                        break;
+                    }
                 }
             }
 
-            if valid {
-                return Action::DeclareBlockers { assignments };
+            match error {
+                None => return Action::DeclareBlockers { assignments },
+                Some(msg) => println!("  {msg}"),
             }
-            println!("  Invalid. Use '0->0 1->1' format.");
         }
     }
 }
@@ -2433,8 +2519,7 @@ impl Player for CliPlayer {
                             let action = &legal_actions[*action_idx];
                             if matches!(action, Action::Concede) {
                                 let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
-                                let confirm = Self::read_line("  Are you sure you want to concede? (y/n)> ");
-                                if confirm.to_lowercase() != "y" {
+                                if !Self::confirm_yn("  Are you sure you want to concede? (y/n)> ") {
                                     continue;
                                 }
                             }

@@ -6,13 +6,13 @@
 # audited and acceptance-tested card by card — so the mutants target the
 # rules engine itself.
 #
-# Missed mutants are findings, not failures: shards stay green and publish
-# their outcome lists as artifacts (missed.txt is the survivors report).
-# Survivors not on the accepted-equivalent list
-# (reports/mutants-accepted.txt) are filed as a GitHub issue labeled
-# phase:mutants, per docs/plans/bug-pipeline.md.
-# A shard goes red only when cargo-mutants itself cannot run (e.g. the
-# unmutated baseline fails to build or test).
+# Color semantics: GREEN means the instrument ran — missed mutants are
+# findings, not failures (survivors beyond reports/mutants-accepted.txt are
+# filed as a phase:mutants GitHub issue per docs/plans/bug-pipeline.md, and
+# every shard publishes its outcome lists as artifacts). Timed-out mutants
+# are livelocks the suite effectively caught by hanging them — also not
+# failures. A shard goes RED only when cargo-mutants itself cannot run
+# (e.g. the unmutated baseline fails to build or test).
 name: weekly-mutants
 
 on:
@@ -66,13 +66,18 @@ jobs:
           set -e
           missed=$(wc -l < mutants.out/missed.txt 2>/dev/null || echo 0)
           caught=$(wc -l < mutants.out/caught.txt 2>/dev/null || echo 0)
+          timeouts=$(wc -l < mutants.out/timeout.txt 2>/dev/null || echo 0)
+          unviable=$(wc -l < mutants.out/unviable.txt 2>/dev/null || echo 0)
           {
             echo "### Mutants shard ${{ matrix.shard }}/$SHARDS"
-            echo "- caught: $caught"
+            echo "- caught: $caught (+ $timeouts livelocks caught by timeout)"
             echo "- missed (survivors): $missed"
+            echo "- unviable (didn't compile): $unviable"
           } >> "$GITHUB_STEP_SUMMARY"
-          # Exit 2 = missed mutants found: a finding, not a failure.
-          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+          # Exit 2 = missed mutants, exit 3 = timeouts: both are findings,
+          # not failures (a timeout is a livelock mutant the suite caught by
+          # hanging it). Anything else is cargo-mutants itself breaking.
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ] && [ "$status" -ne 3 ]; then
             exit "$status"
           fi
 
@@ -109,8 +114,9 @@ jobs:
             "" \
             "**Repro**: re-run any listed mutant with" \
             '```' \
-            "cargo mutants -p mtg-engine -F '<substring of the mutant line>' -- -p mtg-engine" \
+            "cargo mutants -p mtg-engine -F 'PART-OF-MUTANT-LINE' -- -p mtg-engine" \
             '```' \
+            "where PART-OF-MUTANT-LINE is a distinctive substring of the mutant's line, e.g. \"token_dynamic_pt\"." \
             "" \
             "**Evidence** — survivors not on \`reports/mutants-accepted.txt\`:" \
             '```' \
