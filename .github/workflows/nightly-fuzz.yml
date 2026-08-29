@@ -2,10 +2,14 @@
 # random-vs-random games over the coverage decks (scripts/fuzz.sh).
 #
 # Seeds derive from the day number so every night explores new games, and
-# each shard gets a disjoint range. A failing game fails its shard, uploads
-# the replayable failure logs as an artifact, and files one GitHub issue per
-# failing seed (labeled phase:fuzz, deduped on pair+seed, capped per shard)
-# per docs/plans/bug-pipeline.md.
+# each shard gets a disjoint range.
+#
+# Color semantics: GREEN means the instrument ran — findings, if any, were
+# filed as GitHub issues (one per failing seed, labeled phase:fuzz, deduped
+# on pair+seed, capped per shard, per docs/plans/bug-pipeline.md) with the
+# failure logs uploaded as artifacts and counts in the step summary. RED
+# means the instrument itself broke (build failure, script error) and
+# nothing meaningful ran.
 name: nightly-fuzz
 
 on:
@@ -42,6 +46,9 @@ jobs:
             target
           key: fuzz-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
+      - name: Build runner
+        run: cargo build --release -p mtg-runner
+
       - name: Run campaign shard
         run: |
           GAMES="${{ inputs.games_per_pair || '200' }}"
@@ -50,10 +57,24 @@ jobs:
           DAY=$(( $(date +%s) / 86400 ))
           START=$(( DAY * 1000000 + ${{ matrix.shard }} * 25000 + 1 ))
           echo "shard ${{ matrix.shard }}: $GAMES games/pair starting at seed $START"
+          set +e
           FUZZ_JOBS=$(nproc) ./scripts/fuzz.sh "$GAMES" "$START"
+          status=$?
+          set -e
+          failures=$(find logs/fuzz-* -name '*.txt' 2>/dev/null | wc -l)
+          {
+            echo "### Fuzz shard ${{ matrix.shard }}"
+            echo "- failing games: $failures"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Failing games are findings, not failures — the next step files
+          # them as issues. Red is reserved for the script itself breaking
+          # (nonzero exit with no failure logs to show for it).
+          if [ "$status" -ne 0 ] && [ "$failures" -eq 0 ]; then
+            exit "$status"
+          fi
 
       - name: File issues for failing seeds
-        if: failure()
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -63,7 +84,7 @@ jobs:
           # a systemic breakage doesn't flood the tracker.
           filed=0
           for log in logs/fuzz-*/*.txt; do
-            [ -e "$log" ] || continue
+            [ -e "$log" ] || { echo "no failing games — nothing to file"; break; }
             base=$(basename "$log" .txt)
             case "$base" in *-replay-*) continue ;; esac
             [ "$filed" -ge 5 ] && { echo "cap reached; remaining failures are in the artifact"; break; }
@@ -96,7 +117,7 @@ jobs:
           echo "filed $filed issues"
 
       - name: Upload failure logs
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-failures-shard-${{ matrix.shard }}
