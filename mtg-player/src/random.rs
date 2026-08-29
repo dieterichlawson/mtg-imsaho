@@ -1,4 +1,5 @@
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use mtg_engine::actions::{Action, CombatPrompt};
 use mtg_engine::view::GameView;
 
@@ -7,12 +8,20 @@ use crate::Player;
 /// A player that picks randomly from legal actions.
 pub struct RandomPlayer {
     name: String,
+    rng: StdRng,
 }
 
 impl RandomPlayer {
     #[must_use]
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_string() }
+        Self { name: name.to_string(), rng: StdRng::from_entropy() }
+    }
+
+    /// A player whose choices replay identically for the same seed. Pair with
+    /// `GameConfig::rng_seed` to make a whole game deterministic.
+    #[must_use]
+    pub fn with_seed(name: &str, seed: u64) -> Self {
+        Self { name: name.to_string(), rng: StdRng::seed_from_u64(seed) }
     }
 }
 
@@ -85,15 +94,15 @@ impl Player for RandomPlayer {
         if candidates.len() == 1 {
             return legal_actions[candidates[0]].clone();
         }
-        let mut rng = rand::thread_rng();
-        legal_actions[candidates[rng.gen_range(0..candidates.len())]].clone()
+        let pick = self.rng.gen_range(0..candidates.len());
+        legal_actions[candidates[pick]].clone()
     }
 }
 
 impl RandomPlayer {
     /// Choose a random combat action from a combat prompt.
     pub fn choose_combat(&mut self, prompt: &CombatPrompt) -> Action {
-        let mut rng = rand::thread_rng();
+        let rng = &mut self.rng;
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, defending_player, .. } => {
                 // Each eligible creature has a 50% chance of attacking.

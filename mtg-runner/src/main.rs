@@ -70,6 +70,16 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .cloned();
 
+    // --seed N makes the whole game deterministic: the engine's shuffles and
+    // the random players' picks all derive from it, so a failure replays.
+    let seed: Option<u64> = args.iter().position(|a| a == "--seed")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse().unwrap_or_else(|_| panic!("--seed takes a number, got '{s}'")));
+
+    // --check-invariants runs the structural GameState invariants at every
+    // decision point and exits nonzero on the first violation.
+    let check_invariants = args.iter().any(|a| a == "--check-invariants");
+
     let registry = CardRegistry::with_all_cards();
 
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
@@ -92,7 +102,10 @@ fn main() {
         let name2 = deck_display_name(deck2_spec);
 
         if !quiet {
-            println!("MTG Engine — {p1_spec} ({name1}) vs {p2_spec} ({name2})");
+            match seed {
+                Some(s) => println!("MTG Engine — {p1_spec} ({name1}) vs {p2_spec} ({name2}) [seed {s}]"),
+                None => println!("MTG Engine — {p1_spec} ({name1}) vs {p2_spec} ({name2})"),
+            }
             println!();
         }
 
@@ -101,8 +114,8 @@ fn main() {
             decklists: vec![deck1, deck2],
             starting_life: 20,
             starting_player: None,
-            // A fresh seed per game.
-            rng_seed: None,
+            // A fresh seed per game unless --seed pins one.
+            rng_seed: seed,
         };
         let player_names = config.player_names.clone();
         let state = engine::setup_game(&config, &registry);
@@ -114,8 +127,8 @@ fn main() {
         mtg_player::game_log::init(path);
     }
 
-    let mut p1 = make_player(p1_spec, "P1");
-    let mut p2 = make_player(p2_spec, "P2");
+    let mut p1 = make_player(p1_spec, "P1", seed.map(|s| s.wrapping_add(1)));
+    let mut p2 = make_player(p2_spec, "P2", seed.map(|s| s.wrapping_add(2)));
 
     // Log game metadata.
     {
@@ -158,6 +171,12 @@ fn main() {
 
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
 
+    // Serializing the full game state (log included) every action is what
+    // makes hot reload and --save work, but it turns long AI-vs-AI games
+    // quadratic — the state grows with the log, and a 50k-action random game
+    // writes it 50k times. Only pay for it when someone can actually use it.
+    let write_saves = has_human || save_file.is_some();
+
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;
 
@@ -167,20 +186,69 @@ fn main() {
     let hot_reload_path = "/tmp/mtg-hot-reload.json".to_string();
     let hot_reload_ref = hot_reload_path.clone();
 
+    // Per-owner count of non-token objects, captured at the first decision
+    // point. No effect in the pool creates or destroys real cards, so the
+    // count must stay constant for the whole game (tokens come and go).
+    let mut nontoken_baseline: Option<Vec<usize>> = None;
+
+    let registry_ref = &registry;
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
 
+        if check_invariants {
+            // A resolution prompt interrupts a spell or ability mid-effect,
+            // before state-based actions have caught up; everything else is a
+            // settled decision point (CR 704.3).
+            let violations = if legal.resolution_prompt.is_some() {
+                mtg_engine::invariants::check_core(game_state, registry_ref)
+            } else {
+                mtg_engine::invariants::check_settled(game_state, registry_ref)
+            };
+
+            let mut counts = vec![0usize; game_state.players.len()];
+            for obj in game_state.objects.values() {
+                if !obj.is_token {
+                    counts[obj.owner.0 as usize] += 1;
+                }
+            }
+            let mut extra = Vec::new();
+            match &nontoken_baseline {
+                None => nontoken_baseline = Some(counts),
+                Some(base) if *base != counts => {
+                    extra.push(format!("non-token card counts changed: {base:?} -> {counts:?}"));
+                }
+                Some(_) => {}
+            }
+
+            if legal.actions.is_empty() && legal.combat_prompt.is_none() && legal.resolution_prompt.is_none() {
+                extra.push("no legal actions and no prompt: the game is stuck".to_string());
+            }
+
+            let all: Vec<String> = violations.into_iter().chain(extra).collect();
+            if !all.is_empty() {
+                eprintln!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
+                    game_state.turn_number, game_state.step);
+                for msg in &all {
+                    eprintln!("  - {msg}");
+                    mtg_player::game_log::write(file!(), line!(), "INVARIANT", msg);
+                }
+                std::process::exit(2);
+            }
+        }
+
         // Save state before each decision point.
-        let save = SaveData {
-            state: game_state.clone(),
-            player_names: player_names_ref.clone(),
-        };
-        let json = serde_json::to_string(&save).expect("Failed to serialize game state");
-        // Always write hot-reload save.
-        fs::write(&hot_reload_ref, &json).expect("Failed to write hot-reload save");
-        // Also write user-specified save file if set.
-        if let Some(ref path) = save_file_ref {
-            fs::write(path, &json).expect("Failed to write save file");
+        if write_saves {
+            let save = SaveData {
+                state: game_state.clone(),
+                player_names: player_names_ref.clone(),
+            };
+            let json = serde_json::to_string(&save).expect("Failed to serialize game state");
+            // Always write hot-reload save.
+            fs::write(&hot_reload_ref, &json).expect("Failed to write hot-reload save");
+            // Also write user-specified save file if set.
+            if let Some(ref path) = save_file_ref {
+                fs::write(path, &json).expect("Failed to write save file");
+            }
         }
 
         if action_count >= max_actions {
@@ -305,7 +373,7 @@ fn main() {
     }
 }
 
-fn make_player(spec: &str, name: &str) -> PlayerKind {
+fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
     let (kind, model) = match spec.split_once(':') {
         Some((k, m)) => (k, Some(m)),
         None => (spec, None),
@@ -327,7 +395,10 @@ fn make_player(spec: &str, name: &str) -> PlayerKind {
             }
             PlayerKind::Llm(player)
         }
-        "random" => PlayerKind::Random(RandomPlayer::new(name)),
+        "random" => PlayerKind::Random(match seed {
+            Some(s) => RandomPlayer::with_seed(name, s),
+            None => RandomPlayer::new(name),
+        }),
         other => {
             eprintln!("Unknown player type '{other}', using random");
             PlayerKind::Random(RandomPlayer::new(name))

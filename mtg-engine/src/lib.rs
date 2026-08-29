@@ -14,4 +14,5 @@ pub mod view;
 pub mod cards;
 pub mod triggers;
 pub mod destruction;
+pub mod invariants;
 pub mod replacement;
