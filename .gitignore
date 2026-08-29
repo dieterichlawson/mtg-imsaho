@@ -2,6 +2,9 @@
 *.txt
 *.log
 /results.json
+# Audit-calibration run state: the seeded-bug answer key and score sheets
+# (see docs/plans/audit-calibration.md). Regenerated per run.
+/audits/calibration/
 /reports/coverage/
 # Agent-produced staging markdown is ephemeral transport; validate
 # scripts expect a clean worktree and ignore this directory.
