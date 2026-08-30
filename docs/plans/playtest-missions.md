@@ -40,6 +40,8 @@ Competitor:
 - C6 equipment voltron vs token swarm
 - C7 curses: stack multiple curses on one player and play through them
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
+- C9 aristocrats/sacrifice value vs go-wide tokens: trade into sac outlets
+  for value, race a token swarm on the other side of the table
 
 Rules Lawyer:
 - L1 stack battles: respond to everything; 3+ deep stacks; order triggers
@@ -57,6 +59,13 @@ Rules Lawyer:
   verify new-object rules (counters/attachments/damage gone)
 - L8 SBA order: simultaneous deaths, Angelic-Overseer-style dependency,
   both players to 0 life
+- L9 replacement effects: stack multiple replacement effects on the same
+  event (damage prevention/redirection, enters-with-counters vs a static
+  buff); verify the affected player/object's controller chooses the order
+  (CR 616) and only one applies per layer of the event
+- L10 mana ability edges: tap-for-mana abilities that don't use the stack;
+  activate mana abilities in response to a targeted spell/ability to
+  verify no missed priority window and correct fizzle/cost-payment timing
 
 Vandal:
 - V1 input garbage at every prompt: junk text, huge numbers, empty
@@ -75,6 +84,13 @@ Vandal:
   full graveyard displays; look for broken rendering
 - V8 search/menu abuse: the CLI's `/` search, `d`, `l`, `g`, `e` panes
   spammed at every prompt
+- V9 rapid concede/new-game churn: concede and immediately relaunch a
+  fresh game back-to-back many times in the same session; verify no
+  leaked state (stale board/log/hand) bleeds into the next game
+- V10 priority-mash marathon: hold pass-priority/`f` auto-pass through an
+  entire game from turn 1 to conclusion; verify no mandatory decision
+  (declare attackers/blockers, discard to hand size, trigger ordering) is
+  silently skipped and nothing double-resolves
 
 Agents may invent missions beyond this menu; log them in the ledger so
 they enter the rotation.
