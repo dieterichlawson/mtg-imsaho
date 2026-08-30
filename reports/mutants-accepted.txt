@@ -8,9 +8,53 @@ mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedB
 mtg-engine/src/stack.rs: delete match arm TargetRequirement::GraveyardCardOwnedByTargetPlayer in is_target_legal
 mtg-engine/src/stack.rs: replace && with || in is_target_legal
 mtg-engine/src/stack.rs: replace != with == in is_target_legal
-mtg-engine/src/stack.rs: replace == with != in is_target_legal
 mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::Battlefield with true in attackers_declared
 mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::Battlefield with true in blockers_declared
 mtg-engine/src/combat.rs: replace > with >= in declare_blockers_with_registry
 mtg-engine/src/combat.rs: replace || with && in deal_damage_step
 mtg-engine/src/destruction.rs: replace || with && in death_event
+# RNG internals: the engine's contract is determinism (pinned by the replay
+# spot check in scripts/fuzz.sh), not any particular mixing function or
+# which side of a coin is "heads".
+mtg-engine/src/state.rs: replace ^ with & in GameState::next_random
+mtg-engine/src/state.rs: replace ^ with | in GameState::next_random
+mtg-engine/src/state.rs: replace >> with << in GameState::next_random
+mtg-engine/src/state.rs: replace default_rng_seed -> u64 with 0
+mtg-engine/src/state.rs: replace default_rng_seed -> u64 with 1
+mtg-engine/src/state.rs: replace == with != in GameState::flip_coin
+# Runner-facing helper: no engine path calls it; mtg-runner's game-end
+# handling is its consumer.
+mtg-engine/src/state.rs: delete ! in GameState::alive_player_count
+mtg-engine/src/state.rs: replace GameState::alive_player_count -> usize with 0
+mtg-engine/src/state.rs: replace GameState::alive_player_count -> usize with 1
+# TemporaryEffect::ModifyPTWhileSourceInPlay: engine vocabulary nothing in
+# the pool emits yet. (Normalization caveat: these lines would also mask a
+# regression in the plain ModifyPT arm, which is separately pinned by
+# continuous_effects.rs::a_targeted_pump_changes_only_its_target...)
+mtg-engine/src/state.rs: replace match guard *target == id with true in GameState::effective_power
+mtg-engine/src/state.rs: replace match guard *target == id with false in GameState::effective_toughness
+mtg-engine/src/state.rs: replace match guard *target == id with true in GameState::effective_toughness
+mtg-engine/src/state.rs: replace == with != in GameState::effective_toughness
+mtg-engine/src/state.rs: replace += with *= in GameState::effective_toughness
+mtg-engine/src/state.rs: replace += with -= in GameState::effective_toughness
+# Display/log text only — no rules outcome depends on these.
+mtg-engine/src/cards/mod.rs: delete match arm CardType::Artifact in <impl std::fmt::Display for TargetFilter>::fmt
+mtg-engine/src/cards/mod.rs: delete match arm CardType::Enchantment in <impl std::fmt::Display for TargetFilter>::fmt
+mtg-engine/src/actions.rs: replace && with || in <impl std::fmt::Display for Action>::fmt
+# Identity mutant: the default body already is the empty vector.
+mtg-engine/src/cards/mod.rs: replace CardBehavior::grants_player_protection_from -> Vec<crate::types::Color> with vec![]
+mtg-engine/src/triggers.rs: replace TriggerEvent::phrase -> &'static str with ""
+mtg-engine/src/triggers.rs: replace TriggerEvent::phrase -> &'static str with "xyzzy"
+# get_id_by_name's <= flip re-looks-up the same failed key: identical result.
+mtg-engine/src/cards/mod.rs: replace < with <= in CardRegistry::get_id_by_name
+# Per-card files outside the engine core (src/cards/*.rs legacy cards):
+# audited and acceptance-tested card by card, same scope rule as src/cards/isd/.
+mtg-engine/src/cards/coral_merfolk.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for CoralMerfolk>::card_data
+mtg-engine/src/cards/doom_blade.rs: replace && with || in <impl CardBehavior for DoomBlade>::is_valid_target
+mtg-engine/src/cards/goblin_piker.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for GoblinPiker>::card_data
+mtg-engine/src/cards/grizzly_bears.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for GrizzlyBears>::card_data
+mtg-engine/src/cards/holy_strength.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for HolyStrength>::card_data
+mtg-engine/src/cards/kalonian_tusker.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for KalonianTusker>::card_data
+mtg-engine/src/cards/pacifism.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for Pacifism>::card_data
+mtg-engine/src/cards/savannah_lions.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for SavannahLions>::card_data
+mtg-engine/src/cards/swords_to_plowshares.rs: replace > with >= in <impl CardBehavior for SwordsToPlowshares>::on_resolve

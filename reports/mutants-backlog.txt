@@ -1,0 +1,183 @@
+# Mutation-testing backlog: genuine test gaps, tracked but not yet closed.
+#
+# Every line is a surviving mutant (line:col stripped, same normalization
+# as reports/mutants-accepted.txt) that a test SHOULD kill someday — none
+# of these are judged equivalent. They live here so the weekly-mutants
+# workflow doesn't re-file the same known survivors every Saturday; the
+# consolidated tracking issue and the daily bug fixer work this list down.
+# When a test kills one, delete its line. When one is judged equivalent
+# after all, move it to reports/mutants-accepted.txt with a reason.
+mtg-engine/src/cards/helpers.rs: delete ! in any_targets
+mtg-engine/src/cards/helpers.rs: delete ! in any_targets_except
+mtg-engine/src/cards/helpers.rs: replace != with == in any_targets_except
+mtg-engine/src/cards/helpers.rs: replace != with == in counter_spell_inner
+mtg-engine/src/cards/helpers.rs: replace != with == in creature_targets_except
+mtg-engine/src/cards/helpers.rs: replace && with || in any_targets
+mtg-engine/src/cards/helpers.rs: replace && with || in any_targets_except
+mtg-engine/src/cards/helpers.rs: replace && with || in creature_targets_except
+mtg-engine/src/cards/helpers.rs: replace && with || in equip_target_is_legal
+mtg-engine/src/cards/helpers.rs: replace && with || in token_attack_options
+mtg-engine/src/cards/helpers.rs: replace += with *= in format_tap_plan_names
+mtg-engine/src/cards/helpers.rs: replace += with -= in format_tap_plan_names
+mtg-engine/src/cards/helpers.rs: replace == with != in finish_library_search
+mtg-engine/src/cards/helpers.rs: replace == with != in format_tap_plan_names
+mtg-engine/src/cards/helpers.rs: replace || with && in enters_tapped_unless
+mtg-engine/src/engine.rs: delete ! in legal_actions
+mtg-engine/src/engine.rs: delete ! in perform_turn_based_actions
+mtg-engine/src/engine.rs: delete match arm Step::DeclareBlockers in perform_turn_based_actions
+mtg-engine/src/engine.rs: delete match arm Step::EndCombat in perform_turn_based_actions
+mtg-engine/src/engine.rs: replace && with || in run_game_loop_inner
+mtg-engine/src/engine.rs: replace += with *= in run_game_loop_inner
+mtg-engine/src/engine.rs: replace == with != in legal_actions
+mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
+mtg-engine/src/engine.rs: replace > with == in run_game_loop_inner
+mtg-engine/src/engine.rs: replace > with >= in run_game_loop_inner
+mtg-engine/src/engine.rs: replace || with && in run_game_loop_inner
+mtg-engine/src/engine/actions/abilities.rs: delete ! in activate_ability
+mtg-engine/src/engine/actions/abilities.rs: delete - in activate_loyalty_ability
+mtg-engine/src/engine/actions/abilities.rs: replace != with == in activate_ability
+mtg-engine/src/engine/actions/abilities.rs: replace && with || in activate_ability
+mtg-engine/src/engine/actions/abilities.rs: replace < with <= in activate_loyalty_ability
+mtg-engine/src/engine/actions/abilities.rs: replace < with == in activate_loyalty_ability
+mtg-engine/src/engine/actions/abilities.rs: replace < with > in activate_loyalty_ability
+mtg-engine/src/engine/actions/abilities.rs: replace == with != in activate_ability
+mtg-engine/src/engine/actions/abilities.rs: replace > with >= in activate_loyalty_ability
+mtg-engine/src/engine/actions/cast.rs: replace != with == in cast_spell
+mtg-engine/src/engine/actions/cast.rs: replace == with != in cast_spell
+mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_some() with false in cast_spell
+mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_some() with true in cast_spell
+mtg-engine/src/engine/actions/choices.rs: delete match arm (_, ResolvedChoice::CancelCast) in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace && with || in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace == with != in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace > with < in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace > with == in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace > with >= in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace || with && in resolve_choice
+mtg-engine/src/engine/actions/mulligan.rs: replace += with *= in mulligan_keep
+mtg-engine/src/engine/actions/simple.rs: delete match arm Some(AwaitingAction::DiscardToHandSize{player, ..}) in discard_cards
+mtg-engine/src/engine/cards_flow.rs: delete ! in has_castable_with_potential_mana
+mtg-engine/src/engine/cards_flow.rs: replace && with || in has_castable_with_potential_mana
+mtg-engine/src/engine/cards_flow.rs: replace < with <= in discard_cards
+mtg-engine/src/engine/cards_flow.rs: replace < with <= in mill_cards
+mtg-engine/src/engine/cards_flow.rs: replace < with == in discard_cards
+mtg-engine/src/engine/cards_flow.rs: replace < with > in discard_cards
+mtg-engine/src/engine/cards_flow.rs: replace <= with > in legal_discard_actions
+mtg-engine/src/engine/cards_flow.rs: replace == with != in draw_cards
+mtg-engine/src/engine/cards_flow.rs: replace == with != in has_castable_with_potential_mana
+mtg-engine/src/engine/cards_flow.rs: replace > with == in draw_cards
+mtg-engine/src/engine/cards_flow.rs: replace > with == in mill_cards
+mtg-engine/src/engine/cards_flow.rs: replace || with && in has_castable_with_potential_mana
+mtg-engine/src/engine/costs.rs: replace && with || in additional_cost_is_payable
+mtg-engine/src/engine/costs.rs: replace && with || in pay_additional_cost
+mtg-engine/src/engine/costs.rs: replace && with || in pay_exile_creatures
+mtg-engine/src/engine/costs.rs: replace - with / in reduce
+mtg-engine/src/engine/costs.rs: replace -= with += in reduce
+mtg-engine/src/engine/costs.rs: replace -= with /= in reduce
+mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::AddCounters{count}) in apply_pending_effect
+mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::PutOnTopOfLibrary{source_name}) in apply_pending_effect
+mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::ReturnToBattlefield{spell_id}) in apply_pending_effect
+mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(target_id), PendingEffect::GrantFlashback{source_name}) in apply_pending_effect
+mtg-engine/src/engine/effects.rs: replace || with && in apply_pending_effect
+mtg-engine/src/engine/legal/abilities.rs: delete - in loyalty
+mtg-engine/src/engine/legal/abilities.rs: replace && with || in loyalty
+mtg-engine/src/engine/legal/abilities.rs: replace < with <= in loyalty
+mtg-engine/src/engine/legal/abilities.rs: replace < with == in loyalty
+mtg-engine/src/engine/legal/abilities.rs: replace < with > in loyalty
+mtg-engine/src/engine/legal/abilities.rs: replace > with == in loyalty
+mtg-engine/src/engine/legal/abilities.rs: replace > with >= in loyalty
+mtg-engine/src/engine/legal/awaiting.rs: replace != with == in legal_actions_while_awaiting
+mtg-engine/src/engine/legal/awaiting.rs: replace & with ^ in legal_actions_while_awaiting
+mtg-engine/src/engine/legal/awaiting.rs: replace & with | in legal_actions_while_awaiting
+mtg-engine/src/engine/legal/awaiting.rs: replace << with >> in legal_actions_while_awaiting
+mtg-engine/src/engine/legal/casting.rs: delete ! in flashback
+mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
+mtg-engine/src/engine/legal/casting.rs: replace && with || in from_hand
+mtg-engine/src/engine/legal/casting.rs: replace < with <= in from_hand
+mtg-engine/src/engine/legal/casting.rs: replace < with == in from_hand
+mtg-engine/src/engine/legal/casting.rs: replace < with > in from_hand
+mtg-engine/src/engine/mana_sources.rs: delete ! in gather_mana_sources
+mtg-engine/src/engine/mana_sources.rs: replace && with || in activate_mana_source
+mtg-engine/src/engine/mana_sources.rs: replace && with || in gather_mana_sources
+mtg-engine/src/engine/mana_sources.rs: replace > with == in activate_mana_source
+mtg-engine/src/engine/targeting.rs: delete ! in detect_modal_choice_mode
+mtg-engine/src/engine/targeting.rs: delete match arm R::TwoTargets(first, second) in distinct_within_each_target_instance
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::ExileCard in generate_ability_targets
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::GraveyardCard in generate_ability_targets
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::GraveyardCardOwnedByOpponent in valid_targets_for_req
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::ModalChoice(ref modes) in build_cast_target_spec
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::None in build_cast_target_spec
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::OpponentOnly in generate_ability_targets
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::TwoTargets(req1, req2) in build_cast_target_spec
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::UpToTargets(_, inner) in valid_targets_for_req
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::UpToTargets(max, inner_req) in build_cast_target_spec
+mtg-engine/src/engine/targeting.rs: replace != with == in generate_ability_targets
+mtg-engine/src/engine/targeting.rs: replace != with == in valid_targets_for_req
+mtg-engine/src/engine/targeting.rs: replace && with || in generate_ability_targets
+mtg-engine/src/engine/targeting.rs: replace && with || in valid_targets_for_req
+mtg-engine/src/engine/targeting.rs: replace + with * in combinations
+mtg-engine/src/engine/targeting.rs: replace < with <= in combinations
+mtg-engine/src/engine/targeting.rs: replace < with == in combinations
+mtg-engine/src/engine/targeting.rs: replace < with > in target_combinations
+mtg-engine/src/engine/targeting.rs: replace == with != in combinations
+mtg-engine/src/engine/targeting.rs: replace == with != in generate_ability_targets
+mtg-engine/src/engine/targeting.rs: replace == with != in valid_targets_for_req
+mtg-engine/src/funding.rs: delete ! in build_options
+mtg-engine/src/funding.rs: replace && with || in build_options
+mtg-engine/src/funding.rs: replace += with *= in apply
+mtg-engine/src/funding.rs: replace / with * in apply
+mtg-engine/src/funding.rs: replace == with != in build_options
+mtg-engine/src/funding.rs: replace > with < in apply
+mtg-engine/src/funding.rs: replace > with == in apply
+mtg-engine/src/funding.rs: replace > with == in validate
+mtg-engine/src/funding.rs: replace > with >= in apply
+mtg-engine/src/funding.rs: replace || with && in apply
+mtg-engine/src/mana.rs: replace && with || in can_produce_colorless
+mtg-engine/src/mana.rs: replace += with *= in build_hand_demand
+mtg-engine/src/mana.rs: replace += with *= in compute_autotap
+mtg-engine/src/mana.rs: replace += with *= in hand_demand_score
+mtg-engine/src/mana.rs: replace += with -= in compute_autotap
+mtg-engine/src/mana.rs: replace - with + in compute_autotap
+mtg-engine/src/mana.rs: replace - with + in try_auto_pay
+mtg-engine/src/mana.rs: replace - with / in compute_autotap
+mtg-engine/src/mana.rs: replace - with / in try_auto_pay
+mtg-engine/src/mana.rs: replace -= with += in compute_autotap
+mtg-engine/src/mana.rs: replace -= with /= in compute_autotap
+mtg-engine/src/mana.rs: replace < with <= in try_auto_pay
+mtg-engine/src/mana.rs: replace < with == in try_auto_pay
+mtg-engine/src/mana.rs: replace < with > in try_auto_pay
+mtg-engine/src/mana.rs: replace > with == in compute_autotap
+mtg-engine/src/mana.rs: replace > with == in try_auto_pay
+mtg-engine/src/mana.rs: replace > with >= in compute_autotap
+mtg-engine/src/replacement.rs: delete ! in apply
+mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass
+mtg-engine/src/replacement.rs: replace == with != in apply
+mtg-engine/src/state.rs: delete ! in GameState::become_copy_of
+mtg-engine/src/state.rs: delete ! in GameState::effects_controlled_by
+mtg-engine/src/state.rs: delete ! in GameState::global_effects
+mtg-engine/src/state.rs: delete ! in GameState::move_object
+mtg-engine/src/state.rs: delete match arm Zone::Exile in GameState::move_object
+mtg-engine/src/state.rs: replace != with == in GameState::move_object
+mtg-engine/src/state.rs: replace && with || in GameState::move_object
+mtg-engine/src/state.rs: replace + with * in GameState::create_token_with_subtypes
+mtg-engine/src/state.rs: replace == with != in GameState::move_object
+mtg-engine/src/state.rs: replace match guard o.zone == Zone::Battlefield with true in GameState::has_keyword
+mtg-engine/src/state.rs: replace match guard obj.tapped with true in GameState::untap
+mtg-engine/src/triggers.rs: replace == with != in trigger_description
+mtg-engine/src/triggers.rs: replace PendingTrigger::chosen_targets -> &[Target] with Vec::leak(Vec::new())
+mtg-engine/src/triggers.rs: replace PendingTrigger::kind -> Option<crate::cards::TriggerKind> with None
+mtg-engine/src/triggers/collect/damage.rs: replace && with || in combat_damage
+mtg-engine/src/triggers/collect/mod.rs: replace == with != in was_on_the_battlefield
+mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::cards::TriggerKind::EndCombat in step_started
+mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::types::Step::EndCombat in step_started
+mtg-engine/src/triggers/collect/zones.rs: replace == with != in entered_battlefield
+mtg-engine/src/types.rs: delete match arm Step::Untap | Step::Cleanup in Step::has_priority
+mtg-engine/src/types.rs: replace CardType::is_permanent -> bool with true
+mtg-engine/src/types.rs: replace Step::has_priority -> bool with false
+mtg-engine/src/types.rs: replace Step::has_priority -> bool with true
+mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseCardFromHand{cards, ..} in GameView::for_player
+mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseFromLibrary{options, ..} in GameView::for_player
+mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseFromRevealed{revealed, ..} in GameView::for_player
+mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseTarget{options, ..} in GameView::for_player
+mtg-engine/src/view.rs: delete match arm crate::state::AwaitingAction::ResolutionChoice{choice, ..} in GameView::for_player
+mtg-engine/src/view.rs: replace != with == in GameView::for_player
+mtg-engine/src/view.rs: replace >= with < in GameView::for_player

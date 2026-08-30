@@ -5,6 +5,7 @@
 # The accepted-survivor list is reviewed reference data the weekly-mutants
 # workflow compares against, not run output.
 !/reports/mutants-accepted.txt
+!/reports/mutants-backlog.txt
 *.log
 /results.json
 # Audit-calibration run state: the seeded-bug answer key and score sheets

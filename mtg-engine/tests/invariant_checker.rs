@@ -13,6 +13,7 @@
 
 mod common;
 use common::*;
+use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::{CardId, ObjectId};
 use mtg_engine::invariants::{check_core, check_settled};
@@ -27,14 +28,57 @@ fn assert_flags(state: &mtg_engine::state::GameState, reg: &CardRegistry, needle
         "expected a violation containing {needle:?}, got: {v:?}");
 }
 
+/// A RICH clean state: every zone populated the way real games populate
+/// them. This is the false-positive half of the oracle's contract — a
+/// mutant that inverts a check fires on healthy structures, and only a
+/// state that actually has libraries, graveyards, a stack, attachments,
+/// loyalty, and combat can notice.
 #[test]
 fn a_clean_state_has_no_violations() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    ready_creature(&mut state, P0, 2, 2);
+
+    // Battlefield: creatures, a land, an attached Aura, attached Equipment,
+    // a planeswalker with loyalty.
+    let bear = ready_creature(&mut state, P0, 2, 2);
     named_permanent(&mut state, &reg, "Forest", P1);
+    let aura_id = reg.get_id_by_name("Pacifism").unwrap();
+    let aura = state.create_object(aura_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(aura).unwrap().name = "Pacifism".into();
+    state.get_object_mut(aura).unwrap().attached_to = Some(bear);
+    let blade_id = reg.get_id_by_name("Trepanation Blade").unwrap();
+    let blade = state.create_object(blade_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(blade).unwrap().name = "Trepanation Blade".into();
+    state.get_object_mut(blade).unwrap().attached_to = Some(bear);
+    named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+
+    // Libraries with real order, hands, graveyards, for both players.
+    for p in [P0, P1] {
+        for name in ["Island", "Swamp", "Plains"] {
+            let c = spell_in_hand(&mut state, &reg, name, p);
+            state.get_object_mut(c).unwrap().zone = Zone::Library;
+            state.get_player_mut(p).library_order.push(c);
+        }
+        spell_in_hand(&mut state, &reg, "Moment of Heroism", p);
+        let dead = spell_in_hand(&mut state, &reg, "Victim of Night", p);
+        state.get_object_mut(dead).unwrap().zone = Zone::Graveyard;
+    }
+
     assert_eq!(check_core(&state, &reg), Vec::<String>::new());
     assert_eq!(check_settled(&state, &reg), Vec::<String>::new());
+
+    // A spell properly on the stack passes check_core too.
+    let bolt = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    let state2 = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
+    assert_eq!(check_core(&state2, &reg), Vec::<String>::new());
+
+    // A healthy declared combat passes check_settled at the combat steps.
+    let mut combat_state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut combat_state, P0, 2, 2);
+    let blocker = ready_creature(&mut combat_state, P1, 2, 2);
+    mtg_engine::combat::declare_attackers(&mut combat_state, &[(attacker, P1)], &[], &reg);
+    mtg_engine::combat::declare_blockers(&mut combat_state, &[(blocker, attacker)]);
+    assert_eq!(check_settled(&combat_state, &reg), Vec::<String>::new());
 }
 
 #[test]

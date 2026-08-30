@@ -51,7 +51,9 @@ jobs:
           key: mutants-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Install cargo-mutants
-        run: command -v cargo-mutants || cargo install cargo-mutants
+        # Pinned: mutant names must render identically to the reviewed
+        # lists in reports/ (rendering changes across versions).
+        run: cargo mutants --version 2>/dev/null | grep -q '27\.1\.0' || cargo install cargo-mutants --version 27.1.0 --force
 
       - name: Run mutants shard
         run: |
@@ -93,12 +95,12 @@ jobs:
           [ -s mutants.out/missed.txt ] || { echo "no missed mutants"; exit 0; }
           normalize() { sed -E 's/:[0-9]+:[0-9]+:/:/' "$1" | sort -u; }
           normalize mutants.out/missed.txt > /tmp/missed.norm
-          if [ -f reports/mutants-accepted.txt ]; then
-            grep -v '^#' reports/mutants-accepted.txt | sed '/^$/d' | sort -u > /tmp/accepted.norm
-          else
-            : > /tmp/accepted.norm
-          fi
-          comm -23 /tmp/missed.norm /tmp/accepted.norm > /tmp/new.norm
+          # Known survivors don't re-file: the accepted list (judged
+          # equivalent, with reasons) and the backlog (genuine gaps being
+          # worked down — see reports/mutants-backlog.txt).
+          cat reports/mutants-accepted.txt reports/mutants-backlog.txt 2>/dev/null \
+            | grep -v '^#' | sed '/^$/d' | sort -u > /tmp/known.norm
+          comm -23 /tmp/missed.norm /tmp/known.norm > /tmp/new.norm
           if [ ! -s /tmp/new.norm ]; then
             echo "all survivors are on the accepted list"
             exit 0

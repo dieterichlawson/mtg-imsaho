@@ -95,3 +95,43 @@ workflow strips line:col, so an accepted line like "`\|\|`→`&&` in
 deal_damage_step" masks *any* such mutant in that function (296 accepted,
 but a regression re-surfacing 345 would be masked too). The price of
 edit-stable comparisons; the per-line reasons above are the record.
+
+# The full engine-core sweep — 2026-08-30
+
+The first scheduled weekly run (all 2,367 engine-core mutants, run
+33255670070) filed nine per-shard survivor issues (#26–#34). A local
+full sweep against the same-day HEAD gave the exact picture: **1,125
+caught, 32 timed out** (livelocks the suite catches by hanging), **789
+unviable, 421 missed** — 241 unique survivors after normalization, 12 of
+them already on the accepted list.
+
+## Dispositions
+
+Three buckets now exist, and every survivor is in exactly one:
+
+1. **Killed** — a test written for it, watched failing under the exact
+   mutant before it counts. This round: the composite branches of
+   submitted-target validation, the CardBehavior hook defaults and the
+   DFC name fallback, the auto-tap planner contract, X-funding
+   arithmetic and bounds, the targeted-pump accumulation, same-controller
+   control changes, the stack-entry accessors, printed colors
+   (CR 202.2/204.2) — and the whole `invariant_checker.rs` battery: the
+   fuzzing oracle's ~24 invariant families each verified to flag their
+   corruption, with a rich clean state (populated libraries, graveyards,
+   stack, attachments, loyalty, combat) pinning the false-positive
+   direction that corruption tests alone cannot see.
+2. **Accepted** (`reports/mutants-accepted.txt`) — judged equivalent or
+   out of scope, each under a written reason: RNG mixing internals
+   (determinism is the contract, pinned by the replay check), a
+   runner-facing helper no engine path calls, an effect variant nothing
+   emits yet, display/log-text arms, an identity mutant, re-lookup of a
+   failed key, and per-card files outside the engine core.
+3. **Backlog** (`reports/mutants-backlog.txt`) — genuine gaps, kept
+   visible and worked down by the daily fixer, but not re-filed by the
+   weekly workflow. Deleting a line is the "killed" ceremony; moving one
+   to accepted needs a reason here.
+
+The weekly workflow now files an issue only for survivors in none of the
+three buckets — i.e. *new* regressions — and its cargo-mutants version is
+pinned (27.1.0), because mutant names render differently across versions
+and the suppression lists match on the rendered name.
