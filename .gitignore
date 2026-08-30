@@ -8,6 +8,10 @@
 !/reports/mutants-backlog.txt
 *.log
 /results.json
+# Nightly playtest run output (logs + --save snapshots): transient repro
+# evidence for the night's issue filing, deleted once the report is
+# written. Never committed — see docs/plans/playtest-missions.md.
+/logs/playtest/
 # Audit-calibration run state: the seeded-bug answer key and score sheets
 # (see docs/plans/audit-calibration.md). Regenerated per run.
 /audits/calibration/
