@@ -37,8 +37,14 @@ impl Drop for SpinnerHandle {
 /// What step/turn the player wants to auto-pass until.
 #[derive(Clone, Debug)]
 enum PassMode {
-    /// Pass until our next Main Phase 1 on a later turn.
-    UntilNextTurn { activated_turn: u32 },
+    /// Pass until our next Main Phase 1.
+    UntilNextTurn {
+        activated_turn: u32,
+        /// True when 'f' was pressed on our own turn before our precombat
+        /// main — our "next Main Phase 1" is then still THIS turn's, so the
+        /// break clauses must not wait for a later turn number (issue #45).
+        before_our_main: bool,
+    },
 }
 
 pub struct CliPlayer {
@@ -61,6 +67,27 @@ impl CliPlayer {
 
     // ── Pass mode logic ─────────────────────────────────────────────
 
+    /// The pass mode 'f' would engage at the current prompt.
+    fn new_pass_mode(view: &GameView) -> PassMode {
+        PassMode::UntilNextTurn {
+            activated_turn: view.turn_number,
+            before_our_main: view.active_player == view.you
+                && matches!(view.step, Step::Untap | Step::Upkeep | Step::Draw),
+        }
+    }
+
+    /// Decide what pressing 'f' does at the current prompt: the pass mode to
+    /// engage, or None when the current prompt already meets the break
+    /// condition — passing would silently discard actions (a land play, a
+    /// castable spell) that auto-pass promises never to skip (issue #48).
+    fn try_engage_auto_pass(
+        view: &GameView,
+        legal: &mtg_engine::engine::LegalActions,
+    ) -> Option<PassMode> {
+        let mode = Self::new_pass_mode(view);
+        if Self::should_break_pass(view, legal, &mode) { None } else { Some(mode) }
+    }
+
     /// Check whether the current pass mode should break and return control
     /// to the player. Returns true if the player should be prompted.
     fn should_break_pass(
@@ -69,20 +96,24 @@ impl CliPlayer {
         mode: &PassMode,
     ) -> bool {
         match mode {
-            PassMode::UntilNextTurn { activated_turn } => {
-                // A land drop is never auto-passed. Every other clause here
-                // requires a LATER turn than the f-press, so an f pressed on
-                // your own turn before your main phase (say, at an upkeep
-                // response prompt) used to skip your whole turn, land drop
-                // included (issue #39). Once per turn and free, a land play
-                // is always worth stopping for.
+            PassMode::UntilNextTurn { activated_turn, before_our_main } => {
+                // "Our next Main Phase 1" is this turn's when 'f' was pressed
+                // before it, and a later turn's otherwise (issue #45 — the
+                // spell/ability clauses below used to require a strictly
+                // later turn, silently skipping a same-turn castable spell).
+                let reached_target_turn = view.turn_number > *activated_turn
+                    || (*before_our_main && view.turn_number == *activated_turn);
+
+                // A land drop is never auto-passed, whatever the turn: once
+                // per turn and free, a land play is always worth stopping
+                // for (issue #39).
                 if legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })) {
                     return true;
                 }
 
-                // Break at our precombat main on a later turn.
+                // Break at our precombat main once we reach the target turn.
                 if view.active_player == view.you
-                    && view.turn_number > *activated_turn
+                    && reached_target_turn
                     && view.step == Step::PrecombatMain
                 {
                     return true;
@@ -91,7 +122,7 @@ impl CliPlayer {
                 // Break on our turn if we have meaningful actions (cast spells,
                 // play lands, activate non-mana abilities) — even outside main phase.
                 if view.active_player == view.you
-                    && view.turn_number > *activated_turn
+                    && reached_target_turn
                 {
                     let has_meaningful = legal.actions.iter().any(|a| matches!(a,
                         Action::PlayLand { .. }
@@ -2405,11 +2436,13 @@ impl Player for CliPlayer {
             display_labels.push(label);
         }
 
+        let mut notice: Option<String> = None;
         loop {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
                 PassMode::UntilNextTurn { .. } => "AUTO-PASS",
             });
-            Self::render(view, Some(&display_labels), legal.context.as_deref(),
+            Self::render(view, Some(&display_labels),
+                notice.take().as_deref().or(legal.context.as_deref()),
                 &view.display_log, &self.card_filter, pass_label);
 
             // Read input
@@ -2507,12 +2540,20 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "f" => {
-                    // Pass until my next Main Phase 1 (F6-like).
+                    // Pass until my next Main Phase 1 (F6-like). The break
+                    // check runs against the CURRENT prompt first: if it
+                    // would already break here (a land play or castable
+                    // spell on offer), engaging would silently discard those
+                    // actions (issue #48) — refuse instead.
                     if has_pass {
-                        self.pass_mode = Some(PassMode::UntilNextTurn {
-                            activated_turn: view.turn_number,
-                        });
-                        return Action::PassPriority;
+                        if let Some(mode) = Self::try_engage_auto_pass(view, legal) {
+                            self.pass_mode = Some(mode);
+                            return Action::PassPriority;
+                        }
+                        notice = Some(
+                            "Auto-pass not engaged: this prompt has actions it would \
+                             skip (land play / castable spell). Pass with 0 first to \
+                             decline them.".to_string());
                     }
                     continue;
                 }
@@ -2638,5 +2679,133 @@ impl CliPlayer {
                 Self::choose_blockers(view, prompt)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mtg_engine::engine::LegalActions;
+    use mtg_engine::ids::PlayerId;
+    use mtg_engine::types::ManaPool;
+
+    fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
+        let you = PlayerId(0);
+        GameView {
+            you,
+            your_hand: vec![],
+            your_life: 20,
+            your_mana_pool: ManaPool::new(),
+            your_library_size: 40,
+            your_library_cards: vec![],
+            your_mulligan_count: 0,
+            opponents: vec![],
+            battlefield: vec![],
+            graveyards: vec![],
+            stack: vec![],
+            exile: vec![],
+            step,
+            active_player: if our_turn { you } else { PlayerId(1) },
+            priority_player: Some(you),
+            turn_number,
+            display_log: vec![],
+            full_log: vec![],
+            revealed_names: HashMap::new(),
+        }
+    }
+
+    fn legal(actions: Vec<Action>) -> LegalActions {
+        LegalActions {
+            actions,
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+        }
+    }
+
+    fn cast(id: u64) -> Action {
+        Action::CastSpell {
+            object_id: ObjectId(id),
+            targets: vec![],
+            sacrifice: None,
+            exile_count: None,
+            exile_ids: vec![],
+            alternative_cost: None,
+            tap_plan: vec![],
+        }
+    }
+
+    fn pass_concede_plus(mut extra: Vec<Action>) -> LegalActions {
+        let mut actions = vec![Action::PassPriority, Action::Concede];
+        actions.append(&mut extra);
+        legal(actions)
+    }
+
+    // Issue #45: 'f' pressed on our own turn before our main phase must
+    // still break at THIS turn's Main Phase 1 when a spell is castable
+    // there — "next Main Phase 1" is this turn's, not next turn's.
+    #[test]
+    fn same_turn_main_phase_castable_spell_breaks_pass() {
+        // f pressed at our Draw step of turn 9.
+        let mode = CliPlayer::new_pass_mode(&view(Step::Draw, 9, true));
+        // Reaching our own Main Phase 1 of the same turn with a castable
+        // spell (and no land to play) must prompt.
+        let v = view(Step::PrecombatMain, 9, true);
+        assert!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode));
+    }
+
+    // Issue #45 companion: even with nothing castable, our own Main
+    // Phase 1 of the press turn is "our next Main Phase 1" — stop there.
+    #[test]
+    fn same_turn_main_phase_breaks_pass_when_pressed_before_main() {
+        let mode = CliPlayer::new_pass_mode(&view(Step::Upkeep, 9, true));
+        let v = view(Step::PrecombatMain, 9, true);
+        assert!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode));
+    }
+
+    // 'f' pressed AT our Main Phase 1 is a deliberate skip of the rest of
+    // this turn: the same turn's later steps must not re-break for spells.
+    #[test]
+    fn press_at_main_phase_still_skips_rest_of_turn() {
+        let mode = CliPlayer::new_pass_mode(&view(Step::PrecombatMain, 6, true));
+        let v = view(Step::EndStep, 6, true);
+        assert!(!CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode));
+        // ...but next turn's upkeep with a castable spell breaks, as before.
+        let v = view(Step::Upkeep, 7, true);
+        assert!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode));
+    }
+
+    // Issue #48: pressing 'f' on a prompt that already offers a land play
+    // (or a castable spell alongside it) must not engage-and-pass — that
+    // would silently discard the land drop before any break check runs.
+    #[test]
+    fn press_with_land_play_on_offer_refuses_to_engage() {
+        let v = view(Step::PrecombatMain, 6, true);
+        let l = pass_concede_plus(vec![
+            Action::PlayLand { object_id: ObjectId(3) },
+            cast(4),
+        ]);
+        assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_none());
+    }
+
+    // Issue #48 companion: with no land play on offer, 'f' at our own Main
+    // Phase 1 is a deliberate skip and must still engage.
+    #[test]
+    fn press_at_own_main_without_land_engages() {
+        let v = view(Step::PrecombatMain, 6, true);
+        let l = pass_concede_plus(vec![cast(4)]);
+        assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_some());
+    }
+
+    // Issue #39 guard: a land play breaks auto-pass on any turn, even the
+    // press turn, whatever step the press happened at.
+    #[test]
+    fn land_play_always_breaks_pass() {
+        let mode = CliPlayer::new_pass_mode(&view(Step::PrecombatMain, 6, true));
+        let v = view(Step::PostcombatMain, 6, true);
+        let l = pass_concede_plus(vec![Action::PlayLand { object_id: ObjectId(3) }]);
+        assert!(CliPlayer::should_break_pass(&v, &l, &mode));
     }
 }
