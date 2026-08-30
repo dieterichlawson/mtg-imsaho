@@ -266,3 +266,25 @@ fn bonds_of_faith_loses_its_bonus_mid_combat_without_removing_the_attacker() {
     assert!(!state.can_attack(youth, &reg),
         "and it could not be declared again");
 }
+
+/// A targeted until-end-of-turn pump changes exactly its target's numbers,
+/// by exactly the printed amounts (Moment of Heroism: +2/+2). The full
+/// mutation sweep showed the targeted `ModifyPT` accumulation in
+/// `effective_power`/`effective_toughness` — the guard that matches the
+/// target and the `+=` itself — was pinned by no test.
+#[test]
+fn a_targeted_pump_changes_only_its_target_by_the_printed_amount() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let pumped = ready_creature(&mut state, P0, 2, 3);
+    let bystander = ready_creature(&mut state, P0, 2, 3);
+
+    let heroism = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    let state = cast_and_resolve(&state, &reg, heroism, vec![Target::Object(pumped)]);
+
+    assert_eq!(state.effective_power(pumped, &reg), Some(4), "2 + 2");
+    assert_eq!(state.effective_toughness(pumped, &reg), Some(5), "3 + 2");
+    assert_eq!(state.effective_power(bystander, &reg), Some(2),
+        "the bystander is untouched");
+    assert_eq!(state.effective_toughness(bystander, &reg), Some(3));
+}

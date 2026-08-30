@@ -1160,3 +1160,24 @@ fn an_attack_watcher_hears_the_attack_from_the_battlefield_only() {
     assert_eq!(state.get_player(P0).life, p0_life,
         "the graveyard copy stays silent");
 }
+
+/// The stack accessors report what an entry is: a trigger entry is a
+/// trigger, a spell entry is not (resolution and display both key off
+/// this).
+#[test]
+fn stack_entry_accessors_tell_triggers_and_spells_apart() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut state, P0, 1, 1);
+    let card_id = state.get_object(src).unwrap().card_id;
+    let trigger_entry = StackEntry::Trigger(triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(src, card_id, P0, "test"),
+        mtg_engine::triggers::TriggerEvent::Upkeep,
+    ));
+    assert!(trigger_entry.as_trigger().is_some());
+    assert!(trigger_entry.as_spell().is_none());
+    let spell_entry = StackEntry::Spell(src);
+    assert!(spell_entry.as_trigger().is_none());
+    assert_eq!(spell_entry.as_spell(), Some(src));
+    let _ = reg;
+}

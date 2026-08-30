@@ -133,3 +133,20 @@ fn bug_summoning_sickness_not_enforced_for_tap_abilities() {
     assert!(!has_priest_ability,
         "Priest with summoning sickness should NOT be able to activate {{T}} ability");
 }
+
+/// CR 613.10c-adjacent bookkeeping: "gaining" control of a permanent you
+/// already control is not a control change — it must not re-apply the
+/// summoning-sickness reset that a real change of controller causes.
+#[test]
+fn a_control_change_to_the_same_controller_is_a_no_op() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let veteran = ready_creature(&mut state, P0, 2, 2);
+    assert!(!state.get_object(veteran).unwrap().summoning_sick);
+
+    state.change_control(veteran, P0);
+
+    assert!(!state.get_object(veteran).unwrap().summoning_sick,
+        "no controller changed, so no summoning sickness");
+    let _ = reg;
+}

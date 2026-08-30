@@ -2120,3 +2120,27 @@ fn attacks_each_combat_in_the_text_means_force_attack_in_the_effects() {
     assert_covers(checked, 200, "are in the registry");
     assert_none(&offenders, "declare ForceAttack exactly when their text says so");
 }
+
+/// CR 202.2 / 204.2: a card's printed colors come from its mana cost, and a
+/// face with no mana cost says its colors with a color indicator — while a
+/// cost with no colored symbols means colorless.
+#[test]
+fn printed_colors_come_from_cost_or_color_indicator() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let blade = named_permanent(&mut state, &reg, "Victim of Night", P0);
+    assert_eq!(state.printed_colors_of(blade, &reg), vec![Color::Black],
+        "{{B}}{{B}} prints one color, listed once");
+
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    assert_eq!(state.printed_colors_of(torch, &reg), Vec::<Color>::new(),
+        "an artifact's generic cost prints no colors");
+
+    // A transformed werewolf's back face has no cost — its color comes
+    // from the color indicator (CR 204.2).
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    state.get_object_mut(mayor).unwrap().is_transformed = true;
+    assert_eq!(state.printed_colors_of(mayor, &reg), vec![Color::Green],
+        "Howlpack Alpha is green by color indicator");
+}

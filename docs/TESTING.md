@@ -37,6 +37,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | flashback (CR 702.33) | `flashback.rs`, `flashback_multiple_instances.rs` |
 | targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs`, `submitted_targets.rs` |
 | registry lookup and `CardBehavior` hook defaults | `registry_and_behavior_contracts.rs` |
+| the fuzzing oracle checks itself | `invariant_checker.rs` |
 | fizzling | `fizzle.rs` |
 | activated abilities (CR 602) | `activated_abilities.rs`, `activated_no_stack.rs` |
 | regeneration (CR 701.15) | `regeneration.rs` |

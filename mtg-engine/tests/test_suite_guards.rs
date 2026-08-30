@@ -831,8 +831,11 @@ fn no_test_assembles_combat_state_by_hand() {
     for path in test_files() {
         let Ok(text) = fs::read_to_string(&path) else { continue };
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        // `common/mod.rs` is where the helper that builds it lives.
-        if name == "mod.rs" {
+        // `common/mod.rs` is where the helper that builds it lives, and
+        // `invariant_checker.rs` builds deliberately malformed combat states
+        // — its subject is that the fuzzing oracle flags exactly the states
+        // the helpers refuse to produce.
+        if name == "mod.rs" || name == "invariant_checker.rs" {
             continue;
         }
         for (n, line) in text.lines().enumerate() {
