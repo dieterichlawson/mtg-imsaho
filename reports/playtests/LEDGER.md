@@ -22,3 +22,18 @@ issues are filed per `docs/plans/bug-pipeline.md` (`phase:playtest`).
 | 2026-08-29 | Vandal | V3 save/reload abuse | rb-vampires vs gw-humans | 2 | resume correct across mid-combat/mid-choice; `rr` hot-reload bug found | #37 |
 | 2026-08-29 | Vandal | V4 degenerate decks | custom all-curses vs ub-zombies | 2 | no crashes under simultaneous curses / library depletion at scale | none |
 | 2026-08-29 | Vandal | V7 UI overflow | ug-spider-spawning vs wb-coverage | 2 | rendering held up at scale; search-library picker bug found | #38 |
+| 2026-08-30 | Competitor | C2 control mirror | wu-coverage vs ub-coverage | 2 | split 1-1, t22/t24 | none |
+| 2026-08-30 | Competitor | C3 attrition | br-coverage vs bg-coverage | 2 | bg-coverage won both, t16/t16 | none |
+| 2026-08-30 | Competitor | C6 equipment voltron vs token swarm | wr-coverage vs wg-coverage (sub for gw-humans) | 2 | wg-coverage won both, t22/t24 | none |
+| 2026-08-30 | Competitor | C8 transform tempo | rg-coverage vs wr-coverage | 2 | split 1-1, t13/t16; werewolf flip logic verified correct | none |
+| 2026-08-30 | Competitor | C9 aristocrats/sac vs tokens | ub-coverage vs wg-coverage (sub for ub-zombies/gw-humans) | 2 | ub-coverage won both, t15/t17, close races | #45, #48 |
+| 2026-08-30 | Rules Lawyer | L2 targeting edges | ur-coverage vs wb-coverage | 2 | illegal graveyard target offered, found | #46 |
+| 2026-08-30 | Rules Lawyer | L3 optional everything | wu-coverage vs bg-coverage | 2 | every "may" verified genuinely optional | none |
+| 2026-08-30 | Rules Lawyer | L6 copy/DFC | rg-coverage vs ug-coverage | 2 | DFC transform object-identity verified; no copy effects in this pairing | none |
+| 2026-08-30 | Rules Lawyer | L9 replacement effects | br-coverage vs wg-coverage | 2 | no CR 616 dual-replacement case exists in this pairing; source review confirmed correct ordering elsewhere | none |
+| 2026-08-30 | Rules Lawyer | L10 mana ability edges | ub-coverage vs rg-coverage | 2 | mana abilities confirmed to bypass the stack correctly | none |
+| 2026-08-30 | Vandal | V5 stall | ug-spider-spawning vs bg-coverage | 2 | both games deck-out at t64, ended cleanly | none |
+| 2026-08-30 | Vandal | V6 concede at weirdest moment | rb-vampires vs wb-coverage | 2 (+1 short) | all concede paths safe; found game-over screen render bug | #47 |
+| 2026-08-30 | Vandal | V8 search/menu abuse | wu-coverage vs ur-coverage | 2 | all panes handled cleanly at every prompt, no corruption | none |
+| 2026-08-30 | Vandal | V9 rapid concede/new-game churn | gw-humans vs rb-vampires | ~12 rapid cycles | clean state on every relaunch; #37 fix holds under churn | none |
+| 2026-08-30 | Vandal | V10 priority-mash marathon | ub-zombies vs ug-spider-spawning | 2 (of 3 launched) | mashed to t108, no hangs/skips/double-resolution | none |
