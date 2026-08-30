@@ -135,3 +135,24 @@ The weekly workflow now files an issue only for survivors in none of the
 three buckets — i.e. *new* regressions — and its cargo-mutants version is
 pinned (27.1.0), because mutant names render differently across versions
 and the suppression lists match on the rendered name.
+
+## The checker battery, verified
+
+A scoped re-sweep of `invariants.rs` after `invariant_checker.rs`:
+**137 mutants — 110 caught, 15 unviable, 12 missed** (down from 120
+missed in the full sweep). The clean-state half did most of the work:
+an inverted check flags healthy structures, so the clean state carries
+populated libraries, graveyards, a stack spell, attachments, loyalty,
+declared combat, a damaged-but-healthy creature, a +1/+1 counter, and a
+legend with its twin in the graveyard. Four of the twelve stragglers
+were then killed directly (deathtouch/damage conjunction, the legend
+skip clause, the counter-annihilation conjunction, the three-queue
+trigger sum), verified failing under their mutants.
+
+The last eight collapse to three normalized backlog lines: the
+`being_cast` identity check (needs a mid-cast state), and the
+`check_settled` skip-clause operator flips — several of which diverge
+only on states already violating a different invariant or on printed
+characteristics the pool doesn't contain (0-toughness cards, a printed
+power without a toughness), which is why they sit in the backlog for a
+closer look rather than the accepted list.

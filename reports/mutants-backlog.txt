@@ -181,3 +181,8 @@ mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseTarget{opti
 mtg-engine/src/view.rs: delete match arm crate::state::AwaitingAction::ResolutionChoice{choice, ..} in GameView::for_player
 mtg-engine/src/view.rs: replace != with == in GameView::for_player
 mtg-engine/src/view.rs: replace >= with < in GameView::for_player
+# invariants.rs remainders after the checker battery (12 raw mutants, three
+# normalized lines; see mutation-testing.md for which are near-equivalent):
+mtg-engine/src/invariants.rs: replace == with != in check_core
+mtg-engine/src/invariants.rs: replace && with || in check_settled
+mtg-engine/src/invariants.rs: replace || with && in check_settled

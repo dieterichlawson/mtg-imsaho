@@ -39,9 +39,23 @@ fn a_clean_state_has_no_violations() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Battlefield: creatures, a land, an attached Aura, attached Equipment,
-    // a planeswalker with loyalty.
-    let bear = ready_creature(&mut state, P0, 2, 2);
+    // a planeswalker with loyalty. The bear carries healthy in-game marks —
+    // non-lethal damage and a +1/+1 counter — because an inverted checker
+    // clause flags exactly the healthy version of what it polices.
+    let bear = ready_creature(&mut state, P0, 2, 3);
+    {
+        let o = state.get_object_mut(bear).unwrap();
+        o.damage_marked = 1;
+        o.counters.insert(CounterType::PlusOnePlusOne, 1);
+    }
     named_permanent(&mut state, &reg, "Forest", P1);
+    // A legend on the battlefield with its twin in the graveyard: only
+    // battlefield copies count for CR 704.5j.
+    let geist_id = reg.get_id_by_name("Geist of Saint Traft").unwrap();
+    let geist = state.create_object(geist_id, P0, Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(geist).unwrap().name = "Geist of Saint Traft".into();
+    let dead_geist = state.create_object(geist_id, P0, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(dead_geist).unwrap().name = "Geist of Saint Traft".into();
     let aura_id = reg.get_id_by_name("Pacifism").unwrap();
     let aura = state.create_object(aura_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(aura).unwrap().name = "Pacifism".into();
@@ -343,13 +357,19 @@ fn triggers_still_queued_at_priority_are_flagged() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let src = ready_creature(&mut state, P0, 1, 1);
     let card_id = state.get_object(src).unwrap().card_id;
-    state.pending_triggers.push(mtg_engine::triggers::PendingTrigger::new(
-        mtg_engine::triggers::TriggerSource::new(src, card_id, P0, "test trigger"),
+    // All three queues count toward "still queued".
+    let make = |desc: &str| mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(src, card_id, P0, desc),
         mtg_engine::triggers::TriggerEvent::Upkeep,
-    ));
+    );
+    state.pending_triggers.push(make("queued"));
+    state.pending_trigger_pushes_ap.push(make("ap push"));
+    state.pending_trigger_pushes_nap.push(make("nap push"));
     state.priority_player = Some(P0);
     state.awaiting_action = None;
-    assert_flags(&state, &reg, "still queued");
+    let v = check_settled(&state, &reg);
+    assert!(v.iter().any(|m| m.contains("3 collected trigger(s) still queued")),
+        "all three queues are counted: {v:?}");
 }
 
 #[test]
