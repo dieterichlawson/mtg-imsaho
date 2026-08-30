@@ -160,21 +160,7 @@ pub(crate) fn generate_cast_actions_with_targets(
             };
 
             for t1 in &targets1 {
-                // "from THEIR graveyard" — the second slot's candidates can
-                // depend on the first target, which is only known here.
-                let mut options = valid_targets_for_req(state, caster, spell_id, inner2, behavior, registry);
-                if matches!(inner2, TargetRequirement::GraveyardCardOwnedByTargetPlayer) {
-                    if let crate::actions::Target::Player(pid) = t1 {
-                        options.retain(|t| match t {
-                            crate::actions::Target::Object(id) =>
-                                state.get_object(*id).is_some_and(|o| o.owner == *pid),
-                            crate::actions::Target::Player(_) => false,
-                            // CR 608.2b: a target that stopped being legal is skipped.
-                            crate::actions::Target::Illegal => false,
-                        });
-                    }
-                }
-                options.retain(|t| t != t1);
+                let options = second_slot_options(state, caster, spell_id, inner2, t1, behavior, registry);
 
                 let lower = if max2 == 1 { 1 } else { 0 };
                 for k in lower..=max2.min(options.len()) {
@@ -230,6 +216,38 @@ pub(crate) fn generate_cast_actions_with_targets(
         }
     }
 }
+/// The legal second-slot candidates of a `TwoTargets` requirement once the
+/// first target is known. "From THEIR graveyard" — the second slot's
+/// candidates can depend on the first target, so every path that offers or
+/// enumerates second-slot choices (expanded actions AND the interactive
+/// `CastTargetSpec`) must narrow through here, not call
+/// `valid_targets_for_req` on the raw requirement (issue #46).
+fn second_slot_options(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    inner2: &crate::cards::TargetRequirement,
+    first: &crate::actions::Target,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Vec<crate::actions::Target> {
+    use crate::cards::TargetRequirement;
+    let mut options = valid_targets_for_req(state, caster, spell_id, inner2, behavior, registry);
+    if matches!(inner2, TargetRequirement::GraveyardCardOwnedByTargetPlayer) {
+        if let crate::actions::Target::Player(pid) = first {
+            options.retain(|t| match t {
+                crate::actions::Target::Object(id) =>
+                    state.get_object(*id).is_some_and(|o| o.owner == *pid),
+                crate::actions::Target::Player(_) => false,
+                // CR 608.2b: a target that stopped being legal is skipped.
+                crate::actions::Target::Illegal => false,
+            });
+        }
+    }
+    options.retain(|t| t != first);
+    options
+}
+
 /// Drop a target named twice within one instance of the word "target"
 /// (CR 601.2c).
 ///
@@ -320,8 +338,32 @@ pub(crate) fn targets_are_legal(
         R::None => targets.is_empty(),
         R::TwoTargets(first, second) => {
             let split = targets.len().min(1);
-            targets_are_legal(state, first, &targets[..split], caster, source_id, behavior, registry)
-                && targets_are_legal(state, second, &targets[split..], caster, source_id, behavior, registry)
+            if !(targets_are_legal(state, first, &targets[..split], caster, source_id, behavior, registry)
+                && targets_are_legal(state, second, &targets[split..], caster, source_id, behavior, registry))
+            {
+                return false;
+            }
+            // Cross-slot restriction the per-slot checks cannot see: "from
+            // THEIR graveyard" ties the second slot's cards to the player
+            // named by the first target (issue #46). The per-target
+            // `is_target_legal` is asked one target at a time and accepts any
+            // graveyard card, so a submitted declaration is re-checked here.
+            let inner2 = match second.as_ref() {
+                R::UpToTargets(_, inner) => inner.as_ref(),
+                other => other,
+            };
+            if matches!(inner2, R::GraveyardCardOwnedByTargetPlayer) {
+                if let Some(crate::actions::Target::Player(pid)) = targets.first() {
+                    if !targets[split..].iter().all(|t| match t {
+                        crate::actions::Target::Object(id) =>
+                            state.get_object(*id).is_some_and(|o| o.owner == *pid),
+                        _ => false,
+                    }) {
+                        return false;
+                    }
+                }
+            }
+            true
         }
         R::UpToTargets(max, inner) => {
             targets.len() <= *max
@@ -550,9 +592,31 @@ pub(crate) fn build_cast_target_spec(
     match target_req {
         TargetRequirement::None => CastTargetSpec::NoTargets,
         TargetRequirement::TwoTargets(req1, req2) => {
-            let t1 = valid_targets_for_req(state, caster, spell_id, req1, behavior, registry);
-            let t2 = valid_targets_for_req(state, caster, spell_id, req2, behavior, registry);
-            CastTargetSpec::TwoTargets(t1, t2)
+            // Mirror `generate_cast_actions_with_targets`: the second slot may
+            // be "up to N", and its candidates can depend on the chosen first
+            // target — so each first option carries its own narrowed list
+            // (issue #46: the flat pair of independent lists offered every
+            // graveyard card in the game for Memory's Journey's card slot,
+            // whichever player was chosen).
+            let (second_max, inner2) = match req2.as_ref() {
+                TargetRequirement::UpToTargets(max, inner) => (*max, inner.as_ref()),
+                other => (1, other),
+            };
+            let second_min = usize::from(second_max == 1);
+
+            let mut first = Vec::new();
+            let mut second = Vec::new();
+            for t1 in valid_targets_for_req(state, caster, spell_id, req1, behavior, registry) {
+                let options = second_slot_options(state, caster, spell_id, inner2, &t1, behavior, registry);
+                // A first target with no legal second choice is not castable
+                // when the second slot is mandatory — don't offer it.
+                if options.len() < second_min {
+                    continue;
+                }
+                first.push(t1);
+                second.push(options);
+            }
+            CastTargetSpec::TwoTargets { first, second, second_min, second_max }
         }
         TargetRequirement::UpToTargets(max, inner_req) => {
             let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);

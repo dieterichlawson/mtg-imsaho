@@ -1082,14 +1082,40 @@ impl CliPlayer {
                     vec![target]
                 }
             }
-            CastTargetSpec::TwoTargets(options1, options2) => {
-                let t1 = Self::prompt_target(view,options1, &format!("{}: select first of two targets", spell.name))?;
-                let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
-                if remaining.is_empty() {
-                    return None;
+            CastTargetSpec::TwoTargets { first, second, second_min, second_max } => {
+                let t1 = Self::prompt_target(view, first, &format!("{}: select first of two targets", spell.name))?;
+                let idx = first.iter().position(|t| *t == t1)?;
+                // The engine pre-narrowed each first choice's legal second-slot
+                // options (e.g. "cards from THEIR graveyard" — only the chosen
+                // player's cards).
+                let mut remaining = second[idx].clone();
+                if *second_max <= 1 {
+                    if remaining.is_empty() {
+                        return None;
+                    }
+                    let t2 = Self::prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
+                    vec![t1, t2]
+                } else {
+                    // "Up to N" second slot: pick 0..=N.
+                    let mut chosen = vec![t1];
+                    for i in 0..*second_max {
+                        if remaining.is_empty() { break; }
+                        let label = format!("{}: select target {} of up to {}",
+                            spell.name, i + 1, second_max);
+                        match Self::prompt_target_optional(view, &remaining, &label) {
+                            Some(target) => {
+                                remaining.retain(|t| *t != target);
+                                chosen.push(target);
+                            }
+                            None => break,
+                        }
+                    }
+                    if chosen.len() <= *second_min {
+                        // Mandatory second target not chosen — treat as cancel.
+                        return None;
+                    }
+                    chosen
                 }
-                let t2 = Self::prompt_target(view,&remaining, &format!("{}: select second of two targets", spell.name))?;
-                vec![t1, t2]
             }
             CastTargetSpec::UpToTargets { max, options } => {
                 let mut chosen = Vec::new();

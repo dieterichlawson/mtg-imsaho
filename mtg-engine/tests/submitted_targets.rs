@@ -600,3 +600,69 @@ fn a_cast_failing_only_the_cards_own_target_check_does_not_happen() {
          card's non-Vampire/Werewolf/Zombie clause; the cast is refused");
     assert_eq!(state.get_object(zombie).unwrap().zone, Zone::Battlefield);
 }
+
+/// Cross-slot restriction (issue #46): Memory's Journey is "target player
+/// shuffles up to three target cards from THEIR graveyard" — the legal card
+/// targets depend on which player was chosen. A submitted cast pairing the
+/// opponent with a card from the caster's own graveyard is refused.
+#[test]
+fn a_cast_pairing_a_player_with_anothers_graveyard_card_does_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let my_card = named_card_in_graveyard(&mut state, &reg, "Island", P0);
+    let their_card = named_card_in_graveyard(&mut state, &reg, "Plains", P1);
+
+    let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
+    let after = cast_onto_stack(&state, &reg, journey,
+        vec![Target::Player(P1), Target::Object(my_card)]);
+
+    assert_eq!(after.get_object(journey).unwrap().zone, Zone::Hand,
+        "a card in the caster's graveyard is not 'their graveyard' once the \
+         opponent is the chosen player — the cast is refused");
+    assert!(after.stack.is_empty());
+
+    // The same pairing done right is accepted.
+    let after = cast_onto_stack(&state, &reg, journey,
+        vec![Target::Player(P1), Target::Object(their_card)]);
+    assert_eq!(after.get_object(journey).unwrap().zone, Zone::Stack,
+        "the chosen player's own card is a legal pairing");
+}
+
+/// The interactive offer must be narrowed the same way (issue #46): each
+/// first-slot choice in the `TwoTargets` spec carries only the second-slot
+/// options legal under it, so choosing the opponent never offers the
+/// caster's own graveyard cards.
+#[test]
+fn the_two_targets_spec_narrows_the_second_slot_to_the_chosen_player() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let my_card = named_card_in_graveyard(&mut state, &reg, "Island", P0);
+    let my_card2 = named_card_in_graveyard(&mut state, &reg, "Island", P0);
+    let their_card = named_card_in_graveyard(&mut state, &reg, "Plains", P1);
+
+    let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == journey)
+        .expect("Memory's Journey should be castable");
+
+    let mtg_engine::actions::CastTargetSpec::TwoTargets { first, second, second_min, second_max } =
+        &cs.target_spec
+    else {
+        panic!("Memory's Journey has a player-then-cards target spec, got {:?}", cs.target_spec);
+    };
+
+    assert_eq!((*second_min, *second_max), (0, 3),
+        "'up to three' means 0 through 3 card targets");
+
+    let p1_idx = first.iter().position(|t| *t == Target::Player(P1))
+        .expect("the opponent is a choosable player");
+    assert_eq!(second[p1_idx], vec![Target::Object(their_card)],
+        "choosing the opponent offers exactly the opponent's graveyard");
+
+    let p0_idx = first.iter().position(|t| *t == Target::Player(P0))
+        .expect("the caster is a choosable player");
+    assert_eq!(second[p0_idx].len(), 2, "choosing yourself offers exactly your own cards");
+    assert!(second[p0_idx].contains(&Target::Object(my_card)));
+    assert!(second[p0_idx].contains(&Target::Object(my_card2)));
+}

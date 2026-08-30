@@ -238,8 +238,20 @@ pub enum CastTargetSpec {
     NoTargets,
     /// Choose exactly one target from this list.
     SingleTarget(Vec<Target>),
-    /// Choose two targets, one from each list. Targets must be different.
-    TwoTargets(Vec<Target>, Vec<Target>),
+    /// Choose two target instances: one from `first`, then `second_min..=second_max`
+    /// from the list in `second` at the same index as the chosen first target.
+    /// The second slot's legal candidates can depend on the first choice
+    /// ("target player shuffles ... cards from THEIR graveyard"), so each
+    /// first option carries its own pre-narrowed second-slot list.
+    TwoTargets {
+        first: Vec<Target>,
+        /// Parallel to `first`: the legal second-slot options once that
+        /// first target is chosen.
+        second: Vec<Vec<Target>>,
+        /// 0 when the second slot is "up to N" (choosing none is legal), else 1.
+        second_min: usize,
+        second_max: usize,
+    },
     /// Choose up to N targets from this list.
     UpToTargets { max: usize, options: Vec<Target> },
 }
