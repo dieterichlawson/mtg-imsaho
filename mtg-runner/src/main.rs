@@ -373,6 +373,13 @@ fn main() {
     }
     let _ = fs::remove_file(&hot_reload_path);
 
+    // The CLI paints full frames without ever clearing on exit; printing the
+    // summary straight onto the last frame merges it with stale rows. Wipe
+    // the TUI first so the summary is the only thing on screen (issue #47).
+    if has_human {
+        mtg_player::cli::reset_terminal_for_exit();
+    }
+
     let result_msg = match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
             let name = &player_names[id.0 as usize];

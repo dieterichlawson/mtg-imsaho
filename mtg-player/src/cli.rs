@@ -20,6 +20,18 @@ use crate::Player;
 pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Restore the terminal for normal line-oriented output after the TUI:
+/// leave raw mode, clear the last rendered frame, and home the cursor.
+/// The runner calls this before printing the end-of-game summary so the
+/// summary doesn't land on top of a stale frame and visually merge with
+/// leftover rows (issue #47).
+pub fn reset_terminal_for_exit() {
+    let _ = terminal::disable_raw_mode();
+    let mut out = stdout();
+    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+    let _ = out.flush();
+}
+
 /// Handle for the background spinner thread. Drop to stop.
 pub struct SpinnerHandle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
