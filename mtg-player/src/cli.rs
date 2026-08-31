@@ -59,6 +59,13 @@ enum PassMode {
     },
 }
 
+/// One round of an "up to N targets" prompt (see `prompt_target_up_to`).
+enum UpToPick {
+    Pick(mtg_engine::actions::Target),
+    Done,
+    Cancel,
+}
+
 pub struct CliPlayer {
     name: String,
     /// When set, auto-pass priority until the specified condition.
@@ -1136,17 +1143,19 @@ impl CliPlayer {
                     if remaining.is_empty() { break; }
                     let label = format!("{}: select target {} of up to {}",
                         spell.name, i + 1, max);
-                    match Self::prompt_target_optional(view,&remaining, &label) {
-                        Some(target) => {
+                    match Self::prompt_target_up_to(view, &remaining, &label) {
+                        UpToPick::Pick(target) => {
                             remaining.retain(|t| *t != target);
                             chosen.push(target);
                         }
-                        None => break,
+                        UpToPick::Done => break,
+                        UpToPick::Cancel => return None,
                     }
                 }
-                if chosen.is_empty() {
-                    return None;
-                }
+                // CR 601.2c: an "up to N targets" spell may be cast choosing
+                // zero — including when no legal target exists at all. An
+                // empty choice is a real cast, not a cancel; treating it as
+                // one made the menu entry a silent no-op (issue #49).
                 chosen
             }
         };
@@ -1203,6 +1212,34 @@ impl CliPlayer {
     }
 
     /// Prompt for an optional target (for "up to N" spells). Empty = done.
+    /// Pick one target of an "up to N" batch, or stop. `Done` casts with the
+    /// targets chosen so far (legal even at zero — CR 601.2c); `Cancel`
+    /// abandons the cast, which `Done` used to double as.
+    fn prompt_target_up_to(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> UpToPick {
+        let mut labels: Vec<String> = options.iter().map(|t| match t {
+            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+            mtg_engine::actions::Target::Player(pid) => {
+                if *pid == view.you { "You".into() } else { "Opponent".into() }
+            }
+            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
+        }).collect();
+        labels.push("Done (cast with targets chosen so far)".into());
+        labels.push("Cancel the cast".into());
+
+        loop {
+            Self::render(view, Some(&labels), Some(label), &view.display_log, "", None);
+            let input = Self::read_line("");
+            if input.is_empty() { return UpToPick::Done; }
+            if let Ok(idx) = input.parse::<usize>() {
+                if idx < options.len() {
+                    return UpToPick::Pick(options[idx].clone());
+                }
+                if idx == options.len() { return UpToPick::Done; }
+                if idx == options.len() + 1 { return UpToPick::Cancel; }
+            }
+        }
+    }
+
     fn prompt_target_optional(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
         let mut labels: Vec<String> = options.iter().map(|t| match t {
             mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
