@@ -1442,9 +1442,22 @@ impl CliPlayer {
                 format!("Bottom {}", names.join(", "))
             }
             Action::Concede => "Concede".into(),
-            Action::ActivateLoyaltyAbility { object_id, ability_index, targets } =>
-                format!("Activate loyalty ability {} on {}{}", ability_index,
-                    Self::perm_name(view, *object_id), Self::targets_suffix(view, targets)),
+            Action::ActivateLoyaltyAbility { object_id, ability_index, targets } => {
+                // Name the ability, not its index: "loyalty ability 1" told
+                // the player nothing, and two abilities rendered identically
+                // apart from that number (#61).
+                let desc = view.battlefield.iter()
+                    .find(|p| p.object_id == *object_id)
+                    .and_then(|p| p.loyalty_abilities.iter()
+                        .find(|(i, _)| i == ability_index)
+                        .map(|(_, d)| d.clone()));
+                match desc {
+                    Some(d) => format!("{}: {}{}", Self::perm_name(view, *object_id),
+                        d, Self::targets_suffix(view, targets)),
+                    None => format!("Activate loyalty ability {} on {}{}", ability_index,
+                        Self::perm_name(view, *object_id), Self::targets_suffix(view, targets)),
+                }
+            }
             Action::ResolveChoice { choice } => {
                 use mtg_engine::actions::ResolvedChoice;
                 match choice {
@@ -2589,6 +2602,26 @@ impl Player for CliPlayer {
                 Action::Concede => {
                     // Defer concede to always be last.
                     deferred_concede = Some((i, Self::format_action(view, action)));
+                }
+                // The ability's own text goes in the label: without it two
+                // different abilities on one permanent rendered identically
+                // and the player could not tell a 2-mana ability from a
+                // 5-mana one (#61). The engine already collapses the metadata
+                // into activatable_abilities, description included.
+                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, .. } => {
+                    let desc = legal.activatable_abilities.iter()
+                        .find(|ab| ab.object_id == *object_id
+                            && ab.ability_index == *ability_index
+                            && ab.source_card_id == *source_card_id)
+                        .map(|ab| ab.description.clone())
+                        .filter(|d| !d.is_empty());
+                    let label = match desc {
+                        Some(d) => format!("{}: {}{}", Self::perm_name(view, *object_id),
+                            d, Self::targets_suffix(view, targets)),
+                        None => Self::format_action(view, action),
+                    };
+                    display.push(DisplayEntry::Direct(i));
+                    display_labels.push(label);
                 }
                 // Choose-cards-from-hand menus: two Forests are
                 // interchangeable, so options whose labels render identically

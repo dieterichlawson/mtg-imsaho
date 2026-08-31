@@ -3360,6 +3360,7 @@ mod tests {
             keywords: vec![],
             oracle_text: String::new(),
             counters: HashMap::new(),
+            loyalty_abilities: vec![],
         }
     }
 
@@ -3382,6 +3383,7 @@ mod tests {
             keywords: vec![],
             oracle_text: String::new(),
             counters: HashMap::new(),
+            loyalty_abilities: vec![],
         }
     }
 

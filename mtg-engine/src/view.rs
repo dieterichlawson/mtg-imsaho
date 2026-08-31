@@ -77,6 +77,11 @@ pub struct PermanentView {
     /// Counters on the permanent (+1/+1, -1/-1, loyalty, etc). Exposed so
     /// the LLM prompt can render counter state alongside effective P/T.
     pub counters: std::collections::HashMap<CounterType, u32>,
+    /// Loyalty abilities as (ability_index, "+1: Each player discards a
+    /// card."). Exposed so ability menus can NAME the ability a player is
+    /// choosing — an index alone made two abilities on one walker render
+    /// identically (#61). Empty for non-planeswalkers.
+    pub loyalty_abilities: Vec<(usize, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +183,25 @@ impl GameView {
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),
                     counters: obj.counters.clone(),
+                    loyalty_abilities: registry.get(obj.card_id)
+                        .map(|b| b.loyalty_abilities(state, obj.id).iter().map(|ab| {
+                            let sign = if ab.loyalty_change > 0 {
+                                format!("+{}", ab.loyalty_change)
+                            } else {
+                                ab.loyalty_change.to_string()
+                            };
+                            // Most descriptions already lead with their cost
+                            // ("+1: Each player discards a card."); only add
+                            // the sign when the card's text doesn't carry it.
+                            let d = ab.description.trim();
+                            let label = if d.starts_with(&sign) {
+                                d.to_string()
+                            } else {
+                                format!("{sign}: {d}")
+                            };
+                            (ab.ability_index, label)
+                        }).collect())
+                        .unwrap_or_default(),
                 }
             })
             .collect();
