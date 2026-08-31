@@ -2204,8 +2204,26 @@ impl CliPlayer {
         use mtg_engine::funding::FundingResponse;
         use mtg_engine::types::ManaType;
 
-        println!("\n{description}");
-        println!("Max X = {}", options.max_x);
+        // Rendered inside the TUI frame like every other prompt: bare
+        // println! landed on top of the drawn frame, colliding with the log
+        // panel mid-word — "Max X = 1" read as "Max X = 13 (p0) ──" — and
+        // left the stale main-phase menu on screen, so players pressed Enter
+        // "to retry" and silently funded X = 0 (#56).
+        Self::render(view, None, Some(description), &view.display_log, "", None);
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let side = term_w as usize / 5;
+        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
+        let w = term_w as usize;
+        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+        let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
+        let mut r = cursor::position().unwrap_or((0, 20)).1;
+        let mut out = stdout();
+
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+            Print(clip(&format!("  Max X = {}", options.max_x))),
+            SetAttribute(Attribute::Reset), ResetColor);
+        r += 1;
         let pool_summary: Vec<String> = [
             ManaType::White, ManaType::Blue, ManaType::Black,
             ManaType::Red, ManaType::Green, ManaType::Colorless,
@@ -2214,24 +2232,35 @@ impl CliPlayer {
             if n > 0 { Some(format!("{n} {mt:?}")) } else { None }
         }).collect();
         if !pool_summary.is_empty() {
-            println!("Pool: {}", pool_summary.join(", "));
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                Print(clip(&format!("  Pool: {}", pool_summary.join(", ")))));
+            r += 1;
         }
         for g in &options.groups {
-            println!(
-                "  {} x{} ({}/tap, max {})",
-                g.name, g.source_ids.len(), g.mana_per_tap, g.max_contribution()
-            );
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                Print(clip(&format!("  {} x{} ({}/tap, max {})",
+                    g.name, g.source_ids.len(), g.mana_per_tap, g.max_contribution()))));
+            r += 1;
         }
-        let _ = view;
+        let _ = execute!(out, cursor::MoveTo(col, r));
+        let _ = out.flush();
 
         let x: u32 = loop {
-            let input = Self::read_line("X = ");
+            // Clear the input row before each attempt (same as the combat
+            // prompts), so a rejected entry doesn't merge with the next.
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            let input = Self::read_line(&format!("  X (0-{}, blank = 0) = ", options.max_x));
             if input.trim().is_empty() {
                 break 0;
             }
             match input.trim().parse::<u32>() {
                 Ok(n) if n <= options.max_x => break n,
-                _ => println!("Enter an integer between 0 and {}.", options.max_x),
+                _ => {
+                    let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine),
+                        Print(format!("  Enter an integer between 0 and {}.", options.max_x)));
+                    let _ = stdout().flush();
+                    std::thread::sleep(std::time::Duration::from_millis(700));
+                }
             }
         };
 
@@ -2273,10 +2302,12 @@ impl CliPlayer {
             }
         }
         if remaining > 0 {
-            println!(
-                "(Note: could not allocate final {remaining} mana due to multi-mana source quanta; X = {})",
-                x - remaining,
-            );
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
+                Print(clip(&format!(
+                    "  (could not allocate final {remaining} mana due to source quanta; X = {})",
+                    x - remaining))));
+            let _ = stdout().flush();
+            std::thread::sleep(std::time::Duration::from_millis(900));
         }
         Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
     }
@@ -2293,18 +2324,52 @@ impl CliPlayer {
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
-        println!("\n{description}");
-        if min == max {
-            println!("Choose exactly {min} card{}.", if min == 1 { "" } else { "s" });
-        } else {
-            println!("Choose between {min} and {max} cards.");
-        }
-        for (i, &id) in options.iter().enumerate() {
-            println!("  [{i}] {}", Self::perm_name(view, id));
-        }
+        // Rendered inside the TUI frame — bare println! straddled the panel
+        // borders and let the previous frame bleed through mid-sentence (#56).
+        Self::render(view, None, Some(description), &view.display_log, "", None);
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let side = term_w as usize / 5;
+        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
+        let w = term_w as usize;
+        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+        let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
+        let mut r = cursor::position().unwrap_or((0, 20)).1;
+        let mut out = stdout();
 
+        let count_line = if min == max {
+            format!("  Choose exactly {min} card{}.", if min == 1 { "" } else { "s" })
+        } else {
+            format!("  Choose between {min} and {max} cards.")
+        };
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Yellow), Print(clip(&count_line)), ResetColor);
+        r += 1;
+        for (i, &id) in options.iter().enumerate() {
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetAttribute(Attribute::Bold), Print(format!("  {i}")),
+                SetAttribute(Attribute::Reset),
+                Print(clip(&format!(": {}", Self::perm_name(view, id)))));
+            r += 1;
+        }
+        let _ = execute!(out, cursor::MoveTo(col, r));
+        let _ = out.flush();
+
+        // "blank = minimum" only makes sense when there is a real range.
+        let hint = if min == max {
+            format!("  indices (space-separated, blank = first {min}): ")
+        } else {
+            format!("  indices (space-separated, blank = minimum {min}): ")
+        };
+        let mut error: Option<String> = None;
         loop {
-            let input = Self::read_line("indices (space-separated, blank = minimum): ");
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = error.take() {
+                let _ = execute!(stdout(), Print(clip(&msg)));
+                let _ = stdout().flush();
+                std::thread::sleep(std::time::Duration::from_millis(700));
+                let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            }
+            let input = Self::read_line(&hint);
             let trimmed = input.trim();
             let indices: Vec<usize> = if trimmed.is_empty() {
                 (0..min).collect()
@@ -2313,24 +2378,24 @@ impl CliPlayer {
                     .map(str::parse::<usize>)
                     .collect();
                 let Ok(v) = parsed else {
-                    println!("Invalid input.");
+                    error = Some("  Invalid input.".into());
                     continue;
                 };
                 v
             };
             if indices.iter().any(|&i| i >= options.len()) {
-                println!("Index out of range.");
+                error = Some("  Index out of range.".into());
                 continue;
             }
             let mut sorted = indices.clone();
             sorted.sort_unstable();
             sorted.dedup();
             if sorted.len() != indices.len() {
-                println!("Duplicate indices.");
+                error = Some("  Duplicate indices.".into());
                 continue;
             }
             if indices.len() < min || indices.len() > max {
-                println!("Need between {min} and {max} indices.");
+                error = Some(format!("  Need between {min} and {max} indices."));
                 continue;
             }
             let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
