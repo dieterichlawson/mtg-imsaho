@@ -1075,7 +1075,9 @@ impl CliPlayer {
                     KeyCode::Backspace => {
                         self.card_filter.pop();
                     }
-                    KeyCode::Char(c) => {
+                    // A chord the UI doesn't bind (Ctrl-A, Alt-x, ...) is
+                    // ignored, never inserted as its bare character (#51).
+                    KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         self.card_filter.push(c);
                     }
                     _ => {}
@@ -1473,8 +1475,11 @@ impl CliPlayer {
         let answer = loop {
             if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
                 match code {
-                    KeyCode::Char('y' | 'Y') => { let _ = execute!(stdout(), Print("y")); break true; }
-                    KeyCode::Char('n' | 'N') | KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
+                    // Bare y/n only: a control/alt chord must not answer a
+                    // confirmation prompt (#51).
+                    KeyCode::Char('y' | 'Y') if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { let _ = execute!(stdout(), Print("y")); break true; }
+                    KeyCode::Char('n' | 'N') if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { let _ = execute!(stdout(), Print("n")); break false; }
+                    KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         let _ = terminal::disable_raw_mode();
                         std::process::exit(0);
@@ -1504,10 +1509,10 @@ impl CliPlayer {
         let result = loop {
             if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
                 match code {
-                    KeyCode::Char('/') if buf.is_empty() => {
+                    KeyCode::Char('/') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         break None; // trigger card search
                     }
-                    KeyCode::Char('r') if buf.is_empty() => {
+                    KeyCode::Char('r') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         // Wait briefly for a second 'r' to trigger hot reload.
                         if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
                             if let Ok(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) = event::read() {
@@ -1535,7 +1540,12 @@ impl CliPlayer {
                             let _ = out.flush();
                         }
                     }
-                    KeyCode::Char(c) => {
+                    // Unbound chords are ignored, never typed: Ctrl-L must
+                    // not become the 'l' shortcut, and crossterm reports the
+                    // 0x1C-0x1F control codes (Ctrl-\ among them - SIGQUIT's
+                    // key) as the DIGITS 4-7 with CONTROL set, which used to
+                    // silently pick menu entries (#51).
+                    KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         buf.push(c);
                         let _ = execute!(out, Print(c.to_string()));
                         let _ = out.flush();
@@ -2379,7 +2389,7 @@ impl CliPlayer {
                         let _ = terminal::disable_raw_mode();
                         std::process::exit(0);
                     }
-                    KeyCode::Char(c) => {
+                    KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         filter.push(c);
                         selected = 0;
                     }
