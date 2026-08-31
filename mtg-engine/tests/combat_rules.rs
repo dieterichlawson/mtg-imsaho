@@ -378,6 +378,58 @@ fn an_illegal_block_by_a_tapped_creature_does_not_absorb_damage() {
         "the block was illegal; the attacker is unblocked and hits the player");
 }
 
+/// Regression (#62): a creature can block only one attacker (CR 509.1b) —
+/// no effect in this set lifts that. A submitted declaration assigning one
+/// blocker to two attackers used to be accepted pair-by-pair, and the
+/// blocker then dealt its full power to EACH attacker (a 2/1 killed a 2/2
+/// and a 3/1 in the same combat). Only the first assignment may stand; the
+/// second attacker is unblocked and hits the player.
+#[test]
+fn one_blocker_cannot_block_two_attackers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker_a = ready_creature(&mut state, P0, 2, 2);
+    let attacker_b = ready_creature(&mut state, P0, 3, 1);
+    let blocker = ready_creature(&mut state, P1, 2, 1);
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(
+        &mut state, &[(attacker_a, P1), (attacker_b, P1)], &[], &reg);
+    mtg_engine::combat::declare_blockers_with_registry(
+        &mut state, &[(blocker, attacker_a), (blocker, attacker_b)], &reg);
+
+    let combat = state.combat.as_ref().expect("combat exists");
+    assert_eq!(combat.blocker_assignments.get(&attacker_a).map(Vec::len), Some(1),
+        "the first assignment stands");
+    assert!(combat.blocker_assignments.get(&attacker_b).is_none_or(Vec::is_empty),
+        "CR 509.1b: the blocker is already blocking; the second assignment is refused");
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(attacker_b).unwrap().damage_marked, 0,
+        "the second attacker was never blocked and takes no damage");
+    assert_eq!(state.get_player(P1).life, p1_life - 3,
+        "the unblocked 3/1 hits the player");
+}
+
+/// The same pair submitted many times is one block, not many (#50): the
+/// declaration log and save file should not record a thousand copies.
+#[test]
+fn a_repeated_identical_block_pair_collapses_to_one() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 4, 4);
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
+    let pairs = vec![(blocker, attacker); 1000];
+    mtg_engine::combat::declare_blockers_with_registry(&mut state, &pairs, &reg);
+
+    let combat = state.combat.as_ref().expect("combat exists");
+    assert_eq!(combat.blocker_assignments.get(&attacker).map(Vec::len), Some(1),
+        "one block, however many times the pair was submitted");
+}
+
 /// A creature the attacking player controls can't be declared as a blocker —
 /// only the defending player's creatures block (CR 509.1a).
 #[test]

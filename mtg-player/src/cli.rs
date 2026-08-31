@@ -2023,6 +2023,18 @@ impl CliPlayer {
                                 Self::perm_name(view, blocker), Self::perm_name(view, attacker)));
                             break;
                         }
+                        // The same pair twice is one block, not two.
+                        if assignments.contains(&(blocker, attacker)) {
+                            continue;
+                        }
+                        // CR 509.1b: one blocker, one attacker — refuse here,
+                        // loudly, like the illegal-pairing case above.
+                        if assignments.iter().any(|&(b, _)| b == blocker) {
+                            error = Some(format!(
+                                "{} can block only one attacker (CR 509.1b).",
+                                Self::perm_name(view, blocker)));
+                            break;
+                        }
                         assignments.push((blocker, attacker));
                     }
                     _ => {

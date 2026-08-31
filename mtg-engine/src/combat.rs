@@ -85,6 +85,23 @@ pub fn declare_blockers_with_registry(
     let defender = state.opponent(state.active_player);
     let mut valid: Vec<(ObjectId, ObjectId)> = Vec::new();
     for &(blocker, attacker) in assignments {
+        // The same pair submitted twice is one block, not two (seen from a
+        // pasted line of repeated pairs — issue #50).
+        if valid.contains(&(blocker, attacker)) {
+            continue;
+        }
+        // CR 509.1b: a creature can block only one attacker. No card in this
+        // set lifts that (there is no "can block an additional creature"
+        // effect in the engine), so a blocker already spoken for refuses any
+        // further assignment — without this, one blocker blocked two
+        // attackers and dealt its full power to each (issue #62).
+        if let Some(&(_, first)) = valid.iter().find(|&&(b, _)| b == blocker) {
+            state.log(crate::state::LogLevel::Info, format!(
+                "ignored illegal block: {} is already blocking {} and can block \
+                 only one attacker (CR 509.1b)",
+                state.obj_name(blocker), state.obj_name(first)));
+            continue;
+        }
         let is_attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker));
         let defenders_creature = state.get_object(blocker).is_some_and(|o| o.controller == defender);
         if is_attacking && defenders_creature && can_block_attacker(state, blocker, attacker, registry) {
