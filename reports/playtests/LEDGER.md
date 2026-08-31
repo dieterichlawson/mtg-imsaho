@@ -43,7 +43,7 @@ issues are filed per `docs/plans/bug-pipeline.md` (`phase:playtest`).
 | 2026-08-31 | Competitor | C13 flyers vs ground stall | wu-coverage vs bg-coverage | 2 | bg-coverage won both, t16/t10; blocker eligibility correct in every combat | none |
 | 2026-08-31 | Competitor | C14 topdeck war | rb-vampires vs ur-coverage | 2 | rb-vampires won both, t11/t15; draw/hand-size/discard accounting all correct | none |
 | 2026-08-31 | Rules Lawyer | L11 layers (CR 613) | gw-humans vs wg-coverage | 2 | gw-humans won both, t24/t30; layer order and recompute-on-removal correct | #57, #56 |
-| 2026-08-31 | Rules Lawyer | L12 attack/block requirements vs restrictions | rb-vampires vs wb-coverage | 2 | 1-1 split; per-pair block legality correct, blocker-count rule missing | #62, #65 |
+| 2026-08-31 | Rules Lawyer | L12 attack/block requirements vs restrictions | rb-vampires vs wb-coverage | 2 | 1-1 split; per-pair block legality correct, blocker-count rule missing | #62, #65, #66 |
 | 2026-08-31 | Rules Lawyer | L13 LTB / exile-and-return ordering | wu-coverage vs ub-zombies | 2 (g1 ended in an engine panic, t34) | g2 ub-zombies won ~t90; CR 400.7 new-object rule verified correct | #64, comment on #60 |
 | 2026-08-31 | Rules Lawyer | L14 timing and priority enforcement | ur-coverage vs bg-coverage | 2 | bg-coverage won both; ~350 prompts probed, came back completely clean | none |
 | 2026-08-31 | Rules Lawyer | L15 attachment legality and SBAs | wr-coverage vs ug-coverage | 2 | 1-1 split; CR 704.5m (aura to owner's gy) vs 704.5n (equipment unattaches) correct | none |
