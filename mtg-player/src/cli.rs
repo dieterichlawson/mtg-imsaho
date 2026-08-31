@@ -722,6 +722,11 @@ impl CliPlayer {
             has_type(p, CardType::Enchantment) && !has_type(p, CardType::Creature)).collect();
         let artifacts: Vec<_> = perms.iter().filter(|p|
             has_type(p, CardType::Artifact) && !has_type(p, CardType::Creature) && !has_type(p, CardType::Land)).collect();
+        // Planeswalkers get their own bucket — any permanent type outside the
+        // buckets above simply vanished from the panel, and loyalty (their
+        // defining public state, CR 306.5b) was shown nowhere (#58).
+        let planeswalkers: Vec<_> = perms.iter().filter(|p|
+            has_type(p, CardType::Planeswalker) && !has_type(p, CardType::Creature)).collect();
 
         // Build aura map from ALL permanents (auras can be controlled by a different
         // player than the creature they're attached to, e.g. Pacifism).
@@ -803,6 +808,16 @@ impl CliPlayer {
             for a in &artifacts {
                 let t = if a.tapped { " [T]" } else { "" };
                 let _ = execute!(out, cursor::MoveTo(col, *row), Print(format!("  {}{}", a.name, t)));
+                *row += 1;
+            }
+            for pw in &planeswalkers {
+                let loyalty = pw.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                    .copied().unwrap_or(0);
+                let dmg = if pw.damage_marked > 0 { format!(" ({}d)", pw.damage_marked) } else { String::new() };
+                let text = format!("  {} [{loyalty} loyalty]{dmg}", pw.name);
+                let truncated: String = text.chars().take(max_w).collect();
+                let _ = execute!(out, cursor::MoveTo(col, *row),
+                    SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
                 *row += 1;
             }
         };
@@ -1630,10 +1645,15 @@ impl CliPlayer {
                 let flags = format!("{}{}",
                     if perm.tapped { " [T]" } else { "" },
                     if perm.summoning_sick { " [S]" } else { "" });
+                let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
+                    let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                        .copied().unwrap_or(0);
+                    format!(" [{l} loyalty]")
+                } else { String::new() };
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {idx:>2}")),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{}{}\n", perm.name, pt, flags)));
+                    Print(format!(": {}{}{}{}\n", perm.name, pt, loyalty, flags)));
                 idx += 1;
             }
 
@@ -1648,10 +1668,15 @@ impl CliPlayer {
                 let flags = format!("{}{}",
                     if perm.tapped { " [T]" } else { "" },
                     if perm.summoning_sick { " [S]" } else { "" });
+                let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
+                    let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                        .copied().unwrap_or(0);
+                    format!(" [{l} loyalty]")
+                } else { String::new() };
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {idx:>2}")),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{}{}\n", perm.name, pt, flags)));
+                    Print(format!(": {}{}{}{}\n", perm.name, pt, loyalty, flags)));
                 idx += 1;
             }
 
@@ -1688,6 +1713,11 @@ impl CliPlayer {
                     }
                     if perm.damage_marked > 0 {
                         let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
+                    }
+                    if perm.card_types.contains(&CardType::Planeswalker) {
+                        let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                            .copied().unwrap_or(0);
+                        let _ = execute!(out, Print(format!("  Loyalty: {l}\n")));
                     }
 
                     let controller = if perm.controller == view.you { "You" } else { "Opponent" };
