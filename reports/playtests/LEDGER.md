@@ -37,3 +37,18 @@ issues are filed per `docs/plans/bug-pipeline.md` (`phase:playtest`).
 | 2026-08-30 | Vandal | V8 search/menu abuse | wu-coverage vs ur-coverage | 2 | all panes handled cleanly at every prompt, no corruption | none |
 | 2026-08-30 | Vandal | V9 rapid concede/new-game churn | gw-humans vs rb-vampires | ~12 rapid cycles | clean state on every relaunch; #37 fix holds under churn | none |
 | 2026-08-30 | Vandal | V10 priority-mash marathon | ub-zombies vs ug-spider-spawning | 2 (of 3 launched) | mashed to t108, no hangs/skips/double-resolution | none |
+| 2026-08-31 | Competitor | C10 mulligan-to-five resource grind | wu-coverage vs br-coverage | 2 | br-coverage won both, t14/t14; London mulligan + bottoming counts verified correct | #58, #56, #60, #61 |
+| 2026-08-31 | Competitor | C11 lifegain vs burn race | wb-coverage vs rg-coverage | 2 | rg-coverage won both, t20/t14; deliberate exact-lethal to 0 verified (CR 704.5a) | #59 |
+| 2026-08-31 | Competitor | C12 mill race / winning by decking | ub-coverage vs gw-humans | 2 | gw-humans won both, t10/t15; **decking rule NOT exercised** — ub-coverage has no real mill, needs a new pairing | none |
+| 2026-08-31 | Competitor | C13 flyers vs ground stall | wu-coverage vs bg-coverage | 2 | bg-coverage won both, t16/t10; blocker eligibility correct in every combat | none |
+| 2026-08-31 | Competitor | C14 topdeck war | rb-vampires vs ur-coverage | 2 | rb-vampires won both, t11/t15; draw/hand-size/discard accounting all correct | none |
+| 2026-08-31 | Rules Lawyer | L11 layers (CR 613) | gw-humans vs wg-coverage | 2 | gw-humans won both, t24/t30; layer order and recompute-on-removal correct | #57, #56 |
+| 2026-08-31 | Rules Lawyer | L12 attack/block requirements vs restrictions | rb-vampires vs wb-coverage | 2 | 1-1 split; per-pair block legality correct, blocker-count rule missing | #62, #65 |
+| 2026-08-31 | Rules Lawyer | L13 LTB / exile-and-return ordering | wu-coverage vs ub-zombies | 2 (g1 ended in an engine panic, t34) | g2 ub-zombies won ~t90; CR 400.7 new-object rule verified correct | #64, comment on #60 |
+| 2026-08-31 | Rules Lawyer | L14 timing and priority enforcement | ur-coverage vs bg-coverage | 2 | bg-coverage won both; ~350 prompts probed, came back completely clean | none |
+| 2026-08-31 | Rules Lawyer | L15 attachment legality and SBAs | wr-coverage vs ug-coverage | 2 | 1-1 split; CR 704.5m (aura to owner's gy) vs 704.5n (equipment unattaches) correct | none |
+| 2026-08-31 | Vandal | V11 terminal resize storm | rg-coverage vs wb-coverage | 2 | wb-coverage won both, t26/t18; no panic/hang/misrouted input at any size 20x5–300x100 | #53, #49 |
+| 2026-08-31 | Vandal | V12 control-char / ANSI injection | br-coverage vs wg-coverage | 2 | br-coverage won both, t21/t15; Ctrl chords leak as plain text and menu digits | #51 |
+| 2026-08-31 | Vandal | V13 paste-flood | br-coverage vs wg-coverage | 2 | 1-1 split, t25/t16; one paste executed 11 turns of real actions across both seats | #50 |
+| 2026-08-31 | Vandal | V14 save/resume corruption abuse | gw-humans vs ur-coverage | 2 | gw-humans won both, t9/t11; every bad save panics, honest resume correct | #52 |
+| 2026-08-31 | Vandal | V15 mulligan-phase abuse | ug-spider-spawning vs bg-coverage | 2 | bg-coverage won both, t14/t14; cap real and counter honest | #54, #63 |

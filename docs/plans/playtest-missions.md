@@ -42,6 +42,22 @@ Competitor:
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
 - C9 aristocrats/sacrifice value vs go-wide tokens: trade into sac outlets
   for value, race a token swarm on the other side of the table
+- C10 mulligan-to-five resource grind: both seats mulligan to the
+  floor, then play the resource-starved game out honestly; watch hand
+  sizes, bottoming counts and land-drop accounting
+- C11 lifegain vs burn race: set up exact-lethal and exact-survival
+  spots deliberately; verify every life transition and that the game
+  ends at exactly 0 at the right time (CR 704.5a)
+- C12 mill race / winning by decking: race a mill clock against a board
+  clock; verify the loss happens on the DRAW from an empty library, not
+  when the library empties (CR 104.3c / 704.5b). Needs a pairing that
+  can actually mill — WU coverage (Curse of the Bloody Tome, Undead
+  Alchemist, Armored Skaab) is the mill seat that works
+- C13 flyers vs ground stall: build a ground stall and win in the air;
+  chump blocks, evasion checks, combat tricks every turn
+- C14 topdeck war: empty both hands by turn ~8 and play a pure topdeck
+  game to a conclusion; verify draw counts, hand size and
+  discard-to-hand-size, and that no draw is duplicated or skipped
 
 Rules Lawyer:
 - L1 stack battles: respond to everything; 3+ deep stacks; order triggers
@@ -66,6 +82,29 @@ Rules Lawyer:
 - L10 mana ability edges: tap-for-mana abilities that don't use the stack;
   activate mana abilities in response to a targeted spell/ability to
   verify no missed priority window and correct fizzle/cost-payment timing
+- L11 layers (CR 613): stack anthems (7c), +1/+1 counters (7d),
+  P/T-setting (7b) and type/ability grants (4/6) on one creature at
+  once; verify layer order, timestamps, and that removing one effect
+  recomputes rather than un-adding a stale number
+- L12 attack/block requirements vs restrictions (CR 506.4, 508.1d,
+  509.1c): menace, "can't block", "must attack if able", tapped and
+  summoning-sick creatures all live at once; verify the engine
+  maximizes satisfied requirements without violating a restriction and
+  refuses illegal sets rather than silently trimming or augmenting them
+- L13 leaves-the-battlefield and exile-and-return ordering (CR 603.6d,
+  603.10, 400.7): Fiend Hunter as the centerpiece — exile a creature,
+  then kill or bounce the Hunter, including in response to its own ETB
+  trigger; verify the returning creature is a new object. Wants a deck
+  pair with instant-speed removal that can kill a 1/3
+- L14 timing and priority enforcement (CR 305.1, 307.1, 606.3, 117):
+  probe for any land played off-turn or with a non-empty stack, any
+  sorcery-speed spell offered at instant speed, any loyalty ability
+  outside its window or twice per turn, any skipped or doubled priority
+- L15 attachment legality and SBAs (CR 704.5m/n/p, 303.4): attach auras
+  and equipment, then make the attachment illegal (kill, bounce, grant
+  protection/hexproof, change type); verify auras go to their OWNER's
+  graveyard while equipment merely unattaches. Wants a deck pair with a
+  real protection/hexproof granter
 
 Vandal:
 - V1 input garbage at every prompt: junk text, huge numbers, empty
@@ -91,6 +130,26 @@ Vandal:
   entire game from turn 1 to conclusion; verify no mandatory decision
   (declare attackers/blockers, discard to hand size, trigger ordering) is
   silently skipped and nothing double-resolves
+- V11 terminal resize storm: resize the pane aggressively mid-game and
+  mid-prompt (tiny, huge, back), including with a target-selection or
+  declare-blockers prompt open and a deep stack; look for panics,
+  unrecoverable frames, unreachable prompts, misrouted input
+- V12 control-character and escape-sequence injection: send Ctrl
+  chords, Escape, arrows, function keys, Tab, Backspace-on-empty and
+  literal ANSI sequences at every prompt type; nothing unbound may be
+  inserted as text or dispatched as a menu shortcut
+- V13 paste-flood: paste multi-KB single lines and 50-line blocks at
+  every prompt; watch whether queued lines are consumed as independent
+  menu submissions and silently take real, irreversible game actions
+- V14 save/resume corruption abuse (distinct from V3's honest
+  save/reload): resume from truncated, byte-flipped, empty,
+  wrong-schema and structurally-invalid saves, and with mismatched
+  decks/seed; failures must be clean errors, never panics, and never a
+  silently-wrong game
+- V15 mulligan-phase abuse: mulligan to the floor on both seats, find
+  the real cap and check the counter is honest, send garbage and
+  out-of-range input at every mulligan and bottoming prompt, and verify
+  a floor-mulligan game is still playable to a conclusion
 
 Agents may invent missions beyond this menu; log them in the ledger so
 they enter the rotation.
