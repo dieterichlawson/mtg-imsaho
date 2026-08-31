@@ -96,6 +96,12 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
                 .map(|id| card_name(&state, registry, *id))
                 .collect();
             state.log(LogLevel::Event, format!("Forced attackers: {}", names.join(", ")));
+            // These creatures were declared as attackers just the same
+            // (CR 508.1d picks the declaration for the player), so the
+            // CR 508.8 skip must not treat this combat as attacker-less.
+            if let Some(ref mut combat) = state.combat {
+                combat.any_attackers_declared = true;
+            }
         }
 
         state.awaiting_action = None;

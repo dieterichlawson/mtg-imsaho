@@ -685,6 +685,15 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     // Step::CombatDamage (regular damage) instead of moving to EndCombat.
     let next = if state.step == Step::CombatDamage && state.combat_damage_step_pending {
         Some(Step::CombatDamage)
+    } else if state.step == Step::DeclareAttackers
+        && !state.combat.as_ref().is_some_and(|c| c.any_attackers_declared)
+    {
+        // CR 508.8: if no creatures were declared as attackers (or put onto
+        // the battlefield attacking), skip the declare blockers and combat
+        // damage steps. Observable in rules terms: a "beginning of the
+        // declare blockers step" trigger must not fire, and no priority
+        // windows open in steps that don't happen.
+        Some(Step::EndCombat)
     } else {
         state.step.next()
     };
@@ -1173,8 +1182,8 @@ fn run_game_loop_inner<F>(
 
             Action::DeclareAttackers { .. } => {
                 // After declaring attackers (even zero), give priority to active player.
-                // The step will advance naturally through DeclareBlockers, CombatDamage,
-                // and EndCombat — no skipping. advance_step handles empty combat gracefully.
+                // When zero were declared, advance_step skips straight to
+                // EndCombat (CR 508.8) once this priority round ends.
                 state.priority_player = Some(state.active_player);
             }
 

@@ -2928,6 +2928,14 @@ pub struct CombatState {
     /// combat damage step unless they have double strike.
     #[serde(default)]
     pub dealt_first_strike: std::collections::BTreeSet<ObjectId>,
+    /// Whether any attackers were declared this combat. CR 508.8 skips the
+    /// declare blockers and combat damage steps when none were — and the
+    /// question is about the declaration, not about who is still in combat,
+    /// so `attackers.is_empty()` can't answer it (a lone attacker removed
+    /// from combat during the declare attackers step leaves the map empty,
+    /// but the steps still happen).
+    #[serde(default)]
+    pub any_attackers_declared: bool,
 }
 
 impl CombatState {

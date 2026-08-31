@@ -36,11 +36,13 @@ fn no_priority_during_untap() {
 /// also true of an engine that empties pools at some unrelated moment.
 #[test]
 fn a_mana_pool_empties_at_every_step_boundary() {
-    // (step to float mana in, the step that follows it)
+    // (step to float mana in, the step that follows it). No attackers are
+    // ever declared here, so leaving DeclareAttackers skips to EndCombat
+    // (CR 508.8).
     const BOUNDARIES: &[(Step, Step)] = &[
         (Step::Upkeep, Step::Draw),
         (Step::PrecombatMain, Step::BeginCombat),
-        (Step::DeclareAttackers, Step::DeclareBlockers),
+        (Step::DeclareAttackers, Step::EndCombat),
     ];
 
     for &(from, to) in BOUNDARIES {

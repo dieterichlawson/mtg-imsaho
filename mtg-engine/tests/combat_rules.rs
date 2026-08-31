@@ -292,12 +292,11 @@ fn a_creature_that_forces_itself_to_attack_must_attack() {
 // A combat nobody attacked in
 // -------------------------------------------------------------------------
 
-/// After declaring zero attackers, the game loop skips to `EndCombat`.
-/// This tests the game loop code path (not `submit_action`, which doesn't skip).
-/// The bug is in `run_game_loop_inner`'s post-action handler for `DeclareAttackers`.
-///
-/// We test this by running the game loop with a callback that records what
-/// steps the game passes through.
+/// Regression (#59): after declaring zero attackers, the game loop skips the
+/// declare blockers and combat damage steps entirely (CR 508.8) — no
+/// "beginning of the declare blockers step" trigger can fire and no priority
+/// window opens in a step that doesn't happen. This test used to assert the
+/// opposite of its own name, pinning the rule violation in place.
 #[test]
 fn no_attackers_game_loop_skips_to_end_combat() {
     let reg = registry();
@@ -340,17 +339,40 @@ fn no_attackers_game_loop_skips_to_end_combat() {
         Action::PassPriority
     });
 
-    // Check that DeclareBlockers was reached by looking at StepStarted events.
-    // Auto-pass may skip asking the player, but the step should still be entered.
-    let saw_declare_blockers = state.events.iter().any(|e| {
-        matches!(e, GameEvent::StepStarted { step: Step::DeclareBlockers })
+    // The callback declares zero attackers every combat of every turn, so no
+    // declare blockers or combat damage step may ever start. (`state.events`
+    // is cleared by every submit_action, so the game log is the record.)
+    let entered_skipped_step = state.game_log.iter().any(|e| {
+        e.message.contains("Step: DeclareBlockers") || e.message.contains("Step: CombatDamage")
     });
-    // Also check the game log for the step.
-    let log_has_blockers = state.game_log.iter().any(|e| {
-        e.message.contains("DeclareBlockers")
+    assert!(!entered_skipped_step,
+        "CR 508.8: with no attackers declared, the declare blockers and combat \
+         damage steps are skipped");
+    let reached_end_combat = state.game_log.iter().any(|e| {
+        e.message.contains("Step: EndCombat")
     });
-    assert!(saw_declare_blockers || log_has_blockers,
-        "Game loop should pass through DeclareBlockers even with zero attackers (CR 507-510)");
+    assert!(reached_end_combat,
+        "combat still ends through the end of combat step");
+}
+
+/// The other half of CR 508.8's condition: when attackers WERE declared, the
+/// steps happen even if every attacker has left combat by the time the
+/// declare attackers step ends — the skip keys on the declaration.
+#[test]
+fn declared_attacker_leaving_combat_does_not_skip_the_steps() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
+    state.remove_from_combat(attacker);
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.is_empty()),
+        "test precondition: nobody is left in combat");
+
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::DeclareBlockers,
+        "attackers were declared, so the declare blockers step happens \
+         (CR 508.8 skips only when none were declared)");
 }
 
 // -------------------------------------------------------------------------

@@ -47,6 +47,7 @@ pub fn declare_attackers(
         attackers: attackers.to_vec(),
     });
 
+    combat.any_attackers_declared = !combat.attackers.is_empty();
     state.combat = Some(combat);
 }
 
