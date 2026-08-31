@@ -654,11 +654,35 @@ impl CliPlayer {
 
         // Action list (only when actions are provided)
         if let Some(labels) = actions {
-            for (i, label) in labels.iter().enumerate() {
+            // Rows left for the menu once the hint and prompt rows below it
+            // are reserved. A menu longer than the pane used to keep printing
+            // past the bottom — 11 of 35 mulligan-bottom options were simply
+            // invisible, with nothing saying the list continued (#60). The
+            // hidden entries stay selectable by number; the marker row says
+            // how many there are.
+            let avail = h.saturating_sub(row as usize + 2);
+            let shown = if labels.len() > avail {
+                avail.saturating_sub(1)
+            } else {
+                labels.len()
+            };
+            let hidden = labels.len() - shown;
+            for (i, label) in labels.iter().take(shown).enumerate() {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset), Print(": "));
-                Self::print_action_label(&mut out, label);
+                // Clip to the panel like every other row.
+                let plen = 4 + i.to_string().chars().count();
+                let label: String = label.chars().take(mid_w.saturating_sub(plen)).collect();
+                Self::print_action_label(&mut out, &label);
+                row += 1;
+            }
+            if hidden > 0 {
+                let marker = format!("  … {hidden} more option{} up to {} (not shown; type the number)",
+                    if hidden == 1 { "" } else { "s" }, labels.len() - 1);
+                let marker: String = marker.chars().take(mid_w).collect();
+                let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
                 row += 1;
             }
             let has_pass = labels.first().is_some_and(|l| l == "Pass priority");
@@ -2535,6 +2559,18 @@ impl Player for CliPlayer {
                 Action::Concede => {
                     // Defer concede to always be last.
                     deferred_concede = Some((i, Self::format_action(view, action)));
+                }
+                // Choose-cards-from-hand menus: two Forests are
+                // interchangeable, so options whose labels render identically
+                // are one choice, not several. Ten of a 35-entry bottoming
+                // menu were unreadable duplicates (#54). Only these variants:
+                // elsewhere an identical label can hide a genuinely different
+                // action (two abilities on one permanent — #61).
+                Action::BottomCards { .. } | Action::DiscardCards { .. } => {
+                    let label = Self::format_action(view, action);
+                    if display_labels.contains(&label) { continue; }
+                    display.push(DisplayEntry::Direct(i));
+                    display_labels.push(label);
                 }
                 _ => {
                     display.push(DisplayEntry::Direct(i));

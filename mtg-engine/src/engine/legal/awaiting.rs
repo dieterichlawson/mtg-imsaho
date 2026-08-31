@@ -137,7 +137,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 context: Some(format!(
                     "BOTTOM {} CARD{} AFTER MULLIGAN",
                     count,
-                    if *count == 1 { "" } else { "s" }
+                    if *count == 1 { "" } else { "S" }
                 )),
                 resolution_prompt: None,
             }
