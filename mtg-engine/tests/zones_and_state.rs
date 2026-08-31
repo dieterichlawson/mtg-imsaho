@@ -292,3 +292,70 @@ fn leaving_the_battlefield_resets_runtime_grants_but_not_a_tokens_print() {
         "a token's object-level subtypes are its printed ones and stay");
     assert_eq!(tok.colors, vec![Color::Green]);
 }
+
+/// CR 400.7: an until-end-of-turn effect targeting a permanent ends when the
+/// permanent leaves the battlefield, so a same-turn return reusing the id is
+/// a clean object.
+#[test]
+fn until_eot_effects_end_when_their_target_leaves_the_battlefield() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: c, keyword: Keyword::Haste,
+    });
+
+    state.move_object(c, Zone::Graveyard, &registry);
+    assert!(state.until_end_of_turn.is_empty(),
+        "the pump ended with the permanent (CR 400.7); a same-turn return \
+         must not inherit it");
+}
+
+/// "As [this] enters, choose ..." (CR 614.12) runs exactly when the object
+/// enters the battlefield — not when the same card moves between other zones.
+#[test]
+fn chooses_as_it_enters_fires_on_entering_the_battlefield_and_only_then() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let entering = spell_in_hand(&mut state, &registry, "Nevermore", P0);
+    state.move_object(entering, Zone::Battlefield, &registry);
+    assert!(matches!(state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardName { .. }, ..
+        })),
+        "Nevermore chooses its name as it enters, got {:?}", state.awaiting_action);
+    state.awaiting_action = None;
+
+    let discarded = spell_in_hand(&mut state, &registry, "Nevermore", P0);
+    state.move_object(discarded, Zone::Graveyard, &registry);
+    assert!(state.awaiting_action.is_none(),
+        "a Nevermore going hand -> graveyard never entered the battlefield; \
+         no as-it-enters choice may fire");
+}
+
+/// Enters-the-battlefield replacements (counters, tapped) apply to entering
+/// the BATTLEFIELD. A card moved hand -> graveyard is not entering anything:
+/// Unbreathing Horde ("enters with a +1/+1 counter for each Zombie card in
+/// your graveyard") discarded with a full graveyard gains nothing.
+#[test]
+fn enter_replacements_do_not_run_on_non_battlefield_moves() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &registry, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &registry, "Walking Corpse", P0);
+
+    let horde = spell_in_hand(&mut state, &registry, "Unbreathing Horde", P0);
+    state.move_object(horde, Zone::Graveyard, &registry);
+    assert!(state.get_object(horde).unwrap().counters.is_empty(),
+        "no +1/+1 counters for a discard — the enters-with-counters \
+         replacement is an entering-the-battlefield event only");
+
+    // The control: actually entering the battlefield does add them.
+    let horde2 = spell_in_hand(&mut state, &registry, "Unbreathing Horde", P0);
+    state.move_object(horde2, Zone::Battlefield, &registry);
+    let n = *state.get_object(horde2).unwrap()
+        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
+    assert_eq!(n, 3,
+        "two Walking Corpses and the discarded Horde in the graveyard -> three counters");
+}
