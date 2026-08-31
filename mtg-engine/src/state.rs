@@ -1600,6 +1600,16 @@ impl GameState {
             obj.power?
         };
 
+        // Everything below layer-7c-and-friends applies to PERMANENTS: an
+        // anthem reads "creatures you control", counters sit on permanents,
+        // and until-end-of-turn pumps target permanents (CR 613.1). A card in
+        // hand or the graveyard shows its printed P/T plus CDAs only (the
+        // dynamic_pt above — CR 604.3 makes those work in every zone). Hand
+        // cards used to grow with battlefield anthems (issue #57).
+        if obj.zone != Zone::Battlefield {
+            return Some(power);
+        }
+
         // Continuous effects (auras, anthems, debuffs — including dynamic aura P/T).
         let (p_mod, _) = self.continuous_pt_mods(id, registry);
         power += p_mod;
@@ -1652,6 +1662,13 @@ impl GameState {
         } else {
             obj.toughness?
         };
+
+        // Same zone guard as effective_power: only a permanent gets anthem,
+        // counter, and until-end-of-turn modifications (CR 613.1); CDAs above
+        // already applied in every zone (CR 604.3).
+        if obj.zone != Zone::Battlefield {
+            return Some(toughness);
+        }
 
         let (_, t_mod) = self.continuous_pt_mods(id, registry);
         toughness += t_mod;

@@ -288,3 +288,34 @@ fn a_targeted_pump_changes_only_its_target_by_the_printed_amount() {
         "the bystander is untouched");
     assert_eq!(state.effective_toughness(bystander, &reg), Some(3));
 }
+
+// ---------------------------------------------------------------------------
+// Continuous P/T effects reach permanents only (CR 613.1)
+// ---------------------------------------------------------------------------
+
+/// Regression (#57): a battlefield anthem must not change the P/T of a card
+/// in hand or in the graveyard. Mayor of Avabruck reads "Other Human
+/// CREATURES you control get +1/+1" — creatures are permanents. Elder Cathar
+/// (Human 2/2) in hand stays 2/2 however many anthems are out;
+/// characteristic-defining abilities (CR 604.3) keep working in every zone
+/// and are covered by the Geist-Honored Monk assertions elsewhere.
+#[test]
+fn a_battlefield_anthem_does_not_pump_cards_in_hand_or_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let in_hand = spell_in_hand(&mut state, &reg, "Elder Cathar", P0);
+    let in_gy = named_card_in_graveyard(&mut state, &reg, "Elder Cathar", P0);
+    let on_field = named_permanent(&mut state, &reg, "Doomed Traveler", P0); // Human 1/1
+
+    named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+
+    assert_eq!(state.effective_power(on_field, &reg), Some(2),
+        "the anthem applies to a Human creature on the battlefield");
+    assert_eq!(state.effective_power(in_hand, &reg), Some(2),
+        "a card in hand shows its printed power (CR 613.1)");
+    assert_eq!(state.effective_toughness(in_hand, &reg), Some(2),
+        "a card in hand shows its printed toughness");
+    assert_eq!(state.effective_power(in_gy, &reg), Some(2),
+        "a card in the graveyard shows its printed power");
+}
