@@ -667,6 +667,9 @@ impl CliPlayer {
             } else {
                 "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             };
+            // Clipped to the panel like every other row — at full length this
+            // ate the right border and the card panel behind it (#53).
+            let hints: String = hints.chars().take(mid_w).collect();
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
             row += 1;
@@ -1506,6 +1509,18 @@ impl CliPlayer {
         let _ = terminal::enable_raw_mode();
         let mut buf = String::new();
 
+        // The echo stops at the middle panel's right edge (same layout math
+        // as `render`): an unbounded echo let one long pasted line wrap over
+        // the card panel and scroll the whole UI away (#53). Input beyond
+        // the cap still lands in `buf`, it just isn't painted.
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let w = term_w as usize;
+        let has_right = w >= 100;
+        let gutter = w / 5;
+        let mid_w = w.saturating_sub(gutter + if has_right { gutter + 2 } else { 1 });
+        let echo_cap = mid_w.saturating_sub("  > ".len());
+        let mut echoed: usize = 0;
+
         let result = loop {
             if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
                 match code {
@@ -1523,8 +1538,11 @@ impl CliPlayer {
                         }
                         // Single 'r' — treat as normal input.
                         buf.push('r');
-                        let _ = execute!(out, Print("r"));
-                        let _ = out.flush();
+                        if echoed < echo_cap {
+                            let _ = execute!(out, Print("r"));
+                            let _ = out.flush();
+                            echoed += 1;
+                        }
                     }
                     KeyCode::Enter => {
                         break Some(buf.clone());
@@ -1534,10 +1552,11 @@ impl CliPlayer {
                         std::process::exit(0);
                     }
                     KeyCode::Backspace => {
-                        if buf.pop().is_some() {
-                            // Erase character on screen
+                        if buf.pop().is_some() && echoed > buf.chars().count() {
+                            // Erase character on screen (only ones echoed)
                             let _ = execute!(out, Print("\x08 \x08"));
                             let _ = out.flush();
+                            echoed -= 1;
                         }
                     }
                     // Unbound chords are ignored, never typed: Ctrl-L must
@@ -1547,8 +1566,11 @@ impl CliPlayer {
                     // silently pick menu entries (#51).
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         buf.push(c);
-                        let _ = execute!(out, Print(c.to_string()));
-                        let _ = out.flush();
+                        if echoed < echo_cap {
+                            let _ = execute!(out, Print(c.to_string()));
+                            let _ = out.flush();
+                            echoed += 1;
+                        }
                     }
                     _ => {}
                 }
