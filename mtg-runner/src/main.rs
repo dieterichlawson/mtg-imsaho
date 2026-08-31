@@ -27,8 +27,72 @@ enum PlayerKind {
     Random(RandomPlayer),
 }
 
+const USAGE: &str = "\
+mtg-runner — run one game of the MTG engine
+
+Usage: mtg-runner [OPTIONS]
+
+Options:
+  --p1 <spec>            Player 1: cli | random | claude[:model] | gemini[:model]  (default cli)
+  --p2 <spec>            Player 2: same specs  (default random)
+  --deck1 <name-or-file> Deck for player 1: built-in name or deck file  (default red-green)
+  --deck2 <name-or-file> Deck for player 2  (default white-black)
+  --seed <N>             Deterministic seed for shuffles and random players
+  --log <path>           Append the game log to this file
+  --save <path>          Continuously write a resumable save to this file
+  --resume <path>        Resume from a save file (saved decks/seed win over flags)
+  --check-invariants     Check structural invariants at every decision point
+  --quiet, -q            Suppress the pre-game banner
+  --help, -h             Print this help and exit
+  --version              Print the version and exit
+
+Built-in decks: red-green (rg), white-black (wb), blue-white (uw),
+black-aggro (ba), innistrad-white (iw), innistrad-blue (iu), innistrad-green (ig)";
+
+/// A user error: report it and exit without a Rust panic/backtrace.
+fn die(msg: &str) -> ! {
+    eprintln!("Error: {msg}");
+    std::process::exit(1);
+}
+
+/// Refuse an argument vector the parser below wouldn't fully consume. Every
+/// lookup in `main` is an exact-match position scan, so an unrecognized or
+/// misspelled flag used to be silently dropped and its default silently used —
+/// a typo'd --deck1 quietly played the wrong deck (issue #55).
+fn validate_args(args: &[String]) {
+    const VALUE_FLAGS: &[&str] = &["--p1", "--p2", "--deck1", "--deck2",
+        "--seed", "--log", "--save", "--resume"];
+    const BOOL_FLAGS: &[&str] = &["--check-invariants", "--quiet", "-q"];
+    let mut i = 1;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if VALUE_FLAGS.contains(&a) {
+            if i + 1 >= args.len() {
+                eprintln!("Error: {a} requires a value\n\n{USAGE}");
+                std::process::exit(2);
+            }
+            i += 2;
+        } else if BOOL_FLAGS.contains(&a) {
+            i += 1;
+        } else {
+            eprintln!("Error: unrecognized argument '{a}'\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
+
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        return;
+    }
+    if args.iter().any(|a| a == "--version") {
+        println!("mtg-runner {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    validate_args(&args);
 
     // Parse player specs: --p1 <spec> --p2 <spec>
     // Spec formats:
@@ -74,7 +138,7 @@ fn main() {
     // the random players' picks all derive from it, so a failure replays.
     let seed: Option<u64> = args.iter().position(|a| a == "--seed")
         .and_then(|i| args.get(i + 1))
-        .map(|s| s.parse().unwrap_or_else(|_| panic!("--seed takes a number, got '{s}'")));
+        .map(|s| s.parse().unwrap_or_else(|_| die(&format!("--seed takes a number, got '{s}'"))));
 
     // --check-invariants runs the structural GameState invariants at every
     // decision point and exits nonzero on the first violation.
@@ -85,10 +149,41 @@ fn main() {
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
 
     let (player_names, mut state) = if let Some(ref path) = resume_file {
+        // The saved game carries its own decks and RNG: flags that only
+        // shape a NEW game are ignored, and silently ignored flags corrupt
+        // repro provenance (issues #52/#55) — so say so.
+        for flag in ["--deck1", "--deck2", "--seed"] {
+            if args.iter().any(|a| a == flag) {
+                eprintln!("note: {flag} is ignored with --resume; the save file's game wins");
+            }
+        }
+        // Every failure here is a user-supplied file being wrong (a typo'd
+        // path, a truncated or edited save) — report and exit(1), never
+        // panic (issue #52).
         let data = fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("Failed to read save file '{path}': {e}"));
+            .unwrap_or_else(|e| die(&format!("failed to read save file '{path}': {e}")));
         let save: SaveData = serde_json::from_str(&data)
-            .unwrap_or_else(|e| panic!("Failed to parse save file '{path}': {e}"));
+            .unwrap_or_else(|e| die(&format!("save file '{path}' is not a valid game save: {e}")));
+        if save.player_names.len() != save.state.players.len()
+            || save.state.players.len() != 2
+        {
+            die(&format!(
+                "save file '{path}' is not a valid game save: {} players but {} player names",
+                save.state.players.len(), save.player_names.len()));
+        }
+        // A schema-valid save can still describe an impossible game (an
+        // out-of-range active_player panics deep in the engine; a phantom
+        // library id silently plays a wrong game). Loading foreign state is
+        // exactly where the structural invariants are needed, so they run
+        // here unconditionally, not only under --check-invariants.
+        let violations = mtg_engine::invariants::check_core(&save.state, &registry);
+        if !violations.is_empty() {
+            eprintln!("Error: save file '{path}' describes an invalid game state:");
+            for v in &violations {
+                eprintln!("  - {v}");
+            }
+            std::process::exit(1);
+        }
         if !quiet {
             println!("MTG Engine — resuming from {} (turn {}, {} vs {})",
                 path, save.state.turn_number, save.player_names[0], save.player_names[1]);
@@ -610,7 +705,8 @@ fn builtin_deck(name: &str) -> Option<Decklist> {
 ///   10 Mountain
 fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
     let content = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read deck file '{path}': {e}"));
+        .unwrap_or_else(|e| die(&format!(
+            "'{path}' is not a built-in deck name and could not be read as a deck file: {e}")));
 
     let mut entries = Vec::new();
     for (line_num, line) in content.lines().enumerate() {
@@ -618,16 +714,21 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let (count_str, card_name) = line.split_once(' ')
-            .unwrap_or_else(|| panic!("{}:{}: expected 'COUNT CARD NAME', got '{}'", path, line_num + 1, line));
+        let Some((count_str, card_name)) = line.split_once(' ') else {
+            die(&format!("{}:{}: expected 'COUNT CARD NAME', got '{}'", path, line_num + 1, line));
+        };
         let count: u32 = count_str.parse()
-            .unwrap_or_else(|_| panic!("{}:{}: invalid count '{}'", path, line_num + 1, count_str));
+            .unwrap_or_else(|_| die(&format!("{}:{}: invalid count '{}'", path, line_num + 1, count_str)));
         let card_name = card_name.trim();
-        assert!(registry.get_id_by_name(card_name).is_some(), "{}:{}: unknown card '{}'", path, line_num + 1, card_name);
+        if registry.get_id_by_name(card_name).is_none() {
+            die(&format!("{}:{}: unknown card '{}'", path, line_num + 1, card_name));
+        }
         entries.push((card_name.to_string(), count));
     }
 
-    assert!(!entries.is_empty(), "Deck file '{path}' is empty");
+    if entries.is_empty() {
+        die(&format!("Deck file '{path}' is empty"));
+    }
 
     Decklist { entries }
 }
