@@ -78,9 +78,19 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                     .find_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
                         if *target == object_id { Some(cost.clone()) } else { None }
                     } else { None });
-                CastMethod::Alternative(dynamic_fb.unwrap_or_else(|| {
-                    data.flashback_cost.clone().expect("flashback cast on card without flashback_cost")
-                }))
+                // CR 601.3a: without granted or printed flashback (and no
+                // cast-from-graveyard permission, ruled out above), there is
+                // no way to cast this card from the graveyard. A submitted
+                // action can name any object, so refuse rather than panic.
+                match dynamic_fb.or_else(|| data.flashback_cost.clone()) {
+                    Some(c) => CastMethod::Alternative(c),
+                    None => {
+                        state.log(crate::state::LogLevel::Debug, format!(
+                            "{}: cast refused, no permission to cast from the graveyard (CR 601.3a)",
+                            data.name));
+                        return Applied::ReturnNow;
+                    }
+                }
             }
             (None, false) => CastMethod::Normal,
         };

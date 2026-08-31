@@ -283,14 +283,23 @@ pub(crate) fn flashback(
                 if let Some(c) = &data.cost {
                     fb_costs.push(c.clone());
                 }
+                // CR 601.2b: an alternative cost replaces the mana cost of
+                // casting the spell, whichever zone it is being cast from.
+                // Rooftop Storm's "{0} for Zombie creature spells you cast"
+                // applies to Skaab Ruinator's graveyard cast as much as to a
+                // cast from hand; this path used to ask only about flashback
+                // and the printed cost, so the discount stopped at the hand.
+                //
+                // It replaces the mana cost of a cast that is otherwise
+                // permitted, though: an alternative cost is not permission to
+                // cast from the graveyard (CR 601.3a), and a flashback cast
+                // already IS an alternative cost, so only one applies
+                // (CR 601.2b). Extending unconditionally here offered a
+                // "flashback" of every Zombie card in the graveyard while
+                // Rooftop Storm was out, and choosing one panicked in
+                // cast_spell.
+                fb_costs.extend(alternative_costs(state, registry, obj.card_id, player));
             }
-            // CR 601.2b: an alternative cost replaces the mana cost of casting
-            // the spell, whichever zone it is being cast from. Rooftop Storm's
-            // "{0} for Zombie creature spells you cast" applies to Skaab
-            // Ruinator's graveyard cast as much as to a cast from hand; this
-            // path used to ask only about flashback and the printed cost, so
-            // the discount stopped at the hand.
-            fb_costs.extend(alternative_costs(state, registry, obj.card_id, player));
             // Two identical costs are one option, not two.
             let mut unique: Vec<ManaCost> = Vec::new();
             for c in fb_costs {

@@ -265,6 +265,43 @@ fn rooftop_storms_free_cast_reaches_a_zombie_cast_from_the_graveyard() {
          the Ruinator is castable for {{0}}");
 }
 
+/// Regression (#64): an alternative cost is not permission to cast from the
+/// graveyard. Diregraf Ghoul has no flashback and no cast-from-graveyard
+/// ability; Rooftop Storm only replaces the mana cost of a cast that is
+/// otherwise legal (CR 601.3a, 118.9). The bug offered a "Flashback Diregraf
+/// Ghoul" action for every Zombie card in the graveyard while Rooftop Storm
+/// was out, and choosing it panicked in cast_spell ("flashback cast on card
+/// without flashback_cost").
+#[test]
+fn rooftop_storm_does_not_make_graveyard_zombies_castable() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Rooftop Storm", P0);
+    let ghoul = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    assert!(state.has_subtype(ghoul, "Zombie", &reg),
+        "test precondition: Diregraf Ghoul is a Zombie");
+
+    assert!(!can_cast(&state, &reg, ghoul),
+        "CR 601.3a: no flashback and no cast-from-graveyard permission, so no \
+         cast may be offered however cheap Rooftop Storm makes the mana");
+
+    // A hand-built action naming the graveyard card must be refused, not
+    // panic: both clients assemble their own CastSpell actions.
+    let action = mtg_engine::actions::Action::CastSpell {
+        object_id: ghoul,
+        targets: vec![],
+        sacrifice: None,
+        exile_count: None,
+        exile_ids: vec![],
+        alternative_cost: None,
+        tap_plan: vec![],
+    };
+    let after = mtg_engine::engine::submit_action(&state, &action, &reg);
+    assert_eq!(after.get_object(ghoul).unwrap().zone, Zone::Graveyard,
+        "the refused cast leaves the card where it was");
+}
+
 /// Ruling: "You must still pay any mandatory additional costs, such as exiling
 /// a creature card from your graveyard for Makeshift Mauler." Paying {0}
 /// replaces the MANA cost only (CR 601.2b) — with no creature card in the
