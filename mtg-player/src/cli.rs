@@ -2044,6 +2044,24 @@ impl CliPlayer {
         let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
+        // CR 508.1d: a declaration that leaves out a creature required and
+        // able to attack is illegal — refuse it here, loudly, the way the
+        // blocker prompt refuses illegal pairings, instead of letting the
+        // engine silently auto-correct it with only a side-log trace (#66).
+        // The engine's forced-attackers pass stays as the backstop for
+        // non-interactive players.
+        let missing_forced = |chosen: &[ObjectId]| -> Vec<ObjectId> {
+            must_attack.iter().copied().filter(|id| !chosen.contains(id)).collect()
+        };
+        let forced_error = |missing: &[ObjectId]| -> String {
+            let names: Vec<String> = missing.iter().map(|&id| Self::perm_name(view, id)).collect();
+            format!("  {} must attack this combat (CR 508.1d) — include {} in the declaration.",
+                names.join(", "),
+                missing.iter().map(|id| eligible.iter().position(|e| e == id)
+                    .map_or("?".into(), |i| i.to_string()))
+                    .collect::<Vec<_>>().join(", "))
+        };
+
         loop {
             // Clear the row before re-prompting: a rejected entry's characters
             // otherwise stay on screen and visually merge with the next
@@ -2052,6 +2070,10 @@ impl CliPlayer {
             let input = Self::read_line("  Attack (numbers/all/none)> ");
 
             if input == "none" || input == "n" {
+                if !must_attack.is_empty() {
+                    println!("{}", forced_error(&must_attack.iter().copied().collect::<Vec<_>>()));
+                    continue;
+                }
                 return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
             }
             if input.is_empty() || input == "all" || input == "a" {
@@ -2087,6 +2109,14 @@ impl CliPlayer {
                         a >= eligible.len() || w >= defending_planeswalkers.len()).map(|&(a, _)| a))
                     .collect();
                 if bad.is_empty() {
+                    let chosen: Vec<ObjectId> = indices.iter().map(|&i| eligible[i])
+                        .chain(walker_attacks.iter().map(|&(a, _)| eligible[a]))
+                        .collect();
+                    let missing = missing_forced(&chosen);
+                    if !missing.is_empty() {
+                        println!("{}", forced_error(&missing));
+                        continue;
+                    }
                     return Action::DeclareAttackers {
                         attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
                         planeswalker_attacks: walker_attacks.iter()
