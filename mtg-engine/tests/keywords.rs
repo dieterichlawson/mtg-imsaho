@@ -645,3 +645,25 @@ fn spell_grants_keyword_until_eot() {
     assert_eq!(state.effective_power(creature, &reg), Some(2),
         "+2/+2 should expire at end of turn");
 }
+
+/// Keywords are a battlefield question: `has_keyword` answers false for the
+/// same card in any other zone (CR 113.6 — abilities generally function only
+/// on the battlefield). Moon Heron has flying printed on the card, but a Moon
+/// Heron card in the graveyard is not a creature with flying.
+#[test]
+fn a_printed_keyword_is_only_had_on_the_battlefield() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let on_field = named_permanent(&mut state, &reg, "Moon Heron", P0);
+    assert!(state.has_keyword(on_field, Keyword::Flying, &reg),
+        "test precondition: Moon Heron has flying printed");
+
+    let in_gy = named_card_in_graveyard(&mut state, &reg, "Moon Heron", P0);
+    assert!(!state.has_keyword(in_gy, Keyword::Flying, &reg),
+        "a card in the graveyard has no keyword abilities");
+
+    let in_hand = spell_in_hand(&mut state, &reg, "Moon Heron", P0);
+    assert!(!state.has_keyword(in_hand, Keyword::Flying, &reg),
+        "nor does one in hand");
+}

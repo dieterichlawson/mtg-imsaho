@@ -319,3 +319,58 @@ fn a_battlefield_anthem_does_not_pump_cards_in_hand_or_graveyard() {
     assert_eq!(state.effective_power(in_gy, &reg), Some(2),
         "a card in the graveyard shows its printed power");
 }
+
+/// `effects_controlled_by` evaluates each effect's condition the right way
+/// around: a `When`-wrapped effect appears while its condition HOLDS and is
+/// absent while it doesn't. Bonds of Faith carries one of each polarity —
+/// +2/+2 while the enchanted creature is a Human, can't-attack while it
+/// isn't — so an inverted condition check flips both.
+#[test]
+fn effects_controlled_by_reads_conditions_the_right_way_around() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let human = named_permanent(&mut state, &reg, "Doomed Traveler", P0); // Human
+    let bonds = named_permanent(&mut state, &reg, "Bonds of Faith", P0);
+    state.get_object_mut(bonds).unwrap().attached_to = Some(human);
+
+    let effects = state.effects_controlled_by(P0, &reg);
+    assert!(effects.iter().any(|e| matches!(e, ContinuousEffect::ModifyPT { power: 2, .. })),
+        "attached to a Human: the +2/+2 half holds, got {effects:?}");
+    assert!(!effects.iter().any(|e| matches!(e, ContinuousEffect::PreventAttack { .. })),
+        "and the can't-attack half does not");
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let beast = ready_creature(&mut state, P0, 2, 2); // no subtypes
+    let bonds = named_permanent(&mut state, &reg, "Bonds of Faith", P0);
+    state.get_object_mut(bonds).unwrap().attached_to = Some(beast);
+
+    let effects = state.effects_controlled_by(P0, &reg);
+    assert!(effects.iter().any(|e| matches!(e, ContinuousEffect::PreventAttack { .. })),
+        "attached to a non-Human: the can't-attack half holds, got {effects:?}");
+    assert!(!effects.iter().any(|e| matches!(e, ContinuousEffect::ModifyPT { power: 2, .. })),
+        "and the +2/+2 half does not");
+}
+
+/// `global_effects` (scope-less rule modifications) evaluates conditions the
+/// same way. Built with an instance effect because no printed card in the set
+/// wraps a global effect in a condition: the mechanism still must not invert.
+#[test]
+fn global_effects_reads_conditions_the_right_way_around() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(source).unwrap().instance_continuous_effects =
+        Some(vec![ContinuousEffect::when(
+            EffectCondition::YouControlSubtype("Zombie".into()),
+            ContinuousEffect::PreventCastingNamed { name: "Lightning Bolt".into() },
+        )]);
+
+    assert!(!state.global_effects(&reg).iter().any(|e|
+            matches!(e, ContinuousEffect::PreventCastingNamed { .. })),
+        "no Zombie controlled: the conditional global effect is off");
+
+    named_permanent(&mut state, &reg, "Walking Corpse", P0); // a Zombie
+    assert!(state.global_effects(&reg).iter().any(|e|
+            matches!(e, ContinuousEffect::PreventCastingNamed { .. })),
+        "with a Zombie controlled it holds");
+}

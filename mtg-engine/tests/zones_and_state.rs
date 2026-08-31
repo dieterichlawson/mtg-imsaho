@@ -206,3 +206,89 @@ fn revealing_past_the_end_of_a_library_is_not_drawing_from_it() {
     assert!(!state.get_player(P0).has_drawn_from_empty,
         "running the library out by revealing must not flag a draw from an empty library");
 }
+
+// ── Mutation-motivated guards (reports/mutants-backlog.txt) ──────────────
+
+/// CR 701.20a: only a tapped permanent untaps. `untap` on an untapped
+/// permanent is a complete no-op — no `Untapped` event — mirroring what
+/// `tap` already documents for the reverse.
+#[test]
+fn untapping_an_untapped_permanent_emits_nothing() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+
+    state.events.clear();
+    state.untap(c);
+    assert!(!state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::Untapped { object } if *object == c)),
+        "an untapped permanent does not untap again — no event");
+
+    state.tap(c);
+    state.events.clear();
+    state.untap(c);
+    assert!(state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::Untapped { object } if *object == c)),
+        "a tapped permanent untapping emits the event");
+    assert!(!state.get_object(c).unwrap().tapped);
+}
+
+/// The leaves-the-battlefield log line names the destination: "died" for the
+/// graveyard, "was exiled" for exile — and only for a creature leaving the
+/// BATTLEFIELD. A card moving hand → graveyard did not die.
+#[test]
+fn leaving_the_battlefield_is_logged_by_destination() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bear = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
+    state.move_object(bear, Zone::Exile, &registry);
+    assert!(state.game_log.iter().any(|e| e.message.contains("Grizzly Bears was exiled")),
+        "battlefield -> exile logs 'was exiled'");
+
+    let traveler = named_permanent(&mut state, &registry, "Doomed Traveler", P0);
+    state.move_object(traveler, Zone::Graveyard, &registry);
+    assert!(state.game_log.iter().any(|e| e.message.contains("Doomed Traveler died")),
+        "battlefield -> graveyard logs 'died'");
+
+    let in_hand = spell_in_hand(&mut state, &registry, "Elder Cathar", P0);
+    let log_len = state.game_log.len();
+    state.move_object(in_hand, Zone::Graveyard, &registry);
+    assert!(!state.game_log[log_len..].iter().any(|e|
+            e.message.contains("Elder Cathar died")
+            || e.message.contains("Elder Cathar was exiled")
+            || e.message.contains("Elder Cathar left the battlefield")),
+        "a card that was never on the battlefield gets no leave-the-battlefield line");
+}
+
+/// CR 400.7: leaving the battlefield makes a new object. Runtime-granted
+/// subtypes/colors are wiped for a real card (its printed ones live in the
+/// registry) but kept for a token (its object fields ARE its printed
+/// characteristics), and the cast's X value dies with the permanent.
+#[test]
+fn leaving_the_battlefield_resets_runtime_grants_but_not_a_tokens_print() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bear = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
+    {
+        let obj = state.get_object_mut(bear).unwrap();
+        obj.subtypes.push("Vampire".into());
+        obj.colors.push(Color::Black);
+        obj.x_value = Some(5);
+    }
+    state.move_object(bear, Zone::Graveyard, &registry);
+    let obj = state.get_object(bear).unwrap();
+    assert!(obj.subtypes.is_empty(), "a granted subtype does not follow a card to the graveyard");
+    assert!(obj.colors.is_empty(), "nor a granted color");
+    assert_eq!(obj.x_value, None, "X was chosen for one cast (CR 107.3b)");
+
+    let token = *state.create_token_with_subtypes(
+        "Wolf", P0, 2, 2, vec![Color::Green], vec![CardType::Creature],
+        vec![], vec!["Wolf".into()], &registry)
+        .first().expect("token created");
+    state.move_object(token, Zone::Graveyard, &registry);
+    let tok = state.get_object(token).unwrap();
+    assert_eq!(tok.subtypes, vec!["Wolf".to_string()],
+        "a token's object-level subtypes are its printed ones and stay");
+    assert_eq!(tok.colors, vec![Color::Green]);
+}

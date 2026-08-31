@@ -402,3 +402,21 @@ fn a_token_copy_of_bloodline_keeper_cannot_transform() {
     assert!(!state.get_object(token).unwrap().is_transformed,
         "CR 111.7: a token copy of a DFC cannot transform");
 }
+
+/// A copy of a real card takes the card's colors, which for a card with no
+/// color indicator derive from its mana cost (CR 202.2). Walking Corpse costs
+/// {1}{B}: the copy is black — via the cost-derivation path, not a runtime
+/// grant (those are covered elsewhere).
+#[test]
+fn a_copy_derives_the_copied_cards_colors_from_its_cost() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    let victim = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    copy_onto(&mut state, &reg, twin, victim);
+
+    let colors = &state.get_object(twin).unwrap().colors;
+    assert_eq!(colors, &vec![Color::Black],
+        "the copy's color comes from the copied card's {{1}}{{B}} cost");
+}
