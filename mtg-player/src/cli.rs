@@ -28,6 +28,8 @@ pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
 pub fn reset_terminal_for_exit() {
     let _ = terminal::disable_raw_mode();
     let mut out = stdout();
+    // Defensive: bracketed paste must never survive into the user's shell.
+    let _ = execute!(out, event::DisableBracketedPaste);
     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
     let _ = out.flush();
 }
@@ -1573,8 +1575,32 @@ impl CliPlayer {
         let echo_cap = mid_w.saturating_sub("  > ".len());
         let mut echoed: usize = 0;
 
+        // Bracketed paste, enabled only for this raw-mode read: without it a
+        // multi-line paste arrives as N keystroke sequences whose embedded
+        // newlines SUBMIT — one stray paste answered thirty prompts, made
+        // cleanup discards for both seats, and advanced eleven turns (#50).
+        // With it the terminal delivers the paste as one event, the first
+        // line lands in the buffer, and nothing submits until a real Enter.
+        let _ = execute!(out, event::EnableBracketedPaste);
+
         let result = loop {
-            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+            let ev = match event::read() {
+                Ok(ev) => ev,
+                Err(_) => continue,
+            };
+            if let Event::Paste(pasted) = &ev {
+                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
+                for c in first.chars() {
+                    buf.push(c);
+                    if echoed < echo_cap {
+                        let _ = execute!(out, Print(c.to_string()));
+                        echoed += 1;
+                    }
+                }
+                let _ = out.flush();
+                continue;
+            }
+            if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
                 match code {
                     KeyCode::Char('/') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         break None; // trigger card search
@@ -1600,6 +1626,7 @@ impl CliPlayer {
                         break Some(buf.clone());
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = execute!(stdout(), event::DisableBracketedPaste);
                         let _ = terminal::disable_raw_mode();
                         std::process::exit(0);
                     }
@@ -1629,6 +1656,7 @@ impl CliPlayer {
             }
         };
 
+        let _ = execute!(stdout(), event::DisableBracketedPaste);
         let _ = terminal::disable_raw_mode();
         result
     }
