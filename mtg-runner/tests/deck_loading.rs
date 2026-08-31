@@ -159,7 +159,7 @@ fn missing_deck_file_panics() {
         .expect("failed to run");
     assert!(!output.status.success(), "Should fail on missing file");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Failed to read deck file"),
+    assert!(stderr.contains("could not be read as a deck file"),
         "Error should mention file read failure: {stderr}");
 }
 
@@ -189,6 +189,6 @@ fn unknown_builtin_name_treated_as_file() {
         .expect("failed to run");
     assert!(!output.status.success(), "Should fail on unknown deck name");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Failed to read deck file"),
+    assert!(stderr.contains("is not a built-in deck name and could not be read as a deck file"),
         "Should try to open as file and fail: {stderr}");
 }
