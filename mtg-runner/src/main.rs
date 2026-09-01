@@ -283,10 +283,14 @@ fn main() {
     {
         let p1_model = if let PlayerKind::Llm(ref llm) = p1 { llm.model_name().to_string() } else { p1_spec.to_string() };
         let p2_model = if let PlayerKind::Llm(ref llm) = p2 { llm.model_name().to_string() } else { p2_spec.to_string() };
+        // `player_names` holds the decks actually in play: on --resume the
+        // save's decks win over flags (and their defaults), and the banner
+        // must say so — it used to echo the default --deck1/--deck2 values,
+        // contradicting the RESULT line in the same file (issue #94).
         let meta = format!(
             "P1: {} (deck: {})\nP2: {} (deck: {})",
-            p1_model, deck_display_name(deck1_spec),
-            p2_model, deck_display_name(deck2_spec),
+            p1_model, player_names[0],
+            p2_model, player_names[1],
         );
         mtg_player::game_log::write(file!(), line!(), "GAME_START", &meta);
     }
