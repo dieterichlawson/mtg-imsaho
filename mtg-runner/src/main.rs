@@ -55,6 +55,20 @@ fn die(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// Write a save via a same-directory temp file and `rename(2)`, so a reader
+/// always sees either the previous complete save or the new complete save —
+/// never a half-written one. Writing in place (`fs::write` = O_TRUNC +
+/// write_all) tore ~12% of raw reads against a live writer (the 0-byte
+/// O_TRUNC window, 64 KiB-boundary cuts) and let two runners on one path
+/// braid their saves into one file (issue #75). The temp name carries the
+/// pid so two writers can't braid the temp either — the last rename wins
+/// whole, which is the most a shared path can promise.
+fn write_save_atomically(path: &str, json: &str) -> std::io::Result<()> {
+    let tmp = format!("{}.{}.tmp", path, std::process::id());
+    fs::write(&tmp, json)?;
+    fs::rename(&tmp, path)
+}
+
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
 /// lookup in `main` is an exact-match position scan, so an unrecognized or
 /// misspelled flag used to be silently dropped and its default silently used —
@@ -157,8 +171,19 @@ fn main() {
             .unwrap_or_else(|e| die(&format!("failed to open log file '{path}': {e}")));
     }
     if let Some(ref path) = save_file {
-        fs::OpenOptions::new().create(true).append(true).open(path)
+        // The probe never touches the save path itself — even a create+
+        // delete leaves a momentary empty file that reads as a torn save to
+        // anything polling the path (issue #75). A directory is checked
+        // directly (the later rename would only fail mid-game), and
+        // writability is proven on the same temp sibling the atomic write
+        // uses, which also catches a missing parent and bad permissions.
+        if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
+            die(&format!("cannot write save file '{path}': Is a directory"));
+        }
+        let probe = format!("{}.{}.tmp", path, std::process::id());
+        fs::write(&probe, b"")
             .unwrap_or_else(|e| die(&format!("cannot write save file '{path}': {e}")));
+        let _ = fs::remove_file(&probe);
     }
 
     let (player_names, mut state) = if let Some(ref path) = resume_file {
@@ -379,13 +404,14 @@ fn main() {
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // Always write hot-reload save.
-            fs::write(&hot_reload_ref, &json).expect("Failed to write hot-reload save");
+            write_save_atomically(&hot_reload_ref, &json)
+                .expect("Failed to write hot-reload save");
             // Also write user-specified save file if set. The path was
             // probed writable at startup, but the disk can still fill or the
             // file be replaced mid-game — that's a user-environment failure,
             // reported cleanly, not a panic (issue #69).
             if let Some(ref path) = save_file_ref {
-                fs::write(path, &json)
+                write_save_atomically(path, &json)
                     .unwrap_or_else(|e| die(&format!("failed to write save file '{path}': {e}")));
             }
         }
@@ -475,11 +501,14 @@ fn main() {
         return;
     }
 
-    // Clean up save file when game completes normally.
+    // Clean up save file when game completes normally, plus any temp file a
+    // crash mid-write could have stranded.
     if let Some(ref path) = save_file {
         let _ = fs::remove_file(path);
+        let _ = fs::remove_file(format!("{}.{}.tmp", path, std::process::id()));
     }
     let _ = fs::remove_file(&hot_reload_path);
+    let _ = fs::remove_file(format!("{}.{}.tmp", hot_reload_path, std::process::id()));
 
     // The CLI paints full frames without ever clearing on exit; printing the
     // summary straight onto the last frame merges it with stale rows. Wipe
