@@ -713,9 +713,14 @@ impl CliPlayer {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset), Print(": "));
-                // Clip to the panel like every other row.
+                // Clip to the panel like every other row — but from the
+                // middle, and never silently: the tail is what tells
+                // otherwise-identical entries apart (" targeting X",
+                // ", sacrificing Y"), and end-clipping it re-created the
+                // #36 blind-target menu for any ability whose description
+                // ran long — three self-hits in real games (issue #80).
                 let plen = 4 + i.to_string().chars().count();
-                let label: String = label.chars().take(mid_w.saturating_sub(plen)).collect();
+                let label = Self::clip_middle(label, mid_w.saturating_sub(plen));
                 Self::print_action_label(&mut out, &label);
                 row += 1;
             }
@@ -1435,6 +1440,28 @@ impl CliPlayer {
                 .map(|c| c.name.clone()))
             .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
+    }
+
+    /// Truncate `s` to `cap` characters by dropping the MIDDLE behind a
+    /// visible '…': the head names the permanent and ability, the tail
+    /// carries the disambiguating choice (" targeting X", ", sacrificing
+    /// Y"), and both must survive — end-clipping the tail rendered N
+    /// byte-identical menu entries whose choice silently decided who got
+    /// hit (issue #80, defeating the #36 fix).
+    fn clip_middle(s: &str, cap: usize) -> String {
+        let len = s.chars().count();
+        if len <= cap {
+            return s.to_string();
+        }
+        if cap <= 1 {
+            return "…".chars().take(cap).collect();
+        }
+        // Rough 3:2 split favors the head; the ellipsis takes one slot.
+        let tail_len = (cap - 1) * 2 / 5;
+        let head_len = cap - 1 - tail_len;
+        let head: String = s.chars().take(head_len).collect();
+        let tail: String = s.chars().skip(len - tail_len).collect();
+        format!("{head}…{tail}")
     }
 
     /// " targeting X" for an action's chosen targets, or "" when untargeted.
@@ -2831,17 +2858,28 @@ impl Player for CliPlayer {
                 // and the player could not tell a 2-mana ability from a
                 // 5-mana one (#61). The engine already collapses the metadata
                 // into activatable_abilities, description included.
-                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, .. } => {
+                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, sacrifice, .. } => {
                     let desc = legal.activatable_abilities.iter()
                         .find(|ab| ab.object_id == *object_id
                             && ab.ability_index == *ability_index
                             && ab.source_card_id == *source_card_id)
                         .map(|ab| ab.description.clone())
                         .filter(|d| !d.is_empty());
+                    // A sacrifice cost with a choice in it (CR 601.2h) is
+                    // part of what this entry does: Grimgrin's two
+                    // "Sacrifice another creature" entries differed only in
+                    // which creature died, with nothing on screen saying so
+                    // (issue #80). Sacrificing THIS permanent is already in
+                    // the description, so only name a different one.
+                    let sac_suffix = match sacrifice {
+                        Some(sac) if sac != object_id =>
+                            format!(", sacrificing {}", Self::perm_name(view, *sac)),
+                        _ => String::new(),
+                    };
                     let label = match desc {
-                        Some(d) => format!("{}: {}{}", Self::perm_name(view, *object_id),
-                            d, Self::targets_suffix(view, targets)),
-                        None => Self::format_action(view, action),
+                        Some(d) => format!("{}: {}{}{}", Self::perm_name(view, *object_id),
+                            d, Self::targets_suffix(view, targets), sac_suffix),
+                        None => format!("{}{}", Self::format_action(view, action), sac_suffix),
                     };
                     display.push(DisplayEntry::Direct(i));
                     display_labels.push(label);
@@ -3149,6 +3187,27 @@ mod tests {
     use mtg_engine::engine::LegalActions;
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
+
+    /// Issue #80: a menu label longer than the panel is clipped from the
+    /// MIDDLE with a visible ellipsis, never from the end — the tail is
+    /// what tells otherwise-identical entries apart (" targeting X").
+    #[test]
+    fn clip_middle_keeps_the_disambiguating_tail() {
+        let label = "Olivia Voldaren 3/3 (your): {1}{R}: Deal 1 damage to \
+                     another target creature, make it a Vampire, +1/+1 \
+                     counter on Olivia targeting Fiend Hunter 1/3 (opp)";
+        let clipped = CliPlayer::clip_middle(label, 113);
+        assert_eq!(clipped.chars().count(), 113);
+        assert!(clipped.contains('…'), "truncation is visible");
+        assert!(clipped.starts_with("Olivia Voldaren"), "the head survives");
+        assert!(clipped.ends_with("targeting Fiend Hunter 1/3 (opp)"),
+            "the target suffix survives: {clipped}");
+
+        // Short labels pass through untouched, cap-edge cases don't panic.
+        assert_eq!(CliPlayer::clip_middle("Pass priority", 113), "Pass priority");
+        assert_eq!(CliPlayer::clip_middle("abcdef", 1), "…");
+        assert_eq!(CliPlayer::clip_middle("abcdef", 0), "");
+    }
 
     fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
         let you = PlayerId(0);

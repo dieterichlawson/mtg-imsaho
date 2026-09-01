@@ -48,7 +48,7 @@ impl CardBehavior for OliviaVoldaren {
             // Ability 0: {1}{R}: Deal 1 damage to another target creature.
             ActivatedAbilityDef {
                 ability_index: 0,
-                description: "{1}{R}: Deal 1 damage to target creature, make it a Vampire, +1/+1 counter on Olivia".into(),
+                description: "{1}{R}: Deal 1 damage to another target creature, make it a Vampire, +1/+1 counter on Olivia".into(),
                 cost: ManaCost::new(vec![
                     ManaSymbol::Generic(1),
                     ManaSymbol::Colored(Color::Red),
