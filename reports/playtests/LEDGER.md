@@ -52,3 +52,18 @@ issues are filed per `docs/plans/bug-pipeline.md` (`phase:playtest`).
 | 2026-08-31 | Vandal | V13 paste-flood | br-coverage vs wg-coverage | 2 | 1-1 split, t25/t16; one paste executed 11 turns of real actions across both seats | #50 |
 | 2026-08-31 | Vandal | V14 save/resume corruption abuse | gw-humans vs ur-coverage | 2 | gw-humans won both, t9/t11; every bad save panics, honest resume correct | #52 |
 | 2026-08-31 | Vandal | V15 mulligan-phase abuse | ug-spider-spawning vs bg-coverage | 2 | bg-coverage won both, t14/t14; cap real and counter honest | #54, #63 |
+| 2026-09-01 | Competitor | C12 mill race (re-probe) | ub-zombies vs wg-coverage | 2 | ub-zombies decked p1 both games, t22/t20; **decking rule now genuinely exercised** (CR 704.5b verified) | #86 |
+| 2026-09-01 | Competitor | C15 mana pool and land-drop accounting | rg-coverage vs ur-coverage | 2 | 1-1 split, t18/t21; pool emptying, no mana burn, land-drop gating all correct | #72, #90 |
+| 2026-09-01 | Competitor | C16 combat priority windows | wr-coverage vs bg-coverage | 2 | wr-coverage won both, t15/t17; all five combat windows exercised; CR 509.1h correct | #88, #89 |
+| 2026-09-01 | Competitor | C17 activated-ability value engines | wu-coverage vs ub-coverage | 2 | wu-coverage won both, t13/t15; costs, stack use and counters all correct | #82, #83, #84 |
+| 2026-09-01 | Competitor | C18 sweeper vs go-wide | wu-coverage vs ug-spider-spawning | 2 | ug-spider-spawning won both, t18/t22; 5 Divine Reckoning resolutions, APNAP + simultaneity + tokens all correct | #94, #95 |
+| 2026-09-01 | Rules Lawyer | L16 copy effects (CR 706) | ub-coverage vs rg-coverage | 2 | 1-1 split, t35/t36; **two real copy-rules bugs**; CR 706.2 copiable values otherwise correct | #74, #85, #87, #93, comment on #80 |
+| 2026-09-01 | Rules Lawyer | L17 morbid | br-coverage vs wg-coverage | 2 | br-coverage won both, t19/t47; morbid correct on all 10 checks (resolution timing, tokens, exile/discard exclusions, per-turn reset) | #96, comments on #80, #95 |
+| 2026-09-01 | Rules Lawyer | L18 token existence + doublers | ug-spider-spawning vs wg-coverage | 2 | 1-1 split, t19/t30; CR 111.7 and Parallel Lives 2N-once-per-event correct | #91, #92 |
+| 2026-09-01 | Rules Lawyer | L19 curse / enchant-player legality | wb-coverage vs ur-coverage | 2 | 1-1 split, t30/t31; every curse rule verified correct (targeting, self-curse, 7c layers, 508.1d, upkeep timing) | #81 |
+| 2026-09-01 | Rules Lawyer | L20 evasion and blocking legality | wu-coverage vs rb-vampires | 2 (+1 abandoned) | rb-vampires won both, t18/t18; evasion/flying/hexproof/must-attack all correct. **Invisible Stalker + Blazing Torch never drawn — those two items still unverified** | comment on #80 |
+| 2026-09-01 | Vandal | V16 deck-file abuse | 15 malformed decks vs rg-coverage | 15 runs (3 full games) | completely clean: every malformed deck a clear error with exit 1, no panics | none |
+| 2026-09-01 | Vandal | V17 CLI flag abuse | rg-coverage vs wb-coverage | ~20 runs (1 hotseat) | seeds/flags/resume all clean; --log and --save path handling is not | #69, #70 |
+| 2026-09-01 | Vandal | V18 EOF, signals, terminal detach | wr-coverage vs ub-coverage | 2 (+12 kill-tests) | Ctrl-D/detach/resize all safe; signal death and --log are not | #77, #78, #79, comment on #73 |
+| 2026-09-01 | Vandal | V19 type-ahead race | gw-humans vs br-coverage | 2 (+6 controls) | br-coverage won both, t18/t16; **type-ahead crosses seats and takes irreversible actions** | #71, #73, #80, comments on #71 |
+| 2026-09-01 | Vandal | V20 concurrent save contention | rg-coverage vs wb-coverage | 2 (+load runs) | wb-coverage won g1 t22; saves are non-atomic, but no corrupt save ever loaded | #75, #76, comment on #69 |
