@@ -320,6 +320,13 @@ fn main() {
 
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
 
+    // A signal (closed window, kill, timeout) landing while a CLI prompt
+    // holds the terminal in raw mode must not leave the pty raw for the
+    // shell (issue #78).
+    if has_human {
+        mtg_player::cli::install_terminal_restore_signal_handlers();
+    }
+
     // Serializing the full game state (log included) every action is what
     // makes hot reload and --save work, but it turns long AI-vs-AI games
     // quadratic — the state grows with the log, and a 50k-action random game

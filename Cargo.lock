@@ -769,6 +769,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "crossterm",
+ "libc",
  "mtg-engine",
  "rand",
  "reqwest",

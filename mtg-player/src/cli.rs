@@ -26,6 +26,47 @@ pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
 static LAST_DECISION_IDENTITY: std::sync::Mutex<Option<(String, String)>> =
     std::sync::Mutex::new(None);
 
+/// The terminal settings from before the TUI ever touched them, captured
+/// when the signal handlers are installed, for the handler to restore.
+static SANE_TERMIOS: std::sync::OnceLock<libc::termios> = std::sync::OnceLock::new();
+
+/// Signal handler: put the terminal back, then die with the conventional
+/// 128+sig code. Restricted to async-signal-safe calls — `tcsetattr` with
+/// a pre-captured termios, a `write(2)` of the bracketed-paste-off /
+/// show-cursor sequences, `_exit` — so no crossterm, no locks, no
+/// allocation (`OnceLock::get` after initialization is a plain atomic
+/// load).
+extern "C" fn restore_terminal_and_exit(sig: libc::c_int) {
+    unsafe {
+        if let Some(t) = SANE_TERMIOS.get() {
+            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, t);
+        }
+        let seq = b"\x1b[?2004l\x1b[?25h\r\n";
+        libc::write(libc::STDOUT_FILENO, seq.as_ptr().cast(), seq.len());
+        libc::_exit(128 + sig);
+    }
+}
+
+/// Install SIGHUP/SIGTERM/SIGINT handlers that restore the terminal
+/// before exiting (issue #78). A signal landing while a prompt held the
+/// terminal in raw mode used to leave the pty raw for the inheriting
+/// shell — no echo, no line editing, no Ctrl-C, staircased output — on
+/// the ordinary close-the-window (SIGHUP) and `kill`/`timeout` (SIGTERM)
+/// paths, forcing a blind `stty sane`. The runner calls this once, before
+/// the first prompt, when a human CLI seat exists.
+pub fn install_terminal_restore_signal_handlers() {
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(libc::STDIN_FILENO, &mut t) == 0 {
+            let _ = SANE_TERMIOS.set(t);
+        }
+        let handler = restore_terminal_and_exit as extern "C" fn(libc::c_int);
+        for sig in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT] {
+            libc::signal(sig, handler as libc::sighandler_t);
+        }
+    }
+}
+
 /// Restore the terminal for normal line-oriented output after the TUI:
 /// leave raw mode, clear the last rendered frame, and home the cursor.
 /// The runner calls this before printing the end-of-game summary so the
