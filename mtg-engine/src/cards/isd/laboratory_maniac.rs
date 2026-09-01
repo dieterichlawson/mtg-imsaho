@@ -40,11 +40,7 @@ impl CardBehavior for LaboratoryManiac {
         // stops the state-based action from killing them for it first.
         state.get_player_mut(*player).has_drawn_from_empty = false;
         let opponent = state.opponent(*player);
-        state.players[opponent.0 as usize].lost = true;
-        state.events.push(crate::events::GameEvent::PlayerLost {
-            player: opponent,
-            reason: crate::events::LossReason::OpponentWon,
-        });
+        state.player_loses(opponent, crate::events::LossReason::OpponentWon);
         state.result = Some(crate::state::GameResult::Winner(*player));
         let name = state.obj_name(self_id);
         state.log(crate::state::LogLevel::Milestone,

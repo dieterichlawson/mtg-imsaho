@@ -2026,6 +2026,21 @@ impl GameState {
         }
     }
 
+    /// A player loses the game (CR 104.3): record why, say so in the log,
+    /// and raise the event. The single chokepoint, so no loss is ever
+    /// silent — `LossReason` used to be constructed at four sites and then
+    /// discarded, leaving the log with no line for the loss and the result
+    /// naming only the winner (issue #86).
+    pub fn player_loses(&mut self, player: PlayerId, reason: crate::events::LossReason) {
+        if self.get_player(player).lost {
+            return;
+        }
+        self.get_player_mut(player).lost = true;
+        self.get_player_mut(player).loss_reason = Some(reason);
+        self.log(LogLevel::Milestone, format!("p{} {}", player.0, reason.describe()));
+        self.events.push(crate::events::GameEvent::PlayerLost { player, reason });
+    }
+
     /// Remove a creature from the current combat (if any) — regeneration
     /// (CR 701.15c), control changes (CR 506.4d), and anything else that
     /// pulls a creature out of combat.
@@ -2838,6 +2853,10 @@ pub struct PlayerState {
     pub mana_pool: ManaPool,
     pub land_plays_remaining: u32,
     pub lost: bool,
+    /// Why `lost` is set (CR 104.3), recorded so the end-of-game report can
+    /// say how the game was decided rather than only who won (issue #86).
+    #[serde(default)]
+    pub loss_reason: Option<crate::events::LossReason>,
     pub has_drawn_from_empty: bool,
     /// Order of cards in library (first element is top of library).
     pub library_order: Vec<ObjectId>,
@@ -2861,6 +2880,7 @@ impl PlayerState {
             mana_pool: ManaPool::new(),
             land_plays_remaining: 1,
             lost: false,
+            loss_reason: None,
             has_drawn_from_empty: false,
             library_order: Vec::new(),
             mulligan_count: 0,

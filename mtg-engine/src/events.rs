@@ -59,7 +59,7 @@ pub enum DamageTarget {
     Object(ObjectId),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LossReason {
     LifeReachedZero,
     DrewFromEmptyLibrary,
@@ -68,4 +68,21 @@ pub enum LossReason {
     /// wins. Nothing happened to *them* — Laboratory Maniac used to report
     /// this as `LifeReachedZero`, which is simply untrue of a player on 20.
     OpponentWon,
+}
+
+impl LossReason {
+    /// Human sentence fragment, read as "<player> <describe()>". One string
+    /// for both the game log's loss line and the runner's result summary
+    /// (issue #86: the reason was constructed and then discarded — no log
+    /// line, and the result named only the winner).
+    #[must_use]
+    pub fn describe(self) -> &'static str {
+        match self {
+            LossReason::LifeReachedZero => "lost the game: life total reached 0 (CR 704.5a)",
+            LossReason::DrewFromEmptyLibrary =>
+                "lost the game: tried to draw from an empty library (CR 704.5b)",
+            LossReason::Conceded => "conceded",
+            LossReason::OpponentWon => "lost the game: the opponent won (CR 104.2a)",
+        }
+    }
 }

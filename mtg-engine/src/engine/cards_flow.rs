@@ -46,6 +46,11 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
             state.events.push(GameEvent::CardDrawn { player, object: id });
             drawn += 1;
         } else {
+            // The failed attempt is a real game event and the usual way a
+            // mill race ends — logged, not silent (issue #86): the loss it
+            // leads to (CR 704.5b) otherwise appeared from nowhere.
+            state.log(LogLevel::Info,
+                format!("p{} tried to draw from an empty library", player.0));
             // CR 614: drawing from an empty library can be replaced
             // (Laboratory Maniac wins instead). The effect does whatever it
             // does; either way the draw does not happen.

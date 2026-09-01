@@ -34,11 +34,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                 (p.lost, p.life, p.id)
             };
             if !lost && life <= 0 {
-                state.players[i].lost = true;
-                state.events.push(GameEvent::PlayerLost {
-                    player: id,
-                    reason: LossReason::LifeReachedZero,
-                });
+                state.player_loses(id, LossReason::LifeReachedZero);
                 took_action = true;
             }
         }
@@ -50,11 +46,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                 (p.lost, p.has_drawn_from_empty, p.id)
             };
             if !lost && drawn_empty {
-                state.players[i].lost = true;
-                state.events.push(GameEvent::PlayerLost {
-                    player: id,
-                    reason: LossReason::DrewFromEmptyLibrary,
-                });
+                state.player_loses(id, LossReason::DrewFromEmptyLibrary);
                 took_action = true;
             }
         }

@@ -63,12 +63,7 @@ pub(crate) fn discard_cards(state: &mut GameState, cards: &[ObjectId], registry:
 
 pub(crate) fn concede(state: &mut GameState, _registry: &CardRegistry) -> Applied {
         if let Some(player) = state.priority_player {
-            state.log(LogLevel::Milestone, format!("p{} concedes", player.0));
-            state.get_player_mut(player).lost = true;
-            state.events.push(GameEvent::PlayerLost {
-                player,
-                reason: crate::events::LossReason::Conceded,
-            });
+            state.player_loses(player, crate::events::LossReason::Conceded);
         }
     Applied::Continue
 }

@@ -12,6 +12,27 @@ use mtg_engine::state::GameResult;
 use mtg_engine::types::*;
 use mtg_engine::state::PendingEffect;
 
+/// Issue #86: a loss is never silent. The reason is recorded on the player
+/// for the end-of-game report and a Milestone line lands in the game log —
+/// LossReason used to be constructed and then discarded, so the game ended
+/// with no line saying who lost or why.
+#[test]
+fn a_loss_is_logged_and_its_reason_recorded() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.players[1].life = 0;
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert!(state.players[1].lost);
+    assert_eq!(state.players[1].loss_reason,
+        Some(mtg_engine::events::LossReason::LifeReachedZero),
+        "the reason is recorded for the result summary");
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("p1 lost the game: life total reached 0")),
+        "the loss has a log line naming the player and the reason");
+}
+
 /// Rule 104.4a: If both players reach 0 life simultaneously, it's a draw.
 #[test]
 fn simultaneous_life_loss_is_draw() {

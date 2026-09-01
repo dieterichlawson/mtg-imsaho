@@ -559,13 +559,25 @@ fn main() {
         mtg_player::cli::reset_terminal_for_exit();
     }
 
+    // Say HOW the game was decided, not only who won (issue #86): every
+    // lost player's recorded LossReason joins the headline.
+    let losses: Vec<String> = state.players.iter()
+        .filter(|p| p.lost)
+        .filter_map(|p| p.loss_reason.map(|r|
+            format!("{} {}", player_names[p.id.0 as usize], r.describe())))
+        .collect();
+    let loss_suffix = if losses.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", losses.join("; "))
+    };
     let result_msg = match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
             let name = &player_names[id.0 as usize];
-            format!("Game over! {name} wins!")
+            format!("Game over! {name} wins!{loss_suffix}")
         }
         Some(mtg_engine::state::GameResult::Draw) => {
-            "Game over! It's a draw!".to_string()
+            format!("Game over! It's a draw!{loss_suffix}")
         }
         None => {
             "Game ended without a result.".to_string()
