@@ -1693,16 +1693,76 @@ impl CliPlayer {
     // ── Input ──────────────────────────────────────────────────────
 
     fn read_line(prompt: &str) -> String {
-        // A cooked-mode read while the terminal is still raw silently
-        // swallows keystrokes ('\r' never ends the line, nothing echoes) —
-        // the concede prompt ate three keypresses this way (issue #42).
-        // Force cooked mode for the read; callers re-enable raw themselves.
+        // ONE reader for the terminal, always. This used to be a cooked-mode
+        // io::stdin() read while every menu prompt reads crossterm events in
+        // raw mode; two buffered readers over one fd desynchronize, and a
+        // stale newline sitting in stdin's BufReader answered the
+        // declare-blockers prompt as an empty line — a full 12-pair block
+        // declaration became "declared no blockers" in a game-deciding
+        // combat (issue #91; the concede prompt ate keystrokes across the
+        // same boundary in #42). Reading key events in raw mode, like every
+        // other prompt, removes the second reader outright. Leaves the
+        // terminal cooked, as the old read did.
+        let mut out = stdout();
+        let _ = execute!(out, Print(prompt));
+        let _ = out.flush();
+        let _ = terminal::enable_raw_mode();
+        // Same paste hardening as the menu reader (#50): a multi-line paste
+        // must not submit on its embedded newlines.
+        let _ = execute!(out, event::EnableBracketedPaste);
+        // Pending type-ahead is dropped — the cooked read's mode switch did
+        // this by accident, #71 does it on purpose: a keystroke must never
+        // answer a prompt the player has not been shown.
+        while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+            let _ = event::read();
+        }
+        let mut buf = String::new();
+        loop {
+            let ev = match event::read() {
+                Ok(ev) => ev,
+                Err(_) => continue,
+            };
+            if let Event::Paste(pasted) = &ev {
+                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
+                buf.push_str(first);
+                let _ = execute!(out, Print(first));
+                let _ = out.flush();
+                continue;
+            }
+            let Event::Key(KeyEvent { code, modifiers, .. }) = ev else { continue };
+            match code {
+                KeyCode::Enter => break,
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    let _ = execute!(out, event::DisableBracketedPaste);
+                    let _ = terminal::disable_raw_mode();
+                    std::process::exit(0);
+                }
+                // Ctrl-U kills the line (issue #79), here as in the menu reader.
+                KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    for _ in 0..buf.chars().count() {
+                        let _ = execute!(out, Print("\x08 \x08"));
+                    }
+                    buf.clear();
+                    let _ = out.flush();
+                }
+                KeyCode::Backspace => {
+                    if buf.pop().is_some() {
+                        let _ = execute!(out, Print("\x08 \x08"));
+                        let _ = out.flush();
+                    }
+                }
+                KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                    buf.push(c);
+                    let _ = execute!(out, Print(c.to_string()));
+                    let _ = out.flush();
+                }
+                // Unbound chords are ignored, never typed (#51).
+                _ => {}
+            }
+        }
+        let _ = execute!(out, event::DisableBracketedPaste, Print("\r\n"));
         let _ = terminal::disable_raw_mode();
-        print!("{prompt}");
-        io::stdout().flush().unwrap();
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        input.trim().to_string()
+        buf.trim().to_string()
     }
 
     /// A y/n confirmation that answers on a single keypress: `y` confirms,
