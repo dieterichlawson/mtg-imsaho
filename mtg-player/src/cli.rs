@@ -1733,6 +1733,19 @@ impl CliPlayer {
                             echoed -= 1;
                         }
                     }
+                    // Ctrl-U: kill the line, the standard readline binding
+                    // and the documented recovery from a garbled prompt.
+                    // Without it the stray characters stayed in the buffer
+                    // and corrupted the next input — exactly the situation
+                    // the recovery step exists for (issue #79).
+                    KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        buf.clear();
+                        while echoed > 0 {
+                            let _ = execute!(out, Print("\x08 \x08"));
+                            echoed -= 1;
+                        }
+                        let _ = out.flush();
+                    }
                     // Unbound chords are ignored, never typed: Ctrl-L must
                     // not become the 'l' shortcut, and crossterm reports the
                     // 0x1C-0x1F control codes (Ctrl-\ among them - SIGQUIT's
