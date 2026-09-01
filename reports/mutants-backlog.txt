@@ -7,21 +7,11 @@
 # consolidated tracking issue and the daily bug fixer work this list down.
 # When a test kills one, delete its line. When one is judged equivalent
 # after all, move it to reports/mutants-accepted.txt with a reason.
-mtg-engine/src/cards/helpers.rs: delete ! in any_targets
-mtg-engine/src/cards/helpers.rs: delete ! in any_targets_except
-mtg-engine/src/cards/helpers.rs: replace != with == in any_targets_except
 mtg-engine/src/cards/helpers.rs: replace != with == in counter_spell_inner
-mtg-engine/src/cards/helpers.rs: replace != with == in creature_targets_except
-mtg-engine/src/cards/helpers.rs: replace && with || in any_targets
-mtg-engine/src/cards/helpers.rs: replace && with || in any_targets_except
-mtg-engine/src/cards/helpers.rs: replace && with || in creature_targets_except
-mtg-engine/src/cards/helpers.rs: replace && with || in equip_target_is_legal
-mtg-engine/src/cards/helpers.rs: replace && with || in token_attack_options
 mtg-engine/src/cards/helpers.rs: replace += with *= in format_tap_plan_names
 mtg-engine/src/cards/helpers.rs: replace += with -= in format_tap_plan_names
 mtg-engine/src/cards/helpers.rs: replace == with != in finish_library_search
 mtg-engine/src/cards/helpers.rs: replace == with != in format_tap_plan_names
-mtg-engine/src/cards/helpers.rs: replace || with && in enters_tapped_unless
 mtg-engine/src/engine.rs: delete ! in legal_actions
 mtg-engine/src/engine.rs: delete ! in perform_turn_based_actions
 mtg-engine/src/engine.rs: delete match arm Step::DeclareBlockers in perform_turn_based_actions
