@@ -50,18 +50,21 @@ static LOG: Mutex<Option<LogState>> = Mutex::new(None);
 /// Initialize the global log writer. Call once at startup.
 /// If already initialized, replaces the previous log file.
 ///
-/// # Panics
-/// Panics if the log file at `path` cannot be created or opened for writing,
-/// or if the global log mutex is poisoned.
-pub fn init(path: &str) {
+/// The path is user input, so failure to open it is returned rather than
+/// panicking (issue #69): the caller owns how a bad `--log` argument is
+/// reported.
+pub fn init(path: &str) -> std::io::Result<()> {
     let file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(path)
-        .unwrap_or_else(|e| panic!("Failed to create log file {path}: {e}"));
-    let mut guard = LOG.lock().unwrap();
+        .open(path)?;
+    let mut guard = match LOG.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
     *guard = Some(LogState { file });
+    Ok(())
 }
 
 /// Write an info-level log entry. Equivalent to `write_at(LogLevel::Info, ..)`.

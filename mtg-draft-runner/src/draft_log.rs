@@ -10,7 +10,10 @@ pub struct DraftLogger;
 
 impl DraftLogger {
     pub fn new(path: &Path) -> Self {
-        mtg_player::game_log::init(&path.to_string_lossy());
+        if let Err(e) = mtg_player::game_log::init(&path.to_string_lossy()) {
+            eprintln!("Error: failed to open draft log '{}': {e}", path.display());
+            std::process::exit(1);
+        }
         Self
     }
 

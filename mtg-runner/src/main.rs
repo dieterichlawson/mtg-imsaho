@@ -148,6 +148,19 @@ fn main() {
 
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
 
+    // Fail fast on unwritable --log/--save paths: these are arguments, so a
+    // bad one is reported like any other bad argument — a one-line Error and
+    // exit 1 — not a panic with a backtrace after the game has already
+    // started (issue #69, the --log/--save siblings of #52).
+    if let Some(path) = log_file {
+        mtg_player::game_log::init(path)
+            .unwrap_or_else(|e| die(&format!("failed to open log file '{path}': {e}")));
+    }
+    if let Some(ref path) = save_file {
+        fs::OpenOptions::new().create(true).append(true).open(path)
+            .unwrap_or_else(|e| die(&format!("cannot write save file '{path}': {e}")));
+    }
+
     let (player_names, mut state) = if let Some(ref path) = resume_file {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
@@ -217,10 +230,6 @@ fn main() {
         (player_names, state)
     };
 
-    // Initialize the global game log if --log was given.
-    if let Some(path) = log_file {
-        mtg_player::game_log::init(path);
-    }
 
     let mut p1 = make_player(p1_spec, "P1", seed.map(|s| s.wrapping_add(1)));
     let mut p2 = make_player(p2_spec, "P2", seed.map(|s| s.wrapping_add(2)));
@@ -371,9 +380,13 @@ fn main() {
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // Always write hot-reload save.
             fs::write(&hot_reload_ref, &json).expect("Failed to write hot-reload save");
-            // Also write user-specified save file if set.
+            // Also write user-specified save file if set. The path was
+            // probed writable at startup, but the disk can still fill or the
+            // file be replaced mid-game — that's a user-environment failure,
+            // reported cleanly, not a panic (issue #69).
             if let Some(ref path) = save_file_ref {
-                fs::write(path, &json).expect("Failed to write save file");
+                fs::write(path, &json)
+                    .unwrap_or_else(|e| die(&format!("failed to write save file '{path}': {e}")));
             }
         }
 
