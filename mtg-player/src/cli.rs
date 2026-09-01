@@ -20,6 +20,12 @@ use crate::Player;
 pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// The (seat, prompt-kind) of the last decision that actually read input,
+/// shared across both hotseat CliPlayer instances — the terminal's event
+/// queue is process-global, so seat-crossing has to be tracked globally too.
+static LAST_DECISION_IDENTITY: std::sync::Mutex<Option<(String, String)>> =
+    std::sync::Mutex::new(None);
+
 /// Restore the terminal for normal line-oriented output after the TUI:
 /// leave raw mode, clear the last rendered frame, and home the cursor.
 /// The runner calls this before printing the end-of-game summary so the
@@ -83,6 +89,40 @@ impl CliPlayer {
             name: name.to_string(),
             pass_mode: None,
             card_filter: String::new(),
+        }
+    }
+
+    /// Drop pending type-ahead when the decision being prompted changes
+    /// identity — a different seat, or a different kind of prompt (the
+    /// action menu vs. a mandatory discard/sacrifice/bottoming menu, which
+    /// all share the same raw-mode reader). A keystroke must never answer a
+    /// prompt the player has not been shown: ordinary type-ahead against
+    /// one seat's main-phase menu survived the seat change and answered the
+    /// other player's mandatory cleanup discard — and picked which creature
+    /// an opponent sacrificed to Tribute to Hunger (issue #71).
+    ///
+    /// Repeats of the SAME identity keep their type-ahead: spamming Enter
+    /// through your own priority prompts still works. The surviving bytes
+    /// live in crossterm's parsed event queue, not the kernel tty buffer,
+    /// so the drain reads events, and raw mode must be on for `poll` to
+    /// see them.
+    fn drain_stale_input(&self, kind: &str) {
+        let id = (self.name.clone(), kind.to_string());
+        let mut last = match LAST_DECISION_IDENTITY.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        if last.as_ref() == Some(&id) {
+            return;
+        }
+        *last = Some(id);
+        let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
+        let _ = terminal::enable_raw_mode();
+        while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+            let _ = event::read();
+        }
+        if !was_raw {
+            let _ = terminal::disable_raw_mode();
         }
     }
 
@@ -2808,6 +2848,16 @@ impl Player for CliPlayer {
             display.push(DisplayEntry::Direct(action_idx));
             display_labels.push(label);
         }
+
+        // Issue #71: a decision of a different identity (seat or prompt
+        // kind) must not consume keystrokes typed against an earlier
+        // prompt. Every menu with a Pass option is the one ordinary
+        // priority menu — a single kind, whatever the step, so holding
+        // Enter to pass through your own turn keeps working. A menu
+        // without Pass is a mandatory choice (discard, sacrifice,
+        // bottoming, search), keyed by its context string.
+        let kind = if has_pass { "priority" } else { legal.context.as_deref().unwrap_or("") };
+        self.drain_stale_input(kind);
 
         let mut notice: Option<String> = None;
         loop {
