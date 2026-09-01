@@ -169,6 +169,17 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                     "activation refused, submitted funding cannot pay {pay:?} (CR 601.2h)"));
                 return Applied::ReturnNow;
             }
+            // CR 601.2a via 602.2b: the activation is announced before its
+            // costs are paid. Logged here — past the last refusal point, and
+            // before any cost mutates the state — so a sacrifice cost reads
+            // "activated, then died", not a creature dying on its own and
+            // then somehow activating from the graveyard. The name is
+            // captured now for the same reason: it is the name the player
+            // saw when they activated.
+            let name = card_name(&state, registry, object_id);
+            state.log(LogLevel::Event, format!(
+                "p{} activated ability on {}: {}", player.0, name, ab.description));
+
             mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &pay)
                 .expect("can_pay just verified this");
             if !has_x_cost {
@@ -224,10 +235,11 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             }
 
             if has_x_cost {
-                // Defer the stack push and the activation log until
-                // funding completes — the ability's effect reads
-                // `last_activated_x_value`, which isn't set until then.
-                // See the ChooseXFunding handler for the continuation.
+                // Defer the stack push until funding completes — the
+                // ability's effect reads `last_activated_x_value`, which
+                // isn't set until then. See the ChooseXFunding handler for
+                // the continuation. (The activation was already logged at
+                // announcement time above.)
                 let options = crate::funding::build_options(&state, player, registry);
                 let name = card_name(&state, registry, object_id);
                 if options.max_x > 0 {
@@ -255,13 +267,9 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                     // No mana available; force X = 0.
                     state.last_activated_x_value = Some(0);
                     put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, registry);
-                    let name = card_name(&state, registry, object_id);
-                    state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
                 }
             } else {
                 put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, registry);
-                let name = card_name(&state, registry, object_id);
-                state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
             }
             // CR 117.3b: taking an action means every player gets priority
             // again before anything resolves. This used to be moot — the

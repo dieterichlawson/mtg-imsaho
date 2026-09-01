@@ -57,6 +57,27 @@ fn selfless_cathar_pumps_only_the_creatures_you_control() {
     assert_eq!(new_state.effective_toughness(theirs, &reg).unwrap(), 2);
 }
 
+/// CR 601.2a via 602.2b (issue #88, secondary): the activation is announced
+/// before its costs are paid, so the log reads "activated, then died" — not a
+/// creature dying on its own and then activating from the graveyard.
+#[test]
+fn a_sacrifice_cost_activation_is_logged_before_the_sacrifice() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let cathar = named_permanent(&mut state, &reg, "Selfless Cathar", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let new_state = activate(&state, &reg, cathar, 0, vec![]);
+    assert_eq!(new_state.get_object(cathar).unwrap().zone, Zone::Graveyard);
+
+    let position = |needle: &str| new_state.game_log.iter()
+        .position(|e| e.message.contains(needle))
+        .unwrap_or_else(|| panic!("log line containing {needle:?} not found"));
+    assert!(position("activated ability on Selfless Cathar") < position("Selfless Cathar died"),
+        "the activation announcement precedes the sacrifice that paid for it");
+}
+
 /// Ruling: "You can activate Selfless Cathar's ability even if you control no
 /// other creatures." The ability names no minimum, and the Cathar sacrifices
 /// itself to pay for it — so the empty board is the ordinary case, not an

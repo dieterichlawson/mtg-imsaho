@@ -348,6 +348,9 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.last_activated_x_value = Some(x);
                         let pending = state.pending_ability_effect.take()
                             .expect("pending_ability_effect must be set for X-cost ability funding");
+                        // The activation itself was already logged at
+                        // announcement time (CR 601.2a), before this funding
+                        // choice — only the stack push was deferred.
                         super::abilities::put_ability_on_stack(
                             &mut *state,
                             pending.source_id,
@@ -355,14 +358,6 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             pending.behavior_card_id,
                             &pending.targets,
                             registry,
-                        );
-                        let name = card_name(&state, registry, pending.source_id);
-                        state.log(
-                            LogLevel::Event,
-                            format!(
-                                "p{} activated ability on {}: {}",
-                                pending.activator.0, name, pending.description
-                            ),
                         );
                     } else {
                         // Spells: pull the stashed casting context and
