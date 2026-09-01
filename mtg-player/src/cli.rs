@@ -3017,10 +3017,16 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "" => {
-                    // Enter = pass if available
+                    // Enter = pass if available. Without a Pass option this
+                    // is a mandatory choice with no "do nothing" — refuse
+                    // bare Enter out loud instead of silently re-rendering:
+                    // 30 swallowed Enters at a cleanup discard read as a
+                    // hung game (issue #76, the menu sibling of #42).
                     if has_pass {
                         return Action::PassPriority;
                     }
+                    notice = Some(format!("{} — mandatory: enter an option number",
+                        legal.context.as_deref().unwrap_or("This choice")));
                     continue;
                 }
                 _ => {}
@@ -3055,9 +3061,13 @@ impl Player for CliPlayer {
                             // User cancelled target selection — re-render
                         }
                     }
+                    continue;
                 }
             }
-            // Invalid input — just re-render
+            // Invalid input: say so (issue #76 — a silent re-render at a
+            // full-screen menu is indistinguishable from a hung game).
+            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
+                input, display.len().saturating_sub(1)));
         }
     }
 
