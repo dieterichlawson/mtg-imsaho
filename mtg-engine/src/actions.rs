@@ -165,6 +165,13 @@ pub enum CombatPrompt {
         /// For each blocker, the set of attackers it can legally block.
         /// Accounts for flying/reach, intimidate, protection, `CanOnlyBeBlockedBy`, etc.
         legal_blocks: std::collections::HashMap<ObjectId, Vec<ObjectId>>,
+        /// Attackers that can't be blocked by fewer than N creatures
+        /// (menace, `MinimumBlockers` effects — CR 509.1b), so the players
+        /// can refuse an under-minimum declaration up front instead of the
+        /// engine silently discarding it (issue #72). Only attackers with a
+        /// requirement above 1 appear.
+        #[serde(default)]
+        min_blockers: std::collections::HashMap<ObjectId, u32>,
     },
 }
 

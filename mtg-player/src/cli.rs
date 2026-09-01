@@ -2134,7 +2134,7 @@ impl CliPlayer {
     }
 
     fn choose_blockers(view: &GameView, prompt: &CombatPrompt) -> Action {
-        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, legal_blocks } = prompt else {
+        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, legal_blocks, min_blockers } = prompt else {
             unreachable!()
         };
 
@@ -2157,8 +2157,14 @@ impl CliPlayer {
             Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
         r += 1;
         for (i, &id) in attacker_ids.iter().enumerate() {
+            // CR 509.1b: say the minimum-blockers requirement (menace,
+            // Terror of Kruin Pass) up front — an unmarked menace attacker
+            // took a single block the engine then discarded (issue #72).
+            let note = min_blockers.get(&id)
+                .map(|min| format!(" [needs {min}+ blockers]"))
+                .unwrap_or_default();
             let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(format!("  {}: {}", i, Self::perm_name(view, id))));
+                Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
             r += 1;
         }
         let _ = execute!(out, cursor::MoveTo(col, r),
@@ -2233,6 +2239,25 @@ impl CliPlayer {
                     }
                     _ => {
                         error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
+                        break;
+                    }
+                }
+            }
+
+            // CR 509.1b: an attacker that can't be blocked by fewer than N
+            // creatures makes any 1..N-blocker declaration illegal as a
+            // whole. Refuse it here, loudly, like the per-pairing cases
+            // above — the engine would discard the blocks and report
+            // "declared no blockers", eating the blocker on nothing
+            // (issue #72).
+            if error.is_none() {
+                for (&attacker, &min) in min_blockers {
+                    let count = assignments.iter().filter(|&&(_, a)| a == attacker).count();
+                    if count > 0 && count < min as usize {
+                        error = Some(format!(
+                            "{} can't be blocked by fewer than {} creatures \
+                             (CR 509.1b) — add blockers or drop the block.",
+                            Self::perm_name(view, attacker), min));
                         break;
                     }
                 }

@@ -66,12 +66,21 @@ pub(crate) fn legal_actions_while_awaiting(
                     .collect();
                 legal_blocks.insert(blocker_id, can_block);
             }
+            // CR 509.1b: tell the defender up front which attackers need 2+
+            // blockers (menace, Terror of Kruin Pass), so clients can refuse
+            // an under-minimum declaration instead of the engine silently
+            // discarding it (issue #72).
+            let min_blockers = attacker_ids.iter()
+                .map(|&att| (att, combat::minimum_blockers(state, att, registry)))
+                .filter(|&(_, min)| min > 1)
+                .collect();
             LegalActions {
                 actions: vec![],
                 combat_prompt: Some(crate::actions::CombatPrompt::ChooseBlockers {
                     eligible_blockers,
                     attackers: attacker_ids,
                     legal_blocks,
+                    min_blockers,
                 }),
                 castable_spells: vec![],
                 activatable_abilities: vec![],

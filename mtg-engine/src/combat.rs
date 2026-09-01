@@ -127,43 +127,53 @@ pub fn declare_blockers_with_registry(
         *blocker_counts.entry(attacker).or_insert(0) += 1;
     }
 
-    // Determine minimum blocker requirement for each attacker.
-    let attacker_ids: Vec<ObjectId> = blocker_counts.keys().copied().collect();
-    let mut min_blockers: std::collections::HashMap<ObjectId, u32> = std::collections::HashMap::new();
-    for &att_id in &attacker_ids {
-        let mut min_req: u32 = 1; // default: any single creature can block
-        // Menace keyword: need at least 2 blockers.
-        if state.has_keyword(att_id, Keyword::Menace, registry) {
-            min_req = min_req.max(2);
-        }
-        // MinimumBlockers continuous effects (e.g., Terror of Kruin Pass).
-        state.walk_effects(
-            att_id,
-            &|e| matches!(e, ContinuousEffect::MinimumBlockers { .. }),
-            registry,
-            &mut |e, _| {
-                if let ContinuousEffect::MinimumBlockers { count, .. } = e {
-                    min_req = min_req.max(*count);
-                }
-                true
-            },
-        );
-        if min_req > 1 {
-            min_blockers.insert(att_id, min_req);
-        }
+    // The same never-silently rule as the per-pairing filter above: a
+    // dropped under-minimum block turned "Bears blocks Terror" into
+    // "declared no blockers" with no trace, and the defender ate 10 damage
+    // without ever learning why (issue #72). The prompt's `min_blockers`
+    // is the up-front source of truth; this line is the audit trail.
+    let (valid, dropped): (Vec<_>, Vec<_>) = valid.into_iter()
+        .partition(|&(_, attacker)| {
+            let min = minimum_blockers(state, attacker, registry);
+            blocker_counts.get(&attacker).copied().unwrap_or(0) >= min as usize
+        });
+    for (blocker, attacker) in dropped {
+        let min = minimum_blockers(state, attacker, registry);
+        state.log(crate::state::LogLevel::Info, format!(
+            "ignored illegal block: {} blocking {} — it can't be blocked by \
+             fewer than {} creatures (CR 509.1b), and only {} blocked it",
+            state.obj_name(blocker), state.obj_name(attacker), min,
+            blocker_counts.get(&attacker).copied().unwrap_or(0)));
     }
 
-    let valid: Vec<_> = valid.into_iter()
-        .filter(|&(_, attacker)| {
-            if let Some(&min) = min_blockers.get(&attacker) {
-                blocker_counts.get(&attacker).copied().unwrap_or(0) >= min as usize
-            } else {
-                true
-            }
-        })
-        .collect();
-
     declare_blockers(state, &valid);
+}
+
+/// The minimum number of creatures that must block `att_id` for any block to
+/// be legal (CR 509.1b): 1 for most creatures, 2+ under menace
+/// (CR 702.111b) or a `MinimumBlockers` continuous effect (e.g. Terror of
+/// Kruin Pass). Exposed so `legal_actions` can tell the players about the
+/// requirement up front instead of the engine silently discarding an
+/// under-minimum declaration (issue #72).
+pub fn minimum_blockers(state: &GameState, att_id: ObjectId, registry: &CardRegistry) -> u32 {
+    let mut min_req: u32 = 1; // default: any single creature can block
+    // Menace keyword: need at least 2 blockers.
+    if state.has_keyword(att_id, Keyword::Menace, registry) {
+        min_req = min_req.max(2);
+    }
+    // MinimumBlockers continuous effects (e.g., Terror of Kruin Pass).
+    state.walk_effects(
+        att_id,
+        &|e| matches!(e, ContinuousEffect::MinimumBlockers { .. }),
+        registry,
+        &mut |e, _| {
+            if let ContinuousEffect::MinimumBlockers { count, .. } = e {
+                min_req = min_req.max(*count);
+            }
+            true
+        },
+    );
+    min_req
 }
 
 /// Deal combat damage with full keyword support.

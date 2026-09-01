@@ -1113,6 +1113,44 @@ fn an_attacker_that_left_the_battlefield_cannot_be_blocked() {
         "the blocker is not consumed blocking a permanent that left the game");
 }
 
+/// CR 509.1b / 702.111b (issue #72): a lone blocker on a menace attacker is
+/// an illegal declaration. The prompt must advertise the requirement up
+/// front (`min_blockers`) so clients can refuse it at input time, and the
+/// engine backstop that discards it must leave an audit trail — a silently
+/// vanished block read as "declared no blockers" and ate the defender's
+/// only blocker on nothing.
+#[test]
+fn an_under_minimum_block_is_advertised_and_refused_with_an_audit_trail() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    grant_keyword(&mut state, attacker, Keyword::Menace);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+
+    // The prompt says up front that this attacker needs 2+ blockers.
+    state.awaiting_action =
+        Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::actions::CombatPrompt::ChooseBlockers { min_blockers, .. }) =
+        legal.combat_prompt
+    else {
+        panic!("expected a ChooseBlockers prompt");
+    };
+    assert_eq!(min_blockers.get(&attacker), Some(&2),
+        "menace (CR 702.111b) is advertised as a 2+ blocker requirement");
+
+    // The engine backstop: the under-minimum declaration is discarded (the
+    // attacker ends up unblocked) — but never silently.
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+    assert!(state.combat.as_ref().is_some_and(
+        |c| c.blocker_assignments.get(&attacker).is_some_and(Vec::is_empty)),
+        "a lone blocker can't block a menace attacker");
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("ignored illegal block") && e.message.contains("fewer than 2")),
+        "the discarded block leaves an audit trail in the log");
+}
+
 /// CR 510.5: a creature with plain first strike deals damage in the first
 /// step and NOT again in the regular step; the vanilla blocker still deals
 /// its own damage in the regular step.

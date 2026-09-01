@@ -3062,8 +3062,8 @@ impl LlmPlayer {
                 Action::DeclareAttackers { attackers, planeswalker_attacks: walker_attacks }
             }
 
-            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks } => {
-                self.choose_blockers_structured(view, eligible_blockers, attackers, legal_blocks)
+            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks, min_blockers } => {
+                self.choose_blockers_structured(view, eligible_blockers, attackers, legal_blocks, min_blockers)
             }
         }
     }
@@ -3074,27 +3074,28 @@ impl LlmPlayer {
         view: &GameView,
         assignments: &[(ObjectId, ObjectId)],
         attackers: &[ObjectId],
+        min_blockers: &std::collections::HashMap<ObjectId, u32>,
     ) -> Vec<String> {
-        use mtg_engine::types::Keyword;
-
         let mut errors = Vec::new();
 
-        // Menace: if an attacker with menace is blocked, it must have 2+ blockers.
+        // CR 509.1b: an attacker that can't be blocked by fewer than N
+        // creatures needs N+ blockers or none. The engine's `min_blockers`
+        // map is authoritative — a keyword scan here missed the
+        // `MinimumBlockers` continuous effects (Terror of Kruin Pass,
+        // issue #72).
         let mut blocker_counts: std::collections::HashMap<ObjectId, Vec<ObjectId>> = std::collections::HashMap::new();
         for &(blocker, attacker) in assignments {
             blocker_counts.entry(attacker).or_default().push(blocker);
         }
         for (att_idx, &attacker_id) in attackers.iter().enumerate() {
-            if let Some(attacker) = view.battlefield.iter().find(|p| p.object_id == attacker_id) {
-                if attacker.keywords.contains(&Keyword::Menace) {
-                    if let Some(blockers) = blocker_counts.get(&attacker_id) {
-                        if blockers.len() == 1 {
-                            errors.push(format!(
-                                "Attacker {} ({}) has MENACE and must be blocked by at least 2 creatures, but you only assigned 1 blocker. Either assign more blockers to it or set all blockers to -1 (don't block it at all).",
-                                att_idx, Self::format_combat_creature(view, attacker_id)
-                            ));
-                        }
-                    }
+            let Some(&min) = min_blockers.get(&attacker_id) else { continue };
+            if let Some(blockers) = blocker_counts.get(&attacker_id) {
+                if !blockers.is_empty() && blockers.len() < min as usize {
+                    errors.push(format!(
+                        "Attacker {} ({}) can't be blocked by fewer than {} creatures, but you only assigned {}. Either assign more blockers to it or set those blockers to -1 (don't block it at all).",
+                        att_idx, Self::format_combat_creature(view, attacker_id),
+                        min, blockers.len()
+                    ));
                 }
             }
         }
@@ -3110,6 +3111,7 @@ impl LlmPlayer {
         eligible_blockers: &[ObjectId],
         attackers: &[ObjectId],
         legal_blocks: &std::collections::HashMap<ObjectId, Vec<ObjectId>>,
+        min_blockers: &std::collections::HashMap<ObjectId, u32>,
     ) -> Action {
         if eligible_blockers.is_empty() || attackers.is_empty() {
             return Action::DeclareBlockers { assignments: vec![] };
@@ -3155,12 +3157,14 @@ impl LlmPlayer {
 
         let mut combat_text = String::from("Attackers: ");
         for (i, &id) in attackers.iter().enumerate() {
-            let perm = view.battlefield.iter().find(|p| p.object_id == id);
-            let menace = perm.is_some_and(|p| p.keywords.contains(&mtg_engine::types::Keyword::Menace));
-            if menace {
-                write!(combat_text, "{}:{} (MENACE) ", i, attacker_labels[i]).unwrap();
-            } else {
-                write!(combat_text, "{}:{} ", i, attacker_labels[i]).unwrap();
+            // The engine's `min_blockers` map, not a keyword scan: menace
+            // and the MinimumBlockers effects (Terror of Kruin Pass) both
+            // land here (issue #72).
+            match min_blockers.get(&id) {
+                Some(&min) => write!(combat_text,
+                    "{}:{} (can't be blocked by fewer than {} creatures) ",
+                    i, attacker_labels[i], min).unwrap(),
+                None => write!(combat_text, "{}:{} ", i, attacker_labels[i]).unwrap(),
             }
         }
         combat_text.push_str("\nYour blockers: ");
@@ -3200,7 +3204,7 @@ impl LlmPlayer {
             }
 
             // Validate.
-            let errors = Self::validate_blocker_assignments(view, &assignments, attackers);
+            let errors = Self::validate_blocker_assignments(view, &assignments, attackers, min_blockers);
             if errors.is_empty() {
                 return Action::DeclareBlockers { assignments };
             }
