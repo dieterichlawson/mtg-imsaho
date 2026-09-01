@@ -107,6 +107,36 @@ fn parallel_lives_doubles_only_its_controllers_tokens() {
         "an opponent's are not");
 }
 
+/// Issue #92: the token-creation log line reports what actually ENTERED,
+/// not the pre-doubling count — "created 3 Wolf tokens" while six attacked
+/// told the defender half the real number of attackers.
+#[test]
+fn doubled_token_creation_logs_the_real_count() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    named_permanent(&mut state, &reg, "Parallel Lives", P0);
+    let cagebreakers = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
+    state.get_object_mut(cagebreakers).unwrap().summoning_sick = false;
+    // Three creature CARDS in the controller's graveyard.
+    for _ in 0..3 {
+        let bear = ready_creature(&mut state, P0, 2, 2);
+        state.move_object(bear, Zone::Graveyard, &reg);
+    }
+
+    let behavior = reg.get(state.get_object(cagebreakers).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, cagebreakers,
+        mtg_engine::cards::AttackInfo { attacker: cagebreakers, defending_player: P1 },
+        &[], &reg);
+
+    assert_eq!(count_tokens_named_by(&state, "Wolf Token", P0), 6,
+        "3 creature cards, doubled by Parallel Lives");
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("created 6 Wolf tokens")),
+        "the log counts the six that entered, not the three the graveyard \
+         suggested: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
 // ── Heartless Summoning ──────────────────────────────────────
 
 /// Heartless Summoning's other half: "Creature spells you cast cost {2} less to

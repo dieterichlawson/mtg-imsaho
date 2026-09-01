@@ -68,6 +68,11 @@ impl CardBehavior for KessigCagebreakers {
         crate::cards::helpers::tokens_enter_combat_attacking(
             state, self_id, controller, &all_tokens, registry);
         state.log(crate::state::LogLevel::Event,
-            format!("Kessig Cagebreakers created {creature_count} Wolf tokens tapped and attacking"));
+            // The count the players see is what actually ENTERED — a token
+            // doubler (Parallel Lives, CR 614.1) makes it differ from the
+            // graveyard count, and the log said half the real number of
+            // attackers (issue #92).
+            format!("Kessig Cagebreakers created {} Wolf tokens tapped and attacking",
+                all_tokens.len()));
     }
 }
