@@ -315,6 +315,11 @@ pub(crate) fn legal_actions_while_awaiting(
                     description.clone()
                 }
                 ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),
+                // The description says what choosing does ("Forbidden
+                // Alchemy: choose a card to put into your hand") — same
+                // rule as YesNo above (issues #87/#95).
+                ResolutionChoiceKind::ChooseFromRevealed { description, .. }
+                    if !description.is_empty() => description.clone(),
                 ResolutionChoiceKind::ChooseFromRevealed { .. } => {
                     format!("{source_name}: choose a card")
                 }

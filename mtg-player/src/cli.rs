@@ -416,6 +416,13 @@ impl CliPlayer {
     // ── Rendering ──────────────────────────────────────────────────
 
     fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
+        let _ = Self::render_paged(view, actions, message, log, card_filter, pass_mode_label, 0);
+    }
+
+    /// `render`, starting the action menu at `menu_offset` (issue #96 — a
+    /// menu longer than the pane is paged with 'm', not guessed at).
+    /// Returns how many menu entries were shown from that offset.
+    fn render_paged(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> usize {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -736,21 +743,27 @@ impl CliPlayer {
         }
 
         // Action list (only when actions are provided)
+        let mut menu_shown = 0usize;
         if let Some(labels) = actions {
             // Rows left for the menu once the hint and prompt rows below it
             // are reserved. A menu longer than the pane used to keep printing
             // past the bottom — 11 of 35 mulligan-bottom options were simply
-            // invisible, with nothing saying the list continued (#60). The
-            // hidden entries stay selectable by number; the marker row says
-            // how many there are.
+            // invisible (#60) — and the marker #60 added still left hidden
+            // entries reachable only by typing a number the player could not
+            // see, which mis-cast a spell in a real game (#96). The menu now
+            // renders a page starting at `menu_offset`, advanced with 'm';
+            // indices are absolute, so any number works from any page.
             let avail = h.saturating_sub(row as usize + 2);
-            let shown = if labels.len() > avail {
-                avail.saturating_sub(1)
+            let offset = menu_offset.min(labels.len().saturating_sub(1));
+            let remaining = labels.len() - offset;
+            let paged = offset > 0 || remaining > avail;
+            let shown = if paged {
+                avail.saturating_sub(1).max(1).min(remaining)
             } else {
-                labels.len()
+                remaining
             };
-            let hidden = labels.len() - shown;
-            for (i, label) in labels.iter().take(shown).enumerate() {
+            menu_shown = shown;
+            for (i, label) in labels.iter().enumerate().skip(offset).take(shown) {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset), Print(": "));
@@ -765,9 +778,9 @@ impl CliPlayer {
                 Self::print_action_label(&mut out, &label);
                 row += 1;
             }
-            if hidden > 0 {
-                let marker = format!("  … {hidden} more option{} up to {} (not shown; type the number)",
-                    if hidden == 1 { "" } else { "s" }, labels.len() - 1);
+            if paged {
+                let marker = format!("  … showing {}-{} of 0-{} — m = next page (any number works)",
+                    offset, offset + shown - 1, labels.len() - 1);
                 let marker: String = marker.chars().take(mid_w).collect();
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
@@ -797,6 +810,7 @@ impl CliPlayer {
         // Print prompt and move cursor to input area in middle panel
         let _ = execute!(out, cursor::MoveTo(mid_col, row), Print("  > "));
         let _ = out.flush();
+        menu_shown
     }
 
     /// Display name for a counter kind, as it reads on a battlefield line.
@@ -2771,7 +2785,7 @@ impl CliPlayer {
         }
     }
 
-    fn library_search_ui(view: &GameView, actions: &[Action]) -> Action {
+    fn library_search_ui(view: &GameView, actions: &[Action], title: &str) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
         // Collect card info for each option.
@@ -2836,8 +2850,12 @@ impl CliPlayer {
 
             // Render.
             let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+            // The header names the effect and the choice ("Forbidden
+            // Alchemy: choose a card to put into your hand") — the literal
+            // "Search Library" implied free tutoring for prompts that
+            // reveal a fixed set, or discard from hand (issue #95).
             let _ = execute!(out, SetForegroundColor(Color::Yellow),
-                Print("═══ Search Library ═══\n\r"),
+                Print(format!("═══ {title} ═══\n\r")),
                 ResetColor);
             let _ = execute!(out, Print(format!("Filter: {filter}_\n\r\n\r")));
 
@@ -2963,7 +2981,8 @@ impl Player for CliPlayer {
                 Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_) }
             ));
             if all_chosen_cards && legal_actions.len() > 3 {
-                return Self::library_search_ui(view, legal_actions);
+                let title = legal.context.as_deref().unwrap_or("Choose a card");
+                return Self::library_search_ui(view, legal_actions, title);
             }
         }
 
@@ -3107,13 +3126,14 @@ impl Player for CliPlayer {
         self.drain_stale_input(kind);
 
         let mut notice: Option<String> = None;
+        let mut menu_offset = 0usize;
         loop {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
                 PassMode::UntilNextTurn { .. } => "AUTO-PASS",
             });
-            Self::render(view, Some(&display_labels),
+            let menu_shown = Self::render_paged(view, Some(&display_labels),
                 notice.take().as_deref().or(legal.context.as_deref()),
-                &view.display_log, &self.card_filter, pass_label);
+                &view.display_log, &self.card_filter, pass_label, menu_offset);
 
             // Read input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -3233,6 +3253,17 @@ impl Player for CliPlayer {
                 }
                 "l" => {
                     Self::show_log(&view.display_log);
+                    continue;
+                }
+                // Page a menu longer than the pane (issue #96); wraps back
+                // to the top after the last page. A no-op on a menu that
+                // fits, so 'm' never falls through to be misread as input.
+                "m" => {
+                    menu_offset = if menu_offset + menu_shown >= display_labels.len() {
+                        0
+                    } else {
+                        menu_offset + menu_shown
+                    };
                     continue;
                 }
                 "" => {
