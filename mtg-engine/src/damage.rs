@@ -114,9 +114,18 @@ fn deal_damage_to_object(
 
     let event_target = DamageTarget::Object(target);
     match kind {
-        DamageKind::Combat => state.events.push(GameEvent::CombatDamageDealt {
-            source, target: event_target, amount,
-        }),
+        DamageKind::Combat => {
+            state.events.push(GameEvent::CombatDamageDealt {
+                source, target: event_target, amount,
+            });
+            // Logged like its non-combat sibling below: without this line a
+            // blocker died with no stated cause and the log's combat math
+            // could not be reconciled after the fact (issue #89).
+            let source_name = state.obj_name(source);
+            state.log(LogLevel::Event,
+                format!("{} dealt {} combat damage to {}",
+                    source_name, amount, state.obj_name(target)));
+        }
         DamageKind::NonCombat => {
             state.events.push(GameEvent::NonCombatDamageDealt {
                 source, target: event_target, amount,
@@ -205,6 +214,12 @@ fn apply_lifelink(state: &mut GameState, source: ObjectId, amount: u32, registry
     }
     let Some(controller) = state.get_object(source).map(|o| o.controller) else { return };
     state.gain_life(controller, i32::try_from(amount).unwrap_or(i32::MAX));
+    // Say so, with the running total — an unexplained 6-point life swing made
+    // the log's life figures impossible to reconcile (issue #89).
+    let new_life = state.get_player(controller).life;
+    state.log(LogLevel::Event, format!(
+        "{} (lifelink): p{} gained {} life ({})",
+        state.obj_name(source), controller.0, amount, new_life));
 }
 
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).

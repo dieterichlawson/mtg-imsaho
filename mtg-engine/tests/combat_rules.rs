@@ -1151,6 +1151,29 @@ fn an_under_minimum_block_is_advertised_and_refused_with_an_audit_trail() {
         "the discarded block leaves an audit trail in the log");
 }
 
+/// Issue #89: combat damage dealt to creatures, and life gained from
+/// lifelink, leave log lines — a blocker used to die with no stated cause
+/// and a lifelink swing left the log's life totals irreconcilable.
+#[test]
+fn creature_combat_damage_and_lifelink_are_logged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    grant_keyword(&mut state, attacker, Keyword::Lifelink);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    combat::deal_combat_damage(&mut state, &reg);
+
+    let log = state.game_log.iter().map(|e| e.message.as_str()).collect::<Vec<_>>();
+    assert!(log.iter().any(|m| m.contains("dealt 3 combat damage to")),
+        "the attacker's damage to the blocker is logged: {log:?}");
+    assert!(log.iter().any(|m| m.contains("dealt 2 combat damage to")),
+        "the blocker's damage back is logged too: {log:?}");
+    assert!(log.iter().any(|m| m.contains("(lifelink): p0 gained 3 life (23)")),
+        "the lifelink gain is logged with the running total: {log:?}");
+}
+
 /// CR 510.5: a creature with plain first strike deals damage in the first
 /// step and NOT again in the regular step; the vanilla blocker still deals
 /// its own damage in the regular step.
