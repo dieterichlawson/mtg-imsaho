@@ -609,7 +609,7 @@ impl CliPlayer {
         let bf_content_start = row;
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield, false);
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield, false, view.you);
         let opp_rows = row - bf_content_start;
 
         // Your board (measure first to calculate padding)
@@ -644,7 +644,7 @@ impl CliPlayer {
         row += padding;
 
         // Your board
-        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield, true);
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield, true, view.you);
 
         // Your status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -799,10 +799,41 @@ impl CliPlayer {
         let _ = out.flush();
     }
 
+    /// Display name for a counter kind, as it reads on a battlefield line.
+    fn counter_display_name(ct: mtg_engine::types::CounterType) -> &'static str {
+        use mtg_engine::types::CounterType;
+        match ct {
+            CounterType::PlusOnePlusOne => "+1/+1",
+            CounterType::MinusOneMinusOne => "-1/-1",
+            CounterType::Loyalty => "loyalty",
+            CounterType::Slime => "slime",
+            CounterType::Study => "study",
+            CounterType::Hatchling => "hatchling",
+        }
+    }
+
+    /// " {2 hatchling, 3 +1/+1}" for a permanent's non-loyalty counters, or
+    /// "" when it has none. Counters are public information (CR 122.3) and
+    /// were invisible everywhere in the CLI except the log line that added
+    /// them (issue #82); loyalty stays with the planeswalker line's own
+    /// `[N loyalty]` rendering (#58).
+    fn counters_suffix(counters: &HashMap<mtg_engine::types::CounterType, u32>) -> String {
+        let mut parts: Vec<String> = counters.iter()
+            .filter(|&(ct, n)| *ct != mtg_engine::types::CounterType::Loyalty && *n > 0)
+            .map(|(ct, n)| format!("{n} {}", Self::counter_display_name(*ct)))
+            .collect();
+        if parts.is_empty() {
+            return String::new();
+        }
+        parts.sort();
+        format!(" {{{}}}", parts.join(", "))
+    }
+
     /// Render battlefield permanents at a specific column/row, return next row.
     fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
                               col: u16, mut row: u16, max_w: usize,
-                              all_perms: &[PermanentView], lands_last: bool) -> u16 {
+                              all_perms: &[PermanentView], lands_last: bool,
+                              view_you: mtg_engine::ids::PlayerId) -> u16 {
         let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
         let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
         let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
@@ -816,14 +847,16 @@ impl CliPlayer {
         let planeswalkers: Vec<_> = perms.iter().filter(|p|
             has_type(p, CardType::Planeswalker) && !has_type(p, CardType::Creature)).collect();
 
-        // Build aura map from ALL permanents (auras can be controlled by a different
-        // player than the creature they're attached to, e.g. Pacifism).
+        // Build the attachment map from ALL permanents (auras can be
+        // controlled by a different player than the creature they're
+        // attached to, e.g. Pacifism). Equipment counts too: a creature's
+        // line shows everything on it, aura or Pike — filtering to
+        // enchantments left Equipment invisible outside the inspector
+        // (issue #83, CR 301.5c).
         let mut aura_map: HashMap<ObjectId, Vec<String>> = HashMap::new();
         for p in all_perms {
-            if p.attached_to.is_some() && p.card_types.contains(&CardType::Enchantment) {
-                if let Some(target_id) = p.attached_to {
-                    aura_map.entry(target_id).or_default().push(p.name.clone());
-                }
+            if let Some(target_id) = p.attached_to {
+                aura_map.entry(target_id).or_default().push(p.name.clone());
             }
         }
 
@@ -902,7 +935,8 @@ impl CliPlayer {
                 let flags = format!("{}{}",
                     if c.tapped { " [T]" } else { "" },
                     if c.summoning_sick { " [S]" } else { "" });
-                format!("{}{}{}{}{}", c.name, pt, auras, dmg, flags)
+                format!("{}{}{}{}{}{}", c.name, pt,
+                    CliPlayer::counters_suffix(&c.counters), auras, dmg, flags)
             }).collect();
             for (n, label) in collapse(creature_labels) {
                 let truncated: String = counted_line(n, &label).chars().take(max_w).collect();
@@ -912,15 +946,31 @@ impl CliPlayer {
             }
             let enchantment_labels = enchantments.iter()
                 .filter(|e| e.attached_to.is_none())
-                .map(|e| e.name.clone())
+                .map(|e| {
+                    // A Curse's entire identity is whom it enchants
+                    // (CR 702.5c) — without this, two curses on opposite
+                    // players rendered identically (issue #81).
+                    let host = match e.attached_to_player {
+                        Some(p) if p == view_you => " [enchanting you]".to_string(),
+                        Some(_) => " [enchanting opponent]".to_string(),
+                        None => String::new(),
+                    };
+                    format!("{}{}{}", e.name, host,
+                        CliPlayer::counters_suffix(&e.counters))
+                })
                 .collect();
             for (n, label) in collapse(enchantment_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(Color::Magenta), Print(counted_line(n, &label)), ResetColor);
                 *row += 1;
             }
+            // Attached Equipment rides on its creature's line (above), like
+            // attached auras — not in the standalone artifact list.
             let artifact_labels = artifacts.iter()
-                .map(|a| format!("{}{}", a.name, if a.tapped { " [T]" } else { "" }))
+                .filter(|a| a.attached_to.is_none())
+                .map(|a| format!("{}{}{}", a.name,
+                    CliPlayer::counters_suffix(&a.counters),
+                    if a.tapped { " [T]" } else { "" }))
                 .collect();
             for (n, label) in collapse(artifact_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row), Print(counted_line(n, &label)));
@@ -1909,6 +1959,12 @@ impl CliPlayer {
                             .copied().unwrap_or(0);
                         let _ = execute!(out, Print(format!("  Loyalty: {l}\n")));
                     }
+                    // Counters are public information (CR 122.3) and this
+                    // page is where a player checks them (issue #82).
+                    let counters = Self::counters_suffix(&perm.counters);
+                    if !counters.is_empty() {
+                        let _ = execute!(out, Print(format!("  Counters:{counters}\n")));
+                    }
 
                     let controller = if perm.controller == view.you { "You" } else { "Opponent" };
                     let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
@@ -1916,14 +1972,20 @@ impl CliPlayer {
                     let _ = execute!(out, Print(format!("  Summoning sick: {}\n", perm.summoning_sick)));
                     let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
 
-                    // Show attached auras
-                    let auras: Vec<&PermanentView> = view.battlefield.iter()
-                        .filter(|p| p.attached_to == Some(perm.object_id))
-                        .collect();
+                    // Attachments, by what they are: an Aura enchants
+                    // (CR 303.4), an Equipment equips (CR 301.5c) — the one
+                    // label for both called a Pike an enchantment (#83).
+                    let (auras, equipment): (Vec<&PermanentView>, Vec<&PermanentView>) =
+                        view.battlefield.iter()
+                            .filter(|p| p.attached_to == Some(perm.object_id))
+                            .partition(|p| p.card_types.contains(&CardType::Enchantment));
                     if !auras.is_empty() {
-                        let _ = execute!(out, Print("  Enchanted by: "));
                         let names: Vec<&str> = auras.iter().map(|a| a.name.as_str()).collect();
-                        let _ = execute!(out, Print(format!("{}\n", names.join(", "))));
+                        let _ = execute!(out, Print(format!("  Enchanted by: {}\n", names.join(", "))));
+                    }
+                    if !equipment.is_empty() {
+                        let names: Vec<&str> = equipment.iter().map(|a| a.name.as_str()).collect();
+                        let _ = execute!(out, Print(format!("  Equipped with: {}\n", names.join(", "))));
                     }
 
                     if let Some(att) = perm.attached_to {
@@ -1931,6 +1993,11 @@ impl CliPlayer {
                             .find(|p| p.object_id == att)
                             .map_or("?", |p| p.name.as_str());
                         let _ = execute!(out, Print(format!("  Attached to: {att_name}\n")));
+                    }
+                    // A Curse names its player (CR 702.5c) — issue #81.
+                    if let Some(p) = perm.attached_to_player {
+                        let who = if p == view.you { "You" } else { "Opponent" };
+                        let _ = execute!(out, Print(format!("  Enchanting: {who}\n")));
                     }
 
                     // Show oracle text

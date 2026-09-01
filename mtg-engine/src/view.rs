@@ -70,6 +70,10 @@ pub struct PermanentView {
     pub damage_marked: u32,
     pub summoning_sick: bool,
     pub attached_to: Option<ObjectId>,
+    /// The player this Aura enchants (Curses, CR 702.5c). A Curse's entire
+    /// identity is whom it curses, and the display had nowhere to read it —
+    /// two curses on opposite players rendered identically (issue #81).
+    pub attached_to_player: Option<PlayerId>,
     pub keywords: Vec<Keyword>,
     /// Oracle text of the card (from the registry). Used by display code to
     /// surface short effect summaries for attached auras/equipment.
@@ -178,6 +182,7 @@ impl GameView {
                     damage_marked: obj.damage_marked,
                     summoning_sick: obj.summoning_sick,
                     attached_to: obj.attached_to,
+                    attached_to_player: obj.attached_to_player,
                     keywords,
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
