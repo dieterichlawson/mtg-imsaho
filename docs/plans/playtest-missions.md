@@ -58,6 +58,23 @@ Competitor:
 - C14 topdeck war: empty both hands by turn ~8 and play a pure topdeck
   game to a conclusion; verify draw counts, hand size and
   discard-to-hand-size, and that no draw is duplicated or skipped
+- C15 mana pool and land-drop accounting: float mana and let it empty at
+  every step/phase boundary (CR 500.4), verify no mana burn, verify the
+  one-land-per-turn rule and that lands are refused off-turn or with a
+  non-empty stack (CR 305.1)
+- C16 combat trick war across every combat priority window: cast instants
+  at beginning of combat, after attackers, after blockers, between
+  first-strike and regular damage, and at end of combat; verify priority
+  exists at each and that removing a blocker doesn't unblock the
+  attacker (CR 509.1h)
+- C17 repeatable activated-ability value engines: Moorland Haunt,
+  Nephalia Drownyard, Ludevic's Test Subject, Avacynian Priest, equip
+  costs; verify every activation actually pays its cost, uses the stack,
+  and that counters/state don't drift over a long game
+- C18 sweeper vs go-wide: build 3+ creatures a side, then break the board
+  with Divine Reckoning; verify each player chooses their own keeper in
+  APNAP order (CR 101.4) before any simultaneous sacrifice (CR 701.17),
+  and that tokens cease to exist rather than resting in a graveyard
 
 Rules Lawyer:
 - L1 stack battles: respond to everything; 3+ deep stacks; order triggers
@@ -105,6 +122,29 @@ Rules Lawyer:
   protection/hexproof, change type); verify auras go to their OWNER's
   graveyard while equipment merely unattaches. Wants a deck pair with a
   real protection/hexproof granter
+- L16 copy effects (CR 706): Cackling Counterpart, Evil Twin, Essence of
+  the Wild; verify only copiable values are copied (no counters, auras,
+  damage or tap state), Evil Twin's name/ability exception, the legend
+  rule on a copied legend, and flashback exile on resolution
+- L17 morbid (ability word, checked on resolution): Brimstone Volley,
+  Morkrut Banshee, Festerhide Boar; kill a creature in response and
+  verify the condition is re-checked as the spell/trigger resolves, that
+  tokens dying count, and that bounce/exile/discard do not (CR 700.4)
+- L18 token existence (CR 111.7, 704.5e) and token-doubling replacement
+  effects (CR 614/616): Spider Spawning, Parallel Lives, Kessig
+  Cagebreakers; verify dead tokens leave no graveyard residue, aren't
+  counted as creature cards, and that doubling applies once per event
+  and only to its controller's tokens
+- L19 Curses and "Enchant player" legality (CR 303.4a, 702.5, 704.5m):
+  verify only players are offered as targets, that a curse may be cast on
+  yourself, Curse of Death's Hold's layer-7c -1/-1 with SBA deaths and
+  recompute-on-removal, and Curse of the Nightly Hunt's attack
+  requirement (CR 508.1d)
+- L20 evasion and blocking legality (CR 509.1a-c, 702.9/702.11/702.16):
+  Invisible Stalker's "can't be blocked", Blazing Torch's conditional
+  evasion, Vampire Interloper's "can't block", Crossway Vampire's
+  one-turn restriction, flying vs reach, and hexproof being targetable
+  by its own controller but not the opponent
 
 Vandal:
 - V1 input garbage at every prompt: junk text, huge numbers, empty
@@ -150,6 +190,27 @@ Vandal:
   the real cap and check the counter is honest, send garbage and
   out-of-range input at every mulligan and bottoming prompt, and verify
   a floor-mulligan game is still playable to a conclusion
+- V16 deck-file abuse: empty, comments-only, zero/negative/overflowing
+  counts, unknown and unicode card names, missing counts, no separator,
+  duplicate lines, binary bytes, CRLF, absurdly long names; every failure
+  must be a clean error with a non-zero exit, never a panic
+- V17 CLI flag abuse: bad/negative/overflowing --seed, missing flag
+  values, unknown flags, unknown player-type values, --resume on a
+  missing file or a directory, and --log/--save pointed at unwritable
+  paths, directories and /dev/full
+- V18 EOF, signals and terminal detach: Ctrl-D at every prompt type,
+  SIGINT/SIGTSTP+CONT/SIGHUP mid-prompt, tmux detach and reattach with a
+  prompt open; nothing may busy-loop, silently choose an action, leave
+  the terminal in raw mode, or survive into a corrupted game
+- V19 type-ahead race (distinct from V13's paste-flood): many separate
+  legitimate keystrokes sent faster than the render loop, including
+  bursts that straddle a prompt-type or seat change; hunt for input
+  consumed against a prompt the player was never shown
+- V20 concurrent save contention (distinct from V3's honest reload and
+  V14's corrupted saves): two live games writing one --save path,
+  resuming a save while its writer is still writing, resuming one save
+  into two processes, and save paths that are directories, read-only or
+  /dev/full
 
 Agents may invent missions beyond this menu; log them in the ledger so
 they enter the rotation.
