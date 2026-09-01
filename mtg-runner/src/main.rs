@@ -545,10 +545,12 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
             Some(s) => RandomPlayer::with_seed(name, s),
             None => RandomPlayer::new(name),
         }),
-        other => {
-            eprintln!("Unknown player type '{other}', using random");
-            PlayerKind::Random(RandomPlayer::new(name))
-        }
+        // An unrecognized value for a recognized flag is refused like an
+        // unrecognized flag (issues #70/#55): substituting `random` played a
+        // different game than the one requested, printed a winner, and
+        // exited 0 — indistinguishable from a legitimate run.
+        other => die(&format!(
+            "unknown player type '{other}' (expected cli, random, claude[:model], or gemini[:model])")),
     }
 }
 

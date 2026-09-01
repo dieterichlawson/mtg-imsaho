@@ -41,6 +41,20 @@ fn assert_clean_refusal(output: &std::process::Output, what: &str) {
          stdout: {stdout}");
 }
 
+// ── issue #70: unknown player type ──────────────────────────────────
+
+#[test]
+fn an_unknown_player_type_is_refused_not_substituted() {
+    let output = runner()
+        .args(["--p1", "wizard", "--p2", "random", "-q", "--seed", "3"])
+        .output()
+        .expect("failed to run");
+    assert_clean_refusal(&output, "--p1 wizard");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown player type 'wizard'"),
+        "the message names the bad value.\nstderr: {stderr}");
+}
+
 // ── issue #69: unwritable --log / --save paths ──────────────────────
 
 #[test]
