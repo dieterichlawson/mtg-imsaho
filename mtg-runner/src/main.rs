@@ -55,6 +55,26 @@ fn die(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// Stream engine game-log entries `[from..]` to the `--log` file (a no-op
+/// when `--log` wasn't given — the global writer isn't initialized) and
+/// return the new high-water mark. This is what makes `--log` do what its
+/// help text says: without it a 219-action game produced seven lines —
+/// GAME_START and RESULT, no history — leaving crash triage blind and
+/// every playtest issue screen-scraping its evidence from the LOG pane
+/// (issue #77). Engine levels map Debug→DEBUG and everything else →INFO,
+/// so the default view reads like the CLI's LOG pane while priority
+/// passes and mana taps stay greppable underneath.
+fn stream_game_log(state: &GameState, from: usize) -> usize {
+    for entry in &state.game_log[from..] {
+        let level = match entry.level {
+            mtg_engine::state::LogLevel::Debug => mtg_player::game_log::LogLevel::Debug,
+            _ => mtg_player::game_log::LogLevel::Info,
+        };
+        mtg_player::game_log::write_at(level, file!(), line!(), "GAME", &entry.message);
+    }
+    state.game_log.len()
+}
+
 /// Write a save via a same-directory temp file and `rename(2)`, so a reader
 /// always sees either the previous complete save or the new complete save —
 /// never a half-written one. Writing in place (`fs::write` = O_TRUNC +
@@ -327,8 +347,18 @@ fn main() {
     let mut nontoken_baseline: Option<Vec<usize>> = None;
 
     let registry_ref = &registry;
+    // High-water mark of engine log entries already streamed to --log
+    // (issue #77). A Cell so both the per-decision callback and the
+    // end-of-game flush below can advance it.
+    let streamed_log = std::cell::Cell::new(0usize);
+    let streamed_log_ref = &streamed_log;
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
+
+        // Stream the engine's game log to --log as it grows, so the file
+        // holds the full history the moment each decision is made — a game
+        // killed mid-run still leaves the sequence that led there.
+        streamed_log_ref.set(stream_game_log(game_state, streamed_log_ref.get()));
 
         if check_invariants {
             // A resolution prompt interrupts a spell or ability mid-effect,
@@ -459,6 +489,11 @@ fn main() {
     } else {
         engine::run_game_loop(&mut state, &registry, &mut game_callback);
     }
+    drop(game_callback);
+
+    // Flush log entries written after the last decision point (final combat
+    // damage, "wins the game") — the callback never sees them (issue #77).
+    streamed_log.set(stream_game_log(&state, streamed_log.get()));
 
     // Check for hot reload request.
     if mtg_player::cli::HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
