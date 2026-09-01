@@ -725,3 +725,81 @@ fn the_resolution_recheck_uses_the_same_player_targeting_rule() {
 }
 
 
+
+/// Mutation-motivated (the #44 backlog's `cards/helpers.rs` targeting
+/// cluster): the "any target" and except-variant helpers enumerate exactly
+/// the legal set. Exact membership assertions on a board holding every
+/// class of object kill the surviving mutants that flipped one leg of the
+/// filters — planeswalkers vanishing (`delete !`), lands leaking in
+/// (`&& -> ||`), and the excluded object swapping roles (`!= -> ==`).
+#[test]
+fn the_any_target_helpers_enumerate_exactly_the_legal_set() {
+    use mtg_engine::cards::helpers;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let source = ready_creature(&mut state, P0, 2, 2);
+    let mine = ready_creature(&mut state, P0, 1, 1);
+    let theirs = ready_creature(&mut state, P1, 1, 1);
+    let hexproof = named_permanent(&mut state, &reg, "Lumberknot", P1);
+    let walker = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+
+    let any = helpers::any_targets(&state, source, P0, &reg);
+    assert!(any.contains(&Target::Object(mine)));
+    assert!(any.contains(&Target::Object(theirs)));
+    assert!(any.contains(&Target::Object(walker)),
+        "a planeswalker is 'any target' (CR 115.4)");
+    assert!(!any.contains(&Target::Object(hexproof)),
+        "an opponent's hexproof creature is not (CR 702.11b)");
+    assert!(!any.contains(&Target::Object(land)),
+        "a land is neither a creature nor a planeswalker nor a player");
+    assert!(any.contains(&Target::Player(P0)) && any.contains(&Target::Player(P1)),
+        "both players are 'any target'");
+
+    let any_ex = helpers::any_targets_except(&state, source, source, P0, &reg);
+    assert!(!any_ex.contains(&Target::Object(source)), "the excluded object is out");
+    assert!(any_ex.contains(&Target::Object(mine)));
+    assert!(any_ex.contains(&Target::Object(walker)));
+    assert!(!any_ex.contains(&Target::Object(land)));
+
+    // Excluding the planeswalker exercises the exclusion leg of the
+    // walker arm specifically.
+    let any_ex_walker = helpers::any_targets_except(&state, walker, source, P0, &reg);
+    assert!(!any_ex_walker.contains(&Target::Object(walker)));
+    assert!(any_ex_walker.contains(&Target::Object(theirs)));
+
+    let creatures_ex = helpers::creature_targets_except(&state, theirs, source, P0, &reg);
+    assert!(!creatures_ex.contains(&Target::Object(theirs)), "the excluded creature is out");
+    assert!(creatures_ex.contains(&Target::Object(mine)));
+    assert!(!creatures_ex.contains(&Target::Object(walker)), "not a creature");
+    assert!(!creatures_ex.contains(&Target::Object(land)));
+    assert!(!creatures_ex.contains(&Target::Object(hexproof)));
+}
+
+/// Mutation-motivated (#44 backlog, `token_attack_options`): a token
+/// created "tapped and attacking" may be sent at each opponent and each
+/// planeswalker an opponent controls (CR 508.4b) — and nothing else. The
+/// negative assertions kill the `&& -> ||` survivor that let the
+/// controller's own planeswalker, or any opponent permanent, be attacked.
+#[test]
+fn token_attack_options_are_opponents_and_their_planeswalkers_only() {
+    use mtg_engine::cards::helpers;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let own_walker = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    let opp_walker = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    let opp_creature = ready_creature(&mut state, P1, 2, 2);
+
+    let options = helpers::token_attack_options(&state, P0, &reg);
+    assert!(options.contains(&Target::Object(opp_walker)),
+        "an opponent's planeswalker may be attacked");
+    assert!(options.contains(&Target::Player(P1)), "so may the opponent");
+    assert!(!options.contains(&Target::Object(own_walker)),
+        "the controller's own planeswalker may not");
+    assert!(!options.contains(&Target::Object(opp_creature)),
+        "an opponent's creature is not a thing tokens attack");
+    assert!(!options.contains(&Target::Player(P0)),
+        "nor is the controller");
+}

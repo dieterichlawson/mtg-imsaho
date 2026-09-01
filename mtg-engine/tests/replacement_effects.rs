@@ -281,3 +281,46 @@ fn a_token_entering_as_a_copy_of_a_human_gets_the_counter() {
     assert_eq!(counters_of(&state, token, CounterType::PlusOnePlusOne), 1,
         "so Dearly Departed sees it entering");
 }
+
+/// Mutation-motivated (#44 backlog, `enters_tapped_unless`): the helper's
+/// three-way OR guard — wrong object, already tapped, or the untapped
+/// condition holds — each independently means "leave the event alone". The
+/// `|| -> &&` survivor tapped the wrong object's entry and ignored the
+/// unless-condition; each arm gets its own assertion.
+#[test]
+fn enters_tapped_unless_taps_only_its_own_conditional_entry() {
+    use mtg_engine::cards::helpers::enters_tapped_unless;
+    use mtg_engine::ids::{ObjectId, PlayerId};
+    use mtg_engine::replacement::{EnteringPermanent, ReplaceableEvent, Replacement};
+
+    let me = ObjectId(7);
+    let someone_else = ObjectId(8);
+    let entering = |object: ObjectId, tapped: bool| {
+        ReplaceableEvent::EntersBattlefield(EnteringPermanent {
+            object,
+            from: Some(Zone::Hand),
+            controller: PlayerId(0),
+            tapped,
+            counters: vec![],
+            copy_of: None,
+        })
+    };
+
+    // The plain case: my own untapped entry, condition false — tap it.
+    let replaced = enters_tapped_unless(me, &entering(me, false), || false);
+    assert!(matches!(replaced,
+        Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e))) if e.tapped),
+        "the permanent enters tapped when its condition does not hold");
+
+    // The unless-condition holds — the event is left alone.
+    assert!(enters_tapped_unless(me, &entering(me, false), || true).is_none(),
+        "when the condition holds it enters untapped (CR 614.1d)");
+
+    // Someone else's entry is never this card's business.
+    assert!(enters_tapped_unless(me, &entering(someone_else, false), || false).is_none(),
+        "another permanent's entry is not modified");
+
+    // An entry already tapped needs nothing done.
+    assert!(enters_tapped_unless(me, &entering(me, true), || false).is_none(),
+        "an already-tapped entry is left alone");
+}

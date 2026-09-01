@@ -267,3 +267,31 @@ fn human_equipment_bonuses_end_when_the_equipped_creature_dies() {
         assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
     }
 }
+
+/// Mutation-motivated (#44 backlog, `equip_target_is_legal`): equip attaches
+/// only to a creature, on the battlefield, that the equipping player
+/// controls (CR 702.6a) — each leg of that conjunction gets a case, killing
+/// the `&& -> ||` survivor that let any one leg suffice.
+#[test]
+fn equip_targets_must_be_own_battlefield_creatures() {
+    use mtg_engine::cards::helpers::equip_target_is_legal;
+    use mtg_engine::actions::Target;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    let in_hand = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+
+    assert!(equip_target_is_legal(&state, P0, &Target::Object(mine), &reg),
+        "your own battlefield creature is a legal equip target");
+    assert!(!equip_target_is_legal(&state, P0, &Target::Object(theirs), &reg),
+        "an opponent's creature is not (\"creature you control\")");
+    assert!(!equip_target_is_legal(&state, P0, &Target::Object(land), &reg),
+        "a land is not a creature");
+    assert!(!equip_target_is_legal(&state, P0, &Target::Object(in_hand), &reg),
+        "a creature card in hand is not on the battlefield");
+    assert!(!equip_target_is_legal(&state, P0, &Target::Player(P0), &reg),
+        "a player is never equipped");
+}
