@@ -818,9 +818,30 @@ impl CliPlayer {
             }
         };
 
+        // Rows whose every visible detail matches are one line with a count
+        // (`63x Zombie Token 2/2`), exactly as the lands summary already
+        // does: an Endless Ranks of the Dead board grew one row per token
+        // and pushed the hand, the action list, and the prompt clean off
+        // the pane (issue #74). Order is first-appearance, and any visible
+        // difference — P/T, an aura, damage, tapped/sick flags — keeps its
+        // own row.
+        let collapse = |labels: Vec<String>| -> Vec<(usize, String)> {
+            let mut counted: Vec<(usize, String)> = Vec::new();
+            for label in labels {
+                match counted.iter_mut().find(|(_, l)| *l == label) {
+                    Some((n, _)) => *n += 1,
+                    None => counted.push((1, label)),
+                }
+            }
+            counted
+        };
+        let counted_line = |n: usize, label: &str| -> String {
+            if n > 1 { format!("  {n}x {label}") } else { format!("  {label}") }
+        };
+
         // Helper: render creatures, enchantments, artifacts
         let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
-            for c in &creatures {
+            let creature_labels = creatures.iter().map(|c| {
                 let pt = match (c.effective_power, c.effective_toughness) {
                     (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => match (c.power, c.toughness) {
@@ -835,21 +856,28 @@ impl CliPlayer {
                 let flags = format!("{}{}",
                     if c.tapped { " [T]" } else { "" },
                     if c.summoning_sick { " [S]" } else { "" });
-                let text = format!("  {}{}{}{}{}", c.name, pt, auras, dmg, flags);
-                let truncated: String = text.chars().take(max_w).collect();
+                format!("{}{}{}{}{}", c.name, pt, auras, dmg, flags)
+            }).collect();
+            for (n, label) in collapse(creature_labels) {
+                let truncated: String = counted_line(n, &label).chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(color), Print(&truncated), ResetColor);
                 *row += 1;
             }
-            for e in &enchantments {
-                if e.attached_to.is_some() { continue; }
+            let enchantment_labels = enchantments.iter()
+                .filter(|e| e.attached_to.is_none())
+                .map(|e| e.name.clone())
+                .collect();
+            for (n, label) in collapse(enchantment_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(Color::Magenta), Print(format!("  {}", e.name)), ResetColor);
+                    SetForegroundColor(Color::Magenta), Print(counted_line(n, &label)), ResetColor);
                 *row += 1;
             }
-            for a in &artifacts {
-                let t = if a.tapped { " [T]" } else { "" };
-                let _ = execute!(out, cursor::MoveTo(col, *row), Print(format!("  {}{}", a.name, t)));
+            let artifact_labels = artifacts.iter()
+                .map(|a| format!("{}{}", a.name, if a.tapped { " [T]" } else { "" }))
+                .collect();
+            for (n, label) in collapse(artifact_labels) {
+                let _ = execute!(out, cursor::MoveTo(col, *row), Print(counted_line(n, &label)));
                 *row += 1;
             }
             for pw in &planeswalkers {
