@@ -97,7 +97,7 @@ impl CardBehavior for DelverOfSecrets {
         // Log what was seen. Debug level on purpose: the controller looks at
         // this card, the opponent does not, and only `display_log` (Info and
         // above) is shown to players.
-        let top_card_name = state.obj_name(top_card_id);
+        let top_card_name = state.name_of(top_card_id, registry);
         state.log(LogLevel::Debug,
             format!("Delver of Secrets: top card is {top_card_name}"));
 
@@ -131,7 +131,7 @@ impl CardBehavior for DelverOfSecrets {
         // Player reveals the top card. Only transform if it's an instant or sorcery.
         let controller = crate::cards::helpers::controller_of(state, self_id);
         let top_card_id = state.get_player(controller).library_order.first().copied();
-        let top_card_name = top_card_id.map_or_else(|| "a card".into(), |id| state.obj_name(id));
+        let top_card_name = top_card_id.map_or_else(|| "a card".into(), |id| state.name_of(id, registry));
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
         if top_is_instant_or_sorcery {
             state.log(LogLevel::Event,

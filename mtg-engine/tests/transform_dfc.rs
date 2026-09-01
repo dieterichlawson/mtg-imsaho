@@ -153,6 +153,15 @@ fn delver_of_secrets_offers_the_reveal_whatever_is_on_top() {
             "with {top} on top the reveal is still offered — the ruling says you \
              may reveal whatever is there");
 
+        // CR 701.20a (issue #87): "look at" means the controller is SHOWN
+        // the card before deciding whether to reveal — the prompt the
+        // player sees must name it. The description carries the name; the
+        // legal-actions context must not flatten it to "choose yes or no".
+        let legal = mtg_engine::engine::legal_actions(&state, &reg);
+        let context = legal.context.clone().unwrap_or_default();
+        assert!(context.contains(top),
+            "the reveal prompt names the looked-at card ({top}); got: {context}");
+
         behavior.on_yes_no_choice(&mut state, delver, true, &reg);
         assert_eq!(state.get_object(delver).unwrap().is_transformed, transforms,
             "{top}: revealing it transforms the Delver only if it is an instant \

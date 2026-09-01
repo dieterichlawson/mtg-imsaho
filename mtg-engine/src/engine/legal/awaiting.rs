@@ -307,6 +307,13 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseTriggerOrder { description, .. } => {
                     description.clone()
                 }
+                // The description says what is being decided AND carries the
+                // information the decision runs on — Delver of Secrets names
+                // the looked-at top card there (CR 701.20a), and the generic
+                // header hid it, making the reveal choice blind (issue #87).
+                ResolutionChoiceKind::YesNo { description, .. } if !description.is_empty() => {
+                    description.clone()
+                }
                 ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),
                 ResolutionChoiceKind::ChooseFromRevealed { .. } => {
                     format!("{source_name}: choose a card")
