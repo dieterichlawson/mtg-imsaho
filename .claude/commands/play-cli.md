@@ -105,10 +105,10 @@ Spells require mana in your pool BEFORE the "Cast" option appears:
 Eligible attackers:
   0: Goblin Piker 2/1
   1: Kalonian Tusker 3/3
-  Attack (numbers/all/none)>
+  Attack (numbers/all/none, enter=none)>
 ```
-- **C-m or `all`** = attack with ALL eligible creatures
-- **`none` or `n`** = don't attack
+- **`all` or `a`** = attack with ALL eligible creatures
+- **C-m, `none` or `n`** = don't attack
 - **`0` or `0 1`** = attack with specific creatures by number
 
 ### Declare Blockers

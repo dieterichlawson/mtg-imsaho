@@ -2067,16 +2067,23 @@ impl CliPlayer {
             // otherwise stay on screen and visually merge with the next
             // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let input = Self::read_line("  Attack (numbers/all/none)> ");
+            let input = Self::read_line("  Attack (numbers/all/none, enter=none)> ");
 
-            if input == "none" || input == "n" {
+            // Bare Enter means "do nothing" — here as at every other prompt
+            // ([enter=pass] at the menu, enter=none at blockers). It used to
+            // mean "all": the one prompt where the universal idle key took
+            // the most aggressive irreversible action available, tapping the
+            // whole board on a key-repeat or a stray Ctrl-D (issue #73).
+            // CR 508.1a backs "none": attacking is a choice, and choosing no
+            // attackers is always legal (must-attack is enforced below).
+            if input.is_empty() || input == "none" || input == "n" {
                 if !must_attack.is_empty() {
                     println!("{}", forced_error(&must_attack.iter().copied().collect::<Vec<_>>()));
                     continue;
                 }
                 return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
             }
-            if input.is_empty() || input == "all" || input == "a" {
+            if input == "all" || input == "a" {
                 return Action::DeclareAttackers {
                     attackers: eligible.iter().map(|&id| (id, defending)).collect(),
                     planeswalker_attacks: vec![],
