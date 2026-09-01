@@ -503,6 +503,18 @@ pub trait CardBehavior: Send + Sync {
 
     fn enters_with_pending_copy_choice(&self) -> bool { false }
 
+    /// Whether this card's copy effect grants abilities to the copy
+    /// (CR 706.2 "except it has <ability>" — Evil Twin). `copy_grantor`
+    /// serves two roles: for Evil Twin it names the card whose "except"
+    /// clause adds an ability; for a plain enters-as-copy (Essence of the
+    /// Wild) it only remembers what the permanent is printed as, so it can
+    /// revert on leaving the battlefield. The ability collectors must
+    /// consult the grantor's behavior ONLY in the first case — consulting
+    /// it unconditionally gave an Essence copy its printed card's own
+    /// activated abilities back (issue #93: a copied Daybreak Ranger kept
+    /// "{T}: deal 2 damage to target creature with flying").
+    fn grants_abilities_to_copies(&self) -> bool { false }
+
     /// Zones this card's replacement effects apply from.
     ///
     /// The battlefield, for nearly everything. Dearly Departed adds counters

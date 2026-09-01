@@ -82,9 +82,13 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                 (card_id, native)
             } else if copy_grantor.is_some() {
                 // CR 706.2: an ability the copy effect added — dispatch to
-                // the card whose copy effect granted it.
+                // the card whose copy effect granted it, and only when that
+                // card grants abilities to copies at all (issue #93: for a
+                // plain enters-as-copy the grantor is just the printed card
+                // remembered for the zone-change revert).
                 let g_id = copy_grantor.filter(|&g| g != card_id);
                 let ab = g_id.and_then(|cid| registry.get(cid))
+                    .filter(|b| b.grants_abilities_to_copies())
                     .and_then(|b| b.activated_abilities(&state, object_id, registry)
                         .into_iter().find(|a| a.ability_index == ability_index));
                 if let Some(ab) = ab {

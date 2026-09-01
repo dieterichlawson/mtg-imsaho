@@ -34,12 +34,18 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
         }
         // CR 706.2: a copy effect may say "except it has <ability>". The copy's
         // `card_id` is the copied card, so the granting card's abilities have to
-        // be collected from `copy_grantor` — whichever card that happens to be.
+        // be collected from `copy_grantor` — but ONLY when that card's copy
+        // effect actually grants abilities (Evil Twin). For a plain
+        // enters-as-copy, `copy_grantor` is just the printed card remembered
+        // for the zone-change revert, and consulting it handed an Essence of
+        // the Wild copy its printed card's own abilities back (issue #93).
         let grantor = state.get_object(obj_id).and_then(|o| o.copy_grantor);
         if let Some(grantor_id) = grantor.filter(|&g| g != obj_card_id) {
             if let Some(behavior) = registry.get(grantor_id) {
-                for ab in behavior.activated_abilities(state, obj_id, registry) {
-                    abilities.push((grantor_id, ab));
+                if behavior.grants_abilities_to_copies() {
+                    for ab in behavior.activated_abilities(state, obj_id, registry) {
+                        abilities.push((grantor_id, ab));
+                    }
                 }
             }
         }

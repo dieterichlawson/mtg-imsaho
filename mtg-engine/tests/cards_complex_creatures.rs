@@ -2255,6 +2255,38 @@ fn essence_overrides_entering_creatures() {
     assert_eq!(state.get_object(bear).unwrap().subtypes, vec!["Avatar".to_string()]);
 }
 
+/// Issue #93 / CR 706.2: a creature that entered as an Essence of the Wild
+/// copy has Essence's abilities and ONLY those — its own printed activated
+/// ability must not be offered. (Triggered abilities were already dropped
+/// correctly; the activated-ability collector consulted `copy_grantor`
+/// unconditionally and handed the printed card's abilities back.)
+#[test]
+fn an_essence_copy_does_not_keep_its_printed_activated_ability() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    let mut state = cast_and_resolve(&state, &reg, essence, vec![]);
+
+    let ranger = castable_spell(&mut state, &reg, "Daybreak Ranger", P0);
+    let mut state = cast_and_resolve(&state, &reg, ranger, vec![]);
+    assert_eq!(state.get_object(ranger).unwrap().name, "Essence of the Wild",
+        "test precondition: the Ranger entered as an Essence copy");
+
+    // A flying target and no summoning sickness, so the printed "{T}: deal
+    // 2 damage to target creature with flying" WOULD be offered if the copy
+    // still had it.
+    state.get_object_mut(ranger).unwrap().summoning_sick = false;
+    let flyer = ready_creature(&mut state, P1, 2, 2);
+    grant_keyword(&mut state, flyer, Keyword::Flying);
+
+    let offered = engine::legal_actions(&state, &reg).actions.iter().any(|a| matches!(
+        a, Action::ActivateAbility { object_id, .. } if *object_id == ranger));
+    assert!(!offered,
+        "a permanent that entered as an Essence copy has only Essence's \
+         abilities (CR 706.2) — Daybreak Ranger's printed ping must be gone");
+}
+
 #[test]
 fn essence_does_not_override_opponent_creatures() {
     let reg = registry();

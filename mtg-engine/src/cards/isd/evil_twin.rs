@@ -40,6 +40,11 @@ impl CardBehavior for EvilTwin {
 
     fn enters_with_pending_copy_choice(&self) -> bool { true }
 
+    // "except it has '{U}{B}, {T}: Destroy target creature with the same
+    // name as this creature'" — the copy carries an Evil Twin-granted
+    // ability, so the collectors must consult this behavior for it.
+    fn grants_abilities_to_copies(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
