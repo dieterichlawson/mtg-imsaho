@@ -367,6 +367,39 @@ fn the_autotap_plan_routes_colored_pips_to_matching_sources() {
         "the only blue source must be in the plan");
 }
 
+/// Issue #84: a generic pip is paid from a REDUNDANT source — one whose
+/// colors the other untapped sources still produce — so no color access
+/// is lost. Nephalia Drownyard's {1}{U}{B} with 2 Islands + 3 Swamps up
+/// used to pay the {1} with the second Island, leaving {B}{B} where a
+/// Swamp would have left {U}{B} and silently removing the {1}{U} spell
+/// still in hand from the menu.
+#[test]
+fn the_autotap_plan_spends_redundant_colors_on_generic() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let islands = [
+        named_permanent(&mut state, &reg, "Island", P0),
+        named_permanent(&mut state, &reg, "Island", P0),
+    ];
+    for _ in 0..3 {
+        named_permanent(&mut state, &reg, "Swamp", P0);
+    }
+    let yard = named_permanent(&mut state, &reg, "Nephalia Drownyard", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let plan = legal.actions.iter()
+        .find_map(|a| match a {
+            Action::ActivateAbility { object_id, tap_plan, .. }
+                if *object_id == yard && !tap_plan.is_empty() => Some(tap_plan.clone()),
+            _ => None,
+        })
+        .expect("the mill ability is affordable and on offer");
+    let islands_tapped = plan.iter().filter(|(id, _)| islands.contains(id)).count();
+    assert_eq!(islands_tapped, 1,
+        "one Island for the {{U}} pip; the generic {{1}} comes from a \
+         redundant Swamp, not the last blue source: {plan:?}");
+}
+
 /// A cost the battlefield cannot pay is not offered at all.
 #[test]
 fn an_unpayable_cost_is_not_offered() {

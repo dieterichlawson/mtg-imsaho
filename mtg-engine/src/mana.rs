@@ -338,12 +338,31 @@ pub fn compute_autotap(
     // abilities cost mana is no help here: a filter produces exactly what it
     // consumes, so it can never reduce a generic requirement.
     while remaining.generic > 0 {
+        // Prefer a REDUNDANT source — one whose every producible mana type
+        // another still-available source also produces — over the plain
+        // priority key: spending it on generic loses no color from the
+        // untapped pool. Paying {1} with the second Island while two
+        // Swamps sat untapped left {B}{B} where a Swamp would have left
+        // {U}{B}, silently removing the {1}{U} spell still in hand from
+        // the menu (issue #84). The check needs no lookahead into the
+        // hand: covered-by-what-remains dominates regardless of what the
+        // leftover mana is later asked to pay.
+        let is_redundant = |src_idx: usize, available: &[usize]| -> bool {
+            sources[src_idx].abilities.iter()
+                .flat_map(|a| a.produced.iter())
+                .filter(|&&(_, amount)| amount > 0)
+                .all(|&(mt, _)| available.iter().any(|&other| other != src_idx
+                    && ability_producing(&sources[other], mt).is_some()))
+        };
         // Sort available sources by priority.
         let best = available.iter()
             .enumerate()
             .filter(|&(_, &src_idx)| sources[src_idx].abilities.iter()
                 .any(|a| ability_total_mana(a) > ability_cost(a)))
-            .min_by_key(|&(_, &src_idx)| source_sort_key(&sources[src_idx], &hand_demand));
+            .min_by_key(|&(_, &src_idx)| {
+                let key = source_sort_key(&sources[src_idx], &hand_demand);
+                (key.0, !is_redundant(src_idx, &available), key.1, key.2)
+            });
 
         if let Some((avail_pos, &src_idx)) = best {
             let source = &sources[src_idx];
