@@ -1013,6 +1013,18 @@ impl GameState {
             }
         }
 
+        // CR 506.4c: a creature that leaves the battlefield is removed from
+        // combat. The damage step tolerates this on its own (it snapshots the
+        // combat state and skips creatures the live state no longer lists),
+        // but the live state must actually drop the id: object ids survive
+        // zone changes, so a dead blocker left in `blocker_assignments`
+        // becomes whatever that id is next — Grimoire of the Dead reanimating
+        // a dead blocker mid-combat under the attacking player produced a
+        // "blocker" the defending player didn't control.
+        if from == Some(Zone::Battlefield) && to != Zone::Battlefield {
+            self.remove_from_combat(id);
+        }
+
         // CR 614.1d: a permanent that "enters as a copy" via a player choice
         // (Evil Twin) resolves that choice through an ETB trigger, so it
         // briefly exists as its printed 0/0 before the copy applies. Arm the

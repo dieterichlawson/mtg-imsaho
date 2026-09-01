@@ -1008,9 +1008,9 @@ fn a_first_strike_blocker_kills_before_the_attacker_strikes_back() {
 /// CR 509.2 + 506.4c: an attacker that became blocked stays blocked even if
 /// its only blocker is *removed from combat* (regeneration, CR 701.15c, or a
 /// control change, CR 506.4d) before the damage step — it deals no combat
-/// damage to anyone. A blocker that merely dies stays in the assignment
-/// snapshot and is skipped by the zone check; removal from combat is the
-/// path that empties the assignment while the attacker stays blocked.
+/// damage to anyone. Death also removes the blocker from combat (CR 506.4c,
+/// via `move_object`); either way the assignment empties while the attacker
+/// stays blocked, recorded in `blocked_attackers`.
 #[test]
 fn a_blocked_attacker_whose_blocker_left_combat_hits_nobody() {
     let reg = registry();
@@ -1034,6 +1034,83 @@ fn a_blocked_attacker_whose_blocker_left_combat_hits_nobody() {
         "a blocked attacker with no blockers left deals no damage at all");
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
         "a creature removed from combat receives no combat damage either");
+}
+
+/// CR 506.4c: a creature that dies leaves combat — the live combat state
+/// drops its id, not just the damage step's snapshot. Object ids survive
+/// zone changes, so a dead blocker left in `blocker_assignments` becomes
+/// whatever that id is next: nightly-fuzz seeds 20696050172, 20696050055,
+/// 20697000024, 20697050136 and 20697075146 all hit a reanimator (Grimoire
+/// of the Dead, Moldgraf Monstrosity) returning a dead blocker to the
+/// battlefield mid-combat under the *attacking* player, leaving combat
+/// claiming a "blocker" the defending player didn't control.
+#[test]
+fn a_blocker_that_dies_is_removed_from_the_live_combat_state() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let attacker = ready_creature(&mut state, P0, 4, 4);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    attacks_blocked_by(&mut state, attacker, P1, &[blocker]);
+
+    combat::deal_combat_damage(&mut state, &reg);
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
+        "test precondition: the 4-power attacker kills the 2/2 blocker");
+
+    assert!(state.combat.as_ref().is_some_and(
+        |c| c.blocker_assignments.get(&attacker).is_some_and(Vec::is_empty)),
+        "a dead blocker is removed from combat (CR 506.4c) — its id must \
+         not linger in blocker_assignments");
+    assert!(state.combat.as_ref().is_some_and(|c| c.blocked_attackers.contains(&attacker)),
+        "the attacker remains a blocked creature (CR 510.1c)");
+
+    // The fuzz-found sequel: the dead blocker is reanimated mid-combat
+    // under the ATTACKING player (as Grimoire of the Dead does). The new
+    // object reuses the id; combat must not claim it blocks anything.
+    state.move_object_under_control(blocker, Zone::Battlefield, P0, &reg);
+    let violations = mtg_engine::invariants::check_settled(&state, &reg);
+    assert!(!violations.iter().any(|v| v.contains("not the defending player")),
+        "a reanimated ex-blocker is a new object outside combat; \
+         invariant violations: {violations:?}");
+}
+
+/// CR 506.4 + 509.1a (issue #88): an attacker that leaves the battlefield
+/// after attackers are declared stops being an attacking creature. It must
+/// not be offered at declare blockers, and a block declared against it must
+/// not consume the blocker — the playtest crew baited the defender's only
+/// blocker onto a sacrificed attacker, letting the real attackers through
+/// unblocked.
+#[test]
+fn an_attacker_that_left_the_battlefield_cannot_be_blocked() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let sacrificed = ready_creature(&mut state, P0, 2, 2);
+    let survivor = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 3);
+    submit_declare_attackers(&mut state, &[(sacrificed, P1), (survivor, P1)], &reg);
+
+    // The attacker is sacrificed before blockers (any leave-the-battlefield
+    // does the same); CR 506.4c removes it from combat.
+    state.move_object(sacrificed, Zone::Graveyard, &reg);
+
+    state.awaiting_action =
+        Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::actions::CombatPrompt::ChooseBlockers { attackers, legal_blocks, .. }) =
+        legal.combat_prompt
+    else {
+        panic!("expected a ChooseBlockers prompt");
+    };
+    assert!(!attackers.contains(&sacrificed),
+        "a dead creature is not an attacking creature (CR 509.1a)");
+    assert!(legal_blocks.get(&blocker).is_some_and(|v| !v.contains(&sacrificed)),
+        "no block may be declared against it");
+
+    // Even a directly submitted block against the phantom must not stick.
+    submit_declare_blockers(&mut state, P1, &[(blocker, sacrificed)], &reg);
+    assert!(state.combat.as_ref().is_some_and(
+        |c| c.blocker_assignments.values().all(|v| !v.contains(&blocker))),
+        "the blocker is not consumed blocking a permanent that left the game");
 }
 
 /// CR 510.5: a creature with plain first strike deals damage in the first
