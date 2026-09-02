@@ -483,7 +483,9 @@ impl CliPlayer {
                     if srow >= u16::try_from(stack_h).unwrap_or(u16::MAX) { break; }
                     let target_name = match target {
                         mtg_engine::actions::Target::Object(id) => {
-                            view.battlefield.iter().find(|p| p.object_id == *id).map_or_else(|| " -> ?".into(), |p| format!(" -> {}", p.name))
+                            // perm_name carries the (your)/(opp) marker and
+                            // resolves non-battlefield objects too (#100).
+                            format!(" -> {}", Self::perm_name(view, *id))
                         }
                         mtg_engine::actions::Target::Player(pid) => {
                             if *pid == view.you { " -> you".into() } else { " -> opp".into() }
@@ -1517,13 +1519,11 @@ impl CliPlayer {
                     (Some(pw), Some(t)) => format!(" {pw}/{t}"),
                     _ => String::new(),
                 };
-                let is_land = p.card_types.iter().all(|t| matches!(t, CardType::Land));
-                if is_land {
-                    format!("{}{}", p.name, pt)
-                } else {
-                    let owner = if p.controller == view.you { "your" } else { "opp" };
-                    format!("{}{} ({})", p.name, pt, owner)
-                }
+                // Lands carry the marker too: "Destroy target land" offered
+                // your own and the opponent's Islands as byte-identical menu
+                // lines (issue #100).
+                let owner = if p.controller == view.you { "your" } else { "opp" };
+                format!("{}{} ({})", p.name, pt, owner)
             })
             .or_else(|| view.your_hand.iter()
                 .find(|c| c.object_id == id)
@@ -3616,6 +3616,42 @@ mod tests {
         let v = view(Step::PrecombatMain, 6, true);
         let l = pass_concede_plus(vec![cast(4)]);
         assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_some());
+    }
+
+    // Issue #100: land targets carry the same (your)/(opp) marker as every
+    // other permanent — without it, "Destroy target land" offered your own
+    // and the opponent's Islands as byte-identical menu lines.
+    #[test]
+    fn land_labels_carry_the_controller_marker() {
+        use mtg_engine::view::PermanentView;
+        let land = |id: u64, controller: u8| PermanentView {
+            object_id: ObjectId(id),
+            card_id: mtg_engine::ids::CardId(0),
+            name: "Island".into(),
+            card_types: vec![CardType::Land],
+            controller: PlayerId(controller),
+            owner: PlayerId(controller),
+            tapped: false,
+            power: None,
+            toughness: None,
+            effective_power: None,
+            effective_toughness: None,
+            damage_marked: 0,
+            summoning_sick: false,
+            attached_to: None,
+            attached_to_player: None,
+            keywords: vec![],
+            oracle_text: String::new(),
+            counters: HashMap::new(),
+            loyalty_abilities: vec![],
+        };
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.battlefield = vec![land(10, 0), land(11, 1)];
+        let yours = CliPlayer::perm_name(&v, ObjectId(10));
+        let theirs = CliPlayer::perm_name(&v, ObjectId(11));
+        assert_eq!(yours, "Island (your)");
+        assert_eq!(theirs, "Island (opp)");
+        assert_ne!(yours, theirs, "identical lands must be distinguishable");
     }
 
     // Issue #39 guard: a land play breaks auto-pass on any turn, even the
