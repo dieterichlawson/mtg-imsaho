@@ -58,6 +58,7 @@ pub fn push_ability(
         x_value: state.last_activated_x_value,
         target_requirement,
         sacrificed: state.last_activated_sacrifice,
+        sacrificed_toughness: state.last_activated_sacrifice_toughness,
     });
 }
 

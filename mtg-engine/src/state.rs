@@ -41,6 +41,15 @@ pub enum StackEntry {
         /// `CreatureDied` event, which is whatever died last — including
         /// something the opponent killed in the priority window in between.
         sacrificed: Option<ObjectId>,
+        /// The sacrificed creature's toughness as it last existed on the
+        /// battlefield (CR 608.2h), captured when the cost was paid. The
+        /// events log used to be scanned for it at resolution, but
+        /// `submit_action` clears events per action, and the resolving pass
+        /// is a later action than the activation — the scan found nothing
+        /// and Disciple of Griselbrand gained 0 life in any real game
+        /// (issue #141).
+        #[serde(default)]
+        sacrificed_toughness: Option<i32>,
     },
 }
 
@@ -228,6 +237,10 @@ pub struct GameState {
     /// Threaded exactly like `last_activated_x_value`: set when the ability is
     /// activated, carried on the stack entry, restored on resolution.
     pub last_activated_sacrifice: Option<ObjectId>,
+    /// Its toughness as it last existed on the battlefield (CR 608.2h),
+    /// captured at cost payment — see `StackEntry::Ability::sacrificed_toughness`.
+    #[serde(default)]
+    pub last_activated_sacrifice_toughness: Option<i32>,
 
     /// Context stashed between the `ActivateAbility` handler and the follow-up
     /// `ChooseXFunding` resolution for X-cost activated abilities. Unlike
@@ -465,6 +478,7 @@ impl GameState {
             num_spells_cast_last_turn: HashMap::new(),
             last_activated_x_value: None,
             last_activated_sacrifice: None,
+            last_activated_sacrifice_toughness: None,
             pending_ability_effect: None,
             pending_spell_cast: None,
             trigger_event_index: 0,

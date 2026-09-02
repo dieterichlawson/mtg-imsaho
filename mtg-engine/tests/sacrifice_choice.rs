@@ -465,3 +465,38 @@ fn hauberk_can_sacrifice_the_creature_it_is_equipping_to_move_itself() {
 }
 
 
+
+/// Issue #141: in a REAL game the ability resolves through later
+/// `submit_action` passes, and submit_action clears `state.events` at the
+/// top of every action — the old event-scan found nothing there, so the
+/// Disciple gained 0 life in every real game while the direct-resolution
+/// tests above kept passing. The toughness snapshot rides the stack entry
+/// now; this test drives the whole flow through submit_action.
+#[test]
+fn disciple_of_griselbrand_gains_life_through_real_priority_passes() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let fodder = ready_creature(&mut state, P0, 2, 5);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let act = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, sacrifice: Some(s), .. }
+            if *object_id == disciple && *s == fodder))
+        .expect("sacrificing the 2/5 is on offer")
+        .clone();
+    let life_before = state.get_player(P0).life;
+
+    let mut state = engine::submit_action(&state, &act, &reg);
+    // Both players pass — each pass is its own submit_action, and every
+    // submit_action clears state.events. Then the game loop resolves the
+    // top of the stack, exactly as run_game_loop does after the passes.
+    state = engine::submit_action(&state, &Action::PassPriority, &reg);
+    state = engine::submit_action(&state, &Action::PassPriority, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.stack.is_empty(), "the ability resolved through the passes");
+    assert_eq!(state.get_player(P0).life - life_before, 5,
+        "five life for the 2/5 that paid the cost, in a real-game flow");
+}

@@ -1,6 +1,5 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, ActivatedAbilityDef, SacrificeCost};
-use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
@@ -45,21 +44,16 @@ impl CardBehavior for DiscipleOfGriselbrand {
 
         // Ruling: "The amount of life you gain is equal to the toughness of the
         // creature as it last existed on the battlefield, not its toughness in
-        // the graveyard" — which is what `CreatureDied` carries.
+        // the graveyard."
         //
-        // Keyed on the creature that actually paid the cost, which the engine
-        // records on the stack entry. This used to take the *most recent*
-        // `CreatureDied` event, and the cost is paid at activation (CR 601.2h)
-        // while the ability resolves later: anything that died in the priority
-        // window in between was read instead. Sacrificing a 1/1 while the
-        // opponent killed a 5/9 in response gained nine life.
-        let Some(sacrificed) = state.last_activated_sacrifice else { return };
-        let toughness = state.events.iter().rev()
-            .find_map(|e| match e {
-                GameEvent::CreatureDied { object, last_known_toughness, .. }
-                    if *object == sacrificed => Some(*last_known_toughness),
-                _ => None,
-            })
+        // The engine snapshots that toughness on the stack entry when the
+        // cost is paid. Scanning `state.events` for the CreatureDied event
+        // found nothing in a real game — `submit_action` clears events per
+        // action, and the resolving pass is a later action than the
+        // activation, so this gained 0 life outside of direct-resolution
+        // tests (issue #141).
+        if state.last_activated_sacrifice.is_none() { return; }
+        let toughness = state.last_activated_sacrifice_toughness
             .unwrap_or(0)
             .max(0);
 

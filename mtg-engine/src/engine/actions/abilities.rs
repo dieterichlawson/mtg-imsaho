@@ -233,6 +233,11 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                 SacrificeCost::SacrificeThis => Some(object_id),
                 SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => sacrifice,
             };
+            // Captured NOW, while the creature is still on the battlefield:
+            // its toughness as it last existed there is what the ability
+            // reads at resolution (CR 608.2h; issue #141).
+            state.last_activated_sacrifice_toughness = state.last_activated_sacrifice
+                .and_then(|id| state.effective_toughness(id, registry));
             match &ab.sacrifice_cost {
                 SacrificeCost::None => {}
                 SacrificeCost::SacrificeThis => {

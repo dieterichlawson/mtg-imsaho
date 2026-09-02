@@ -3849,7 +3849,13 @@ impl Player for CliPlayer {
                     let sac_suffix = match sacrifice {
                         Some(sac) if sac != object_id =>
                             format!(", sacrificing {}", Self::perm_name(view, *sac)),
-                        _ => String::new(),
+                        // A choose-a-creature cost picking the source itself:
+                        // this entry rendered with no creature named at all,
+                        // while its siblings said whom they sacrifice (#141).
+                        // (A SacrificeThis cost carries no choice and no
+                        // sacrifice id, so it never reaches this arm.)
+                        Some(_) => ", sacrificing itself".to_string(),
+                        None => String::new(),
                     };
                     let label = match desc {
                         Some(d) => format!("{}: {}{}{}", Self::perm_name(view, *object_id),
