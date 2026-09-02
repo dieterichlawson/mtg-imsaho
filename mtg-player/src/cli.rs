@@ -3367,10 +3367,25 @@ impl CliPlayer {
             SetForegroundColor(Color::Yellow), Print(clip(&count_line)), ResetColor);
         r += 1;
         for (i, &id) in options.iter().enumerate() {
+            // Cost and P/T, like the hand and graveyard panels — Corpse
+            // Lunge's damage IS the exiled card's power, and the picker
+            // showed names only (issue #132).
+            let label = view.graveyards.iter()
+                .flat_map(|(_, cards)| cards.iter())
+                .find(|c| c.object_id == id)
+                .map(|c| {
+                    let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                    let pt = match (c.power, c.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    format!("{}{}{}", c.name, cost, pt)
+                })
+                .unwrap_or_else(|| Self::perm_name(view, id));
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                 SetAttribute(Attribute::Reset),
-                Print(clip(&format!(": {}", Self::perm_name(view, id)))));
+                Print(clip(&format!(": {label}"))));
             r += 1;
         }
         let _ = execute!(out, cursor::MoveTo(col, r));
