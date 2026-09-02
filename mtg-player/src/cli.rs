@@ -2105,6 +2105,15 @@ impl CliPlayer {
                 }
             }
         };
+        // The answer is one keypress, but players type it line-style —
+        // 'n' then Enter, like every other prompt here. The trailing Enter
+        // used to fall through to the freshly drawn action menu and pass
+        // priority, burning the phase and the floating mana (issue #127).
+        // Drain the short type-ahead window: a keystroke must never answer
+        // a prompt the player has not been shown (#71's rule).
+        while event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+            let _ = event::read();
+        }
         if !was_raw {
             tui_raw_off();
         }
