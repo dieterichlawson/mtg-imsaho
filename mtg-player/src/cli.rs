@@ -2072,6 +2072,11 @@ impl CliPlayer {
     /// invisibly in a line buffer (issue #42).
     fn confirm_yn(prompt: &str) -> bool {
         let mut out = stdout();
+        // Remember where the prompt starts: a rejected key redraws THIS row
+        // in place. The old reprompt printed a fresh row per junk key,
+        // eating the LOG panel one row at a time (issue #125).
+        let (px, py) = cursor::position().unwrap_or((0, 20));
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let _ = execute!(out, Print(prompt));
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
@@ -2089,7 +2094,12 @@ impl CliPlayer {
                         std::process::exit(0);
                     }
                     _ => {
-                        let _ = execute!(stdout(), Print("\r\n  Please answer y or n. "), Print(prompt.trim_start()));
+                        let msg = format!("Please answer y or n. {}", prompt.trim_start());
+                        let clipped: String = msg.chars()
+                            .take((term_w as usize).saturating_sub(px as usize + 1))
+                            .collect();
+                        let _ = execute!(stdout(), cursor::MoveTo(px, py),
+                            Clear(ClearType::UntilNewLine), Print(clipped));
                         let _ = stdout().flush();
                     }
                 }
