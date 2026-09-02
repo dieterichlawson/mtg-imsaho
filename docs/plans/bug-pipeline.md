@@ -11,6 +11,7 @@ the fixer never hunts.
 | Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) | `phase:fuzz` | the workflow (per failing seed) |
 | Weekly mutants | `weekly-mutants` workflow (~2,365 engine-core mutants) | `phase:mutants` | the workflow (new survivors beyond `reports/mutants-accepted.txt`) |
 | Nightly playtest | "Nightly playtest crew" routine (LLM self-play via the CLI) | `phase:playtest` | the routine |
+| Nightly harness | "Nightly harness crew" routine (`prompts/HARNESS_CREW_PROMPT.md`: drives the real binary through tmux — signals, TTY edges, input abuse, files/flags, save/resume, log hygiene, endurance, determinism; seats are `cli`/`random`/`scripted` only, never LLM seats) | `phase:harness` | the routine |
 
 All issues also carry the `bug` label. Labels are auto-created on first
 use, so a new phase just picks a `phase:<name>` label and starts filing.
@@ -37,7 +38,7 @@ use, so a new phase just picks a `phase:<name>` label and starts filing.
 
 Runs daily after the finders. Takes open `phase:*` issues (oldest first,
 grouping obvious duplicates), and for each: reproduce → root-cause →
-fix the engine mechanism (never a per-card special case) → regression
+fix the mechanism, engine or harness (never a per-card special case) → regression
 test (mutation-checked where feasible) → full workspace suite green →
 **merge to master** → close the issue citing the commit. Issues it cannot
 reproduce or safely fix get a comment with the diagnosis and stay open
