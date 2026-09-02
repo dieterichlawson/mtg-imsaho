@@ -238,3 +238,22 @@ fn bug_spare_from_evil_protection_non_combat_damage() {
     assert_eq!(damage, 0,
         "Protection from non-Human creatures should prevent non-combat damage. Got: {damage}");
 }
+
+/// Issue #138: a "target player" list always puts the CHOOSER first, so the
+/// You/Opponent order a human sees is stable across seats and cards —
+/// seat-order emission flipped it with whoever was choosing, and muscle
+/// memory mis-targeted a trigger.
+#[test]
+fn player_target_lists_put_the_chooser_first() {
+    for seat in [P0, P1] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, seat);
+        let door = named_permanent(&mut state, &reg, "Cellar Door", seat);
+        state.get_player_mut(seat).mana_pool.add(ManaType::Colorless, 3);
+
+        let targets = ability_targets(&state, &reg, door);
+        assert!(!targets.is_empty(), "Cellar Door's ability targets a player");
+        assert_eq!(targets.first(), Some(&Target::Player(seat)),
+            "the chooser (p{}) is option 0", seat.0);
+    }
+}

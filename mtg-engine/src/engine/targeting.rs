@@ -448,11 +448,21 @@ pub(crate) fn valid_targets_for_req(
             targets
         }
         TargetRequirement::PlayerOnly => {
-            state.players.iter()
+            let mut v: Vec<Target> = state.players.iter()
                 .filter(|p| can_target_player(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
+                .collect();
+            // The chooser reads this list as "You / Opponent". Emitting
+            // players in seat order made the order flip with the choosing
+            // seat — '0: You' on one card, '0: Opponent' on the next — and
+            // muscle memory mis-targeted a trigger (issue #138). The
+            // chooser always comes first.
+            v.sort_by_key(|t| match t {
+                Target::Player(p) if *p == caster => 0,
+                _ => 1,
+            });
+            v
         }
         // CR 102.1: "target opponent" is every player but the controller.
         TargetRequirement::OpponentOnly => {
@@ -733,11 +743,17 @@ pub(crate) fn generate_ability_targets(
                 .collect()
         }
         TargetRequirement::PlayerOnly => {
-            state.players.iter()
+            let mut v: Vec<Target> = state.players.iter()
                 .filter(|p| can_target_player(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
+                .collect();
+            // Chooser first — same stable order as the spell arm (#138).
+            v.sort_by_key(|t| match t {
+                Target::Player(p) if *p == controller => 0,
+                _ => 1,
+            });
+            v
         }
         // CR 602.2a: the ability's controller is the activator, so "opponent"
         // is measured from them, not from whoever holds the source.
