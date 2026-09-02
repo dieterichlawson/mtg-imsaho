@@ -1320,3 +1320,21 @@ fn autotap_would_rather_lose_a_colour_than_mill_a_card() {
     assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Library,
         "so nothing was milled");
 }
+
+/// Issue #129: every life transition is logged with the resulting total —
+/// non-combat life loss (Bump in the Night) used to change the header
+/// total with no log line at all, so the log couldn't be reconciled.
+#[test]
+fn non_combat_life_loss_is_logged_with_the_resulting_total() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bump = castable_spell(&mut state, &reg, "Bump in the Night", P0);
+    let state = cast_and_resolve(&state, &reg, bump,
+        vec![mtg_engine::actions::Target::Player(P1)]);
+
+    assert_eq!(state.get_player(P1).life, 17);
+    assert!(state.game_log.iter().any(|e| e.message == "p1 lost 3 life (17)"),
+        "the loss and the running total are in the log; got: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}

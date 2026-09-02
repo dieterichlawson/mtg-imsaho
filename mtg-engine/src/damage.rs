@@ -183,7 +183,8 @@ fn deal_damage_to_player(
     // Both events used to be pushed here side by side, which meant this was the
     // one place in the codebase where a LifeChanged could be emitted twice for
     // one change if the helper were ever used alongside it.
-    state.change_life(player, -i32::try_from(amount).unwrap_or(i32::MAX));
+    // Quiet: the damage lines below carry the change and the total.
+    state.change_life_quiet(player, -i32::try_from(amount).unwrap_or(i32::MAX));
     let new_life = state.get_player(player).life;
 
     match kind {
@@ -199,7 +200,7 @@ fn deal_damage_to_player(
                 source, target: DamageTarget::Player(player), amount,
             });
             state.log(LogLevel::Event,
-                format!("{} dealt {} damage to p{}", state.obj_name(source), amount, player.0));
+                format!("{} dealt {} damage to p{} ({})", state.obj_name(source), amount, player.0, new_life));
         }
     }
 
@@ -213,7 +214,8 @@ fn apply_lifelink(state: &mut GameState, source: ObjectId, amount: u32, registry
         return;
     }
     let Some(controller) = state.get_object(source).map(|o| o.controller) else { return };
-    state.gain_life(controller, i32::try_from(amount).unwrap_or(i32::MAX));
+    // Quiet: the lifelink line below carries the change and the total.
+    state.change_life_quiet(controller, i32::try_from(amount).unwrap_or(i32::MAX));
     // Say so, with the running total — an unexplained 6-point life swing made
     // the log's life figures impossible to reconcile (issue #89).
     let new_life = state.get_player(controller).life;

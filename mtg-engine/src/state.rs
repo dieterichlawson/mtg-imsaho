@@ -2294,6 +2294,26 @@ impl GameState {
     /// the event — which meant a site that forgot the event silently broke any
     /// "whenever you gain life" watcher. `delta` is signed: negative loses.
     pub fn change_life(&mut self, player: crate::ids::PlayerId, delta: i32) {
+        self.change_life_quiet(player, delta);
+        if delta == 0 {
+            return;
+        }
+        // Every life transition is logged HERE, with the resulting total —
+        // per-card logging left non-combat life loss (Bump in the Night)
+        // invisible in the log, so the totals couldn't be reconciled
+        // (issue #129; #89 fixed the same for combat damage and lifelink).
+        // Paths that write their own richer line with the total (the damage
+        // pipeline) use `change_life_quiet`.
+        let verb = if delta > 0 { "gained" } else { "lost" };
+        let new_life = self.get_player(player).life;
+        self.log(LogLevel::Info,
+            format!("p{} {} {} life ({})", player.0, verb, delta.abs(), new_life));
+    }
+
+    /// `change_life` without the generic log line, for callers that log the
+    /// change themselves with the running total (the damage pipeline's
+    /// "took N combat damage (T)" and lifelink lines).
+    pub fn change_life_quiet(&mut self, player: crate::ids::PlayerId, delta: i32) {
         if delta == 0 {
             return;
         }
