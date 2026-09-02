@@ -692,10 +692,18 @@ impl CliPlayer {
             Step::Cleanup => "Cleanup (Discard to 7)",
         };
 
-        // Turn/phase bar
+        // Turn/phase bar. The seat is named in the log's p0/p1 scheme —
+        // nothing else told a hotseat player which seat was being prompted,
+        // or (before the first keep/mulligan) who is on the play (#115).
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
+        let on_play = if view.turn_number == 1 {
+            if view.active_player == view.you { ", on the play" } else { ", on the draw" }
+        } else {
+            ""
+        };
         let pass_label = pass_mode_label.map(|l| format!(" [{l}]")).unwrap_or_default();
-        let status = format!(" Turn {} - {} | {}", view.turn_number, step_name, whose_turn);
+        let status = format!(" Turn {} - {} | {} (you are p{}{})",
+            view.turn_number, step_name, whose_turn, view.you.0, on_play);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
         if !pass_label.is_empty() {

@@ -256,8 +256,8 @@ fn main() {
 
         if !quiet {
             match seed {
-                Some(s) => println!("MTG Engine — {p1_spec} ({name1}) vs {p2_spec} ({name2}) [seed {s}]"),
-                None => println!("MTG Engine — {p1_spec} ({name1}) vs {p2_spec} ({name2})"),
+                Some(s) => println!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2}) [seed {s}]"),
+                None => println!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2})"),
             }
             println!();
         }
@@ -287,8 +287,11 @@ fn main() {
         // save's decks win over flags (and their defaults), and the banner
         // must say so — it used to echo the default --deck1/--deck2 values,
         // contradicting the RESULT line in the same file (issue #94).
+        // One naming scheme with the game log: the log says p0/p1, so the
+        // banner states the mapping to the --p1/--p2 flags explicitly
+        // instead of using a third name for each seat (issue #115).
         let meta = format!(
-            "P1: {} (deck: {})\nP2: {} (deck: {})",
+            "p0 (--p1): {} (deck: {})\np1 (--p2): {} (deck: {})",
             p1_model, player_names[0],
             p2_model, player_names[1],
         );
