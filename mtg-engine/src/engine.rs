@@ -171,7 +171,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             .filter_map(|obj| {
                 let data = registry.get(obj.card_id)?.card_data();
                 data.cost.as_ref()
-                    .map(|c| effective_spell_cost(state, registry, obj.card_id, c, player))
+                    .map(|c| (obj.id, effective_spell_cost(state, registry, obj.card_id, c, player)))
             })
             .collect(),
         // Nevermore stores its chosen name as an instance effect, but reading

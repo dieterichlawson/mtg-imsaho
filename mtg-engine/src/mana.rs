@@ -354,6 +354,29 @@ pub fn compute_autotap(
                 .all(|&(mt, _)| available.iter().any(|&other| other != src_idx
                     && ability_producing(&sources[other], mt).is_some()))
         };
+        // Generic pips are the pips ANY mana can pay, so what tapping a
+        // source costs here is measured in colors lost, and that loss
+        // dominates the opportunity-cost tier (issue #114: two Mountains —
+        // the deck's only red — paid {1}{1} while two colorless-only
+        // Stensia Bloodhalls sat untapped, because the Bloodhall's utility
+        // ability out-ranked preserving red; and a Plains beat Sol Ring
+        // for the same reason, over-tapping by a full land):
+        //   0 = colorless-only: spending it can never lose a color;
+        //   1 = every color it makes is still covered by what remains;
+        //   2 = tapping it loses access to a color;
+        //   3 = side effects (milling a card to save a color is not a win).
+        let color_loss = |src_idx: usize, available: &[usize]| -> u8 {
+            let s = &sources[src_idx];
+            if s.source_kind == ManaSourceKind::HasSideEffects {
+                3
+            } else if source_flexibility(s) == 0 {
+                0
+            } else if is_redundant(src_idx, available) {
+                1
+            } else {
+                2
+            }
+        };
         // Sort available sources by priority.
         let best = available.iter()
             .enumerate()
@@ -361,7 +384,7 @@ pub fn compute_autotap(
                 .any(|a| ability_total_mana(a) > ability_cost(a)))
             .min_by_key(|&(_, &src_idx)| {
                 let key = source_sort_key(&sources[src_idx], &hand_demand);
-                (key.0, !is_redundant(src_idx, &available), key.1, key.2)
+                (color_loss(src_idx, &available), key.0, key.1, key.2)
             });
 
         if let Some((avail_pos, &src_idx)) = best {
@@ -601,6 +624,80 @@ mod tests {
                 has_side_effects: false,
             },
         ]
+    }
+
+    /// Issue #114, shape 1: generic pips must prefer colorless-only sources
+    /// over the deck's only colored ones, even when the colorless source
+    /// carries a utility ability. 2x Mountain (only red), Swamp, 2x Stensia
+    /// Bloodhall (colorless + utility): casting {2}{B} used to pay the
+    /// generic with both Mountains, stranding the {1}{R} spell in hand.
+    #[test]
+    fn autotap_generic_prefers_colorless_utility_land_over_only_colored_sources() {
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Black)]);
+        let sources = vec![
+            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+            make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Black)]),
+            make_source(4, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Colorless)]),
+            make_source(5, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Colorless)]),
+        ];
+        let hand = vec![
+            ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Red)]),
+        ];
+        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &hand).unwrap();
+        let tapped: Vec<u64> = plan.iter().map(|&(id, _)| id.0).collect();
+        assert!(tapped.contains(&3), "the Swamp pays {{B}}: {tapped:?}");
+        assert!(tapped.contains(&4) && tapped.contains(&5),
+            "generic comes from the colorless utility lands, preserving red: {tapped:?}");
+        assert!(!tapped.contains(&1) && !tapped.contains(&2),
+            "both Mountains stay untapped for the {{1}}{{R}} spell in hand: {tapped:?}");
+    }
+
+    /// Issue #114, shape 3: {2}{W} with 2x Plains + Sol Ring used to tap all
+    /// three (four mana for a three-mana spell). Sol Ring's colorless pays
+    /// the generic exactly, leaving a Plains untapped.
+    #[test]
+    fn autotap_generic_prefers_colorless_rock_over_second_plains() {
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::White)]);
+        let sol = ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {C}{C}".into(),
+            produced: vec![(ManaType::Colorless, 2)],
+            requires_tap: true,
+            cost: ManaCost::free(),
+            has_side_effects: false,
+        };
+        let sources = vec![
+            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+            make_source(3, ManaSourceKind::NonBasicMana, vec![sol]),
+        ];
+        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
+        assert_eq!(plan.len(), 2, "two taps, not three: {plan:?}");
+        let tapped: Vec<u64> = plan.iter().map(|&(id, _)| id.0).collect();
+        assert!(tapped.contains(&3), "Sol Ring pays the generic: {tapped:?}");
+    }
+
+    /// Color preservation must not out-rank side effects: paying {1} from
+    /// Deranged Assistant (colorless, mills a card) is worse than paying it
+    /// from a non-redundant Forest.
+    #[test]
+    fn autotap_generic_still_avoids_side_effect_sources() {
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let deranged = ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {C}".into(),
+            produced: vec![(ManaType::Colorless, 1)],
+            requires_tap: true,
+            cost: ManaCost::free(),
+            has_side_effects: true,
+        };
+        let sources = vec![
+            make_source(1, ManaSourceKind::HasSideEffects, vec![deranged]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+        ];
+        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
+        assert_eq!(plan[0].0, ObjectId(2), "the Forest pays; the miller stays untapped");
     }
 
     #[test]

@@ -56,15 +56,13 @@ pub(crate) fn from_hand(
             let alt_costs = alternative_costs(state, registry, obj.card_id, player);
             let has_alt_cost = !alt_costs.is_empty();
 
-            // Build hand_costs for other spells (exclude this spell's cost).
+            // Build hand_costs for other spells, excluding the spell being
+            // cast BY ID. The old index-based exclusion compared positions
+            // in a cost-filtered list against the unfiltered hand, so with
+            // a land in hand it excluded the wrong spell and left this
+            // spell's own colors inflating the demand map (issue #114).
             let other_hand_costs: Vec<ManaCost> = hand_costs.iter()
-                .enumerate()
-                .filter(|&(i, _)| {
-                    // Exclude this spell's cost from hand demand.
-                    // Find the index in hand_costs that corresponds to this object.
-                    let hand_objs: Vec<_> = state.objects_in_zone(Zone::Hand, player);
-                    i < hand_objs.len() && hand_objs[i].id != obj.id
-                })
+                .filter(|(id, _)| *id != obj.id)
                 .map(|(_, c)| c.clone())
                 .collect();
 
@@ -348,7 +346,8 @@ pub(crate) fn flashback(
             } else {
                 &fb_total
             };
-            let Some(fb_tap_plan) = mana::compute_autotap(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &hand_costs) else {
+            let fb_hand_costs: Vec<ManaCost> = hand_costs.iter().map(|(_, c)| c.clone()).collect();
+            let Some(fb_tap_plan) = mana::compute_autotap(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &fb_hand_costs) else {
                 // This particular cost is unaffordable; another may not be.
                 continue;
             };

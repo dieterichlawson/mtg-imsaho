@@ -35,7 +35,12 @@ pub(crate) struct Ctx<'a> {
     pub mana_sources: Vec<crate::mana::ManaSource>,
     /// Effective costs of the player's castable spells, which the auto-tap
     /// planner uses to avoid spending mana another spell needs for its colour.
-    pub hand_costs: Vec<ManaCost>,
+    /// (object id, effective cost) of each spell in the player's hand.
+    /// Carrying the id keeps "exclude the spell being cast" honest — an
+    /// index into a cost-filtered list drifted off the unfiltered hand as
+    /// soon as a land sat in it, excluding the wrong spell from the
+    /// auto-tap's color-demand map (issue #114).
+    pub hand_costs: Vec<(crate::ids::ObjectId, ManaCost)>,
     /// Card names that may not be cast at all (Nevermore).
     pub casting_banned: Vec<String>,
 }
