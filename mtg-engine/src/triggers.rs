@@ -404,9 +404,28 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                     || queue[i].source.description != first.source.description
             });
             if indices.len() >= 2 && distinguishable {
-                let options: Vec<String> = indices.iter()
+                let mut options: Vec<String> = indices.iter()
                     .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
                     .collect();
+                // CR 603.3b: an ordering choice must identify what is being
+                // ordered. Two same-named permanents' triggers rendered
+                // byte-identical (issue #116) — tag each repeated option
+                // with the source's P/T and object id, the same tail the
+                // target pickers use.
+                let repeated: Vec<bool> = options.iter()
+                    .map(|o| options.iter().filter(|x| *x == o).count() > 1)
+                    .collect();
+                for (k, &i) in indices.iter().enumerate() {
+                    if repeated[k] {
+                        let src = queue[i].source.id;
+                        let pt = match (state.effective_power(src, registry),
+                                        state.effective_toughness(src, registry)) {
+                            (Some(p), Some(t)) => format!("{p}/{t}, "),
+                            _ => String::new(),
+                        };
+                        options[k] = format!("{} [source {}#{}]", options[k], pt, src.0);
+                    }
+                }
                 let source = first.source.id;
                 state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                     player: controller,

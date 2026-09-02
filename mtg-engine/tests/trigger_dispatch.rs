@@ -651,6 +651,10 @@ fn simultaneous_triggers_are_ordered_by_their_controller() {
         other => panic!("expected a CR 603.3b ordering prompt, got {other:?}"),
     };
     assert_eq!(options.len(), 2, "both Ghouls' triggers are offered");
+    // An ordering choice must identify what is being ordered: two triggers
+    // from two same-named permanents rendered byte-identical (issue #116).
+    assert_ne!(options[0], options[1],
+        "the two same-named sources' triggers must be tellable apart");
 
     // The runner-facing surface: while the prompt is up, `legal_actions`
     // enumerates one ChosenIndex answer per offered trigger, which is what
