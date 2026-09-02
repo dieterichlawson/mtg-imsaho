@@ -858,14 +858,23 @@ impl CliPlayer {
             for (i, line) in wrapped.iter().enumerate() {
                 let leader = if i == 0 { prefix } else { indent };
                 let label = format!("{leader}{line} ");
-                let full = format!("{}{}", label, "─".repeat(mid_w.saturating_sub(label.chars().count())));
+                // Dash-fill only the LAST line of a wrapped title: padding
+                // every line spliced the box rule into the middle of the
+                // sentence ("... no ───────┤ / transform)") (issue #121).
+                let full = if i == wrapped.len() - 1 {
+                    format!("{}{}", label, "─".repeat(mid_w.saturating_sub(label.chars().count())))
+                } else {
+                    label
+                };
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
-                let left_border = if i == 0 { "├" } else { "│" };
+                // The tee borders belong on the row that carries the rule —
+                // the last one — not the first (issue #121).
+                let left_border = if i == wrapped.len() - 1 { "├" } else { "│" };
                 let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
                     SetAttribute(Attribute::Dim), Print(left_border), SetAttribute(Attribute::Reset));
                 if has_right {
-                    let right_border = if i == 0 { "┤" } else { "│" };
+                    let right_border = if i == wrapped.len() - 1 { "┤" } else { "│" };
                     let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
                         SetAttribute(Attribute::Dim), Print(right_border), SetAttribute(Attribute::Reset));
                 }
