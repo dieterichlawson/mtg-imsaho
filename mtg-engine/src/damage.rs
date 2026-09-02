@@ -55,14 +55,22 @@ fn deal_damage_to_object(
         return;
     }
 
-    // Combat-only prevention (Ghostly Possession, Moonmist).
+    // Combat-only prevention (Ghostly Possession, Moonmist). Said out
+    // loud like the protection path below — a silent damage step read as
+    // the engine forgetting combat, not as prevention working (#137).
     if kind == DamageKind::Combat {
         if has_combat_damage_prevention(state, source, registry)
             || has_combat_damage_prevention(state, target, registry)
         {
+            state.log(LogLevel::Event, format!(
+                "{}: {} combat damage from {} prevented",
+                state.obj_name(target), amount, state.obj_name(source)));
             return;
         }
         if is_combat_damage_prevented_by_exception(state, source, registry) {
+            state.log(LogLevel::Event, format!(
+                "{}: {} combat damage from {} prevented",
+                state.obj_name(target), amount, state.obj_name(source)));
             return;
         }
     }
@@ -147,12 +155,15 @@ fn deal_damage_to_player(
     kind: DamageKind,
     registry: &CardRegistry,
 ) {
-    // Combat-only prevention (Ghostly Possession, Moonmist).
+    // Combat-only prevention (Ghostly Possession, Moonmist) — logged, as
+    // for creatures (#137).
     if kind == DamageKind::Combat {
-        if has_combat_damage_prevention(state, source, registry) {
-            return;
-        }
-        if is_combat_damage_prevented_by_exception(state, source, registry) {
+        if has_combat_damage_prevention(state, source, registry)
+            || is_combat_damage_prevented_by_exception(state, source, registry)
+        {
+            state.log(LogLevel::Event, format!(
+                "p{}: {} combat damage from {} prevented",
+                player.0, amount, state.obj_name(source)));
             return;
         }
     }

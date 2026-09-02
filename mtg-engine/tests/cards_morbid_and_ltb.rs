@@ -627,6 +627,13 @@ fn ghostly_possession_prevents_damage() {
     // Attacker should also take no damage (prevented FROM the creature).
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
         "Ghostly Possession should prevent combat damage FROM the creature");
+
+    // The prevention is said out loud, like the protection path — a silent
+    // damage step read as the engine forgetting combat (issue #137).
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("combat damage from") && e.message.contains("prevented")),
+        "prevented combat damage is logged; log: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
 /// "dealt **by** enchanted creature" includes damage to a player. The test
