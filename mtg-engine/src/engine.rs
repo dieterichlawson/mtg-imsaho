@@ -694,6 +694,17 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
         // declare blockers step" trigger must not fire, and no priority
         // windows open in steps that don't happen.
         Some(Step::EndCombat)
+    } else if state.step == Step::Upkeep
+        && state.is_first_turn
+        && state.players.len() == 2
+    {
+        // CR 103.7a: in a two-player game the player on the play skips the
+        // draw STEP of their first turn — the whole step, so no
+        // beginning-of-draw-step triggers and no priority window in it.
+        // Suppressing only the card draw used to leave an extra priority
+        // round that should not exist (issue #113).
+        state.log(LogLevel::Debug, "Turn 1: draw step skipped (CR 103.7a)".into());
+        Some(Step::PrecombatMain)
     } else {
         state.step.next()
     };
@@ -773,10 +784,12 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::Draw => {
-            // Active player draws a card (skip on the very first turn).
-            if !state.is_first_turn {
-                let _ = draw_cards(state, active, 1, registry);
-            }
+            // CR 504.1: the active player draws. The first turn's skip is the
+            // whole STEP (CR 103.7a, handled in advance_step), so a draw step
+            // that is entered always draws — in a multiplayer game the first
+            // player doesn't skip it at all (CR 103.7b applies only to
+            // two-player games).
+            let _ = draw_cards(state, active, 1, registry);
             state.priority_player = Some(active);
         }
 
@@ -1036,6 +1049,12 @@ fn run_game_loop_inner<F>(
             player: state.active_player,
             turn: state.turn_number,
         });
+        // Turn 1 has an untap step like any other (CR 502 runs normally,
+        // there just happens to be nothing to untap) — announce it the way
+        // advance_step announces every later step, so the first turn's log
+        // doesn't read as if untap were skipped (issue #113).
+        state.events.push(GameEvent::StepStarted { step: state.step });
+        state.log(LogLevel::Debug, format!("Step: {:?}", state.step));
         perform_turn_based_actions(state, registry);
     }
 

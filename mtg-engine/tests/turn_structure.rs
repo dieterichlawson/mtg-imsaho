@@ -58,9 +58,12 @@ fn a_mana_pool_empties_at_every_step_boundary() {
     }
 }
 
-/// The first player skips their draw step on the first turn.
+/// CR 103.7a: in a two-player game the player on the play skips the draw
+/// STEP of their first turn — the whole step, so no priority window opens
+/// in it and no card is drawn. Suppressing only the draw used to leave a
+/// phantom draw step with a full priority round (issue #113).
 #[test]
-fn first_player_skips_first_draw() {
+fn first_player_skips_the_whole_first_draw_step() {
     let registry = registry();
     let mut state = GameState::new(2);
     state.is_first_turn = true;
@@ -72,9 +75,34 @@ fn first_player_skips_first_draw() {
     state.get_player_mut(P0).library_order.push(card);
 
     engine::advance_step(&mut state, &registry);
-    assert_eq!(state.step, Step::Draw);
+    assert_eq!(state.step, Step::PrecombatMain,
+        "the draw step is skipped entirely, straight to the main phase");
     assert_eq!(state.get_object(card).unwrap().zone, Zone::Library,
         "First player should skip the draw on the very first turn");
+}
+
+/// The skip is CR 103.7a's two-player rule; in another multiplayer
+/// structure the first player draws normally (CR 103.7c), and the draw
+/// step, once entered, always draws.
+#[test]
+fn multiplayer_first_player_does_not_skip_the_draw_step() {
+    let registry = registry();
+    let mut state = GameState::new(3);
+    state.is_first_turn = true;
+    state.step = Step::Upkeep;
+    state.active_player = P0;
+    state.priority_player = Some(P0);
+    for p in 0..3 {
+        state.players[p].life = 20;
+    }
+
+    let card = state.create_object(CardId(1), P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(card);
+
+    engine::advance_step(&mut state, &registry);
+    assert_eq!(state.step, Step::Draw);
+    assert_eq!(state.get_object(card).unwrap().zone, Zone::Hand,
+        "a free-for-all first player draws on turn 1 (CR 103.7c)");
 }
 
 /// Untap step: all permanents controlled by active player untap.
