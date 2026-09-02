@@ -266,6 +266,39 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     assert_eq!(combat_attackers, 4, "Should have 4 attackers (cage + 3 wolves)");
 }
 
+/// CR 508.1a/508.2: declaring attackers chooses a SET of creatures — a
+/// creature is attacking or it is not, so the event "this creature attacks"
+/// happens once and puts exactly one trigger on the stack (CR 603.2).
+/// A repeated entry (`0 0 0` at the CLI prompt) used to fire the attack
+/// trigger once per repeat: Kessig Cagebreakers declared as `0 0` made
+/// double wolves and won a game on the extra power (issue #108).
+#[test]
+fn duplicate_attacker_entries_collapse_to_one_attack_and_one_trigger() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let cage = named_permanent(&mut state, &reg, "Kessig Cagebreakers", P0);
+    for _ in 0..2 {
+        let c = ready_creature(&mut state, P0, 2, 2);
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+
+    submit_declare_attackers(&mut state, &[(cage, P1), (cage, P1), (cage, P1)], &reg);
+
+    // One attacker in combat (this half already held) ...
+    assert_eq!(state.combat.as_ref().unwrap().attackers.len(), 1);
+
+    // Collect the triggers the declaration's events produced: exactly one
+    // attack trigger, so exactly one batch of wolves. Before the fix the
+    // repeated entries fired the trigger once per repeat (three batches).
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    while !state.stack.is_empty() {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    }
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 2,
+        "one trigger resolution: one wolf per creature card in the graveyard");
+}
+
 /// Ruling: the tokens are attacking, but "they were never declared as
 /// attacking creatures" — and the player they attack comes from the trigger,
 /// not from whoever happens to be the next player in turn order. With three

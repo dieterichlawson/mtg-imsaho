@@ -2604,6 +2604,20 @@ impl CliPlayer {
                 }
             }
             if parsed == tokens.len() {
+                // A creature attacks or it doesn't (CR 508.1a): a repeated
+                // index is a typo, not a double attack — refuse it loudly
+                // (issue #108). The engine de-duplicates too, as the
+                // authority for non-interactive players.
+                let mut listed: Vec<usize> = indices.iter().copied()
+                    .chain(walker_attacks.iter().map(|&(a, _)| a))
+                    .collect();
+                listed.sort_unstable();
+                let before_dedup = listed.len();
+                listed.dedup();
+                if listed.len() != before_dedup {
+                    show_error("  Duplicate attacker index: list each creature at most once.");
+                    continue;
+                }
                 let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len())
                     .chain(walker_attacks.iter().filter(|&&(a, w)|
                         a >= eligible.len() || w >= defending_planeswalkers.len()).map(|&(a, _)| a))

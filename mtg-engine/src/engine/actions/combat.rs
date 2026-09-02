@@ -16,8 +16,14 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         // mirroring how blocker validation filters illegal blocks.
         let eligible = combat::eligible_attackers(&state, state.active_player, registry);
         let valid_defender = state.opponent(state.active_player);
+        // The declaration is a choice of a SET of creatures (CR 508.1a/508.2):
+        // a creature is attacking or it is not. A repeated entry used to sail
+        // through and fire the creature's attack trigger once per repeat —
+        // `0 0` on Kessig Cagebreakers doubled its wolves and won a game
+        // (issue #108). De-duplicate here so no player type can submit one.
+        let mut seen = std::collections::HashSet::new();
         let attackers: Vec<(ObjectId, PlayerId)> = attackers.iter()
-            .filter(|(id, def)| eligible.contains(id) && *def == valid_defender)
+            .filter(|(id, def)| eligible.contains(id) && *def == valid_defender && seen.insert(*id))
             .copied()
             .collect();
         // CR 508.1a: an attacker may instead be sent at a planeswalker the
@@ -28,10 +34,12 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         let planeswalker_attacks: Vec<(ObjectId, ObjectId)> = planeswalker_attacks.iter()
             .filter(|(id, walker)| {
                 eligible.contains(id)
-                    && !attackers.iter().any(|(a, _)| a == id)
                     && state.get_object(*walker).is_some_and(|o|
                         o.zone == crate::types::Zone::Battlefield && o.controller == valid_defender)
                     && state.has_card_type(*walker, crate::types::CardType::Planeswalker, registry)
+                    // The shared `seen` set drops an attacker already sent at
+                    // the player AND a repeat within this list (issue #108).
+                    && seen.insert(*id)
             })
             .copied()
             .collect();
