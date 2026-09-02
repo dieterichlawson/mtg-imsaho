@@ -3908,10 +3908,28 @@ impl Player for CliPlayer {
                             self.pass_mode = Some(mode);
                             return Action::PassPriority;
                         }
-                        notice = Some(
-                            "Auto-pass not engaged: this prompt has actions it would \
-                             skip (land play / castable spell). Pass with 0 first to \
-                             decline them.".to_string());
+                        // Name the thing actually blocking engagement — the
+                        // old fixed "(land play / castable spell)" text was
+                        // asserted at prompts that visibly had neither, e.g.
+                        // an empty-hand postcombat main (issue #131).
+                        let reason = if legal.actions.iter()
+                            .any(|a| matches!(a, Action::PlayLand { .. })) {
+                            "a land play it would skip. Pass with 0 first to decline it"
+                        } else if legal.actions.iter()
+                            .any(|a| matches!(a, Action::CastSpell { .. })) {
+                            "a castable spell it would skip. Pass with 0 first to decline it"
+                        } else if legal.actions.iter()
+                            .any(|a| matches!(a, Action::ActivateAbility { .. })) {
+                            "an activatable ability it would skip. Pass with 0 first to decline it"
+                        } else if view.step == Step::PostcombatMain {
+                            "your postcombat main phase, a stop auto-pass always honours. \
+                             Pass with 0 to move on"
+                        } else if !view.stack.is_empty() {
+                            "something on the stack to respond to. Pass with 0 to decline"
+                        } else {
+                            "a decision auto-pass would make for you. Pass with 0 first"
+                        };
+                        notice = Some(format!("Auto-pass not engaged: this prompt has {reason}."));
                     }
                     continue;
                 }
