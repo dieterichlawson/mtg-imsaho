@@ -613,6 +613,15 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
     };
 
     match kind {
+        // A cli seat with no usable terminal (stdin redirected AND no
+        // controlling tty) can never read a keystroke: every event read
+        // fails and the first prompt becomes a silent 100%-CPU spin
+        // (issue #103). Refuse it up front, like other arguments that
+        // cannot work (#55/#69/#70).
+        "cli" if !mtg_player::cli::terminal_available() => die(&format!(
+            "--{} cli needs an interactive terminal (stdin is not a tty and \
+             /dev/tty is unavailable); use --{} random or run under a tty",
+            name.to_lowercase(), name.to_lowercase())),
         "cli" => PlayerKind::Cli(CliPlayer::new(name)),
         "ai" | "llm" | "claude" => {
             let mut player = LlmPlayer::new(name);

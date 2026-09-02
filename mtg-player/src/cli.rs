@@ -47,13 +47,106 @@ extern "C" fn restore_terminal_and_exit(sig: libc::c_int) {
     }
 }
 
+/// True while a TUI prompt holds the terminal in raw mode, and the raw
+/// termios itself — what the SIGCONT handler re-arms after a job-control
+/// stop/resume put the tty back into cooked mode behind the app's back
+/// (issue #104).
+static RAW_MODE_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static RAW_TERMIOS: std::sync::OnceLock<libc::termios> = std::sync::OnceLock::new();
+
+/// Enter raw mode for a prompt, capturing the raw termios once and
+/// flagging the state for the SIGCONT handler (issue #104).
+fn tui_raw_on() {
+    let _ = terminal::enable_raw_mode();
+    if RAW_TERMIOS.get().is_none() {
+        unsafe {
+            let mut t: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(libc::STDIN_FILENO, &mut t) == 0 {
+                let _ = RAW_TERMIOS.set(t);
+            }
+        }
+    }
+    RAW_MODE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Leave raw mode, clearing the SIGCONT re-arm flag first so a signal
+/// racing the switch can't re-raw a terminal we just released.
+fn tui_raw_off() {
+    RAW_MODE_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    let _ = terminal::disable_raw_mode();
+}
+
+/// SIGCONT handler: when the process was stopped (SIGTSTP/SIGSTOP) inside
+/// a raw-mode prompt and resumed under a job-control shell, the shell
+/// restores its own cooked termios across the stop. crossterm still
+/// believes raw mode is on, so the cooked line discipline's `\n` never
+/// parses as Enter and every prompt is permanently deaf (issue #104).
+/// Re-arm the raw termios on resume. Async-signal-safe: an atomic load,
+/// an initialized `OnceLock::get`, and `tcsetattr`.
+extern "C" fn rearm_raw_mode_on_cont(_sig: libc::c_int) {
+    if RAW_MODE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Some(t) = RAW_TERMIOS.get() {
+            unsafe {
+                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, t);
+            }
+        }
+    }
+}
+
+/// Whether a CLI seat has any usable terminal: stdin is a tty, or a
+/// controlling terminal exists to fall back to (crossterm reads
+/// `/dev/tty` when stdin is redirected). With neither, every
+/// `event::read` fails instantly and the prompt loop is a silent
+/// 100%-CPU spin (issue #103) — the runner uses this to refuse the
+/// seat up front instead.
+#[must_use]
+pub fn terminal_available() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal() || std::fs::File::open("/dev/tty").is_ok()
+}
+
+thread_local! {
+    static READ_ERRORS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// `event::read` with the issue-#103 guard. A read error used to mean
+/// "retry immediately", which with no terminal at all turned every prompt
+/// into a silent hot loop. Failures now back off, and an unbroken run of
+/// them long enough to rule out a transient (EINTR from a signal, a
+/// momentary EIO) restores the terminal and exits with an explanation.
+fn read_event_guarded() -> Option<Event> {
+    match event::read() {
+        Ok(ev) => {
+            READ_ERRORS.with(|c| c.set(0));
+            Some(ev)
+        }
+        Err(_) => {
+            let n = READ_ERRORS.with(|c| {
+                let n = c.get().saturating_add(1);
+                c.set(n);
+                n
+            });
+            if n >= 200 {
+                reset_terminal_for_exit();
+                eprintln!("Error: cannot read terminal input (terminal gone?); exiting");
+                std::process::exit(1);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            None
+        }
+    }
+}
+
 /// Install SIGHUP/SIGTERM/SIGINT handlers that restore the terminal
-/// before exiting (issue #78). A signal landing while a prompt held the
-/// terminal in raw mode used to leave the pty raw for the inheriting
-/// shell — no echo, no line editing, no Ctrl-C, staircased output — on
-/// the ordinary close-the-window (SIGHUP) and `kill`/`timeout` (SIGTERM)
-/// paths, forcing a blind `stty sane`. The runner calls this once, before
-/// the first prompt, when a human CLI seat exists.
+/// before exiting (issue #78), plus the SIGCONT re-arm handler for
+/// stop/resume under a job-control shell (issue #104). A signal landing
+/// while a prompt held the terminal in raw mode used to leave the pty raw
+/// for the inheriting shell — no echo, no line editing, no Ctrl-C,
+/// staircased output — on the ordinary close-the-window (SIGHUP) and
+/// `kill`/`timeout` (SIGTERM) paths, forcing a blind `stty sane`. The
+/// runner calls this once, before the first prompt, when a human CLI seat
+/// exists.
 pub fn install_terminal_restore_signal_handlers() {
     unsafe {
         let mut t: libc::termios = std::mem::zeroed();
@@ -64,6 +157,8 @@ pub fn install_terminal_restore_signal_handlers() {
         for sig in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT] {
             libc::signal(sig, handler as libc::sighandler_t);
         }
+        let cont_handler = rearm_raw_mode_on_cont as extern "C" fn(libc::c_int);
+        libc::signal(libc::SIGCONT, cont_handler as libc::sighandler_t);
     }
 }
 
@@ -73,7 +168,7 @@ pub fn install_terminal_restore_signal_handlers() {
 /// summary doesn't land on top of a stale frame and visually merge with
 /// leftover rows (issue #47).
 pub fn reset_terminal_for_exit() {
-    let _ = terminal::disable_raw_mode();
+    tui_raw_off();
     let mut out = stdout();
     // Defensive: bracketed paste must never survive into the user's shell.
     let _ = execute!(out, event::DisableBracketedPaste);
@@ -168,12 +263,12 @@ impl CliPlayer {
         }
         *last = Some(id);
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
-        let _ = terminal::enable_raw_mode();
+        tui_raw_on();
         while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
             let _ = event::read();
         }
         if !was_raw {
-            let _ = terminal::disable_raw_mode();
+            tui_raw_off();
         }
     }
 
@@ -1277,7 +1372,7 @@ impl CliPlayer {
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
     fn run_card_search(&mut self, view: &GameView, actions: &[String]) {
-        let _ = terminal::enable_raw_mode();
+        tui_raw_on();
 
         self.card_filter.clear();
 
@@ -1296,14 +1391,14 @@ impl CliPlayer {
             let _ = stdout().flush();
 
             // Read one key event
-            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+            if let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() {
                 match code {
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char('/') => {
                         self.card_filter.clear();
                         break;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = terminal::disable_raw_mode();
+                        tui_raw_off();
                         std::process::exit(0);
                     }
                     KeyCode::Backspace => {
@@ -1319,7 +1414,7 @@ impl CliPlayer {
             }
         }
 
-        let _ = terminal::disable_raw_mode();
+        tui_raw_off();
     }
 
     /// Interactive target selection for a castable spell.
@@ -1730,7 +1825,7 @@ impl CliPlayer {
         let mut out = stdout();
         let _ = execute!(out, Print(prompt));
         let _ = out.flush();
-        let _ = terminal::enable_raw_mode();
+        tui_raw_on();
         // Same paste hardening as the menu reader (#50): a multi-line paste
         // must not submit on its embedded newlines.
         let _ = execute!(out, event::EnableBracketedPaste);
@@ -1742,10 +1837,7 @@ impl CliPlayer {
         }
         let mut buf = String::new();
         loop {
-            let ev = match event::read() {
-                Ok(ev) => ev,
-                Err(_) => continue,
-            };
+            let Some(ev) = read_event_guarded() else { continue };
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
                 buf.push_str(first);
@@ -1758,7 +1850,7 @@ impl CliPlayer {
                 KeyCode::Enter => break,
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                     let _ = execute!(out, event::DisableBracketedPaste);
-                    let _ = terminal::disable_raw_mode();
+                    tui_raw_off();
                     std::process::exit(0);
                 }
                 // Ctrl-U kills the line (issue #79), here as in the menu reader.
@@ -1785,7 +1877,7 @@ impl CliPlayer {
             }
         }
         let _ = execute!(out, event::DisableBracketedPaste, Print("\r\n"));
-        let _ = terminal::disable_raw_mode();
+        tui_raw_off();
         buf.trim().to_string()
     }
 
@@ -1798,9 +1890,9 @@ impl CliPlayer {
         let _ = execute!(out, Print(prompt));
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
-        let _ = terminal::enable_raw_mode();
+        tui_raw_on();
         let answer = loop {
-            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+            if let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() {
                 match code {
                     // Bare y/n only: a control/alt chord must not answer a
                     // confirmation prompt (#51).
@@ -1808,7 +1900,7 @@ impl CliPlayer {
                     KeyCode::Char('n' | 'N') if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { let _ = execute!(stdout(), Print("n")); break false; }
                     KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = terminal::disable_raw_mode();
+                        tui_raw_off();
                         std::process::exit(0);
                     }
                     _ => {
@@ -1819,7 +1911,7 @@ impl CliPlayer {
             }
         };
         if !was_raw {
-            let _ = terminal::disable_raw_mode();
+            tui_raw_off();
         }
         let _ = execute!(stdout(), Print("\r\n"));
         answer
@@ -1830,7 +1922,7 @@ impl CliPlayer {
     fn read_line_with_search(_col: u16) -> Option<String> {
         // Prompt "> " is already printed by render.
         let mut out = stdout();
-        let _ = terminal::enable_raw_mode();
+        tui_raw_on();
         let mut buf = String::new();
 
         // The echo stops at the middle panel's right edge (same layout math
@@ -1854,10 +1946,7 @@ impl CliPlayer {
         let _ = execute!(out, event::EnableBracketedPaste);
 
         let result = loop {
-            let ev = match event::read() {
-                Ok(ev) => ev,
-                Err(_) => continue,
-            };
+            let Some(ev) = read_event_guarded() else { continue };
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
                 for c in first.chars() {
@@ -1878,9 +1967,9 @@ impl CliPlayer {
                     KeyCode::Char('r') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         // Wait briefly for a second 'r' to trigger hot reload.
                         if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
-                            if let Ok(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) = event::read() {
+                            if let Some(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) = read_event_guarded() {
                                 HOT_RELOAD_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
-                                let _ = terminal::disable_raw_mode();
+                                tui_raw_off();
                                 break Some("__hot_reload__".into());
                             }
                         }
@@ -1897,7 +1986,7 @@ impl CliPlayer {
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         let _ = execute!(stdout(), event::DisableBracketedPaste);
-                        let _ = terminal::disable_raw_mode();
+                        tui_raw_off();
                         std::process::exit(0);
                     }
                     KeyCode::Backspace => {
@@ -1940,7 +2029,7 @@ impl CliPlayer {
         };
 
         let _ = execute!(stdout(), event::DisableBracketedPaste);
-        let _ = terminal::disable_raw_mode();
+        tui_raw_off();
         result
     }
 
@@ -3011,7 +3100,7 @@ impl CliPlayer {
         let mut selected: usize = 0;
         let mut out = stdout();
 
-        let _ = terminal::enable_raw_mode();
+        tui_raw_on();
 
         loop {
             // Filter cards by name.
@@ -3083,11 +3172,11 @@ impl CliPlayer {
             let _ = out.flush();
 
             // Read input.
-            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+            if let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() {
                 match code {
                     KeyCode::Enter => {
                         if let Some(card) = filtered.get(selected) {
-                            let _ = terminal::disable_raw_mode();
+                            tui_raw_off();
                             let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
                             return actions[card.action_index].clone();
                         }
@@ -3103,7 +3192,7 @@ impl CliPlayer {
                         selected = 0;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = terminal::disable_raw_mode();
+                        tui_raw_off();
                         std::process::exit(0);
                     }
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {

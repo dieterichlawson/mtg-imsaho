@@ -84,3 +84,53 @@ fn save_path_that_is_a_directory_is_refused_cleanly() {
         .expect("failed to run");
     assert_clean_refusal(&output, "--save naming a directory");
 }
+
+// ── issue #103: a cli seat with no terminal is refused, not spun ────
+
+/// With stdin redirected and no controlling terminal (setsid), a `cli`
+/// seat used to print one frame and burn a core forever in its event
+/// loop. It must instead refuse up front like any other argument that
+/// cannot work. Run detached via setsid so the test is deterministic
+/// even when the test runner itself has a tty.
+#[test]
+fn cli_seat_without_a_terminal_is_refused_not_spun() {
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let mut cmd = runner();
+    cmd.args(["--p1", "cli", "--p2", "random", "--seed", "1"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    unsafe {
+        cmd.pre_exec(|| {
+            // Detach from the controlling terminal so /dev/tty is closed
+            // to the child even when cargo test runs under one.
+            libc::setsid();
+            Ok(())
+        });
+    }
+    let mut child = cmd.spawn().expect("failed to spawn");
+
+    // The refusal is immediate; anything near the deadline means the old
+    // spin is back. Kill it rather than hanging the suite.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("wait failed") {
+            break status;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("cli seat without a terminal did not exit — the #103 spin is back");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+
+    let output = child.wait_with_output().expect("output failed");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(status.code(), Some(1), "clean refusal, not a crash.\nstderr: {stderr}");
+    assert!(stderr.contains("Error:") && stderr.contains("terminal"),
+        "the message says a terminal is needed.\nstderr: {stderr}");
+}
