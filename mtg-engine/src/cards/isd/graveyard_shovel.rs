@@ -21,19 +21,17 @@ impl CardBehavior for GraveyardShovel {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // No zone-or-tapped guard here: `legal_actions` enumerates only
         // battlefield permanents its player controls and rejects a
         // `requires_tap` ability on a tapped one, and it also applies the
         // summoning-sickness rule this never did (CR 302.6 — irrelevant to a
         // land, but a card should not be the place that decides).
-        // "exiles a **card** from their graveyard" — CR 109.1, so a token
-        // sitting in a graveyard until the next SBA check is not one.
-        let any_graveyard = state.all_objects_in_zone(Zone::Graveyard).into_iter()
-            .any(|o| state.is_card(o.id));
-        if !any_graveyard {
-            return vec![];
-        }
+        // "Target player" is the whole targeting requirement — the printed
+        // text has no "with a card in their graveyard" clause, so the
+        // ability is activatable with every graveyard empty (even just to
+        // tap the Shovel) and resolution does as much as it can, which may
+        // be nothing (CR 601.2c, 608.2; issue #126).
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{2}, {T}: Target player exiles a card from their graveyard, gain 2 life if creature".into(),
@@ -47,18 +45,12 @@ impl CardBehavior for GraveyardShovel {
         }]
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
-        match target {
-            // CR 608.2b: a target that stopped being legal is skipped.
-            Target::Illegal => false,
-            Target::Player(pid) => {
-                // Only valid if the targeted player has at least one card —
-                // CR 109.1 — in their graveyard.
-                state.objects_in_zone(Zone::Graveyard, *pid).into_iter()
-                    .any(|o| state.is_card(o.id))
-            }
-            Target::Object(_) => false,
-        }
+    fn is_valid_target(&self, _state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        // Any player is a legal target — "target player", with no graveyard
+        // clause. Requiring a card here also mis-countered the ability when
+        // the graveyard was emptied in response, where CR 608.2b says it
+        // resolves and simply does nothing (issue #126).
+        matches!(target, Target::Player(_))
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {

@@ -139,9 +139,12 @@ fn resolution_choice_exiles_and_gains_life() {
         "Controller should gain 2 life (creature exiled)");
 }
 
-/// Can't target a player with no cards in graveyard.
+/// "Target player" has no graveyard clause: a player with an empty
+/// graveyard is a legal target (CR 601.2c), and resolution just does as
+/// much as it can — nothing (CR 608.2). The engine used to refuse the
+/// activation outright (issue #126).
 #[test]
-fn cannot_target_player_with_empty_graveyard() {
+fn can_target_player_with_empty_graveyard_and_resolve_doing_nothing() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -152,13 +155,35 @@ fn cannot_target_player_with_empty_graveyard() {
     let _gy_card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
 
     let actions = engine::legal_actions(&state, &reg);
-    let ability_actions: Vec<_> = actions.actions.iter().filter(|a| {
+    let targets_p1 = actions.actions.iter().any(|a| {
         matches!(a, Action::ActivateAbility { object_id, targets, .. }
             if object_id == &shovel && targets.iter().any(|t| matches!(t, Target::Player(p) if p == &P1)))
-    }).collect();
+    });
+    assert!(targets_p1, "a player with an empty graveyard is still 'target player'");
 
-    assert!(ability_actions.is_empty(),
-        "Should not be able to target P1 (empty graveyard)");
+    // Resolving against the empty graveyard exiles nothing and gains no life.
+    let life_before = state.get_player(P0).life;
+    activate_via_hooks(&mut state, &reg, shovel, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_player(P0).life, life_before);
+    assert!(state.awaiting_action.is_none(), "nothing to choose from an empty graveyard");
+}
+
+/// With EVERY graveyard empty the ability is still activatable — even just
+/// to tap the Shovel (issue #126).
+#[test]
+fn activatable_with_all_graveyards_empty() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shovel = named_permanent(&mut state, &reg, "Graveyard Shovel", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    let actions = engine::legal_actions(&state, &reg);
+    let offered = actions.actions.iter().any(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if object_id == &shovel)
+    });
+    assert!(offered, "the ability is legal with no cards in any graveyard");
 }
 
 /// "you gain 2 life" — "you" is the player who activated the ability
