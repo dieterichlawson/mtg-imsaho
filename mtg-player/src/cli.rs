@@ -115,6 +115,16 @@ enum UpToPick {
     Cancel,
 }
 
+/// One line of a full-screen info view (`l`/`g`/`e`), carrying just enough
+/// styling for the shared pager to render it (issues #101/#102).
+enum InfoLine {
+    Plain(String),
+    Bold(String),
+    Dim(String),
+    /// Indented card line rendered through `print_with_mana`.
+    Mana(String),
+}
+
 pub struct CliPlayer {
     name: String,
     /// When set, auto-pass priority until the specified condition.
@@ -2092,24 +2102,90 @@ impl CliPlayer {
         }
     }
 
-    fn show_log(log: &[String]) {
+    /// Compute the visible page window: `(start, end, page_size)` for a
+    /// list of `len` lines on a terminal `term_h` rows tall, given the
+    /// current `page` (0-based). Pulled out of the pager so the arithmetic
+    /// is testable without a terminal.
+    fn page_window(len: usize, term_h: usize, page: usize) -> (usize, usize, usize) {
+        let page_size = term_h.saturating_sub(4).max(1);
+        let last_page = if len == 0 { 0 } else { (len - 1) / page_size };
+        let page = page.min(last_page);
+        let start = page * page_size;
+        let end = (start + page_size).min(len);
+        (start, end, page_size)
+    }
+
+    /// Full-screen paged line viewer shared by the `l`/`g`/`e` info views.
+    /// The old printers dumped every line unclamped, so anything taller
+    /// than the terminal scrolled off the top with no way back and no
+    /// notice (issues #101/#102). This clamps to the terminal height,
+    /// pages with n/p, and always says which slice is showing.
+    /// `start_at_end` opens on the last page (the log's most recent
+    /// entries); the list views open at the top.
+    fn show_paged_lines(title: &str, lines: &[InfoLine], start_at_end: bool) {
         let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-        Self::print_colored(&mut out, Color::Cyan, " GAME LOG");
-        if log.is_empty() {
-            let _ = execute!(out, Print("  (no events yet)\n"));
+        let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
+        let (_, _, page_size) = Self::page_window(lines.len(), h, 0);
+        let mut page = if start_at_end && !lines.is_empty() {
+            (lines.len() - 1) / page_size
         } else {
-            let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
-            let visible = h.saturating_sub(4); // leave room for header/footer
-            let start = if log.len() > visible { log.len() - visible } else { 0 };
-            for entry in &log[start..] {
-                let _ = execute!(out, SetAttribute(Attribute::Dim),
-                    Print(format!("  {entry}\n")), SetAttribute(Attribute::Reset));
+            0
+        };
+        loop {
+            let (start, end, page_size) = Self::page_window(lines.len(), h, page);
+            let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+            let heading = if lines.len() > page_size {
+                format!("{} (showing {}-{} of {})", title, start + 1, end, lines.len())
+            } else {
+                title.to_string()
+            };
+            Self::print_colored(&mut out, Color::Cyan, &heading);
+            let _ = execute!(out, Print("\n"));
+            for line in &lines[start..end] {
+                match line {
+                    InfoLine::Plain(s) => {
+                        let _ = execute!(out, Print(format!("{s}\n")));
+                    }
+                    InfoLine::Bold(s) => {
+                        let _ = execute!(out, SetAttribute(Attribute::Bold),
+                            Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
+                    }
+                    InfoLine::Dim(s) => {
+                        let _ = execute!(out, SetAttribute(Attribute::Dim),
+                            Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
+                    }
+                    InfoLine::Mana(s) => {
+                        let _ = execute!(out, Print("   "));
+                        Self::print_with_mana(&mut out, s, None);
+                        let _ = execute!(out, Print("\n"));
+                    }
+                }
+            }
+            let footer = if lines.len() > page_size {
+                "  n=next page, p=previous, enter=return: "
+            } else {
+                "  Press enter to return..."
+            };
+            let _ = execute!(out, Print(footer));
+            let _ = out.flush();
+            match Self::read_line("").trim() {
+                "n" if end < lines.len() => page += 1,
+                "n" => {}
+                "p" => page = page.saturating_sub(1),
+                _ => return,
             }
         }
-        let _ = execute!(out, Print("\n  Press enter to return..."));
-        let _ = out.flush();
-        let _ = Self::read_line("");
+    }
+
+    fn show_log(log: &[String]) {
+        let lines: Vec<InfoLine> = if log.is_empty() {
+            vec![InfoLine::Plain("  (no events yet)".into())]
+        } else {
+            log.iter().map(|e| InfoLine::Dim(format!("  {e}"))).collect()
+        };
+        // Open on the final page: the most recent events are what a player
+        // pressing `l` mid-game is usually after.
+        Self::show_paged_lines(" GAME LOG", &lines, true);
     }
 
     fn show_deck_browser(view: &GameView) {
@@ -2168,11 +2244,9 @@ impl CliPlayer {
             + exile_counts.values().sum::<usize>()
             + lib_counts.values().sum::<usize>();
 
+        let mut page = 0usize;
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-            Self::print_colored(&mut out, Color::Cyan,
-                &format!(" YOUR DECK ({total_cards} cards)"));
-            let _ = execute!(out, Print("\n"));
 
             let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
             for name in &all_names {
@@ -2186,7 +2260,22 @@ impl CliPlayer {
 
             let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter().collect();
 
-            for (i, data) in deck_cards.iter().enumerate() {
+            // Clamp to the terminal height and page — an unclamped list
+            // scrolled the header and the first entries off the top with
+            // no way to reach them (issue #102).
+            let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
+            let (start, end, page_size) = Self::page_window(deck_cards.len(), h, page);
+            page = start / page_size;
+            let heading = if deck_cards.len() > page_size {
+                format!(" YOUR DECK ({total_cards} cards, showing {}-{} of {} entries)",
+                    start + 1, end, deck_cards.len())
+            } else {
+                format!(" YOUR DECK ({total_cards} cards)")
+            };
+            Self::print_colored(&mut out, Color::Cyan, &heading);
+            let _ = execute!(out, Print("\n"));
+
+            for (i, data) in deck_cards.iter().enumerate().take(end).skip(start) {
                 let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                 let pt = match (data.power, data.toughness) {
                     (Some(p), Some(t)) => format!(" {p}/{t}"),
@@ -2214,11 +2303,22 @@ impl CliPlayer {
                     Print(format!(": {}x {}{}{}{}\n", total, data.name, cost, pt, loc_str)));
             }
 
-            let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
+            let footer = if deck_cards.len() > page_size {
+                "\n  Enter number for details, n=next page, p=previous, enter=return: "
+            } else {
+                "\n  Enter number for details, or press enter to return: "
+            };
+            let _ = execute!(out, Print(footer));
             let _ = out.flush();
             let input = Self::read_line("");
 
             if input.is_empty() { return; }
+            match input.trim() {
+                "n" if end < deck_cards.len() => { page += 1; continue; }
+                "n" => continue,
+                "p" => { page = page.saturating_sub(1); continue; }
+                _ => {}
+            }
 
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < deck_cards.len() {
@@ -3238,18 +3338,12 @@ impl Player for CliPlayer {
             // Keyboard shortcuts
             match input.as_str() {
                 "g" => {
-                    let mut out = stdout();
-                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-                    Self::print_colored(&mut out, Color::Cyan, " GRAVEYARDS");
-                    let _ = execute!(out, Print("\n"));
+                    let mut lines: Vec<InfoLine> = Vec::new();
                     for (pid, cards) in &view.graveyards {
                         let who = if *pid == view.you { "Your" } else { "Opponent's" };
-                        let _ = execute!(out,
-                            SetAttribute(Attribute::Bold),
-                            Print(format!(" {} graveyard ({}):\n", who, cards.len())),
-                            SetAttribute(Attribute::Reset));
+                        lines.push(InfoLine::Bold(format!(" {} graveyard ({}):", who, cards.len())));
                         if cards.is_empty() {
-                            let _ = execute!(out, Print("   (empty)\n"));
+                            lines.push(InfoLine::Plain("   (empty)".into()));
                         } else {
                             for card in cards {
                                 let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
@@ -3257,59 +3351,35 @@ impl Player for CliPlayer {
                                     (Some(p), Some(t)) => format!(" {p}/{t}"),
                                     _ => String::new(),
                                 };
-                                let _ = execute!(out, Print("   "));
-                                Self::print_with_mana(&mut out, &format!("{}{}{}", card.name, cost, pt), None);
-                                let _ = execute!(out, Print("\n"));
+                                lines.push(InfoLine::Mana(format!("{}{}{}", card.name, cost, pt)));
                             }
                         }
-                        let _ = execute!(out, Print("\n"));
+                        lines.push(InfoLine::Plain(String::new()));
                     }
-                    let _ = execute!(out, Print("  Press enter to return..."));
-                    let _ = out.flush();
-                    let _ = Self::read_line("");
+                    Self::show_paged_lines(" GRAVEYARDS", &lines, false);
                     continue;
                 }
                 "e" => {
-                    let mut out = stdout();
-                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-                    Self::print_colored(&mut out, Color::Cyan, " EXILE");
-                    let _ = execute!(out, Print("\n"));
+                    let mut lines: Vec<InfoLine> = Vec::new();
                     let your_exile: Vec<_> = view.exile.iter().filter(|c| c.owner == view.you).collect();
                     let opp_exile: Vec<_> = view.exile.iter().filter(|c| c.owner != view.you).collect();
-                    let _ = execute!(out, SetAttribute(Attribute::Bold),
-                        Print(format!(" Your exile ({}):\n", your_exile.len())),
-                        SetAttribute(Attribute::Reset));
-                    if your_exile.is_empty() {
-                        let _ = execute!(out, Print("   (empty)\n"));
-                    } else {
-                        for card in &your_exile {
-                            let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                            let pt = match (card.power, card.toughness) {
-                                (Some(p), Some(t)) => format!(" {p}/{t}"),
-                                _ => String::new(),
-                            };
-                            let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
+                    for (who, cards) in [("Your", &your_exile), ("Opponent's", &opp_exile)] {
+                        lines.push(InfoLine::Bold(format!(" {} exile ({}):", who, cards.len())));
+                        if cards.is_empty() {
+                            lines.push(InfoLine::Plain("   (empty)".into()));
+                        } else {
+                            for card in cards.iter() {
+                                let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+                                let pt = match (card.power, card.toughness) {
+                                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                                    _ => String::new(),
+                                };
+                                lines.push(InfoLine::Plain(format!("   {}{}{}", card.name, cost, pt)));
+                            }
                         }
+                        lines.push(InfoLine::Plain(String::new()));
                     }
-                    let _ = execute!(out, Print("\n"));
-                    let _ = execute!(out, SetAttribute(Attribute::Bold),
-                        Print(format!(" Opponent's exile ({}):\n", opp_exile.len())),
-                        SetAttribute(Attribute::Reset));
-                    if opp_exile.is_empty() {
-                        let _ = execute!(out, Print("   (empty)\n"));
-                    } else {
-                        for card in &opp_exile {
-                            let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                            let pt = match (card.power, card.toughness) {
-                                (Some(p), Some(t)) => format!(" {p}/{t}"),
-                                _ => String::new(),
-                            };
-                            let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
-                        }
-                    }
-                    let _ = execute!(out, Print("\n  Press enter to return..."));
-                    let _ = out.flush();
-                    let _ = Self::read_line("");
+                    Self::show_paged_lines(" EXILE", &lines, false);
                     continue;
                 }
                 "i" => {
@@ -3616,6 +3686,30 @@ mod tests {
         let v = view(Step::PrecombatMain, 6, true);
         let l = pass_concede_plus(vec![cast(4)]);
         assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_some());
+    }
+
+    // Issues #101/#102: the info views clamp to the terminal height and
+    // page instead of silently truncating (l) or scrolling off the top
+    // (g/e/d). page_window is the shared arithmetic.
+    #[test]
+    fn page_window_clamps_and_pages() {
+        // 1086 log entries on a 50-row terminal: 46 visible per page.
+        let (start, end, size) = CliPlayer::page_window(1086, 50, 0);
+        assert_eq!((start, end, size), (0, 46, 46));
+        // The last page holds the remainder, not a full page.
+        let last_page = (1086 - 1) / 46;
+        let (start, end, _) = CliPlayer::page_window(1086, 50, last_page);
+        assert_eq!(end, 1086);
+        assert!(end - start <= 46 && start < end);
+        // A page past the end clamps to the last page.
+        let (s2, e2, _) = CliPlayer::page_window(1086, 50, last_page + 7);
+        assert_eq!((s2, e2), (start, end));
+        // Shorter than a page: everything visible, no paging needed.
+        assert_eq!(CliPlayer::page_window(10, 24, 0), (0, 10, 20));
+        // Degenerate terminal heights never yield a zero page size.
+        assert_eq!(CliPlayer::page_window(5, 3, 0).2, 1);
+        // Empty list stays empty without panicking.
+        assert_eq!(CliPlayer::page_window(0, 24, 0), (0, 0, 20));
     }
 
     // Issue #100: land targets carry the same (your)/(opp) marker as every
