@@ -1614,6 +1614,23 @@ impl CliPlayer {
         })
     }
 
+    /// Append the object id to labels that render identically for DIFFERENT
+    /// objects: two identical tokens in a picker decided whether an Aura on
+    /// the stack would fizzle, with nothing on screen telling them apart
+    /// (issue #136).
+    fn disambiguate_target_labels(labels: &mut [String], options: &[mtg_engine::actions::Target]) {
+        let dup: Vec<bool> = labels.iter()
+            .map(|l| labels.iter().filter(|x| *x == l).count() > 1)
+            .collect();
+        for (k, t) in options.iter().enumerate() {
+            if k < labels.len() && dup[k] {
+                if let mtg_engine::actions::Target::Object(id) = t {
+                    labels[k] = format!("{} (#{})", labels[k], id.0);
+                }
+            }
+        }
+    }
+
     /// Prompt the user to pick one target from a list. Returns None on cancel.
     fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
         let mut labels: Vec<String> = options.iter().map(|t| match t {
@@ -1623,6 +1640,7 @@ impl CliPlayer {
             }
             mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
         }).collect();
+        Self::disambiguate_target_labels(&mut labels, options);
         labels.push("Cancel".into());
 
         let mut notice: Option<String> = None;
@@ -1669,6 +1687,7 @@ impl CliPlayer {
             }
             mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
         }).collect();
+        Self::disambiguate_target_labels(&mut labels, options);
         labels.push("Done (cast with targets chosen so far)".into());
         labels.push("Cancel the cast".into());
 
@@ -1711,6 +1730,7 @@ impl CliPlayer {
             }
             mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
         }).collect();
+        Self::disambiguate_target_labels(&mut labels, options);
         labels.push("Done".into());
 
         let mut notice: Option<String> = None;
@@ -3863,6 +3883,26 @@ impl Player for CliPlayer {
         if let Some((action_idx, label)) = deferred_concede {
             display.push(DisplayEntry::Direct(action_idx));
             display_labels.push(label);
+        }
+
+        // Two choice options that render identically but are different game
+        // objects must be tellable apart — two identical tokens in the
+        // sacrifice picker decided whether an Aura on the stack would fizzle
+        // (issue #136). Repeated labels for object choices get the id.
+        {
+            let dup: Vec<bool> = display_labels.iter()
+                .map(|l| display_labels.iter().filter(|x| *x == l).count() > 1)
+                .collect();
+            for (k, entry) in display.iter().enumerate() {
+                if !dup[k] { continue; }
+                let DisplayEntry::Direct(i) = entry else { continue };
+                if let Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                        Some(mtg_engine::actions::Target::Object(id))),
+                } = &legal_actions[*i] {
+                    display_labels[k] = format!("{} (#{})", display_labels[k], id.0);
+                }
+            }
         }
 
         // Issue #71: a decision of a different identity (seat or prompt
