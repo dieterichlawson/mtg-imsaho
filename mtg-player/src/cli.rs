@@ -1433,7 +1433,7 @@ impl CliPlayer {
 
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
-    fn run_card_search(&mut self, view: &GameView, actions: &[String]) {
+    fn run_card_search(view: &GameView, actions: &[String]) {
         // The search box is part of the right panel, which is only drawn at
         // >= 100 columns. Entering search mode on a narrower terminal showed
         // nothing at all and silently swallowed every keystroke until an
@@ -1450,11 +1450,14 @@ impl CliPlayer {
         // prompt (issue #106; same hardening as read_line, #50).
         let _ = execute!(stdout(), event::EnableBracketedPaste);
 
-        self.card_filter.clear();
+        // The filter is scratch state for this one search (it was cleared on
+        // entry and exit as a field too) — local, so the search is callable
+        // from static prompts like the target choosers (issue #122).
+        let mut card_filter = String::new();
 
         loop {
             // Re-render with current filter
-            Self::render(view, Some(actions), None, &view.display_log, &self.card_filter, None);
+            Self::render(view, Some(actions), None, &view.display_log, &card_filter, None);
 
             // Move actual cursor to the search box in the right gutter
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1462,7 +1465,7 @@ impl CliPlayer {
             let gutter_w = w / 5;
             let mid_w = w.saturating_sub(gutter_w * 2 + 2);
             let right_col = u16::try_from(gutter_w + 1 + mid_w + 1).unwrap_or(u16::MAX);
-            let cursor_x = right_col + 2 + u16::try_from(self.card_filter.chars().count()).unwrap_or(u16::MAX);
+            let cursor_x = right_col + 2 + u16::try_from(card_filter.chars().count()).unwrap_or(u16::MAX);
             let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
             let _ = stdout().flush();
 
@@ -1472,13 +1475,13 @@ impl CliPlayer {
             // and its newlines never act as Enter (issue #106).
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                self.card_filter.push_str(first);
+                card_filter.push_str(first);
                 continue;
             }
             if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
                 match code {
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char('/') => {
-                        self.card_filter.clear();
+                        card_filter.clear();
                         break;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1487,12 +1490,12 @@ impl CliPlayer {
                         std::process::exit(0);
                     }
                     KeyCode::Backspace => {
-                        self.card_filter.pop();
+                        card_filter.pop();
                     }
                     // A chord the UI doesn't bind (Ctrl-A, Alt-x, ...) is
                     // ignored, never inserted as its bare character (#51).
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                        self.card_filter.push(c);
+                        card_filter.push(c);
                     }
                     _ => {}
                 }
@@ -1615,16 +1618,35 @@ impl CliPlayer {
         }).collect();
         labels.push("Cancel".into());
 
+        let mut notice: Option<String> = None;
         loop {
-            Self::render(view, Some(&labels), Some(label), &view.display_log, "", None);
+            let title = notice.take().map_or_else(|| label.to_string(),
+                |n| format!("{n} — {label}"));
+            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
             let input = Self::read_line("");
             if input.is_empty() { return None; }
+            // Info panes + card search — advertised by the hint line but
+            // dead here until issue #122: a player wants their graveyard
+            // exactly when choosing a target.
+            match input.as_str() {
+                "l" => { Self::show_log(&view.display_log); continue; }
+                "g" => { Self::show_graveyards(view); continue; }
+                "e" => { Self::show_exile(view); continue; }
+                "d" => { Self::show_deck_browser(view); continue; }
+                "i" => { Self::show_battlefield_inspector(view); continue; }
+                "/" => { Self::run_card_search(view, &labels); continue; }
+                _ => {}
+            }
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < options.len() {
                     return Some(options[idx].clone());
                 }
                 if idx == options.len() { return None; }
             }
+            // A silent re-render is indistinguishable from a hung game —
+            // same rule as the main menu (#76, issue #122).
+            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
+                input, labels.len() - 1));
         }
     }
 
@@ -1643,10 +1665,25 @@ impl CliPlayer {
         labels.push("Done (cast with targets chosen so far)".into());
         labels.push("Cancel the cast".into());
 
+        let mut notice: Option<String> = None;
         loop {
-            Self::render(view, Some(&labels), Some(label), &view.display_log, "", None);
+            let title = notice.take().map_or_else(|| label.to_string(),
+                |n| format!("{n} — {label}"));
+            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
             let input = Self::read_line("");
             if input.is_empty() { return UpToPick::Done; }
+            // Info panes + card search — advertised by the hint line but
+            // dead here until issue #122: a player wants their graveyard
+            // exactly when choosing a target.
+            match input.as_str() {
+                "l" => { Self::show_log(&view.display_log); continue; }
+                "g" => { Self::show_graveyards(view); continue; }
+                "e" => { Self::show_exile(view); continue; }
+                "d" => { Self::show_deck_browser(view); continue; }
+                "i" => { Self::show_battlefield_inspector(view); continue; }
+                "/" => { Self::run_card_search(view, &labels); continue; }
+                _ => {}
+            }
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < options.len() {
                     return UpToPick::Pick(options[idx].clone());
@@ -1654,6 +1691,8 @@ impl CliPlayer {
                 if idx == options.len() { return UpToPick::Done; }
                 if idx == options.len() + 1 { return UpToPick::Cancel; }
             }
+            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
+                input, labels.len() - 1));
         }
     }
 
@@ -1667,16 +1706,31 @@ impl CliPlayer {
         }).collect();
         labels.push("Done".into());
 
+        let mut notice: Option<String> = None;
         loop {
-            Self::render(view, Some(&labels), Some(label), &view.display_log, "", None);
+            let title = notice.take().map_or_else(|| label.to_string(),
+                |n| format!("{n} — {label}"));
+            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
             let input = Self::read_line("");
             if input.is_empty() { return None; }
+            // Info panes + card search (issue #122), as in prompt_target.
+            match input.as_str() {
+                "l" => { Self::show_log(&view.display_log); continue; }
+                "g" => { Self::show_graveyards(view); continue; }
+                "e" => { Self::show_exile(view); continue; }
+                "d" => { Self::show_deck_browser(view); continue; }
+                "i" => { Self::show_battlefield_inspector(view); continue; }
+                "/" => { Self::run_card_search(view, &labels); continue; }
+                _ => {}
+            }
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < options.len() {
                     return Some(options[idx].clone());
                 }
                 if idx == options.len() { return None; }
             }
+            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
+                input, labels.len() - 1));
         }
     }
 
@@ -3773,7 +3827,7 @@ impl Player for CliPlayer {
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {
-                self.run_card_search(view, &display_labels);
+                Self::run_card_search(view, &display_labels);
                 continue;
             }
             let input = input.unwrap();
