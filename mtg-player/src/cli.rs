@@ -1126,7 +1126,12 @@ impl CliPlayer {
                         Some(_) => " [enchanting opponent]".to_string(),
                         None => String::new(),
                     };
-                    format!("{}{}{}", e.name, host,
+                    // The chosen name is the permanent's whole identity
+                    // (Nevermore) and is public information (issue #130).
+                    let named = e.named_card.as_ref()
+                        .map(|n| format!(" [names: {n}]"))
+                        .unwrap_or_default();
+                    format!("{}{}{}{}", e.name, host, named,
                         CliPlayer::counters_suffix(&e.counters))
                 })
                 .collect();
@@ -4261,6 +4266,7 @@ mod tests {
             counters: HashMap::new(),
             loyalty_abilities: vec![],
             mana_abilities: vec![],
+            named_card: None,
         };
         let mut v = view(Step::PrecombatMain, 5, true);
         v.battlefield = vec![land(10, 0), land(11, 1)];

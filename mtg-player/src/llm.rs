@@ -1561,6 +1561,11 @@ impl LlmPlayer {
             if o.attached_to.is_some() { continue; } // skip auras, shown with creature
             let mut flag_parts: Vec<String> = Vec::new();
             if o.tapped { flag_parts.push("T".into()); }
+            // The chosen name is the permanent's whole identity (Nevermore's
+            // ban) — without it a spell just vanishes from the menu (#130).
+            if let Some(n) = &o.named_card {
+                flag_parts.push(format!("names: {n}"));
+            }
             if let Some(suffix) = Self::format_counters(&o.counters) {
                 flag_parts.push(suffix);
             }
@@ -3351,6 +3356,7 @@ mod tests {
             counters: HashMap::new(),
             loyalty_abilities: vec![],
             mana_abilities: vec![],
+            named_card: None,
         }
     }
 
@@ -3376,6 +3382,7 @@ mod tests {
             counters: HashMap::new(),
             loyalty_abilities: vec![],
             mana_abilities: vec![],
+            named_card: None,
         }
     }
 

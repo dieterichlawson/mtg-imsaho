@@ -90,6 +90,11 @@ pub struct PermanentView {
     /// NAME the mana an entry produces — a dual land rendered as two
     /// byte-identical "Tap ... for mana" rows, a filter land as six (#118).
     pub mana_abilities: Vec<(usize, String)>,
+    /// The card name this permanent chose as it entered (Nevermore's ban,
+    /// CR 201.4). Public information that had no way onto the screen: the
+    /// battlefield row was just "Nevermore", and the only symptom of the
+    /// ban was a spell silently missing from the cast menu (issue #130).
+    pub named_card: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -192,6 +197,13 @@ impl GameView {
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),
                     counters: obj.counters.clone(),
+                    named_card: obj.instance_continuous_effects.as_ref().and_then(|effs| {
+                        effs.iter().find_map(|e| match e {
+                            crate::types::ContinuousEffect::PreventCastingNamed { name } =>
+                                Some(name.clone()),
+                            _ => None,
+                        })
+                    }),
                     mana_abilities: registry.get(obj.card_id)
                         .map(|b| b.mana_abilities(state, obj.id).iter()
                             .map(|ab| (ab.ability_index, ab.description.clone()))
