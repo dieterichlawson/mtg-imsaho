@@ -29,6 +29,20 @@ impl CardBehavior for NightTerrors {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         if let Some(Target::Player(target_player)) = targets.first() {
+            // "Target player reveals their hand" — the WHOLE hand becomes
+            // public to every player (CR 701.16a), lands included, and the
+            // log records what was shown. Only the selection below is
+            // restricted to nonland cards; the reveal used to show nothing
+            // but the choosable ones (issue #133).
+            let revealed: Vec<String> = state.objects_in_zone(Zone::Hand, *target_player)
+                .iter()
+                .map(|o| state.name_of(o.id, registry))
+                .collect();
+            state.log(crate::state::LogLevel::Event, format!(
+                "Night Terrors: p{} reveals hand: {}",
+                target_player.0,
+                if revealed.is_empty() { "(empty)".into() } else { revealed.join(", ") }));
+
             // Reveal target player's hand — find all nonland cards.
             let nonland_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()

@@ -515,6 +515,28 @@ fn night_terrors_takes_the_nonland_and_leaves_the_land() {
     assert_eq!(state.get_object(forest).unwrap().zone, Zone::Hand, "the land is not");
 }
 
+/// "Reveals their hand" makes the WHOLE hand public (CR 701.16a) — lands
+/// included — and the log records what was shown. The reveal used to
+/// surface only the choosable nonland cards (issue #133).
+#[test]
+fn night_terrors_reveal_records_the_whole_hand_including_lands() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let _forest = spell_in_hand(&mut state, &reg, "Forest", P1);
+
+    let terrors = castable_spell(&mut state, &reg, "Night Terrors", P0);
+    let state = cast_and_resolve(&state, &reg, terrors, vec![Target::Player(P1)]);
+
+    let reveal = state.game_log.iter()
+        .find(|e| e.message.starts_with("Night Terrors: p1 reveals hand:"))
+        .map(|e| e.message.clone())
+        .expect("the reveal is recorded in the log");
+    assert!(reveal.contains("Grizzly Bears") && reveal.contains("Forest"),
+        "the whole hand is shown, land included: {reveal}");
+}
+
 /// A hand of nothing but lands: the spell resolves and takes nothing.
 #[test]
 fn night_terrors_takes_nothing_from_a_hand_of_lands() {
