@@ -3499,6 +3499,14 @@ impl CliPlayer {
             let start = selected.saturating_sub(max_list / 2);
             let visible: Vec<_> = filtered.iter().enumerate().skip(start).take(max_list).collect();
 
+            // An empty result on a mandatory prompt must say so — a blank
+            // list with "Enter to select" read as a hung game (issue #124).
+            if filtered.is_empty() && !filter.is_empty() {
+                let _ = execute!(out, SetForegroundColor(Color::Yellow),
+                    Print(format!("  No cards match '{shown}' — press Esc or Backspace to clear the filter.\n\r")),
+                    ResetColor);
+            }
+
             for (i, card) in &visible {
                 if *i == selected {
                     let _ = execute!(out, SetForegroundColor(Color::Black),
@@ -3533,10 +3541,14 @@ impl CliPlayer {
 
             let _ = execute!(out, Print("\n\r"),
                 SetForegroundColor(Color::DarkGrey),
-                Print(if decline.is_some() {
-                    "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc = take nothing"
-                } else {
-                    "↑↓ navigate  |  type to filter  |  Enter to select"
+                Print(match (decline.is_some(), filtered.is_empty() && !filter.is_empty()) {
+                    // The footer names the way out — Esc/Backspace were
+                    // undiscoverable exactly when the list was empty (#124).
+                    (_, true) => "no matches  |  Esc or Backspace clears the filter",
+                    (true, false) =>
+                        "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc (empty filter) = take nothing",
+                    (false, false) =>
+                        "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc = clear filter",
                 }),
                 ResetColor, Print("\n\r"));
             let _ = out.flush();
