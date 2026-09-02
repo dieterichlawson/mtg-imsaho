@@ -2402,6 +2402,54 @@ impl CliPlayer {
         }
     }
 
+    /// Full-screen graveyards view, shared by the menu's `g` shortcut and
+    /// the combat prompts (issue #120).
+    fn show_graveyards(view: &GameView) {
+        let mut lines: Vec<InfoLine> = Vec::new();
+        for (pid, cards) in &view.graveyards {
+            let who = if *pid == view.you { "Your" } else { "Opponent's" };
+            lines.push(InfoLine::Bold(format!(" {} graveyard ({}):", who, cards.len())));
+            if cards.is_empty() {
+                lines.push(InfoLine::Plain("   (empty)".into()));
+            } else {
+                for card in cards {
+                    let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+                    let pt = match (card.power, card.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    lines.push(InfoLine::Mana(format!("{}{}{}", card.name, cost, pt)));
+                }
+            }
+            lines.push(InfoLine::Plain(String::new()));
+        }
+        Self::show_paged_lines(" GRAVEYARDS", &lines, false);
+    }
+
+    /// Full-screen exile view, shared like `show_graveyards` (issue #120).
+    fn show_exile(view: &GameView) {
+        let mut lines: Vec<InfoLine> = Vec::new();
+        let your_exile: Vec<_> = view.exile.iter().filter(|c| c.owner == view.you).collect();
+        let opp_exile: Vec<_> = view.exile.iter().filter(|c| c.owner != view.you).collect();
+        for (who, cards) in [("Your", &your_exile), ("Opponent's", &opp_exile)] {
+            lines.push(InfoLine::Bold(format!(" {} exile ({}):", who, cards.len())));
+            if cards.is_empty() {
+                lines.push(InfoLine::Plain("   (empty)".into()));
+            } else {
+                for card in cards.iter() {
+                    let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+                    let pt = match (card.power, card.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    lines.push(InfoLine::Plain(format!("   {}{}{}", card.name, cost, pt)));
+                }
+            }
+            lines.push(InfoLine::Plain(String::new()));
+        }
+        Self::show_paged_lines(" EXILE", &lines, false);
+    }
+
     fn show_log(log: &[String]) {
         let lines: Vec<InfoLine> = if log.is_empty() {
             vec![InfoLine::Plain("  (no events yet)".into())]
@@ -2618,46 +2666,58 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
-
-        // Get mid_col for positioning — action area starts where cursor was left
+        // Layout is computed once; `draw` repaints the whole prompt screen,
+        // so the info panes can be offered here and the view restored after
+        // one is closed (issue #120).
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-        let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
-        let mut out = stdout();
-        let mut r = cur_row;
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-            Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
-        r += 1;
-        for (i, &id) in eligible.iter().enumerate() {
-            let forced = must_attack.contains(&id);
-            let tag = if forced { " [MUST ATTACK]" } else { "" };
-            let color = if forced { Color::Red } else { Color::Reset };
+        let draw = || -> u16 {
+            Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
+            let mut out = stdout();
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
             let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                SetAttribute(Attribute::Reset),
-                Print(format!(": {}", Self::perm_name(view, id))),
-                SetForegroundColor(color), Print(tag), ResetColor);
+                SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+                Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-        }
-        if !defending_planeswalkers.is_empty() {
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetForegroundColor(Color::Yellow),
-                Print(" Attackable planeswalkers (use N>pwM):"), ResetColor);
-            r += 1;
-            for (i, &id) in defending_planeswalkers.iter().enumerate() {
+            for (i, &id) in eligible.iter().enumerate() {
+                let forced = must_attack.contains(&id);
+                let tag = if forced { " [MUST ATTACK]" } else { "" };
+                let color = if forced { Color::Red } else { Color::Reset };
                 let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Bold), Print(format!("  pw{i}")),
+                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}", Self::perm_name(view, id))));
+                    Print(format!(": {}", Self::perm_name(view, id))),
+                    SetForegroundColor(color), Print(tag), ResetColor);
                 r += 1;
             }
-        }
-        let _ = execute!(out, cursor::MoveTo(col, r));
-        let _ = out.flush();
+            if !defending_planeswalkers.is_empty() {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetForegroundColor(Color::Yellow),
+                    Print(" Attackable planeswalkers (use N>pwM):"), ResetColor);
+                r += 1;
+                for (i, &id) in defending_planeswalkers.iter().enumerate() {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Bold), Print(format!("  pw{i}")),
+                        SetAttribute(Attribute::Reset),
+                        Print(format!(": {}", Self::perm_name(view, id))));
+                    r += 1;
+                }
+            }
+            // The public zones are decision inputs during combat (CR 404.2,
+            // 406.3), so the info panes are advertised and accepted here as
+            // at every other prompt (issue #120).
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetAttribute(Attribute::Dim),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect]"),
+                SetAttribute(Attribute::Reset));
+            r += 1;
+            let _ = execute!(out, cursor::MoveTo(col, r));
+            let _ = out.flush();
+            r
+        };
+        let mut r = draw();
 
         // CR 508.1d: a declaration that leaves out a creature required and
         // able to attack is illegal — refuse it here, loudly, the way the
@@ -2682,7 +2742,7 @@ impl CliPlayer {
         // merged with its text into garbage (issue #110).
         let w = term_w as usize;
         let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
-        let show_error = |msg: &str| {
+        let show_error = |msg: &str, r: u16| {
             let clipped: String = msg.chars().take(mid_w).collect();
             let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
                 SetForegroundColor(Color::Red), Print(clipped), ResetColor);
@@ -2698,6 +2758,16 @@ impl CliPlayer {
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Attack (numbers/all/none, enter=none)> ");
 
+            // Info panes (issue #120): show, then repaint this prompt.
+            match input.as_str() {
+                "l" => { Self::show_log(&view.display_log); r = draw(); continue; }
+                "g" => { Self::show_graveyards(view); r = draw(); continue; }
+                "e" => { Self::show_exile(view); r = draw(); continue; }
+                "d" => { Self::show_deck_browser(view); r = draw(); continue; }
+                "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
+                _ => {}
+            }
+
             // Bare Enter means "do nothing" — here as at every other prompt
             // ([enter=pass] at the menu, enter=none at blockers). It used to
             // mean "all": the one prompt where the universal idle key took
@@ -2707,7 +2777,7 @@ impl CliPlayer {
             // attackers is always legal (must-attack is enforced below).
             if input.is_empty() || input == "none" || input == "n" {
                 if !must_attack.is_empty() {
-                    show_error(&forced_error(&must_attack.iter().copied().collect::<Vec<_>>()));
+                    show_error(&forced_error(&must_attack.iter().copied().collect::<Vec<_>>()), r);
                     continue;
                 }
                 return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
@@ -2751,7 +2821,7 @@ impl CliPlayer {
                 let before_dedup = listed.len();
                 listed.dedup();
                 if listed.len() != before_dedup {
-                    show_error("  Duplicate attacker index: list each creature at most once.");
+                    show_error("  Duplicate attacker index: list each creature at most once.", r);
                     continue;
                 }
                 let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len())
@@ -2764,7 +2834,7 @@ impl CliPlayer {
                         .collect();
                     let missing = missing_forced(&chosen);
                     if !missing.is_empty() {
-                        show_error(&forced_error(&missing));
+                        show_error(&forced_error(&missing), r);
                         continue;
                     }
                     return Action::DeclareAttackers {
@@ -2776,9 +2846,9 @@ impl CliPlayer {
                 }
                 show_error(&format!("  Invalid attacker(s): {}. Valid range is 0-{}.",
                     bad.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "),
-                    eligible.len() - 1));
+                    eligible.len() - 1), r);
             } else {
-                show_error("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.");
+                show_error("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.", r);
             }
         }
     }
@@ -2792,62 +2862,94 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
-
-        // Get mid_col for positioning — action area starts where cursor was left
+        // Layout once; `draw` repaints the whole prompt screen so the info
+        // panes can be offered here too (issue #120).
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-        let cur_row = cursor::position().unwrap_or((0, 20)).1;
+        let w = term_w as usize;
+        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
 
-        let mut out = stdout();
-        let mut r = cur_row;
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
-            Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
-        r += 1;
-        for (i, &id) in attacker_ids.iter().enumerate() {
-            // CR 509.1b: say the minimum-blockers requirement (menace,
-            // Terror of Kruin Pass) up front — an unmarked menace attacker
-            // took a single block the engine then discarded (issue #72).
-            let note = min_blockers.get(&id)
-                .map(|min| format!(" [needs {min}+ blockers]"))
-                .unwrap_or_default();
+        let draw = || -> u16 {
+            Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
+            let mut out = stdout();
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
             let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
+                SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
+                Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-        }
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
-            Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
-        r += 1;
-        for (i, &id) in eligible_blockers.iter().enumerate() {
-            // Which attackers this creature may legally block (CR 509.1b —
-            // evasion like flying is per-pairing, so say it up front).
-            let legal: Vec<String> = legal_blocks.get(&id)
-                .map(|atts| attacker_ids.iter().enumerate()
-                    .filter(|(_, a)| atts.contains(a))
-                    .map(|(ai, _)| ai.to_string())
-                    .collect())
-                .unwrap_or_default();
-            let note = if legal.len() == attacker_ids.len() {
-                String::new()
-            } else if legal.is_empty() {
-                " (can block: none)".to_string()
-            } else {
-                format!(" (can block: {})", legal.join(" "))
-            };
+            for (i, &id) in attacker_ids.iter().enumerate() {
+                // CR 509.1b: say the minimum-blockers requirement (menace,
+                // Terror of Kruin Pass) up front — an unmarked menace attacker
+                // took a single block the engine then discarded (issue #72).
+                let note = min_blockers.get(&id)
+                    .map(|min| format!(" [needs {min}+ blockers]"))
+                    .unwrap_or_default();
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
+                r += 1;
+            }
             let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
+                SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
+                Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-        }
-        let _ = execute!(out, cursor::MoveTo(col, r));
-        let _ = out.flush();
+            for (i, &id) in eligible_blockers.iter().enumerate() {
+                // Which attackers this creature may legally block (CR 509.1b —
+                // evasion like flying is per-pairing, so say it up front).
+                let legal: Vec<String> = legal_blocks.get(&id)
+                    .map(|atts| attacker_ids.iter().enumerate()
+                        .filter(|(_, a)| atts.contains(a))
+                        .map(|(ai, _)| ai.to_string())
+                        .collect())
+                    .unwrap_or_default();
+                let note = if legal.len() == attacker_ids.len() {
+                    String::new()
+                } else if legal.is_empty() {
+                    " (can block: none)".to_string()
+                } else {
+                    format!(" (can block: {})", legal.join(" "))
+                };
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
+                r += 1;
+            }
+            // Blocking is exactly where the public zones are decision inputs
+            // (CR 404.2, 406.3) — advertise the info panes here (#120).
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetAttribute(Attribute::Dim),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect]"),
+                SetAttribute(Attribute::Reset));
+            r += 1;
+            let _ = execute!(out, cursor::MoveTo(col, r));
+            let _ = out.flush();
+            r
+        };
+        let mut r = draw();
+
+        // In-pane rejection rendering, as at the attack prompt (#110).
+        let show_error = |msg: &str, r: u16| {
+            let clipped: String = msg.chars().take(mid_w).collect();
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
+                SetForegroundColor(Color::Red), Print(clipped), ResetColor);
+            let _ = stdout().flush();
+            std::thread::sleep(std::time::Duration::from_millis(900));
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+        };
 
         loop {
             // Same stale-row clearing as the attack prompt (issue #35).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Block (blocker:attacker / enter=none)> ");
+
+            // Info panes (issue #120): show, then repaint this prompt.
+            match input.as_str() {
+                "l" => { Self::show_log(&view.display_log); r = draw(); continue; }
+                "g" => { Self::show_graveyards(view); r = draw(); continue; }
+                "e" => { Self::show_exile(view); r = draw(); continue; }
+                "d" => { Self::show_deck_browser(view); r = draw(); continue; }
+                "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
+                _ => {}
+            }
 
             // Same declining vocabulary as the attack prompt: a player who
             // just learned 'none' there will type it here (issue #117).
@@ -2917,7 +3019,9 @@ impl CliPlayer {
 
             match error {
                 None => return Action::DeclareBlockers { assignments },
-                Some(msg) => println!("  {msg}"),
+                // In-pane, not println! over the LOG panel (#110's fix,
+                // applied to the blocker prompt too).
+                Some(msg) => show_error(&format!("  {msg}"), r),
             }
         }
     }
@@ -3651,48 +3755,11 @@ impl Player for CliPlayer {
             // Keyboard shortcuts
             match input.as_str() {
                 "g" => {
-                    let mut lines: Vec<InfoLine> = Vec::new();
-                    for (pid, cards) in &view.graveyards {
-                        let who = if *pid == view.you { "Your" } else { "Opponent's" };
-                        lines.push(InfoLine::Bold(format!(" {} graveyard ({}):", who, cards.len())));
-                        if cards.is_empty() {
-                            lines.push(InfoLine::Plain("   (empty)".into()));
-                        } else {
-                            for card in cards {
-                                let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                                let pt = match (card.power, card.toughness) {
-                                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                                    _ => String::new(),
-                                };
-                                lines.push(InfoLine::Mana(format!("{}{}{}", card.name, cost, pt)));
-                            }
-                        }
-                        lines.push(InfoLine::Plain(String::new()));
-                    }
-                    Self::show_paged_lines(" GRAVEYARDS", &lines, false);
+                    Self::show_graveyards(view);
                     continue;
                 }
                 "e" => {
-                    let mut lines: Vec<InfoLine> = Vec::new();
-                    let your_exile: Vec<_> = view.exile.iter().filter(|c| c.owner == view.you).collect();
-                    let opp_exile: Vec<_> = view.exile.iter().filter(|c| c.owner != view.you).collect();
-                    for (who, cards) in [("Your", &your_exile), ("Opponent's", &opp_exile)] {
-                        lines.push(InfoLine::Bold(format!(" {} exile ({}):", who, cards.len())));
-                        if cards.is_empty() {
-                            lines.push(InfoLine::Plain("   (empty)".into()));
-                        } else {
-                            for card in cards.iter() {
-                                let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                                let pt = match (card.power, card.toughness) {
-                                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                                    _ => String::new(),
-                                };
-                                lines.push(InfoLine::Plain(format!("   {}{}{}", card.name, cost, pt)));
-                            }
-                        }
-                        lines.push(InfoLine::Plain(String::new()));
-                    }
-                    Self::show_paged_lines(" EXILE", &lines, false);
+                    Self::show_exile(view);
                     continue;
                 }
                 "i" => {
