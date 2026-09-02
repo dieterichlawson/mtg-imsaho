@@ -2059,25 +2059,12 @@ impl LlmPlayer {
     /// Divide permanents into two piles via per-permanent boolean choices.
     /// Used for effects like Liliana of the Veil -6 where a player divides
     /// permanents and the opponent chooses which pile to sacrifice.
-    fn choose_pile_division(&mut self, view: &GameView, legal_actions: &[Action], context: Option<&str>) -> Action {
+    fn choose_pile_division(&mut self, view: &GameView, permanents: &[mtg_engine::ids::ObjectId], context: Option<&str>) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
-        // Extract the permanent IDs from the first ChosenSubset that contains
-        // all permanents (the "everything in pile 1" option). We combine all
-        // IDs seen across all subsets to get the full set.
-        let mut all_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
-        for action in legal_actions {
-            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(ids) } = action {
-                for id in ids {
-                    if !all_ids.contains(id) {
-                        all_ids.push(*id);
-                    }
-                }
-            }
-        }
-
+        let all_ids: Vec<mtg_engine::ids::ObjectId> = permanents.to_vec();
         if all_ids.is_empty() {
-            return legal_actions[0].clone();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(vec![]) };
         }
 
         // Build prompt with permanent names
@@ -2136,27 +2123,7 @@ impl LlmPlayer {
         self.log("CHOSE", &format!("pile division: {} in pile 1, {} in pile 2",
             pile_1_ids.len(), all_ids.len() - pile_1_ids.len()));
 
-        // Find the matching ChosenSubset action
-        let chosen = legal_actions.iter()
-            .find(|a| {
-                if let Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(ids) } = a {
-                    let mut sorted_chosen = pile_1_ids.clone();
-                    sorted_chosen.sort();
-                    let mut sorted_ids = ids.clone();
-                    sorted_ids.sort();
-                    sorted_chosen == sorted_ids
-                } else {
-                    false
-                }
-            })
-            .cloned()
-            .unwrap_or_else(|| {
-                // Fallback: find closest match or use first action
-                self.log("WARN", "Pile division response didn't match any legal action, using fallback");
-                legal_actions[0].clone()
-            });
-
-        chosen
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(pile_1_ids) }
     }
 
     /// Handle a `ChooseExileFromGraveyard` resolution prompt.
@@ -2555,10 +2522,15 @@ impl Player for LlmPlayer {
             return self.choose_mulligan_bottom(view, legal_actions);
         }
 
-        // Pile division (e.g. Liliana of the Veil -6): intercept and present
-        // as per-permanent boolean choices instead of 2^N flat subset options.
-        if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenSubset(_) })) && legal_actions.len() > 2 {
-            return self.choose_pile_division(view, legal_actions, legal.context.as_deref());
+        // Pile division (e.g. Liliana of the Veil -6): structured prompt —
+        // the engine no longer enumerates the 2^N subsets (issue #142).
+        // Present per-permanent boolean choices and build the subset directly.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
+            permanents, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            let permanents = permanents.clone();
+            return self.choose_pile_division(view, &permanents, legal.context.as_deref());
         }
 
         // Auto-pass when there's nothing interesting to do. Logged at

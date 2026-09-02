@@ -2202,6 +2202,56 @@ fn liliana_minus_six_all_in_one_pile() {
 }
 
 #[test]
+fn liliana_minus_six_wide_board_prompt_is_structured() {
+    // Issue #142: enumerating every subset as a flat action list is 2^N
+    // actions — with ~36 permanents the legal-action query aborted trying to
+    // allocate a 64 GiB Vec. The pile division must be surfaced as a
+    // structured prompt (like ChooseXFunding), not enumerated.
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 9);
+    let creatures: Vec<_> = (0..40).map(|_| ready_creature(&mut state, P1, 2, 2)).collect();
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+
+    assert!(matches!(
+        state.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::DividePermanentsIntoPiles { .. }, ..
+        })
+    ));
+    // Before the fix this call attempted a 2^40-element Vec and aborted.
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(legal.actions.is_empty(), "structured prompt must not enumerate subsets");
+    let Some(ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. }) =
+        legal.resolution_prompt.as_ref() else {
+        panic!("Expected DividePermanentsIntoPiles resolution prompt");
+    };
+    assert_eq!(permanents.len(), 40);
+
+    // The structured answer still works end to end: split 20/20 and let P1
+    // sacrifice pile 1.
+    let pile_1: Vec<_> = creatures[..20].to_vec();
+    let mut state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenSubset(pile_1.clone()),
+    }, &reg);
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenIndex(0, "Option 0".into()),
+    }, &reg);
+    for &id in &pile_1 {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Graveyard);
+    }
+    for &id in &creatures[20..] {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Battlefield);
+    }
+}
+
+#[test]
 fn liliana_minus_six_can_target_self() {
     // -6 says "target player", so controller can target themselves.
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};

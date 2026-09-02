@@ -232,22 +232,14 @@ pub(crate) fn legal_actions_while_awaiting(
                         choice: ResolvedChoice::ChosenIndex(i, name.clone()),
                     })
                     .collect(),
-                ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. } => {
-                    // Generate all possible subsets of permanents (each subset = pile 1).
-                    // With N permanents there are 2^N subsets. This is fine for typical
-                    // board states (up to ~15 permanents = 32768 actions).
-                    let n = permanents.len();
-                    (0..(1u64 << n))
-                        .map(|mask| {
-                            let subset: Vec<ObjectId> = (0..n)
-                                .filter(|&i| mask & (1u64 << i) != 0)
-                                .map(|i| permanents[i])
-                                .collect();
-                            Action::ResolveChoice {
-                                choice: ResolvedChoice::ChosenSubset(subset),
-                            }
-                        })
-                        .collect()
+                ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => {
+                    // Structured prompt — enumerating every subset is 2^N
+                    // actions, which on a wide board is an out-of-memory
+                    // abort, not a menu (issue #142: 36 permanents asked for
+                    // a 64 GiB Vec). Players see the permanent list in
+                    // `resolution_prompt` and construct a ChosenSubset
+                    // directly; submit_action validates membership.
+                    vec![]
                 }
                 ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. } => {
                     let fmt_pile = |ids: &[ObjectId]| -> String {

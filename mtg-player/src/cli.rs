@@ -2692,6 +2692,85 @@ impl CliPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
     }
 
+    /// Ask the human to divide permanents into two piles (Liliana of the
+    /// Veil -6). Lists the permanents with indices; a space-separated list
+    /// picks pile 1 and the rest form pile 2. Empty input is a legal empty
+    /// pile 1. The engine no longer enumerates the 2^N subsets (issue #142),
+    /// so the subset is constructed here from the structured prompt.
+    fn prompt_pile_division(
+        view: &GameView,
+        permanents: &[mtg_engine::ids::ObjectId],
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+
+        Self::render(view, None, Some(description), &view.display_log, "", None);
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let side = term_w as usize / 5;
+        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
+        let w = term_w as usize;
+        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+        let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
+        let mut r = cursor::position().unwrap_or((0, 20)).1;
+        let mut out = stdout();
+
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Yellow),
+            Print(clip("  Pick the permanents for pile 1; the rest form pile 2.")),
+            ResetColor);
+        r += 1;
+        for (i, &id) in permanents.iter().enumerate() {
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetAttribute(Attribute::Bold), Print(format!("  {i}")),
+                SetAttribute(Attribute::Reset),
+                Print(clip(&format!(": {}", Self::perm_name(view, id)))));
+            r += 1;
+        }
+        let _ = execute!(out, cursor::MoveTo(col, r));
+        let _ = out.flush();
+
+        let hint = "  pile 1 indices (space-separated, blank = empty pile 1): ";
+        let mut error: Option<String> = None;
+        loop {
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = error.take() {
+                let _ = execute!(stdout(), Print(clip(&msg)));
+                let _ = stdout().flush();
+                std::thread::sleep(std::time::Duration::from_millis(700));
+                let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            }
+            let input = Self::read_line(hint);
+            let trimmed = input.trim();
+            let indices: Vec<usize> = if trimmed.is_empty() {
+                vec![]
+            } else {
+                let parsed: Result<Vec<usize>, _> = trimmed.split_whitespace()
+                    .map(str::parse::<usize>)
+                    .collect();
+                let Ok(v) = parsed else {
+                    error = Some("  Invalid input.".into());
+                    continue;
+                };
+                v
+            };
+            if indices.iter().any(|&i| i >= permanents.len()) {
+                error = Some("  Index out of range.".into());
+                continue;
+            }
+            let mut sorted = indices.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            if sorted.len() != indices.len() {
+                error = Some("  Duplicate indices.".into());
+                continue;
+            }
+            let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
+                .map(|i| permanents[i])
+                .collect();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(chosen) };
+        }
+    }
+
     /// Ask the human which graveyard cards to exile as an additional cost.
     /// Lists candidates with indices; accepts a space-separated list. Empty
     /// input picks the minimum subset (typically the first `min` options).
@@ -2970,6 +3049,14 @@ impl Player for CliPlayer {
         }) = legal.resolution_prompt.as_ref()
         {
             return Self::prompt_exile_from_graveyard(view, options, *min, *max, description);
+        }
+
+        // Pile division: prompt for the indices that form pile 1.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
+            permanents, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_pile_division(view, permanents, description);
         }
 
         // Special case: library search — show interactive card browser.

@@ -66,6 +66,21 @@ impl Player for RandomPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
         }
 
+        // Pile division (Liliana of the Veil -6): no enumerated actions —
+        // 2^N subsets don't fit in memory on a wide board. Flip a coin per
+        // permanent, mirroring the 50% conventions used for combat.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
+            permanents, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            use mtg_engine::actions::ResolvedChoice;
+            let chosen: Vec<mtg_engine::ids::ObjectId> = permanents.iter()
+                .filter(|_| self.rng.gen_bool(0.5))
+                .copied()
+                .collect();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(chosen) };
+        }
+
         // Deterministic mulligan policy: always keep the first hand, never
         // mulligan. For the bottom sub-phase (only reached via a forced keep
         // at the cap or if this player had previously mulliganed), pick the
