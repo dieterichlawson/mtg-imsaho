@@ -86,6 +86,10 @@ pub struct PermanentView {
     /// choosing — an index alone made two abilities on one walker render
     /// identically (#61). Empty for non-planeswalkers.
     pub loyalty_abilities: Vec<(usize, String)>,
+    /// Mana abilities as (ability_index, "Add {W}"). Exposed so the menu can
+    /// NAME the mana an entry produces — a dual land rendered as two
+    /// byte-identical "Tap ... for mana" rows, a filter land as six (#118).
+    pub mana_abilities: Vec<(usize, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -188,6 +192,11 @@ impl GameView {
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),
                     counters: obj.counters.clone(),
+                    mana_abilities: registry.get(obj.card_id)
+                        .map(|b| b.mana_abilities(state, obj.id).iter()
+                            .map(|ab| (ab.ability_index, ab.description.clone()))
+                            .collect())
+                        .unwrap_or_default(),
                     loyalty_abilities: registry.get(obj.card_id)
                         .map(|b| b.loyalty_abilities(state, obj.id).iter().map(|ab| {
                             let sign = if ab.loyalty_change > 0 {

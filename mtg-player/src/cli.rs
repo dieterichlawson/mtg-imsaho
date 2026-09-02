@@ -1791,8 +1791,20 @@ impl CliPlayer {
                     format!("Cast {} -> {}{}", name, target_names.join(", "), tap_suffix)
                 }
             }
-            Action::ActivateManaAbility { object_id, .. } =>
-                format!("Tap {} for mana", Self::perm_name(view, *object_id)),
+            Action::ActivateManaAbility { object_id, ability_index } => {
+                // Name the mana this entry makes: a dual land's two abilities
+                // rendered as byte-identical rows, a filter land's as six,
+                // with no way to choose a colour (issue #118).
+                let desc = view.battlefield.iter()
+                    .find(|p| p.object_id == *object_id)
+                    .and_then(|p| p.mana_abilities.iter()
+                        .find(|(i, _)| i == ability_index)
+                        .map(|(_, d)| d.clone()));
+                match desc {
+                    Some(d) => format!("Tap {}: {}", Self::perm_name(view, *object_id), d),
+                    None => format!("Tap {} for mana", Self::perm_name(view, *object_id)),
+                }
+            }
             Action::ActivateAbility { object_id, targets, .. } =>
                 format!("Activate ability: {}{}", Self::perm_name(view, *object_id),
                     Self::targets_suffix(view, targets)),
@@ -4055,6 +4067,7 @@ mod tests {
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
+            mana_abilities: vec![],
         };
         let mut v = view(Step::PrecombatMain, 5, true);
         v.battlefield = vec![land(10, 0), land(11, 1)];
