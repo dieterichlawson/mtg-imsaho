@@ -3197,7 +3197,7 @@ impl CliPlayer {
         }
     }
 
-    fn library_search_ui(view: &GameView, actions: &[Action], title: &str) -> Action {
+    fn library_search_ui(view: &GameView, actions: &[Action], title: &str, decline: Option<Action>) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
         // Collect card info for each option.
@@ -3329,7 +3329,11 @@ impl CliPlayer {
 
             let _ = execute!(out, Print("\n\r"),
                 SetForegroundColor(Color::DarkGrey),
-                Print("↑↓ navigate  |  type to filter  |  Enter to select"),
+                Print(if decline.is_some() {
+                    "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc = take nothing"
+                } else {
+                    "↑↓ navigate  |  type to filter  |  Enter to select"
+                }),
                 ResetColor, Print("\n\r"));
             let _ = out.flush();
 
@@ -3373,6 +3377,19 @@ impl CliPlayer {
                         selected = 0;
                     }
                     KeyCode::Esc => {
+                        // With an empty filter, Esc declines an optional
+                        // search ("you may search...", CR 701.19b) — the
+                        // decline entry that used to force this prompt into
+                        // a flat menu (issue #111). With text in the filter
+                        // it clears the filter first, as before.
+                        if filter.is_empty() {
+                            if let Some(decline_action) = decline {
+                                let _ = execute!(out, event::DisableBracketedPaste);
+                                tui_raw_off();
+                                let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+                                return decline_action;
+                            }
+                        }
                         filter.clear();
                         selected = 0;
                     }
@@ -3425,13 +3442,25 @@ impl Player for CliPlayer {
         if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. }))
             && legal_actions.len() > 1
         {
-            // Check if these are ChosenCard choices (library/revealed search).
+            // ChosenCard choices (library/revealed search). An OPTIONAL
+            // search (CR 701.19b: "you may search...") carries one trailing
+            // ChosenTarget(None) decline — that entry used to disqualify the
+            // browser and dump the most common kind of search as a flat
+            // numbered list (issue #111). The browser now takes the decline
+            // along and offers it on Esc.
+            let decline = legal_actions.iter().find(|a| matches!(a,
+                Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(None) }
+            )).cloned();
             let all_chosen_cards = legal_actions.iter().all(|a| matches!(a,
-                Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_) }
+                Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_)
+                        | mtg_engine::actions::ResolvedChoice::ChosenTarget(None)
+                }
             ));
-            if all_chosen_cards && legal_actions.len() > 3 {
+            let card_count = legal_actions.len() - usize::from(decline.is_some());
+            if all_chosen_cards && card_count > 3 {
                 let title = legal.context.as_deref().unwrap_or("Choose a card");
-                return Self::library_search_ui(view, legal_actions, title);
+                return Self::library_search_ui(view, legal_actions, title, decline);
             }
         }
 
