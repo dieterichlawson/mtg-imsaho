@@ -549,11 +549,30 @@ pub trait CardBehavior: Send + Sync {
     /// Used by Skaab Ruinator.
     fn can_cast_from_graveyard(&self) -> bool { false }
 
-    /// Dynamic power/toughness for cards whose P/T depends on game state.
-    /// Returns Some((power, toughness)) to override base P/T, or None for normal P/T.
-    /// Called by `effective_power/effective_toughness` during P/T computation.
-    /// Examples: Geist-Honored Monk (creatures you control), Wreath of Geists (creatures in graveyard).
+    /// Dynamic power/toughness for cards whose P/T is *defined* by a
+    /// characteristic-defining ability — "power and toughness are each
+    /// equal to ..." (CR 604.3). Returns Some((power, toughness)) to
+    /// override base P/T, or None for normal P/T. Called by
+    /// `effective_power/effective_toughness` in EVERY zone: a CDA
+    /// functions everywhere, so Geist-Honored Monk reads as an X/X in
+    /// hand too.
+    ///
+    /// This is only for genuine CDAs. A "gets +N/+N for each ..." static
+    /// ability *modifies* P/T (layer 7c) and works only on the
+    /// battlefield — implement [`self_static_pt_mod`](CardBehavior::self_static_pt_mod)
+    /// for those instead; routing one through here showed the buffed P/T
+    /// while the card was still in hand (issue #105).
     fn dynamic_pt(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
+        None
+    }
+
+    /// This card's own "gets +N/+N for each ..." static ability: a P/T
+    /// *modification* (layer 7c) added on top of printed P/T, counters and
+    /// the rest. Unlike [`dynamic_pt`](CardBehavior::dynamic_pt) it
+    /// applies only while the card is on the battlefield (CR 604.3 limits
+    /// non-CDA static abilities to the battlefield; a card in hand shows
+    /// its printed box, CR 208.1). Example: Scourge of Geier Reach.
+    fn self_static_pt_mod(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         None
     }
 

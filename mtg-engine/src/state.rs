@@ -1626,6 +1626,15 @@ impl GameState {
         let (p_mod, _) = self.continuous_pt_mods(id, registry);
         power += p_mod;
 
+        // The card's OWN "gets +N/+N for each ..." static ability — an
+        // ordinary layer-7c modification, so battlefield only, unlike the
+        // all-zone CDA dynamic_pt above (issue #105).
+        if let Some(behavior) = registry.get(obj.card_id) {
+            if let Some((p, _)) = behavior.self_static_pt_mod(self, id, registry) {
+                power += p;
+            }
+        }
+
         // +1/+1 and -1/-1 counter bonuses.
         power += i32::try_from(*obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0)).unwrap_or(i32::MAX);
         power -= i32::try_from(*obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0)).unwrap_or(i32::MAX);
@@ -1684,6 +1693,13 @@ impl GameState {
 
         let (_, t_mod) = self.continuous_pt_mods(id, registry);
         toughness += t_mod;
+
+        // Own "gets +N/+N for each ..." static ability — see effective_power.
+        if let Some(behavior) = registry.get(obj.card_id) {
+            if let Some((_, t)) = behavior.self_static_pt_mod(self, id, registry) {
+                toughness += t;
+            }
+        }
 
         // +1/+1 and -1/-1 counter bonuses.
         toughness += i32::try_from(*obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0)).unwrap_or(i32::MAX);

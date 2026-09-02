@@ -27,7 +27,7 @@ use mtg_engine::actions::Target;
 // ── Scourge of Geier Reach ──────────────────────────────────────
 
 /// "Scourge of Geier Reach gets +1/+1 for each creature your opponents
-/// control" — a characteristic-defining count that has to be recomputed as the
+/// control" — a static P/T modification that has to be recomputed as the
 /// board changes, and has to count the right half of the board.
 #[test]
 fn scourge_of_geier_reach_counts_only_opponents_creatures() {
@@ -52,6 +52,36 @@ fn scourge_of_geier_reach_counts_only_opponents_creatures() {
     // "each **creature**" — an opponent's land is not one.
     named_permanent(&mut state, &reg, "Forest", P1);
     assert_eq!(pt(&state), (5, 5), "an opponent's noncreature permanent is not counted");
+}
+
+/// "Gets +1/+1 for each ..." is a plain static ability, not a CDA, so it
+/// functions only on the battlefield (CR 604.3): in hand the card is its
+/// printed 3/3 whatever the board looks like. The hand panel used to show
+/// it growing with the opponent's creature count (issue #105).
+#[test]
+fn scourge_of_geier_reach_is_printed_3_3_in_hand() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let in_hand = castable_spell(&mut state, &reg, "Scourge of Geier Reach", P0);
+    assert_eq!(state.get_object(in_hand).unwrap().zone, Zone::Hand);
+
+    ready_creature(&mut state, P1, 2, 2);
+    ready_creature(&mut state, P1, 2, 2);
+    assert_eq!(
+        (state.effective_power(in_hand, &reg).unwrap(),
+         state.effective_toughness(in_hand, &reg).unwrap()),
+        (3, 3),
+        "a non-CDA static buff must not apply while the card is in hand");
+
+    // Contrast: a genuine CDA does apply in hand (Geist-Honored Monk is
+    // pinned to that behaviour elsewhere); and once Scourge is on the
+    // battlefield the same board makes it a 5/5.
+    let on_field = named_permanent(&mut state, &reg, "Scourge of Geier Reach", P0);
+    assert_eq!(
+        (state.effective_power(on_field, &reg).unwrap(),
+         state.effective_toughness(on_field, &reg).unwrap()),
+        (5, 5));
 }
 
 // ── Army of the Damned ──────────────────────────────────────────

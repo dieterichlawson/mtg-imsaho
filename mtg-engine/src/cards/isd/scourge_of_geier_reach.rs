@@ -25,14 +25,16 @@ impl CardBehavior for ScourgeOfGeierReach {
         }
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<(i32, i32)> {
+    // "Gets +1/+1 for each ..." modifies P/T (layer 7c) — it is not a
+    // characteristic-defining ability, so it works only on the battlefield
+    // and the card is a plain 3/3 in hand (CR 604.3, 208.1; issue #105).
+    fn self_static_pt_mod(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<(i32, i32)> {
         let controller = state.get_object(object_id)?.controller;
         // "each creature your opponents control" — everyone who isn't you, not
         // one named opponent.
         let opponent_creatures = i32::try_from(state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|o| o.controller != controller && state.is_creature(o.id, registry))
             .count()).unwrap_or(i32::MAX);
-        // Base 3/3 + N/N where N = opponent creature count.
-        Some((3 + opponent_creatures, 3 + opponent_creatures))
+        Some((opponent_creatures, opponent_creatures))
     }
 }
