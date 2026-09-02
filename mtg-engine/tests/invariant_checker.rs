@@ -477,3 +477,128 @@ fn aura_and_equipment_attachment_states_are_flagged() {
 // configurations: it is used in this file's type ascriptions above.
 #[allow(dead_code)]
 fn _use(_: CardId) {}
+
+// ── The 2026-09-02 batch's oracle additions ─────────────────────────
+
+/// CR 508.1a/508.2: a repeated id in AttackersDeclared fires the attack
+/// trigger once per repeat (issue #108's shape). The event buffer is the
+/// only place this is visible — combat's own maps dedupe.
+#[test]
+fn duplicate_attackers_in_the_declared_event_are_flagged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let a = ready_creature(&mut state, P0, 2, 2);
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(a, P1), (a, P1)],
+    });
+    assert_flags(&state, &reg, "more than once");
+}
+
+/// CR 509.1b: one blocker, one block. A blocker listed under two attackers
+/// (or twice under one) is flagged.
+#[test]
+fn a_double_assigned_blocker_is_flagged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let a1 = ready_creature(&mut state, P0, 2, 2);
+    let a2 = ready_creature(&mut state, P0, 2, 2);
+    let b = ready_creature(&mut state, P1, 2, 2);
+    let mut combat = CombatState::default();
+    combat.attackers.insert(a1, P1);
+    combat.attackers.insert(a2, P1);
+    combat.blocker_assignments.insert(a1, vec![b]);
+    combat.blocker_assignments.insert(a2, vec![b]);
+    state.combat = Some(combat);
+    assert_flags(&state, &reg, "at once (CR 509.1b)");
+
+    let mut combat = CombatState::default();
+    combat.attackers.insert(a1, P1);
+    combat.blocker_assignments.insert(a1, vec![b, b]);
+    state.combat = Some(combat);
+    assert_flags(&state, &reg, "listed twice against attacker");
+}
+
+/// Every life transition goes through change_life and its LifeChanged
+/// event; a broken chain or a final link that disagrees with the actual
+/// life total means a life change bypassed the pipeline (issue #129's
+/// family, mechanically checked).
+#[test]
+fn a_life_change_that_bypassed_the_event_chain_is_flagged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Chain break: 20 -> 18, then an event claiming to start from 19.
+    state.events.push(mtg_engine::events::GameEvent::LifeChanged {
+        player: P0, old: 20, new_life: 18 });
+    state.events.push(mtg_engine::events::GameEvent::LifeChanged {
+        player: P0, old: 19, new_life: 17 });
+    state.get_player_mut(P0).life = 17;
+    assert_flags(&state, &reg, "LifeChanged chain breaks");
+
+    // Final link disagrees with the actual total.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.events.push(mtg_engine::events::GameEvent::LifeChanged {
+        player: P0, old: 20, new_life: 18 });
+    // life is still 20: something moved it back without an event, or the
+    // event lied.
+    assert_flags(&state, &reg, "but life is");
+}
+
+/// A prompt with nothing to choose is a stuck game; an X-funding prompt
+/// without its stash panics when answered; a stash without its prompt is a
+/// leak (the #123 cancel path must clear both together).
+#[test]
+fn incoherent_prompts_and_stashes_are_flagged() {
+    let reg = registry();
+
+    // Empty choice.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut state, P0, 1, 1);
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player: P0,
+        source: src,
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget {
+            description: "pick".into(),
+            options: vec![],
+            optional: false,
+            effect: mtg_engine::state::PendingEffect::CardEffect { source_id: src, key: String::new() },
+        },
+    });
+    assert_flags(&state, &reg, "nothing to choose");
+
+    // Spell funding prompt with no stashed cast.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut state, P0, 1, 1);
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player: P0,
+        source: src,
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
+            description: "fund".into(),
+            options: mtg_engine::funding::FundingOptions {
+                pool: std::collections::BTreeMap::new(),
+                groups: vec![],
+                max_x: 1,
+            },
+            source_id: src,
+            is_ability: false,
+        },
+    });
+    assert_flags(&state, &reg, "no pending_spell_cast");
+
+    // Stash with no prompt: build the real funding prompt via a cast, then
+    // drop only the prompt — the leak the invariant exists to catch.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+    for _ in 0..2 {
+        named_permanent(&mut state, &reg, "Mountain", P0);
+    }
+    let _ = ready_creature(&mut state, P1, 2, 2);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let cast = legal.actions.iter().find(|a| matches!(a,
+        mtg_engine::actions::Action::CastSpell { object_id, .. } if *object_id == dp))
+        .expect("Devil's Play castable").clone();
+    let mut state = mtg_engine::engine::submit_action(&state, &cast, &reg);
+    assert!(state.pending_spell_cast.is_some(), "setup: the cast is stashed");
+    state.awaiting_action = None;
+    assert_flags(&state, &reg, "leak");
+}

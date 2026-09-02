@@ -179,6 +179,137 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                 v.push(format!("planeswalker_defenders holds {} which never attacked", id.0));
             }
         }
+
+        // CR 509.1b: a creature blocks at most one attacker, once. A blocker
+        // listed under two attackers (or twice under one) is two blocks from
+        // one creature — the shape of the duplicate-declaration family
+        // (issue #108 was the attacker side of it).
+        let mut blocker_of = std::collections::HashMap::new();
+        for (&attacker, blockers) in &combat.blocker_assignments {
+            let mut here = std::collections::HashSet::new();
+            for &b in blockers {
+                if !here.insert(b) {
+                    v.push(format!(
+                        "blocker {} listed twice against attacker {}", b.0, attacker.0));
+                }
+                if let Some(prev) = blocker_of.insert(b, attacker) {
+                    if prev != attacker {
+                        v.push(format!(
+                            "blocker {} assigned to attackers {} and {} at once (CR 509.1b)",
+                            b.0, prev.0, attacker.0));
+                    }
+                }
+            }
+        }
+    }
+
+    // The events of the CURRENT action (submit_action clears the buffer per
+    // action) are an oracle too — triggers fire once per event, so a
+    // malformed event multiplies effects even when the state maps look fine.
+    //
+    // CR 508.1a/508.2: declaring attackers chooses a SET; an id repeated in
+    // AttackersDeclared fires the creature's attack trigger once per repeat.
+    // Combat's own maps dedupe, so this was invisible to every state check
+    // while tripling Kessig Cagebreakers' wolves (issue #108).
+    for e in &state.events {
+        if let crate::events::GameEvent::AttackersDeclared { attackers } = e {
+            let mut seen = std::collections::HashSet::new();
+            for (id, _) in attackers {
+                if !seen.insert(*id) {
+                    v.push(format!("AttackersDeclared lists attacker {} more than once", id.0));
+                }
+            }
+        }
+    }
+
+    // Every life transition goes through change_life, which records a
+    // LifeChanged event — so within one action's events, each player's
+    // LifeChanged chain must link up (old == the previous new) and the last
+    // link must equal the player's actual life. A break means a life total
+    // moved without the event (and, since #129, without the log line) —
+    // the unlogged-life-change family, mechanically checked.
+    {
+        let mut last_new: std::collections::HashMap<PlayerId, i32> =
+            std::collections::HashMap::new();
+        for e in &state.events {
+            if let crate::events::GameEvent::LifeChanged { player, old, new_life } = e {
+                if let Some(prev) = last_new.get(player) {
+                    if prev != old {
+                        v.push(format!(
+                            "p{}: LifeChanged chain breaks ({} -> event starting at {})",
+                            player.0, prev, old));
+                    }
+                }
+                last_new.insert(*player, *new_life);
+            }
+        }
+        for (p, n) in last_new {
+            if p.0 < n_players && state.get_player(p).life != n {
+                v.push(format!(
+                    "p{}: last LifeChanged says {} but life is {}",
+                    p.0, n, state.get_player(p).life));
+            }
+        }
+    }
+
+    // A pending prompt is answerable and its stashes match. A choice with
+    // nothing to choose is a stuck game; an X-funding prompt whose stashed
+    // cast/activation is missing panics when answered; a stash with no
+    // prompt is a leak (the #123 cancel path clears both together).
+    match &state.awaiting_action {
+        Some(crate::state::AwaitingAction::ResolutionChoice { player, choice, .. }) => {
+            if player.0 >= n_players {
+                v.push(format!("awaiting_action prompts out-of-range p{}", player.0));
+            }
+            use crate::state::ResolutionChoiceKind as K;
+            let empty = match choice {
+                K::ChooseTarget { options, .. } => options.is_empty(),
+                K::ChooseFromRevealed { revealed, .. } => revealed.is_empty(),
+                K::ChooseCardFromHand { cards, .. } => cards.is_empty(),
+                K::ChooseTriggerOrder { options, .. } => options.is_empty(),
+                K::DividePermanentsIntoPiles { permanents, .. } => permanents.is_empty(),
+                _ => false,
+            };
+            if empty {
+                v.push("awaiting_action offers a choice with nothing to choose".into());
+            }
+            match choice {
+                K::ChooseXFunding { is_ability: false, .. } if state.pending_spell_cast.is_none() => {
+                    v.push("spell X-funding prompt with no pending_spell_cast stashed".into());
+                }
+                K::ChooseXFunding { is_ability: true, .. } if state.pending_ability_effect.is_none() => {
+                    v.push("ability X-funding prompt with no pending_ability_effect stashed".into());
+                }
+                _ => {}
+            }
+        }
+        Some(crate::state::AwaitingAction::MulliganDecision { player })
+        | Some(crate::state::AwaitingAction::BottomAfterMulligan { player, .. })
+        | Some(crate::state::AwaitingAction::DiscardToHandSize { player, .. })
+            if player.0 >= n_players =>
+        {
+            v.push(format!("awaiting_action prompts out-of-range p{}", player.0));
+        }
+        _ => {}
+    }
+    {
+        let awaiting_stashes_spell = matches!(&state.awaiting_action,
+            Some(crate::state::AwaitingAction::ResolutionChoice {
+                choice: crate::state::ResolutionChoiceKind::ChooseXFunding { is_ability: false, .. }
+                    | crate::state::ResolutionChoiceKind::ChooseExileFromGraveyard { .. },
+                ..
+            }));
+        if state.pending_spell_cast.is_some() && !awaiting_stashes_spell {
+            v.push("pending_spell_cast stashed with no funding/exile prompt up (leak)".into());
+        }
+        let awaiting_stashes_ability = matches!(&state.awaiting_action,
+            Some(crate::state::AwaitingAction::ResolutionChoice {
+                choice: crate::state::ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. },
+                ..
+            }));
+        if state.pending_ability_effect.is_some() && !awaiting_stashes_ability {
+            v.push("pending_ability_effect stashed with no funding prompt up (leak)".into());
+        }
     }
 
     v
