@@ -894,10 +894,16 @@ impl CliPlayer {
                 row += 1;
             }
             let has_pass = labels.first().is_some_and(|l| l == "Pass priority");
-            let hints = if has_pass {
-                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
-            } else {
-                "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
+            // The `/` search lives in the right panel, which only exists at
+            // >= 100 columns — advertising it below that put users into an
+            // invisible modal mode that swallowed keystrokes (issue #107).
+            let hints = match (has_pass, has_right) {
+                (true, true) =>
+                    "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+                (true, false) =>
+                    "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile]",
+                (false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+                (false, false) => "  [d=deck] [l=log] [g=gy] [e=exile]",
             };
             // Clipped to the panel like every other row — at full length this
             // ate the right border and the card panel behind it (#53).
@@ -1372,7 +1378,21 @@ impl CliPlayer {
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
     fn run_card_search(&mut self, view: &GameView, actions: &[String]) {
+        // The search box is part of the right panel, which is only drawn at
+        // >= 100 columns. Entering search mode on a narrower terminal showed
+        // nothing at all and silently swallowed every keystroke until an
+        // undiscoverable Esc/Enter (issue #107) — refuse to enter it instead
+        // (the hint line stops advertising it at this width too).
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        if (term_w as usize) < 100 {
+            return;
+        }
+
         tui_raw_on();
+        // A paste must arrive as one Paste event, never as keystrokes whose
+        // embedded newlines exit the search and SUBMIT at the underlying
+        // prompt (issue #106; same hardening as read_line, #50).
+        let _ = execute!(stdout(), event::EnableBracketedPaste);
 
         self.card_filter.clear();
 
@@ -1390,14 +1410,23 @@ impl CliPlayer {
             let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
             let _ = stdout().flush();
 
-            // Read one key event
-            if let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() {
+            // Read one event
+            let Some(ev) = read_event_guarded() else { continue };
+            // A paste lands in the filter as one event — only its first line,
+            // and its newlines never act as Enter (issue #106).
+            if let Event::Paste(pasted) = &ev {
+                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
+                self.card_filter.push_str(first);
+                continue;
+            }
+            if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
                 match code {
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char('/') => {
                         self.card_filter.clear();
                         break;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = execute!(stdout(), event::DisableBracketedPaste);
                         tui_raw_off();
                         std::process::exit(0);
                     }
@@ -1414,6 +1443,7 @@ impl CliPlayer {
             }
         }
 
+        let _ = execute!(stdout(), event::DisableBracketedPaste);
         tui_raw_off();
     }
 
@@ -3129,6 +3159,11 @@ impl CliPlayer {
         let mut out = stdout();
 
         tui_raw_on();
+        // A paste in the filter box must arrive as one Paste event, never as
+        // keystrokes whose embedded newline SELECTS a card and whose next
+        // line answers the following prompt (issue #106; same hardening as
+        // read_line, #50).
+        let _ = execute!(out, event::EnableBracketedPaste);
 
         loop {
             // Filter cards by name.
@@ -3200,10 +3235,20 @@ impl CliPlayer {
             let _ = out.flush();
 
             // Read input.
-            if let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() {
+            let Some(ev) = read_event_guarded() else { continue };
+            // Only the paste's first line reaches the filter; its newlines
+            // never act as Enter (issue #106).
+            if let Event::Paste(pasted) = &ev {
+                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
+                filter.push_str(first);
+                selected = 0;
+                continue;
+            }
+            if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
                 match code {
                     KeyCode::Enter => {
                         if let Some(card) = filtered.get(selected) {
+                            let _ = execute!(out, event::DisableBracketedPaste);
                             tui_raw_off();
                             let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
                             return actions[card.action_index].clone();
@@ -3220,6 +3265,7 @@ impl CliPlayer {
                         selected = 0;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = execute!(out, event::DisableBracketedPaste);
                         tui_raw_off();
                         std::process::exit(0);
                     }
