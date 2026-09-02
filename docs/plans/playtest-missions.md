@@ -75,6 +75,28 @@ Competitor:
   with Divine Reckoning; verify each player chooses their own keeper in
   APNAP order (CR 101.4) before any simultaneous sacrifice (CR 701.17),
   and that tokens cease to exist rather than resting in a graveyard
+- C19 multi-block combat math: force double and triple blocks every
+  combat; verify P/T after anthems, damage marked, who dies, life lost,
+  and that the attacking player gets the ordering and assignment choices
+  the CR gives them (CR 509.2, 510.1a-d)
+- C20 hand attack / discard-based control: win by stripping the hand.
+  Targeted vs random vs "you choose" discard, discard from an empty hand,
+  cleanup discard-to-hand-size; verify hand-size accounting is exact and
+  no hidden information leaks at the other seat's prompt
+- C21 land destruction and mana denial: attack the mana base. Verify a
+  destroyed land's mana is really gone, no phantom pool, one replacement
+  land per turn (CR 305.2), a landless player still gets priority, and
+  unpayable costs leave the menu rather than failing after selection
+- C22 non-combat damage and life drain attrition: win without combat
+  damage. Verify every life transition, "loses life" vs "is dealt
+  damage", simultaneous drain triggers ordered by their controller
+  (CR 603.3b), lifelink as part of the damage event (CR 702.15a), and
+  the game ending at exactly 0 on the next SBA check (CR 704.5a)
+- C23 play/draw and opening-procedure fairness: play the same pairing
+  twice with the seats swapped; verify the starting player skips their
+  first draw (CR 103.7a), the London mulligan counts, summoning sickness
+  on turn 1 (CR 302.6), APNAP consistency (CR 101.4), and whether the
+  CLI ever says which seat is on the play
 
 Rules Lawyer:
 - L1 stack battles: respond to everything; 3+ deep stacks; order triggers
@@ -145,6 +167,34 @@ Rules Lawyer:
   evasion, Vampire Interloper's "can't block", Crossway Vampire's
   one-turn restriction, flying vs reach, and hexproof being targetable
   by its own controller but not the opponent
+- L21 illegal targets on resolution (CR 608.2b, 603.3d, 601.2c): make a
+  target illegal after the spell or trigger is on the stack (kill,
+  bounce, exile, hexproof, protection, type or controller change).
+  Verify all-targets-illegal is countered on resolution with no partial
+  effects, some-targets-legal still does as much as it can, targets are
+  locked in at announcement, legality is re-checked on resolution, and
+  a fizzle is reported differently from a normal resolution
+- L22 cost legality and payment (CR 601.2f-h, 117.4, 118.4, 118.6): an
+  unpayable additional cost must make the spell un-castable and absent
+  from the menu; sacrifice costs pay on activation and only from
+  permanents you control; life payment can't exceed your life total;
+  mana is deducted exactly and never spent on the wrong spell; and no
+  prompt may let you un-pay a cost already paid
+- L23 regeneration, indestructible and "destroy" replacement (CR 701.15,
+  702.12, 615, 704.5g): a shield taps, removes from combat, clears
+  damage and is used up; a second destruction the same turn kills; no
+  save from sacrifice, exile or a 0-toughness SBA; indestructible
+  ignores lethal damage and "destroy" but still dies to 0 toughness
+- L24 turn structure and trigger windows (CR 500-514): no priority in
+  untap (CR 502.3), upkeep triggers before the draw, the draw happens
+  before priority (CR 504.1), an end-step trigger created during the end
+  step waits for the next turn (CR 513.2), and a cleanup with a discard
+  or a trigger grants priority and a second cleanup step (CR 514.3a)
+- L25 hidden-information integrity (CR 400.2, 701.15, 701.18, 103.1) in
+  a shared-terminal hotseat: every pane (battlefield, i, d, g, e, /)
+  scoped to the prompting seat; "reveal" shown to both and "look at"
+  only to the chooser and never echoed into the shared log; library
+  order not leaked; face-down exile stays hidden
 
 Vandal:
 - V1 input garbage at every prompt: junk text, huge numbers, empty
@@ -211,6 +261,34 @@ Vandal:
   resuming a save while its writer is still writing, resuming one save
   into two processes, and save paths that are directories, read-only or
   /dev/full
+- V21 nested-prompt abuse (distinct from V8's top-level pane spam): send
+  the pane shortcuts, bare Enter, out-of-range indices and junk into the
+  SUB-prompts — target chooser, X cost, chooser filter box, blocker
+  assignment, trigger ordering, "may" yes/no, mulligan bottoming, concede
+  confirmation — and verify a pane opened inside a nested prompt returns
+  to that same prompt with the same state
+- V22 marathon: drive one game past turn 150 with both seats durdling;
+  watch the turn counter and step header, the log panel and `l` view at
+  extreme length, 40+ card graveyard panes, save-file growth, per-input
+  latency drift, invariant failures, and the exact turn and cause of the
+  deck-out ending
+- V23 structured-prompt syntax abuse: the declare-attackers and
+  declare-blockers parsers take free-form text — feed duplicate indices,
+  "all none", "0:0:0", ":0", "0:", one valid plus one invalid entry,
+  5000-character index lists, and mixed separators. Anything not fully
+  valid must be refused with an error and a reprompt, never trimmed to a
+  partial declaration or read as "none"
+- V24 hostile environment and non-TTY execution: stdin at EOF, piped
+  stdin, stdout to a file or pipe, TERM=dumb and TERM unset, COLUMNS=1,
+  a backgrounded process taking SIGTTIN, SIGSTOP/SIGCONT mid-prompt,
+  SIGWINCH storms, and a 1x1 pane at startup; each must be a clean
+  explained exit or a game that keeps working
+- V25 search and filter-box abuse: regex metacharacters, format-string
+  payloads, 10000-character strings, empty and all-matching searches,
+  unicode (combining marks, RTL override, ZWJ, CJK, emoji) and ANSI
+  sequences at the `/` search and inside a chooser's filter box; never
+  crash, hang, corrupt the frame, become unexitable, or mis-scope to a
+  zone the searching seat can't see
 
 Agents may invent missions beyond this menu; log them in the ledger so
 they enter the rotation.
