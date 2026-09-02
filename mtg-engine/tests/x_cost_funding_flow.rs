@@ -322,3 +322,69 @@ fn floating_mana_is_spent_before_lands_are_tapped() {
     assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
         "the additional cost was paid too (CR 601.2h)");
 }
+
+/// Issue #123: at the funding prompt for a SPELL nothing is spent yet, so
+/// the cast can be cancelled — the spell stays in hand, nothing is tapped,
+/// and the same spell is castable again.
+#[test]
+fn spell_x_funding_can_be_cancelled_with_nothing_spent() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
+    for _ in 0..3 {
+        named_permanent(&mut state, &registry, "Mountain", P0);
+    }
+    let _ = ready_creature(&mut state, P1, 2, 2);
+
+    let post_cast = cast_devils_play(&state, &registry, dp);
+    let _ = extract_funding(&post_cast); // prompt is up
+
+    let cancelled = engine::submit_action(&post_cast, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTarget(None),
+    }, &registry);
+
+    assert!(cancelled.awaiting_action.is_none(), "prompt is gone");
+    assert_eq!(cancelled.get_object(dp).unwrap().zone, Zone::Hand,
+        "the spell is back to (still in) hand");
+    assert!(cancelled.stack.is_empty(), "nothing was cast");
+    assert!(cancelled.objects.values().filter(|o| o.zone == Zone::Battlefield)
+        .all(|o| !o.tapped), "no mana source was tapped");
+
+    // And the cast is still available — cancelling lost nothing.
+    let recast = cast_devils_play(&cancelled, &registry, dp);
+    let _ = extract_funding(&recast);
+}
+
+/// An X-cost ABILITY's activation costs are already paid by funding time,
+/// so a cancel there is refused like any non-answer: the prompt stays.
+#[test]
+fn ability_x_funding_refuses_cancel() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let hp = named_permanent(&mut state, &registry, "Heretic's Punishment", P0);
+    for _ in 0..3 {
+        named_permanent(&mut state, &registry, "Mountain", P0);
+    }
+    let _ = ready_creature(&mut state, P1, 2, 2);
+
+    // Activate its {X}{X}{R} ability via the offered action.
+    let legal = engine::legal_actions(&state, &registry);
+    let Some(act) = legal.actions.iter().find(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == hp)) else {
+        // No activation offered in this setup — nothing to pin here.
+        return;
+    };
+    let post = engine::submit_action(&state, act, &registry);
+    if !matches!(post.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }, .. })) {
+        return;
+    }
+    let after = engine::submit_action(&post, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTarget(None),
+    }, &registry);
+    assert!(matches!(after.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
+        "an ability's funding prompt refuses a cancel and stays up");
+}

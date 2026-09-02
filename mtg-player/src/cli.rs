@@ -3047,6 +3047,7 @@ impl CliPlayer {
         view: &GameView,
         options: &mtg_engine::funding::FundingOptions,
         description: &str,
+        can_cancel: bool,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
         use mtg_engine::funding::FundingResponse;
@@ -3093,23 +3094,37 @@ impl CliPlayer {
         let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
+        let hint = if can_cancel {
+            format!("  X (0-{}, c = cancel the cast) = ", options.max_x)
+        } else {
+            format!("  X (0-{}) = ", options.max_x)
+        };
         let x: u32 = loop {
             // Clear the input row before each attempt (same as the combat
             // prompts), so a rejected entry doesn't merge with the next.
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let input = Self::read_line(&format!("  X (0-{}, blank = 0) = ", options.max_x));
-            if input.trim().is_empty() {
-                break 0;
+            let input = Self::read_line(&hint);
+            let input = input.trim();
+            // Cancelling a spell's X prompt backs out of the whole cast —
+            // the engine un-stashes it with nothing spent (issue #123).
+            if can_cancel && (input == "c" || input == "cancel") {
+                return Action::ResolveChoice {
+                    choice: ResolvedChoice::ChosenTarget(None),
+                };
             }
-            match input.trim().parse::<u32>() {
+            // Everywhere else in this CLI the idle key is the SAFE key;
+            // bare Enter used to commit the cast for X=0, burning the card
+            // on a stray keypress (issue #123). It re-prompts now — X=0 is
+            // still available by typing 0.
+            let notice = match input.parse::<u32>() {
                 Ok(n) if n <= options.max_x => break n,
-                _ => {
-                    let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine),
-                        Print(format!("  Enter an integer between 0 and {}.", options.max_x)));
-                    let _ = stdout().flush();
-                    std::thread::sleep(std::time::Duration::from_millis(700));
-                }
-            }
+                _ if input.is_empty() => "  Enter a value for X.".to_string(),
+                _ => format!("  Enter an integer between 0 and {}.", options.max_x),
+            };
+            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine),
+                Print(notice));
+            let _ = stdout().flush();
+            std::thread::sleep(std::time::Duration::from_millis(700));
         };
 
         // Distribute X: drain from pool (larger color buckets first), then
@@ -3551,10 +3566,12 @@ impl Player for CliPlayer {
         // X-cost funding: prompt the user for an X value and auto-distribute
         // across pool mana and tap sources (pool first, then by category).
         // A richer per-source UI could be added later.
-        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, description, .. }) =
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, description, is_ability, .. }) =
             legal.resolution_prompt.as_ref()
         {
-            return Self::prompt_x_funding(view, options, description);
+            // A spell's funding can be cancelled (nothing is spent yet);
+            // an ability's activation costs are already paid (#123).
+            return Self::prompt_x_funding(view, options, description, !is_ability);
         }
 
         // Exile-from-graveyard: prompt for a space-separated list of indices.

@@ -332,6 +332,22 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 //
                 // NOTE: If you change this, also update the "X-cost
                 // spells" bullet in GAME_RULES in mtg-player/src/llm.rs.
+                // Cancelling an X-cost SPELL cast at the funding prompt: at
+                // this point the spell is still in hand, no mana is paid and
+                // no taps have run (see the stash comment in cast.rs), so
+                // backing out is a pure un-stash. The X prompt was the one
+                // cast step with no way back, and its idle key burned the
+                // card for X=0 (issue #123). An ability's activation costs
+                // (tap, counters, sacrifice) are already paid by funding
+                // time, so cancel is refused there like any non-answer.
+                (ResolutionChoiceKind::ChooseXFunding { is_ability: false, .. },
+                 ResolvedChoice::ChosenTarget(None)) => {
+                    let pending = state.pending_spell_cast.take();
+                    let name = pending.as_ref()
+                        .map(|p| card_name(&*state, registry, p.object_id))
+                        .unwrap_or_else(|| "spell".into());
+                    state.log(LogLevel::Debug, format!("{name}: X cast cancelled"));
+                }
                 (ResolutionChoiceKind::ChooseXFunding { options, source_id, is_ability, .. },
                  ResolvedChoice::XFunding(response)) => {
                     let player = state.priority_player
