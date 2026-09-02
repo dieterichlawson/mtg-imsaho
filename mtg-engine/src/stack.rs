@@ -244,14 +244,17 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             // `is_valid_target`. Only the first and third were checked, so an
             // ability whose card restated nothing resolved against a target
             // that no longer matched its own wording.
+            let mut newly_illegal: Vec<String> = Vec::new();
             let targets: Vec<Target> = targets.into_iter()
                 .map(|t| match t {
                     Target::Object(id)
                         if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
                             || !target_requirement.as_ref().is_none_or(|req|
                                     is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
-                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) =>
-                            Target::Illegal,
+                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) => {
+                            newly_illegal.push(format!("{} (#{})", state.obj_name(id), id.0));
+                            Target::Illegal
+                        }
                     other => other,
                 })
                 .collect();
@@ -259,6 +262,13 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
                 state.log(LogLevel::Event,
                     format!("{name} ability fizzled (all targets illegal)"));
                 return;
+            }
+            // Partial fizzle is said out loud, as for spells (CR 608.2b,
+            // issue #135).
+            if !newly_illegal.is_empty() {
+                state.log(LogLevel::Event, format!(
+                    "{name} ability: target {} is illegal, resolving with the rest (CR 608.2b)",
+                    newly_illegal.join(", ")));
             }
 
             state.log(LogLevel::Event, format!("{name} ability resolved"));
@@ -321,11 +331,14 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // branch of a composite requirement, so Memory's Journey's graveyard
         // cards would be judged against its `PlayerOnly` first slot. A target
         // that has changed zones is already skipped by each card's own guard.
+        let mut newly_illegal: Vec<String> = Vec::new();
         targets = targets.into_iter()
             .map(|t| match t {
                 Target::Object(id)
-                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) =>
-                        Target::Illegal,
+                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) => {
+                        newly_illegal.push(format!("{} (#{})", state.obj_name(id), id.0));
+                        Target::Illegal
+                    }
                 other => other,
             })
             .collect();
@@ -334,6 +347,14 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
             // Move to graveyard (or exile for flashback) without resolving.
             state.move_spell_after_resolve(object_id, registry);
             return;
+        }
+        // CR 608.2b's second sentence: the spell resolves but does as much
+        // as it can. A partial fizzle used to log byte-identically to a full
+        // resolution (issue #135) — say which target dropped out.
+        if !newly_illegal.is_empty() {
+            state.log(LogLevel::Event, format!(
+                "{}: target {} is illegal, resolving with the rest (CR 608.2b)",
+                state.obj_name(object_id), newly_illegal.join(", ")));
         }
     }
 

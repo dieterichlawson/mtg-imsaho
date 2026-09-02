@@ -676,6 +676,13 @@ fn simultaneous_triggers_are_ordered_by_their_controller() {
     }).count();
     assert_eq!(ap_count, 2, "both triggers went on the stack in the chosen order");
 
+    // Triggered abilities used to be invisible in the log (issue #135):
+    // each push is recorded now.
+    assert!(state.game_log.iter().filter(|e|
+        e.message.contains("goes on the stack")).count() >= 2,
+        "each trigger's stack push is logged; log: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
     // And both still fire: each Ghoul's ability gains 5 (the victim's
     // toughness) for P0.
     let life_before = state.get_player(P0).life;

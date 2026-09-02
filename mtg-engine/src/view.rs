@@ -265,7 +265,10 @@ impl GameView {
                             card_id: CardId(0),
                             name: trigger.display_name_with_state(registry, Some(state)),
                             controller: trigger.controller(),
-                            targets: vec![],
+                            // CR 603.3d: a trigger's targets are chosen as it
+                            // goes on the stack and are public — the panel
+                            // never showed them (issue #134).
+                            targets: trigger.chosen_targets().to_vec(),
                         })
                     }
                     crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, .. } => {

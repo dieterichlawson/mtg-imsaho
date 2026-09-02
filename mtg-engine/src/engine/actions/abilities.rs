@@ -181,8 +181,22 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             // captured now for the same reason: it is the name the player
             // saw when they activated.
             let name = card_name(&state, registry, object_id);
+            // The ability's targets are logged the way a spell's are — they
+            // were announced with the activation (CR 602.2b) and the log
+            // recorded none of them (issue #135).
+            let target_suffix = if targets.is_empty() {
+                String::new()
+            } else {
+                let names: Vec<String> = targets.iter().map(|t| match t {
+                    crate::actions::Target::Object(id) =>
+                        format!("{} (#{})", state.obj_name(*id), id.0),
+                    crate::actions::Target::Player(p) => format!("p{}", p.0),
+                    crate::actions::Target::Illegal => "an illegal target".into(),
+                }).collect();
+                format!(" targeting {}", names.join(", "))
+            };
             state.log(LogLevel::Event, format!(
-                "p{} activated ability on {}: {}", player.0, name, ab.description));
+                "p{} activated ability on {}: {}{}", player.0, name, ab.description, target_suffix));
 
             mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &pay)
                 .expect("can_pay just verified this");

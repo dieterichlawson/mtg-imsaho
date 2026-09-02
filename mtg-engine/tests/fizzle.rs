@@ -502,6 +502,13 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
     assert_ne!(state.get_object(land).unwrap().zone, Zone::Battlefield,
         "the land was still a legal target, so that half of the spell happened \
          — the spell is not countered while one target remains (CR 608.2b)");
+
+    // A partial fizzle used to log byte-identically to a full resolution
+    // (issue #135): the log now says which target dropped out.
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("is illegal, resolving with the rest")),
+        "the partial fizzle is said out loud; log: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
 /// CR 608.2b, the half of `CreatureWithFilter` the re-check used to skip: a

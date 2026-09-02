@@ -452,6 +452,29 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
     }
 }
 
+
+/// Log the trigger that was just pushed onto the stack, with its targets.
+/// Triggered abilities were invisible in the log — nothing recorded the
+/// trigger, its controller or its target (issue #135). Called immediately
+/// after each `StackEntry::Trigger` push.
+pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards::CardRegistry) {
+    let Some(crate::state::StackEntry::Trigger(t)) = state.stack.last() else { return };
+    let name = t.display_name_with_state(registry, Some(state));
+    let controller = t.controller();
+    let targets = t.chosen_targets().to_vec();
+    let msg = if targets.is_empty() {
+        format!("p{}'s {} goes on the stack", controller.0, name)
+    } else {
+        let names: Vec<String> = targets.iter().map(|tg| match tg {
+            Target::Object(id) => format!("{} (#{})", state.obj_name(*id), id.0),
+            Target::Player(p) => format!("p{}", p.0),
+            Target::Illegal => "an illegal target".into(),
+        }).collect();
+        format!("p{}'s {} goes on the stack targeting {}", controller.0, name, names.join(", "))
+    };
+    state.log(crate::state::LogLevel::Event, msg);
+}
+
 /// Put one pending trigger onto the stack: directly when it is untargeted,
 /// with its single legal target attached when there is exactly one
 /// (CR 603.3d), with a target prompt when there are several, and not at all
@@ -468,6 +491,7 @@ pub(crate) fn push_one_pending_trigger(
     let Some(req) = target_req else {
         // Untargeted: push directly onto the stack.
         state.stack.push(StackEntry::Trigger(trigger));
+        log_trigger_pushed(state, registry);
         return;
     };
 
@@ -495,6 +519,7 @@ pub(crate) fn push_one_pending_trigger(
             let mut t = trigger;
             t.source.chosen_targets = vec![target];
             state.stack.push(StackEntry::Trigger(t));
+            log_trigger_pushed(state, registry);
         }
         _ => {
             // Multiple legal targets: prompt the player. Stash the trigger
