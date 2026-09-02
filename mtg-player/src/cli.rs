@@ -685,6 +685,9 @@ impl CliPlayer {
             Step::BeginCombat => "Begin Combat",
             Step::DeclareAttackers => "Declare Attackers",
             Step::DeclareBlockers => "Declare Blockers",
+            // Two damage steps rendered identically with first strikers in
+            // combat (issue #140, CR 510.4).
+            Step::CombatDamage if view.first_strike_damage_step => "First-Strike Combat Damage",
             Step::CombatDamage => "Combat Damage",
             Step::EndCombat => "End Combat",
             Step::PostcombatMain => "Main Phase 2",
@@ -4188,6 +4191,7 @@ mod tests {
             graveyards: vec![],
             stack: vec![],
             exile: vec![],
+            first_strike_damage_step: false,
             step,
             active_player: if our_turn { you } else { PlayerId(1) },
             priority_player: Some(you),

@@ -23,6 +23,10 @@ pub struct GameView {
     pub battlefield: Vec<PermanentView>,
     pub graveyards: Vec<(PlayerId, Vec<CardView>)>,
     pub stack: Vec<StackItemView>,
+    /// True while the current combat damage step is the FIRST-STRIKE one
+    /// (CR 510.4): with first/double strikers there are two damage steps,
+    /// and both rendered as "Combat Damage" (issue #140).
+    pub first_strike_damage_step: bool,
     pub exile: Vec<CardView>,
 
     pub step: Step,
@@ -338,6 +342,8 @@ impl GameView {
             stack,
             exile,
             step: state.step,
+            first_strike_damage_step: state.step == crate::types::Step::CombatDamage
+                && state.combat_damage_step_pending,
             active_player: state.active_player,
             priority_player: state.priority_player,
             turn_number: state.turn_number,

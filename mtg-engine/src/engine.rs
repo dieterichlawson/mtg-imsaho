@@ -235,6 +235,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             Step::Draw => "DRAW",
             Step::DeclareAttackers => "AFTER ATTACKERS DECLARED",
             Step::DeclareBlockers => "AFTER BLOCKERS DECLARED",
+            // CR 510.4: the first-strike combat damage step is its own step
+            // and is named as such (issue #140).
+            Step::CombatDamage if state.combat_damage_step_pending => "FIRST-STRIKE COMBAT DAMAGE",
             Step::CombatDamage => "COMBAT DAMAGE",
             Step::Untap => "UNTAP",
             Step::Cleanup => "CLEANUP",
@@ -826,6 +829,12 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             // again, forever. The game never reached end of combat: about one
             // random game in twenty-five ground to a halt cycling this step.
             let second_damage_step = std::mem::take(&mut state.combat_damage_step_pending);
+            if second_damage_step {
+                // Named even when combat emptied between the steps — the
+                // step still happened (issue #140, CR 510.5).
+                state.log(LogLevel::Debug,
+                    "Regular combat damage step (second of two, CR 510.5)".into());
+            }
 
             let has_attackers = state.combat.as_ref()
                 .is_some_and(|c| !c.attackers.is_empty());
@@ -840,7 +849,10 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                     // First of two combat damage steps (CR 510.5): only
                     // first/double strikers deal damage now. advance_step
                     // repeats Step::CombatDamage after this step's SBA /
-                    // trigger / priority round.
+                    // trigger / priority round. Say which step this is —
+                    // the two logged identically (issue #140).
+                    state.log(LogLevel::Debug,
+                        "First-strike combat damage step (CR 510.4); regular damage follows".into());
                     combat::deal_first_strike_damage_pass(state, registry);
                     state.combat_damage_step_pending = true;
                 } else {

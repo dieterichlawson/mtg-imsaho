@@ -595,6 +595,15 @@ fn first_strike_creates_second_combat_damage_step_with_window() {
     // And the step sequence continues normally afterwards.
     mtg_engine::engine::advance_step(&mut state, &reg);
     assert_eq!(state.step, Step::EndCombat);
+
+    // The two damage steps used to log identically (issue #140, CR 510.4):
+    // each half names itself now.
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("First-strike combat damage step")),
+        "the first-strike half is named in the log");
+    assert!(state.game_log.iter().any(|e|
+        e.message.contains("Regular combat damage step")),
+        "the regular half is named in the log");
 }
 
 /// Without first strikers, the combat damage step happens exactly once.
