@@ -1103,9 +1103,14 @@ impl CliPlayer {
                     .map(|names| format!(" [{}]", names.join(",")))
                     .unwrap_or_default();
                 let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
+                // A hasty creature isn't slowed by summoning sickness —
+                // '[S]' read as "cannot attack" on a creature whose attack
+                // was perfectly legal (issue #139).
+                let sick = c.summoning_sick
+                    && !c.keywords.contains(&mtg_engine::types::Keyword::Haste);
                 let flags = format!("{}{}",
                     if c.tapped { " [T]" } else { "" },
-                    if c.summoning_sick { " [S]" } else { "" });
+                    if sick { " [S]" } else { "" });
                 format!("{}{}{}{}{}{}", c.name, pt,
                     CliPlayer::counters_suffix(&c.counters), auras, dmg, flags)
             }).collect();
