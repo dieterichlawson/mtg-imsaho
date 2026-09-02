@@ -1757,7 +1757,8 @@ impl LlmPlayer {
             sacrifice: chosen_sacrifice,
             exile_count: None,
             exile_ids: vec![],
-            alternative_cost: None,
+            // The cost this entry was offered for (issue #128).
+            alternative_cost: spell.alternative_cost.clone(),
             tap_plan: spell.tap_plan.clone(),
         }
     }
@@ -2544,18 +2545,22 @@ impl Player for LlmPlayer {
         // castable spell + one per activatable ability.
         let mut display_labels = Vec::new();
         let mut display_entries: Vec<DisplayEntry> = Vec::new();
-        let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        // Keyed by (object, alternative cost) — one row per way to cast
+        // (issue #128), matching the CLI.
+        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
         let mut seen_ability_keys: Vec<(mtg_engine::ids::ObjectId, usize)> = Vec::new();
 
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
-                Action::CastSpell { object_id, .. } => {
-                    if !seen_spell_objects.contains(object_id) {
+                Action::CastSpell { object_id, alternative_cost, .. } => {
+                    let key = (*object_id, alternative_cost.is_some());
+                    if !seen_spell_objects.contains(&key) {
                         if let Some(cs_idx) = legal.castable_spells.iter()
-                            .position(|cs| cs.object_id == *object_id)
+                            .position(|cs| cs.object_id == *object_id
+                                && cs.alternative_cost.is_some() == alternative_cost.is_some())
                         {
-                            seen_spell_objects.push(*object_id);
+                            seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
@@ -2570,6 +2575,13 @@ impl Player for LlmPlayer {
                                 .unwrap_or_default();
                             let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
                             let mut extras = Vec::new();
+                            match &cs.alternative_cost {
+                                Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
+                                    extras.push("without paying its mana cost".to_string()),
+                                Some(alt) if !cs.is_flashback =>
+                                    extras.push(format!("alternative cost {alt}")),
+                                _ => {}
+                            }
                             if !cost_note.is_empty() { extras.push(cost_note.to_string()); }
                             if !tap_str.is_empty() { extras.push(format!("tap {tap_str}")); }
                             let label = if extras.is_empty() {
@@ -3522,6 +3534,7 @@ mod tests {
             exile_x_from_gy_max: None,
             sacrifice_options: vec![],
             additional_cost_label: Some("exile 1 creature from GY".into()),
+            alternative_cost: None,
         };
 
         let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
@@ -3581,6 +3594,7 @@ mod tests {
             exile_x_from_gy_max: Some(3),
             sacrifice_options: vec![],
             additional_cost_label: Some("exile cards from GY".into()),
+            alternative_cost: None,
         };
 
         // Mirror the LLM display logic in mtg-player/src/llm.rs around

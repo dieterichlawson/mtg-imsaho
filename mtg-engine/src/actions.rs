@@ -200,6 +200,13 @@ pub struct CastableSpell {
     /// "exile a creature from GY", "sacrifice a creature"). `None`
     /// when the spell has no additional cost.
     pub additional_cost_label: Option<String>,
+    /// The alternative cost this entry casts with (CR 118.9), when it does —
+    /// Rooftop Storm's "without paying its mana cost", or flashback's cost.
+    /// When both the normal and an alternative cost are payable the engine
+    /// emits one CastableSpell per way to cast, so the CR 601.2b choice
+    /// reaches the player instead of being collapsed away (issue #128).
+    /// Player implementations must carry this into the CastSpell they build.
+    pub alternative_cost: Option<crate::types::ManaCost>,
 }
 
 /// An activated ability that can be activated, with its valid target options.

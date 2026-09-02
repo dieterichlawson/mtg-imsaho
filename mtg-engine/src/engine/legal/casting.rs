@@ -183,7 +183,9 @@ pub(crate) fn from_hand(
                 let alt_tap_plan = mana::compute_autotap(&alt_mana, &player_state.mana_pool, &mana_sources, &other_hand_costs)
                     .unwrap_or_default();
                 if can_pay_normal {
-                    // Player can pay normally — add alternative cost copies alongside normal ones.
+                    // Player can pay normally — add alternative cost copies
+                    // alongside normal ones, and a second CastableSpell so
+                    // collapsed UIs offer the CR 601.2b choice too (#128).
                     let alt_actions: Vec<Action> = cast_actions.iter().filter_map(|a| {
                         if let Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, .. } = a {
                             Some(Action::CastSpell {
@@ -211,10 +213,31 @@ pub(crate) fn from_hand(
             }
 
             if !cast_actions.is_empty() {
-                // Use the tap_plan from the first cast action for the CastableSpell.
-                let spell_tap_plan = cast_actions.iter().find_map(|a| {
-                    if let Action::CastSpell { tap_plan, .. } = a { Some(tap_plan.clone()) } else { None }
+                // Use the tap_plan and cost of the first cast action for the
+                // CastableSpell (when the normal cost was unpayable, the
+                // actions were all replaced with alternative-cost ones, and
+                // the entry must carry that cost for the player to cast it).
+                let (spell_tap_plan, first_alt) = cast_actions.iter().find_map(|a| {
+                    if let Action::CastSpell { tap_plan, alternative_cost, .. } = a {
+                        Some((tap_plan.clone(), alternative_cost.clone()))
+                    } else {
+                        None
+                    }
                 }).unwrap_or_default();
+                // One CastableSpell per distinct way to cast: if the actions
+                // hold both a normal-cost and an alternative-cost variant,
+                // emit an entry for each (issue #128).
+                let alt_variant = if first_alt.is_none() {
+                    cast_actions.iter().find_map(|a| {
+                        if let Action::CastSpell { tap_plan, alternative_cost: Some(alt), .. } = a {
+                            Some((tap_plan.clone(), alt.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                };
                 // Expose max X for ExileXFromGraveyard spells so the player
                 // UI can show the effective damage in the label.
                 let exile_x_from_gy_max = additional.exile_x_max;
@@ -225,12 +248,26 @@ pub(crate) fn from_hand(
                     object_id: obj.id,
                     name: data.name.clone(),
                     is_flashback: false,
-                    target_spec: spec,
+                    target_spec: spec.clone(),
                     tap_plan: spell_tap_plan,
                     exile_x_from_gy_max,
                     sacrifice_options: eligible_sacrifices.clone(),
-                    additional_cost_label,
+                    additional_cost_label: additional_cost_label.clone(),
+                    alternative_cost: first_alt,
                 });
+                if let Some((alt_tap, alt_cost)) = alt_variant {
+                    castable_spells.push(crate::actions::CastableSpell {
+                        object_id: obj.id,
+                        name: data.name.clone(),
+                        is_flashback: false,
+                        target_spec: spec,
+                        tap_plan: alt_tap,
+                        exile_x_from_gy_max,
+                        sacrifice_options: eligible_sacrifices.clone(),
+                        additional_cost_label,
+                        alternative_cost: Some(alt_cost),
+                    });
+                }
             }
         }
     }
@@ -394,6 +431,9 @@ pub(crate) fn flashback(
                     exile_x_from_gy_max: additional.exile_x_max,
                     sacrifice_options: additional.sacrifice_options.clone(),
                     additional_cost_label: additional.label.clone(),
+                    // The cost this entry casts with — the actions above all
+                    // carry it, and the player's CastSpell must too (#128).
+                    alternative_cost: Some(fb_total.clone()),
                 });
             }
             }

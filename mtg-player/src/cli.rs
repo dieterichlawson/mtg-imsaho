@@ -1602,7 +1602,9 @@ impl CliPlayer {
             sacrifice: chosen_sacrifice,
             exile_count: None,
             exile_ids: vec![],
-            alternative_cost: None,
+            // The cost this entry was offered for: dropping it here charged
+            // the normal cost for an alternative-cost entry (issue #128).
+            alternative_cost: spell.alternative_cost.clone(),
             tap_plan: spell.tap_plan.clone(),
         })
     }
@@ -3728,7 +3730,11 @@ impl Player for CliPlayer {
         // Each entry maps to either a direct action or an interactive casting flow.
         let mut display: Vec<DisplayEntry> = Vec::new();
         let mut display_labels: Vec<String> = Vec::new();
-        let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        // Keyed by (object, casting with an alternative cost): a spell that
+        // can be cast both normally and via Rooftop Storm's "without paying
+        // its mana cost" is TWO menu rows — collapsing on the object alone
+        // dropped the CR 601.2b choice (issue #128).
+        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
 
         // Ordering: non-tap actions, cast spells, tap actions, concede last.
         let mut deferred_taps: Vec<(usize, String)> = Vec::new();
@@ -3736,21 +3742,30 @@ impl Player for CliPlayer {
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
-                Action::CastSpell { object_id, .. } => {
+                Action::CastSpell { object_id, alternative_cost, .. } => {
                     // Skip expanded CastSpell entries — use castable_spells instead.
-                    if !seen_spell_objects.contains(object_id) {
-                        // Find the matching CastableSpell entry.
+                    let key = (*object_id, alternative_cost.is_some());
+                    if !seen_spell_objects.contains(&key) {
+                        // Find the CastableSpell entry for this way to cast.
                         if let Some(cs_idx) = legal.castable_spells.iter()
-                            .position(|cs| cs.object_id == *object_id)
+                            .position(|cs| cs.object_id == *object_id
+                                && cs.alternative_cost.is_some() == alternative_cost.is_some())
                         {
-                            seen_spell_objects.push(*object_id);
+                            seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
+                            let alt_note = match &cs.alternative_cost {
+                                Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
+                                    " (without paying its mana cost)".to_string(),
+                                Some(alt) if !cs.is_flashback =>
+                                    format!(" (alternative cost {alt})"),
+                                _ => String::new(),
+                            };
                             let label = if tap_str.is_empty() {
-                                format!("{} {}", verb, cs.name)
+                                format!("{} {}{}", verb, cs.name, alt_note)
                             } else {
-                                format!("{} {} (tap {})", verb, cs.name, tap_str)
+                                format!("{} {}{} (tap {})", verb, cs.name, alt_note, tap_str)
                             };
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }

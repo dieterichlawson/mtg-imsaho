@@ -389,3 +389,37 @@ fn snapcaster_mage_grants_flashback() {
         "Snapcaster Mage should let Lightning Bolt be cast from the graveyard for {{R}}");
 }
 
+
+/// Issue #128: an alternative cost is a CHOICE made as part of casting
+/// (CR 601.2b, 118.9). When the normal cost is also payable, both ways to
+/// cast must reach the player — as expanded actions AND as collapsed
+/// CastableSpell entries (the CLI/LLM menus build rows from the latter, and
+/// used to drop the Rooftop Storm '{0}' way entirely).
+#[test]
+fn rooftop_storm_offers_both_ways_to_cast_when_both_are_payable() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Rooftop Storm", P0);
+    let corpse = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
+    // {1}{B} affordable normally.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let normal = legal.actions.iter().any(|a| matches!(a,
+        Action::CastSpell { object_id, alternative_cost: None, .. } if *object_id == corpse));
+    let alt = legal.actions.iter().any(|a| matches!(a,
+        Action::CastSpell { object_id, alternative_cost: Some(_), .. } if *object_id == corpse));
+    assert!(normal && alt, "both cast actions are offered");
+
+    let entries: Vec<_> = legal.castable_spells.iter()
+        .filter(|cs| cs.object_id == corpse)
+        .collect();
+    assert_eq!(entries.len(), 2, "one collapsed entry per way to cast");
+    assert!(entries.iter().any(|cs| cs.alternative_cost.is_none()));
+    let alt_entry = entries.iter().find(|cs| cs.alternative_cost.is_some())
+        .expect("the alternative-cost entry exists");
+    assert!(alt_entry.tap_plan.is_empty(),
+        "'without paying its mana cost' taps nothing: {:?}", alt_entry.tap_plan);
+}
