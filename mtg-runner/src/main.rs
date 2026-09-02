@@ -67,6 +67,10 @@ fn die(msg: &str) -> ! {
 fn stream_game_log(state: &GameState, from: usize) -> usize {
     for entry in &state.game_log[from..] {
         let level = match entry.level {
+            // Private entries are one player's hidden information (a "look
+            // at", a fruitless search); the --log file is shared between
+            // hotseat seats, so they never reach it (issue #119).
+            mtg_engine::state::LogLevel::Private => continue,
             mtg_engine::state::LogLevel::Debug => mtg_player::game_log::LogLevel::Debug,
             _ => mtg_player::game_log::LogLevel::Info,
         };

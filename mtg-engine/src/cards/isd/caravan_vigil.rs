@@ -86,10 +86,10 @@ impl CardBehavior for CaravanVigil {
         // this used to take that land for the player — and declining still
         // shuffles, because the search happened (CR 701.19a).
         if basic_lands.is_empty() {
-            // Debug on purpose: a player who searched and came back with
-            // nothing need not say whether there was anything to find, and an
-            // Event-level line would say it for them.
-            state.log(LogLevel::Debug, "Caravan Vigil: no basic land in library".into());
+            // Private on purpose: a player who searched and came back with
+            // nothing need not say whether there was anything to find, and a
+            // louder line would say it for them (issue #119).
+            state.log(LogLevel::Private, "Caravan Vigil: no basic land in library".into());
             crate::cards::helpers::shuffle_library(state, controller);
             return;
         }

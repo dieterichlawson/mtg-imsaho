@@ -94,11 +94,12 @@ impl CardBehavior for DelverOfSecrets {
         };
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
 
-        // Log what was seen. Debug level on purpose: the controller looks at
-        // this card, the opponent does not, and only `display_log` (Info and
-        // above) is shown to players.
+        // Log what was seen. Private level on purpose: the controller looks
+        // at this card, the opponent does not (CR 701.18a) — not through
+        // `display_log` (Info and above) and not through the shared --log
+        // file either (issue #119).
         let top_card_name = state.name_of(top_card_id, registry);
-        state.log(LogLevel::Debug,
+        state.log(LogLevel::Private,
             format!("Delver of Secrets: top card is {top_card_name}"));
 
         // Always present the "you may reveal" choice. Per the ruling, the player may reveal

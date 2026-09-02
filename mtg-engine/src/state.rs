@@ -289,14 +289,21 @@ pub struct GameState {
 /// Log level for game log entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum LogLevel {
+    /// Information only ONE player is entitled to see — a CR 701.18a "look
+    /// at" (Delver's top card), or whether a fruitless library search had
+    /// anything to find. Never shown to players (display_log is Info and
+    /// above) and never written to the shared --log file either: in a
+    /// hotseat game the log file is readable by both seats, and it used to
+    /// carry these lines at Debug level (issue #119).
+    Private = 0,
     /// Every priority pass, mana tap, etc.
-    Debug = 0,
+    Debug = 1,
     /// Actions taken: land plays, phase changes.
-    Info = 1,
+    Info = 2,
     /// Important game events: spells cast/resolved, combat, life changes.
-    Event = 2,
+    Event = 3,
     /// Major game moments: turn changes, player death, game over.
-    Milestone = 3,
+    Milestone = 4,
 }
 
 /// A single log entry with a level.

@@ -330,7 +330,11 @@ impl GameView {
                 .filter(|e| e.level >= crate::state::LogLevel::Info)
                 .map(|e| e.message.clone())
                 .collect(),
+            // Private entries are one player's hidden information and the
+            // view is handed to both seats — they stay out of even the
+            // full log (issue #119).
             full_log: state.game_log.iter()
+                .filter(|e| e.level > crate::state::LogLevel::Private)
                 .map(|e| e.message.clone())
                 .collect(),
             revealed_names,

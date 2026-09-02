@@ -894,11 +894,11 @@ pub fn search_library(
     // card. So the choice is offered even when exactly one card qualifies,
     // where this used to take it for them.
     if candidates.is_empty() {
-        // Nothing to offer, so nothing to decline. Debug level on purpose: a
-        // player who searched and came back with nothing is not obliged to say
-        // whether there was anything to find, and this line would say it for
-        // them.
-        state.log(crate::state::LogLevel::Debug,
+        // Nothing to offer, so nothing to decline. Private level on purpose:
+        // a player who searched and came back with nothing is not obliged to
+        // say whether there was anything to find, and this line would say it
+        // for them — including through the shared --log file (issue #119).
+        state.log(crate::state::LogLevel::Private,
             format!("{}: no matching card in library", state.obj_name(source_id)));
         shuffle_library(state, searcher);
         return;
