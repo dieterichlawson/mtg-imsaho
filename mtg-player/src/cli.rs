@@ -2837,7 +2837,9 @@ impl CliPlayer {
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             let input = Self::read_line("  Block (blocker:attacker / enter=none)> ");
 
-            if input.is_empty() {
+            // Same declining vocabulary as the attack prompt: a player who
+            // just learned 'none' there will type it here (issue #117).
+            if input.is_empty() || input == "none" || input == "n" {
                 return Action::DeclareBlockers { assignments: vec![] };
             }
 
