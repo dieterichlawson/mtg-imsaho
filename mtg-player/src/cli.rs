@@ -2541,6 +2541,20 @@ impl CliPlayer {
                     .collect::<Vec<_>>().join(", "))
         };
 
+        // Rejection messages render inside the pane at the prompt row, not
+        // via bare println! at column 0 — those landed on the LOG panel and
+        // merged with its text into garbage (issue #110).
+        let w = term_w as usize;
+        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+        let show_error = |msg: &str| {
+            let clipped: String = msg.chars().take(mid_w).collect();
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
+                SetForegroundColor(Color::Red), Print(clipped), ResetColor);
+            let _ = stdout().flush();
+            std::thread::sleep(std::time::Duration::from_millis(900));
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+        };
+
         loop {
             // Clear the row before re-prompting: a rejected entry's characters
             // otherwise stay on screen and visually merge with the next
@@ -2557,7 +2571,7 @@ impl CliPlayer {
             // attackers is always legal (must-attack is enforced below).
             if input.is_empty() || input == "none" || input == "n" {
                 if !must_attack.is_empty() {
-                    println!("{}", forced_error(&must_attack.iter().copied().collect::<Vec<_>>()));
+                    show_error(&forced_error(&must_attack.iter().copied().collect::<Vec<_>>()));
                     continue;
                 }
                 return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
@@ -2600,7 +2614,7 @@ impl CliPlayer {
                         .collect();
                     let missing = missing_forced(&chosen);
                     if !missing.is_empty() {
-                        println!("{}", forced_error(&missing));
+                        show_error(&forced_error(&missing));
                         continue;
                     }
                     return Action::DeclareAttackers {
@@ -2610,11 +2624,11 @@ impl CliPlayer {
                             .collect(),
                     };
                 }
-                println!("  Invalid attacker(s): {}. Valid range is 0-{}.",
+                show_error(&format!("  Invalid attacker(s): {}. Valid range is 0-{}.",
                     bad.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "),
-                    eligible.len() - 1);
+                    eligible.len() - 1));
             } else {
-                println!("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.");
+                show_error("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.");
             }
         }
     }
