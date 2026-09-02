@@ -210,6 +210,33 @@ enum UpToPick {
     Cancel,
 }
 
+/// Display width of one character in terminal columns (CJK and other wide
+/// characters take two cells). Clipping by `char` count let 20 wide chars
+/// overflow a 40-column region and wrap over neighbouring panels (#109).
+fn col_width(c: char) -> usize {
+    unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)
+}
+
+/// Truncate `s` to at most `max` display COLUMNS (not chars).
+fn clip_cols(s: &str, max: usize) -> String {
+    let mut cols = 0;
+    let mut out = String::new();
+    for c in s.chars() {
+        let w = col_width(c);
+        if cols + w > max {
+            break;
+        }
+        cols += w;
+        out.push(c);
+    }
+    out
+}
+
+/// Display width of `s` in terminal columns.
+fn str_cols(s: &str) -> usize {
+    s.chars().map(col_width).sum()
+}
+
 /// One line of a full-screen info view (`l`/`g`/`e`), carrying just enough
 /// styling for the shared pager to render it (issues #101/#102).
 enum InfoLine {
@@ -1227,8 +1254,20 @@ impl CliPlayer {
         let search_display = if filter.is_empty() {
             format!(" /search{}", " ".repeat(right_w.saturating_sub(8)))
         } else {
+            // Clipped to the gutter by display columns: an overlong or
+            // wide-character filter used to wrap onto the next terminal row
+            // and paint over the STACK panel (#109). Show the TAIL — what
+            // the player just typed is the useful part.
             let text = format!(" /{filter}");
-            let pad = right_w.saturating_sub(text.chars().count());
+            let text = if str_cols(&text) > right_w {
+                let tail: String = text.chars().rev().collect::<String>();
+                let mut kept = clip_cols(&tail, right_w.saturating_sub(1));
+                kept = kept.chars().rev().collect();
+                format!("\u{2026}{kept}")
+            } else {
+                text
+            };
+            let pad = right_w.saturating_sub(str_cols(&text));
             format!("{}{}", text, " ".repeat(pad))
         };
         let _ = execute!(out, cursor::MoveTo(right_col, 1),
@@ -1865,13 +1904,32 @@ impl CliPlayer {
         while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
             let _ = event::read();
         }
+        // The echo stops at the terminal's right edge minus one: an
+        // unbounded echo let a 5000-character paste wrap across the whole
+        // pane and scroll the frame away (issue #109; same cap idea as the
+        // menu reader's, #53). Input beyond the cap still lands in `buf`,
+        // it just isn't painted.
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let start_col = cursor::position().map(|(x, _)| x as usize).unwrap_or(0);
+        let echo_cap = (term_w as usize).saturating_sub(start_col + 1);
+        // Echo is tracked in display COLUMNS, not chars — 20 CJK chars are
+        // 40 cells and used to overflow a char-counted cap (#109).
+        let mut echoed_chars: usize = 0;
+        let mut echoed_cols: usize = 0;
         let mut buf = String::new();
         loop {
             let Some(ev) = read_event_guarded() else { continue };
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                buf.push_str(first);
-                let _ = execute!(out, Print(first));
+                for c in first.chars() {
+                    buf.push(c);
+                    let w = col_width(c);
+                    if echoed_cols + w <= echo_cap {
+                        let _ = execute!(out, Print(c.to_string()));
+                        echoed_chars += 1;
+                        echoed_cols += w;
+                    }
+                }
                 let _ = out.flush();
                 continue;
             }
@@ -1885,22 +1943,36 @@ impl CliPlayer {
                 }
                 // Ctrl-U kills the line (issue #79), here as in the menu reader.
                 KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    for _ in 0..buf.chars().count() {
-                        let _ = execute!(out, Print("\x08 \x08"));
-                    }
                     buf.clear();
+                    while echoed_cols > 0 {
+                        let _ = execute!(out, Print("\x08 \x08"));
+                        echoed_cols -= 1;
+                    }
+                    echoed_chars = 0;
                     let _ = out.flush();
                 }
                 KeyCode::Backspace => {
-                    if buf.pop().is_some() {
-                        let _ = execute!(out, Print("\x08 \x08"));
-                        let _ = out.flush();
+                    if let Some(c) = buf.pop() {
+                        // Unechoed tail chars (beyond the cap) erase nothing.
+                        if buf.chars().count() < echoed_chars {
+                            for _ in 0..col_width(c) {
+                                let _ = execute!(out, Print("\x08 \x08"));
+                                echoed_cols = echoed_cols.saturating_sub(1);
+                            }
+                            echoed_chars -= 1;
+                            let _ = out.flush();
+                        }
                     }
                 }
                 KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                     buf.push(c);
-                    let _ = execute!(out, Print(c.to_string()));
-                    let _ = out.flush();
+                    let w = col_width(c);
+                    if echoed_cols + w <= echo_cap {
+                        let _ = execute!(out, Print(c.to_string()));
+                        let _ = out.flush();
+                        echoed_chars += 1;
+                        echoed_cols += w;
+                    }
                 }
                 // Unbound chords are ignored, never typed (#51).
                 _ => {}
@@ -1965,7 +2037,10 @@ impl CliPlayer {
         let gutter = w / 5;
         let mid_w = w.saturating_sub(gutter + if has_right { gutter + 2 } else { 1 });
         let echo_cap = mid_w.saturating_sub("  > ".len());
-        let mut echoed: usize = 0;
+        // Tracked in display COLUMNS, like read_line — a char-counted cap
+        // still overflowed with wide characters (#109).
+        let mut echoed_chars: usize = 0;
+        let mut echoed_cols: usize = 0;
 
         // Bracketed paste, enabled only for this raw-mode read: without it a
         // multi-line paste arrives as N keystroke sequences whose embedded
@@ -1981,9 +2056,11 @@ impl CliPlayer {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
                 for c in first.chars() {
                     buf.push(c);
-                    if echoed < echo_cap {
+                    let w = col_width(c);
+                    if echoed_cols + w <= echo_cap {
                         let _ = execute!(out, Print(c.to_string()));
-                        echoed += 1;
+                        echoed_chars += 1;
+                        echoed_cols += w;
                     }
                 }
                 let _ = out.flush();
@@ -2005,10 +2082,11 @@ impl CliPlayer {
                         }
                         // Single 'r' — treat as normal input.
                         buf.push('r');
-                        if echoed < echo_cap {
+                        if echoed_cols < echo_cap {
                             let _ = execute!(out, Print("r"));
                             let _ = out.flush();
-                            echoed += 1;
+                            echoed_chars += 1;
+                            echoed_cols += 1;
                         }
                     }
                     KeyCode::Enter => {
@@ -2020,11 +2098,16 @@ impl CliPlayer {
                         std::process::exit(0);
                     }
                     KeyCode::Backspace => {
-                        if buf.pop().is_some() && echoed > buf.chars().count() {
-                            // Erase character on screen (only ones echoed)
-                            let _ = execute!(out, Print("\x08 \x08"));
-                            let _ = out.flush();
-                            echoed -= 1;
+                        if let Some(c) = buf.pop() {
+                            // Erase on screen only what was echoed.
+                            if buf.chars().count() < echoed_chars {
+                                for _ in 0..col_width(c) {
+                                    let _ = execute!(out, Print("\x08 \x08"));
+                                    echoed_cols = echoed_cols.saturating_sub(1);
+                                }
+                                echoed_chars -= 1;
+                                let _ = out.flush();
+                            }
                         }
                     }
                     // Ctrl-U: kill the line, the standard readline binding
@@ -2034,10 +2117,11 @@ impl CliPlayer {
                     // the recovery step exists for (issue #79).
                     KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                         buf.clear();
-                        while echoed > 0 {
+                        while echoed_cols > 0 {
                             let _ = execute!(out, Print("\x08 \x08"));
-                            echoed -= 1;
+                            echoed_cols -= 1;
                         }
+                        echoed_chars = 0;
                         let _ = out.flush();
                     }
                     // Unbound chords are ignored, never typed: Ctrl-L must
@@ -2047,10 +2131,12 @@ impl CliPlayer {
                     // silently pick menu entries (#51).
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         buf.push(c);
-                        if echoed < echo_cap {
+                        let w = col_width(c);
+                        if echoed_cols + w <= echo_cap {
                             let _ = execute!(out, Print(c.to_string()));
                             let _ = out.flush();
-                            echoed += 1;
+                            echoed_chars += 1;
+                            echoed_cols += w;
                         }
                     }
                     _ => {}
@@ -3188,7 +3274,20 @@ impl CliPlayer {
             let _ = execute!(out, SetForegroundColor(Color::Yellow),
                 Print(format!("═══ {title} ═══\n\r")),
                 ResetColor);
-            let _ = execute!(out, Print(format!("Filter: {filter}_\n\r\n\r")));
+            // Clipped by display columns; an unclipped 10k-char filter was
+            // 50 rows of echo re-painted per keystroke and looked like a
+            // hang (#109). The tail is shown — it's what was last typed.
+            let (term_w_now, _) = terminal::size().unwrap_or((80, 24));
+            let avail = (term_w_now as usize).saturating_sub("Filter: _".len() + 1);
+            let shown = if str_cols(&filter) > avail {
+                let tail: String = filter.chars().rev().collect::<String>();
+                let mut kept = clip_cols(&tail, avail.saturating_sub(1));
+                kept = kept.chars().rev().collect();
+                format!("\u{2026}{kept}")
+            } else {
+                filter.clone()
+            };
+            let _ = execute!(out, Print(format!("Filter: {shown}_\n\r\n\r")));
 
             let (_, term_height) = terminal::size().unwrap_or((80, 24));
             let max_list = (term_height as usize).saturating_sub(8); // Leave room for detail
@@ -3849,6 +3948,22 @@ mod tests {
         let v = view(Step::PrecombatMain, 6, true);
         let l = pass_concede_plus(vec![cast(4)]);
         assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_some());
+    }
+
+    // Issue #109: echo and filter displays clip by display COLUMNS, so a
+    // wide-character (CJK) filter can't take twice its char count in cells
+    // and wrap over neighbouring panels.
+    #[test]
+    fn clipping_counts_display_columns_not_chars() {
+        assert_eq!(col_width('a'), 1);
+        assert_eq!(col_width('稲'), 2);
+        // 5 wide chars = 10 columns; a 7-column clip keeps only 3 chars (6 cols).
+        assert_eq!(clip_cols("稲妻稲妻稲", 7), "稲妻稲");
+        assert_eq!(str_cols("稲妻稲"), 6);
+        // ASCII behaves like a char clip.
+        assert_eq!(clip_cols("abcdef", 4), "abcd");
+        assert_eq!(clip_cols("abc", 10), "abc");
+        assert_eq!(clip_cols("", 5), "");
     }
 
     // Issues #101/#102: the info views clamp to the terminal height and
