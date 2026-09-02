@@ -38,6 +38,7 @@ Options:
   --deck1 <name-or-file> Deck for player 1: built-in name or deck file  (default red-green)
   --deck2 <name-or-file> Deck for player 2  (default white-black)
   --seed <N>             Deterministic seed for shuffles and random players
+  --on-the-play <1|2>    Which seat takes the first turn (default: random, CR 103.1)
   --log <path>           Append the game log to this file
   --save <path>          Continuously write a resumable save to this file
   --resume <path>        Resume from a save file (saved decks/seed win over flags)
@@ -99,7 +100,7 @@ fn write_save_atomically(path: &str, json: &str) -> std::io::Result<()> {
 /// a typo'd --deck1 quietly played the wrong deck (issue #55).
 fn validate_args(args: &[String]) {
     const VALUE_FLAGS: &[&str] = &["--p1", "--p2", "--deck1", "--deck2",
-        "--seed", "--log", "--save", "--resume"];
+        "--seed", "--log", "--save", "--resume", "--on-the-play"];
     const BOOL_FLAGS: &[&str] = &["--check-invariants", "--quiet", "-q"];
     let mut i = 1;
     while i < args.len() {
@@ -177,6 +178,17 @@ fn main() {
     let seed: Option<u64> = args.iter().position(|a| a == "--seed")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.parse().unwrap_or_else(|_| die(&format!("--seed takes a number, got '{s}'"))));
+
+    // --on-the-play 1|2 pins which seat takes the first turn; without it the
+    // opening player is randomized per CR 103.1 (seeded, so reproducible) —
+    // p0-always-on-the-play biased every recorded match (issue #112).
+    let starting_player: Option<PlayerId> = args.iter().position(|a| a == "--on-the-play")
+        .and_then(|i| args.get(i + 1))
+        .map(|v| match v.as_str() {
+            "1" => PlayerId(0),
+            "2" => PlayerId(1),
+            other => die(&format!("--on-the-play takes 1 or 2, got '{other}'")),
+        });
 
     // --check-invariants runs the structural GameState invariants at every
     // decision point and exits nonzero on the first violation.
@@ -270,7 +282,7 @@ fn main() {
             player_names: vec![name1.clone(), name2.clone()],
             decklists: vec![deck1, deck2],
             starting_life: 20,
-            starting_player: None,
+            starting_player,
             // A fresh seed per game unless --seed pins one.
             rng_seed: seed,
         };

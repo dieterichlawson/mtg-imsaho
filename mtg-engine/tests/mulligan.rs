@@ -364,3 +364,35 @@ fn integration_keep_then_concede_ends_game() {
     assert!(saw_turn1, "Game loop should have reached turn 1 after mulligans");
     assert!(state.is_game_over());
 }
+
+/// Issue #112 (CR 103.1): the opening player is determined at random —
+/// seeded, so a --seed game replays identically — instead of always p0.
+/// An explicit starting_player (loser-chooses, --on-the-play) still wins.
+#[test]
+fn the_opening_player_is_seeded_random_not_always_p0() {
+    let registry = CardRegistry::with_all_cards();
+    let game_with = |starting: Option<PlayerId>, seed: u64| {
+        let config = GameConfig {
+            player_names: vec!["P0".into(), "P1".into()],
+            decklists: vec![test_decklist(), test_decklist()],
+            starting_life: 20,
+            starting_player: starting,
+            rng_seed: Some(seed),
+        };
+        engine::setup_game(&config, &registry).active_player
+    };
+
+    // Reproducible: the same seed always yields the same opening player.
+    assert_eq!(game_with(None, 42), game_with(None, 42));
+
+    // Random: across seeds, both seats win the roll sometimes.
+    let winners: std::collections::HashSet<PlayerId> =
+        (0u64..32).map(|s| game_with(None, s)).collect();
+    assert_eq!(winners.len(), 2,
+        "both seats should win the die roll across 32 seeds — always-p0 was \
+         the issue #112 bias");
+
+    // An explicit choice wins over the roll.
+    assert_eq!(game_with(Some(PlayerId(1)), 42), PlayerId(1));
+    assert_eq!(game_with(Some(PlayerId(0)), 42), PlayerId(0));
+}

@@ -506,18 +506,6 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         p.life = config.starting_life;
     }
 
-    // Honour the caller's choice of starting player if specified. Default
-    // to PlayerId(0) (the legacy behaviour) otherwise. The caller is
-    // expected to randomise game 1 and apply loser-chooses for games 2+
-    // per MTG tournament rules.
-    if let Some(starting) = config.starting_player {
-        assert!(
-            starting.0 < num_players,
-            "starting_player {starting:?} out of range for {num_players}-player game",
-        );
-        state.active_player = starting;
-    }
-
     // Seed the game's randomness before anything draws from it. Without a
     // seed from the caller, one from the OS — so an unconfigured game is a
     // different game each time, and a configured one is the same game every
@@ -526,6 +514,23 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         use rand::Rng;
         rand::thread_rng().gen()
     });
+
+    // Who takes the first turn. An explicit choice from the caller wins
+    // (loser-chooses for games 2+, or a --on-the-play flag); otherwise the
+    // opening player is determined at random (CR 103.1), from the seeded
+    // stream so a --seed game replays identically. Defaulting to p0 made
+    // --deck1 win the die roll 100% of the time, biasing every recorded
+    // match and A/B deck test (issue #112).
+    if let Some(starting) = config.starting_player {
+        assert!(
+            starting.0 < num_players,
+            "starting_player {starting:?} out of range for {num_players}-player game",
+        );
+        state.active_player = starting;
+    } else {
+        state.active_player =
+            PlayerId(u8::try_from(state.random_below(u64::from(num_players))).unwrap_or(0));
+    }
 
     // Create card objects for each player's deck.
     for (player_idx, decklist) in config.decklists.iter().enumerate() {
