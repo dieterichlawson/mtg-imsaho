@@ -374,7 +374,7 @@ pub enum TemporaryEffect {
 ///
 /// Exhaustive by design: a new `TemporaryEffect` variant must be classified
 /// here rather than silently defaulting.
-fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
+pub(crate) fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
     match effect {
         TemporaryEffect::ModifyPT { target, .. }
         | TemporaryEffect::GrantKeyword { target, .. }
@@ -3123,6 +3123,10 @@ pub struct PendingAbilityEffect {
     pub description: String,
     /// Player who activated the ability.
     pub activator: PlayerId,
+    /// What the ability asks of its target, read before its costs were paid
+    /// (the source may be gone by the time X is funded).
+    #[serde(default)]
+    pub target_requirement: Option<crate::cards::TargetRequirement>,
 }
 
 /// Context stashed between `CastSpell` action submission and the follow-up
@@ -3137,10 +3141,6 @@ pub struct PendingAbilityEffect {
 pub struct PendingSpellCast {
     /// The spell object being cast (still in its origin zone).
     pub object_id: ObjectId,
-    /// What the ability asks of its target, read before its costs were paid
-    /// (the source may be gone by the time X is funded).
-    #[serde(default)]
-    pub target_requirement: Option<crate::cards::TargetRequirement>,
     /// Player casting the spell.
     pub player: PlayerId,
     /// Card ID for behavior / `card_data` lookups.

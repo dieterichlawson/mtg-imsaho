@@ -37,15 +37,22 @@ fn assert_flags(state: &mtg_engine::state::GameState, reg: &CardRegistry, needle
 fn a_clean_state_has_no_violations() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
+    // `game_at_step` leaves the turn counter at 1 with the first-turn flag
+    // off, which is not a state a game can reach; a later turn is.
+    state.turn_number = 3;
 
     // Battlefield: creatures, a land, an attached Aura, attached Equipment,
     // a planeswalker with loyalty. The bear carries healthy in-game marks —
-    // non-lethal damage and a +1/+1 counter — because an inverted checker
-    // clause flags exactly the healthy version of what it polices.
-    let bear = ready_creature(&mut state, P0, 2, 3);
+    // non-lethal damage (with the record of what dealt it) and a +1/+1
+    // counter — because an inverted checker clause flags exactly the
+    // healthy version of what it polices. Real cards throughout: the
+    // checker asks the registry about every card.
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let opposing_bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
     {
         let o = state.get_object_mut(bear).unwrap();
         o.damage_marked = 1;
+        o.damaged_by.push(opposing_bear);
         o.counters.insert(CounterType::PlusOnePlusOne, 1);
     }
     named_permanent(&mut state, &reg, "Forest", P1);
@@ -88,8 +95,9 @@ fn a_clean_state_has_no_violations() {
 
     // A healthy declared combat passes check_settled at the combat steps.
     let mut combat_state = game_at_step(Step::DeclareBlockers, P0);
-    let attacker = ready_creature(&mut combat_state, P0, 2, 2);
-    let blocker = ready_creature(&mut combat_state, P1, 2, 2);
+    combat_state.turn_number = 3;
+    let attacker = named_permanent(&mut combat_state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut combat_state, &reg, "Grizzly Bears", P1);
     mtg_engine::combat::declare_attackers(&mut combat_state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut combat_state, &[(blocker, attacker)]);
     assert_eq!(check_settled(&combat_state, &reg), Vec::<String>::new());

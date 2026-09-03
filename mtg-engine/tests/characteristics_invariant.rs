@@ -40,6 +40,9 @@ const ALLOWED: &[(&str, &str)] = &[
     ("cards/isd/grimoire_of_the_dead.rs", "grants Zombie and black at runtime"),
     ("cards/isd/nevermore.rs", "names a CARD from the registry; no game object involved"),
     ("triggers.rs", "face_name implements front/back resolution for trigger display"),
+    ("invariants/objects.rs", "the fuzz oracle audits the raw fields against the layer (CR 400.7 leaks)"),
+    ("invariants/events.rs", "the fuzz oracle reads printed faces to check what entered the battlefield"),
+    ("invariants/stack.rs", "the fuzz oracle reads printed faces to check casting timing and X"),
 ];
 
 /// Reads that indicate a rules decision made off the raw field.

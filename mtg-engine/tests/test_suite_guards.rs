@@ -517,7 +517,9 @@ fn crate_sources() -> Vec<(String, String)> {
 fn only_the_damage_pipeline_marks_damage() {
     let mut offenders = Vec::new();
     for (rel, text) in crate_sources() {
-        if rel == "damage.rs" {
+        // The fuzz oracle only reads `damage_marked` (its `== 0` comparisons
+        // look like assignments to this scan).
+        if rel == "damage.rs" || rel.starts_with("invariants/") {
             continue;
         }
         // Unit tests inside a module set up damaged creatures on purpose.
@@ -577,6 +579,11 @@ fn a_rules_decision_about_a_name_goes_through_name_of() {
         // compares the names of mana *groups* in a funding request, which are
         // not game objects at all.
         if rel == "state.rs" || rel == "funding.rs" {
+            continue;
+        }
+        // The fuzz oracle's object check is what audits the cache against
+        // `name_of`; it has to read the cache to do so.
+        if rel == "invariants/objects.rs" {
             continue;
         }
         let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
@@ -657,7 +664,7 @@ fn only_the_library_helper_puts_a_card_into_a_library() {
         // `invariants.rs` audits the order against the zone — it takes
         // `&GameState` and cannot edit anything; its violation messages
         // name `library_order` on lines that also push onto its own list.
-        if rel == "state.rs" || rel == "invariants.rs" {
+        if rel == "state.rs" || rel.starts_with("invariants/") {
             continue;
         }
         let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());
@@ -835,7 +842,7 @@ fn no_test_assembles_combat_state_by_hand() {
         // `invariant_checker.rs` builds deliberately malformed combat states
         // — its subject is that the fuzzing oracle flags exactly the states
         // the helpers refuse to produce.
-        if name == "mod.rs" || name == "invariant_checker.rs" {
+        if name == "mod.rs" || name == "invariant_checker.rs" || name == "invariant_families.rs" {
             continue;
         }
         for (n, line) in text.lines().enumerate() {

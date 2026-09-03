@@ -22,6 +22,23 @@ use crate::ids::PlayerId;
 use crate::state::{GameState, StackEntry};
 use crate::types::{Keyword, Zone};
 
+mod effects;
+mod events;
+mod objects;
+mod permanents;
+mod prompts;
+mod stack;
+mod turn;
+
+/// One message per violation.
+pub type Violations = Vec<String>;
+
+/// Whether `p` indexes a player of this game (every `get_player` panics
+/// otherwise, so this is checked before anything reads through an id).
+fn player_ok(state: &GameState, p: PlayerId) -> bool {
+    (p.0 as usize) < state.players.len()
+}
+
 /// Invariants that hold at every decision point, even mid-resolution.
 /// Returns one message per violation; empty means the state is coherent.
 #[must_use]
@@ -312,6 +329,12 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
         }
     }
 
+    objects::check_core(state, _registry, &mut v);
+    stack::check_core(state, _registry, &mut v);
+    prompts::check_core(state, _registry, &mut v);
+    turn::check_core(state, _registry, &mut v);
+    events::check_core(state, _registry, &mut v);
+
     v
 }
 
@@ -323,9 +346,10 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
     let mut v = check_core(state, registry);
 
     // CR 704.5d: a token anywhere but the battlefield has ceased to exist.
-    // (The stack is allowed for a token copy of a spell.)
+    // (Nothing in this pool copies a spell, so no token is ever on the
+    // stack either.)
     for obj in state.objects_in_id_order() {
-        if obj.is_token && obj.zone != Zone::Battlefield && obj.zone != Zone::Stack {
+        if obj.is_token && obj.zone != Zone::Battlefield {
             v.push(format!("token {} ({}) still exists in {:?}", obj.id.0, obj.name, obj.zone));
         }
     }
@@ -584,6 +608,11 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
             }
         }
     }
+
+
+    turn::check_settled(state, registry, &mut v);
+    effects::check_settled(state, registry, &mut v);
+    permanents::check_settled(state, registry, &mut v);
 
     v
 }

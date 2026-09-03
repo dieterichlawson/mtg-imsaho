@@ -37,7 +37,10 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | flashback (CR 702.33) | `flashback.rs`, `flashback_multiple_instances.rs` |
 | targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs`, `submitted_targets.rs` |
 | registry lookup and `CardBehavior` hook defaults | `registry_and_behavior_contracts.rs` |
-| the fuzzing oracle checks itself | `invariant_checker.rs` |
+| the fuzzing oracle checks itself | `invariant_checker.rs`, `invariant_families.rs` |
+| CR 400.7 zone-change memory and copy identity | `zone_change_memory.rs` |
+| the legend rule (CR 704.5j) | `legend_rule.rs` |
+| an ability's controller and requirement are fixed at activation (CR 602.2a, 601.2c) | `activation_controller.rs` |
 | fizzling | `fizzle.rs` |
 | activated abilities (CR 602) | `activated_abilities.rs`, `activated_no_stack.rs` |
 | regeneration (CR 701.15) | `regeneration.rs` |
