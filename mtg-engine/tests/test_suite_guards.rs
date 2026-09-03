@@ -582,8 +582,9 @@ fn a_rules_decision_about_a_name_goes_through_name_of() {
             continue;
         }
         // The fuzz oracle's object check is what audits the cache against
-        // `name_of`; it has to read the cache to do so.
-        if rel == "invariants/objects.rs" {
+        // `name_of`, and the transition check that the cache is stable; both
+        // have to read the cache to do so.
+        if rel == "invariants/objects.rs" || rel == "invariants/transition.rs" {
             continue;
         }
         let test_mod = text.find("#[cfg(test)]").unwrap_or(text.len());

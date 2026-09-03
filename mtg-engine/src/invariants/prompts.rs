@@ -292,13 +292,16 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                     if *p2 != player || *optional {
                         v.push(format!("legend-rule prompt for p{} answered by p{}, optional={optional}", p2.0, player.0));
                     }
-                    let group: std::collections::BTreeSet<ObjectId> = state.objects_in_id_order().into_iter()
-                        .filter(|o| o.zone == Zone::Battlefield && o.controller == player
-                            && state.name_of(o.id, registry) == *legend_name && state.is_legendary(o.id, registry))
-                        .map(|o| o.id)
-                        .collect();
                     let offered: std::collections::BTreeSet<ObjectId> = options.iter()
                         .filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None })
+                        .collect();
+                    // The group is everything sharing the offered legends'
+                    // face name (the prompt's label is a display string).
+                    let face = offered.iter().next().map(|id| state.name_of(*id, registry)).unwrap_or_default();
+                    let group: std::collections::BTreeSet<ObjectId> = state.objects_in_id_order().into_iter()
+                        .filter(|o| o.zone == Zone::Battlefield && o.controller == player
+                            && state.name_of(o.id, registry) == face && state.is_legendary(o.id, registry))
+                        .map(|o| o.id)
                         .collect();
                     if offered.len() != options.len() || offered != group || group.len() < 2 {
                         v.push(format!("legend-rule prompt for {legend_name:?} offers {offered:?} but the duplicate group is {group:?} (CR 704.5j)"));

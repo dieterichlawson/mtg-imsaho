@@ -107,11 +107,18 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                         v.push(format!("{what} is an Aura spell with {} targets (CR 303.4a)", obj.targets.len()));
                     }
                 }
-                // CR 601.2b/107.3a: an X spell announced X.
-                if !obj.cast_with_flashback
-                    && registry.card_data(obj.card_id).and_then(|d| d.cost).is_some_and(|c| c.has_x())
-                    && obj.x_value.is_none()
-                {
+                // CR 601.2b/107.3a: an X spell announced X — for the cost it
+                // was cast with, the flashback cost included (Devil's Play).
+                let paid = if obj.cast_with_flashback {
+                    registry.card_data(obj.card_id).and_then(|d| d.flashback_cost).or_else(|| state.until_end_of_turn.iter()
+                        .find_map(|e| match e {
+                            crate::state::TemporaryEffect::GrantFlashback { target, cost } if *target == obj.id => Some(cost.clone()),
+                            _ => None,
+                        }))
+                } else {
+                    registry.card_data(obj.card_id).and_then(|d| d.cost)
+                };
+                if paid.is_some_and(|c| c.has_x()) && obj.x_value.is_none() {
                     v.push(format!("{what} has an X cost but no X announced (CR 601.2b)"));
                 }
                 // CR 302.1/303.1/307.1 etc.: a sorcery-speed spell was cast

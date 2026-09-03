@@ -75,6 +75,11 @@ fn identity(prev: &GameState, cur: &GameState, v: &mut Violations) {
                 if printed(b) != printed(a) {
                     v.push(format!("#{} ({}) changed printed card {} -> {} (CR 707.2)", a.id.0, a.name, printed(a).0, printed(b).0));
                 }
+                if !a.is_token && a.zone_change_count == b.zone_change_count && a.copy_grantor.is_none()
+                    && b.copy_grantor.is_none() && a.is_transformed == b.is_transformed && a.name != b.name
+                {
+                    v.push(format!("#{} was renamed {:?} -> {:?} without a copy or transform", a.id.0, a.name, b.name));
+                }
                 if b.card_id != a.card_id
                     && !((b.copy_grantor.is_some() && b.zone == Zone::Battlefield)
                         || (a.copy_grantor.is_some() && b.zone_change_count > a.zone_change_count))
@@ -330,8 +335,11 @@ fn zone_ledger(prev: &GameState, cur: &GameState, events: &[GameEvent], v: &mut 
             GameEvent::CardDrawn { object, .. } => ("CardDrawn", *object, moved(*object, Some(Zone::Library), Zone::Hand)),
             GameEvent::Discarded { object, .. } => ("Discarded", *object, moved(*object, Some(Zone::Hand), Zone::Graveyard)),
             GameEvent::CreatureCardMilled { object, .. } => ("CreatureCardMilled", *object, moved(*object, Some(Zone::Library), Zone::Graveyard)),
-            GameEvent::SpellCast { object, .. } => ("SpellCast", *object,
-                moved(*object, Some(Zone::Hand), Zone::Stack) || moved(*object, Some(Zone::Graveyard), Zone::Stack)),
+            GameEvent::SpellCast { object, .. } => ("SpellCast", *object, match cur.get_object(*object) {
+                // CR 702.34a: cast from the graveyard exactly when flashback was used.
+                Some(o) if o.zone == Zone::Stack => moved(*object, Some(if o.cast_with_flashback { Zone::Graveyard } else { Zone::Hand }), Zone::Stack),
+                _ => moved(*object, Some(Zone::Hand), Zone::Stack) || moved(*object, Some(Zone::Graveyard), Zone::Stack),
+            }),
             GameEvent::LeftBattlefield { object, to, .. } => ("LeftBattlefield", *object, moved(*object, Some(Zone::Battlefield), *to)),
             GameEvent::EnteredBattlefield { object, .. } => ("EnteredBattlefield", *object,
                 moved(*object, None, Zone::Battlefield) || prev.get_object(*object).is_none()),
@@ -469,7 +477,7 @@ fn life_and_loss(prev: &GameState, cur: &GameState, action: Option<&Action>, eve
             }
             match pb.loss_reason {
                 Some(LossReason::LifeReachedZero) => {
-                    if pa.life > 0 && !chain.iter().any(|(_, n)| *n <= 0) {
+                    if pb.life > 0 || (pa.life > 0 && !chain.iter().any(|(_, n)| *n <= 0)) {
                         v.push(format!("p{} lost to 0 life without their life reaching 0 (CR 704.5a)", p.0));
                     }
                 }
@@ -506,9 +514,10 @@ fn life_and_loss(prev: &GameState, cur: &GameState, action: Option<&Action>, eve
 /// payment or the end of a step.
 fn mana_ledger(prev: &GameState, cur: &GameState, action: Option<&Action>, events: &[GameEvent], v: &mut Violations) {
     let cleanup = events.iter().any(|e| matches!(e, GameEvent::StepStarted { step: Step::Cleanup }));
+    // Nothing that resolves spends mana without asking first, so a pass
+    // never pays.
     let paying = matches!(action, Some(Action::CastSpell { .. } | Action::ActivateAbility { .. }
-        | Action::ActivateManaAbility { .. } | Action::ResolveChoice { .. }))
-        || (matches!(action, Some(Action::PassPriority)) && prev.consecutive_passes == 1 && !prev.stack.is_empty());
+        | Action::ActivateManaAbility { .. } | Action::ResolveChoice { .. }));
     for (pa, pb) in prev.players.iter().zip(&cur.players) {
         let p = pa.id;
         let emptied = events.iter().any(|e| matches!(e, GameEvent::ManaPoolEmptied { player } if *player == p));
@@ -972,9 +981,9 @@ fn triggers_witnessed(prev: &GameState, cur: &GameState, events: &[GameEvent], v
             TriggerEvent::CreatureCardMilled { milled_object, .. } =>
                 has(&|e| matches!(e, GameEvent::CreatureCardMilled { object, .. } if *object == *milled_object)),
             TriggerEvent::LeftBattlefield => has(&|e| matches!(e, GameEvent::LeftBattlefield { object, .. } if *object == src)),
-            TriggerEvent::Upkeep => has(&|e| matches!(e, GameEvent::StepStarted { step: Step::Upkeep })),
-            TriggerEvent::EndStep => has(&|e| matches!(e, GameEvent::StepStarted { step: Step::EndStep })),
-            TriggerEvent::EndCombat => has(&|e| matches!(e, GameEvent::StepStarted { step: Step::EndCombat })),
+            TriggerEvent::Upkeep => cur.step == Step::Upkeep && has(&|e| matches!(e, GameEvent::StepStarted { step: Step::Upkeep })),
+            TriggerEvent::EndStep => cur.step == Step::EndStep && has(&|e| matches!(e, GameEvent::StepStarted { step: Step::EndStep })),
+            TriggerEvent::EndCombat => cur.step == Step::EndCombat && has(&|e| matches!(e, GameEvent::StepStarted { step: Step::EndCombat })),
             TriggerEvent::StateTriggered | TriggerEvent::DelayedTokenExile { .. } => true,
         };
         if !witnessed {
