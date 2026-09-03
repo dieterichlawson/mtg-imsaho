@@ -328,6 +328,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 Target::Player(pid) => {
                     if let Some(combat) = &mut state.combat {
                         combat.attackers.insert(*token_id, *pid);
+                        // A declared attacker gets its blocker list at
+                        // declaration; a token that enters attacking needs
+                        // one too, or every block against it is silently
+                        // dropped (found by fuzzing: 14 Cagebreakers wolves,
+                        // three blocks, none recorded).
+                        combat.blocker_assignments.entry(*token_id).or_default();
                     }
                     state.log(LogLevel::Event,
                         format!("{token_name} is attacking p{}", pid.0));
@@ -341,6 +347,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     let walker_name = state.obj_name(*walker_id);
                     if let (Some(wc), Some(combat)) = (walker_controller, state.combat.as_mut()) {
                         combat.attackers.insert(*token_id, wc);
+                        // A declared attacker gets its blocker list at
+                        // declaration; a token that enters attacking needs
+                        // one too, or every block against it is silently
+                        // dropped (found by fuzzing: 14 Cagebreakers wolves,
+                        // three blocks, none recorded).
+                        combat.blocker_assignments.entry(*token_id).or_default();
                         combat.planeswalker_defenders.insert(*token_id, *walker_id);
                     }
                     state.log(LogLevel::Event,

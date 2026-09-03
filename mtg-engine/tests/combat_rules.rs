@@ -1325,3 +1325,36 @@ fn a_forced_attacker_is_in_the_attackers_declared_event() {
         "the forced attacker is part of the declaration (CR 508.1d), got {declared:?}");
     assert!(state.get_object(bear).unwrap().tapped, "and it was tapped by attacking (CR 508.1f)");
 }
+
+/// A token put onto the battlefield attacking (Kessig Cagebreakers) is an
+/// attacking creature like any other: it can be blocked, and the block is
+/// recorded. It used to be entered into the attackers map without a blocker
+/// list, so every block declared against it was silently dropped — found
+/// by fuzzing (fourteen wolves, three blocks, none recorded).
+#[test]
+fn a_token_that_enters_attacking_can_be_blocked() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    declare_combat(&mut state, &[(attacker, P1, &[])]);
+    let token = state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green], vec![CardType::Creature],
+        vec![], vec!["Wolf".into()], &reg)[0];
+    mtg_engine::cards::helpers::tokens_enter_combat_attacking(&mut state, attacker, P0, &[token], &reg);
+    let mut state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))) },
+        &reg,
+    );
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&token)), "test precondition: the token attacks");
+
+    state.step = Step::DeclareBlockers;
+    submit_declare_blockers(&mut state, P1, &[(blocker, token)], &reg);
+
+    let c = state.combat.as_ref().unwrap();
+    assert_eq!(c.blocker_assignments.get(&token).map(Vec::as_slice), Some(&[blocker][..]),
+        "the block against the token is recorded (CR 509.1h)");
+    assert!(c.blocked_attackers.contains(&token));
+}
