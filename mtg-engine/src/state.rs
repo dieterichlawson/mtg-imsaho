@@ -726,6 +726,10 @@ impl GameState {
         // falls back to the object's own fields only for a token, which has no
         // face to read (the ruling's "if the copied creature is a token, the
         // token copies the original characteristics of that token").
+        // CR 707.8a: a copy of a permanent with its back face up shows that
+        // face too. The copied characteristics below already come from the
+        // face that is up; the flag is what makes every accessor agree.
+        let source_transformed = source.is_some_and(|o| o.is_transformed);
         //
         // Reading `obj.power` / `obj.toughness` instead copied a Tree of
         // Redemption whose toughness had been exchanged with its controller's
@@ -780,6 +784,7 @@ impl GameState {
     /// spell that left the stack).
     ///
     /// Dropping it from `self.objects` is most of it, because every zone but
+                obj.is_transformed = source_transformed;
     /// one is derived from that map and so empties itself. The exception is a
     /// library, whose order is a list of object ids kept alongside; an id left
     /// there is a card that can be drawn and isn't — the draw comes up empty,
@@ -968,6 +973,13 @@ impl GameState {
                 // battlefield. Tokens are the exception: their object-level
                 // fields ARE their printed characteristics.
                 //
+                // CR 400.7 with 602.5b/606.3: the record of which of this
+                // permanent's abilities were used this turn belongs to the
+                // object that leaves; what comes back has used nothing. It
+                // was cleared only at turn start, so a Darkthicket Wolf or a
+                // planeswalker that used its ability and died stayed locked
+                // out after a same-turn reanimation.
+                obj.abilities_activated_this_turn.clear();
                 // This runs before the CR 712.8a revert below, which writes the
                 // front face onto a transformed DFC's object and would
                 // otherwise be wiped by the clear.
@@ -992,6 +1004,9 @@ impl GameState {
                 // characteristics accessor resolves through `face_data`, which
                 // reads that flag. What has no registry lookup behind it is
                 // `name` and the base P/T, so those are written back from the
+                    obj.card_types.clear();
+                    obj.keywords.clear();
+                    obj.is_legendary = false;
                 // printed card: the Tree of Redemption's toughness exchange
                 // otherwise followed it into the graveyard and came back with
                 // it, and a copy kept the copied creature's name.
@@ -1100,6 +1115,14 @@ impl GameState {
             // property of the zone change, not of the caller having remembered
             // a helper. It used to be emitted by `engine::mill_one` alone, and
             // four cards moved library cards to the graveyard by hand —
+            // The same rule for "for as long as" control effects. Object ids
+            // survive zone changes, so an entry left behind for a stolen
+            // creature that died named whatever came back under that id — a
+            // reanimated creature (Grimoire of the Dead, under its thief) was
+            // handed to its original controller when the thief's source later
+            // left. The source side is the SBA's job (`expire_control_effects`),
+            // but an entry whose source is gone is dead weight too.
+            self.control_effects.retain(|c| c.object != id && c.source != id);
             // Trepanation Blade milling the *defending* player, which is
             // exactly whose graveyard Undead Alchemist watches ("whenever a
             // creature card is put into an opponent's graveyard from their

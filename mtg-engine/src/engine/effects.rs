@@ -135,6 +135,21 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{source_name}: sacrificed {name}"));
         }
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
+            // The copy applies to the permanent that raised the choice. Killed
+            // in response (a printed 0/0 until the copy lands), the card in
+            // the graveyard is a new object the choice no longer concerns
+            // (CR 400.7) — writing the copy onto it made a permanent copy in
+            // the graveyard that a reanimation brought back as the copied
+            // creature.
+            if !state.get_object(*source_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                if let Some(obj) = state.get_object_mut(*source_id) {
+                    obj.entering_copy_source = false;
+                }
+                return;
+            }
+            // CR 707.8: copying a transformed permanent copies the face that
+            // is up, and the copy shows that face.
+            let target_transformed = state.get_object(*target_id).is_some_and(|o| o.is_transformed);
             // Copy the target creature's copiable characteristics onto the
             // source permanent (CR 707.2), including the legendary supertype.
             let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary) =
@@ -204,6 +219,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.colors = colors;
                 obj.is_legendary = is_legendary;
                 obj.copy_grantor = grantor;
+                obj.is_transformed = target_transformed;
                 // The copy has resolved — disarm the SBA copy-guard so the
                 // permanent is once again subject to state-based actions.
                 obj.entering_copy_source = false;

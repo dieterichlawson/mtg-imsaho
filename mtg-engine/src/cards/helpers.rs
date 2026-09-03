@@ -611,16 +611,26 @@ pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
 /// which made those fields a second source of truth that a card hand-rolling
 /// its own transform could leave stale. There is nothing left to leave stale.
 pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-    let (card_id, was_transformed) = match state.get_object(object_id) {
+    let card_id = match state.get_object(object_id) {
         // A token copy of a double-faced card has only the copied face — it is
         // not itself a double-faced card, so it cannot transform (CR 111.7,
         // and the Back from the Brink ruling says so explicitly). A token
         // stamped with a DFC's `card_id` would otherwise pick up that card's
         // upkeep trigger and flip.
-        Some(o) if o.zone == Zone::Battlefield && !o.is_token => (o.card_id, o.is_transformed),
+        Some(o) if o.zone == Zone::Battlefield && !o.is_token => (o.card_id, o.is_transformed, o.copy_grantor),
         _ => return,
     };
+    let (card_id, was_transformed, copy_grantor) = (card_id.0, card_id.1, card_id.2);
     let Some(behavior) = registry.get(card_id) else { return; };
+
+    // CR 701.28c: it is the *card* that has to be double-faced. A single-faced
+    // clone (Evil Twin) copying a werewolf shows the werewolf's face, but the
+    // card under it has no other face — nothing happens when it would
+    // transform.
+    let printed = copy_grantor.unwrap_or(card_id);
+    if registry.get(printed).is_none_or(|b| b.back_face_data().is_none()) {
+        return;
+    }
 
     // CR 701.28c: only a double-faced permanent can transform. Without this,
     // "transform all Humans" flipped `is_transformed` on a single-faced Human
