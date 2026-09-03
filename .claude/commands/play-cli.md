@@ -20,7 +20,7 @@ tmux new-session -d -s mtg -x 120 -y 45 \
 sleep 5
 ```
 
-Available opponents: `random`, `claude`, `claude:claude-haiku-4-5-20251001`, `gemini`
+Available opponents: `random`, `claude-code` / `claude-code:<model>` (the LLM seat driven through `claude -p` — billed to the CLI's login, no API key), `claude`, `claude:claude-haiku-4-5-20251001`, `gemini` (the last three call metered APIs and need `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`)
 
 Built-in decks: `red-green`, `white-black`, `blue-white`, `black-aggro`
 

@@ -9,11 +9,14 @@ are played through. You are a finder in the bug pipeline
 
 ## Hard cost rule
 
-NEVER spawn an LLM seat. `--p1 claude`, `--p2 claude`, `--p1 gemini`,
+NEVER spawn a metered API seat. `--p1 claude`, `--p2 claude`, `--p1 gemini`,
 `--p2 gemini` (any model suffix) call metered external APIs and are
 forbidden for this crew, without exception. Your seats are `cli` (driven by
-you through tmux), `random`, and `scripted`. You yourself are the only
-intelligence in the loop.
+you through tmux), `random`, `scripted`, and `claude-code[:model]` — the
+same LLM seat run through `claude -p`, billed to the CLI's own login. Use
+`claude-code` when a mission needs a thinking opponent (the LLM-harness
+missions below need it as the seat under test); prefer `random` when it
+does not.
 
 ## Setup
 
@@ -64,6 +67,20 @@ reach: real terminals, real signals, real filesystems, hostile timing.
 - **H8 Determinism from the outside**: same seed + same scripted keystrokes
   twice → byte-identical `--log` (timestamps aside) and identical saves;
   `--on-the-play` honored; different seeds actually differ.
+- **H9 LLM harness (prompt protocol)**: run `--p1 claude-code --p2 random`
+  (and `--p1 cli --p2 claude-code` with you at the cli seat) with `--log`
+  and read what the LLM seat is *told* versus what the game state is: every
+  prompt field in `mtg-player/src/llm.rs`'s `GAME_RULES` format documented
+  and populated; hidden information never in the seat's prompt; legal
+  actions listed match what the engine accepts; a schema-constrained answer
+  that the engine rejects (prompt/parse mismatch); resume-from-recap
+  fidelity after `--save`/`--resume`; retry/fallback behavior when the CLI
+  fails (point `CLAUDE_CODE_BIN` at a script that exits non-zero or hangs).
+- **H10 LLM harness (subprocess)**: with `CLAUDE_CODE_BIN` pointing at a
+  wrapper that logs argv/stdin and delegates to the real `claude`: session
+  ids stable across a game, one subprocess per decision, no leaked
+  processes or temp dirs after exit/Ctrl-C/kill, the game never blocks
+  past the call timeout, usage totals printed at game end are sane.
 
 ## Filing
 
