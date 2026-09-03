@@ -288,6 +288,12 @@ fn zone_ledger(prev: &GameState, cur: &GameState, events: &[GameEvent], v: &mut 
             None => (None, 0),
         };
         let expected = b.zone_change_count.saturating_sub(from_count) as usize;
+        // CR 111.2: a token is created on the battlefield, and says so.
+        if from_zone.is_none()
+            && !events.iter().any(|e| matches!(e, GameEvent::EnteredBattlefield { object, .. } if *object == b.id))
+        {
+            v.push(format!("#{} ({}) appeared without entering the battlefield (CR 111.2)", b.id.0, b.name));
+        }
         if m.len() != expected {
             v.push(format!("#{} ({}) moved {} time(s) but announced {} (CR 400.7)", b.id.0, b.name, expected, m.len()));
             continue;

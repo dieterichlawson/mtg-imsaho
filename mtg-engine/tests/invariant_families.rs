@@ -1014,6 +1014,13 @@ fn transition_zone_and_status_ledgers_are_checked() {
     flags_transition(&prev, None, &s, &reg, "became tapped with no Tapped event");
 
     let mut s = next(&prev);
+    let wolf = s.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green], vec![CardType::Creature],
+        vec![], vec!["Wolf".into()], &reg)[0];
+    clean_transition(&prev, None, &s, &reg);
+    s.events.retain(|e| !matches!(e, GameEvent::EnteredBattlefield { object, .. } if *object == wolf));
+    flags_transition(&prev, None, &s, &reg, "appeared without entering the battlefield (CR 111.2)");
+
+    let mut s = next(&prev);
     s.get_object_mut(bear).unwrap().damage_marked = 1;
     flags_transition(&prev, None, &s, &reg, "damage marked after 0 + 0 dealt (CR 120.3)");
 
