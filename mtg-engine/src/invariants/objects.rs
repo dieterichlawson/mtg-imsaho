@@ -5,10 +5,13 @@
 use super::{player_ok, Violations};
 use crate::cards::CardRegistry;
 use crate::ids::CardId;
-use crate::state::GameState;
+use crate::ids::ObjectId;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind, StackEntry};
+use crate::triggers::TriggerEvent;
 use crate::types::{CardType, CounterType, Supertype, Zone};
 
 pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
+    contract(state, registry, v);
     let n_players = state.players.len();
     for obj in state.objects_in_id_order() {
         let id = obj.id;
@@ -287,5 +290,93 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
     // The unused designation stays unused: nothing writes it.
     if state.day_night.is_some() {
         v.push("day/night designation set but nothing in this pool uses it".into());
+    }
+}
+
+/// Whether an enters-as-copy decision for `id` is still in flight: its
+/// enters trigger is queued or on the stack, or its copy prompt is up.
+fn copy_choice_live(state: &GameState, id: ObjectId) -> bool {
+    let trigger_waiting = state.stack.iter()
+        .filter_map(|e| match e { StackEntry::Trigger(t) => Some(t), _ => None })
+        .chain(state.pending_triggers.iter())
+        .chain(state.pending_trigger_pushes_ap.iter())
+        .chain(state.pending_trigger_pushes_nap.iter())
+        .any(|t| t.source.id == id && matches!(t.event, TriggerEvent::SelfEntered));
+    let prompt_up = matches!(&state.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget { effect: PendingEffect::CopyCreature { source_id }, .. }, ..
+        }) if *source_id == id);
+    trigger_waiting || prompt_up
+}
+
+/// What every card hook leaves behind on an object — the contract card code
+/// is held to whichever card wrote the field.
+fn contract(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
+    for obj in state.objects_in_id_order() {
+        let id = obj.id;
+        let tag = format!("#{} ({})", id.0, obj.name);
+        let on_bf = obj.zone == Zone::Battlefield;
+
+        // CR 614.1d: the state-based-action copy-guard is armed only while
+        // the enters-as-copy choice is live; afterwards the permanent is an
+        // ordinary one again.
+        if obj.entering_copy_source && !copy_choice_live(state, id) {
+            v.push(format!("{tag} is exempt from state-based actions with no enters-as-copy choice in flight (CR 614.1d)"));
+        }
+
+        if !obj.is_token {
+            // CR 707.2/613: the object-level vectors are written only by copy
+            // effects, from the copied card's active face, so they never say
+            // more than that face does (grants go through effects instead).
+            if let Some(face) = state.face_data(id, registry) {
+                for k in &obj.keywords {
+                    if !face.keywords.contains(k) {
+                        v.push(format!("{tag} carries {k:?} which its face does not print (CR 707.2)"));
+                    }
+                }
+                for t in &obj.card_types {
+                    if !face.card_types.contains(t) {
+                        v.push(format!("{tag} carries type {t:?} which its face does not print (CR 707.2)"));
+                    }
+                }
+            }
+            // CR 208.1: a card has a P/T box exactly when it is printed with
+            // one (every face of every double-faced card in this pool agrees).
+            if let Some(d) = registry.card_data(obj.card_id) {
+                if obj.power.is_some() != d.power.is_some() {
+                    v.push(format!("{tag} has power {:?} but the card prints {:?} (CR 208.1)", obj.power, d.power));
+                }
+            }
+        }
+
+        // CR 701.15: a regeneration shield is on a creature.
+        if obj.regeneration_shields > 0 && !state.is_creature(id, registry) {
+            v.push(format!("{tag} has {} regeneration shield(s) but is no creature (CR 701.15)", obj.regeneration_shields));
+        }
+
+        // CR 122.1: counters are on permanents, and +1/+1 counters on creatures.
+        for (kind, n) in &obj.counters {
+            if *n == 0 {
+                continue;
+            }
+            if !on_bf {
+                v.push(format!("{tag} has {n} {kind:?} counter(s) in {:?} (CR 122.1)", obj.zone));
+            } else if *kind == CounterType::PlusOnePlusOne && !state.is_creature(id, registry) {
+                v.push(format!("{tag} has {n} +1/+1 counter(s) but is no creature"));
+            }
+        }
+
+        // CR 606.3: a loyalty ability is activated by its controller on
+        // their own turn, so the sentinel sits on the active player's walker.
+        if on_bf && obj.abilities_activated_this_turn.contains(&999) && obj.controller != state.active_player {
+            v.push(format!("{tag} used a loyalty ability this turn but p{} is not the active player (CR 606.3)", obj.controller.0));
+        }
+
+        // CR 301.5/303.4: an attachment names something that exists.
+        if let Some(h) = obj.attached_to {
+            if state.get_object(h).is_none() {
+                v.push(format!("{tag} is attached to #{} which does not exist", h.0));
+            }
+        }
     }
 }

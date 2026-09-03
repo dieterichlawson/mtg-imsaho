@@ -5,8 +5,58 @@
 
 use super::{player_ok, Violations};
 use crate::cards::CardRegistry;
-use crate::state::{until_eot_object_target, GameState, TemporaryEffect};
-use crate::types::Zone;
+use crate::state::{until_eot_object_target, GameState, StackEntry, TemporaryEffect};
+use crate::triggers::TriggerEvent;
+use crate::types::{CardType, Zone};
+
+pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
+    for e in &state.until_end_of_turn {
+        // CR 611.2c: every until-end-of-turn effect on an object in this pool
+        // is written for a creature; creature-ness never changes here.
+        if let Some(t) = until_eot_object_target(e) {
+            if state.get_object(t).is_some_and(|o| o.zone == Zone::Battlefield) && !state.is_creature(t, registry) {
+                v.push(format!("until-end-of-turn effect on #{} which is no creature", t.0));
+            }
+        }
+        // CR 702.34a: granted flashback is the card's own mana cost, on an
+        // instant or sorcery card.
+        if let TemporaryEffect::GrantFlashback { target, cost } = e {
+            match state.get_object(*target) {
+                None => v.push(format!("flashback granted to #{} which does not exist", target.0)),
+                Some(o) => {
+                    if o.is_token {
+                        v.push(format!("flashback granted to token #{}", target.0));
+                    }
+                    if !state.has_card_type(*target, CardType::Instant, registry)
+                        && !state.has_card_type(*target, CardType::Sorcery, registry)
+                    {
+                        v.push(format!("flashback granted to #{} ({}) which is no instant or sorcery (CR 702.34a)", target.0, o.name));
+                    }
+                    let printed = state.face_data(*target, registry).and_then(|d| d.cost);
+                    if printed.as_ref() != Some(cost) {
+                        v.push(format!("flashback granted to #{} ({}) for {cost:?} but its cost is {printed:?}", target.0, o.name));
+                    }
+                }
+            }
+        }
+    }
+    for c in &state.control_effects {
+        if state.get_object(c.object).is_some_and(|o| o.zone == Zone::Battlefield) && !state.is_creature(c.object, registry) {
+            v.push(format!("control effect over #{} which is no creature", c.object.0));
+        }
+    }
+    // CR 603.7d: the delayed exiles in this pool are for tokens.
+    let delayed = state.end_of_combat_exiles.iter().map(|e| e.target_id)
+        .chain(state.stack.iter().filter_map(|e| match e {
+            StackEntry::Trigger(t) => match t.event { TriggerEvent::DelayedTokenExile { target_id } => Some(target_id), _ => None },
+            _ => None,
+        }));
+    for t in delayed {
+        if state.get_object(t).is_some_and(|o| !o.is_token) {
+            v.push(format!("delayed exile of #{} which is a card, not a token", t.0));
+        }
+    }
+}
 
 pub(super) fn check_settled(state: &GameState, _registry: &CardRegistry, v: &mut Violations) {
     // CR 611.2c/400.7: an effect on a permanent is on a permanent that is

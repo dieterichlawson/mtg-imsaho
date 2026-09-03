@@ -438,8 +438,22 @@ fn damage(state: &GameState, registry: &CardRegistry, events: &[GameEvent], quie
     }
 }
 
+/// Whether `e` is about object `id` — the events that can move or mark it.
+fn names_object(e: &GameEvent, id: ObjectId) -> bool {
+    match e {
+        GameEvent::CardDrawn { object, .. } | GameEvent::LandPlayed { object, .. }
+        | GameEvent::SpellCast { object, .. } | GameEvent::SpellResolved { object }
+        | GameEvent::EnteredBattlefield { object, .. } | GameEvent::LeftBattlefield { object, .. }
+        | GameEvent::ObjectMoved { object, .. } | GameEvent::Tapped { object } | GameEvent::Untapped { object }
+        | GameEvent::CreatureDied { object, .. } | GameEvent::Discarded { object, .. }
+        | GameEvent::CreatureCardMilled { object, .. } => *object == id,
+        _ => false,
+    }
+}
+
 fn zone_changes(state: &GameState, registry: &CardRegistry, events: &[GameEvent], v: &mut Violations) {
     for (i, e) in events.iter().enumerate() {
+        let later_mention = |id: ObjectId| events[i + 1..].iter().any(|x| names_object(x, id));
         match e {
             GameEvent::CardDrawn { player, object } => {
                 let ok = state.get_object(*object).is_some_and(|o|
@@ -450,12 +464,28 @@ fn zone_changes(state: &GameState, registry: &CardRegistry, events: &[GameEvent]
                 if player_ok(state, *player) && state.get_player(*player).library_order.contains(object) {
                     v.push(format!("CardDrawn #{} is still listed in p{}'s library", object.0, player.0));
                 }
+                // CR 121.1: drawing puts the card in hand, and nothing in this
+                // pool moves it again in the same action without saying so.
+                if !later_mention(*object) && state.get_object(*object).is_some_and(|o| o.zone != Zone::Hand) {
+                    v.push(format!("CardDrawn #{} but it is in {:?} (CR 121.1)", object.0, state.get_object(*object).map(|o| o.zone).unwrap()));
+                }
             }
             GameEvent::Discarded { player, object } => {
                 if !state.get_object(*object).is_some_and(|o| !o.is_token && o.owner == *player) {
                     v.push(format!("Discarded #{} by p{}: not that player's card (CR 701.9a)", object.0, player.0));
                 }
+                // CR 701.8a: discarding puts the card in the graveyard.
+                if !later_mention(*object) && state.get_object(*object).is_some_and(|o| o.zone != Zone::Graveyard) {
+                    v.push(format!("Discarded #{} but it is in {:?} (CR 701.8a)", object.0, state.get_object(*object).map(|o| o.zone).unwrap()));
+                }
             }
+            // CR 104.2a: a loss ends the game in the same breath.
+            GameEvent::PlayerLost { player, .. } => {
+                if !events[i + 1..].iter().any(|x| matches!(x, GameEvent::GameEnded { .. })) {
+                    v.push(format!("PlayerLost p{} without the game ending afterwards (CR 104.2a)", player.0));
+                }
+            }
+
             GameEvent::CreatureCardMilled { object, milled_player } => {
                 if !state.get_object(*object).is_some_and(|o| o.owner == *milled_player) {
                     v.push(format!("CreatureCardMilled #{} for p{}: not that player's card (CR 701.17a)", object.0, milled_player.0));
@@ -465,6 +495,10 @@ fn zone_changes(state: &GameState, registry: &CardRegistry, events: &[GameEvent]
             // reported once with the controller it had.
             GameEvent::CreatureDied { object, controller, is_token, .. } => {
                 let after = &events[i + 1..];
+                // Morbid reads this flag; every death path sets it.
+                if !state.creature_died_this_turn && !after.iter().any(|x| matches!(x, GameEvent::TurnStarted { .. })) {
+                    v.push(format!("CreatureDied #{} but creature_died_this_turn is false", object.0));
+                }
                 let left = after.iter().find(|x| matches!(x, GameEvent::LeftBattlefield { object: o, .. } if o == object));
                 match left {
                     Some(GameEvent::LeftBattlefield { to, last_controller, .. }) => {
@@ -503,9 +537,19 @@ fn zone_changes(state: &GameState, registry: &CardRegistry, events: &[GameEvent]
                     v.push(format!("token #{} changed zones again after leaving the battlefield (CR 111.8)", object.0));
                 }
             }
-            // CR 306.5b: a planeswalker enters with its printed loyalty.
             GameEvent::EnteredBattlefield { object, .. } => {
                 let Some(o) = state.get_object(*object) else { continue };
+                // CR 302.6: a creature that arrived this action is summoning
+                // sick unless it was put onto the battlefield attacking, and
+                // no untap step has passed since.
+                let untapped_since = events[i + 1..].iter().any(|x| matches!(x, GameEvent::StepStarted { step: Step::Untap }));
+                let attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(object));
+                if o.zone == Zone::Battlefield && state.is_creature(*object, registry)
+                    && !o.summoning_sick && !attacking && !untapped_since
+                {
+                    v.push(format!("creature #{} ({}) entered this action but is not summoning sick (CR 302.6)", object.0, o.name));
+                }
+                // CR 306.5b: a planeswalker enters with its printed loyalty.
                 let printed = o.copy_grantor.unwrap_or(o.card_id);
                 let Some(d) = registry.card_data(printed) else { continue };
                 if !d.card_types.contains(&CardType::Planeswalker) {

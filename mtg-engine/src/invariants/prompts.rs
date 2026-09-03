@@ -9,7 +9,7 @@ use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind, LONDON_MULLIGAN_CAP};
-use crate::types::{ManaSymbol, Step, Zone};
+use crate::types::{CardType, ManaSymbol, Step, Zone};
 
 fn distinct(ids: &[ObjectId], what: &str, v: &mut Violations) {
     let mut seen = std::collections::HashSet::new();
@@ -193,9 +193,88 @@ fn mulligan_shape(state: &GameState, v: &mut Violations) {
 fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::PlayerId, source: ObjectId,
                 choice: &ResolutionChoiceKind, v: &mut Violations) {
     use ResolutionChoiceKind as K;
+    // CR 608.2: the answer is routed back through two copies of the source
+    // id (the prompt's and the choice's); they name the same object.
+    let inner = match choice {
+        K::ChooseTarget { effect: PendingEffect::CardEffect { source_id, .. }, .. }
+        | K::ChooseTarget { effect: PendingEffect::CopyCreature { source_id }, .. }
+        | K::ChooseTarget { effect: PendingEffect::TokenAttacks { source_id, .. }, .. }
+        | K::ChooseFromLibrary { source_id, .. }
+        | K::ChooseCardName { source_id, .. }
+        | K::DividePermanentsIntoPiles { source_id, .. }
+        | K::ChoosePile { source_id, .. }
+        | K::ChooseExileFromGraveyard { source_id, .. } => Some(*source_id),
+        K::YesNo { source_card, .. } => Some(*source_card),
+        K::PayOrNot { source_spell_id, .. } => Some(*source_spell_id),
+        _ => None,
+    };
+    if let Some(inner) = inner {
+        if inner != source {
+            v.push(format!("prompt from #{} carries a choice for #{} (CR 608.2)", source.0, inner.0));
+        }
+    }
+    if let K::ChooseCardType { controller, .. } = choice {
+        if *controller != player {
+            v.push(format!("card-type prompt for p{} answered by p{}", controller.0, player.0));
+        }
+    }
     match choice {
         K::ChooseTarget { options, optional, effect, .. } => {
             let w = "target prompt";
+            // The options are in the zone the effect acts on (CR 608.2d):
+            // permanents for destroy, creatures for the rest, one's own for
+            // a sacrifice (CR 701.17a), a creature or planeswalker for damage.
+            let zone_rule = match effect {
+                PendingEffect::Destroy { .. } => Some(("destroy", false, false)),
+                PendingEffect::DestroyCreature { .. } => Some(("destroy-creature", true, false)),
+                PendingEffect::AddCounters { .. } => Some(("counter", true, false)),
+                PendingEffect::DebuffUntilEOT { .. } => Some(("debuff", true, false)),
+                PendingEffect::CantBlockThisTurn { .. } => Some(("can't-block", true, false)),
+                PendingEffect::CopyCreature { .. } => Some(("copy", true, false)),
+                PendingEffect::SacrificeCreature { .. } => Some(("sacrifice", true, true)),
+                _ => None,
+            };
+            if let Some((what, creature, own)) = zone_rule {
+                for t in options {
+                    match t {
+                        Target::Object(id) => {
+                            let Some(o) = state.get_object(*id) else { continue };
+                            if o.zone != Zone::Battlefield {
+                                v.push(format!("{what} prompt offers #{} in {:?} (CR 608.2d)", id.0, o.zone));
+                            } else if creature && !state.is_creature(*id, registry) {
+                                v.push(format!("{what} prompt offers #{} which is no creature", id.0));
+                            } else if own && o.controller != player {
+                                v.push(format!("{what} prompt offers #{} which p{} does not control (CR 701.17a)", id.0, player.0));
+                            }
+                        }
+                        other => v.push(format!("{what} prompt offers {other:?}")),
+                    }
+                }
+            }
+            if let PendingEffect::DealDamage { .. } = effect {
+                for t in options {
+                    if let Target::Object(id) = t {
+                        let ok = state.get_object(*id).is_none_or(|o| o.zone == Zone::Battlefield
+                            && (state.is_creature(*id, registry) || state.has_card_type(*id, CardType::Planeswalker, registry)));
+                        if !ok {
+                            v.push(format!("damage prompt offers #{} which is no battlefield creature or planeswalker", id.0));
+                        }
+                    }
+                }
+            }
+            if let PendingEffect::TokenAttacks { .. } = effect {
+                for t in options {
+                    let ok = match t {
+                        Target::Player(p) => *p != player && player_ok(state, *p) && !state.get_player(*p).lost,
+                        Target::Object(w) => state.get_object(*w).is_none_or(|o| o.zone == Zone::Battlefield
+                            && o.controller != player && state.has_card_type(*w, CardType::Planeswalker, registry)),
+                        Target::Illegal => true,
+                    };
+                    if !ok {
+                        v.push(format!("token-attacks prompt offers {t:?} which is no opponent or opposing planeswalker (CR 508.4b)"));
+                    }
+                }
+            }
             for (i, t) in options.iter().enumerate() {
                 match t {
                     Target::Object(id) if state.get_object(*id).is_none() => v.push(format!("{w} offers missing #{}", id.0)),
@@ -298,7 +377,9 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 match state.get_object(*r) {
                     None => v.push(format!("revealed prompt offers missing #{}", r.0)),
                     Some(o) if o.is_token => v.push(format!("revealed prompt offers token #{}", r.0)),
-                    _ => {}
+                    // CR 701.16a: looking moves nothing — the cards are still
+                    // in the library until the answer.
+                    _ => library_option(state, player, *r, "revealed prompt", v),
                 }
             }
         }

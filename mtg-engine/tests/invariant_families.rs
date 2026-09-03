@@ -776,3 +776,162 @@ fn cast_time_prompts_keep_priority_and_offer_a_real_ceiling() {
     s.get_player_mut(P0).mana_pool.mana.clear();
     flags_core(&s, &reg, "offers pool");
 }
+
+// ── the card-code contract ───────────────────────────────────────────────
+
+#[test]
+fn object_contract_violations_are_flagged() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let aura = named_permanent(&mut state, &reg, "Pacifism", P0);
+    state.get_object_mut(aura).unwrap().attached_to = Some(bear);
+    clean(&state, &reg);
+
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().entering_copy_source = true;
+    flags_core(&s, &reg, "no enters-as-copy choice in flight (CR 614.1d)");
+    // With the copy prompt up the guard is legitimate.
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source: bear, choice: ResolutionChoiceKind::ChooseTarget {
+        description: String::new(), options: vec![Target::Object(aura)], optional: true,
+        effect: PendingEffect::CopyCreature { source_id: bear } } });
+    assert!(!check_core(&s, &reg).iter().any(|m| m.contains("614.1d")), "{:?}", check_core(&s, &reg));
+
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().keywords.push(Keyword::Flying);
+    flags_core(&s, &reg, "carries Flying which its face does not print (CR 707.2)");
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().card_types.push(CardType::Artifact);
+    flags_core(&s, &reg, "carries type Artifact which its face does not print (CR 707.2)");
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().power = Some(1);
+    flags_core(&s, &reg, "has power Some(1) but the card prints None (CR 208.1)");
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().regeneration_shields = 1;
+    flags_core(&s, &reg, "regeneration shield(s) but is no creature (CR 701.15)");
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().counters.insert(CounterType::PlusOnePlusOne, 1);
+    flags_core(&s, &reg, "+1/+1 counter(s) but is no creature");
+    let mut s = state.clone();
+    s.move_object(bear, Zone::Graveyard, &reg);
+    s.get_object_mut(bear).unwrap().counters.insert(CounterType::Slime, 2);
+    flags_core(&s, &reg, "has 2 Slime counter(s) in Graveyard (CR 122.1)");
+
+    let mut s = state.clone();
+    let lili = named_permanent(&mut s, &reg, "Liliana of the Veil", P1);
+    s.get_object_mut(lili).unwrap().abilities_activated_this_turn.insert(999);
+    flags_core(&s, &reg, "used a loyalty ability this turn but p1 is not the active player (CR 606.3)");
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().attached_to = Some(ObjectId(424_242));
+    flags_core(&s, &reg, "is attached to #424242 which does not exist");
+}
+
+#[test]
+fn delayed_effect_records_name_the_right_kind_of_object() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let aura = named_permanent(&mut state, &reg, "Pacifism", P0);
+    state.get_object_mut(aura).unwrap().attached_to = Some(bear);
+    let spell = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    state.get_object_mut(spell).unwrap().zone = Zone::Graveyard;
+    let cost = state.face_data(spell, &reg).unwrap().cost.unwrap();
+    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: spell, cost: cost.clone() });
+    state.until_end_of_turn.push(TemporaryEffect::ModifyPT { target: bear, power_mod: 1, toughness_mod: 1 });
+    clean(&state, &reg);
+
+    let mut s = state.clone();
+    s.until_end_of_turn.push(TemporaryEffect::ModifyPT { target: aura, power_mod: 1, toughness_mod: 1 });
+    flags_core(&s, &reg, "until-end-of-turn effect on #");
+    flags_core(&s, &reg, "which is no creature");
+
+    let mut s = state.clone();
+    s.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: spell, cost: ManaCost::free() });
+    flags_core(&s, &reg, "but its cost is");
+    let mut s = state.clone();
+    let dead = named_permanent(&mut s, &reg, "Grizzly Bears", P1);
+    s.move_object(dead, Zone::Graveyard, &reg);
+    s.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: dead, cost: cost.clone() });
+    flags_core(&s, &reg, "which is no instant or sorcery (CR 702.34a)");
+
+    let mut s = state.clone();
+    s.step = Step::DeclareBlockers;
+    s.combat = Some(mtg_engine::state::CombatState::default());
+    s.combat.as_mut().unwrap().any_attackers_declared = true;
+    s.end_of_combat_exiles.push(mtg_engine::state::EndOfCombatExileEntry {
+        target_id: bear, source_id: aura, source_card_id: s.get_object(aura).unwrap().card_id,
+        controller: P0, description: String::new() });
+    flags_core(&s, &reg, "delayed exile of #");
+    flags_core(&s, &reg, "which is a card, not a token");
+}
+
+#[test]
+fn prompt_sources_and_option_zones_are_checked() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let dead = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.move_object(dead, Zone::Graveyard, &reg);
+    let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    let prompt = |source: ObjectId, options: Vec<Target>, effect: PendingEffect| AwaitingAction::ResolutionChoice {
+        player: P0, source, choice: ResolutionChoiceKind::ChooseTarget { description: String::new(), options, optional: false, effect } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(bear, vec![Target::Object(theirs)], PendingEffect::CardEffect { source_id: theirs, key: "k".into() }));
+    flags_core(&s, &reg, "carries a choice for #");
+    flags_core(&s, &reg, "(CR 608.2)");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(bear, vec![Target::Object(dead)], PendingEffect::Destroy { source_name: "x".into() }));
+    flags_core(&s, &reg, "destroy prompt offers #");
+    flags_core(&s, &reg, "in Graveyard (CR 608.2d)");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(bear, vec![Target::Object(theirs)], PendingEffect::SacrificeCreature { source_name: "x".into() }));
+    flags_core(&s, &reg, "which p0 does not control (CR 701.17a)");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(bear, vec![Target::Object(bear)], PendingEffect::TokenAttacks {
+        token_id: bear, remaining: vec![], source_id: bear }));
+    flags_core(&s, &reg, "which is no opponent or opposing planeswalker (CR 508.4b)");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source: bear,
+        choice: ResolutionChoiceKind::ChooseFromRevealed { description: String::new(), revealed: vec![card] } });
+    flags_core(&s, &reg, "revealed prompt offers #");
+    flags_core(&s, &reg, "which is not in p0's library");
+}
+
+#[test]
+fn verb_events_leave_the_object_where_the_verb_puts_it() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    state.events.push(GameEvent::CardDrawn { player: P0, object: card });
+    clean(&state, &reg);
+
+    let mut s = state.clone();
+    s.get_object_mut(card).unwrap().zone = Zone::Graveyard;
+    flags_core(&s, &reg, "but it is in Graveyard (CR 121.1)");
+
+    let mut s = state.clone();
+    s.events = vec![GameEvent::Discarded { player: P0, object: card }];
+    flags_core(&s, &reg, "but it is in Hand (CR 701.8a)");
+
+    let mut s = state.clone();
+    s.events = vec![GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::Conceded }];
+    flags_core(&s, &reg, "PlayerLost p1 without the game ending afterwards (CR 104.2a)");
+
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().summoning_sick = false;
+    s.events = vec![GameEvent::EnteredBattlefield { object: bear, controller: P0 }];
+    flags_core(&s, &reg, "entered this action but is not summoning sick (CR 302.6)");
+
+    let mut s = state.clone();
+    s.creature_died_this_turn = false;
+    s.events = vec![GameEvent::CreatureDied { object: bear, card_id: s.get_object(bear).unwrap().card_id, controller: P0,
+        damaged_by: vec![], last_known_toughness: 2, is_token: false, subtypes: vec![] }];
+    flags_core(&s, &reg, "but creature_died_this_turn is false");
+}

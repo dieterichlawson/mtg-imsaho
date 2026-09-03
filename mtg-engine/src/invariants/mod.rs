@@ -334,6 +334,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
     prompts::check_core(state, _registry, &mut v);
     turn::check_core(state, _registry, &mut v);
     events::check_core(state, _registry, &mut v);
+    effects::check_core(state, _registry, &mut v);
 
     v
 }
