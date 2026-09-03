@@ -90,7 +90,9 @@ fn a_clean_state_has_no_violations() {
 
     // A spell properly on the stack passes check_core too.
     let bolt = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
-    let state2 = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
+    let mut state2 = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
+    // The loop collects triggers before it asks anyone; the fixture stops short of that.
+    state2.trigger_event_index = state2.events.len();
     assert_eq!(check_core(&state2, &reg), Vec::<String>::new());
 
     // A healthy declared combat passes check_settled at the combat steps.
@@ -100,6 +102,7 @@ fn a_clean_state_has_no_violations() {
     let blocker = named_permanent(&mut combat_state, &reg, "Grizzly Bears", P1);
     mtg_engine::combat::declare_attackers(&mut combat_state, &[(attacker, P1)], &[], &reg);
     mtg_engine::combat::declare_blockers(&mut combat_state, &[(blocker, attacker)]);
+    combat_state.trigger_event_index = combat_state.events.len();
     assert_eq!(check_settled(&combat_state, &reg), Vec::<String>::new());
 }
 

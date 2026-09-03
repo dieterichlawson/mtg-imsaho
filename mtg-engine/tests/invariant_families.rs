@@ -33,9 +33,23 @@ fn flags_settled(state: &GameState, reg: &CardRegistry, needle: &str) {
     assert!(v.iter().any(|m| m.contains(needle)), "expected a settled violation containing {needle:?}, got: {v:?}");
 }
 
+/// A hand-built fixture never ran the trigger collector; the game loop
+/// checks a state only after it has, so the clean baselines look at the
+/// state the way the loop would (`trigger_event_index` caught up).
+fn as_collected(state: &GameState) -> GameState {
+    let mut s = state.clone();
+    s.trigger_event_index = s.events.len();
+    s
+}
+
 #[track_caller]
 fn clean(state: &GameState, reg: &CardRegistry) {
-    assert_eq!(check_settled(state, reg), Vec::<String>::new());
+    assert_eq!(check_settled(&as_collected(state), reg), Vec::<String>::new());
+}
+
+#[track_caller]
+fn clean_core(state: &GameState, reg: &CardRegistry) {
+    assert_eq!(check_core(&as_collected(state), reg), Vec::<String>::new());
 }
 
 // ── objects ──────────────────────────────────────────────────────────────
@@ -195,7 +209,7 @@ fn stack_entry_rules_are_checked() {
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let bolt = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
     let state = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
-    assert_eq!(check_core(&state, &reg), Vec::<String>::new());
+    clean_core(&state, &reg);
 
     let mut s = state.clone();
     s.get_object_mut(bolt).unwrap().targets = vec![Target::Illegal];
@@ -281,7 +295,7 @@ fn a_cast_in_progress_is_checked_against_its_prompt_and_zones() {
     let state = cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]);
     assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
         choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })), "test precondition: funding prompt");
-    assert_eq!(check_core(&state, &reg), Vec::<String>::new());
+    clean_core(&state, &reg);
 
     let mut s = state.clone();
     s.get_object_mut(play).unwrap().zone = Zone::Battlefield;
@@ -451,7 +465,7 @@ fn cast_and_land_events_are_checked() {
     let bolt = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
     let cast = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
     assert!(cast.events.iter().any(|e| matches!(e, GameEvent::SpellCast { .. })));
-    assert_eq!(check_core(&cast, &reg), Vec::<String>::new());
+    clean_core(&cast, &reg);
 
     let mut s = cast.clone();
     s.stack.clear();
@@ -471,7 +485,7 @@ fn cast_and_land_events_are_checked() {
     let land = named_permanent(&mut s, &reg, "Forest", P0);
     s.events = vec![GameEvent::EnteredBattlefield { object: land, controller: P0 }, GameEvent::LandPlayed { player: P0, object: land }];
     s.get_player_mut(P0).land_plays_remaining = 0;
-    assert_eq!(check_core(&s, &reg), Vec::<String>::new());
+    clean_core(&s, &reg);
     s.get_player_mut(P0).land_plays_remaining = 1;
     flags_core(&s, &reg, "the land drop was not spent (CR 305.2)");
     s.active_player = P1;
@@ -692,4 +706,73 @@ fn attachment_kinds_match_their_enchant_abilities() {
     let blade = named_permanent(&mut s, &reg, "Trepanation Blade", P0);
     s.get_object_mut(blade).unwrap().attached_to_player = Some(P1);
     flags_core(&s, &reg, "attached to a player but is no Aura");
+}
+
+// ── trigger collection and cast-time prompts ─────────────────────────────
+
+/// CR 603.3: at a decision point every event has been scanned and every
+/// SBA-queued trigger bucketed. A checker that saw the state after
+/// `submit_action` but before the loop's collector would be looking at
+/// exactly the window a missed trigger hides in.
+#[test]
+fn unscanned_events_and_unbucketed_triggers_are_flagged() {
+    let (mut state, reg) = base();
+    let src = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.events.push(GameEvent::TurnStarted { player: P0, turn: 3 });
+    state.trigger_event_index = state.events.len();
+    clean(&state, &reg);
+
+    let mut s = state.clone();
+    s.trigger_event_index = 0;
+    flags_core(&s, &reg, "0 of 1 events scanned for triggers at a decision point (CR 603.3)");
+
+    let mut s = state.clone();
+    let card_id = s.get_object(src).unwrap().card_id;
+    s.pending_triggers.push(mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(src, card_id, P0, "t"),
+        mtg_engine::triggers::TriggerEvent::StateTriggered,
+    ));
+    s.priority_player = None;
+    flags_core(&s, &reg, "1 trigger(s) collected but not bucketed at a decision point (CR 603.3b)");
+}
+
+/// CR 601.2/602.2: the player casting or activating holds priority through
+/// the funding prompt, and the prompt offers exactly what could fund X.
+#[test]
+fn cast_time_prompts_keep_priority_and_offer_a_real_ceiling() {
+    let (mut state, reg) = base();
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2)]);
+    let state = cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]);
+    clean_core(&state, &reg);
+
+    let mut s = state.clone();
+    s.priority_player = Some(P1);
+    flags_core(&s, &reg, "but priority is Some(PlayerId(1)) (CR 601.2)");
+
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) =
+        &mut s.awaiting_action
+    {
+        options.max_x = 0;
+    }
+    flags_core(&s, &reg, "with nothing to fund");
+    flags_core(&s, &reg, "but a ceiling of 0");
+
+    // An activated X ability: the prompt is built from the live pool.
+    let (mut state, reg) = base();
+    let run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1), (ManaType::Green, 2)]);
+    let state = activate_onto_stack(&state, &reg, run, Some(Target::Object(bear)));
+    assert!(state.pending_ability_effect.is_some(), "test precondition: X activation stashed");
+    clean_core(&state, &reg);
+
+    let mut s = state.clone();
+    s.priority_player = None;
+    flags_core(&s, &reg, "but priority is None (CR 602.2)");
+
+    let mut s = state.clone();
+    s.get_player_mut(P0).mana_pool.mana.clear();
+    flags_core(&s, &reg, "offers pool");
 }

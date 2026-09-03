@@ -179,6 +179,20 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             _ => v.push(format!("pending_triggers holds a {:?} trigger; only state and copy-ETB triggers are queued there", t.event)),
         }
     }
+    // CR 603.3: every event has been scanned for triggers, and every trigger
+    // the state-based actions queued has been bucketed, before anyone is
+    // asked anything. The opening-hand loop never runs the collector and a
+    // finished game stops before it, so both are outside the claim.
+    if !crate::engine::in_mulligan_phase(state) && state.result.is_none() {
+        if state.trigger_event_index != state.events.len() {
+            v.push(format!("{} of {} events scanned for triggers at a decision point (CR 603.3)",
+                state.trigger_event_index, state.events.len()));
+        }
+        if !state.pending_triggers.is_empty() {
+            v.push(format!("{} trigger(s) collected but not bucketed at a decision point (CR 603.3b)",
+                state.pending_triggers.len()));
+        }
+    }
     // A state-triggered ability is on the stack exactly when its source says
     // so, and never twice (CR 603.8).
     let mut state_triggers: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
@@ -240,6 +254,10 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("{what} by p{} who is not a player", c.player.0));
         }
         check_targets(state, &what, &c.targets, v);
+        // CR 601.2: the caster holds priority throughout casting.
+        if state.priority_player != Some(c.player) {
+            v.push(format!("{what} by p{} but priority is {:?} (CR 601.2)", c.player.0, state.priority_player));
+        }
         match &state.awaiting_action {
             Some(AwaitingAction::ResolutionChoice { player, source, choice }) => {
                 let linked = match choice {
@@ -308,6 +326,10 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("{what} by p{} who is not a player", a.activator.0));
         }
         check_targets(state, &what, &a.targets, v);
+        // CR 602.2: the activator holds priority throughout activation.
+        if state.priority_player != Some(a.activator) {
+            v.push(format!("{what} by p{} but priority is {:?} (CR 602.2)", a.activator.0, state.priority_player));
+        }
         match &state.awaiting_action {
             Some(AwaitingAction::ResolutionChoice {
                 player, source,
@@ -325,6 +347,19 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
     }
     // The prompt side of the same links.
     if let Some(AwaitingAction::ResolutionChoice { player, source, choice }) = &state.awaiting_action {
+        if let ResolutionChoiceKind::ChooseXFunding { options, source_id, .. } = choice {
+            // A funding prompt only exists when there is something to fund
+            // (an empty ceiling forces X = 0 without asking).
+            if options.max_x == 0 {
+                v.push(format!("X-funding prompt for #{} with nothing to fund", source_id.0));
+            }
+            let pooled: u32 = options.pool.values().sum();
+            let tappable: u32 = options.groups.iter().map(|g| g.max_contribution()).sum();
+            if pooled + tappable != options.max_x {
+                v.push(format!("X-funding prompt for #{} offers {pooled} floating + {tappable} tappable but a ceiling of {}",
+                    source_id.0, options.max_x));
+            }
+        }
         match choice {
             ResolutionChoiceKind::ChooseXFunding { is_ability: false, source_id, .. }
             | ResolutionChoiceKind::ChooseExileFromGraveyard { source_id, .. } => {
@@ -351,7 +386,14 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                     }
                 }
             }
-            ResolutionChoiceKind::ChooseXFunding { is_ability: true, source_id, .. } => {
+            ResolutionChoiceKind::ChooseXFunding { is_ability: true, source_id, options, .. } => {
+                // The prompt was built from the live pool after the non-X
+                // part was paid, and nothing touches the pool until it is
+                // answered.
+                if player_ok(state, *player) && options.pool != state.get_player(*player).mana_pool.mana {
+                    v.push(format!("X-funding prompt for #{} offers pool {:?} but p{} floats {:?}",
+                        source_id.0, options.pool, player.0, state.get_player(*player).mana_pool.mana));
+                }
                 if let Some(a) = &state.pending_ability_effect {
                     if a.source_id != *source_id || a.activator != *player {
                         v.push(format!("X-funding prompt for #{} (p{}) but the stash is for #{} (p{})",
