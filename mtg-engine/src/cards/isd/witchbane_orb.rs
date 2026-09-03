@@ -63,6 +63,8 @@ impl CardBehavior for WitchbaneOrb {
                     format!("Witchbane Orb could not destroy {name} — it regenerated"),
                 crate::destruction::DestroyResult::Indestructible =>
                     format!("Witchbane Orb could not destroy {name} — it is indestructible"),
+                crate::destruction::DestroyResult::NotAPermanent =>
+                    format!("Witchbane Orb found {name} already gone"),
             };
             state.log(crate::state::LogLevel::Event, line);
         }

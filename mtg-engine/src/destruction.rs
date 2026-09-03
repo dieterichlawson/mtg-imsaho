@@ -19,6 +19,16 @@ pub enum DestroyResult {
     Indestructible,
     /// Destruction replaced by regeneration (state changed: tapped, damage cleared).
     Regenerated,
+    /// Nothing to destroy: the object is not on the battlefield (CR 701.7a
+    /// destroys permanents; a card already in the graveyard is a new object
+    /// that an earlier "destroy that creature" no longer concerns, CR 400.7).
+    /// No event, no zone change — a second death used to be announced for a
+    /// creature that had already died (found by fuzzing).
+    NotAPermanent,
+}
+
+fn on_battlefield(state: &GameState, id: ObjectId) -> bool {
+    state.get_object(id).is_some_and(|o| o.zone == Zone::Battlefield)
 }
 
 /// Attempt to destroy a permanent.
@@ -31,6 +41,9 @@ pub enum DestroyResult {
 /// Called by destroy spells (Doom Blade, etc.) and by SBAs for lethal damage / deathtouch.
 /// NOT called for 0-toughness deaths (rule 704.5f) — those are not destruction.
 pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
+    if !on_battlefield(state, id) {
+        return DestroyResult::NotAPermanent;
+    }
     // Indestructible prevents destruction.
     if state.has_keyword(id, Keyword::Indestructible, registry) {
         return DestroyResult::Indestructible;
@@ -71,6 +84,7 @@ pub fn try_destroy_by(
         DestroyResult::Died => format!("{source} destroyed {name}"),
         DestroyResult::Regenerated => format!("{source} could not destroy {name} — it regenerated"),
         DestroyResult::Indestructible => format!("{source} could not destroy {name} — it is indestructible"),
+        DestroyResult::NotAPermanent => format!("{source} found nothing to destroy — {name} is no longer on the battlefield"),
     };
     state.log(crate::state::LogLevel::Event, line);
     result
@@ -99,7 +113,9 @@ pub fn try_destroy_all(
     // battlefield.
     let decisions: Vec<(ObjectId, DestroyResult)> = ids.iter()
         .map(|&id| {
-            let result = if state.has_keyword(id, Keyword::Indestructible, registry) {
+            let result = if !on_battlefield(state, id) {
+                DestroyResult::NotAPermanent
+            } else if state.has_keyword(id, Keyword::Indestructible, registry) {
                 DestroyResult::Indestructible
             } else if state.get_object(id).is_some_and(|o| o.regeneration_shields > 0) {
                 DestroyResult::Regenerated
@@ -138,6 +154,9 @@ pub fn try_destroy_all(
 /// Destroy a permanent, bypassing regeneration ("can't be regenerated").
 /// Still respects indestructible.
 pub fn try_destroy_no_regen(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
+    if !on_battlefield(state, id) {
+        return DestroyResult::NotAPermanent;
+    }
     if state.has_keyword(id, Keyword::Indestructible, registry) {
         return DestroyResult::Indestructible;
     }
@@ -205,6 +224,11 @@ pub(crate) fn death_event(state: &GameState, id: ObjectId, registry: Option<&Car
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.
 fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>) {
+    // Only a permanent can be destroyed; every caller checks, and this is
+    // the last line of defence for the ones that reach here directly.
+    if !on_battlefield(state, id) {
+        return;
+    }
     if let Some(event) = death_event(state, id, registry) {
         state.events.push(event);
         state.creature_died_this_turn = true;

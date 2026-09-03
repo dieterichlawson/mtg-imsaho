@@ -151,6 +151,8 @@ impl CardBehavior for GrimgrinCorpseBorn {
                 format!("Grimgrin, Corpse-Born could not destroy {name} (indestructible)"),
             crate::destruction::DestroyResult::Regenerated =>
                 format!("Grimgrin, Corpse-Born destroyed {name}, but it regenerated"),
+            crate::destruction::DestroyResult::NotAPermanent =>
+                format!("Grimgrin, Corpse-Born found {name} already gone"),
         });
         state.add_counters(source_id, crate::types::CounterType::PlusOnePlusOne, 1);
         state.log(crate::state::LogLevel::Event,
