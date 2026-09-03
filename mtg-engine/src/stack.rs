@@ -212,7 +212,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness } => {
+        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness, loyalty } => {
             state.stack.pop();
             state.last_activated_x_value = x_value;
             state.last_activated_sacrifice = sacrificed;
@@ -280,7 +280,17 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
                 state.resolving_ability_activator = Some(activator);
-                behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);
+                if loyalty {
+                    // CR 606.5: loyalty abilities resolve like any other
+                    // activated ability; their effects live in the loyalty
+                    // hook. The source may be gone — a planeswalker that paid
+                    // itself to 0 died to CR 704.5i in the meantime — and the
+                    // ability resolves anyway (CR 113.7a), reading the
+                    // battlefield as it is now.
+                    behavior.on_loyalty_ability(state, source_id, ability_index, &targets, registry);
+                } else {
+                    behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);
+                }
                 // Held across a choice the ability raised: the rest of the
                 // effect happens when that choice is answered, and it is still
                 // this ability's effect, so its "you" is still the activator.

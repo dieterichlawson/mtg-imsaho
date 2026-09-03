@@ -50,6 +50,16 @@ pub enum StackEntry {
         /// (issue #141).
         #[serde(default)]
         sacrificed_toughness: Option<i32>,
+        /// True for a planeswalker loyalty ability (CR 606.5): it resolves
+        /// through `on_loyalty_ability` rather than
+        /// `resolve_activated_ability`. Loyalty abilities used to resolve on
+        /// the spot at activation, which meant Liliana's -6 built its pile of
+        /// "all permanents target player controls" while Liliana — about to
+        /// die to the loyalty cost she just paid — was still on the
+        /// battlefield, and the pile prompt offered a permanent that no
+        /// longer existed by the time anyone could answer it.
+        #[serde(default)]
+        loyalty: bool,
     },
 }
 

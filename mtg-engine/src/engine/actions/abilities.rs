@@ -328,9 +328,20 @@ pub(crate) fn activate_loyalty_ability(state: &mut GameState, object_id: ObjectI
                 if let Some(obj) = state.get_object_mut(object_id) {
                     obj.abilities_activated_this_turn.insert(999); // sentinel for "used loyalty this turn"
                 }
-                behavior.on_loyalty_ability(&mut *state, object_id, ability_index, targets, registry);
                 let name = card_name(&state, registry, object_id);
                 state.log(LogLevel::Event, format!("p{} activated loyalty ability on {}: {}", player.0, name, ab.description));
+                // CR 606.5: a loyalty ability is an activated ability and uses
+                // the stack. Resolving it on the spot meant its effect read
+                // the battlefield before state-based actions had seen the
+                // loyalty payment — Liliana's -6 put herself, at 0 loyalty, in
+                // her own pile prompt — and the opponent never got to respond.
+                let behavior_card_id = state.get_object(object_id)
+                    .map_or(crate::ids::CardId(0), |o| o.card_id);
+                crate::cards::push_loyalty_ability(&mut *state, object_id, ability_index,
+                    behavior_card_id, targets, ab.target_requirement.clone(), player);
+                // CR 117.3b: taking an action resets the pass count, as for
+                // regular activated abilities above.
+                state.consecutive_passes = 0;
             }
         }
     Applied::Continue

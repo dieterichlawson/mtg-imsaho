@@ -65,6 +65,37 @@ pub fn push_ability(
         target_requirement,
         sacrificed: state.last_activated_sacrifice,
         sacrificed_toughness: state.last_activated_sacrifice_toughness,
+        loyalty: false,
+    });
+}
+
+/// Put a planeswalker loyalty ability on the stack (CR 606.5).
+///
+/// The loyalty cost has been paid by the caller. No X, no sacrifice — a
+/// loyalty ability's cost is loyalty counters, so the `last_activated_*`
+/// stashes (which belong to whatever regular ability was activated last) must
+/// not leak onto this entry.
+pub fn push_loyalty_ability(
+    state: &mut GameState,
+    object_id: ObjectId,
+    ability_index: usize,
+    behavior_card_id: CardId,
+    targets: &[Target],
+    target_requirement: Option<TargetRequirement>,
+    activator: PlayerId,
+) {
+    if state.get_object(object_id).is_none() { return; }
+    state.stack.push(crate::state::StackEntry::Ability {
+        source_id: object_id,
+        ability_index,
+        behavior_card_id,
+        targets: targets.to_vec(),
+        activator,
+        x_value: None,
+        target_requirement,
+        sacrificed: None,
+        sacrificed_toughness: None,
+        loyalty: true,
     });
 }
 

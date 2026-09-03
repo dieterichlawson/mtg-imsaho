@@ -239,7 +239,7 @@ fn stack_entry_rules_are_checked() {
     s.stack.push(StackEntry::Ability {
         source_id: bear, ability_index: 0, behavior_card_id: s.get_object(bear).unwrap().card_id,
         targets: vec![Target::Object(bolt)], activator: P0, x_value: None, target_requirement: None,
-        sacrificed: None, sacrificed_toughness: Some(2),
+        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false,
     });
     flags_core(&s, &reg, "has targets but no requirement");
     flags_core(&s, &reg, "remembers a sacrificed creature's toughness but no sacrifice");
