@@ -33,8 +33,10 @@ mtg-runner — run one game of the MTG engine
 Usage: mtg-runner [OPTIONS]
 
 Options:
-  --p1 <spec>            Player 1: cli | random | claude[:model] | gemini[:model]  (default cli)
+  --p1 <spec>            Player 1: cli | random | claude[:model] | gemini[:model] | claude-code[:model]  (default cli)
   --p2 <spec>            Player 2: same specs  (default random)
+                         claude/gemini seats call metered APIs (ANTHROPIC_API_KEY / GEMINI_API_KEY);
+                         claude-code runs the same LLM seat through `claude -p` on the CLI's own login.
   --deck1 <name-or-file> Deck for player 1: built-in name or deck file  (default red-green)
   --deck2 <name-or-file> Deck for player 2  (default white-black)
   --seed <N>             Deterministic seed for shuffles and random players
@@ -656,6 +658,19 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
             }
             PlayerKind::Llm(player)
         }
+        // The same LLM seat driven through the Claude Code CLI (`claude -p`)
+        // instead of the metered Messages API — plan quota, no API key.
+        "claude-code" | "cc" if !mtg_player::llm::claude_code_available() => die(&format!(
+            "--{} {kind} needs the Claude Code CLI: `{}` is not runnable (set {} to its path)",
+            name.to_lowercase(), mtg_player::llm::claude_code_binary(),
+            mtg_player::llm::CLAUDE_CODE_BINARY_ENV)),
+        "claude-code" | "cc" => {
+            let mut player = LlmPlayer::new_claude_code(name);
+            if let Some(m) = model {
+                player = player.with_model(m);
+            }
+            PlayerKind::Llm(player)
+        }
         "random" => PlayerKind::Random(match seed {
             Some(s) => RandomPlayer::with_seed(name, s),
             None => RandomPlayer::new(name),
@@ -665,7 +680,7 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
         // different game than the one requested, printed a winner, and
         // exited 0 — indistinguishable from a legitimate run.
         other => die(&format!(
-            "unknown player type '{other}' (expected cli, random, claude[:model], or gemini[:model])")),
+            "unknown player type '{other}' (expected cli, random, claude[:model], gemini[:model], or claude-code[:model])")),
     }
 }
 

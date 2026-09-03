@@ -831,6 +831,13 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
             }
             p
         }
+        "claude-code" | "cc" => {
+            let mut p = LlmPlayer::new_claude_code(name);
+            if let Some(m) = model {
+                p = p.with_model(m);
+            }
+            p
+        }
         _ => {
             eprintln!("Unknown model provider '{provider}', defaulting to claude");
             LlmPlayer::new(name)
