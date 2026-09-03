@@ -544,8 +544,14 @@ fn zone_changes(state: &GameState, registry: &CardRegistry, events: &[GameEvent]
                 // no untap step has passed since.
                 let untapped_since = events[i + 1..].iter().any(|x| matches!(x, GameEvent::StepStarted { step: Step::Untap }));
                 let attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(object));
+                // A token put onto the battlefield attacking is exempt, and
+                // so is one still being asked whom it attacks.
+                let choosing_attack = o.is_token && matches!(&state.awaiting_action,
+                    Some(crate::state::AwaitingAction::ResolutionChoice {
+                        choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                            effect: crate::state::PendingEffect::TokenAttacks { .. }, .. }, .. }));
                 if o.zone == Zone::Battlefield && state.is_creature(*object, registry)
-                    && !o.summoning_sick && !attacking && !untapped_since
+                    && !o.summoning_sick && !attacking && !choosing_attack && !untapped_since
                 {
                     v.push(format!("creature #{} ({}) entered this action but is not summoning sick (CR 302.6)", object.0, o.name));
                 }

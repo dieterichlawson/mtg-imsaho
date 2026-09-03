@@ -377,6 +377,9 @@ fn main() {
     // point. No effect in the pool creates or destroys real cards, so the
     // count must stay constant for the whole game (tokens come and go).
     let mut nontoken_baseline: Option<Vec<usize>> = None;
+    // The previous decision point and the action chosen there, for the
+    // transition invariants (what one action may and must have done).
+    let mut last_decision: Option<(GameState, mtg_engine::actions::Action)> = None;
 
     let registry_ref = &registry;
     // High-water mark of engine log entries already streamed to --log
@@ -384,6 +387,46 @@ fn main() {
     // end-of-game flush below can advance it.
     let streamed_log = std::cell::Cell::new(0usize);
     let streamed_log_ref = &streamed_log;
+    // The decision itself, separated so the callback can record what was chosen.
+    let mut choose = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions, action_count: u64| -> mtg_engine::actions::Action {
+        if action_count >= max_actions {
+            if let Some(concede_idx) = legal.actions.iter().position(|a| matches!(a, mtg_engine::actions::Action::Concede)) {
+                return legal.actions[concede_idx].clone();
+            }
+        }
+
+        let view = GameView::for_player(game_state, acting_player, &CardRegistry::with_all_cards());
+
+        let player = if acting_player == PlayerId(0) { &mut p1 } else { &mut p2 };
+
+        // Show thinking spinner only if a human is playing — render from the
+        // human's perspective so they see the board while the AI thinks.
+        let _spinner = if has_human {
+            let is_ai = matches!(player, PlayerKind::Llm(_));
+            let will_call_api = is_ai && (
+                legal.combat_prompt.is_some() ||
+                !legal.actions.iter().all(|a| matches!(a,
+                    mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede
+                ))
+            );
+            if will_call_api {
+                let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
+                let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
+                Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(prompt) = &legal.combat_prompt {
+            return choose_combat(player, &view, prompt);
+        }
+
+        choose_action(player, &view, legal)
+    };
+
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
 
@@ -396,11 +439,14 @@ fn main() {
             // A resolution prompt interrupts a spell or ability mid-effect,
             // before state-based actions have caught up; everything else is a
             // settled decision point (CR 704.3).
-            let violations = if legal.resolution_prompt.is_some() {
+            let mut violations = if legal.resolution_prompt.is_some() {
                 mtg_engine::invariants::check_core(game_state, registry_ref)
             } else {
                 mtg_engine::invariants::check_settled(game_state, registry_ref)
             };
+            if let Some((prev, act)) = &last_decision {
+                violations.extend(mtg_engine::invariants::check_transition(prev, Some(act), game_state, registry_ref));
+            }
 
             let mut counts = vec![0usize; game_state.players.len()];
             for obj in game_state.objects.values() {
@@ -478,43 +524,13 @@ fn main() {
             }
         }
 
-        if action_count >= max_actions {
-            if let Some(concede_idx) = legal.actions.iter().position(|a| matches!(a, mtg_engine::actions::Action::Concede)) {
-                return legal.actions[concede_idx].clone();
-            }
+        let chosen = choose(game_state, acting_player, legal, action_count);
+        if check_invariants {
+            last_decision = Some((game_state.clone(), chosen.clone()));
         }
-
-        let view = GameView::for_player(game_state, acting_player, &CardRegistry::with_all_cards());
-
-        let player = if acting_player == PlayerId(0) { &mut p1 } else { &mut p2 };
-
-        // Show thinking spinner only if a human is playing — render from the
-        // human's perspective so they see the board while the AI thinks.
-        let _spinner = if has_human {
-            let is_ai = matches!(player, PlayerKind::Llm(_));
-            let will_call_api = is_ai && (
-                legal.combat_prompt.is_some() ||
-                !legal.actions.iter().all(|a| matches!(a,
-                    mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede
-                ))
-            );
-            if will_call_api {
-                let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
-                let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
-                Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        if let Some(prompt) = &legal.combat_prompt {
-            return choose_combat(player, &view, prompt);
-        }
-
-        choose_action(player, &view, legal)
+        chosen
     };
+
 
     if resume_file.is_some() {
         engine::resume_game_loop(&mut state, &registry, &mut game_callback);

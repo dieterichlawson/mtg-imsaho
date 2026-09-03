@@ -16,6 +16,9 @@
 //!   priority or a turn-based-action prompt (attackers, blockers,
 //!   mulligans), because CR 704.3 has run state-based actions to a fixed
 //!   point right before that.
+//! - [`check_transition`] looks at two consecutive decision points and the
+//!   action chosen between them: what may not change, what must, and that
+//!   every change announced itself in `events`.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
@@ -28,7 +31,10 @@ mod objects;
 mod permanents;
 mod prompts;
 mod stack;
+mod transition;
 mod turn;
+
+pub use transition::check_transition;
 
 /// One message per violation.
 pub type Violations = Vec<String>;

@@ -94,6 +94,7 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
     let max_actions: u64 = 5_000;
     let mut violations: Vec<String> = Vec::new();
     let mut baseline: Option<Vec<usize>> = None;
+    let mut last_decision: Option<(GameState, mtg_engine::actions::Action)> = None;
 
     let mut callback = |gs: &GameState, acting: PlayerId, legal: &LegalActions| {
         actions += 1;
@@ -104,6 +105,9 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
             } else {
                 mtg_engine::invariants::check_settled(gs, registry)
             };
+            if let Some((prev, act)) = &last_decision {
+                found.extend(mtg_engine::invariants::check_transition(prev, Some(act), gs, registry));
+            }
             let mut counts = vec![0usize; gs.players.len()];
             for obj in gs.objects.values() {
                 if !obj.is_token {
@@ -151,11 +155,14 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
         }
 
         let player = &mut players[acting.0 as usize];
-        if let Some(prompt) = &legal.combat_prompt {
-            return player.choose_combat(prompt);
-        }
-        let view = GameView::for_player(gs, acting, registry);
-        player.choose_action(&view, legal)
+        let chosen = if let Some(prompt) = &legal.combat_prompt {
+            player.choose_combat(prompt)
+        } else {
+            let view = GameView::for_player(gs, acting, registry);
+            player.choose_action(&view, legal)
+        };
+        last_decision = Some((gs.clone(), chosen.clone()));
+        chosen
     };
 
     engine::run_game_loop(&mut state, registry, &mut callback);

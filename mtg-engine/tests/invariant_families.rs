@@ -935,3 +935,135 @@ fn verb_events_leave_the_object_where_the_verb_puts_it() {
         damaged_by: vec![], last_known_toughness: 2, is_token: false, subtypes: vec![] }];
     flags_core(&s, &reg, "but creature_died_this_turn is false");
 }
+
+// ── transitions ──────────────────────────────────────────────────────────
+
+use mtg_engine::invariants::check_transition;
+use mtg_engine::actions::Action;
+
+#[track_caller]
+fn flags_transition(prev: &GameState, action: Option<&Action>, cur: &GameState, reg: &CardRegistry, needle: &str) {
+    let v = check_transition(prev, action, cur, reg);
+    assert!(v.iter().any(|m| m.contains(needle)), "expected a transition violation containing {needle:?}, got: {v:?}");
+}
+
+#[track_caller]
+fn clean_transition(prev: &GameState, action: Option<&Action>, cur: &GameState, reg: &CardRegistry) {
+    assert_eq!(check_transition(prev, action, cur, reg), Vec::<String>::new());
+}
+
+/// The next decision point, one action later, with nothing having happened.
+fn next(prev: &GameState) -> GameState {
+    let mut cur = prev.clone();
+    cur.submit_seq = prev.submit_seq + 1;
+    cur.events.clear();
+    cur
+}
+
+#[test]
+fn transition_identity_and_monotone_rules_are_checked() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let cur = next(&prev);
+    clean_transition(&prev, None, &cur, &reg);
+
+    let mut s = cur.clone();
+    s.get_object_mut(bear).unwrap().owner = P1;
+    flags_transition(&prev, None, &s, &reg, "changed owner p0 -> p1 (CR 108.3)");
+
+    let mut s = cur.clone();
+    s.objects.remove(&bear);
+    flags_transition(&prev, None, &s, &reg, "ceased to exist (CR 108.3)");
+
+    let mut s = cur.clone();
+    s.turn_number = 2;
+    flags_transition(&prev, None, &s, &reg, "turn_number went back 3 -> 2");
+
+    let mut s = cur.clone();
+    s.get_object_mut(bear).unwrap().zone = Zone::Graveyard;
+    flags_transition(&prev, None, &s, &reg, "without a zone change being counted (CR 400.7)");
+
+    let mut s = cur.clone();
+    s.get_player_mut(P0).land_plays_remaining = 1;
+    let mut p = prev.clone();
+    p.get_player_mut(P0).land_plays_remaining = 0;
+    flags_transition(&p, None, &s, &reg, "regained a land drop mid-turn (CR 305.2)");
+
+    let mut s = cur.clone();
+    s.step = Step::Upkeep;
+    flags_transition(&prev, None, &s, &reg, "step went back");
+}
+
+#[test]
+fn transition_zone_and_status_ledgers_are_checked() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let mut cur = next(&prev);
+    cur.move_object(bear, Zone::Graveyard, &reg);
+    assert!(cur.events.iter().any(|e| matches!(e, GameEvent::ObjectMoved { .. })), "every move is announced");
+    clean_transition(&prev, None, &cur, &reg);
+
+    let mut s = cur.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::ObjectMoved { .. }));
+    flags_transition(&prev, None, &s, &reg, "moved 1 time(s) but announced 0 (CR 400.7)");
+    flags_transition(&prev, None, &s, &reg, "LeftBattlefield #");
+    flags_transition(&prev, None, &s, &reg, "without the matching zone change");
+
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().tapped = true;
+    flags_transition(&prev, None, &s, &reg, "became tapped with no Tapped event");
+
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().damage_marked = 1;
+    flags_transition(&prev, None, &s, &reg, "damage marked after 0 + 0 dealt (CR 120.3)");
+
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().controller = P1;
+    s.get_object_mut(bear).unwrap().summoning_sick = false;
+    flags_transition(&prev, None, &s, &reg, "without summoning sickness (CR 302.6)");
+
+    let mut s = next(&prev);
+    s.get_player_mut(P1).life = 10;
+    flags_transition(&prev, None, &s, &reg, "life 20 -> 10 with no LifeChanged (CR 119)");
+
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 1);
+    flags_transition(&prev, None, &s, &reg, "(CR 106.4)");
+
+    let mut s = next(&prev);
+    s.get_player_mut(P1).lost = true;
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    flags_transition(&prev, None, &s, &reg, "with no PlayerLost event");
+}
+
+#[test]
+fn transition_action_contracts_are_checked() {
+    let (mut prev, reg) = base();
+    let land = spell_in_hand(&mut prev, &reg, "Forest", P0);
+    prev.priority_player = Some(P0);
+    let play = Action::PlayLand { object_id: land };
+    let cur = mtg_engine::engine::submit_action(&prev, &play, &reg);
+    assert_eq!(cur.submit_seq, prev.submit_seq + 1);
+    clean_transition(&prev, Some(&play), &cur, &reg);
+
+    let mut s = cur.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::LandPlayed { .. }));
+    flags_transition(&prev, Some(&play), &s, &reg, "did not put the land from hand onto the battlefield with its event (CR 305.1)");
+
+    let mut s = cur.clone();
+    s.priority_player = Some(P1);
+    flags_transition(&prev, Some(&play), &s, &reg, "PlayLand handed priority Some(PlayerId(0)) -> Some(PlayerId(1)) (CR 117.3c)");
+
+    // A lone pass moves priority and nothing else.
+    let mut p = prev.clone();
+    p.consecutive_passes = 0;
+    let pass = Action::PassPriority;
+    let mut cur = mtg_engine::engine::submit_action(&p, &pass, &reg);
+    cur.priority_player = Some(P1); // the loop hands priority over after the pass
+    clean_transition(&p, Some(&pass), &cur, &reg);
+    let mut s = cur.clone();
+    s.get_object_mut(land).unwrap().tapped = true;
+    s.events.push(GameEvent::Tapped { object: land });
+    flags_transition(&p, Some(&pass), &s, &reg, "a lone pass by p0 produced 2 event(s)");
+    flags_transition(&p, Some(&pass), &s, &reg, "changed the game (CR 117.4)");
+}
