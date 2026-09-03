@@ -693,6 +693,13 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     // Step::CombatDamage (regular damage) instead of moving to EndCombat.
     let next = if state.step == Step::CombatDamage && state.combat_damage_step_pending {
         Some(Step::CombatDamage)
+    } else if state.step == Step::Cleanup && std::mem::take(&mut state.cleanup_repeat) {
+        // CR 514.3a: the cleanup step that opened a priority window is
+        // followed by another cleanup step, not by the next turn. Without
+        // this, damage marked and until-end-of-turn effects created in that
+        // window rode into the next turn, and the hand-size discard was
+        // skipped altogether.
+        Some(Step::Cleanup)
     } else if state.step == Step::DeclareAttackers
         && !state.combat.as_ref().is_some_and(|c| c.any_attackers_declared)
     {
@@ -925,9 +932,11 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             let registry_ref = registry;
             let sba_fired = crate::sba::check_state_based_actions(state, registry_ref);
             if sba_fired {
-                // SBA occurred — give active player priority. The game loop
-                // will process actions and eventually advance past cleanup.
+                // SBA occurred — give active player priority. Once every
+                // player passes, `advance_step` runs this cleanup step again
+                // (CR 514.3a) rather than starting the next turn.
                 state.priority_player = Some(active);
+                state.cleanup_repeat = true;
             } else {
                 // Check hand size: max 7 cards.
                 let hand_size = state.objects_in_zone(Zone::Hand, active).len();
@@ -947,6 +956,24 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         _ => {
             state.priority_player = Some(active);
         }
+    }
+}
+
+/// The player a pending cast-time prompt belongs to: the caster of a spell
+/// waiting on its X funding or exile cost, or the activator of an X-cost
+/// ability waiting on its funding. `None` for every other prompt (and for
+/// no prompt). Answering such a prompt finishes the cast or activation, so
+/// that player receives priority afterwards (CR 117.3c).
+#[must_use]
+pub fn cast_time_prompt_player(state: &GameState) -> Option<PlayerId> {
+    use crate::state::ResolutionChoiceKind as K;
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            player,
+            choice: K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. },
+            ..
+        }) => Some(*player),
+        _ => None,
     }
 }
 
@@ -1192,6 +1219,11 @@ fn run_game_loop_inner<F>(
             continue;
         };
 
+        // CR 117.3c: a cast or activation completed through a cast-time
+        // prompt (X funding, an exile cost) leaves priority with the player
+        // who cast or activated — read off the prompt before it is consumed.
+        let cast_prompt_player = cast_time_prompt_player(state);
+
         *state = submit_action(state, &action, registry);
 
         // After submitting, handle priority flow.
@@ -1248,9 +1280,14 @@ fn run_game_loop_inner<F>(
             }
 
             Action::ResolveChoice { .. } => {
-                // After resolving a choice, return priority to active player.
-                // Triggers may continue processing in the next loop iteration.
-                state.priority_player = Some(state.active_player);
+                // A choice raised while a spell or ability resolved hands
+                // priority to the active player afterwards (CR 117.3b). A
+                // choice that completed a cast or an activation — X funding,
+                // an exile cost — is part of that cast, so the caster keeps
+                // priority (CR 117.3c); the non-active player answering
+                // Devil's Play's funding used to lose priority to the
+                // opponent.
+                state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
             }
         }
     }

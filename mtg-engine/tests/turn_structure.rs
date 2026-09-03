@@ -562,3 +562,110 @@ fn eot_cant_block_prevents_blocking() {
         "Blocker should not be eligible after can't-block"
     );
 }
+
+/// CR 514.3a: a cleanup step in which state-based actions were performed
+/// gives players priority, and then another cleanup step happens — it does
+/// not fall straight into the next turn. Before, damage marked and
+/// until-end-of-turn effects created in that priority window rode into the
+/// next turn, and the hand-size discard was skipped.
+#[test]
+fn a_cleanup_step_that_gave_priority_is_followed_by_another_cleanup_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // A 1/1 with a -1/-1 counter dies to the SBA check inside cleanup —
+    // counters survive cleanup, damage would not.
+    let doomed = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(doomed).unwrap().counters.insert(CounterType::MinusOneMinusOne, 1);
+
+    advance_to_cleanup(&mut state, &reg);
+    assert_eq!(state.get_object(doomed).unwrap().zone, Zone::Graveyard, "the SBA fired in cleanup");
+    assert_eq!(state.priority_player, Some(P0), "so players get priority (CR 514.3a)");
+    let turn = state.turn_number;
+
+    // Everyone passes: the step ends — into another cleanup step.
+    engine::advance_step(&mut state, &reg);
+    assert_eq!((state.step, state.turn_number), (Step::Cleanup, turn),
+        "another cleanup step, same turn (CR 514.3a)");
+    assert_eq!(state.priority_player, None, "nothing happened this time: no priority");
+
+    engine::advance_step(&mut state, &reg);
+    assert_eq!((state.step, state.turn_number), (Step::Untap, turn + 1), "now the next turn");
+}
+
+/// CR 117.3c: the player who cast a spell or activated an ability receives
+/// priority afterwards — also when the cast or activation was completed
+/// through a cast-time prompt (X funding, an exile cost).
+#[test]
+fn a_cast_time_prompt_belongs_to_the_caster_for_priority() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    assert_eq!(engine::cast_time_prompt_player(&state), None);
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    // The non-active player is the interesting case; P1 owns the prompt here.
+    state.get_object_mut(play).unwrap().owner = P1;
+    state.get_object_mut(play).unwrap().controller = P1;
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player: P1,
+        source: play,
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
+            description: "X".into(),
+            options: mtg_engine::funding::FundingOptions { pool: std::collections::BTreeMap::new(), groups: vec![], max_x: 1 },
+            source_id: play,
+            is_ability: false,
+        },
+    });
+    assert_eq!(engine::cast_time_prompt_player(&state), Some(P1));
+}
+
+/// The same rule, end to end through the game loop: the non-active player
+/// activates Kessig Wolf Run's X ability on the opponent's turn and funds X.
+/// The first priority pass after the funding must be the activator's — the
+/// loop used to hand priority to the active player after any resolved
+/// choice, funding included. (The activator has nothing else to do, so the
+/// loop passes for them silently; the log is where the order is visible.)
+#[test]
+fn the_activator_keeps_priority_after_funding_an_x_ability_on_the_opponents_turn() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let _target = ready_creature(&mut state, P0, 2, 2);
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P1);
+    named_permanent(&mut state, &reg, "Mountain", P1);
+    named_permanent(&mut state, &reg, "Forest", P1);
+    named_permanent(&mut state, &reg, "Forest", P1);
+    state.priority_player = Some(P0);
+
+    let mut calls = 0;
+    engine::run_game_loop(&mut state, &reg, |state, acting, legal| {
+        calls += 1;
+        if let Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, ..
+        }) = &state.awaiting_action {
+            let mut response = mtg_engine::funding::FundingResponse::default();
+            for g in &options.groups {
+                response.taps.insert(g.name.clone(), g.max_contribution());
+            }
+            return Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
+        }
+        if acting == P1 {
+            if let Some(a) = legal.actions.iter().find(|a|
+                matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf_run))
+            {
+                return a.clone();
+            }
+        }
+        if calls > 4 { Action::Concede } else { Action::PassPriority }
+    });
+
+    let log: Vec<&str> = state.game_log.iter().map(|l| l.message.as_str()).collect();
+    let funded = log.iter().position(|m| m.starts_with("Funded X"))
+        .unwrap_or_else(|| panic!("the ability was never funded:\n{}", log.join("\n")));
+    let first_pass = log[funded..].iter().find(|m| m.contains("passes priority"))
+        .unwrap_or_else(|| panic!("nobody passed after funding:\n{}", log.join("\n")));
+    assert_eq!(*first_pass, "p1 passes priority",
+        "the activator holds priority after funding (CR 117.3c):\n{}", log[funded..].join("\n"));
+    assert!(log[funded..].iter().any(|m| m.contains("Kessig Wolf Run ability resolved")),
+        "and the ability resolved afterwards:\n{}", log[funded..].join("\n"));
+}
