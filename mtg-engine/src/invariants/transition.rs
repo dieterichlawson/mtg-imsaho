@@ -336,8 +336,10 @@ fn zone_ledger(prev: &GameState, cur: &GameState, events: &[GameEvent], v: &mut 
             GameEvent::Discarded { object, .. } => ("Discarded", *object, moved(*object, Some(Zone::Hand), Zone::Graveyard)),
             GameEvent::CreatureCardMilled { object, .. } => ("CreatureCardMilled", *object, moved(*object, Some(Zone::Library), Zone::Graveyard)),
             GameEvent::SpellCast { object, .. } => ("SpellCast", *object, match cur.get_object(*object) {
-                // CR 702.34a: cast from the graveyard exactly when flashback was used.
-                Some(o) if o.zone == Zone::Stack => moved(*object, Some(if o.cast_with_flashback { Zone::Graveyard } else { Zone::Hand }), Zone::Stack),
+                // CR 702.34a: a flashback cast comes from the graveyard; a
+                // card may also be castable from there on its own (Skaab
+                // Ruinator), so the converse does not hold.
+                Some(o) if o.zone == Zone::Stack && o.cast_with_flashback => moved(*object, Some(Zone::Graveyard), Zone::Stack),
                 _ => moved(*object, Some(Zone::Hand), Zone::Stack) || moved(*object, Some(Zone::Graveyard), Zone::Stack),
             }),
             GameEvent::LeftBattlefield { object, to, .. } => ("LeftBattlefield", *object, moved(*object, Some(Zone::Battlefield), *to)),

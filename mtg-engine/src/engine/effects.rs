@@ -277,7 +277,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let candidates: Vec<(ObjectId, crate::ids::PlayerId, String)> =
                 state.objects_in_id_order().into_iter()
                     .filter(|o| o.zone == crate::types::Zone::Battlefield)
-                    .map(|o| (o.id, o.controller, o.name.clone()))
+                    .map(|o| (o.id, o.controller, state.name_of(o.id, registry)))
                     .collect();
             let to_remove: Vec<ObjectId> = candidates.into_iter()
                 .filter(|(id, controller, name)| controller == player
