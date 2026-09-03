@@ -54,8 +54,6 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
                 "{} -> {}", card_name(state, registry, *id), card_name(state, registry, *walker))));
             state.log(LogLevel::Event, format!("p{} declared attackers: {}", state.active_player.0, names.join(", ")));
         }
-        combat::declare_attackers(&mut *state, attackers, &planeswalker_attacks, registry);
-
         // CR 508.1d: a creature that is required to attack and *able* to must
         // be among the declared attackers. "Able" is `eligible_attackers` —
         // the same list the declaration above was validated against, and the
@@ -66,51 +64,30 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         // asks `!summoning_sick || has_keyword(Haste)`. So a hasty creature
         // under Curse of the Nightly Hunt was listed in the prompt as having
         // to attack, and then allowed to stay home.
-        let forced_ids: Vec<crate::ids::ObjectId> = eligible.iter()
-            .copied()
-            .filter(|&id| {
-                !state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&id))
-                    && state.must_attack(id, registry)
-            })
+        //
+        // Forced attackers are declared attackers — CR 508.1d picks the
+        // declaration for the player — so they go through the same
+        // declaration as the chosen ones: tapped, stamped, and in the
+        // `AttackersDeclared` event. Inserting them into the combat maps
+        // after the event had been pushed left them out of it, and a
+        // forced Kessig Cagebreakers made no wolves (CR 508.1m).
+        let already: Vec<ObjectId> = attackers.iter().map(|(id, _)| *id)
+            .chain(planeswalker_attacks.iter().map(|(id, _)| *id))
             .collect();
-
-        // Add forced attackers to combat.
+        let forced_ids: Vec<ObjectId> = eligible.iter()
+            .copied()
+            .filter(|id| !already.contains(id) && state.must_attack(*id, registry))
+            .collect();
         if !forced_ids.is_empty() {
-            let defending = state.opponent(state.active_player);
-            if let Some(ref mut combat) = state.combat {
-                for id in &forced_ids {
-                    if !combat.attackers.contains_key(id) {
-                        combat.attackers.insert(*id, defending);
-                        combat.blocker_assignments.insert(*id, Vec::new());
-                    }
-                }
-            }
-            // A creature dragged into combat by a "must attack" effect attacked
-            // this turn just the same (CR 508.1).
-            let turn = state.turn_number;
-            for id in &forced_ids {
-                if let Some(obj) = state.get_object_mut(*id) {
-                    obj.attacked_on_turn = Some(turn);
-                }
-            }
-            // Tap forced attackers (unless vigilance).
-            for id in &forced_ids {
-                let has_vig = state.has_keyword(*id, crate::types::Keyword::Vigilance, registry);
-                if !has_vig {
-                    state.tap(*id);
-                }
-            }
             let names: Vec<String> = forced_ids.iter()
                 .map(|id| card_name(&state, registry, *id))
                 .collect();
             state.log(LogLevel::Event, format!("Forced attackers: {}", names.join(", ")));
-            // These creatures were declared as attackers just the same
-            // (CR 508.1d picks the declaration for the player), so the
-            // CR 508.8 skip must not treat this combat as attacker-less.
-            if let Some(ref mut combat) = state.combat {
-                combat.any_attackers_declared = true;
-            }
         }
+        let defending = state.opponent(state.active_player);
+        let mut declared: Vec<(ObjectId, PlayerId)> = attackers.to_vec();
+        declared.extend(forced_ids.iter().map(|&id| (id, defending)));
+        combat::declare_attackers(&mut *state, &declared, &planeswalker_attacks, registry);
 
         state.awaiting_action = None;
         state.consecutive_passes = 0;

@@ -1298,3 +1298,30 @@ fn an_illegal_flying_block_is_refused_loudly_and_never_offered() {
     assert!(state.game_log.iter().any(|e| e.message.contains("ignored illegal block")),
         "the drop is visible in the game log, not silent");
 }
+
+/// CR 508.1d/508.1m: a creature forced to attack ("attacks each combat if
+/// able") is a declared attacker like any other — it is in the
+/// `AttackersDeclared` event its own attack trigger fires from. Forced
+/// attackers used to be inserted into the combat maps after the event had
+/// been pushed, so a forced Kessig Cagebreakers made no wolves.
+#[test]
+fn a_forced_attacker_is_in_the_attackers_declared_event() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let bear = ready_creature(&mut state, P0, 2, 2);
+    attach_curse_to_player(&mut state, &reg, "Curse of the Nightly Hunt", P1, P0);
+    assert!(state.must_attack(bear, &reg), "test precondition");
+
+    submit_declare_attackers(&mut state, &[], &reg);
+
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&bear)),
+        "the curse dragged the bear into combat");
+    let declared: Vec<_> = state.events.iter().filter_map(|e| match e {
+        GameEvent::AttackersDeclared { attackers } => Some(attackers.clone()),
+        _ => None,
+    }).collect();
+    assert_eq!(declared.len(), 1, "one declaration per action: {:?}", state.events);
+    assert!(declared[0].iter().any(|(id, _)| *id == bear),
+        "the forced attacker is part of the declaration (CR 508.1d), got {declared:?}");
+    assert!(state.get_object(bear).unwrap().tapped, "and it was tapped by attacking (CR 508.1f)");
+}
