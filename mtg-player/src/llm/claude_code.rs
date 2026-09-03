@@ -245,7 +245,15 @@ impl ClaudeCodeBackend {
         }
         let status = status.map_err(|e| format!("wait: {e}"))?;
         if !status.success() {
-            let snippet: String = err_text.trim().chars().take(300).collect();
+            // The CLI reports refusals (a usage limit, a bad model name) as
+            // a result object on stdout with a non-zero exit and an empty
+            // stderr — surface whichever stream says why.
+            let reason = if err_text.trim().is_empty() { out.trim() } else { err_text.trim() };
+            let reason = serde_json::from_str::<serde_json::Value>(reason)
+                .ok()
+                .and_then(|j| j["result"].as_str().map(str::to_string))
+                .unwrap_or_else(|| reason.to_string());
+            let snippet: String = reason.chars().take(300).collect();
             return Err(format!("exit {status}: {snippet}"));
         }
         serde_json::from_str(out.trim())

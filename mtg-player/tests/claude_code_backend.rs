@@ -163,6 +163,22 @@ fn resume_delivers_the_recap_as_a_real_turn() {
     assert_eq!(p.conversation_len_for_test(), 2);
 }
 
+/// A refusal the CLI prints as a result object on stdout (a usage limit
+/// looks exactly like this: exit 1, empty stderr, the reason in `result`).
+#[test]
+fn a_stdout_refusal_is_reported_by_its_reason() {
+    let body = r#"printf '{"type":"result","is_error":true,"result":"You have hit your usage limit"}
+'; exit 1"#;
+    let fake = Fake::new("refusal", body);
+    let log = std::env::temp_dir().join(format!("mtg-fake-claude-refusal-log-{}", std::process::id()));
+    mtg_player::game_log::init(log.to_str().unwrap()).unwrap();
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+    assert_eq!(p.backend_send_for_test("pick"), "0");
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    let _ = std::fs::remove_file(&log);
+    assert!(logged.contains("usage limit"), "the reason reaches the log:\n{logged}");
+}
+
 #[test]
 fn a_failing_cli_is_retried_then_falls_back_to_pass() {
     // Exit non-zero on every call.
