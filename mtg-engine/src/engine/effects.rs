@@ -287,6 +287,15 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 .map(|(id, _, _)| id)
                 .collect();
             for id in to_remove {
+                // CR 700.4: put into a graveyard from the battlefield is
+                // "dies", legend rule included — morbid and every "whenever a
+                // creature dies" watcher used to miss it because this was a
+                // bare zone move with no death event. Same capture the
+                // state-based zero-toughness death does.
+                if let Some(event) = crate::destruction::death_event(state, id, Some(registry)) {
+                    state.events.push(event);
+                    state.creature_died_this_turn = true;
+                }
                 state.move_object(id, crate::types::Zone::Graveyard, registry);
             }
             state.log(LogLevel::Event, format!("Legend rule: kept {legend_name}"));

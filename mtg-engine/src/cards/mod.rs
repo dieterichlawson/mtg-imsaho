@@ -908,11 +908,17 @@ pub trait CardBehavior: Send + Sync {
         let card_data = self.card_data();
         if card_data.card_types.iter().any(CardType::is_permanent) {
             state.move_object(object_id, Zone::Battlefield, registry);
-            // Set is_legendary from card data for legend rule enforcement.
-            if card_data.supertypes.contains(&crate::types::Supertype::Legendary) {
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.is_legendary = true;
-                }
+            // Set is_legendary for legend rule enforcement — from the card
+            // the permanent now IS, not the one that was cast: an
+            // "enters as a copy" replacement (Essence of the Wild) has
+            // already applied inside `move_object`, and supertypes are
+            // copiable values (CR 707.2), so a legend entering as a copy of
+            // a non-legend is not legendary.
+            let legendary_now = state.get_object(object_id)
+                .and_then(|o| registry.card_data(o.card_id))
+                .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
+            if let Some(obj) = state.get_object_mut(object_id) {
+                obj.is_legendary = legendary_now;
             }
             // If this is a planeswalker, set starting loyalty counters.
             if let Some(loyalty) = self.starting_loyalty() {
