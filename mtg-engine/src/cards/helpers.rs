@@ -873,13 +873,20 @@ pub fn search_library(
     optional: bool,
     description: &str,
 ) {
-    // "You MAY search" is a real decision even when only one card qualifies,
-    // or when nothing does — the player is entitled to decline, and a player
-    // who declines never searched, so they do not shuffle either. Asking
-    // regardless also keeps the prompt from leaking whether the library holds
-    // a match: an unconditional shuffle told the table there was nothing to
-    // find. With no candidates the only answer available is "decline", which
-    // is the right outcome, not a reason to skip the question.
+    // "You MAY search" is a real decision even when only one card qualifies —
+    // the player is entitled to decline, and a player who declines never
+    // searched, so they do not shuffle either. With no candidates there is no
+    // decision left to represent: the only reachable answer was "decline", and
+    // a prompt whose option list is empty is a choice with nothing to choose
+    // (the game contract every player implementation is written against). So
+    // that case resolves as declined without asking. Private level for the
+    // same reason as the mandatory branch below: whether the library held a
+    // match is the searcher's own hidden information.
+    if optional && candidates.is_empty() {
+        state.log(crate::state::LogLevel::Private,
+            format!("{}: no matching card in library; search declined", state.obj_name(source_id)));
+        return;
+    }
     if optional {
         let options: Vec<Target> = candidates.into_iter().map(Target::Object).collect();
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {

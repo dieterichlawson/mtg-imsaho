@@ -82,10 +82,13 @@ fn moldgraf_exile_skipped_when_already_exiled_still_returns_creatures() {
 // card, put it onto the battlefield, then shuffle."
 // ---------------------------------------------------------------------------
 
-/// With no basic land to find, the controller is still asked, and declining
-/// means no search — so no shuffle.
+/// With no basic land to find, there is no decision left to represent — the
+/// only reachable answer was "decline" — so the search resolves as declined
+/// without a prompt: no search, no shuffle. An optional prompt whose option
+/// list is empty is a choice with nothing to choose, which the prompt
+/// invariant rejects (fuzz issues #153, #156 and nine more).
 #[test]
-fn ghost_quarter_may_choice_offered_when_no_basics() {
+fn ghost_quarter_no_basics_resolves_as_declined_without_a_prompt() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -106,21 +109,18 @@ fn ghost_quarter_may_choice_offered_when_no_basics() {
     activate_via_hooks(&mut state, &reg, quarter, 1, &[Target::Object(victim)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert!(matches!(&state.awaiting_action,
-        Some(AwaitingAction::ResolutionChoice {
-            player, choice: ResolutionChoiceKind::ChooseTarget { optional: true, .. }, .. })
-        if *player == P1),
-        "the land's controller must still be offered the 'may search'; got {:?}",
+    assert!(state.awaiting_action.is_none(),
+        "an empty 'may search' is auto-declined, not offered; got {:?}",
         state.awaiting_action);
-
-    let actions = mtg_engine::engine::legal_actions(&state, &reg).actions;
-    assert!(actions.len() == 1
-        && matches!(&actions[0], Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) }),
-        "with no basic land to find, declining is the only answer; got {actions:?}");
-
-    let state = mtg_engine::engine::submit_action(&state, &actions[0], &reg);
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard,
+        "the destroy half still happened");
     assert_eq!(state.get_player(P1).library_order, library,
         "a player who declines to search does not shuffle");
+    // The specific violation the fuzzer reported must be gone. (Not a full
+    // check_settled: raw fixture objects don't carry the caches it audits.)
+    assert!(mtg_engine::invariants::check_settled(&state, &reg).iter()
+        .all(|v| !v.contains("nothing to choose")),
+        "no empty prompt survives resolution");
 }
 
 /// Declining a search that *could* have found something also skips the
