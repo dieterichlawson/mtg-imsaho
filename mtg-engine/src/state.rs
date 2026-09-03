@@ -402,6 +402,20 @@ pub fn default_rng_seed() -> u64 {
 }
 
 impl GameState {
+    /// CR 400.7: an until-end-of-turn effect created for a permanent that is
+    /// no longer on the battlefield applies to nothing — the object it was
+    /// about is gone, and the card in the graveyard is a new object that
+    /// must not carry it back onto the battlefield. `move_object` drops the
+    /// effects of a permanent as it leaves; this drops the ones an ability
+    /// creates *after* its source has already left (Feral Ridgewolf's pump
+    /// resolving after the wolf died in response — found by fuzzing).
+    pub fn prune_effects_on_departed_objects(&mut self) {
+        self.until_end_of_turn.retain(|e| match until_eot_object_target(e) {
+            Some(id) => self.objects.get(&id).is_some_and(|o| o.zone == Zone::Battlefield),
+            None => true,
+        });
+    }
+
     /// The next value from the game's random stream.
     ///
     /// SplitMix64: a state and an output function, both of which fit in the

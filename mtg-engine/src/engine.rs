@@ -406,7 +406,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
     match applied {
         // The handler asked to return this state verbatim, skipping the
         // end-of-action cleanup below — it is mid-way through a choice chain.
-        Applied::ReturnNow => return new_state,
+        Applied::ReturnNow => {
+            new_state.prune_effects_on_departed_objects();
+            return new_state;
+        }
         // The handler re-entered submit_action (a cast resumed after its
         // prompts were answered); that call already did the cleanup.
         Applied::Replace(s) => return s,
@@ -414,6 +417,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
     }
 
     finish_spell_resolution_if_idle(&mut new_state, registry);
+    new_state.prune_effects_on_departed_objects();
 
     new_state
 }

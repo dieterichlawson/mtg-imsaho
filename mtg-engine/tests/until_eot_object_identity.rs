@@ -61,3 +61,27 @@ fn until_eot_effect_on_a_different_creature_is_kept() {
         "an unrelated creature leaving must not clear another's until-EOT buff");
     assert_eq!(state.until_end_of_turn.len(), 1);
 }
+
+/// An ability that resolves after its source has died applies to nothing:
+/// the card in the graveyard is a new object (CR 400.7), so the pump must
+/// not be recorded against it — reanimated this turn, it would come back
+/// pumped. Found by fuzzing: Feral Ridgewolf's +2/+0 resolving after Smite
+/// the Monstrous had killed it.
+#[test]
+fn a_pump_resolving_after_its_source_died_does_not_follow_the_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let wolf = named_permanent(&mut state, &reg, "Feral Ridgewolf", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1), (ManaType::Colorless, 1)]);
+    let mut state = activate_onto_stack(&state, &reg, wolf, None);
+    assert!(matches!(state.stack.last(), Some(mtg_engine::state::StackEntry::Ability { .. })), "test precondition");
+
+    mtg_engine::destruction::try_destroy(&mut state, wolf, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.until_end_of_turn.is_empty(),
+        "no effect is recorded for a permanent that is gone: {:?}", state.until_end_of_turn);
+    state.move_object(wolf, Zone::Battlefield, &reg);
+    assert_eq!(state.effective_power(wolf, &reg), Some(1),
+        "the reanimated wolf is a new object with its printed power");
+}
