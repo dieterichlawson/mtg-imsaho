@@ -2925,6 +2925,46 @@ fn creepy_doll_can_destroy_a_creature_that_regenerated_from_its_damage() {
         "the trigger's destroy is a second one, and there is no shield left");
 }
 
+/// CR 701.7a through the whole trigger path: when the Doll's damage was
+/// lethal and the creature is already in the graveyard by the time the
+/// trigger resolves, the destroy does nothing — one death, one
+/// `CreatureDied`. The unit half lives in `destroy_targets_permanents.rs`;
+/// this drives `process_triggers` the way the fuzz repros did (issues #145,
+/// #151 and seventeen more).
+#[test]
+fn creepy_doll_destroys_nothing_when_the_creature_already_died() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+    attacks_blocked_by(&mut state, doll, P1, &[target]);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(target),
+        amount: 1,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    // The same combat killed it: the creature is gone before the trigger
+    // resolves, exactly one CreatureDied on record.
+    mtg_engine::destruction::try_destroy(&mut state, target, &reg);
+    assert_eq!(state.get_object(target).unwrap().zone, Zone::Graveyard,
+        "test setup: it died to the combat damage");
+    let died = |s: &GameState| s.events.iter()
+        .filter(|e| matches!(e, GameEvent::CreatureDied { object, .. } if *object == target))
+        .count();
+    assert_eq!(died(&state), 1, "test setup: one death recorded");
+
+    rig_next_coin_flip(&mut state, true);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(died(&state), 1,
+        "destroying an object that already left the battlefield is a no-op (CR 701.7a)");
+    assert!(state.game_log.iter().any(|e| e.message.contains("is no longer on the battlefield")),
+        "the log says why nothing was destroyed");
+}
+
 /// Indestructible answers the trigger's destroy like any other (CR 702.12b),
 /// and the log has to say so rather than announcing a kill that did not happen.
 #[test]
