@@ -1,5 +1,5 @@
 use crate::cards::CardRegistry;
-use crate::events::{GameEvent, LossReason};
+use crate::events::LossReason;
 use crate::ids::ObjectId;
 use crate::state::{GameResult, GameState, LogLevel};
 use crate::types::Zone;
@@ -329,8 +329,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             } else {
                 GameResult::Draw
             };
-            state.events.push(GameEvent::GameEnded { result: result.clone() });
-            state.result = Some(result);
+            state.end_game(result);
             took_action = true;
         }
 

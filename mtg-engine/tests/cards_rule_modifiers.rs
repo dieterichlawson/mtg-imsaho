@@ -70,6 +70,8 @@ fn laboratory_maniac_replaces_the_empty_draw_loss_for_its_controller() {
             "{why} (checking the other player too, so a row cannot pass by \
              everyone losing)");
         assert!(state.result.is_some(), "{why}: the game is over either way");
+        assert!(state.events.iter().any(|e| matches!(e, mtg_engine::events::GameEvent::GameEnded { .. })),
+            "{why}: the end of the game is announced whichever way it ended (CR 104.2)");
     }
 }
 

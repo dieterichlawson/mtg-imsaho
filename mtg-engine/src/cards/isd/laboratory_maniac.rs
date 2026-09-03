@@ -41,7 +41,7 @@ impl CardBehavior for LaboratoryManiac {
         state.get_player_mut(*player).has_drawn_from_empty = false;
         let opponent = state.opponent(*player);
         state.player_loses(opponent, crate::events::LossReason::OpponentWon);
-        state.result = Some(crate::state::GameResult::Winner(*player));
+        state.end_game(crate::state::GameResult::Winner(*player));
         let name = state.obj_name(self_id);
         state.log(crate::state::LogLevel::Milestone,
             format!("p{} wins the game with {name}!", player.0));

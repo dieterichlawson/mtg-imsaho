@@ -2137,6 +2137,17 @@ impl GameState {
         self.get_player_mut(player).lost = true;
         self.get_player_mut(player).loss_reason = Some(reason);
         self.log(LogLevel::Milestone, format!("p{} {}", player.0, reason.describe()));
+    /// End the game with `result`, announcing it (CR 104.2). Every path that
+    /// decides a game goes through here so the record always carries the
+    /// `GameEnded` event the state-based check would have written.
+    pub fn end_game(&mut self, result: GameResult) {
+        if self.result.is_some() {
+            return;
+        }
+        self.events.push(crate::events::GameEvent::GameEnded { result: result.clone() });
+        self.result = Some(result);
+    }
+
         self.events.push(crate::events::GameEvent::PlayerLost { player, reason });
     }
 
