@@ -1292,6 +1292,13 @@ impl GameState {
                     obj.copy_grantor = Some(obj.card_id);
                     obj.card_id = card_id;
                 }
+                // CR 614.1d: whether an enters-as-copy choice is still coming
+                // is a property of the card it now is. The guard armed for
+                // the printed card (Evil Twin arriving as an Essence of the
+                // Wild) would otherwise stay set for good — an Essence exempt
+                // from state-based actions, since no choice ever clears it.
+                obj.entering_copy_source = registry.get(card_id)
+                    .is_some_and(super::cards::CardBehavior::enters_with_pending_copy_choice);
                 obj.name.clone_from(&name);
                 obj.power = Some(power);
                 obj.toughness = Some(toughness);
@@ -2130,13 +2137,6 @@ impl GameState {
     /// silent — `LossReason` used to be constructed at four sites and then
     /// discarded, leaving the log with no line for the loss and the result
     /// naming only the winner (issue #86).
-    pub fn player_loses(&mut self, player: PlayerId, reason: crate::events::LossReason) {
-        if self.get_player(player).lost {
-            return;
-        }
-        self.get_player_mut(player).lost = true;
-        self.get_player_mut(player).loss_reason = Some(reason);
-        self.log(LogLevel::Milestone, format!("p{} {}", player.0, reason.describe()));
     /// End the game with `result`, announcing it (CR 104.2). Every path that
     /// decides a game goes through here so the record always carries the
     /// `GameEnded` event the state-based check would have written.
@@ -2148,6 +2148,13 @@ impl GameState {
         self.result = Some(result);
     }
 
+    pub fn player_loses(&mut self, player: PlayerId, reason: crate::events::LossReason) {
+        if self.get_player(player).lost {
+            return;
+        }
+        self.get_player_mut(player).lost = true;
+        self.get_player_mut(player).loss_reason = Some(reason);
+        self.log(LogLevel::Milestone, format!("p{} {}", player.0, reason.describe()));
         self.events.push(crate::events::GameEvent::PlayerLost { player, reason });
     }
 

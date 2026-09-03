@@ -3466,3 +3466,26 @@ fn geistcatchers_rig_deals_nothing_when_you_decline() {
     assert!(state.awaiting_action.is_none(),
         "and the trigger is finished, not still asking");
 }
+
+/// CR 614.1d: the state-based-action guard for an "enters as a copy" choice
+/// follows the card the permanent became. An Evil Twin entering under its
+/// controller's Essence of the Wild arrives as an Essence with no choice to
+/// make; the guard armed for the printed Twin was never cleared, leaving a
+/// 6/6 that no amount of damage could kill (found by the invariant sweep).
+#[test]
+fn an_evil_twin_that_enters_as_an_essence_is_not_exempt_from_state_based_actions() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Essence of the Wild", P0);
+    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
+    let mut state = cast_and_resolve(&state, &reg, twin, vec![]);
+
+    let obj = state.get_object(twin).unwrap();
+    assert_eq!(obj.name, "Essence of the Wild", "the replacement applied");
+    assert!(!obj.entering_copy_source, "no copy choice is coming for an Essence (CR 614.1d)");
+
+    state.get_object_mut(twin).unwrap().damage_marked = 6;
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
+        "lethal damage destroys it like any other creature (CR 704.5g)");
+}
