@@ -58,3 +58,27 @@ fn the_legend_rule_loser_dies() {
         "the unkept legend died (CR 700.4): {:?}", state.events);
     assert!(state.creature_died_this_turn, "morbid saw it");
 }
+
+/// CR 704.5j reads the permanent's name, which is the name of the face
+/// that is up. The rule used to group by the cached name string, so two
+/// copies of a legend whose caches differed — one entered from a decklist
+/// entry written "Front // Back", or transformed and flipped back — were
+/// never grouped and both stayed (found by the invariant audit).
+#[test]
+fn the_legend_rule_groups_by_face_name_not_by_the_cached_string() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    let b = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    state.get_object_mut(b).unwrap().name = "Garruk Relentless // Garruk, the Veil-Cursed".into();
+
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget { options, effect: PendingEffect::LegendRuleKeep { .. }, .. }, .. }) => {
+            assert!(options.contains(&Target::Object(a)) && options.contains(&Target::Object(b)),
+                "both Garruks are in the legend-rule group: {options:?}");
+        }
+        other => panic!("expected the legend-rule prompt, got {other:?}"),
+    }
+}

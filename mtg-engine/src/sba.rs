@@ -265,10 +265,14 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         if state.awaiting_action.is_none() {
             use std::collections::HashMap as Map;
             let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
+            // Grouped by the name of the face that is up (CR 704.5j reads the
+            // permanent's name), not the cached string — a decklist entry
+            // written as "Front // Back" and a walker that transformed and
+            // flipped back carry different caches for the same legend.
             let battlefield: Vec<(crate::ids::ObjectId, crate::ids::PlayerId, String)> =
                 state.objects_in_id_order().into_iter()
                     .filter(|o| o.zone == Zone::Battlefield)
-                    .map(|o| (o.id, o.controller, o.name.clone()))
+                    .map(|o| (o.id, o.controller, state.name_of(o.id, registry)))
                     .collect();
             for (id, controller, name) in battlefield {
                 // Read from the active face, not from the `is_legendary` cache
