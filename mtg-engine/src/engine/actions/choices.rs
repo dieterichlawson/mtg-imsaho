@@ -374,6 +374,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             pending.behavior_card_id,
                             &pending.targets,
                             pending.activator,
+                            pending.target_requirement.clone(),
                             registry,
                         );
                     } else {

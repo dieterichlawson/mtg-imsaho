@@ -3123,6 +3123,10 @@ pub struct PendingAbilityEffect {
 pub struct PendingSpellCast {
     /// The spell object being cast (still in its origin zone).
     pub object_id: ObjectId,
+    /// What the ability asks of its target, read before its costs were paid
+    /// (the source may be gone by the time X is funded).
+    #[serde(default)]
+    pub target_requirement: Option<crate::cards::TargetRequirement>,
     /// Player casting the spell.
     pub player: PlayerId,
     /// Card ID for behavior / `card_data` lookups.

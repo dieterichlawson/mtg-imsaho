@@ -28,3 +28,37 @@ fn a_stolen_permanents_sacrifice_ability_belongs_to_the_player_who_activated_it(
         other => panic!("expected the ability on the stack, got {other:?}"),
     }
 }
+
+/// CR 601.2c/608.2b: what an ability asks of its target is fixed when it is
+/// activated and re-checked on resolution — so it has to be read before the
+/// costs are paid. Skirsdag Cultist paying "sacrifice a creature" with
+/// itself is gone from the battlefield by the time the entry is built, and
+/// a lookup through the source then found no ability at all: the entry
+/// carried targets with no requirement (found by fuzzing).
+#[test]
+fn an_ability_whose_cost_removed_its_source_keeps_its_target_requirement() {
+    use mtg_engine::actions::Action;
+    use mtg_engine::cards::TargetRequirement;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1)]);
+
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let action = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, sacrifice: Some(s), .. } if *object_id == cultist && *s == cultist))
+        .cloned()
+        .unwrap_or_else(|| panic!("the Cultist can sacrifice itself to its own ability: {:?}", legal.actions));
+    let state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    assert_eq!(state.get_object(cultist).unwrap().zone, Zone::Graveyard, "the cost was paid");
+    match state.stack.last() {
+        Some(StackEntry::Ability { targets, target_requirement, .. }) => {
+            assert!(!targets.is_empty(), "the ability targets");
+            assert!(matches!(target_requirement, Some(TargetRequirement::AnyTarget)),
+                "the requirement read at activation rides on the entry (CR 601.2c), got {target_requirement:?}");
+        }
+        other => panic!("expected the ability on the stack, got {other:?}"),
+    }
+}

@@ -33,18 +33,17 @@ pub(crate) fn put_ability_on_stack(
     behavior_card_id: crate::ids::CardId,
     targets: &[Target],
     activator: crate::ids::PlayerId,
+    target_requirement: Option<crate::cards::TargetRequirement>,
     registry: &CardRegistry,
 ) {
-    // Read what the ability asks of its target *before* the cost is paid:
-    // `SacrificeThis` removes the source, and a card's `activated_abilities`
-    // is then gone with it. CR 608.2b re-checks the target against this on
-    // resolution, so it rides on the stack entry (CR 601.2c).
-    let target_requirement = registry.get(behavior_card_id)
-        .and_then(|b| b.activated_abilities(state, object_id, registry)
-            .into_iter()
-            .find(|a| a.ability_index == ability_index)
-            .and_then(|a| a.target_requirement));
-
+    // `target_requirement` is what the ability asked of its target, read by
+    // the caller *before* any cost was paid: a sacrifice cost may have
+    // removed the source — "sacrifice this", or "sacrifice a creature" paid
+    // with the source itself — and a card's `activated_abilities` is gone
+    // with it. Re-deriving it here answered `None` for Skirsdag Cultist
+    // sacrificing itself, and the CR 608.2b re-check at resolution had
+    // nothing to check against (found by fuzzing). It rides on the stack
+    // entry (CR 601.2c).
     if let Some(behavior) = registry.get(behavior_card_id) {
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
@@ -189,8 +188,7 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                 String::new()
             } else {
                 let names: Vec<String> = targets.iter().map(|t| match t {
-                    crate::actions::Target::Object(id) =>
-                        format!("{} (#{})", state.obj_name(*id), id.0),
+                    crate::actions::Target::Object(id) => state.obj_name(*id),
                     crate::actions::Target::Player(p) => format!("p{}", p.0),
                     crate::actions::Target::Illegal => "an illegal target".into(),
                 }).collect();
@@ -286,14 +284,17 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                         targets: targets.to_vec(),
                         description: ab.description.clone(),
                         activator: player,
+                        target_requirement: ab.target_requirement.clone(),
                     });
                 } else {
                     // No mana available; force X = 0.
                     state.last_activated_x_value = Some(0);
-                    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player, registry);
+                    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
+                        ab.target_requirement.clone(), registry);
                 }
             } else {
-                put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player, registry);
+                put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
+                    ab.target_requirement.clone(), registry);
             }
             // CR 117.3b: taking an action means every player gets priority
             // again before anything resolves. This used to be moot — the
