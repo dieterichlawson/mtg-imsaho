@@ -920,8 +920,7 @@ pub trait CardBehavior: Send + Sync {
             // already applied inside `move_object`, and supertypes are
             // copiable values (CR 707.2), so a legend entering as a copy of
             // a non-legend is not legendary.
-            let legendary_now = state.get_object(object_id)
-                .and_then(|o| registry.card_data(o.card_id))
+            let legendary_now = state.face_data(object_id, registry)
                 .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.is_legendary = legendary_now;
