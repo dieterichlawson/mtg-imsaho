@@ -47,8 +47,14 @@ pub fn push_ability(
     behavior_card_id: CardId,
     targets: &[Target],
     target_requirement: Option<TargetRequirement>,
+    activator: PlayerId,
 ) {
-    let Some(activator) = state.get_object(object_id).map(|o| o.controller) else { return };
+    // CR 602.2a: the ability's controller is the player who activated it —
+    // passed in, not read back off the source. By the time the entry is
+    // pushed the cost has been paid, and "sacrifice this" has already moved
+    // the source to the graveyard and reset its controller to its owner, so
+    // a stolen permanent's own sacrifice ability was filed under its owner.
+    if state.get_object(object_id).is_none() { return; }
     state.stack.push(crate::state::StackEntry::Ability {
         source_id: object_id,
         ability_index,

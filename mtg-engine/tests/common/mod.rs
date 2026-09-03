@@ -190,6 +190,9 @@ pub fn activate_via_hooks(
     targets: &[Target],
 ) {
     let Some(card_id) = state.get_object(object_id).map(|o| o.card_id) else { return };
+    // The activator is whoever controls the source now — read before the
+    // cost is paid, since "sacrifice this" resets the controller (CR 602.2a).
+    let activator = state.get_object(object_id).map_or(P0, |o| o.controller);
     let mut target_requirement = None;
     if let Some(behavior) = registry.get(card_id) {
         // The costs the ability declares, paid the way `submit_action` pays
@@ -233,7 +236,7 @@ pub fn activate_via_hooks(
         }
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
-    mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets, target_requirement);
+    mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets, target_requirement, activator);
 }
 
 /// Activating an ability only puts it on the stack (CR 602.2a); it resolves

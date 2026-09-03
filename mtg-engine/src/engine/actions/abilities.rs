@@ -32,6 +32,7 @@ pub(crate) fn put_ability_on_stack(
     ability_index: usize,
     behavior_card_id: crate::ids::CardId,
     targets: &[Target],
+    activator: crate::ids::PlayerId,
     registry: &CardRegistry,
 ) {
     // Read what the ability asks of its target *before* the cost is paid:
@@ -47,7 +48,7 @@ pub(crate) fn put_ability_on_stack(
     if let Some(behavior) = registry.get(behavior_card_id) {
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
-    crate::cards::push_ability(state, object_id, ability_index, behavior_card_id, targets, target_requirement);
+    crate::cards::push_ability(state, object_id, ability_index, behavior_card_id, targets, target_requirement, activator);
 }
 
 pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], tap_plan: &[(ObjectId, usize)], sacrifice: Option<ObjectId>, source_card_id: Option<crate::ids::CardId>, registry: &CardRegistry) -> Applied {
@@ -289,10 +290,10 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                 } else {
                     // No mana available; force X = 0.
                     state.last_activated_x_value = Some(0);
-                    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, registry);
+                    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player, registry);
                 }
             } else {
-                put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, registry);
+                put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player, registry);
             }
             // CR 117.3b: taking an action means every player gets priority
             // again before anything resolves. This used to be moot — the
