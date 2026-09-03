@@ -1134,9 +1134,9 @@ impl GameState {
             // creature that died named whatever came back under that id — a
             // reanimated creature (Grimoire of the Dead, under its thief) was
             // handed to its original controller when the thief's source later
-            // left. The source side is the SBA's job (`expire_control_effects`),
-            // but an entry whose source is gone is dead weight too.
-            self.control_effects.retain(|c| c.object != id && c.source != id);
+            // left. The source side stays: `expire_control_effects` needs the
+            // entry to hand the permanent back when the source leaves.
+            self.control_effects.retain(|c| c.object != id);
         }
 
         // Emit zone-change events outside the mutable borrow.

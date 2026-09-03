@@ -818,12 +818,12 @@ fn creeping_renaissance_only_returns_chosen_type() {
     for _ in 0..2 {
         let c = ready_creature(&mut state, P0, 2, 2);
         state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-        state.move_object(c, Zone::Graveyard, &reg);
+        state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
     }
     for _ in 0..2 {
         let e = state.create_object(CardId(9999), P0, Zone::Battlefield, None, None);
         state.get_object_mut(e).unwrap().card_types = vec![CardType::Enchantment];
-        state.move_object(e, Zone::Graveyard, &reg);
+        state.get_object_mut(e).unwrap().zone = Zone::Graveyard;
     }
 
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
@@ -882,7 +882,7 @@ fn creeping_renaissance_returns_the_chosen_type_from_your_graveyard_only() {
             for (owner, into) in [(P0, &mut mine), (P1, &mut theirs)] {
                 let c = state.create_object(CardId(9999), owner, Zone::Battlefield, None, None);
                 state.get_object_mut(c).unwrap().card_types = vec![t];
-                state.move_object(c, Zone::Graveyard, &reg);
+                state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
                 into.push((t, c));
             }
         }
@@ -918,7 +918,7 @@ fn creeping_renaissance_flashback_exiles() {
     // Put a creature in graveyard.
     let c = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-    state.move_object(c, Zone::Graveyard, &reg);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
 
     // Put Creeping Renaissance itself in graveyard for flashback.
     let card_id = reg.get_id_by_name("Creeping Renaissance").unwrap();
