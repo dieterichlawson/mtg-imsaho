@@ -12,6 +12,9 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write;
 
+mod claude_code;
+pub use claude_code::{available as claude_code_available, binary as claude_code_binary, BINARY_ENV as CLAUDE_CODE_BINARY_ENV};
+
 #[derive(Default, Debug, Clone)]
 pub struct LlmModelUsage {
     pub input: u64,
@@ -951,12 +954,24 @@ impl LlmBackend for GeminiBackend {
     }
 }
 
+/// Which backend family a player was built with, so `with_model` rebuilds
+/// the same kind. `Anthropic` and `Gemini` are metered API seats;
+/// `ClaudeCode` runs the same prompt protocol through `claude -p` and is
+/// billed to whatever that CLI is logged into (a subscription, typically).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Provider {
+    Anthropic,
+    Gemini,
+    ClaudeCode,
+}
+
 pub struct LlmPlayer {
     name: String,
     /// Index into the game log — tracks which log entries have been sent.
     last_log_index: usize,
     /// Provider-specific API backend.
     backend: Box<dyn LlmBackend>,
+    provider: Provider,
     /// Optional guide text injected into the game-play system prompt.
     guide: Option<String>,
 }
@@ -968,6 +983,7 @@ impl LlmPlayer {
             name: name.to_string(),
             last_log_index: 0,
             backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
+            provider: Provider::Anthropic,
             guide: None,
         }
     }
@@ -978,6 +994,35 @@ impl LlmPlayer {
             name: name.to_string(),
             last_log_index: 0,
             backend: Box::new(GeminiBackend::new("gemini-2.5-flash")),
+            provider: Provider::Gemini,
+            guide: None,
+        }
+    }
+
+    /// A seat driven through the Claude Code CLI (`claude -p`) instead of
+    /// the Messages API: no API key, billed to the CLI's own login. The
+    /// binary comes from `CLAUDE_CODE_BIN` or `claude` on `PATH`; the
+    /// model is the CLI's default until `with_model` names one.
+    #[must_use]
+    pub fn new_claude_code(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            last_log_index: 0,
+            backend: Box::new(claude_code::ClaudeCodeBackend::new(None)),
+            provider: Provider::ClaudeCode,
+            guide: None,
+        }
+    }
+
+    /// [`new_claude_code`](Self::new_claude_code) with an explicit binary,
+    /// for tests that stand in a fake CLI and for unusual installs.
+    #[must_use]
+    pub fn new_claude_code_with_binary(name: &str, binary: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            last_log_index: 0,
+            backend: Box::new(claude_code::ClaudeCodeBackend::with_binary(binary, None)),
+            provider: Provider::ClaudeCode,
             guide: None,
         }
     }
@@ -990,12 +1035,17 @@ impl LlmPlayer {
 
     #[must_use]
     pub fn with_model(mut self, model: &str) -> Self {
-        // Recreate the backend with the new model name.
-        // We check the current backend type by trying to downcast.
-        if model.contains("gemini") {
+        // Recreate the backend with the new model name, keeping the
+        // provider family: a Claude Code seat stays a Claude Code seat
+        // (`claude-code:opus` must never quietly become an API-key seat).
+        if self.provider == Provider::ClaudeCode {
+            self.backend = Box::new(claude_code::ClaudeCodeBackend::new(Some(model)));
+        } else if model.contains("gemini") {
             self.backend = Box::new(GeminiBackend::new(model));
+            self.provider = Provider::Gemini;
         } else {
             self.backend = Box::new(AnthropicBackend::new(model));
+            self.provider = Provider::Anthropic;
         }
         self
     }
@@ -1124,6 +1174,27 @@ impl LlmPlayer {
     #[must_use]
     pub fn conversation_len_for_test(&self) -> usize {
         self.backend.conversation_len()
+    }
+
+    /// Drive the backend's plain action call directly, for backend tests.
+    pub fn backend_send_for_test(&mut self, message: &str) -> String {
+        self.backend.send(message)
+    }
+
+    /// Drive the backend's structured call directly, for backend tests.
+    pub fn backend_send_with_schema_for_test(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        self.backend.send_with_schema(message, schema)
+    }
+
+    /// Feed a recap through the backend's resume path, for backend tests.
+    pub fn backend_resume_for_test(&mut self, recap: &str) {
+        self.backend.resume(recap);
+    }
+
+    /// The backend's model label, for backend tests.
+    #[must_use]
+    pub fn model_name_for_test(&self) -> &str {
+        self.backend.model_name()
     }
 
     /// Expose `last_log_index` for testing.
