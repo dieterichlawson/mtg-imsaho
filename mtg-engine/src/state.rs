@@ -274,6 +274,13 @@ pub struct GameState {
     #[serde(default)]
     pub trigger_event_index: usize,
 
+    /// How many actions have been submitted to reach this state. Two
+    /// consecutive decision points are one action apart exactly when this
+    /// moved by one — the game loop may pass on a player's behalf in
+    /// between, and `events` only ever holds the last action's events.
+    #[serde(default)]
+    pub submit_seq: u64,
+
     /// Pending triggered abilities waiting to resolve, in APNAP order.
     /// Active player's triggers at the front (bottom of "stack"),
     /// non-active player's at the back (top). Resolved LIFO from the back.
@@ -515,6 +522,7 @@ impl GameState {
             pending_ability_effect: None,
             pending_spell_cast: None,
             trigger_event_index: 0,
+            submit_seq: 0,
             pending_triggers: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),
@@ -1149,8 +1157,12 @@ impl GameState {
             self.control_effects.retain(|c| c.object != id);
         }
 
-        // Emit zone-change events outside the mutable borrow.
+        // Emit zone-change events outside the mutable borrow. Every move is
+        // announced (CR 400.7) — a library reorder included, since it counts
+        // as a zone change here — so a ledger can pair each change of zone
+        // with the verb that caused it.
         if let Some(from_zone) = from {
+            self.events.push(crate::events::GameEvent::ObjectMoved { object: id, from: from_zone, to });
             if from_zone == Zone::Battlefield && to != Zone::Battlefield {
                 self.events.push(crate::events::GameEvent::LeftBattlefield {
                     object: id,

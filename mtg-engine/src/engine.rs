@@ -362,6 +362,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 /// is handled by its own function in [`actions`]; this is the dispatch and the
 /// bookkeeping either side of it.
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
+    let mut new_state = submit_action_inner(state, action, registry);
+    // Counted once per action the caller submits; a cast that re-enters
+    // through its own cost prompt is still one action.
+    new_state.submit_seq = state.submit_seq + 1;
+    new_state
+}
+
+pub(crate) fn submit_action_inner(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = state.clone();
     new_state.events.clear();
     new_state.trigger_event_index = 0;

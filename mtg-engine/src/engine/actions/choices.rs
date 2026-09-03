@@ -497,7 +497,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // Clear awaiting_action so the recursive submit_action
                     // doesn't treat this as another resolution choice.
                     state.awaiting_action = None;
-                    return Applied::Replace(submit_action(state, &cast, registry));
+                    return Applied::Replace(crate::engine::submit_action_inner(state, &cast, registry));
                 }
                 // Player cancelled a cast mid-prompt (rarely reached —
                 // only when a fixed-count exile choice couldn't be
