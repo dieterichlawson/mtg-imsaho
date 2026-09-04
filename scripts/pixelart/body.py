@@ -28,7 +28,7 @@ class Skel:
         self.knee_y     = round(h * 0.78)
         self.foot_y     = h - 1
         self.sw = shoulder_w if shoulder_w else round(hd * 2.4)   # ~2.4 heads wide
-        self.hw = hip_w if hip_w else round(hd * 1.7)
+        self.hw = hip_w if hip_w else max(4, round(hd * 1.3))
         # contrapposto: hips tilt toward the weighted leg, shoulders counter it
         self.hip_tilt      = +1 * weight
         self.shoulder_tilt = -1 * weight
@@ -43,7 +43,7 @@ class Skel:
         h = self.hw // 2
         return ((-h, self.hip_y - self.hip_tilt), (h, self.hip_y + self.hip_tilt))
     def feet(self, stance=None):
-        s = stance if stance is not None else max(2, self.hw // 2)
+        s = stance if stance is not None else max(2, self.hw // 2 - 1)
         return ((-s, self.foot_y), (s + 1, self.foot_y))
 
 def limb(cv, ox, oy, a, b, c, shade, w=2, taper=0, outer=0):
@@ -82,7 +82,7 @@ def head(cv, ox, oy, x, y, hd, skin='n', shade='m', hi='o', hair=None, eyes='0')
             cv.set(ox+xx, oy+y, hair)
         cv.set(ox+x-w//2, oy+y+1, hair); cv.set(ox+x+w//2, oy+y+1, hair)
 
-def neck(cv, ox, oy, x, chin, shoulder_y, skin='n', shade='m', w=3):
+def neck(cv, ox, oy, x, chin, shoulder_y, skin='n', shade='m', w=2):
     """Close the gap between jaw and chest — a floating head reads as a mask."""
     for yy in range(chin, shoulder_y):
         for k in range(w):
