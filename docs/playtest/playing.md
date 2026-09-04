@@ -113,6 +113,18 @@ contradict the CR.
   first draw (CR 103.7a), the London mulligan counts, summoning sickness
   on turn 1 (CR 302.6), APNAP consistency (CR 101.4), and whether the
   CLI ever says which seat is on the play
+- C24 planeswalkers as a combat target: attack a walker, defend it, and
+  kill it. Verify the attack target is chosen per attacker at declare
+  attackers and the CLI offers it per attacker (CR 508.1a), that combat
+  damage removes that many loyalty counters (CR 306.7, 120.3c) and stays
+  removed rather than clearing at cleanup, that 0 loyalty sends it to its
+  owner's graveyard at the next SBA check (CR 704.5i), that a trampler
+  measures lethal in loyalty before spilling to the controller (CR
+  702.19b), that a burn spell reaches a walker only if it says "any
+  target" (CR 115.4 — there is no redirection any more), and that loyalty
+  abilities are sorcery-speed and once per turn per permanent (CR 606.3,
+  118.5). Liliana of the Veil and Garruk Relentless are the only
+  implemented walkers and both are 1-ofs, so write a one-off deck
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
@@ -214,3 +226,30 @@ illegal or dubious resolutions do.
   scoped to the prompting seat; "reveal" shown to both and "look at"
   only to the chooser and never echoed into the shared log; library
   order not leaked; face-down exile stays hidden
+- L26 [proposed 2026-09-04, from the C24 night and #219/#220] planeswalker
+  combat leftovers (CR 506.4c, 508.1a, 510.5, 702.19b): send TWO attackers at
+  once, one at the player and one at a walker, and verify the blocker prompt
+  and the damage split are right for each; kill or bounce the attacked walker
+  after blockers are declared and verify the attacker deals no damage at all
+  rather than falling through to the player; block a trampler that is
+  attacking a walker and verify the excess crosses the blocker to the walker
+  (lethal = loyalty) and only then to the player; attack a walker with a
+  first- or double-striker and verify the regular damage step does nothing
+  once the walker died in the first-strike step. Wants Liliana of the Veil
+  (br-coverage) or Garruk Relentless (ug-coverage) plus Kessig Wolf Run for
+  the trample grant; write a one-off deck, the 1-ofs are unreachable
+- L27 the graveyard as an ordered, shared, contested zone: reanimate or steal
+  an opponent's creature (Grimoire of the Dead, Olivia Voldaren, Traitorous
+  Blood), attach one player's Aura and the other's Equipment to it, then kill
+  it — verify the creature goes to its OWNER's graveyard (CR 404.3), each Aura
+  to ITS owner's (CR 704.5m), and the Equipment merely unattaches (CR 704.5n),
+  all from one death. Sweep several creatures at once and verify every "dies"
+  trigger sees the others having died (CR 603.10a) and that tokens leave no
+  residue (CR 111.7). Cast a flashback card from the graveyard and make it
+  resolve, be countered, and fizzle — all three must exile it (CR 702.34a),
+  never return it. Finally check the ORDER: put three cards into one graveyard
+  on three known turns and compare `g` against arrival order (CR 404.2) — the
+  engine keeps no graveyard order at all (#222), so this is a re-probe until a
+  real ordered zone exists. Needs reanimation or theft, Auras, Equipment,
+  flashback and a sweeper; no coverage pairing has all of these, so write
+  one-off decks
