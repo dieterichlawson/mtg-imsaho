@@ -16,9 +16,15 @@ night.
 
 The menu covers all three targets named in the pipeline's glossary: the
 **engine** (Competitor, Rules Lawyer), the **machine** (Vandal, Operator)
-and the **harness** (Handler). A separate D family covers the draft
+and the **harness** (Handler). A separate D group covers the draft
 runner, which has its own packs, pick loop, deck builder and tournament,
-and its own prompts. Say which one an issue is about in its
+and its own prompts.
+
+Missions are grouped into six *families*, each a letter prefix on its
+ids: C, L, V, M and H are the five personas below, and D is the draft
+runner. D is the odd one out — it is grouped by subject rather than
+mindset, and its missions borrow whichever persona each one needs. "The
+next free id in that family" means H6 if H1-H5 are taken. Say which one an issue is about in its
 **Target** line. The Operator and Handler missions are the only ones that
 don't run two `cli` seats; the Handler's `claude-code` seat runs on plan
 quota through `claude -p` — a metered `claude`/`gemini` API seat is never
@@ -379,8 +385,8 @@ Draft:
 
 The D missions test `mtg-draft-runner` — booster generation, the pick
 loop, deck building and the Swiss tournament that follows. They use the
-personas above as lenses; the family is separate because the subject is
-different, not the mindset. Two setup rules:
+personas above as lenses; this family is grouped by subject rather than
+by mindset, which is why it is separate. Two setup rules:
 
 - **`--model` defaults to `claude`, a metered API seat.** Every draft
   mission must pass `--model cc` explicitly. Nothing else is allowed, and
