@@ -281,6 +281,13 @@ pub struct GameState {
     #[serde(default)]
     pub submit_seq: u64,
 
+    /// When set, the game loop routes the passes and empty attack
+    /// declarations it would make on a player's behalf through the decision
+    /// callback, so an observer sees every submitted action and every
+    /// event buffer. A runtime setting, not part of the game.
+    #[serde(skip)]
+    pub observe_every_submit: bool,
+
     /// Pending triggered abilities waiting to resolve, in APNAP order.
     /// Active player's triggers at the front (bottom of "stack"),
     /// non-active player's at the back (top). Resolved LIFO from the back.
@@ -523,6 +530,7 @@ impl GameState {
             pending_spell_cast: None,
             trigger_event_index: 0,
             submit_seq: 0,
+            observe_every_submit: false,
             pending_triggers: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),

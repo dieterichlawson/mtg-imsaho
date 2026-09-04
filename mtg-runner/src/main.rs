@@ -447,6 +447,7 @@ fn main() {
             if let Some((prev, act)) = &last_decision {
                 violations.extend(mtg_engine::invariants::check_transition(prev, Some(act), game_state, registry_ref));
             }
+            violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
 
             let mut counts = vec![0usize; game_state.players.len()];
             for obj in game_state.objects.values() {
@@ -532,6 +533,9 @@ fn main() {
     };
 
 
+    // Under the checker every submitted action is a decision point, so the
+    // event ledgers see the passes the loop would otherwise make silently.
+    state.observe_every_submit = check_invariants;
     if resume_file.is_some() {
         engine::resume_game_loop(&mut state, &registry, &mut game_callback);
     } else {

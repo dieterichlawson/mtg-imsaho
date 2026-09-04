@@ -83,6 +83,7 @@ pub struct GameConfig {
 /// Result of `legal_actions`: a list of actions plus an optional combat prompt.
 /// When a combat prompt is present, the player should construct a
 /// DeclareAttackers/DeclareBlockers action from it (not pick from the actions list).
+#[derive(Clone)]
 pub struct LegalActions {
     pub actions: Vec<Action>,
     pub combat_prompt: Option<crate::actions::CombatPrompt>,
@@ -1197,7 +1198,7 @@ fn run_game_loop_inner<F>(
         if let Some(crate::actions::CombatPrompt::ChooseAttackers {
             ref eligible, ref must_attack, ..
         }) = legal.combat_prompt {
-            if eligible.is_empty() && must_attack.is_empty() {
+            if eligible.is_empty() && must_attack.is_empty() && !state.observe_every_submit {
                 *state = submit_action(state, &Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }, registry);
                 state.priority_player = Some(state.active_player);
                 continue;
@@ -1225,7 +1226,21 @@ fn run_game_loop_inner<F>(
                 auto_pass_count = 0;
                 continue;
             }
-            Action::PassPriority
+            if state.observe_every_submit {
+                // An observer wants to see this pass as a decision of its
+                // own; the menu is the pass (and the ever-present concede).
+                let pass_only = LegalActions {
+                    actions: vec![Action::PassPriority, Action::Concede],
+                    combat_prompt: None,
+                    castable_spells: vec![],
+                    activatable_abilities: vec![],
+                    context: None,
+                    resolution_prompt: None,
+                };
+                choose_action(state, acting_player, &pass_only)
+            } else {
+                Action::PassPriority
+            }
         } else {
             advance_step(state, registry);
             continue;

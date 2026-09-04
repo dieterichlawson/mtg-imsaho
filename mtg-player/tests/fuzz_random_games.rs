@@ -84,6 +84,7 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
         rng_seed: Some(seed),
     };
     let mut state = engine::setup_game(&config, registry);
+    state.observe_every_submit = true;
 
     let mut players = [
         RandomPlayer::with_seed("A", seed.wrapping_add(1)),
@@ -108,6 +109,7 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
             if let Some((prev, act)) = &last_decision {
                 found.extend(mtg_engine::invariants::check_transition(prev, Some(act), gs, registry));
             }
+            found.extend(mtg_engine::invariants::check_legal(gs, acting, legal, registry));
             let mut counts = vec![0usize; gs.players.len()];
             for obj in gs.objects.values() {
                 if !obj.is_token {
