@@ -328,7 +328,7 @@ impl Step {
 }
 
 /// Counter types that can exist on permanents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum CounterType {
     PlusOnePlusOne,
     MinusOneMinusOne,

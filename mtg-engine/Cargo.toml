@@ -7,5 +7,10 @@ edition = "2021"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 
+[dev-dependencies]
+# The save format is JSON, and its reproducibility is a property worth
+# testing here rather than only through the runner (issue #199).
+serde_json = "1"
+
 [lints]
 workspace = true

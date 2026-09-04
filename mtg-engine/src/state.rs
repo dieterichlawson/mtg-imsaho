@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde::{Serialize, Deserialize};
 
 use crate::ids::{ObjectId, PlayerId, CardId};
@@ -116,7 +114,13 @@ pub struct EndOfCombatExileEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
     /// All game objects keyed by their unique ID.
-    pub objects: HashMap<ObjectId, GameObject>,
+    /// Ordered by id, not hashed: `HashMap`'s iteration order is seeded per
+    /// process, so two identical seeded runs serialized the same game to
+    /// byte-different saves and `cmp`/`sha256sum` could not confirm they
+    /// matched (issue #199). Same reason `ManaPool` is a `BTreeMap`. Also
+    /// makes every iteration over the objects deterministic rather than
+    /// merely usually-consistent.
+    pub objects: std::collections::BTreeMap<ObjectId, GameObject>,
     /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
 
@@ -233,11 +237,11 @@ pub struct GameState {
 
     /// Number of spells cast this turn by each player (for werewolf transforms).
     #[serde(default)]
-    pub num_spells_cast_this_turn: HashMap<PlayerId, u32>,
+    pub num_spells_cast_this_turn: std::collections::BTreeMap<PlayerId, u32>,
 
     /// Spells cast last turn (saved at turn start for werewolf condition checking).
     #[serde(default)]
-    pub num_spells_cast_last_turn: HashMap<PlayerId, u32>,
+    pub num_spells_cast_last_turn: std::collections::BTreeMap<PlayerId, u32>,
 
     /// X value chosen for the most recently activated X-cost ability.
     /// Set by the engine before the ability goes on the stack; cards read this.
@@ -496,7 +500,7 @@ impl GameState {
             .collect();
 
         Self {
-            objects: HashMap::new(),
+            objects: std::collections::BTreeMap::new(),
             next_object_id: 1,
             rng_state: default_rng_seed(),
             players,
@@ -521,8 +525,8 @@ impl GameState {
             control_effects: Vec::new(),
             creature_died_this_turn: false,
             day_night: None,
-            num_spells_cast_this_turn: HashMap::new(),
-            num_spells_cast_last_turn: HashMap::new(),
+            num_spells_cast_this_turn: std::collections::BTreeMap::new(),
+            num_spells_cast_last_turn: std::collections::BTreeMap::new(),
             last_activated_x_value: None,
             last_activated_sacrifice: None,
             last_activated_sacrifice_toughness: None,
@@ -586,13 +590,13 @@ impl GameState {
             cast_with_flashback: false,
             instance_oracle_text: None,
             instance_continuous_effects: None,
-            card_state: HashMap::new(),
-            counters: HashMap::new(),
+            card_state: std::collections::BTreeMap::new(),
+            counters: std::collections::BTreeMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
             x_value: None,
             chosen_mode: None,
-            abilities_activated_this_turn: std::collections::HashSet::new(),
+            abilities_activated_this_turn: std::collections::BTreeSet::new(),
             entering_copy_source: false,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
@@ -731,12 +735,12 @@ impl GameState {
             cast_with_flashback: false,
             instance_oracle_text: None,
             instance_continuous_effects: None,
-            card_state: HashMap::new(),
-            counters: HashMap::new(),
+            card_state: std::collections::BTreeMap::new(),
+            counters: std::collections::BTreeMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
             x_value: None,
-            abilities_activated_this_turn: std::collections::HashSet::new(),
+            abilities_activated_this_turn: std::collections::BTreeSet::new(),
             chosen_mode: None,
             entering_copy_source: false,
             state_trigger_on_stack: false,
@@ -2963,10 +2967,10 @@ pub struct GameObject {
     /// Card-specific persistent state (e.g., Fiend Hunter stores the exiled creature ID).
     /// Keyed by purpose string, value is an `ObjectId`.
     #[serde(default)]
-    pub card_state: HashMap<String, ObjectId>,
+    pub card_state: std::collections::BTreeMap<String, ObjectId>,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
-    pub counters: HashMap<crate::types::CounterType, u32>,
+    pub counters: std::collections::BTreeMap<crate::types::CounterType, u32>,
 
     /// Number of regeneration shields (consumed instead of destruction).
     #[serde(default)]
@@ -2992,7 +2996,7 @@ pub struct GameObject {
 
     /// Activated abilities used this turn (for once-per-turn tracking).
     #[serde(default)]
-    pub abilities_activated_this_turn: std::collections::HashSet<usize>,
+    pub abilities_activated_this_turn: std::collections::BTreeSet<usize>,
 
     /// Whether this permanent is an entering-battlefield copy source (replacement effect).
     /// When true, other creatures entering the battlefield under the same controller

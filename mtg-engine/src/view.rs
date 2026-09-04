@@ -200,7 +200,9 @@ impl GameView {
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),
-                    counters: obj.counters.clone(),
+                    // The view keeps a HashMap; the state's is ordered now
+                    // (issue #199), and this is the one boundary between them.
+                    counters: obj.counters.iter().map(|(k, v)| (*k, *v)).collect(),
                     named_card: obj.instance_continuous_effects.as_ref().and_then(|effs| {
                         effs.iter().find_map(|e| match e {
                             crate::types::ContinuousEffect::PreventCastingNamed { name } =>
