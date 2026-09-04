@@ -229,3 +229,36 @@ fn the_seat_aliases_still_reach_their_llm_seat() {
             "--p1 {alias} is an alias for claude, not an unknown type.\nstderr: {stderr}");
     }
 }
+
+/// `--log` accumulates, as `--help` says it does ("Append the game log to
+/// this file").
+///
+/// It opened with `.truncate(true)`, so the second of two runs sharing a
+/// `--log` path silently destroyed the first game's record and still exited
+/// 0 — the natural way to record a matchup, or to re-run the same command
+/// line after a crash, was also the way to lose the evidence.
+#[test]
+fn the_log_flag_appends_rather_than_destroying_the_previous_run() {
+    let path = std::env::temp_dir().join(format!("mtg-runner-append-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+
+    let mut lines = Vec::new();
+    for seed in ["1", "2"] {
+        let output = runner()
+            .args(["--p1", "random", "--p2", "random", "--seed", seed,
+                   "--log", &path.to_string_lossy(), "--quiet"])
+            .output()
+            .expect("failed to run");
+        assert_eq!(output.status.code(), Some(0), "seeded random-vs-random game runs clean");
+        lines.push(std::fs::read_to_string(&path).expect("log exists").lines().count());
+    }
+
+    let contents = std::fs::read_to_string(&path).expect("log exists");
+    let _ = std::fs::remove_file(&path);
+
+    assert!(lines[1] > lines[0],
+        "the second run adds to the log rather than replacing it: {} lines then {} lines",
+        lines[0], lines[1]);
+    assert_eq!(contents.matches("Game over").count(), 2,
+        "both games' records are in the file, not just the last one");
+}

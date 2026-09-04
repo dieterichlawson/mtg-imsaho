@@ -48,7 +48,15 @@ struct LogState {
 static LOG: Mutex<Option<LogState>> = Mutex::new(None);
 
 /// Initialize the global log writer. Call once at startup.
-/// If already initialized, replaces the previous log file.
+/// If already initialized, replaces the previous writer (the file it was
+/// writing to keeps whatever it already holds).
+///
+/// Opened for append, which is what `--log` has always promised: "Append the
+/// game log to this file". It truncated instead, so an operator recording a
+/// matchup under one `--log` path — or simply re-running the same command
+/// after a crash — destroyed the previous game's log silently, with exit 0.
+/// A run's record is evidence; a flag that says it accumulates must not be
+/// the thing that erases it.
 ///
 /// The path is user input, so failure to open it is returned rather than
 /// panicking (issue #69): the caller owns how a bad `--log` argument is
@@ -56,8 +64,7 @@ static LOG: Mutex<Option<LogState>> = Mutex::new(None);
 pub fn init(path: &str) -> std::io::Result<()> {
     let file = OpenOptions::new()
         .create(true)
-        .write(true)
-        .truncate(true)
+        .append(true)
         .open(path)?;
     let mut guard = match LOG.lock() {
         Ok(g) => g,
