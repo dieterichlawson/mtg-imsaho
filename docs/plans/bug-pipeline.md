@@ -19,7 +19,7 @@ Three words that are easy to confuse, fixed here:
 |---|---|---|---|
 | Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) | `phase:fuzz` | the workflow (per failing seed) |
 | Weekly mutants | `weekly-mutants` workflow (~2,365 engine-core mutants) | `phase:mutants` | the workflow (new survivors beyond `reports/mutants-accepted.txt`) |
-| Nightly playtest | "Nightly playtest crew" routine (`prompts/PLAYTEST_CREW_PROMPT.md`: 2-3 missions a night from `docs/plans/playtest-missions.md`, spanning all three targets — the Competitor and Rules Lawyer play the engine, the Vandal and Operator the machine, the Handler the harness, and a D family the draft runner; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:playtest` | the routine |
+| Nightly playtest | "Nightly playtest crew" routine (`docs/playtest/README.md`: a tester picks one subject a night — the game, the CLI, the harness or drafting — and works from that subject's guide and from the code and the CR; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:playtest` | the routine |
 
 All issues also carry the `bug` label. Labels are auto-created on first
 use, so a new phase just picks a `phase:<name>` label and starts filing.
@@ -61,12 +61,12 @@ docs.
 
 ## Feeding the menu
 
-The playtest crew's mission menu (`docs/plans/playtest-missions.md`) is
-open to every agent in the pipeline, not just the crew that plays it. A
+The playtest guides (`docs/playtest/`) are open to every agent in the
+pipeline, not just the testers who work from them. A
 fixer that roots a bug down to a class nothing covers, a triager reading
 a pile of fuzz seeds with a shape in common, a human who notices a hole —
-each should add the mission rather than note the gap and move on. The
-rules are in that file under "Adding a mission"; the short version is
-that a mission must be playable as written, must cite the observation
-that prompted it, and goes on the menu in its own commit. Missions that
-have never been played are picked first, so adding one schedules it.
+each should add the idea rather than note the gap and move on. The rules
+are in `docs/playtest/README.md` under "Adding an idea"; the short
+version is that it must be actionable as written, must cite the
+observation that prompted it, and goes into the relevant guide in its own
+commit. Untried ideas are picked first, so adding one schedules it.
