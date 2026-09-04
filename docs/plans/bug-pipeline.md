@@ -4,6 +4,15 @@ Every automated testing phase reports bugs as GitHub issues with uniform
 metadata; one fixer loop works the queue and merges. Finders never fix;
 the fixer never hunts.
 
+Three words that are easy to confuse, fixed here:
+
+- **the engine** — the rules (`mtg-engine`).
+- **the machine** — the binaries as programs: the CLI/TUI, flags, files,
+  signals, save/resume (`mtg-runner`, `mtg-player`'s interactive surface).
+- **the harness** — the LLM interface: the prompts, the response schema and
+  the conversation an LLM seat plays a game through (`mtg-player/src/llm.rs`
+  and its backends). Documented in `docs/llm-harness.md`.
+
 ## Finders (each files issues, labeled with its phase)
 
 | Phase | What it runs | Label | Filed by |
@@ -11,7 +20,7 @@ the fixer never hunts.
 | Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) | `phase:fuzz` | the workflow (per failing seed) |
 | Weekly mutants | `weekly-mutants` workflow (~2,365 engine-core mutants) | `phase:mutants` | the workflow (new survivors beyond `reports/mutants-accepted.txt`) |
 | Nightly playtest | "Nightly playtest crew" routine (LLM self-play via the CLI) | `phase:playtest` | the routine |
-| Nightly harness | "Nightly harness crew" routine (`prompts/HARNESS_CREW_PROMPT.md`: drives the real binary through tmux — signals, TTY edges, input abuse, files/flags, save/resume, log hygiene, endurance, determinism; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:harness` | the routine |
+| Nightly robustness | "Nightly robustness crew" routine (`prompts/ROBUSTNESS_CREW_PROMPT.md`: audits the binaries as programs through tmux — signals, TTY edges, input abuse, files/flags, save/resume, log hygiene, endurance, determinism, and the two missions that poke the LLM harness's prompt protocol and subprocess contract; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:robustness` | the routine |
 
 All issues also carry the `bug` label. Labels are auto-created on first
 use, so a new phase just picks a `phase:<name>` label and starts filing.
@@ -38,7 +47,7 @@ use, so a new phase just picks a `phase:<name>` label and starts filing.
 
 Runs daily after the finders. Takes open `phase:*` issues (oldest first,
 grouping obvious duplicates), and for each: reproduce → root-cause →
-fix the mechanism, engine or harness (never a per-card special case) → regression
+fix the mechanism, wherever it lives (never a per-card special case) → regression
 test (mutation-checked where feasible) → full workspace suite green →
 **merge to master** → close the issue citing the commit. Issues it cannot
 reproduce or safely fix get a comment with the diagnosis and stay open
