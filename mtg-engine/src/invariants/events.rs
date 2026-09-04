@@ -40,7 +40,8 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             | GameEvent::LandPlayed { player, .. } | GameEvent::SpellCast { player, .. }
             | GameEvent::ManaAdded { player, .. } | GameEvent::ManaPoolEmptied { player }
             | GameEvent::LifeChanged { player, .. } | GameEvent::PlayerLost { player, .. }
-            | GameEvent::PriorityPassed { player } | GameEvent::Discarded { player, .. } => Some(*player),
+            | GameEvent::PriorityPassed { player } | GameEvent::Discarded { player, .. }
+            | GameEvent::LibraryShuffled { player } => Some(*player),
             GameEvent::EnteredBattlefield { controller, .. } | GameEvent::CreatureDied { controller, .. } => Some(*controller),
             GameEvent::LeftBattlefield { last_controller, .. } => Some(*last_controller),
             GameEvent::CreatureCardMilled { milled_player, .. } => Some(*milled_player),
@@ -371,7 +372,7 @@ fn damage(state: &GameState, registry: &CardRegistry, events: &[GameEvent], quie
             }
         }
         // CR 702.15b: lifelink damage gains life for the source's controller.
-        if quiet && on_bf(state, source) && state.has_keyword(source, Keyword::Lifelink, registry) {
+        if on_bf(state, source) && state.has_keyword(source, Keyword::Lifelink, registry) {
             let controller = state.get_object(source).map(|o| o.controller);
             let gain = events.iter().enumerate().skip(i + 1).find(|(j, x)| !consumed[*j] && matches!(x,
                 GameEvent::LifeChanged { player, old, new_life } if Some(*player) == controller && new_life - old == amount as i32));
@@ -451,7 +452,23 @@ fn names_object(e: &GameEvent, id: ObjectId) -> bool {
     }
 }
 
+/// CR 502.3: the untap step untaps the active player's permanents and
+/// nothing else, and nothing else happens in it.
+fn untap_step_scope(state: &GameState, events: &[GameEvent], v: &mut Violations) {
+    let Some(i) = events.iter().rposition(|e| matches!(e, GameEvent::StepStarted { step: Step::Untap })) else { return };
+    let j = events[i + 1..].iter().position(|e| matches!(e, GameEvent::StepStarted { .. })).map_or(events.len(), |k| i + 1 + k);
+    for e in &events[i + 1..j] {
+        if let GameEvent::Untapped { object } = e {
+            let ok = state.get_object(*object).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == state.active_player);
+            if !ok {
+                v.push(format!("the untap step untapped #{} which p{} does not control (CR 502.3)", object.0, state.active_player.0));
+            }
+        }
+    }
+}
+
 fn zone_changes(state: &GameState, registry: &CardRegistry, events: &[GameEvent], v: &mut Violations) {
+    untap_step_scope(state, events, v);
     for (i, e) in events.iter().enumerate() {
         let later_mention = |id: ObjectId| events[i + 1..].iter().any(|x| names_object(x, id));
         match e {

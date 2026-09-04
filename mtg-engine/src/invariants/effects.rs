@@ -45,6 +45,18 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("control effect over #{} which is no creature", c.object.0));
         }
     }
+    // CR 302.6: control taken this turn (the effect ends at cleanup, so it
+    // began after this turn's untap step) leaves the permanent summoning
+    // sick under its new controller.
+    for e in &state.until_end_of_turn {
+        if let TemporaryEffect::ChangeControl { target, original_controller } = e {
+            if let Some(o) = state.get_object(*target) {
+                if o.zone == Zone::Battlefield && o.controller != *original_controller && !o.summoning_sick {
+                    v.push(format!("#{} ({}) was taken from p{} this turn but is not summoning sick (CR 302.6)", target.0, o.name, original_controller.0));
+                }
+            }
+        }
+    }
     // CR 603.7d: the delayed exiles in this pool are for tokens.
     let delayed = state.end_of_combat_exiles.iter().map(|e| e.target_id)
         .chain(state.stack.iter().filter_map(|e| match e {

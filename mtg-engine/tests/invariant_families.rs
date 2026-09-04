@@ -1074,3 +1074,196 @@ fn transition_action_contracts_are_checked() {
     flags_transition(&p, Some(&pass), &s, &reg, "a lone pass by p0 produced 2 event(s)");
     flags_transition(&p, Some(&pass), &s, &reg, "changed the game (CR 117.4)");
 }
+
+// ── the legal action set ─────────────────────────────────────────────────
+
+use mtg_engine::invariants::check_legal;
+
+#[track_caller]
+fn flags_legal(state: &GameState, acting: PlayerId, legal: &mtg_engine::engine::LegalActions, reg: &CardRegistry, needle: &str) {
+    let v = check_legal(state, acting, legal, reg);
+    assert!(v.iter().any(|m| m.contains(needle)), "expected a legal-set violation containing {needle:?}, got: {v:?}");
+}
+
+#[test]
+fn the_priority_offer_shape_and_sorcery_timing_are_checked() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let land = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    add_mana(&mut state, P0, &[(ManaType::Green, 2)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })), "precondition: a land drop is offered");
+    assert_eq!(check_legal(&state, P0, &legal, &reg), Vec::<String>::new());
+
+    flags_legal(&state, P1, &legal, &reg, "priority offer to p1 who does not hold priority (CR 117.1)");
+
+    let mut l = legal.clone();
+    l.actions.retain(|a| !matches!(a, Action::Concede));
+    flags_legal(&state, P0, &l, &reg, "does not start with PassPriority and end with Concede");
+
+    let mut l = legal.clone();
+    l.actions.insert(1, Action::PlayLand { object_id: land });
+    flags_legal(&state, P0, &l, &reg, "offered twice");
+
+    // The same offers during combat are sorcery-speed violations.
+    let mut s = state.clone();
+    s.step = Step::BeginCombat;
+    flags_legal(&s, P0, &legal, &reg, "outside a main phase with an empty stack on p0's turn (CR 305.1)");
+    flags_legal(&s, P0, &legal, &reg, "at sorcery speed outside p0's main phase with an empty stack (CR 307.1)");
+
+    let mut s = state.clone();
+    s.get_player_mut(P0).land_plays_remaining = 0;
+    flags_legal(&s, P0, &legal, &reg, "with no land drop left (CR 305.2)");
+
+    let mut s = state.clone();
+    s.get_object_mut(creature).unwrap().owner = P1;
+    flags_legal(&s, P0, &legal, &reg, "owned by p1 offered to p0 (CR 601.3a)");
+
+    let mut l = legal.clone();
+    l.actions.insert(1, Action::ActivateManaAbility { object_id: bear, ability_index: 0 });
+    flags_legal(&state, P0, &l, &reg, "offered but not available to p0 (CR 605.3a)");
+}
+
+#[test]
+fn combat_prompt_offers_are_checked_against_the_board() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let sick = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(sick).unwrap().summoning_sick = true;
+    state.step = Step::DeclareAttackers;
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(matches!(legal.combat_prompt, Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { .. })));
+    assert_eq!(check_legal(&state, P0, &legal, &reg), Vec::<String>::new());
+
+    let mut l = legal.clone();
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { eligible, .. }) = &mut l.combat_prompt {
+        eligible.push(sick);
+    }
+    flags_legal(&state, P0, &l, &reg, "but the creatures able to attack are");
+    let mut l = legal.clone();
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { eligible, .. }) = &mut l.combat_prompt {
+        eligible.clear();
+    }
+    flags_legal(&state, P0, &l, &reg, "(CR 508.1a)");
+    let _ = bear;
+
+    // Blockers: a flyer cannot be blocked by a ground creature.
+    let (mut state, reg) = base();
+    let flyer = named_permanent(&mut state, &reg, "Chapel Geist", P0);
+    let ground = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(flyer, P1)], &reg);
+    state.step = Step::DeclareBlockers;
+    state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+    state.priority_player = Some(P1);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(matches!(legal.combat_prompt, Some(mtg_engine::actions::CombatPrompt::ChooseBlockers { .. })));
+    assert_eq!(check_legal(&state, P1, &legal, &reg), Vec::<String>::new());
+    let mut l = legal.clone();
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+        legal_blocks.entry(ground).or_default().push(flyer);
+    }
+    flags_legal(&state, P1, &l, &reg, "which evades it (CR 509.1b)");
+}
+
+#[test]
+fn resolution_prompt_enumerations_are_checked() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source: bear, choice: ResolutionChoiceKind::ChooseTarget {
+        description: String::new(), options: vec![Target::Object(other)], optional: true,
+        effect: PendingEffect::DestroyCreature { source_name: "x".into() } } });
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert_eq!(check_legal(&state, P0, &legal, &reg), Vec::<String>::new());
+
+    let mut l = legal.clone();
+    l.actions.pop();
+    flags_legal(&state, P0, &l, &reg, "but the prompt enumerates to");
+    flags_legal(&state, P1, &legal, &reg, "resolution prompt offered to p1, not p0");
+}
+
+// ── checks driven by the mutation audit ──────────────────────────────────
+
+#[test]
+fn untap_scope_theft_sickness_and_shuffles_are_checked() {
+    let (mut state, reg) = base();
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+
+    // CR 502.3: the untap step touches only the active player's permanents.
+    let mut s = state.clone();
+    s.step = Step::Upkeep;
+    s.events = vec![GameEvent::StepStarted { step: Step::Untap }, GameEvent::Untapped { object: mine },
+        GameEvent::StepStarted { step: Step::Upkeep }];
+    clean(&s, &reg);
+    s.events[1] = GameEvent::Untapped { object: theirs };
+    flags_core(&s, &reg, "the untap step untapped #");
+    flags_core(&s, &reg, "which p0 does not control (CR 502.3)");
+
+    // CR 302.6: a creature taken this turn is summoning sick.
+    let mut s = state.clone();
+    s.change_control(theirs, P0);
+    s.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: theirs, original_controller: P1 });
+    clean(&s, &reg);
+    s.get_object_mut(theirs).unwrap().summoning_sick = false;
+    flags_core(&s, &reg, "was taken from p1 this turn but is not summoning sick (CR 302.6)");
+
+    // CR 701.20a: a library keeps its order unless shuffled.
+    let mut prev = state.clone();
+    for name in ["Island", "Swamp", "Plains"] {
+        let c = spell_in_hand(&mut prev, &reg, name, P0);
+        prev.get_object_mut(c).unwrap().zone = Zone::Library;
+        prev.get_player_mut(P0).library_order.push(c);
+    }
+    let mut cur = next(&prev);
+    cur.get_player_mut(P0).library_order.reverse();
+    flags_transition(&prev, None, &cur, &reg, "p0's library was reordered without a shuffle (CR 701.20a)");
+    cur.events.push(GameEvent::LibraryShuffled { player: P0 });
+    clean_transition(&prev, None, &cur, &reg);
+}
+
+#[test]
+fn the_legend_rule_keep_and_colored_payment_are_checked() {
+    let (mut state, reg) = base();
+    let a = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let b = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source: a, choice: ResolutionChoiceKind::ChooseTarget {
+        description: String::new(), options: vec![Target::Object(a), Target::Object(b)], optional: false,
+        effect: PendingEffect::LegendRuleKeep { player: P0, legend_name: "Grimgrin, Corpse-Born".into() } } });
+    state.priority_player = Some(P0);
+    let keep = Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(a))) };
+    let cur = mtg_engine::engine::submit_action(&state, &keep, &reg);
+    assert_eq!(cur.get_object(b).unwrap().zone, Zone::Graveyard, "precondition: the duplicate went to the graveyard");
+    clean_transition(&state, Some(&keep), &cur, &reg);
+
+    let mut s = cur.clone();
+    s.move_object(b, Zone::Battlefield, &reg);
+    flags_transition(&state, Some(&keep), &s, &reg, "was not kept but is still on the battlefield (CR 704.5j)");
+    let mut s = cur.clone();
+    s.move_object(a, Zone::Graveyard, &reg);
+    flags_transition(&state, Some(&keep), &s, &reg, "the kept #");
+    flags_transition(&state, Some(&keep), &s, &reg, "did not stay on the battlefield (CR 704.5j)");
+
+    // CR 601.2h: casting spends the colored part of the cost.
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    add_mana(&mut prev, P0, &[(ManaType::White, 2)]);
+    prev.priority_player = Some(P0);
+    let cast = Action::CastSpell { object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None, exile_count: None,
+        exile_ids: vec![], alternative_cost: None, tap_plan: vec![] };
+    let cur = mtg_engine::engine::submit_action(&prev, &cast, &reg);
+    assert!(cur.events.iter().any(|e| matches!(e, GameEvent::SpellCast { .. })), "precondition: cast");
+    clean_transition(&prev, Some(&cast), &cur, &reg);
+    // The white pip never left the pool.
+    let mut s = cur.clone();
+    let unpaid = prev.get_player(P0).mana_pool.mana.get(&ManaType::White).copied().unwrap_or(0);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::White, unpaid);
+    flags_transition(&prev, Some(&cast), &s, &reg, "(CR 601.2h)");
+}

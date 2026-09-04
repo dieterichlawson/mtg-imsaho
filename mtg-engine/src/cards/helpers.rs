@@ -967,4 +967,5 @@ pub fn shuffle_library(state: &mut GameState, player: PlayerId) {
     let mut order = std::mem::take(&mut state.get_player_mut(player).library_order);
     state.shuffle(&mut order);
     state.get_player_mut(player).library_order = order;
+    state.events.push(crate::events::GameEvent::LibraryShuffled { player });
 }

@@ -19,6 +19,9 @@
 //! - [`check_transition`] looks at two consecutive decision points and the
 //!   action chosen between them: what may not change, what must, and that
 //!   every change announced itself in `events`.
+//! - [`check_legal`] looks at the legal action set offered at a decision
+//!   point: nothing the rules forbid is on the menu, and what they require
+//!   is.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
@@ -27,6 +30,7 @@ use crate::types::{Keyword, Zone};
 
 mod effects;
 mod events;
+mod legal;
 mod objects;
 mod permanents;
 mod prompts;
@@ -34,6 +38,7 @@ mod stack;
 mod transition;
 mod turn;
 
+pub use legal::check_legal;
 pub use transition::check_transition;
 
 /// One message per violation.

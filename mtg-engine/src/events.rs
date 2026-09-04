@@ -51,6 +51,8 @@ pub enum GameEvent {
     Discarded { player: PlayerId, object: ObjectId },
     /// A creature card was milled from a player's library to their graveyard.
     CreatureCardMilled { object: ObjectId, milled_player: PlayerId },
+    /// A player's library was shuffled (CR 701.20a).
+    LibraryShuffled { player: PlayerId },
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]

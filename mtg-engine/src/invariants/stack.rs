@@ -27,7 +27,7 @@ fn check_targets(state: &GameState, what: &str, targets: &[Target], v: &mut Viol
 }
 
 /// Whether `n` chosen targets is a count the requirement allows (CR 601.2c).
-fn arity_ok(req: &TargetRequirement, n: usize) -> bool {
+pub(super) fn arity_ok(req: &TargetRequirement, n: usize) -> bool {
     match req {
         TargetRequirement::None => n == 0,
         TargetRequirement::UpToTargets(k, _) => n <= *k,

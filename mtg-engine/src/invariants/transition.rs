@@ -10,11 +10,11 @@
 //! buffer), and only then are the event-ledger clauses applied.
 
 use super::{player_ok, Violations};
-use crate::actions::{Action, CombatPrompt};
+use crate::actions::{Action, CombatPrompt, ResolvedChoice, Target};
 use crate::cards::CardRegistry;
 use crate::events::{DamageTarget, GameEvent, LossReason};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameObject, GameState, StackEntry};
+use crate::state::{AwaitingAction, GameObject, GameState, PendingEffect, ResolutionChoiceKind, StackEntry};
 use crate::triggers::{PendingTrigger, TriggerEvent};
 use crate::types::{ManaType, Step, Zone};
 use std::collections::{BTreeSet, HashMap};
@@ -428,6 +428,19 @@ fn status_ledgers(prev: &GameState, cur: &GameState, events: &[GameEvent], staye
             }
         }
     }
+    // CR 701.20a: without a shuffle, a library keeps its order (draws and
+    // mills take the top, searches shuffle, cards go to the top or bottom).
+    for (pa, pb) in prev.players.iter().zip(&cur.players) {
+        let p = pa.id;
+        if events.iter().any(|e| matches!(e, GameEvent::LibraryShuffled { player } if *player == p)) {
+            continue;
+        }
+        let common: Vec<ObjectId> = pa.library_order.iter().copied().filter(|id| pb.library_order.contains(id)).collect();
+        let after: Vec<ObjectId> = pb.library_order.iter().copied().filter(|id| common.contains(id)).collect();
+        if common != after {
+            v.push(format!("p{}'s library was reordered without a shuffle (CR 701.20a)", p.0));
+        }
+    }
     // CR 121.1: drawn cards come out of the library the player had.
     for e in events {
         if let GameEvent::CardDrawn { player, object } = e {
@@ -587,13 +600,39 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                 v.push(format!("PlayLand #{} did not put the land from hand onto the battlefield with its event (CR 305.1)", object_id.0));
             }
         }
-        Action::CastSpell { object_id, .. } => {
+        Action::CastSpell { object_id, alternative_cost, .. } => {
             let cast = events.iter().any(|e| matches!(e, GameEvent::SpellCast { object, .. } if *object == *object_id));
             let stashed = cur.pending_spell_cast.as_ref().is_some_and(|c| c.object_id == *object_id);
             if cast {
                 acted = true;
                 if zcc(cur, *object_id) <= zcc(prev, *object_id) {
                     v.push(format!("CastSpell #{} announced but the card never moved (CR 601.2a)", object_id.0));
+                }
+                // CR 601.2h: the colored part of the cost left the pool (no
+                // hybrid mana in this pool, and reductions touch generic).
+                if let Some(who) = p {
+                    let cost = alternative_cost.clone()
+                        .or_else(|| cur.face_data(*object_id, registry).and_then(|d| d.cost));
+                    if let Some(cost) = cost {
+                        let mut need: HashMap<ManaType, u32> = HashMap::new();
+                        for sym in &cost.symbols {
+                            if let crate::types::ManaSymbol::Colored(c) = sym {
+                                *need.entry(ManaType::from(*c)).or_default() += 1;
+                            }
+                        }
+                        for (t, n) in need {
+                            let before = prev.get_player(who).mana_pool.mana.get(&t).copied().unwrap_or(0);
+                            let after = cur.get_player(who).mana_pool.mana.get(&t).copied().unwrap_or(0);
+                            let added: u32 = events.iter().map(|e| match e {
+                                GameEvent::ManaAdded { player, mana_type, amount } if *player == who && *mana_type == t => *amount,
+                                _ => 0,
+                            }).sum();
+                            if after + n > before + added {
+                                v.push(format!("CastSpell #{} left p{} with {after} {t:?} mana after {before} + {added} for a cost of {n} (CR 601.2h)",
+                                    object_id.0, who.0));
+                            }
+                        }
+                    }
                 }
             } else if stashed {
                 if !stayed(*object_id) {
@@ -717,6 +756,14 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
             acted = true;
             if let Some(AwaitingAction::MulliganDecision { player }) = &prev.awaiting_action {
                 let who = *player;
+                // CR 103.5: shuffle, then draw.
+                let shuffled = events.iter().position(|e| matches!(e, GameEvent::LibraryShuffled { player } if *player == who));
+                let first_draw = events.iter().position(|e| matches!(e, GameEvent::CardDrawn { player, .. } if *player == who));
+                match (shuffled, first_draw) {
+                    (None, _) => v.push(format!("p{} mulliganed without shuffling (CR 103.5)", who.0)),
+                    (Some(s), Some(d)) if s > d => v.push(format!("p{} drew the new hand before shuffling (CR 103.5)", who.0)),
+                    _ => {}
+                }
                 if cur.get_player(who).mulligan_count != prev.get_player(who).mulligan_count + 1 {
                     v.push(format!("p{} mulliganed without the count moving (CR 103.5)", who.0));
                 }
@@ -773,7 +820,25 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
         Action::PassPriority => {
             pass_contract(prev, cur, events, v);
         }
-        Action::ResolveChoice { .. } => {
+        Action::ResolveChoice { choice } => {
+            // CR 704.5j: the legend kept stays; the rest are put into the graveyard.
+            if let (Some(AwaitingAction::ResolutionChoice { player: who, choice: ResolutionChoiceKind::ChooseTarget {
+                        options, effect: PendingEffect::LegendRuleKeep { .. }, .. }, .. }),
+                    ResolvedChoice::ChosenTarget(Some(Target::Object(keep)))) = (&prev.awaiting_action, choice)
+            {
+                let doomed = prev.get_object(*keep).is_some_and(|o| o.damage_marked > 0 || o.dealt_deathtouch_damage
+                    || prev.effective_toughness(*keep, registry).is_none_or(|t| t <= 0));
+                if !doomed && cur.get_object(*keep).is_none_or(|o| o.zone != Zone::Battlefield || o.controller != *who) {
+                    v.push(format!("legend rule: the kept #{} did not stay on the battlefield (CR 704.5j)", keep.0));
+                }
+                for t in options {
+                    if let Target::Object(id) = t {
+                        if *id != *keep && cur.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                            v.push(format!("legend rule: #{} was not kept but is still on the battlefield (CR 704.5j)", id.0));
+                        }
+                    }
+                }
+            }
             // CR 608.2m, 601.2: a paused resolution or cast is resumed, not dropped.
             if let Some(id) = prev.resolving_spell {
                 if cur.resolving_spell != Some(id) && cur.get_object(id).is_some_and(|o| o.zone == Zone::Stack) && stayed(id) {
