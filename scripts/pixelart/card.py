@@ -39,6 +39,16 @@ def make_card(art_rows, color='B', name='', typeline='', cost='', greek=True):
         cv.disc(px, 5, 1.7, PIPS.get(sym,'4'), edge=key); px -= 4
 
     cv.rect(ART_X-1, ART_Y-1, ART_X+AW, ART_Y+AH, key)   # art window
+    # Half the set ended with a bright 1px hairline at the art's last row: a
+    # gradient's bottom stop, or the Canvas fill, never overpainted by the
+    # scene. It reads as a stray glowing line right above the type bar. If the
+    # final row is a single flat colour that the row above doesn't share,
+    # it's that artefact rather than real ground — carry row -2 down.
+    art_rows = list(art_rows)
+    if len(art_rows) >= 2:
+        last, above = art_rows[-1], art_rows[-2]
+        if len(set(last)) == 1 and last[0] not in set(above):
+            art_rows[-1] = above
     for dy, row in enumerate(art_rows):
         for dx, ch in enumerate(row):
             if ch != '.': cv.set(ART_X+dx, ART_Y+dy, ch)

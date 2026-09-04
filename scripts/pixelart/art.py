@@ -85,51 +85,55 @@ def _():
 @card("Chapel Geist")
 def _():
     cv = Canvas(fill='1')
-    # cold arched chapel windows, deep shadow between
-    for x in (6, 21, 36):
-        cv.rect(x-4, 4, x+4, 27, '2'); cv.disc(x, 5, 4.2, '2')
-        cv.rect(x-3, 5, x+3, 27, '3'); cv.disc(x, 5, 3.2, '3')
-        cv.vline(x, 4, 27, '2'); cv.hline(13, x-3, x+3, '2'); cv.hline(21, x-3, x+3, '2')
+    for x in (5, 33):                                           # narrower, offset
+        cv.rect(x-3, 4, x+3, 27, '2'); cv.disc(x, 5, 3.2, '2')
+        cv.vline(x, 4, 27, '2')
     cv.rect(0, 28, 41, 33, '1')
-    # the empty robe: shoulders, two trailing sleeves, a long torn hem
-    cv.stamp(8, 2, [
-      "......000000......","....0056777600....","..00577777776600..",
-      ".05777777777776550","0577766655677777 0","05777 5 0 5 677760",
-      "0577 5 000 5 67760","057 5 00000 5 6760","057 5 0000000 5760",
-      "05 5 000000000 560","05 5 000000000 560","057 5 0000000 5760",
-      "0577 5 00000 5 760","05777 5 000 5 7760","057777 5 0 5 77760",
-      "0567777 5 5 777760",".05677766677777 0.","..056777777776 0..",
-      "...0567777777 0...","....05677777 0....","....0567 7 76 0...",
-      "...056 7 5 7 60...","..05 7 5 . 5 7 0..",".05 6 . . . 6 50..",
-      "..0 5 . . . 5 0...","...0 . . . . 0....",
+    # A robed geist banked left-to-right. Mass pushed left; nothing symmetric.
+    cv.stamp(17, 3, ["00000","06660","6060 6","06560","0 60 ",".060."])
+    cv.hline(9, 12, 25, '7')                                    # 14px shoulder row
+    cv.stamp(10, 10, [
+      "0777777777777 0","07777777777777 ","077777777777770","0777777777777 0",
+      "07777777777760.","0777777777760..",".0777777776 0..",".077777777 0...",
+      "..077777777 0..","..07777777 0...","...0777777 0...","...077777 0....",
+      "..07777 76 0...","..0777 7 6 0...",".077 7 . 6 0...",".07 . . . 0....",
+      "0 7 . . . 0....","0 . . ... .....",
     ])
-    for y in range(9, 22): cv.set(20, y, '9')            # hanging chain
-    cv.disc(20, 23, 2.0, '8', edge='9')                  # pendant
-    cv.set(20, 23, '7')
+    cv.limb(13, 12, 8, 17, '7'); cv.hand(6, 17, '6')            # left arm, out low
+    cv.limb(24, 12, 29, 15, '7'); cv.hand(29, 15, '6')          # right arm, out high
+    for i, y in enumerate(range(19, 26)):                       # chain to reliquary
+        cv.set(31 + i//3, y, '9')
+    cv.stamp(32, 26, ["0990","98 9","9889","0990"])             # the reliquary
+    for y in range(11, 24): cv.set(10, y, '6')                  # rim on the lit edge
     return cv
 
 @card("Elite Inquisitor")
 def _():
     cv = Canvas(fill='1')
-    # real gothic arches: pointed tops, mullions, cold daylight beyond
-    for x in (5, 18, 31, 41):
-        cv.poly([(x-4,28),(x-4,10),(x,4),(x+4,10),(x+4,28)], '3')
-        cv.poly([(x-3,27),(x-3,10),(x,6),(x+3,10),(x+3,27)], '5')
-        cv.vline(x, 6, 27, '3'); cv.hline(14, x-3, x+3, '3'); cv.hline(21, x-3, x+3, '3')
-    cv.rect(0, 28, 41, 33, '2'); cv.hline(28, 0, 41, '3')
-    cv.stamp(24, 6, ["0.0.0.0","0333330",".03330.","..000.."])   # wolf trophy
-    # rapier, high on the diagonal, catching the light
-    cv.line(37, 2, 20, 15, '0'); cv.line(38, 3, 21, 16, '0')
-    cv.line(37, 3, 21, 15, '7'); cv.line(38, 2, 22, 14, '6')
-    # the inquisitor: pale storm-coat, dark boots, wide stance
-    cv.stamp(11, 7, [
-      "..0000000000..",".055555555550.","..0067777600..",".006nnnnnn600.",
-      ".06n2nnnn2n60.",".06nnnnnnnn60.","..06nn22nn60..","...06nnnn60...",
-      "..0st6776ts0..",".0st66777766ts","0st667ss766ts0","0s67 6ss6 76s0",
-      "067 66ss66 760","067 6ssss6 760",".06 6ssss6 60.","..0 67ss76 0..",
-      "..0 677776 0..","..0 677776 0..","..0 66 . 66 0.","..0 33 . 33 0.",
-      "..0 11 . 11 0.","...000 . 000..",
+    # Light source: the cold windows BEHIND him. So he is backlit, rim on both
+    # edges, and the coat's interior stays dark.
+    for x in (6, 20, 34):
+        cv.poly([(x-5,29),(x-5,10),(x,3),(x+5,10),(x+5,29)], '3')
+        cv.poly([(x-4,28),(x-4,10),(x,5),(x+4,10),(x+4,28)], '5')
+        cv.vline(x, 5, 28, '3'); cv.hline(15, x-4, x+4, '3'); cv.hline(22, x-4, x+4, '3')
+    cv.rect(0, 29, 41, 33, '2'); cv.hline(29, 0, 41, '3')
+    # rapier: up and to the right, so the pose is asymmetric
+    cv.line(38, 1, 25, 12, '0'); cv.line(38, 2, 25, 13, '7'); cv.line(37, 2, 24, 13, '6')
+    cv.poly([(24,12),(26,11),(27,14),(25,15)], '9')            # crossguard
+    # head (5 wide) then a 13-wide shoulder row — the ratio that kills "blob"
+    cv.stamp(16, 8, ["00000","0nnn0","n0n0n","0nnn0","0mmn0",".0n0."])
+    cv.hline(6, 13, 25, 'k'); cv.hline(7, 12, 26, 'k')          # wide-brim hat
+    cv.hline(5, 15, 23, 'l'); cv.hline(4, 16, 22, 'k')
+    cv.hline(14, 12, 28, '7')                                   # THE shoulder row
+    cv.stamp(13, 15, [
+      "0666666666660","06777777777 0","0677777777760","0677711177760",
+      "06777111177 0","0677711117760","06777777777 0",".067777777760",
+      ".067777777760",".06777777 760",".0677777 7760","..067777 76 0",
+      "..06777. 7760","..0666. .6660","..0222. .2220",
     ])
+    cv.limb(15, 15, 11, 24, '6'); cv.hand(9, 24, '6')          # left arm, low
+    cv.limb(26, 15, 25, 13, '6'); cv.hand(24, 12, 'n')         # right arm, on the hilt
+    for y in range(15, 28): cv.set(12, y, '5')                 # rim from the window
     return cv
 
 @card("Midnight Haunting")
@@ -156,76 +160,76 @@ def _():
 @card("Snapcaster Mage")
 def _():
     cv = Canvas(fill='1')
-    cv.gradient_sky([(0,'1'),(0.5,'2'),(0.8,'2')])
-    # gothic castle + wolf statue on a plinth behind him
-    cv.poly([(0,26),(0,12),(4,8),(8,12),(8,26)], '1')
-    cv.poly([(30,26),(30,10),(35,4),(40,10),(40,26)], '1')
-    cv.vline(35, 4, 26, '2'); cv.rect(2, 20, 40, 33, '1')
-    cv.stamp(2, 12, ["0.0..","03330","0333.",".000."])
-    # Tiago: dark hair, black-and-silver plate, teal lantern on the left arm
-    cv.stamp(11, 6, [
-      "...000000...","..01111110..",".0111nnn110.",".011nnnnn10.",
-      ".01n2nn2nn10",".01nnnnnnn10",".011nn2nn110","..01nnnnn10.",
-      ".0tst111tst0","0tsst111tsst","0ts1111111st","0t111111111t",
-      ".011111111t.",".011111111t.","..0111111t..","..0111111t..",
-      "..011111t...","..01111t....",".00111t.....",
+    cv.gradient_sky([(0,'1'),(0.5,'2'),(0.82,'2')])
+    cv.poly([(27,29),(27,9),(34,3),(41,9),(41,29)], '2')       # arch, offset right
+    cv.poly([(29,29),(29,10),(34,5),(39,10),(39,29)], '1')
+    cv.vline(34, 5, 29, '2'); cv.rect(0, 29, 41, 33, '1')
+    cv.stamp(2, 15, ["0.0..","03330","0333.",".000."])
+    # Built shoulders-first: head 6px at x18-23, shoulder row 16px at x15-30.
+    cv.stamp(18, 6, ["0kkkk0","0knnk0","0n00n0","0nnnn0","0mnnm0",".0nn0."])
+    cv.stamp(15, 12, [
+      "0tttttttttttttt0","0tsssssssssssst0","0tseeeeeeeeeest0",
+      "0seeeeeeeeeeees0","0seeeeeeeeeees0.","0tseeeeeeeeest0.",
+      "0seeeeeeeeees0..","0seeeeeeeeas0...","0seeeeeeeas0....",
+      "0seeeeeeas0.....","0tseeeeas0......","0seeeeas0.......",
+      "0seeas0.........","002220..........",
     ])
-    cv.disc(9, 20, 5.5, 'e'); cv.disc(9, 20, 4.2, 'f')   # the arm-lantern
-    cv.disc(9, 20, 2.6, 'g'); cv.disc(9, 19, 1.2, '7')
-    cv.ring(9, 20, 6.4, 'e'); cv.ring(9, 20, 5.6, 'f')
-    cv.stamp(6, 24, ["0ttt0","0sss0","00000"])
+    cv.limb(17, 14, 11, 21, 's'); cv.hand(9, 22, 'n')          # left, onto the flask
+    cv.limb(28, 14, 31, 22, 's'); cv.hand(30, 23, 'n')         # right, hanging low
+    cv.disc(10, 24, 4.2, 'e'); cv.disc(10, 24, 2.8, 'f')       # the arm-lantern
+    cv.disc(10, 24, 1.5, 'g'); cv.set(9, 23, '7'); cv.ring(10, 24, 5.2, 'e')
+    for y in range(13, 26): cv.set(14, y, 'f')                 # lit by his own flask
     return cv
 
 @card("Delver of Secrets")
 def _():
     cv = Canvas(fill='1')
-    cv.rect(0, 0, 41, 33, '2'); cv.rect(0, 24, 41, 33, '1')
-    # specimen jars and a birdcage in the gloom of the study
-    for (x, w) in ((2,6),(32,7)):
-        cv.rect(x, 18, x+w, 30, '1'); cv.rect(x+1, 19, x+w-1, 29, 'e')
-        cv.rect(x+1, 23, x+w-1, 29, 'h'); cv.hline(18, x, x+w, '3')
-    for x in range(33, 40, 2): cv.vline(x, 6, 17, '3')
-    cv.hline(6, 32, 40, '3'); cv.hline(17, 32, 40, '3')
-    # the scholar: bald, hunched, robe, one arm raised to the specimen
-    cv.stamp(12, 7, [
-      "....0000....","...0ooooo0..","..0onnnno0..","..0n2nn2n0..",
-      "..0nnnnnn0..","...0nnnn0...","...0pppp0...","..0epppppe0.",
-      ".0eeppppppe0","0eepppppppe0","0epppppppppe","0eppppppppp0",
-      "0epppppppp0.","0eppppppp0..","0eppppppp0..","0epppppp0...",
-      ".0pppppp0...",".0pppppp0...","..000000....",
+    cv.rect(0, 0, 41, 33, '2'); cv.rect(0, 25, 41, 33, '1')
+    cv.rect(1, 16, 8, 31, '1'); cv.rect(2, 17, 7, 30, 'e')      # jars, NOT mirrored
+    cv.rect(2, 22, 7, 30, 'h'); cv.hline(16, 1, 8, '3')
+    cv.rect(30, 20, 41, 31, '1'); cv.rect(31, 21, 40, 30, 'e')
+    cv.rect(31, 25, 40, 30, 'h'); cv.hline(20, 30, 41, '3')
+    for x in range(33, 41, 2): cv.vline(x, 3, 14, '3')          # birdcage
+    cv.hline(3, 32, 41, '3'); cv.hline(14, 32, 41, '3')
+    cv.stamp(15, 5, ["00000","0ooo0","o0o0o","0ooo0","0omo0",".0o0."])  # bald head
+    cv.hline(11, 11, 26, 'p')                                    # 16px shoulder row
+    cv.stamp(11, 11, [
+      "0pppppppppppppp0","0pepppppppppppe0","0peppppppppppp 0",
+      "0pepppppppppp 0.","0peppppppppp 0..","0pepppppppp 0...",
+      "0peppppppppp0...","0pepppppppp0....",".0pppppppp0.....",
+      ".0pppppppp0.....",".0pppppppp0.....","..00000000......",
     ])
-    cv.line(19, 12, 25, 6, 'p'); cv.line(20, 12, 26, 6, 'e')   # raised arm
-    cv.disc(27, 5, 3.2, '2'); cv.disc(27, 5, 2.0, '8')          # the glowing moth
-    cv.stamp(24, 2, ["0d.d0","d8d8d",".d8d.","0d.d0"])
+    cv.limb(13, 12, 9, 19, 'p'); cv.hand(7, 19, 'o')            # left hand, low
+    cv.limb(24, 12, 29, 6, 'p'); cv.hand(29, 3, 'o')            # right hand, raised
+    cv.disc(31, 2, 3.4, '2'); cv.disc(31, 2, 2.0, '9')          # the burning specimen
+    cv.stamp(28, 0, ["0d.d0","d8d8d",".d8d.","0d.d0"])
+    for y in range(11, 22): cv.set(26, y, '9')                  # lit from the moth
     return cv
 
 @card("Invisible Stalker")
 def _():
     cv = Canvas(fill='2')
     cv.gradient_sky([(0,'2'),(0.4,'3'),(0.8,'3')])
-    for y in range(2, 22, 3):
+    for y in range(2, 24, 3):
         cv.hline(y, 0, 41, '3')
         for x in range(((y//3) % 2)*4, 42, 8): cv.vline(x, y, y+2, '3')
-    cv.rect(0, 22, 41, 33, '3'); cv.hline(22, 0, 41, '2')
-    # hat: brim then crown, with an unmistakable gap of nothing below it
-    cv.hline(6, 15, 26, 'k'); cv.hline(5, 16, 25, 'l'); cv.hline(4, 17, 24, 'l')
-    cv.hline(7, 12, 29, 'k'); cv.hline(8, 11, 30, 'l'); cv.hline(9, 12, 29, 'k')
-    # the coat: collar, shoulders, an open dark front, two hanging sleeves
-    COAT = [  # (y, x0, x1) shoulders-to-hem, then the dark interior punched out
-     (13,15,26),(14,12,29),(15,10,31),(16,9,32),(17,9,32),(18,9,32),(19,9,32),
-     (20,10,31),(21,10,31),(22,11,30),(23,11,30),(24,12,29),(25,12,29),
-     (26,13,28),(27,14,27),(28,15,26),(29,16,25),(30,17,24)]
+    cv.rect(0, 24, 41, 33, '3'); cv.hline(24, 0, 41, '2')
+    cv.hline(8, 13, 27, 'k'); cv.hline(7, 14, 26, 'l')          # brim
+    cv.hline(6, 16, 24, 'k'); cv.hline(5, 17, 23, 'l'); cv.hline(4, 18, 22, 'k')
+    # the coat: collar, shoulder row, taper, flare, torn hem. Khaki, not brass.
+    COAT = [(11,16,24),(12,14,26),(13,13,27),(14,13,27),(15,14,26),(16,14,26),
+            (17,15,25),(18,15,25),(19,15,25),(20,14,26),(21,14,26),(22,13,27),
+            (23,13,27),(24,12,28),(25,12,28),(26,11,29),(27,11,29)]
     for (y, x0, x1) in COAT:
         cv.hline(y, x0, x1, '0'); cv.hline(y, x0+1, x1-1, 'k'); cv.hline(y, x0+2, x1-2, 'l')
-    for (y, x0, x1) in COAT[2:]:                    # hollow: no one is inside it
-        if y < 27: cv.hline(y, x0+5, x1-5, '1')
-    for y in range(15, 29):                          # the open front seam
-        cv.set(20, y, '0'); cv.set(21, y, '0')
-    for y in range(16, 27):                          # sleeve edges
-        cv.set(11, y, 'k'); cv.set(30, y, 'k')
-    for i in range(70):
-        x = (i*13) % 46 - 4; y = (i*7) % 34
-        cv.line(x, y, x-2, y+3, '4')
+    for x in range(12, 30, 3): cv.set(x, 28, 'k'); cv.set(x+1, 29, '0')  # torn hem
+    for y in range(11, 15): cv.hline(y, 18, 22, '1')            # empty collar only
+    for y in range(12, 27): cv.set(20, y, '0')                  # the open front
+    cv.limb(26, 13, 33, 18, 'l', w=3); cv.stamp(32, 19, ["0kk0","k11k","k11k","0kk0"])
+    for y in range(12, 28): cv.set(13, y, '5')                  # wet rim-light
+    for i in range(22):                                          # rain, restrained
+        x = (i*17) % 8 + (0 if i % 3 == 0 else (34 if i % 3 == 1 else 4))
+        cv.line(x, (i*11) % 30, x-2, (i*11) % 30 + 3, '4')
     return cv
 
 @card("Laboratory Maniac")
@@ -284,23 +288,28 @@ def _():
 def _():
     cv = Canvas(fill='1')
     cv.gradient_sky([(0,'1'),(0.3,'2'),(0.75,'2')])
-    for x in range(0, 42, 7):                               # gold drapery behind
-        cv.vline(x, 0, 33, '9'); cv.vline(x+1, 0, 33, '8'); cv.vline(x+2, 0, 33, '9')
-    cv.rect(0, 0, 41, 33, None)
-    for x in range(0, 42, 7): cv.vline(x+3, 0, 33, '2'); cv.vline(x+4, 0, 33, '1')
-    # Liliana: long dark hair, magenta corset, red skirt
-    cv.stamp(13, 2, [
-      "...000000...","..0kkkkkk0..",".0kkkkkkkk0.",".0kkoookkk0.",".0kokm mok0.",
-      ".0koommmok0.",".0kkommok k0",".0kkkookkkk0",".0kkk00kkkk0","0kk0pppp0kk0",
-      "0k0pppppp p0","0.0p7pp7p0.0",".0pp7pp7pp0.",".0ppp77ppp0.",".0pppppppp0.",
-      ".0appppppa0.",".0aappppaa0.",".0aaaaaaaa0.","0aaaaaaaaaa0","0aaaaaaaaaa0",
-      "0aaaaaaaaaa0",".0aaaaaaaa0.",".0aaaaaaaa0.","..00000000..",
+    for (x, w) in ((0,3),(6,2),(11,4),(18,2),(23,3),(29,5),(36,2)):   # irregular drape
+        cv.rect(x, 0, x+w, 33, '9'); cv.vline(x, 0, 33, '8')
+        cv.rect(x+w+1, 0, x+w+2, 33, '2')
+    cv.noise(0, 0, 41, 33, '2', 0.10, seed=5)
+    cv.stamp(17, 2, ["0kkkk0","kkkkkk","k0kk0k","0knnk0","0nmmn0",".0nn0."])
+    cv.hline(9, 14, 28, 'k')                                     # hair over shoulders
+    cv.hline(10, 13, 29, 'p')                                    # 17px shoulder row
+    cv.stamp(13, 10, [
+      "0ppppppppppppppp0","0pkppppppppppkp0",".0kpppppppppppk0",
+      ".0k7ppppppppp7k0",".0kp7pppppppk 0.","..0kppppppppk0..",
+      "..0kpppppppk 0..","..0appppppa0....","..0aaaaaaaa0....",
+      ".0aaaaaaaaaa0...",".0aaaaaaaaaa0...","0aaaaaaaaaaaa0..",
+      "0aaaaaaaaaaaa0..","0aaaaaaaaaaaa0..",".0aaaaaaaaaa0...",
+      "..0000000000....",
     ])
-    for (cx, cy) in ((8, 17), (33, 17)):                    # flame in each palm
-        cv.disc(cx, cy, 4.2, 'a'); cv.disc(cx, cy, 3.0, 'c')
-        cv.disc(cx, cy, 1.8, 'd'); cv.disc(cx, cy-1, 0.9, '8')
+    cv.limb(14, 12, 8, 18, 'o'); cv.hand(6, 19, 'o')            # both arms end in
+    cv.limb(27, 12, 32, 16, 'o'); cv.hand(32, 17, 'o')          # hands the flame sits in
+    for (cx, cy) in ((7, 21), (33, 19)):                        # flame, touching the hand
+        cv.disc(cx, cy, 3.6, 'a'); cv.disc(cx, cy, 2.5, 'c')
+        cv.disc(cx, cy, 1.4, 'd'); cv.set(cx, cy-1, '8')
         cv.set(cx, cy-4, 'c'); cv.set(cx+1, cy-5, 'd')
-    cv.line(13, 15, 9, 17, 'o'); cv.line(28, 15, 32, 17, 'o')
+    for y in range(10, 25): cv.set(12, y, 'c')                  # lit by her own flame
     return cv
 
 @card("Diregraf Ghoul")
@@ -414,56 +423,71 @@ def _():
 @card("Devil's Play")
 def _():
     cv = Canvas(fill='0')
-    cv.gradient_sky([(0,'0'),(0.4,'1'),(0.7,'a')])
-    cv.poly([(0,4),(41,14),(41,20),(0,10)], 'k')       # the fallen beam
-    cv.poly([(0,5),(41,15),(41,17),(0,7)], 'l')
-    cv.rect(0, 26, 41, 33, '0')
-    cv.poly([(0,33),(6,26),(16,30),(26,25),(34,29),(41,26),(41,33)], 'a')
-    cv.poly([(2,33),(9,28),(18,32),(27,27),(35,31),(41,28),(41,33)], 'b')
-    cv.poly([(5,33),(12,30),(20,33),(29,29),(37,33),(41,30),(41,33)], 'c')
-    cv.noise(0, 27, 41, 33, 'd', 0.26, seed=2)
-    # the stream of fire, poured from the devil's mouth down into the wreck
-    for i in range(90):
-        t = i/89.0
-        x = 14 + 12*t + 3*math.sin(t*4); y = 8 + 22*t
-        cv.disc(x, y, 2.6-1.2*t, 'a'); cv.disc(x, y, 1.8-0.8*t, 'c')
-        cv.disc(x, y, 0.9-0.3*t, 'd')
-    # the devil, crouched on the beam, horns and a long tail
-    cv.stamp(8, 0, [
-      "0.0....0.0",".0b0..0b0.","..0bbbb0..",".0bbbbbb0.",".0b8bb8b0.",
-      ".0bbbbbb0.","..0b00b0..","0bbbbbbbb0","0bbbbbbbb0","0bb0bb0bb0",
-      ".0b0bb0b0.","..00bb00..","..0b..b0..",
+    cv.gradient_sky([(0,'0'),(0.4,'1'),(0.72,'a')])
+    cv.poly([(0,4),(41,14),(41,21),(0,11)], 'k')
+    cv.poly([(0,5),(41,15),(41,18),(0,8)], 'l')
+    cv.poly([(0,33),(6,27),(16,31),(26,26),(34,30),(41,27),(41,33)], 'a')
+    cv.poly([(2,33),(9,29),(18,33),(27,28),(35,32),(41,29),(41,33)], 'b')
+    cv.poly([(6,33),(13,31),(21,33),(30,30),(38,33),(41,31),(41,33)], 'c')
+    cv.noise(0, 28, 41, 33, 'd', 0.28, seed=2)
+    # the pour: tapers and brightens toward the fire, with a hot core
+    for i in range(80):
+        t = i/79.0
+        x = 15 + 11*t + 2.5*math.sin(t*5); y = 11 + 19*t
+        cv.disc(x, y, 2.4-1.1*t, 'a'); cv.disc(x, y, 1.5-0.6*t, 'c')
+        cv.disc(x, y, 0.7-0.2*t, 'd')
+    # the devil: crouched, asymmetric, arms that reach down to the pour
+    cv.stamp(9, 0, [
+      "0b0.....0b0","0bb0...0bb0",".0bbbbbbb0.","0bb8bbb8bb0","0bbbbbbbbb0",
+      "0bb00b00bb0",".0bbbbbbb0.","0abbbbbbba0","0abbbbbbba0","0ab0bbb0ba0",
+      ".0b0bbb0b0.","..0bbbbb0..","..0b0.0b0..",
     ])
-    cv.line(17, 9, 24, 6, 'b'); cv.line(24, 6, 27, 10, 'b')   # tail
+    cv.limb(11, 8, 15, 12, 'b'); cv.hand(14, 12, 'b', 'a')      # arms onto the pour
+    cv.limb(19, 8, 17, 12, 'b'); cv.hand(16, 12, 'b', 'a')
+    cv.line(20, 7, 26, 4, 'b'); cv.line(26, 4, 29, 9, 'b')      # tail
+    cv.line(20, 8, 26, 5, 'a')
+    for y in range(1, 12): cv.set(8, y, 'c')                    # lit from below
     return cv
 
 @card("Balefire Dragon")
 def _():
+    """Three attempts at a full flying dragon all read as a moth. At 42x34 a
+    head-and-neck portrait crop carries far more menace than a whole body —
+    so this one breaks the set's wide-shot habit on purpose."""
     cv = Canvas(fill='b')
-    cv.gradient_sky([(0,'a'),(0.22,'b'),(0.62,'b'),(0.85,'a')])
-    cv.disc(24, 15, 14, 'b')
-    for x in (3, 11, 31, 38):
-        cv.vline(x, 24, 33, '0'); cv.hline(27, x-2, x+2, '0')
-    cv.rect(0, 30, 41, 33, '0')
-    # far wing: swept back and small. Near wing: forward and huge.
-    cv.poly([(24,16),(33,9),(41,7),(40,14),(33,19),(27,20)], '1')
-    cv.poly([(24,16),(14,4),(3,1),(0,9),(5,19),(15,22)], '0')
-    cv.poly([(24,16),(15,6),(6,4),(4,10),(9,18),(17,21)], '1')
-    for (wx, wy) in ((4,3),(7,9),(12,15),(38,8),(35,13)):
-        cv.line(24, 16, wx, wy, '0')
-    cv.stamp(20, 14, ["..0000..",".000000.","00000000","00000000",
-                      ".000000.","..0000..",".000000.","00000000",
-                      "00000000",".000000.","..0000.."])
-    for i, (nx, ny) in enumerate([(23,14),(21,11),(19,9),(16,8),(13,8),(10,9)]):
-        cv.disc(nx, ny, 2.2-i*0.15, '0')
-    cv.stamp(6, 6, ["..000.",".00000","0000d0","000000",".0000.",
-                    "..000."])                                # the head, jaw wide
-    cv.set(8, 8, 'd')
-    for i in range(11):                                       # balefire breath
-        cv.disc(6-i*0.5, 9+i*1.6, 1.4+i*0.30, 'a')
-        cv.disc(6-i*0.5, 9+i*1.6, 0.9+i*0.22, 'c')
-        cv.disc(6-i*0.5, 9+i*1.6, 0.4+i*0.11, 'd')
-    cv.line(26, 24, 32, 30, '0'); cv.line(32, 30, 27, 33, '0')
+    cv.gradient_sky([(0,'a'),(0.18,'b'),(0.55,'b'),(0.80,'a')])
+    cv.disc(24, 14, 15, 'b')
+    for x in (2, 9, 34, 40):
+        cv.vline(x, 25, 33, '0'); cv.hline(28, x-2, x+2, '0')
+    cv.rect(0, 31, 41, 33, '0')
+    # skull and upper jaw, snout to the left, brow ridge heavy over the eye
+    UPPER = {5:(24,34),6:(20,35),7:(16,36),8:(12,36),9:(9,35),
+             10:(7,34),11:(5,32),12:(4,30),13:(5,27)}
+    for y,(x0,x1) in UPPER.items():
+        cv.hline(y, x0, x1, '0'); cv.hline(y, x0+1, x1-1, '1') if y in (7,9) else None
+        cv.set(x0, y, 'a')
+    for y,(x0,x1) in UPPER.items(): cv.hline(y, x0+2, x1-2, '0')
+    # lower jaw, dropped open — the gap between the two is where the fire is
+    LOWER = {17:(7,29),18:(9,30),19:(12,31),20:(16,32),21:(20,33)}
+    for y,(x0,x1) in LOWER.items():
+        cv.hline(y, x0, x1, '0'); cv.set(x0, y, 'a')
+    for x in range(9, 26, 4):                                    # teeth, upper + lower
+        cv.set(x, 14, '6'); cv.set(x+2, 16, '6')
+    # swept-back horns
+    for (hx, hy) in ((30,4),(34,3)):
+        cv.limb(hx, hy, hx+7, hy-3, '0', 'a', w=2)
+    cv.set(27, 9, 'd'); cv.set(28, 9, 'd'); cv.set(27, 8, '8')   # the eye
+    cv.hline(7, 25, 31, '0')                                     # brow ridge over it
+    # neck, receding down-right so the head is unmistakably the subject
+    for i, (nx, ny) in enumerate([(33,14),(35,18),(37,23),(39,28)]):
+        cv.limb(nx, ny, nx+2, ny+5, '0', 'a', w=4+i)
+    # the balefire, pouring out of the open jaw to the left
+    for i in range(16):
+        t = i/15.0
+        x = 8 - i*0.55; y = 15 + i*0.30
+        cv.disc(x, y, 1.6+i*0.26, 'a'); cv.disc(x, y, 1.0+i*0.19, 'c')
+        cv.disc(x, y, 0.5+i*0.11, 'd')
+        if i > 9: cv.disc(x, y, 0.3+i*0.05, '8')
     return cv
 
 @card("Instigator Gang")
@@ -500,27 +524,38 @@ def _():
 def _():
     cv = Canvas(fill='0')
     cv.rect(0, 0, 41, 33, '1')
-    # cathedral: a great arch, warm fire beyond, red banners hung
-    cv.poly([(8,33),(8,12),(21,2),(34,12),(34,33)], '2')
-    cv.poly([(10,33),(10,13),(21,4),(32,13),(32,33)], 'a')
-    cv.poly([(12,33),(12,14),(21,6),(30,14),(30,33)], 'c')
-    cv.noise(12, 14, 30, 33, 'd', 0.18, seed=4)
-    cv.noise(13, 18, 29, 33, '8', 0.08, seed=7)
-    for x in (3, 38):
-        cv.rect(x-2, 2, x+2, 22, 'a'); cv.rect(x-1, 2, x+1, 20, 'b')
-        cv.poly([(x-2,22),(x,25),(x+2,22)], 'b')
-    for y in range(24, 34, 3): cv.hline(y, 0, 41, '1')   # the steps
-    for y in range(25, 34, 3): cv.hline(y, 0, 41, '2')
-    # the bodies strewn down the steps
-    for (bx, by) in ((4,27),(12,30),(26,29),(35,26),(18,32)):
-        cv.stamp(bx, by, ["0nn0..",".0nnn0","0mmmm0"])
-    cv.stamp(19, 16, [                                    # the lone figure standing
-      "..000..",".0sss0.","0s2 2s0",".0sss0.","0ssssss","0s1111s",
-      "0s1111s",".01111.",".01..10",".00..00",
-    ])
+    # a POINTED gothic arch: narrow apex, walls curving in, not a barn pentagon
+    ARCH = [(2,20),(3,18),(4,16),(5,14),(6,12),(7,10),(8,8),(9,6),(10,5),(11,4)]
+    for (dy, halfw) in enumerate([3,4,5,6,7,8,9,10,11,12,12,13,13,13]):
+        y = 3 + dy
+        cv.hline(y, 21-halfw, 21+halfw, '2')
+    cv.rect(8, 17, 34, 33, '2')
+    for (dy, halfw) in enumerate([2,3,4,5,6,7,8,9,10,11,11,12,12,12]):
+        cv.hline(4+dy, 21-halfw, 21+halfw, 'a')
+    cv.rect(9, 18, 33, 33, 'a')
+    for (dy, halfw) in enumerate([1,2,3,4,5,6,7,8,9,10,10,11,11,11]):
+        cv.hline(5+dy, 21-halfw, 21+halfw, 'c')
+    cv.rect(10, 19, 32, 33, 'c')
+    cv.noise(10, 8, 32, 33, 'd', 0.20, seed=4)
+    cv.noise(11, 14, 31, 33, '8', 0.09, seed=7)
+    for x in (3, 38):                                            # red banners
+        cv.rect(x-2, 1, x+2, 21, 'a'); cv.rect(x-1, 1, x+1, 19, 'b')
+        cv.poly([(x-2,21),(x,24),(x+2,21)], 'b')
+    for y in range(24, 34, 3): cv.hline(y, 0, 41, '1')
+    # the survivor: black silhouette against the fire, arms and a lowered sword
+    cv.stamp(18, 12, ["00000","0mmm0","m0m0m","0mmm0",".0m0."])
+    cv.hline(17, 15, 27, '0')
+    cv.stamp(15, 17, ["0000000000 0","000000000 0.","00000000 0..",
+                      "0000000 0...","000000 0....","00000 0.....",
+                      "0000 0......","000.0.......","00..........",])
+    cv.limb(17, 18, 13, 25, '0', '1'); cv.hand(11, 25, 'm', '1')
+    cv.limb(25, 18, 29, 24, '0', '1'); cv.hand(29, 25, 'm', '1')
+    cv.line(30, 26, 37, 31, 's'); cv.line(30, 27, 37, 32, '0')   # sword, point down
+    for (bx, by) in ((3,28),(12,31),(27,30),(35,27)):            # bodies, not loaves
+        cv.stamp(bx, by, ["00m00.","0mmmm0","0m00m0"])
+    for y in range(12, 26): cv.set(14, y, 'c')                   # rim from the fire
     return cv
 
-# ══ GREEN ════════════════════════════════════════════════════════════
 @card("Mayor of Avabruck")
 def _():
     cv = Canvas(fill='0')
@@ -540,7 +575,7 @@ def _():
       "0ehhhhhhh0",".0hhhhhh0.",".0hhhhhh0.",".0hhhhhh0.",".0hhh.hh0.",
       ".0hh0.0hh0",".0k0...0k0",
     ])
-    cv.line(17, 14, 11, 21, 'h'); cv.line(18, 14, 12, 21, 'e')
+    cv.limb(17, 14, 12, 20, 'h', '0'); cv.hand(10, 21, 'n')   # a hand on the desk
     cv.stamp(21, 24, [                                   # the hound
       "0000.......","0k11k0.....","01 1 10....","00111000000","0111111111 0",
       "0111111111 0","0k1k...0k1k",
@@ -551,24 +586,27 @@ def _():
 def _():
     cv = Canvas(fill='0')
     cv.gradient_sky([(0,'1'),(0.4,'2'),(0.75,'2')])
-    # the iron cage: heavy bars, the wolf's face pressed to them
-    cv.rect(6, 3, 33, 30, '1'); cv.rect(7, 4, 32, 29, '0')
-    cv.disc(20, 15, 8, '1'); cv.disc(20, 15, 6, '3')
-    cv.stamp(15, 9, [
-      "0h0.....0h0","0hh0...0hhh",".0hhhhhhh0.","0h5h5hh5h5h","0hh5hhh5hhh",
+    cv.rect(5, 2, 34, 31, '1'); cv.rect(6, 3, 33, 30, '0')
+    cv.disc(20, 14, 9, '2'); cv.disc(20, 14, 7, '4')            # LIT so the wolf reads
+    cv.stamp(14, 7, [
+      "0h0.....0h0","0hh0...0hh0",".0hhhhhhh0.","0h5hhhhh5h0","0hh5hhh5hhh",
       "0hhhhhhhhhh",".0hh777hh0.","..0h777h0..","...0h7h0...",".0hh...hh0.",
     ])
-    cv.set(18, 12, 'j'); cv.set(23, 12, 'j')             # wolf-eye shine
-    for x in range(6, 34, 5): cv.vline(x, 3, 30, 's'); cv.vline(x+1, 3, 30, '3')
-    cv.hline(3, 6, 33, 's'); cv.hline(30, 6, 33, 's')
-    cv.rect(0, 30, 41, 33, '1')
-    # the cagebreakers, tricorn hats, seen from behind at the edges
-    for (x, y, c) in ((0, 12, 'e'), (34, 9, 'e')):
-        cv.stamp(x, y, [
-          ".00000.","0kkkkk0","00000000".replace('8',''),"..0nn0.",".0"+c+c+c+c+"0",
-          "0"+c*6+"0","0"+c*6+"0","0"+c*6+"0","0"+c*6+"0",".0"+c*4+"0",".0"+c*4+"0",
-        ])
-    cv.disc(37, 3, 2.6, 'a'); cv.disc(37, 3, 1.6, 'd'); cv.set(37, 2, '8')
+    cv.set(17, 10, 'j'); cv.set(22, 10, 'j')
+    for x in range(5, 35, 5): cv.vline(x, 2, 31, 's'); cv.vline(x+1, 2, 31, '3')
+    cv.hline(2, 5, 34, 's'); cv.hline(31, 5, 34, 's')
+    cv.rect(0, 31, 41, 33, '1')
+    # the cagebreakers: actual heads under the hats, arms, hands on the bars
+    for (x, flip) in ((0, 0), (35, 1)):
+        cv.stamp(x, 10, ["0kkkkk0","kkkkkkk","0.....0"])        # tricorn
+        cv.stamp(x+1, 13, ["00000","0nnn0","n0n0n","0nnn0",".0n0."])
+        cv.hline(18, x, x+6, 'e')
+        cv.stamp(x, 18, ["0eeeeee0","0eeeeee0","0eeeeee0","0eeeeee0",
+                         ".0eeee0.",".0eeee0.",".0e00e0.",".00..00."])
+        sx = x+6 if not flip else x
+        cv.limb(sx, 19, 20 if not flip else 21, 22, 'e'); cv.hand(
+            (18 if not flip else 22), 22, 'n')
+    cv.disc(38, 3, 2.4, 'a'); cv.disc(38, 3, 1.4, 'd'); cv.set(38, 2, '8')
     return cv
 
 @card("Garruk Relentless")
@@ -633,9 +671,10 @@ def _():
 
 @card("Gatstaf Shepherd")
 def _():
-    cv = Canvas(fill='g')
-    cv.gradient_sky([(0,'g'),(0.28,'5'),(0.45,'6')])    # a rare bright ISD sky
-    for (x, y, r) in ((7,5,4),(20,3,3),(33,6,4)): cv.disc(x, y, r, '7')
+    cv = Canvas(fill='4')
+    # dusk, not daylight — the set is gothic and this was the one defector
+    cv.gradient_sky([(0,'3'),(0.20,'4'),(0.36,'5'),(0.48,'9')])
+    cv.hline(15, 0, 41, '8'); cv.hline(16, 0, 41, '9')
     cv.poly([(0,33),(0,18),(12,14),(26,17),(41,13),(41,33)], 'i')
     cv.poly([(0,33),(0,23),(14,19),(28,22),(41,18),(41,33)], 'j')
     cv.noise(0, 16, 41, 33, 'i', 0.10, seed=8)
@@ -643,8 +682,8 @@ def _():
     # the flock, then the shepherd with his crook
     for (sx, sy) in ((22,25),(28,23),(33,26),(26,29),(36,22),(31,30),(19,28)):
         cv.stamp(sx, sy, ["06660","67776","0k0k0"])
-    cv.line(9, 2, 9, 30, 'k'); cv.line(10, 2, 10, 30, 'l')
-    cv.stamp(7, 1, ["00.","0l0","0l.",".0."])            # the crook's hook
+    cv.line(13, 4, 11, 30, 'k'); cv.line(14, 4, 12, 30, 'l')
+    cv.stamp(11, 1, ["00..","0ll0","0l.0",".00."])       # the crook's hook
     cv.stamp(11, 9, [
       "..0000..",".0nnnn0.","0n2nn2n0","0nnnnnn0",".0nnnn0.","..0kk0..",
       ".0hkkkh0","0hhkkkhh0".replace('9',''),"0hhkkkhh","0hhkkkhh",".0hkkkh0",
@@ -786,25 +825,28 @@ def _():
 @card("Blazing Torch")
 def _():
     cv = Canvas(fill='1')
-    cv.gradient_sky([(0,'2'),(0.2,'a'),(0.35,'9'),(0.5,'8')])
-    cv.poly([(0,22),(12,19),(24,21),(34,18),(41,20),(41,26),(0,26)], '3')
-    cv.poly([(0,33),(0,25),(41,24),(41,33)], '1')
-    for (x, w) in ((3,4),(9,3),(28,4),(35,3)):                     # the village below
-        cv.rect(x, 22, x+w, 26, '0'); cv.poly([(x-1,22),(x+w//2,20),(x+w+1,22)], '0')
-        cv.set(x+1, 24, '8')
-    # the torch: the brightest thing on the card, held high
-    cv.line(20, 14, 22, 24, 'k'); cv.line(21, 14, 23, 24, 'l')
-    cv.disc(20, 9, 6.5, 'a'); cv.disc(20, 9, 4.8, 'c')
-    cv.disc(20, 8, 3.2, 'd'); cv.disc(20, 7, 1.6, '8')
-    for (fx, fy, r) in ((17,4,1.6),(23,3,1.2),(20,1,1.0),(15,7,1.0)):
+    # dusk gradient rather than three flat bands
+    cv.gradient_sky([(0,'2'),(0.14,'3'),(0.26,'a'),(0.36,'9'),(0.46,'8'),(0.56,'9')])
+    cv.noise(0, 6, 41, 20, 'a', 0.06, seed=3)
+    cv.poly([(0,23),(12,20),(24,22),(34,19),(41,21),(41,27),(0,27)], '3')
+    cv.poly([(0,33),(0,26),(41,25),(41,33)], '1')
+    for (x, w) in ((2,4),(8,3),(30,4),(37,3)):
+        cv.rect(x, 23, x+w, 27, '0'); cv.poly([(x-1,23),(x+w//2,21),(x+w+1,23)], '0')
+        cv.set(x+1, 25, '8')
+    # the bearer, in silhouette, with an arm that actually holds the torch
+    cv.stamp(22, 9, ["00000","01110","01110","01110",".010."])
+    cv.hline(14, 19, 30, '1')
+    cv.stamp(19, 14, ["0111111111 0","01111111110.","011111111 0.",
+                      "0111111110..","01111111 0..","011111110...",
+                      "01111111 0..","011111110...","0111.1110...",
+                      "011.0.110...","01..0.010...",])
+    cv.limb(20, 15, 15, 12, '1'); cv.hand(13, 12, '1', '0')     # arm up to the shaft
+    cv.line(14, 13, 15, 23, 'k'); cv.line(15, 13, 16, 23, 'l')  # torch shaft
+    cv.disc(14, 8, 5.6, 'a'); cv.disc(14, 8, 4.0, 'c')
+    cv.disc(14, 7, 2.6, 'd'); cv.disc(14, 6, 1.2, '8')
+    for (fx, fy, r) in ((11,3,1.4),(17,2,1.0),(14,0,0.9)):
         cv.disc(fx, fy, r, 'c'); cv.disc(fx, fy, r*0.5, 'd')
-    # the bearer, seen from behind, in silhouette against his own flame
-    cv.line(33, 4, 30, 31, 'k')                                    # the spear
-    cv.stamp(24, 10, [
-      "..00000..",".0111110.","011111110","0111111 0",".01111110",
-      "0011111100","0111111110","0111111110","0111111110",".01111110.",
-      ".01111110.",".01111110.",".0111.110.",".011.-110.",".01..-110.",
-      ".01...110.","..0...00..",
-    ])
-    cv.line(23, 15, 21, 20, '1')
+    cv.line(31, 6, 29, 30, 'k')                                  # the spear
+    for y in range(14, 26): cv.set(19, y, 'c')                   # rim from his flame
     return cv
+

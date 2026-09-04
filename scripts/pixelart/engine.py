@@ -133,4 +133,20 @@ class Canvas:
                     nx,ny = x+dx, y+dy
                     if 0<=nx<self.w and 0<=ny<self.h and src[ny][nx] not in (bg,c):
                         self.px[y][x] = c; break
+    def limb(self, x0, y0, x1, y1, core, edge='0', w=2):
+        """An arm or leg: >=2px of core colour inside a dark edge. Never 1px."""
+        import math as _m
+        n = max(abs(x1-x0), abs(y1-y0)) or 1
+        perp = (-(y1-y0)/n, (x1-x0)/n)
+        for i in range(n+1):
+            cx = x0 + (x1-x0)*i/n; cy = y0 + (y1-y0)*i/n
+            for k in range(-1, w+1):
+                c = edge if k in (-1, w) else core
+                self.set(round(cx + perp[0]*k), round(cy + perp[1]*k), c)
+
+    def hand(self, x, y, skin, shade='0'):
+        """A 3x4 hand block. Every arm must end in one, touching its object."""
+        self.stamp(x, y, [shade+skin+shade, skin+skin+skin,
+                          skin+skin+skin, shade+skin+shade])
+
     def rows(self): return [''.join(r) for r in self.px]
