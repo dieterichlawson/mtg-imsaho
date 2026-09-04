@@ -74,7 +74,16 @@ jobs:
           fi
 
       - name: File issues for failing seeds
-        if: always()
+        # Deliberately not `always()`: that includes cancellation, and a
+        # cancelled shard is exactly the case where the leftover logs are
+        # meaningless. `xargs` writes each game's output to its log up front
+        # and deletes it only when the game passes, so every game still in
+        # flight when the runner is killed at the timeout leaves an empty log
+        # behind — which this step then filed as a bug with an empty symptom
+        # and empty evidence (issues #223-#231, from the seven shards
+        # cancelled at the 90-minute cap on run 33877077624). Real script
+        # breakage still files, via failure().
+        if: success() || failure()
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -87,6 +96,13 @@ jobs:
             [ -e "$log" ] || { echo "no failing games — nothing to file"; break; }
             base=$(basename "$log" .txt)
             case "$base" in *-replay-*) continue ;; esac
+            # A log with nothing in it records no symptom and no evidence, so
+            # it cannot be a finding — it is a game that was killed before it
+            # could write anything. Never file one.
+            if [ ! -s "$log" ]; then
+              echo "skipping empty log $log (game did not finish writing)"
+              continue
+            fi
             [ "$filed" -ge 5 ] && { echo "cap reached; remaining failures are in the artifact"; break; }
             seed="${base##*-seed}"; rest="${base%-seed*}"
             d1="${rest%%-vs-*}"; d2="${rest##*-vs-}"
