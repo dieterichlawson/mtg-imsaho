@@ -106,6 +106,28 @@ impl DraftLogger {
         );
     }
 
+    /// A pick the run had to make on a seat's behalf, because the seat's
+    /// answer could not be used. Logged next to the PROMPT/RESPONSE/PICK
+    /// entries it belongs with, so a reader scanning the draft sees it
+    /// where it happened — and `grep WARN` finds it, which used to return
+    /// nothing at all for a run where no seat ever picked (issue #195).
+    pub fn draft_pick_warning(
+        seat: usize,
+        pack: usize,
+        pick_index: usize,
+        substituted: &str,
+        response: &str,
+        file: &str,
+        line: u32,
+    ) {
+        mtg_player::game_log::write(
+            file, line,
+            &format!("[Seat {seat}] WARN Pack {pack} Pick {pick_index} | \
+unusable response, substituted {substituted} (the first card)"),
+            response,
+        );
+    }
+
     pub fn pool_summary(seat: usize, pool: &[String], file: &str, line: u32) {
         let mut content = String::new();
         for card in pool {
@@ -242,6 +264,10 @@ macro_rules! log_pack_contents {
 #[macro_export]
 macro_rules! log_draft_pick {
     ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::draft_pick($($args),+, file!(), line!()) }}
+}
+#[macro_export]
+macro_rules! log_draft_warning {
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::draft_pick_warning($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_pool_summary {

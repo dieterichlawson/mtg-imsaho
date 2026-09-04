@@ -352,6 +352,11 @@ fn main() {
     // suffix may differ. Logging seat 0's prompt is representative.
     log_system_prompt!(log, clients[0].system_prompt());
 
+    // Picks the run had to make on a seat's behalf, per seat. Reported at
+    // the end: a draft where a seat never made a choice must not present
+    // its pools, decks and standings as if it had (issue #195).
+    let mut substituted_picks = vec![0usize; args.players];
+
     // Run the draft — all players pick in parallel each round
     for round in 0..3 {
         if round > 0 {
@@ -379,7 +384,7 @@ fn main() {
                     .collect();
 
             // All players pick in parallel
-            let pick_results: Vec<(usize, String, String, String)> =
+            let pick_results: Vec<(usize, Pick, String, String)> =
                 std::thread::scope(|s| {
                     let handles: Vec<_> = pick_inputs
                         .iter()
@@ -396,7 +401,7 @@ fn main() {
                                 );
                                 let response = client.send_pick_message(&prompt, available.len());
                                 let chosen = parse_pick_response(&response, available);
-                                crate::llm_client::DraftLlmClient::record_pick(&chosen);
+                                crate::llm_client::DraftLlmClient::record_pick(chosen.card());
                                 (seat, chosen, prompt, response)
                             })
                         })
@@ -409,8 +414,22 @@ fn main() {
             if pick_num == 0 {
                 log_subsection!(log, &format!("Pack {}", round + 1));
             }
-            for (seat, chosen, prompt, response) in pick_results {
+            for (seat, pick, prompt, response) in pick_results {
                 let available = draft.current_pack_for(seat).to_vec();
+
+                if pick.was_substituted() {
+                    // A seat whose answers never parse is a failed seat, and
+                    // the run has to be able to say so: without this, 42
+                    // unusable answers read exactly like 42 deliberate picks
+                    // (issue #195).
+                    substituted_picks[seat] += 1;
+                    eprintln!("\nWARN: seat {} pack {} pick {}: could not use the response, \
+substituting {} (the first card). Response: {}",
+                        seat, round + 1, pick_num + 1, pick.card(),
+                        response.trim().replace('\n', " "));
+                    log_draft_warning!(log, seat, round + 1, pick_num + 1, pick.card(), &response);
+                }
+                let chosen = pick.into_card();
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
                     eprintln!("\nDraft pick error for seat {seat}: {e}");
@@ -631,6 +650,22 @@ fn main() {
     // Print token usage summary (draft client + game player combined)
     llm_client::print_usage_summary(total_games);
 
+    // A run whose seats never picked must not look like one that did. This
+    // is the last thing printed before "Done", next to the standings it
+    // qualifies (issue #195).
+    let substituted_total: usize = substituted_picks.iter().sum();
+    if substituted_total > 0 {
+        eprintln!("\n=== Substituted Picks ===");
+        eprintln!("  {substituted_total} pick(s) were made by the runner, not by a seat:");
+        for (seat, n) in substituted_picks.iter().enumerate() {
+            if *n > 0 {
+                eprintln!("    Seat {seat}: {n} pick(s) unusable — this seat's pool, \
+deck and results are not a drafted one");
+            }
+        }
+        eprintln!("  (grep the log for WARN to see each one)");
+    }
+
     if !args.quiet {
         eprintln!("\nDone. Log written to {}", args.log);
     }
@@ -638,7 +673,41 @@ fn main() {
 
 // ─── Draft Pick Parsing ──────────────────────────────────────────────
 
-fn parse_pick_response(response: &str, available: &[String]) -> String {
+/// What a seat's answer amounted to: the card it picked, and whether that
+/// card was actually chosen or substituted because the answer was unusable.
+///
+/// The substitution itself is deliberate — a draft has to continue — but it
+/// used to be silent, so 42 unparsable answers produced 42 confident
+/// "Chose:" lines and a tournament built on them (issue #195). The adjacent
+/// backend code already treats this class of failure as loud; this carries
+/// the same fact out of the parser so the caller can too.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Pick {
+    /// The seat named this card.
+    Chosen(String),
+    /// The answer could not be used; this is the first card of the pack.
+    Substituted(String),
+}
+
+impl Pick {
+    fn card(&self) -> &str {
+        match self {
+            Pick::Chosen(c) | Pick::Substituted(c) => c,
+        }
+    }
+
+    fn into_card(self) -> String {
+        match self {
+            Pick::Chosen(c) | Pick::Substituted(c) => c,
+        }
+    }
+
+    fn was_substituted(&self) -> bool {
+        matches!(self, Pick::Substituted(_))
+    }
+}
+
+fn parse_pick_response(response: &str, available: &[String]) -> Pick {
     // Primary path: JSON response like `{"thoughts": "...", "pick": N}`.
     // Secondary path (legacy or stray wrappers): strip markdown code fences
     // and retry. Last resort: fall through to a text scan for "PICK: N".
@@ -649,7 +718,7 @@ fn parse_pick_response(response: &str, available: &[String]) -> String {
     };
 
     if let Some(pick) = try_json(response) {
-        return pick;
+        return Pick::Chosen(pick);
     }
 
     // Strip optional ```json ... ``` fencing that some models still add.
@@ -660,7 +729,7 @@ fn parse_pick_response(response: &str, available: &[String]) -> String {
         .trim_end_matches("```")
         .trim();
     if let Some(pick) = try_json(stripped) {
-        return pick;
+        return Pick::Chosen(pick);
     }
 
     // Legacy text scan — kept for robustness against older responses.
@@ -669,14 +738,15 @@ fn parse_pick_response(response: &str, available: &[String]) -> String {
         if let Some(rest) = trimmed.strip_prefix("PICK:") {
             if let Ok(idx) = rest.trim().trim_start_matches('"').trim_end_matches('"').trim_end_matches(',').parse::<usize>() {
                 if idx < available.len() {
-                    return available[idx].clone();
+                    return Pick::Chosen(available[idx].clone());
                 }
             }
         }
     }
 
-    // Fallback: pick the first card.
-    available[0].clone()
+    // Last resort: the draft must continue, so take the first card — but say
+    // so, rather than letting it pass for a decision.
+    Pick::Substituted(available[0].clone())
 }
 
 // ─── Deck Building ───────────────────────────────────────────────────
@@ -971,4 +1041,49 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
         p = p.with_guide(g.to_string());
     }
     p
+}
+
+#[cfg(test)]
+mod pick_parsing_tests {
+    use super::{parse_pick_response, Pick};
+
+    fn pack() -> Vec<String> {
+        ["Hysterical Blindness", "Voiceless Spirit", "Ambush Viper", "Delver of Secrets"]
+            .iter().map(std::string::ToString::to_string).collect()
+    }
+
+    #[test]
+    fn a_usable_answer_is_the_seats_own_pick() {
+        let p = pack();
+        assert_eq!(parse_pick_response(r#"{"pick": 2}"#, &p),
+            Pick::Chosen("Ambush Viper".into()));
+        assert_eq!(parse_pick_response("```json\n{\"pick\": 1}\n```", &p),
+            Pick::Chosen("Voiceless Spirit".into()));
+        assert_eq!(parse_pick_response("thinking...\nPICK: 3", &p),
+            Pick::Chosen("Delver of Secrets".into()));
+    }
+
+    /// The four shapes from issue #195: each is a well-formed JSON object
+    /// that never reaches the backend's loud "no structured object" path,
+    /// so the parser is the only place that can notice. Each still yields a
+    /// card — a draft has to continue — but it must be marked as the
+    /// runner's substitution, not the seat's choice.
+    #[test]
+    fn an_unusable_answer_is_reported_as_a_substitution() {
+        let p = pack();
+        for response in [
+            r#"{"pick": 9999}"#,            // out-of-range index
+            r#"{"choice": 3}"#,             // right shape, wrong key
+            "{}",                           // empty object
+            r#"{"pick": "Ambush Viper"}"#,  // a name where an index goes
+        ] {
+            let got = parse_pick_response(response, &p);
+            assert_eq!(got, Pick::Substituted("Hysterical Blindness".into()),
+                "{response} is not a usable pick, so it must not pass for one");
+            assert!(got.was_substituted(),
+                "{response} must be reportable as a substitution");
+            // The draft still gets a card to continue with.
+            assert_eq!(got.card(), "Hysterical Blindness");
+        }
+    }
 }
