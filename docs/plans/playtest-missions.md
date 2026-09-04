@@ -355,6 +355,19 @@ Handler:
   illegal action, or answers the previous prompt. Every one must be a
   clean recovery or a clean failure; none may cause the game to take an
   action the seat did not choose
+- H5 [proposed 2026-09-04, from reading `format_state_body` and
+  `format_perms_compact` in `mtg-player/src/llm.rs`] information
+  sufficiency: H1 asks whether what the seat is told is *correct*; this
+  asks whether it is *enough*. Play a `cc` seat with `--log` and at every
+  decision try to make the choice from the prompt text alone, then look at
+  the real game state for what you needed and didn't have. Suspects to
+  confirm or clear: exile is a count with no contents; land lines carry a
+  name and tapped state but no rules text, so a utility land's activated
+  ability is invisible; creature lines carry keywords but no rules text,
+  and the "Card reference" block covers only the seat's own decklist, so
+  an opponent's creature may have no text anywhere in the prompt; nothing
+  states what mana is actually available. File a gap when it would change
+  a decision, not for every omission
 - H4 recap fidelity across resume: `--save` and `--resume` a game with a
   `cc` seat and check the conversation the resumed seat is handed
   describes the same game it left — recap contents, turn count, nothing
