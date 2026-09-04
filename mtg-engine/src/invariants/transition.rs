@@ -440,6 +440,38 @@ fn status_ledgers(prev: &GameState, cur: &GameState, events: &[GameEvent], staye
         if common != after {
             v.push(format!("p{}'s library was reordered without a shuffle (CR 701.20a)", p.0));
         }
+        // CR 121.3/701.13a: a draw and a mill take the top card. Order alone
+        // cannot see the difference — taking from the bottom preserves the
+        // order of what is left — so the cards that left have to be the ones
+        // that were on top. A card put back into the library moves the top,
+        // so a buffer containing one says nothing here.
+        let put_back = events.iter().any(|e| matches!(e, GameEvent::ObjectMoved { object, to: Zone::Library, .. }
+            if cur.get_object(*object).is_some_and(|o| o.owner == p)));
+        if put_back {
+            continue;
+        }
+        let taken: Vec<ObjectId> = events.iter().filter_map(|e| match e {
+            GameEvent::ObjectMoved { object, from: Zone::Library, .. }
+                if cur.get_object(*object).is_some_and(|o| o.owner == p) => Some(*object),
+            _ => None,
+        }).collect();
+        // CR 121.3: a draw takes the top card. Only a draw — a card may say
+        // it mills from the bottom (Cellar Door does), and an effect that
+        // looks at the top few and sorts them removes them in its own order,
+        // so the claim is about the drawn cards alone: they came from the
+        // top of what was there, however many cards left in total.
+        let drawn: BTreeSet<ObjectId> = events.iter().filter_map(|e| match e {
+            GameEvent::CardDrawn { player, object } if *player == p => Some(*object),
+            _ => None,
+        }).collect();
+        if !drawn.is_empty() {
+            let top: BTreeSet<ObjectId> = pa.library_order.iter().take(taken.len().max(drawn.len())).copied().collect();
+            if !drawn.is_subset(&top) {
+                let below: Vec<ObjectId> = drawn.difference(&top).copied().collect();
+                v.push(format!("p{} drew {below:?} from below the top {} of a library that starts {top:?} (CR 121.3)",
+                    p.0, taken.len().max(drawn.len())));
+            }
+        }
     }
     // CR 121.1: drawn cards come out of the library the player had.
     for e in events {
@@ -554,6 +586,21 @@ fn mana_ledger(prev: &GameState, cur: &GameState, action: Option<&Action>, event
     }
 }
 
+/// Every mana symbol a cost demands, generic and colorless included. The
+/// per-colour ledger below sees only the coloured pips, so a cost whose
+/// generic part is never deducted reads as fully paid.
+fn mana_demanded(cost: &crate::types::ManaCost) -> u32 {
+    let colored = cost.symbols.iter().filter(|s| matches!(s, crate::types::ManaSymbol::Colored(_))).count();
+    u32::try_from(colored).unwrap_or(u32::MAX) + cost.colorless_amount() + cost.generic_amount()
+}
+
+fn mana_added(events: &[GameEvent], who: PlayerId) -> u32 {
+    events.iter().map(|e| match e {
+        GameEvent::ManaAdded { player, amount, .. } if *player == who => *amount,
+        _ => 0,
+    }).sum()
+}
+
 fn entry_sig(e: &StackEntry) -> String {
     match e {
         StackEntry::Spell(id) => format!("spell #{}", id.0),
@@ -610,10 +657,29 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                 }
                 // CR 601.2h: the colored part of the cost left the pool (no
                 // hybrid mana in this pool, and reductions touch generic).
-                if let Some(who) = p {
-                    let cost = alternative_cost.clone()
-                        .or_else(|| cur.face_data(*object_id, registry).and_then(|d| d.cost));
+                if let (Some(who), Some(card)) = (p, prev.get_object(*object_id).map(|o| o.card_id)) {
+                    // What the engine charges, not what the card prints: a
+                    // reduction (Ghoultree and friends) is folded in here the
+                    // same way the offer side folds it in.
+                    let method = match alternative_cost {
+                        Some(alt) => crate::engine::CastMethod::Alternative(alt.clone()),
+                        None => crate::engine::CastMethod::Normal,
+                    };
+                    let cost = Some(crate::engine::cost_to_cast(prev, registry, card, who, &method).mana);
                     if let Some(cost) = cost {
+                        // CR 601.2h: all of it, not just the colored part. X
+                        // is announced and funded through its own prompt, so
+                        // its size is not known from the state before the cast.
+                        if !cost.has_x() {
+                            let need_total = mana_demanded(&cost);
+                            let before = prev.get_player(who).mana_pool.total();
+                            let after = cur.get_player(who).mana_pool.total();
+                            let added = mana_added(events, who);
+                            if after + need_total > before + added {
+                                v.push(format!("CastSpell #{} left p{} with {after} mana after {before} + {added} for a total cost of {need_total} (CR 601.2h)",
+                                    object_id.0, who.0));
+                            }
+                        }
                         let mut need: HashMap<ManaType, u32> = HashMap::new();
                         for sym in &cost.symbols {
                             if let crate::types::ManaSymbol::Colored(c) = sym {
@@ -642,12 +708,32 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                 v.push(format!("CastSpell #{} was refused but left traces: {} events, stack {:?}", object_id.0, events.len(), non_trigger(cur)));
             }
         }
-        Action::ActivateAbility { object_id, ability_index, .. } => {
+        Action::ActivateAbility { object_id, ability_index, source_card_id, .. } => {
             let pushed = cur.stack.iter().skip(prev.stack.len()).any(|e| matches!(e,
                 StackEntry::Ability { source_id, ability_index: i, activator, .. }
                 if *source_id == *object_id && *i == *ability_index && Some(*activator) == p));
             let stashed = cur.pending_ability_effect.as_ref().is_some_and(|a|
                 a.source_id == *object_id && a.ability_index == *ability_index && Some(a.activator) == p);
+            if pushed || stashed {
+                // CR 602.2f: an activation cost is paid like any other, and
+                // no ledger here ever looked at one.
+                if let (Some(who), Some(o)) = (p, prev.get_object(*object_id)) {
+                    let def_card = source_card_id.unwrap_or(o.card_id);
+                    let def = registry.get(def_card)
+                        .map(|b| b.activated_abilities(prev, *object_id, registry))
+                        .and_then(|defs| defs.into_iter().find(|d| d.ability_index == *ability_index));
+                    if let Some(def) = def.filter(|d| !d.cost.has_x()) {
+                        let need = mana_demanded(&def.cost);
+                        let before = prev.get_player(who).mana_pool.total();
+                        let after = cur.get_player(who).mana_pool.total();
+                        let added = mana_added(events, who);
+                        if after + need > before + added {
+                            v.push(format!("ActivateAbility #{}/{} left p{} with {after} mana after {before} + {added} for a cost of {need} (CR 602.2f)",
+                                object_id.0, ability_index, who.0));
+                        }
+                    }
+                }
+            }
             if pushed {
                 acted = true;
             } else if !stashed {
@@ -829,7 +915,12 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                 let doomed = prev.get_object(*keep).is_some_and(|o| o.damage_marked > 0 || o.dealt_deathtouch_damage
                     || prev.effective_toughness(*keep, registry).is_none_or(|t| t <= 0))
                     || events.iter().any(|e| matches!(e, GameEvent::LeftBattlefield { object, .. } if *object == *keep));
-                if !doomed && cur.get_object(*keep).is_none_or(|o| o.zone != Zone::Battlefield || o.controller != *who) {
+                // Only that it stays on the battlefield: the loser can have
+                // been the source of a control effect over the winner (one
+                // Olivia Voldaren stealing another), so the kept permanent
+                // legitimately goes back to its owner as the loser dies.
+                let _ = who;
+                if !doomed && cur.get_object(*keep).is_none_or(|o| o.zone != Zone::Battlefield) {
                     v.push(format!("legend rule: the kept #{} did not stay on the battlefield (CR 704.5j)", keep.0));
                 }
                 for t in options {
