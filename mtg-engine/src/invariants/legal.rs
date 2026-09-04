@@ -223,6 +223,21 @@ fn play_land(state: &GameState, acting: PlayerId, id: ObjectId, sorcery: bool, v
 /// `spell`: a spell can't target itself (CR 115.5); an ability may target
 /// its source.
 #[allow(clippy::too_many_arguments)]
+/// CR 601.2c: a card's own restriction on what it may target ("target
+/// non-Human creature") lives in its behaviour, not in the shared target
+/// requirement, and the shared legality re-check never consults it. An
+/// enumerator that drops the predicate offers targets the card forbids, and
+/// nothing else here would notice.
+fn card_predicate_ok(state: &GameState, acting: PlayerId, card: crate::ids::CardId, targets: &[Target],
+                     what: &str, registry: &CardRegistry, v: &mut Violations) {
+    let Some(behavior) = registry.get(card) else { return };
+    for t in targets {
+        if !behavior.is_valid_target(state, acting, t, registry) {
+            v.push(format!("{what} offers {t:?} which the card's own restriction rejects (CR 601.2c)"));
+        }
+    }
+}
+
 fn targets_ok(state: &GameState, acting: PlayerId, source: ObjectId, spell: bool, req: &TargetRequirement, targets: &[Target],
               what: &str, registry: &CardRegistry, v: &mut Violations) {
     for (i, t) in targets.iter().enumerate() {
@@ -302,6 +317,7 @@ fn cast(state: &GameState, acting: PlayerId, id: ObjectId, targets: &[Target], s
             v.push(format!("{what} offers {} targets for {req:?}", targets.len()));
         }
         targets_ok(state, acting, id, true, &req, targets, &what, registry, v);
+        card_predicate_ok(state, acting, obj.card_id, targets, &what, registry, v);
     }
     for t in targets {
         if let Target::Object(tid) = t {
@@ -406,6 +422,7 @@ fn activate(state: &GameState, acting: PlayerId, id: ObjectId, index: usize, tar
                 v.push(format!("{what} offers {} targets for one requirement", targets.len()));
             }
             targets_ok(state, acting, id, false, req, targets, &what, registry, v);
+            card_predicate_ok(state, acting, def_card, targets, &what, registry, v);
         }
     }
 }
@@ -445,6 +462,7 @@ fn loyalty(state: &GameState, acting: PlayerId, id: ObjectId, index: usize, targ
                 v.push(format!("{what} offers {} targets for one requirement", targets.len()));
             }
             targets_ok(state, acting, id, false, req, targets, &what, registry, v);
+            card_predicate_ok(state, acting, obj.card_id, targets, &what, registry, v);
         }
     }
 }
