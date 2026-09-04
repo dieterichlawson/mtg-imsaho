@@ -394,7 +394,12 @@ fn damage(state: &GameState, registry: &CardRegistry, events: &[GameEvent], quie
                 let to_walker = matches!(target, DamageTarget::Object(w) if c.planeswalker_defenders.get(&source) == Some(w));
                 match target {
                     DamageTarget::Player(_) | DamageTarget::Object(_) if blocked && (matches!(target, DamageTarget::Player(_)) || to_walker) => {
-                        if quiet && on_bf(state, source) && !state.has_keyword(source, Keyword::Trample, registry) {
+                        // Not gated on a quiet window: CR 509.2 keeps an
+                        // attacker blocked for the rest of combat even when
+                        // every blocker has left, which is exactly the
+                        // window where the damage code is most likely to
+                        // forget it.
+                        if on_bf(state, source) && !state.has_keyword(source, Keyword::Trample, registry) {
                             v.push(format!("{what}: a blocked attacker without trample reached the player (CR 510.1c)"));
                         }
                     }
