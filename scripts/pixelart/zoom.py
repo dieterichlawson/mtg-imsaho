@@ -1,3 +1,5 @@
+import sys
+sys.dont_write_bytecode = True
 import sys; sys.path.insert(0,'.')
 import art, card, render
 from PIL import Image

@@ -1,3 +1,6 @@
+import sys
+sys.dont_write_bytecode = True
+import sys
 import sys, math, json; sys.path.insert(0,'.')
 import art, render
 from PIL import Image, ImageDraw

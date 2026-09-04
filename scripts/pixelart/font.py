@@ -36,9 +36,17 @@ def draw_text(cv, x, y, s, c):
                     if b == '1': cv.set(x+dx, y+dy, c)
         x += 4
 def draw_greek(cv, x, y, w, s, c, seed=0, h=5):
-    """Illegible word-shapes with the rhythm of the real string."""
-    import random
-    rng = random.Random(hash(s) & 0xffff if seed == 0 else seed)
+    """Illegible word-shapes with the rhythm of the real string.
+
+    Seeded with a *stable* hash of the text. Python's built-in hash() is
+    randomised per process (PYTHONHASHSEED), so seeding from it gave every
+    card different greeked handwriting on every render — the same card was
+    never twice the same, and diffing two renders showed 50k changed pixels
+    with no source change. A card's scribble is part of its identity and
+    must be reproducible.
+    """
+    import random, zlib
+    rng = random.Random(zlib.crc32(s.encode()) & 0xffff if seed == 0 else seed)
     cx = x
     for word in s.upper().split():
         wl = max(2, min(len(word)*3, w - (cx - x)))

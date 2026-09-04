@@ -1,3 +1,5 @@
+import sys
+sys.dont_write_bytecode = True
 import sys; sys.path.insert(0,'.')
 import board
 # A real mid-game position: turn 7, green-white werewolves vs blue-black zombies.

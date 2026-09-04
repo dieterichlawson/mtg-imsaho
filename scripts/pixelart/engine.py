@@ -77,7 +77,14 @@ class Canvas:
             self.set(round(cx+r*math.cos(math.radians(a))),
                      round(cy+r*math.sin(math.radians(a))), c)
     def poly(self, pts, c):
-        """Scanline-fill a polygon."""
+        """Scanline-fill a polygon.
+
+        A vertex sitting exactly on the last row is extended past the edge:
+        scanlines sample at y+0.5, so a bottom edge at y=h-1 bounds a region
+        that contains no sample and the row never fills. That left a bright
+        1px hairline of unpainted sky along the bottom of a third of the set.
+        """
+        pts = [(x, (self.h + 1) if y >= self.h - 1 else y) for (x, y) in pts]
         ys = [p[1] for p in pts]
         for y in range(int(min(ys))-1, int(max(ys))+1):
             yc = y + 0.5
@@ -148,5 +155,52 @@ class Canvas:
         """A 3x4 hand block. Every arm must end in one, touching its object."""
         self.stamp(x, y, [shade+skin+shade, skin+skin+skin,
                           skin+skin+skin, shade+skin+shade])
+
+    def aperture(self, sides, depth=8, seed=0, c='0', jitter=1):
+        """Bite a ragged dark occluder into two edges of the frame.
+
+        Lifted from the Mountain card, which works because its darkness is a
+        *shape* rather than an absence: a jagged near-black margin eats the
+        outer columns and forces the eye into the lit centre. Generalised
+        here into the set's framing device — every card is seen through
+        something that belongs to its own world (chapel tracery, brambles,
+        the edge of a coffin lid) — which manufactures a third plane and
+        kills the flat-backdrop look. Never applied symmetrically.
+        """
+        import random
+        rng = random.Random(seed)
+        for side in sides:
+            d = depth
+            if side in 'LR':
+                for y in range(self.h):
+                    d = max(1, min(depth + 3, d + rng.randint(-jitter, jitter)))
+                    if side == 'L': self.hline(y, 0, d-1, c)
+                    else:           self.hline(y, self.w-d, self.w-1, c)
+            else:
+                for x in range(self.w):
+                    d = max(0, min(depth + 2, d + rng.randint(-jitter, jitter)))
+                    if side == 'T': self.vline(x, 0, d-1, c)
+                    else:           self.vline(x, self.h-d, self.h-1, c)
+
+    def candle(self, x, y, big=False):
+        """The set's signature: a votive flame, always the warmest thing here.
+
+        Promoted out of Geist of Saint Traft and made a set-wide rule. The
+        NUMBER of candles is a deliberate signal — one for a lone figure, two
+        for a duel or a bargain, an uncountable field for mass death, and
+        none at all on the werewolf cards, where the moon replaces them.
+        """
+        self.disc(x, y, 3.0 if big else 2.0, '2')
+        self.disc(x, y, 1.6 if big else 1.1, '3')
+        self.vline(x, y+1, y + (4 if big else 2), '6')
+        self.set(x, y, '8'); self.set(x, y-1, '7')
+        if big: self.set(x, y+1, '9')
+
+    def contact(self, x, y, w):
+        """A ground shadow. A figure without one is a sprite on a backdrop."""
+        for i in range(w):
+            t = abs(i - w/2) / (w/2)
+            if t < 0.85: self.set(x+i, y, '0')
+            if t < 0.5:  self.set(x+i, y+1, '0')
 
     def rows(self): return [''.join(r) for r in self.px]

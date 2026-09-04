@@ -1,3 +1,5 @@
+import sys
+sys.dont_write_bytecode = True
 import json, sys, math
 from PIL import Image, ImageDraw
 meta = json.load(open('refs/meta.json'))

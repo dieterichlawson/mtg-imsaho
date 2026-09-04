@@ -1,3 +1,5 @@
+import sys
+sys.dont_write_bytecode = True
 import json, sys, math
 from PIL import Image, ImageDraw
 sys.path.insert(0,'.')
@@ -13,7 +15,7 @@ def cost_syms(mc):
     return ''.join(out[:5])
 def build(name, greek=True, scale=6):
     m = meta[name]
-    cv = art.ART[name]()
+    cv = art.finish(name, art.ART[name]())
     c = card.make_card(cv.rows(), m['bucket'], name, m['type_line'],
                        cost_syms(m.get('mana_cost','')), greek=greek)
     return card.to_image(c, scale)

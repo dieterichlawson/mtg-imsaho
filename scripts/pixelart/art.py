@@ -850,3 +850,63 @@ def _():
     for y in range(14, 26): cv.set(19, y, 'c')                   # rim from his flame
     return cv
 
+
+# ══ SET GRAMMAR ══════════════════════════════════════════════════════
+# Three rules applied across all 32 after each illustration is drawn, so the
+# set reads as one art object rather than 32 competent pictures.
+#
+#   1. APERTURE — every card is seen through something. Two of four edges are
+#      bitten by a ragged occluder belonging to that card's own world. Never
+#      symmetric, never the same depth twice.
+#   2. CANDLES  — a votive flame is the warmest thing on almost every card,
+#      and the count means something: 1 = a lone soul, 2 = a duel or bargain,
+#      many = mass death, ZERO = the werewolf/moon cards, where the moon
+#      takes the candles' place.
+#   3. CONTACT  — any figure standing on ground gets a shadow under its feet.
+#
+# The four client-approved cards are exempt: they already do all of this.
+APPROVED = {"Brimstone Volley", "Spider Spawning", "Mountain", "Forest"}
+
+FINISH = {
+ # name: (aperture sides, depth, seed, colour, [candles], contact or None)
+ "Geist of Saint Traft":  (('L','R'), 3,11, '0',  [], None),
+ "Doomed Traveler":       (('B','R'), 3,3, '0',  [(3,26,False)], (8,29,9)),
+ "Chapel Geist":          (('T','L'), 4,5, '0',  [(35,24,True),(3,27,False)], None),
+ "Elite Inquisitor":      (('L','B'), 4,7, '0',  [(36,20,True)], (16,31,13)),
+ "Midnight Haunting":     (('R','B'), 4,9, '0',  [(3,7,False),(6,29,True)], None),
+ "Snapcaster Mage":       (('R','B'), 4,13, '0',  [(4,8,False),(38,17,False)], (17,30,13)),
+ "Delver of Secrets":     (('T','R'), 3,17, '0',  [(11,29,True),(24,28,False)], (13,30,11)),
+ "Invisible Stalker":     (('L','T'), 3,19, '0',  [(37,28,False)], None),
+ "Laboratory Maniac":     (('L','B'), 4,23, '0',  [(35,6,False),(38,25,False)], (19,30,11)),
+ "Stitched Drake":        (('T','L'), 4,29, '0',  [(5,30,True)], None),
+ "Liliana of the Veil":   (('T','B'), 3,31, '0',  [], (16,31,13)),
+ "Diregraf Ghoul":        (('R','T'), 4,37, '0',  [(4,28,True)], (12,29,11)),
+ "Unburial Rites":        (('L','T'), 4,41, '0',  [(37,26,True),(2,24,False)], None),
+ "Bloodline Keeper":      (('L','R'), 4,43, '0',  [], None),
+ "Grimgrin, Corpse-Born": (('T','R'), 4,47, '0',  [(3,27,True)], (14,31,15)),
+ "Devil's Play":          (('L','T'), 3,53, '0',  [], None),
+ "Balefire Dragon":       (('B','L'), 3,59, '0',  [], None),
+ "Instigator Gang":       (('L','R'), 3,61, 'k',  [(20,3,False)], (14,31,15)),
+ "Blasphemous Act":       (('L','R'), 4,67, '0',  [(6,12,True),(35,12,True),(4,22,False),(37,22,False)], None),
+ "Mayor of Avabruck":     (('T','R'), 3,71, '0',  [], (18,29,11)),
+ "Kessig Cagebreakers":   (('T','B'), 3,73, '0',  [], None),
+ "Garruk Relentless":     (('L','B'), 4,79, 'r',  [], (13,31,15)),
+ "Gatstaf Shepherd":      (('T','L'), 3,83, '0',  [], (12,29,9)),
+ "Plains":                (('L','T'), 4,89, '0',  [(33,22,False)], None),
+ "Island":                (('T','R'), 4,97, '0',  [], None),
+ "Swamp":                 (('R','T'), 4,101, '0',  [(6,27,True)], None),
+ "Kessig Wolf Run":       (('L','B'), 4,103, '0',  [], None),
+ "Blazing Torch":         (('R','T'), 3,107, '0',  [], (24,30,11)),
+}
+
+def finish(name, cv):
+    """Apply the set grammar. Approved cards pass through untouched."""
+    if name in APPROVED or name not in FINISH:
+        return cv
+    sides, depth, seed, col, candles, contact = FINISH[name]
+    cv.aperture(sides, depth, seed, col)
+    if contact:
+        cv.contact(*contact)
+    for (x, y, big) in candles:
+        cv.candle(x, y, big)
+    return cv
