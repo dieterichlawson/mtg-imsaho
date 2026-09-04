@@ -365,6 +365,50 @@ fn integration_keep_then_concede_ends_game() {
     assert!(state.is_game_over());
 }
 
+/// The turn-1 banner names whoever is actually taking turn 1.
+///
+/// It was the literal "── Turn 1 (p0) ──", so a game p1 opened — an
+/// `--on-the-play 2`, or simply losing the CR 103.1 roll — announced turn 1
+/// as p0's in the `--log` file and, through the harness's turn-banner
+/// rewrite, in the first prompt every LLM seat sees. The turn-1
+/// `TurnStarted` event always carried the right player; only the line people
+/// read did not.
+#[test]
+fn the_turn_1_banner_names_the_player_who_takes_turn_1() {
+    let registry = CardRegistry::with_all_cards();
+
+    for starting in [P0, P1] {
+        let config = GameConfig {
+            player_names: vec!["P0".into(), "P1".into()],
+            decklists: vec![test_decklist(), test_decklist()],
+            starting_life: 20,
+            starting_player: Some(starting),
+            rng_seed: Some(mtg_engine::state::default_rng_seed()),
+        };
+        let mut state = engine::setup_game(&config, &registry);
+
+        // Drive the mulligan phase to completion: both seats keep.
+        engine::run_game_loop(&mut state, &registry, |gs, _player, legal| {
+            if !engine::in_mulligan_phase(gs)
+                && legal.actions.iter().any(|a| matches!(a, Action::Concede))
+            {
+                return Action::Concede;
+            }
+            for a in &legal.actions {
+                if matches!(a, Action::MulliganKeep) { return a.clone(); }
+            }
+            Action::PassPriority
+        });
+
+        let banner = state.game_log.iter()
+            .find(|e| e.message.starts_with("── Turn 1 "))
+            .map(|e| e.message.clone())
+            .expect("turn 1 is announced");
+        assert_eq!(banner, format!("── Turn 1 (p{}) ──", starting.0),
+            "turn 1 belongs to the player on the play");
+    }
+}
+
 /// Issue #112 (CR 103.1): the opening player is determined at random —
 /// seeded, so a --seed game replays identically — instead of always p0.
 /// An explicit starting_player (loser-chooses, --on-the-play) still wins.

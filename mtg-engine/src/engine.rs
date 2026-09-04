@@ -674,7 +674,15 @@ fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
 
     // Mulligan phase fully complete.
     state.awaiting_action = None;
-    state.log(LogLevel::Milestone, "── Turn 1 (p0) ──".into());
+    // Built from the real active player, exactly like every later banner in
+    // `advance_step`. As a literal it said p0 whoever was on the play, so a
+    // game where p1 won the roll opened with turn 1 attributed to the player
+    // who was not taking it — in the --log file and, through
+    // `rewrite_turn_banner`, in the first prompt every LLM seat ever sees.
+    // The turn-1 `TurnStarted` event has always carried the right player;
+    // only the line humans and seats read was wrong.
+    state.log(LogLevel::Milestone,
+        format!("── Turn {} (p{}) ──", state.turn_number, state.active_player.0));
 }
 
 /// True if the state is in the opening-hand mulligan phase.
