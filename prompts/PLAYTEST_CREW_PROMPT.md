@@ -49,7 +49,10 @@ real filesystems, hostile timing, and games long enough to drift.
 
 `docs/plans/playtest-missions.md` holds the menu, grouped by persona:
 Competitor (C) and Rules Lawyer (L) hunt the engine, Vandal (V) and
-Operator (M) the machine, Handler (H) the harness. Pick by the rule at the
+Operator (M) the machine, Handler (H) the harness, and a separate D family
+covers `mtg-draft-runner` — read that family's own setup rules before
+taking one, in particular that `--model` defaults to a metered API seat
+and must always be overridden with `--model cc`. Pick by the rule at the
 top of that file: never-played missions first (`reports/playtests/LEDGER.md`
 is the record), then nothing played in the last two weeks unless you are
 re-probing a fresh fix, then oldest first — and take a spread of targets

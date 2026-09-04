@@ -19,7 +19,7 @@ Three words that are easy to confuse, fixed here:
 |---|---|---|---|
 | Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) | `phase:fuzz` | the workflow (per failing seed) |
 | Weekly mutants | `weekly-mutants` workflow (~2,365 engine-core mutants) | `phase:mutants` | the workflow (new survivors beyond `reports/mutants-accepted.txt`) |
-| Nightly playtest | "Nightly playtest crew" routine (`prompts/PLAYTEST_CREW_PROMPT.md`: 2-3 missions a night from `docs/plans/playtest-missions.md`, spanning all three targets — the Competitor and Rules Lawyer play the engine, the Vandal and Operator the machine, the Handler the harness; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:playtest` | the routine |
+| Nightly playtest | "Nightly playtest crew" routine (`prompts/PLAYTEST_CREW_PROMPT.md`: 2-3 missions a night from `docs/plans/playtest-missions.md`, spanning all three targets — the Competitor and Rules Lawyer play the engine, the Vandal and Operator the machine, the Handler the harness, and a D family the draft runner; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:playtest` | the routine |
 
 All issues also carry the `bug` label. Labels are auto-created on first
 use, so a new phase just picks a `phase:<name>` label and starts filing.

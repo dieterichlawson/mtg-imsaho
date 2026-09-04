@@ -16,7 +16,9 @@ night.
 
 The menu covers all three targets named in the pipeline's glossary: the
 **engine** (Competitor, Rules Lawyer), the **machine** (Vandal, Operator)
-and the **harness** (Handler). Say which one an issue is about in its
+and the **harness** (Handler). A separate D family covers the draft
+runner, which has its own packs, pick loop, deck builder and tournament,
+and its own prompts. Say which one an issue is about in its
 **Target** line. The Operator and Handler missions are the only ones that
 don't run two `cli` seats; the Handler's `claude-code` seat runs on plan
 quota through `claude -p` — a metered `claude`/`gemini` API seat is never
@@ -372,6 +374,74 @@ Handler:
   `cc` seat and check the conversation the resumed seat is handed
   describes the same game it left — recap contents, turn count, nothing
   hallucinated and nothing dropped
+
+Draft:
+
+The D missions test `mtg-draft-runner` — booster generation, the pick
+loop, deck building and the Swiss tournament that follows. They use the
+personas above as lenses; the family is separate because the subject is
+different, not the mindset. Two setup rules:
+
+- **`--model` defaults to `claude`, a metered API seat.** Every draft
+  mission must pass `--model cc` explicitly. Nothing else is allowed, and
+  a mission that forgets is a mission that spent money.
+- **Draft runs are long.** Eight seats is 360 picks, eight deck builds and
+  a full Swiss tournament. Use the smallest `--players` the mission
+  tolerates and `--best-of 1`, and prefer inspecting `--log` after a small
+  run over playing a big one.
+
+- D1 [Operator] pack collation and conservation: check generated packs
+  against `docs/isd-booster-collation.md` — rarity slots per pack, the
+  foil slot's rate, no card twice in one pack, and the conditional
+  structure the C1/C2 sheets imply over a few hundred packs. Then check
+  conservation across a draft: packs shrink by exactly one per pick,
+  passing alternates left/right/left by pack round, each seat sees each
+  pack exactly once, and every card printed into a pack ends in exactly
+  one seat's pool. `filter_implemented` drops unimplemented cards before
+  packs are built — quantify what that removes and whether it skews the
+  rarity or colour balance the collation intends
+- D2 [Vandal] the silent first-card pick: `parse_pick_response` falls back
+  to `available[0]` when a seat's response doesn't parse. Point
+  `CLAUDE_CODE_BIN` at a wrapper returning junk, an out-of-range index,
+  valid JSON under the wrong key, and an empty string, and find out
+  whether that fallback is visible anywhere — a log line, a warning, a
+  counter in the usage summary. A seat that quietly took card 0 forty-five
+  times must not be indistinguishable from a seat that drafted
+- D3 [Vandal] the deck-build fallback: force ten consecutive invalid deck
+  responses and inspect what the fallback builds — the entire pool as
+  maindeck plus 9 Island and 8 Swamp regardless of what colours the pool
+  is. Then follow it downstream: does the log, the tournament, and the
+  standings present that deck as a legitimately built one, and does a
+  62-card off-colour deck even play?
+- D4 [Rules Lawyer] deck legality and identity: every built deck legal for
+  limited — size, only cards from that seat's own pool, basics unlimited,
+  DFC and split names counted once — and the decklist that gets played in
+  the tournament identical to the one the log says was built
+- D5 [Operator] log completeness: `main` seeds from `rand::thread_rng()`
+  and there is no `--seed`, so the log is the only record a draft leaves.
+  Verify a reader with the log alone can reconstruct the whole run — pack
+  contents, every pick in order with the pack it came from, pass
+  direction, final pools, decks, pairings and results — and file what is
+  missing
+- D6 [Handler] draft prompt sufficiency: what a drafting seat is told
+  against what it needs to pick well. Is its pool so far shown at every
+  pick, with colours and curve, or only the pack? Does it know the pack
+  round and pick number and which way packs are passing? Does the
+  deck-building prompt carry anything but names and counts
+  (`build_deck_prompt` sends a name/count list; oracle text is in the
+  system prompt's card reference)? This is H5's question asked of the
+  draft harness
+- D7 [Handler] draft subprocess contract: with `CLAUDE_CODE_BIN` pointed
+  at a logging wrapper, one `claude -p` per pick, session continuity
+  across a seat's 45 picks, `--model-N` actually routing to seat N, the
+  end-of-run usage totals and cost summary consistent with the number of
+  calls, and — the one that matters — no metered API call made at all
+  when every seat is `cc`
+- D8 [Competitor] tournament integrity: run a small Swiss tournament and
+  check its bookkeeping — no pairing repeated, an odd player count handled
+  honestly, match results and standings arithmetic correct, play/draw
+  alternating between games of a match, and each seat playing its own
+  drafted deck
 
 ## Adding a mission
 
