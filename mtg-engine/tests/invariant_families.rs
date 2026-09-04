@@ -1252,9 +1252,12 @@ fn the_legend_rule_keep_and_colored_payment_are_checked() {
     s.move_object(b, Zone::Battlefield, &reg);
     flags_transition(&state, Some(&keep), &s, &reg, "was not kept but is still on the battlefield (CR 704.5j)");
     // Leaving the battlefield during the same action is legitimate (the kept
-    // legend can still die); ending up under the other player is not.
+    // legend can still die), and so is changing hands (the loser may have
+    // been the source of a control effect over the winner) — vanishing is not.
     let mut s = cur.clone();
-    s.get_object_mut(a).unwrap().controller = P1;
+    s.get_object_mut(a).unwrap().zone = Zone::Exile;
+    s.get_object_mut(a).unwrap().zone_change_count += 1;
+    s.events.push(GameEvent::ObjectMoved { object: a, from: Zone::Battlefield, to: Zone::Exile });
     flags_transition(&state, Some(&keep), &s, &reg, "the kept #");
     flags_transition(&state, Some(&keep), &s, &reg, "did not stay on the battlefield (CR 704.5j)");
     let mut s = cur.clone();
@@ -1277,5 +1280,94 @@ fn the_legend_rule_keep_and_colored_payment_are_checked() {
     let mut s = cur.clone();
     let unpaid = prev.get_player(P0).mana_pool.mana.get(&ManaType::White).copied().unwrap_or(0);
     s.get_player_mut(P0).mana_pool.mana.insert(ManaType::White, unpaid);
+    flags_transition(&prev, Some(&cast), &s, &reg, "(CR 601.2h)");
+}
+
+// ── the gaps mutation testing found ──────────────────────────────────────
+
+#[test]
+fn a_cards_own_target_restriction_is_part_of_the_offer() {
+    let (mut state, reg) = base();
+    // Avacynian Priest taps a *non-Human* creature; the restriction lives in
+    // the card, not in the shared target requirement, so an enumerator that
+    // drops it offers Humans and nothing else here would notice.
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    let human = named_permanent(&mut state, &reg, "Elder Cathar", P1);
+    let wolf = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert_eq!(check_legal(&state, P0, &legal, &reg), Vec::<String>::new());
+    assert!(legal.actions.iter().any(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }
+        if *object_id == priest && targets.contains(&Target::Object(wolf)))), "the non-Human is offered");
+
+    let mut l = legal.clone();
+    if let Some(a) = l.actions.iter_mut().find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest)) {
+        if let Action::ActivateAbility { targets, .. } = a {
+            *targets = vec![Target::Object(human)];
+        }
+    }
+    flags_legal(&state, P0, &l, &reg, "which the card's own restriction rejects (CR 601.2c)");
+}
+
+#[test]
+fn a_draw_comes_off_the_top_and_a_blocked_attacker_spares_the_player() {
+    let (mut prev, reg) = base();
+    for name in ["Island", "Swamp", "Plains"] {
+        let c = spell_in_hand(&mut prev, &reg, name, P0);
+        prev.get_object_mut(c).unwrap().zone = Zone::Library;
+        prev.get_player_mut(P0).library_order.push(c);
+    }
+    let top = prev.get_player(P0).library_order[0];
+    let bottom = *prev.get_player(P0).library_order.last().unwrap();
+
+    // Drawing the top card is what a draw is.
+    let mut cur = next(&prev);
+    cur.move_object(top, Zone::Hand, &reg);
+    cur.get_player_mut(P0).library_order.retain(|id| *id != top);
+    cur.events.push(GameEvent::CardDrawn { player: P0, object: top });
+    clean_transition(&prev, None, &cur, &reg);
+
+    // Taking the bottom one instead preserves the order of what is left, so
+    // only the draw rule sees it.
+    let mut cur = next(&prev);
+    cur.move_object(bottom, Zone::Hand, &reg);
+    cur.get_player_mut(P0).library_order.retain(|id| *id != bottom);
+    cur.events.push(GameEvent::CardDrawn { player: P0, object: bottom });
+    flags_transition(&prev, None, &cur, &reg, "from below the top 1 of a library that starts");
+
+    // CR 510.1c: a blocked attacker's damage goes to its blockers.
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    state.step = Step::CombatDamage;
+    state.events = vec![GameEvent::CombatDamageDealt {
+        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags_core(&state, &reg, "a blocked attacker without trample reached the player (CR 510.1c)");
+}
+
+#[test]
+fn the_whole_cost_leaves_the_pool_not_just_its_colored_part() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    add_mana(&mut prev, P0, &[(ManaType::White, 2)]);
+    prev.priority_player = Some(P0);
+    let cast = Action::CastSpell { object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+        exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] };
+    let cur = mtg_engine::engine::submit_action(&prev, &cast, &reg);
+    clean_transition(&prev, Some(&cast), &cur, &reg);
+
+    // The generic pip never left: the per-colour ledger is satisfied and only
+    // the total catches it.
+    let mut s = cur.clone();
+    let pool = &mut s.get_player_mut(P0).mana_pool.mana;
+    let white = pool.get(&ManaType::White).copied().unwrap_or(0);
+    pool.insert(ManaType::White, white + 1);
+    flags_transition(&prev, Some(&cast), &s, &reg, "for a total cost of");
     flags_transition(&prev, Some(&cast), &s, &reg, "(CR 601.2h)");
 }
