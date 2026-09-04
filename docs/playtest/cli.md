@@ -159,3 +159,13 @@ whether it told the truth.
   fights back: read-only directories, a small tmpfs filled to capacity
   mid-game, paths that are directories or symlinks. V17 abuses flag
   values; this walks the combinations and the capacity edge
+- M5 [proposed 2026-09-04, from #194/#196/#197] audit `--help` against the
+  code, sentence by sentence. Three of tonight's bugs were one line of usage
+  text next to one line of implementation: `--log` says "Append" and
+  `game_log::init` passes `.truncate(true)`; the `--resume` note names three
+  flags and gets two wrong in opposite directions, while the one flag that is
+  genuinely ignored (`--on-the-play`) is not mentioned at all. Take every
+  claim `--help` makes, find the code that would have to be true for it, and
+  run the command that distinguishes them. A flag that is accepted and then
+  silently ignored, or documented as ignored and then used, is a broken
+  promise and worth filing
