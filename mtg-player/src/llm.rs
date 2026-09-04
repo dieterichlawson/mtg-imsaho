@@ -13,7 +13,10 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 mod claude_code;
+pub mod cost;
 pub use claude_code::{available as claude_code_available, binary as claude_code_binary, BINARY_ENV as CLAUDE_CODE_BINARY_ENV};
+pub use cost::{cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
+
 
 #[derive(Default, Debug, Clone)]
 pub struct LlmModelUsage {

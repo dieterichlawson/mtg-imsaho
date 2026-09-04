@@ -8,6 +8,7 @@ use mtg_draft::draft::DraftPick;
 use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write;
+use mtg_player::llm::Cost;
 
 #[derive(Default, Debug)]
 pub struct ModelUsage {
@@ -69,43 +70,30 @@ impl Clone for ModelUsage {
 
 /// Known model pricing ($/`MTok`). (input, output, `cache_read`, `cache_write`)
 /// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08)
-/// Gemini: ai.google.dev/pricing (verified 2026-04-08)
-fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
-    match model {
-        // Anthropic models (cache_read = 0.1x input, cache_write = 1.25x input for 5-min TTL)
-        m if m.contains("opus-4-6") => (5.00, 25.00, 0.50, 6.25),
-        m if m.contains("opus-4-5") => (5.00, 25.00, 0.50, 6.25),
-        m if m.contains("opus-4-1") => (15.00, 75.00, 1.50, 18.75),
-        m if m.contains("sonnet-4-6") => (3.00, 15.00, 0.30, 3.75),
-        m if m.contains("sonnet-4-5") => (3.00, 15.00, 0.30, 3.75),
-        m if m.contains("sonnet-4-0") | m.contains("sonnet-4-2") => (3.00, 15.00, 0.30, 3.75),
-        m if m.contains("haiku-4-5") => (1.00, 5.00, 0.10, 1.25),
-        m if m.contains("haiku-3-5") => (0.80, 4.00, 0.08, 1.00),
-        // Gemini models (cache_read = 0.1x input, implicit caching has no write cost)
-        m if m.contains("gemini-2.5-flash-lite") => (0.10, 0.40, 0.01, 0.0),
-        m if m.contains("gemini-2.5-flash") && !m.contains("lite") => (0.30, 2.50, 0.03, 0.0),
-        m if m.contains("gemini-2.5-pro") => (1.25, 10.00, 0.125, 0.0),
-        m if m.contains("gemini-3.1-flash-lite") => (0.25, 1.50, 0.025, 0.0),
-        m if m.contains("gemini-3.1-pro") => (2.00, 12.00, 0.20, 0.0),
-        m if m.contains("gemini-3-flash") || m.contains("gemini-3.0-flash") => (0.50, 3.00, 0.05, 0.0),
-        m if m.contains("gemini-3-pro") || m.contains("gemini-3.0-pro") => (2.00, 12.00, 0.20, 0.0),
-        m if m.contains("gemini") => (0.30, 2.50, 0.03, 0.0), // default gemini → 2.5 flash pricing
-        _ => (3.00, 15.00, 0.30, 3.75), // unknown model → sonnet pricing
+
+/// This crate's usage record as the shared cost model reads it. The two
+/// structs are the same five counters kept once per crate.
+fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
+    mtg_player::llm::LlmModelUsage {
+        input: u.input,
+        output: u.output,
+        cache_read: u.cache_read,
+        cache_create: u.cache_create,
+        calls: u.calls,
     }
 }
 
-fn usage_cost(u: &ModelUsage, model: &str) -> f64 {
-    let (input_price, output_price, cache_read_price, cache_write_price) = model_pricing(model);
-    // Convert token counts to f64 via u32 since realistic counts fit.
-    // `as u32` saturates via `min` to avoid wraparound on overflow.
-    let input = u32::try_from(u.input).unwrap_or(u32::MAX);
-    let output = u32::try_from(u.output).unwrap_or(u32::MAX);
-    let cache_read = u32::try_from(u.cache_read).unwrap_or(u32::MAX);
-    let cache_create = u32::try_from(u.cache_create).unwrap_or(u32::MAX);
-    f64::from(input) * input_price / 1_000_000.0
-        + f64::from(output) * output_price / 1_000_000.0
-        + f64::from(cache_read) * cache_read_price / 1_000_000.0
-        + f64::from(cache_create) * cache_write_price / 1_000_000.0
+fn usage_cost(u: &ModelUsage, model: &str) -> Cost {
+    mtg_player::llm::cost(model, &as_llm_usage(u))
+}
+
+/// What a phase's usage came to, summed the way the shared model sums a run:
+/// plan-quota seats contribute no dollars, and one model with no rate on file
+/// makes the phase total unknown rather than an understatement.
+fn phase_cost(usage: &HashMap<String, ModelUsage>) -> Cost {
+    let converted: HashMap<String, mtg_player::llm::LlmModelUsage> =
+        usage.iter().map(|(m, u)| (m.clone(), as_llm_usage(u))).collect();
+    mtg_player::llm::total_cost(&converted)
 }
 
 /// Print a summary of all token usage and estimated cost, broken down by model and phase.
@@ -114,27 +102,15 @@ pub fn print_usage_summary(total_games: usize) {
     let game_usage = mtg_player::llm::get_llm_model_usage();
 
     // Draft phase cost
-    let mut draft_cost = 0.0;
-    let mut draft_calls = 0u64;
-    for (model, u) in &draft_usage {
-        draft_cost += usage_cost(u, model);
-        draft_calls += u.calls;
-    }
+    let draft_cost = phase_cost(&draft_usage);
+    let draft_calls: u64 = draft_usage.values().map(|u| u.calls).sum();
 
     // Game phase cost
-    let mut game_cost = 0.0;
-    let mut game_calls = 0u64;
-    for (model, u) in &game_usage {
-        let mu = ModelUsage {
-            calls: u.calls,
-            input: u.input,
-            output: u.output,
-            cache_read: u.cache_read,
-            cache_create: u.cache_create,
-        };
-        game_cost += usage_cost(&mu, model);
-        game_calls += u.calls;
-    }
+    let game_usage: HashMap<String, ModelUsage> = game_usage.iter().map(|(m, u)| (m.clone(), ModelUsage {
+        calls: u.calls, input: u.input, output: u.output, cache_read: u.cache_read, cache_create: u.cache_create,
+    })).collect();
+    let game_cost = phase_cost(&game_usage);
+    let game_calls: u64 = game_usage.values().map(|u| u.calls).sum();
 
     // Combined per-model
     let mut combined: HashMap<String, ModelUsage> = HashMap::new();
@@ -158,14 +134,20 @@ pub fn print_usage_summary(total_games: usize) {
     // Build summary string for both stderr and log file
     let mut summary = String::from("=== Token Usage ===\n");
 
-    writeln!(summary, "  Draft:  {draft_calls} calls, ${draft_cost:.4}").unwrap();
-    writeln!(summary, "  Games:  {} calls, ${:.4}{}", game_calls, game_cost,
-        if total_games > 0 { format!(" ({} games, ${:.4}/game avg)", total_games, game_cost / f64::from(u32::try_from(total_games).unwrap_or(u32::MAX))) } else { String::new() }).unwrap();
+    writeln!(summary, "  Draft:  {draft_calls} calls, {draft_cost}").unwrap();
+    // A per-game average only means anything for a metered phase; a
+    // plan-quota or unpriced one has no dollars to divide.
+    let per_game = match (game_cost, total_games) {
+        (Cost::Usd(v), n) if n > 0 => format!(" ({n} games, ${:.4}/game avg)",
+            v / f64::from(u32::try_from(n).unwrap_or(u32::MAX))),
+        _ => String::new(),
+    };
+    writeln!(summary, "  Games:  {game_calls} calls, {game_cost}{per_game}").unwrap();
     summary.push('\n');
 
     let mut models: Vec<_> = combined.iter().collect();
     models.sort_by_key(|(name, _)| (*name).clone());
-    let total_cost = draft_cost + game_cost;
+    let total_cost = phase_cost(&combined);
 
     for (model, u) in &models {
         let cost = usage_cost(u, model);
@@ -173,7 +155,7 @@ pub fn print_usage_summary(total_games: usize) {
             model, u.calls, u.input, u.output, u.cache_read, cost
         ).unwrap();
     }
-    writeln!(summary, "  ---\n  Total: {} calls, ${:.2}", draft_calls + game_calls, total_cost).unwrap();
+    writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
 
     // Write to stderr
     eprint!("\n{summary}");
