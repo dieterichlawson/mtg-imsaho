@@ -229,10 +229,19 @@ fn main() {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
         // repro provenance (issues #52/#55) — so say so.
-        for flag in ["--deck1", "--deck2", "--seed"] {
+        for flag in ["--deck1", "--deck2"] {
             if args.iter().any(|a| a == flag) {
                 eprintln!("note: {flag} is ignored with --resume; the save file's game wins");
             }
+        }
+        // --seed is NOT ignored, and calling it ignored was worse than
+        // saying nothing: only the *engine* RNG comes from the save
+        // (`GameState.rng_state`). The seats' RNG does not, so --seed still
+        // seeds them, and dropping it — as the old note advised — is what
+        // makes a resumed replay non-reproducible (issue #196).
+        if args.iter().any(|a| a == "--seed") {
+            eprintln!("note: --seed does not change the saved game's shuffle (the save's RNG wins), \
+but it still seeds the random/AI seats — keep it to replay a resume deterministically");
         }
         // Every failure here is a user-supplied file being wrong (a typo'd
         // path, a truncated or edited save) — report and exit(1), never

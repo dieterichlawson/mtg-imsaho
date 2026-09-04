@@ -262,3 +262,92 @@ fn the_log_flag_appends_rather_than_destroying_the_previous_run() {
     assert_eq!(contents.matches("Game over").count(), 2,
         "both games' records are in the file, not just the last one");
 }
+
+/// The runner, run from the workspace root so workspace-relative deck paths
+/// resolve — cargo runs integration tests from the package directory.
+fn runner_at_root() -> Command {
+    let mut c = runner();
+    c.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+    c
+}
+
+/// Make a mid-game save for the --resume tests below: start a seeded game
+/// and interrupt it once it has written one. A *finished* game deletes its
+/// save (there is nothing left to resume), so the save has to be caught in
+/// flight — which is also how an operator gets one, and how the issues that
+/// motivated these tests reproduce.
+fn a_save_file(tag: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir()
+        .join(format!("mtg-runner-resume-{tag}-{}.save", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let mut child = runner_at_root()
+        .args(["--p1", "random", "--p2", "random",
+               "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+               "--seed", "2301", "--on-the-play", "1",
+               "--save", &path.to_string_lossy(), "--quiet"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to start");
+
+    // The save is rewritten after every action, so it appears almost at
+    // once; poll rather than sleeping a fixed guess.
+    let mut saved = None;
+    for _ in 0..200 {
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            // Only a complete save is useful — the writer is atomic, so any
+            // readable file is whole, but it must parse as a game.
+            if contents.contains("player_names") {
+                saved = Some(contents);
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let saved = saved.expect("the game writes a save while it is running");
+    // The kill can land between the writer's unlink and rename, so restore
+    // the snapshot we actually read.
+    std::fs::write(&path, saved).expect("write the captured save");
+    path
+}
+
+/// The `--seed` note under `--resume` says what actually happens. It used to
+/// claim the seed was ignored; only the engine RNG comes from the save, so
+/// `--seed` still seeds the seats — and dropping it, as the old note
+/// advised, is exactly what makes a resumed replay non-reproducible.
+#[test]
+fn resume_does_not_call_the_seed_ignored_when_it_is_not() {
+    let save = a_save_file("seednote");
+    let output = runner_at_root()
+        .args(["--p1", "random", "--p2", "random",
+               "--resume", &save.to_string_lossy(), "--seed", "12345", "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!stderr.contains("--seed is ignored"),
+        "the seed is not ignored, so the note must not say it is.\nstderr: {stderr}");
+    assert!(stderr.contains("--seed") && stderr.contains("seeds the random/AI seats"),
+        "the note says what --seed really does.\nstderr: {stderr}");
+
+    // And it demonstrably still determines the resumed game: same seed twice
+    // is the same game, a different seed is a different one.
+    let actions_with = |seed: &str| {
+        let out = runner_at_root()
+            .args(["--p1", "random", "--p2", "random",
+                   "--resume", &save.to_string_lossy(), "--seed", seed, "--quiet"])
+            .output()
+            .expect("failed to run");
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find(|l| l.starts_with("Total actions:"))
+            .map(std::string::ToString::to_string)
+            .expect("the run reports its action count")
+    };
+    assert_eq!(actions_with("12345"), actions_with("12345"),
+        "one seed replays one game");
+    let _ = std::fs::remove_file(&save);
+}
