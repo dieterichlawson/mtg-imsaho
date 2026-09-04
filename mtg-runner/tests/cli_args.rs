@@ -314,6 +314,33 @@ fn a_save_file(tag: &str) -> std::path::PathBuf {
     path
 }
 
+/// A flag `--resume` has just declared ignored must not be able to stop the
+/// run. `--deck1` was loaded anyway — for the LLM card reference — and
+/// `load_deck` exits 1 on a bad path, so a resume aborted on a deck file it
+/// did not need, even with no LLM seat in the game. The deck a resumed seat
+/// is told about now comes from the save, which is what makes the save
+/// self-sufficient.
+#[test]
+fn resume_ignores_a_bad_deck_path_it_just_called_ignored() {
+    let save = a_save_file("baddeck");
+    let output = runner_at_root()
+        .args(["--p1", "random", "--p2", "random",
+               "--resume", &save.to_string_lossy(),
+               "--deck1", "/nonexistent/deck.txt", "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _ = std::fs::remove_file(&save);
+
+    assert_eq!(output.status.code(), Some(0),
+        "the resume runs to completion.\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stderr.contains("--deck1 is ignored"),
+        "and still says the flag is ignored.\nstderr: {stderr}");
+    assert!(!stderr.contains("could not be read as a deck file"),
+        "an ignored flag is not loaded, so it cannot fail.\nstderr: {stderr}");
+}
+
 /// The `--seed` note under `--resume` says what actually happens. It used to
 /// claim the seed was ignored; only the engine RNG comes from the save, so
 /// `--seed` still seeds the seats — and dropping it, as the old note

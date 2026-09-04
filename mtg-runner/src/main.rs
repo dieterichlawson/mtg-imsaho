@@ -327,8 +327,20 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
     }
 
     // Initialize LLM player conversations with decklists.
-    let deck1_entries = load_deck(deck1_spec, &registry).entries;
-    let deck2_entries = load_deck(deck2_spec, &registry).entries;
+    //
+    // On --resume these come from the saved game, not from --deck1/--deck2:
+    // those flags were just declared ignored, and loading them anyway made
+    // an ignored flag fatal — `load_deck` die()s, so a resume aborted on a
+    // deck file it did not need, even with no LLM seat in the game. A save
+    // is meant to be self-sufficient, and the scratch deck file a game was
+    // started from is often gone by the time it is resumed (issue #197).
+    let (deck1_entries, deck2_entries) = if resume_file.is_some() {
+        (decklist_from_state(&state, mtg_engine::ids::PlayerId(0), &registry),
+         decklist_from_state(&state, mtg_engine::ids::PlayerId(1), &registry))
+    } else {
+        (load_deck(deck1_spec, &registry).entries,
+         load_deck(deck2_spec, &registry).entries)
+    };
     // Build a card reference from all cards in both decks
     let card_reference = build_card_reference(&deck1_entries, &deck2_entries, &registry);
     if let PlayerKind::Llm(ref mut llm) = p1 {
@@ -754,6 +766,29 @@ fn choose_combat(player: &mut PlayerKind, view: &GameView, prompt: &mtg_engine::
 
 /// Resolve a deck spec: either a built-in name or a file path.
 /// Build a card reference with oracle text for all unique cards across both decks.
+/// The cards a player owns in a saved game, as decklist entries.
+///
+/// A save carries objects, not the decklist they were dealt from, so this
+/// counts every non-token card the player owns across all zones — which is
+/// exactly the deck they started with, since a card never changes owner
+/// (CR 108.3). Used to build the LLM card reference on --resume, so the
+/// save needs no deck file beside it.
+fn decklist_from_state(
+    state: &mtg_engine::state::GameState,
+    player: mtg_engine::ids::PlayerId,
+    registry: &CardRegistry,
+) -> Vec<(String, u32)> {
+    let mut counts: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+    for obj in state.objects_in_id_order() {
+        if obj.owner != player || obj.is_token {
+            continue;
+        }
+        let Some(data) = registry.card_data(obj.card_id) else { continue };
+        *counts.entry(data.name.clone()).or_default() += 1;
+    }
+    counts.into_iter().collect()
+}
+
 fn build_card_reference(
     deck1: &[(String, u32)],
     deck2: &[(String, u32)],
