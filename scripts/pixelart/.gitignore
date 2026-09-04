@@ -1,0 +1,4 @@
+# Scryfall reference art: third-party copyrighted images, re-fetchable at any
+# time with `python3 fetch.py`. Never committed.
+refs/
+__pycache__/
