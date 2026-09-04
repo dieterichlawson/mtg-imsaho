@@ -30,6 +30,25 @@ pub struct LlmModelUsage {
 static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// The `thinking` parameter this model accepts.
+///
+/// The current models take adaptive thinking and reject a fixed token
+/// budget outright — `{"type": "enabled", "budget_tokens": N}` is a 400 on
+/// Opus 5, Opus 4.8/4.7, Sonnet 5 and the Fable family — so a seat that
+/// hard-codes a budget works only until someone asks for a current model.
+/// The older families are the other way round: they have no adaptive mode
+/// and need the budget to think at all. Depth is steered by
+/// `output_config.effort` on everything that takes adaptive thinking.
+#[must_use]
+pub fn thinking_param(model: &str) -> serde_json::Value {
+    let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
+    if wants_budget {
+        serde_json::json!({ "type": "enabled", "budget_tokens": 4096 })
+    } else {
+        serde_json::json!({ "type": "adaptive" })
+    }
+}
+
 fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
     let mut map = LLM_MODEL_USAGE.lock().unwrap();
     let entry = map.entry(model.to_string()).or_default();
@@ -615,10 +634,7 @@ impl AnthropicBackend {
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 8192,
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": 4096
-            },
+            "thinking": thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -680,10 +696,7 @@ impl AnthropicBackend {
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 8192,
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": 4096
-            },
+            "thinking": thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {

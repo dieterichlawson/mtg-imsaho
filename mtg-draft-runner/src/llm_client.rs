@@ -414,10 +414,7 @@ impl AnthropicDraftBackend {
         let body = serde_json::json!({
             "model": &self.model,
             "max_tokens": 8192,
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": 4096
-            },
+            "thinking": mtg_player::llm::thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
