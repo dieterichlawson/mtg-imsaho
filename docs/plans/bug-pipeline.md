@@ -55,5 +55,18 @@ reproduce or safely fix get a comment with the diagnosis and stay open
 for a human. Duplicate issues are closed as duplicates of the one that
 carries the fix.
 
-The fixer is the only automated writer to master. Finders write only
-issues, plus (for playtest) ledger/report docs.
+The fixer is the only automated writer of engine code to master. Finders
+write only issues, plus (for playtest) ledger, report and mission-menu
+docs.
+
+## Feeding the menu
+
+The playtest crew's mission menu (`docs/plans/playtest-missions.md`) is
+open to every agent in the pipeline, not just the crew that plays it. A
+fixer that roots a bug down to a class nothing covers, a triager reading
+a pile of fuzz seeds with a shape in common, a human who notices a hole —
+each should add the mission rather than note the gap and move on. The
+rules are in that file under "Adding a mission"; the short version is
+that a mission must be playable as written, must cite the observation
+that prompted it, and goes on the menu in its own commit. Missions that
+have never been played are picked first, so adding one schedules it.

@@ -49,11 +49,11 @@ real filesystems, hostile timing, and games long enough to drift.
 
 `docs/plans/playtest-missions.md` holds the menu, grouped by persona:
 Competitor (C) and Rules Lawyer (L) hunt the engine, Vandal (V) and
-Operator (M) the machine, Handler (H) the harness. `reports/playtests/LEDGER.md`
-records every mission ever played; a mission from the last two weeks is off
-the menu unless you are re-probing a fresh fix. Prefer a spread of targets
-over a night, and invent new missions freely — log them in the ledger so
-they enter the rotation.
+Operator (M) the machine, Handler (H) the harness. Pick by the rule at the
+top of that file: never-played missions first (`reports/playtests/LEDGER.md`
+is the record), then nothing played in the last two weeks unless you are
+re-probing a fresh fix, then oldest first — and take a spread of targets
+across the night rather than three missions from one persona.
 
 For engine missions, pick deck pairs from `decks/` and `decks/coverage/`,
 or write one-off decks into a temp file (deck files are `COUNT NAME`
@@ -77,5 +77,16 @@ deliberate.
 ## Afterwards
 
 Write the night's report to `reports/playtests/YYYY-MM-DD.md` and append
-one ledger row per mission. Then clean up: `tmux kill-server`, and delete
+one ledger row per mission.
+
+Then add to the menu what the night taught you. A mission that kept
+running into something it wasn't built to test, a pairing that couldn't
+reach the rule you came for, a symptom you saw but couldn't pin down —
+each of those is a mission the next night should have. Add it per
+"Adding a mission" in `docs/plans/playtest-missions.md`, in its own
+commit; because never-played missions are picked first, that is how it
+gets played. Do not add one you can't trace to something you actually
+observed tonight.
+
+Finally, clean up: `tmux kill-server`, and delete
 `logs/playtest/` — logs are gitignored and never committed.

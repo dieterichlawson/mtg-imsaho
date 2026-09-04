@@ -3,10 +3,16 @@
 The nightly playtest routine plays ~30 games a night, most of them hotseat
 self-play through the real CLI (`mtg-runner --p1 cli --p2 cli` in tmux)
 with the agent at both seats. Each game is assigned a persona and a
-mission. The ledger (`reports/playtests/LEDGER.md`) records every mission
-played; a mission from the last two weeks is off the menu unless
-re-probing a fresh fix. Findings become GitHub issues per
-`docs/plans/bug-pipeline.md` (`phase:playtest`).
+mission. Findings become GitHub issues per `docs/plans/bug-pipeline.md`
+(`phase:playtest`).
+
+Which missions: the ledger (`reports/playtests/LEDGER.md`) records every
+mission ever played, and picking from the menu goes by it. **A mission
+that has never been played comes first** — that is what drains the
+proposals below. After those, a mission played in the last two weeks is
+off the menu unless it is re-probing a fresh fix, and among the rest,
+prefer the one played longest ago and a spread of targets across the
+night.
 
 The menu covers all three targets named in the pipeline's glossary: the
 **engine** (Competitor, Rules Lawyer), the **machine** (Vandal, Operator)
@@ -354,5 +360,33 @@ Handler:
   describes the same game it left — recap contents, turn count, nothing
   hallucinated and nothing dropped
 
-Agents may invent missions beyond this menu; log them in the ledger so
-they enter the rotation.
+## Adding a mission
+
+Any agent may add one — the crew mid-night, the fixer after a fix, anyone
+reading the engine who notices a hole. There is no separate queue and no
+approval step: a new mission goes straight onto the list above, under the
+persona whose mindset it needs, with the next free id in that family and a
+provenance tag that stays until it is first played:
+
+```
+- H5 [proposed 2026-09-04, from #147] hidden information in the resumed
+  seat's recap: ...
+```
+
+Because never-played missions are picked first, adding one is the same as
+scheduling it. Four rules keep the menu worth reading:
+
+1. **Write a mission, not a topic.** Say what to set up, what to do, and
+   what to verify, in the voice of the entries above. "Check trample
+   more" schedules nothing.
+2. **Cite what prompted it** — an issue number, a ledger row, a CR rule,
+   the file you were reading when you noticed. A mission nobody can trace
+   back to an observation is a guess.
+3. **Extend before you add.** If it is a wrinkle on an existing mission,
+   add the wrinkle to that entry; a menu of 80 near-duplicates rotates
+   worse than one of 40 distinct ones. Search the list first.
+4. **Commit it on its own**, so the addition is reviewable as a change.
+
+Dropping a mission is the same move in reverse: if a mission has been
+played several times and never found anything, say so in the commit and
+remove it. The menu is meant to churn.
