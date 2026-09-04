@@ -76,3 +76,17 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `cc` seat and check the conversation the resumed seat is handed
   describes the same game it left — recap contents, turn count, nothing
   hallucinated and nothing dropped
+- H6 [proposed 2026-09-04, from #203] the stdout-holder: point
+  `CLAUDE_CODE_BIN` at a script that writes a valid answer and then leaves a
+  background child holding stdout open, and at one that does the same after
+  exiting normally. #203 found the call finishing only on EOF rather than on
+  the watchdog's kill, in the hang case; confirm whether that is the general
+  case — a well-behaved seat with one stray grandchild should not wedge a
+  game, and the timeout should end the call whatever else holds the pipe
+- H7 [proposed 2026-09-04, from #209] display-index vs legal-index audit:
+  #209 found `pick_action_index` given an index into the *displayed* option
+  list while testing its concede guard against `legal_actions`, so the guard
+  vanishes whenever duplicate permanents collapse two options into one. Walk
+  every call site (`mtg-player/src/llm.rs` lines 1889/2014/2045/2077 pass
+  `&[]`) against its own display list, and force a collapsed list at each —
+  any other guard or lookup keyed off the wrong list is the same bug
