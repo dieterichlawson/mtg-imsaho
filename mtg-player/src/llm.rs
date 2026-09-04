@@ -378,6 +378,37 @@ Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
 
 /// Backend trait for LLM API communication.
 /// Separates provider-specific API mechanics from shared game logic.
+/// A backend that keeps the conversation but sends nothing anywhere. See
+/// [`LlmPlayer::for_prompt_tests`] — the prompt is what those tests read
+/// back, so it is recorded exactly as a real backend would record it.
+#[derive(Default)]
+struct InertBackend {
+    system_prompt: String,
+    turns: usize,
+}
+
+impl LlmBackend for InertBackend {
+    fn send(&mut self, _message: &str) -> String {
+        self.turns += 1;
+        String::new()
+    }
+    fn init(&mut self, deck_info: &str) {
+        // Composed exactly as the API backend composes it: the rules and the
+        // response-format preamble come from the backend, so a stand-in that
+        // only stored what it was handed would drop most of the prompt the
+        // tests are there to inspect.
+        self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
+        self.turns = 0;
+    }
+    fn resume(&mut self, _recap: &str) {
+        // The recap and its acknowledgement, as the API backend records them.
+        self.turns += 2;
+    }
+    fn conversation_len(&self) -> usize { self.turns }
+    fn system_prompt(&self) -> &str { &self.system_prompt }
+    fn model_name(&self) -> &str { "inert" }
+}
+
 trait LlmBackend {
     /// Send a message and get a response. Manages conversation state internally.
     fn send(&mut self, message: &str) -> String;
@@ -999,6 +1030,22 @@ impl LlmPlayer {
             name: name.to_string(),
             last_log_index: 0,
             backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
+            provider: Provider::Anthropic,
+            guide: None,
+        }
+    }
+
+    /// A player whose backend answers nothing, for the tests that only
+    /// exercise prompt construction and conversation bookkeeping. Building
+    /// a real backend reads an API key out of the environment and panics
+    /// without one, which made those tests fail on a clean checkout for a
+    /// reason that had nothing to do with what they assert.
+    #[must_use]
+    pub fn for_prompt_tests(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            last_log_index: 0,
+            backend: Box::new(InertBackend::default()),
             provider: Provider::Anthropic,
             guide: None,
         }

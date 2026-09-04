@@ -31,7 +31,7 @@ fn format_decklist_includes_oracle_text() {
 #[test]
 fn init_conversation_sets_system_prompt_with_decklists() {
     let registry = CardRegistry::with_all_cards();
-    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
 
     let your_deck = vec![
         ("Lightning Bolt".to_string(), 4),
@@ -62,7 +62,7 @@ fn init_conversation_sets_system_prompt_with_decklists() {
 #[test]
 fn conversation_grows_with_messages() {
     let registry = CardRegistry::with_all_cards();
-    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
 
     let deck = vec![("Mountain".to_string(), 20)];
     player.init_conversation(&deck, "Mountain | Land", &registry);
@@ -84,7 +84,7 @@ fn build_prompt_includes_board_state() {
     // but we can verify format_state_compact handles various states.
     // This is a smoke test that the function exists and is callable.
     let registry = CardRegistry::with_all_cards();
-    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Mountain".to_string(), 20)];
     player.init_conversation(&deck, "Mountain | Land", &registry);
 
@@ -95,7 +95,7 @@ fn build_prompt_includes_board_state() {
 #[test]
 fn resume_from_log_seeds_conversation() {
     let registry = CardRegistry::with_all_cards();
-    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Mountain".to_string(), 20)];
     player.init_conversation(&deck, "Mountain | Land", &registry);
 
@@ -124,7 +124,7 @@ fn resume_from_log_seeds_conversation() {
 #[test]
 fn resume_from_empty_log_does_nothing() {
     let registry = CardRegistry::with_all_cards();
-    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Mountain".to_string(), 20)];
     player.init_conversation(&deck, "Mountain | Land", &registry);
 
@@ -185,7 +185,7 @@ fn short_effect_summary_drops_enchant_line_and_reminder_text() {
 #[test]
 fn resume_preserves_system_prompt() {
     let registry = CardRegistry::with_all_cards();
-    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Lightning Bolt".to_string(), 4)];
     player.init_conversation(&deck, "Mountain | Land", &registry);
 
