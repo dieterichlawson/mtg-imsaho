@@ -1124,6 +1124,12 @@ fn the_priority_offer_shape_and_sorcery_timing_are_checked() {
     let mut l = legal.clone();
     l.actions.insert(1, Action::ActivateManaAbility { object_id: bear, ability_index: 0 });
     flags_legal(&state, P0, &l, &reg, "offered but not available to p0 (CR 605.3a)");
+
+    // The collapsed views the CLI and LLM players act through offer the
+    // same game as the flat list.
+    let mut l = legal.clone();
+    l.castable_spells.clear();
+    flags_legal(&state, P0, &l, &reg, "do not match the cast actions");
 }
 
 #[test]

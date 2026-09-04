@@ -67,6 +67,7 @@ pub fn check_legal(state: &GameState, acting: PlayerId, legal: &LegalActions, re
     for a in &legal.activatable_abilities {
         tap_plan_ok(state, acting, &a.tap_plan, Some(a.object_id), stony, registry, &mut v);
     }
+    collapsed_views(legal, &mut v);
     if let Some(p) = &legal.combat_prompt {
         combat_prompt(state, acting, p, registry, &mut v);
     }
@@ -715,4 +716,50 @@ fn choose(n: usize, k: usize) -> usize {
     }
     let k = k.min(n - k);
     (0..k).fold(1usize, |acc, i| acc * (n - i) / (i + 1))
+}
+
+/// The interactive and LLM players act through the collapsed views rather
+/// than the flat list, so the two must offer the same game.
+fn collapsed_views(legal: &LegalActions, v: &mut Violations) {
+    let mut cast_keys: BTreeSet<(u64, String)> = BTreeSet::new();
+    let mut ability_groups: std::collections::BTreeMap<(u64, Option<u32>, usize), Vec<(Vec<String>, Option<ObjectId>)>> = std::collections::BTreeMap::new();
+    for a in &legal.actions {
+        match a {
+            Action::CastSpell { object_id, alternative_cost, .. } => {
+                cast_keys.insert((object_id.0, format!("{alternative_cost:?}")));
+            }
+            Action::ActivateAbility { object_id, ability_index, targets, sacrifice, source_card_id, .. } => {
+                ability_groups.entry((object_id.0, source_card_id.map(|c| c.0), *ability_index))
+                    .or_default()
+                    .push((targets.iter().map(|t| format!("{t:?}")).collect(), *sacrifice));
+            }
+            _ => {}
+        }
+    }
+    let listed_casts: BTreeSet<(u64, String)> = legal.castable_spells.iter()
+        .map(|c| (c.object_id.0, format!("{:?}", c.alternative_cost))).collect();
+    if listed_casts != cast_keys {
+        v.push(format!("castable spells {listed_casts:?} do not match the cast actions {cast_keys:?}"));
+    }
+    let listed_abilities: BTreeSet<(u64, Option<u32>, usize)> = legal.activatable_abilities.iter()
+        .map(|a| (a.object_id.0, a.source_card_id.map(|c| c.0), a.ability_index)).collect();
+    let action_abilities: BTreeSet<(u64, Option<u32>, usize)> = ability_groups.keys().copied().collect();
+    if listed_abilities != action_abilities {
+        v.push(format!("activatable abilities {listed_abilities:?} do not match the activation actions {action_abilities:?}"));
+    }
+    for entry in &legal.activatable_abilities {
+        let key = (entry.object_id.0, entry.source_card_id.map(|c| c.0), entry.ability_index);
+        let Some(group) = ability_groups.get(&key) else { continue };
+        let combos: Vec<(Vec<String>, Option<ObjectId>)> = entry.option_combos.iter()
+            .map(|o| (o.targets.iter().map(|t| format!("{t:?}")).collect(), o.sacrifice)).collect();
+        if combos != *group {
+            v.push(format!("activatable ability #{}/{} lists {} option(s) for {} action(s)",
+                entry.object_id.0, entry.ability_index, combos.len(), group.len()));
+        }
+        for t in &entry.target_options {
+            if !group.iter().any(|(ts, _)| ts.contains(&format!("{t:?}"))) {
+                v.push(format!("activatable ability #{}/{} offers target {t:?} that no action uses", entry.object_id.0, entry.ability_index));
+            }
+        }
+    }
 }
