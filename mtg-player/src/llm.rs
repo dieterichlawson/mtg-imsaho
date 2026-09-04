@@ -1491,12 +1491,12 @@ impl LlmPlayer {
 
         if !your_perms.is_empty() {
             s.push_str("Your board:\n  ");
-            s.push_str(&Self::format_perms_compact(&your_perms, &all_perms));
+            s.push_str(&Self::format_perms_compact(&your_perms, &all_perms, view.you));
             s.push('\n');
         }
         if !opp_perms.is_empty() {
             s.push_str("Opp board:\n  ");
-            s.push_str(&Self::format_perms_compact(&opp_perms, &all_perms));
+            s.push_str(&Self::format_perms_compact(&opp_perms, &all_perms, view.you));
             s.push('\n');
         }
 
@@ -1616,7 +1616,11 @@ impl LlmPlayer {
         }
     }
 
-    fn format_perms_compact(perms: &[&mtg_engine::view::PermanentView], all_perms: &[&mtg_engine::view::PermanentView]) -> String {
+    fn format_perms_compact(
+        perms: &[&mtg_engine::view::PermanentView],
+        all_perms: &[&mtg_engine::view::PermanentView],
+        view_you: mtg_engine::ids::PlayerId,
+    ) -> String {
         // Group lands by name with tapped count.
         let lands: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Land)).collect();
         let creatures: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Creature)).collect();
@@ -1709,11 +1713,25 @@ impl LlmPlayer {
             } else {
                 format!(" [{}]", flag_parts.join(","))
             };
+            // A Curse's entire identity is whom it enchants (CR 702.5c).
+            // It attaches to a *player*, so it is not in `aura_map` (keyed on
+            // attached_to, an object) and falls through to here — where the
+            // line used to print "enchanted player" with no antecedent
+            // anywhere in the prompt, since short_effect_summary drops the
+            // "Enchant player" line. Two Curses of the same name on opposite
+            // players then rendered identically, and the controller is no
+            // proxy for the host: a seat can legally curse itself. This is
+            // the CLI's #81 fix, which the prompt never got.
+            let host = match o.attached_to_player {
+                Some(p) if p == view_you => " [enchanting you]",
+                Some(_) => " [enchanting opponent]",
+                None => "",
+            };
             let desc = Self::short_effect_summary(&o.oracle_text);
             if desc.is_empty() {
-                parts.push(format!("{} (#{}){}", o.name, o.object_id.0, flags_str));
+                parts.push(format!("{} (#{}){}{}", o.name, o.object_id.0, flags_str, host));
             } else {
-                parts.push(format!("{} (#{}){} ({})", o.name, o.object_id.0, flags_str, desc));
+                parts.push(format!("{} (#{}){}{} ({})", o.name, o.object_id.0, flags_str, host, desc));
             }
         }
 
@@ -3496,6 +3514,52 @@ mod tests {
         }
     }
 
+    /// A Curse: an Aura attached to a *player* rather than an object.
+    fn curse(id: u64, name: &str, enchanted: PlayerId, controller: PlayerId, oracle: &str) -> PermanentView {
+        let mut p = perm(id, name, 0, 0, controller);
+        p.card_types = vec![CardType::Enchantment];
+        p.power = None;
+        p.toughness = None;
+        p.effective_power = None;
+        p.effective_toughness = None;
+        p.attached_to_player = Some(enchanted);
+        p.oracle_text = oracle.into();
+        p
+    }
+
+    /// A Curse's whole identity is whom it enchants (CR 702.5c), and the
+    /// prompt never said. It attaches to a player, so it is not in the aura
+    /// map (keyed on objects) and fell through to the plain "other
+    /// permanents" line; `short_effect_summary` drops the "Enchant player"
+    /// line, so the text that survived said "enchanted player" with no
+    /// antecedent. Two same-named Curses on opposite players read
+    /// identically, and the controller is no proxy — a seat can curse
+    /// itself. The CLI has said this since #81; the prompt now does too.
+    #[test]
+    fn a_curse_says_which_player_it_enchants() {
+        let you = PlayerId(0);
+        let opp = PlayerId(1);
+        let oracle = "Enchant player\nAt the beginning of enchanted player's upkeep, \
+this Aura deals 1 damage to that player.";
+
+        let on_you = curse(27, "Curse of the Pierced Heart", you, you, oracle);
+        let on_opp = curse(28, "Curse of the Pierced Heart", opp, you, oracle);
+        let perms = vec![&on_you, &on_opp];
+
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+
+        assert!(output.contains("(#27)") && output.contains("(#28)"),
+            "both curses are listed: {output}");
+        let line_27 = output.lines().find(|l| l.contains("(#27)")).expect("curse 27 on a line");
+        let line_28 = output.lines().find(|l| l.contains("(#28)")).expect("curse 28 on a line");
+        assert!(line_27.contains("[enchanting you]"),
+            "a curse on the viewing seat says so: {line_27}");
+        assert!(line_28.contains("[enchanting opponent]"),
+            "a curse on the other seat says so: {line_28}");
+        assert_ne!(line_27, line_28,
+            "two same-named curses on opposite players must not render identically");
+    }
+
     fn aura(id: u64, name: &str, attached_to: u64, controller: PlayerId) -> PermanentView {
         PermanentView {
             object_id: ObjectId(id),
@@ -3649,7 +3713,7 @@ mod tests {
         view.battlefield.push(perm(61, "Grizzly Bears", 2, 2, PlayerId(0)));
 
         let perms: Vec<_> = view.battlefield.iter().collect();
-        let output = LlmPlayer::format_perms_compact(&perms, &perms);
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, PlayerId(0));
 
         let suspicious = output.contains("Flying, Grizzly Bears")
             || output.contains("flying, Grizzly Bears");
