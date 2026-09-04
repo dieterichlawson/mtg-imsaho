@@ -19,8 +19,7 @@ Three words that are easy to confuse, fixed here:
 |---|---|---|---|
 | Nightly fuzz | `nightly-fuzz` workflow (~110k seeded games) | `phase:fuzz` | the workflow (per failing seed) |
 | Weekly mutants | `weekly-mutants` workflow (~2,365 engine-core mutants) | `phase:mutants` | the workflow (new survivors beyond `reports/mutants-accepted.txt`) |
-| Nightly playtest | "Nightly playtest crew" routine (LLM self-play via the CLI) | `phase:playtest` | the routine |
-| Nightly robustness | "Nightly robustness crew" routine (`prompts/ROBUSTNESS_CREW_PROMPT.md`: audits the binaries as programs through tmux — signals, TTY edges, input abuse, files/flags, save/resume, log hygiene, endurance, determinism, and the two missions that poke the LLM harness's prompt protocol and subprocess contract; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:robustness` | the routine |
+| Nightly playtest | "Nightly playtest crew" routine (`prompts/PLAYTEST_CREW_PROMPT.md`: 2-3 missions a night from `docs/plans/playtest-missions.md`, spanning all three targets — the Competitor and Rules Lawyer play the engine, the Vandal and Operator the machine, the Handler the harness; seats are `cli`/`random`/`claude-code` — the LLM seat through `claude -p` on plan quota — never metered `claude`/`gemini` API seats) | `phase:playtest` | the routine |
 
 All issues also carry the `bug` label. Labels are auto-created on first
 use, so a new phase just picks a `phase:<name>` label and starts filing.
@@ -33,6 +32,8 @@ use, so a new phase just picks a `phase:<name>` label and starts filing.
 - **Body** must contain:
   - `**Found-by**:` phase, date, and the run that produced it (workflow
     run id / routine session / ledger row).
+  - `**Target**:` engine, machine or harness — which of the three the
+    defect is in, per the glossary above.
   - `**Repro**:` the exact command(s). For fuzz: the seeded runner
     invocation. For mutants: the `cargo mutants -F` re-run. For playtest:
     the game setup plus the decision sequence (and a `--save` snapshot
