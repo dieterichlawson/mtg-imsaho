@@ -35,6 +35,7 @@ Usage: mtg-runner [OPTIONS]
 Options:
   --p1 <spec>            Player 1: cli | random | claude[:model] | gemini[:model] | claude-code[:model]  (default cli)
   --p2 <spec>            Player 2: same specs  (default random)
+                         Aliases: ai and llm mean claude; cc means claude-code.
                          claude/gemini seats call metered APIs (ANTHROPIC_API_KEY / GEMINI_API_KEY);
                          claude-code runs the same LLM seat through `claude -p` on the CLI's own login.
   --deck1 <name-or-file> Deck for player 1: built-in name or deck file  (default red-green)
@@ -647,6 +648,12 @@ fn main() {
     }
 }
 
+/// An API key that is present but empty cannot authenticate any better than
+/// one that is unset, so the seat guards reject both.
+fn env_key_set(var: &str) -> bool {
+    env::var(var).is_ok_and(|v| !v.trim().is_empty())
+}
+
 fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
     let (kind, model) = match spec.split_once(':') {
         Some((k, m)) => (k, Some(m)),
@@ -664,6 +671,16 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
              /dev/tty is unavailable); use --{} random or run under a tty",
             name.to_lowercase(), name.to_lowercase())),
         "cli" => PlayerKind::Cli(CliPlayer::new(name)),
+        // Both API seats build a backend that unwraps the key out of the
+        // environment, so a missing key surfaced as a panic and a backtrace
+        // while every other unusable seat argument here refuses cleanly
+        // (issues #55/#69/#70/#103). Pre-flight the variable instead. An
+        // empty value is as unusable as an unset one, so treat it the same.
+        "ai" | "llm" | "claude" if !env_key_set("ANTHROPIC_API_KEY") => die(&format!(
+            "--{} {kind} needs an Anthropic API key: ANTHROPIC_API_KEY is not set; \
+             use --{} claude-code to run the same seat through the Claude Code CLI, \
+             or --{} random",
+            name.to_lowercase(), name.to_lowercase(), name.to_lowercase())),
         "ai" | "llm" | "claude" => {
             let mut player = LlmPlayer::new(name);
             if let Some(m) = model {
@@ -671,6 +688,10 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
             }
             PlayerKind::Llm(player)
         }
+        "gemini" if !env_key_set("GEMINI_API_KEY") => die(&format!(
+            "--{} gemini needs a Gemini API key: GEMINI_API_KEY is not set; \
+             use --{} random",
+            name.to_lowercase(), name.to_lowercase())),
         "gemini" => {
             let mut player = LlmPlayer::new_gemini(name);
             if let Some(m) = model {
@@ -700,7 +721,9 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
         // different game than the one requested, printed a winner, and
         // exited 0 — indistinguishable from a legitimate run.
         other => die(&format!(
-            "unknown player type '{other}' (expected cli, random, claude[:model], gemini[:model], or claude-code[:model])")),
+            "unknown player type '{other}' (expected cli, random, claude[:model], \
+             gemini[:model], or claude-code[:model]; ai and llm are accepted for \
+             claude, cc for claude-code)")),
     }
 }
 

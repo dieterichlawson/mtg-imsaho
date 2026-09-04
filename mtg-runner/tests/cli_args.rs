@@ -134,3 +134,98 @@ fn cli_seat_without_a_terminal_is_refused_not_spun() {
     assert!(stderr.contains("Error:") && stderr.contains("terminal"),
         "the message says a terminal is needed.\nstderr: {stderr}");
 }
+
+// ── a metered LLM seat without its API key ──────────────────────────
+
+/// The claude/gemini backends read their key out of the environment and
+/// unwrap it, so a user without a key used to get a Rust panic instead of
+/// the clean refusal every other unusable seat gets. Empty is passed
+/// rather than unset so the test never depends on the ambient environment
+/// — and never reaches the network either.
+#[test]
+fn a_claude_seat_without_an_api_key_is_refused_not_panicked() {
+    let output = runner()
+        .args(["--p1", "claude", "--p2", "random", "-q", "--seed", "3"])
+        .env("ANTHROPIC_API_KEY", "")
+        .output()
+        .expect("failed to run");
+    assert_clean_refusal(&output, "--p1 claude with no key");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("ANTHROPIC_API_KEY"),
+        "the message names the variable to set.\nstderr: {stderr}");
+}
+
+#[test]
+fn a_gemini_seat_without_an_api_key_is_refused_not_panicked() {
+    let output = runner()
+        .args(["--p1", "random", "--p2", "gemini", "-q", "--seed", "3"])
+        .env("GEMINI_API_KEY", "")
+        .output()
+        .expect("failed to run");
+    assert_clean_refusal(&output, "--p2 gemini with no key");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("GEMINI_API_KEY"),
+        "the message names the variable to set.\nstderr: {stderr}");
+}
+
+#[test]
+fn a_claude_seat_with_a_model_suffix_and_no_key_is_refused_not_panicked() {
+    let output = runner()
+        .args(["--p1", "claude:some-model", "--p2", "random", "-q", "--seed", "3"])
+        .env("ANTHROPIC_API_KEY", "")
+        .output()
+        .expect("failed to run");
+    assert_clean_refusal(&output, "--p1 claude:some-model with no key");
+}
+
+// ── the documented seat surface matches the accepted one ────────────
+
+/// `ai`, `llm` and `cc` are accepted seat specs; a reader who only has
+/// --help or the unknown-seat error had no way to learn they exist.
+const SEAT_ALIASES: &[&str] = &["ai", "llm", "cc"];
+
+/// `contains` alone would pass on any word that happens to spell an alias
+/// ("ai" inside "remaining"), so match the alias as a standalone word.
+fn mentions_word(text: &str, word: &str) -> bool {
+    text.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == word)
+}
+
+#[test]
+fn help_names_every_accepted_seat_alias() {
+    let output = runner().arg("--help").output().expect("failed to run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for alias in SEAT_ALIASES {
+        assert!(mentions_word(&stdout, alias),
+            "--help does not mention the accepted alias '{alias}'.\nstdout: {stdout}");
+    }
+}
+
+#[test]
+fn the_unknown_seat_error_names_every_accepted_seat_alias() {
+    let output = runner()
+        .args(["--p1", "wizard", "--p2", "random", "-q", "--seed", "3"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for alias in SEAT_ALIASES {
+        assert!(mentions_word(&stderr, alias),
+            "the unknown-seat error does not mention the accepted alias \
+             '{alias}'.\nstderr: {stderr}");
+    }
+}
+
+/// The aliases must stay accepted: each reaches the claude/claude-code
+/// seat's own guard (a named key or CLI), never the unknown-type refusal.
+#[test]
+fn the_seat_aliases_still_reach_their_llm_seat() {
+    for (alias, expected) in [("ai", "ANTHROPIC_API_KEY"), ("llm", "ANTHROPIC_API_KEY")] {
+        let output = runner()
+            .args(["--p1", alias, "--p2", "random", "-q", "--seed", "3"])
+            .env("ANTHROPIC_API_KEY", "")
+            .output()
+            .expect("failed to run");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(expected),
+            "--p1 {alias} is an alias for claude, not an unknown type.\nstderr: {stderr}");
+    }
+}
