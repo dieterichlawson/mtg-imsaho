@@ -3,7 +3,7 @@
 Play the MTG CLI game via tmux, driving all input programmatically. Use this to test the UI, verify card interactions, or play a full game.
 
 ## Arguments
-- `$ARGUMENTS` — Optional: opponent type and deck specs (e.g., "random red-green vs white-black", "claude decks/wb-death-triggers.txt vs decks/rg-aggro-triggers.txt"). Defaults to `--p2 random --deck1 red-green --deck2 white-black`.
+- `$ARGUMENTS` — Optional: opponent type and deck specs (e.g., "random red-green vs white-black", "claude-code decks/gw-humans.txt vs decks/rb-vampires.txt"). Defaults to `--p2 random --deck1 red-green --deck2 white-black`.
 
 ## Setup
 
@@ -20,11 +20,13 @@ tmux new-session -d -s mtg -x 120 -y 45 \
 sleep 5
 ```
 
-Available opponents: `random`, `claude-code` / `claude-code:<model>` (the LLM seat driven through `claude -p` — billed to the CLI's login, no API key), `claude`, `claude:claude-haiku-4-5-20251001`, `gemini` (the last three call metered APIs and need `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`)
+Available opponents: `cli` (a second human seat), `random`, `claude-code` / `claude-code:<model>` (alias `cc` — the LLM seat driven through `claude -p`, billed to the CLI's login, no API key), `claude` / `claude:<model>` (aliases `ai`, `llm`), `gemini` / `gemini:<model>` (the last two call metered APIs and need `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`)
 
-Built-in decks: `red-green`, `white-black`, `blue-white`, `black-aggro`
+Built-in decks (aliases in parentheses): `red-green` (`rg`), `white-black` (`wb`), `blue-white` (`uw`), `black-aggro` (`ba`), `innistrad-white` (`iw`), `innistrad-blue` (`iu`), `innistrad-green` (`ig`)
 
-Custom deck files in `decks/`: `decks/wb-death-triggers.txt`, `decks/rg-aggro-triggers.txt`, `decks/stress-test-wb.txt`, `decks/stress-test-rg.txt`
+Custom deck files: `decks/gw-humans.txt`, `decks/rb-vampires.txt`, `decks/ub-zombies.txt`, `decks/ug-spider-spawning.txt`, plus one file per color pair under `decks/coverage/` (e.g. `decks/coverage/wu-coverage.txt`)
+
+Seats, billing, logs, and saves are documented in `docs/llm-harness.md`.
 
 ## CRITICAL: How to Send Input
 

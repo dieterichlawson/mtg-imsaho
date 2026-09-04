@@ -12,9 +12,11 @@ are played through. You are a finder in the bug pipeline
 NEVER spawn a metered API seat. `--p1 claude`, `--p2 claude`, `--p1 gemini`,
 `--p2 gemini` (any model suffix) call metered external APIs and are
 forbidden for this crew, without exception. Your seats are `cli` (driven by
-you through tmux), `random`, `scripted`, and `claude-code[:model]` — the
-same LLM seat run through `claude -p`, billed to the CLI's own login. Use
-`claude-code` when a mission needs a thinking opponent (the LLM-harness
+you through tmux), `random`, and `claude-code[:model]` (`cc` is accepted as
+a short form) — the same LLM seat run through `claude -p`, billed to the
+CLI's own login. Those are the only non-metered values `--p1`/`--p2` accept;
+there is no `scripted` seat argument, so don't plan a mission around one.
+Use `claude-code` when a mission needs a thinking opponent (the LLM-harness
 missions below need it as the seat under test); prefer `random` when it
 does not.
 
