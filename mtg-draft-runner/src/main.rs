@@ -35,6 +35,35 @@ type PickInput = (usize, Vec<String>, Vec<String>, Vec<mtg_draft::draft::DraftPi
 
 // ─── CLI Argument Parsing ────────────────────────────────────────────
 
+const USAGE: &str = "\
+mtg-draft-runner — draft a set with LLM seats, then play a Swiss tournament
+
+Usage: mtg-draft-runner [OPTIONS]
+
+Options:
+  --set <name>           Set to draft, from data/sets/<name>.json  (default isd)
+  --players <N>          Number of drafters  (default 8)
+  --model <spec>         Model for every seat  (default claude)
+  --model-<N> <spec>     Model for seat N alone (0-based)
+  --best-of <N>          Games per tournament match  (default 3)
+  --guide <path>         Draft guide file prepended to every seat's prompt
+  --guide-<N> <path>     Draft guide file for seat N alone (0-based)
+  --log <path>           Write the run log here  (default draft.log)
+  --quiet, -q            Suppress progress output
+  --help, -h             Print this help and exit
+  --version              Print the version and exit
+
+Model spec: provider[:model[:draft_thinking[:game_thinking]]]. claude and gemini
+seats call metered APIs (ANTHROPIC_API_KEY / GEMINI_API_KEY); claude-code (alias
+cc) runs the same seat through `claude -p` on the CLI's own login, for both the
+draft and the games.";
+
+/// A user error: report it and exit without a Rust panic/backtrace.
+fn die(msg: &str) -> ! {
+    eprintln!("Error: {msg}");
+    std::process::exit(1);
+}
+
 struct Args {
     set: String,
     players: usize,
@@ -46,44 +75,111 @@ struct Args {
     quiet: bool,
 }
 
+/// Refuse an argument vector `parse_args` wouldn't fully consume, and hand
+/// back the `--model-N` / `--guide-N` flags it saw so their seat numbers can
+/// be range-checked once `--players` is known. Every lookup below is an
+/// exact-match position scan, so an unrecognized or misspelled flag was
+/// silently dropped and its default silently used — a typo'd `--model` drafted
+/// with a model nobody asked for, on a seat that bills per token.
+fn validate_args(args: &[String]) -> Vec<(String, usize)> {
+    const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log"];
+    const BOOL_FLAGS: &[&str] = &["--quiet", "-q"];
+    let mut indexed = Vec::new();
+    let mut i = 1;
+    while i < args.len() {
+        let a = args[i].as_str();
+        let per_seat = seat_flag(a);
+        if VALUE_FLAGS.contains(&a) || per_seat.is_some() {
+            if i + 1 >= args.len() {
+                eprintln!("Error: {a} requires a value\n\n{USAGE}");
+                std::process::exit(2);
+            }
+            if let Some(index) = per_seat {
+                indexed.push((a.to_string(), index));
+            }
+            i += 2;
+        } else if BOOL_FLAGS.contains(&a) {
+            i += 1;
+        } else {
+            eprintln!("Error: unrecognized argument '{a}'\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    }
+    indexed
+}
+
+/// The seat number of a `--model-N` / `--guide-N` flag, if it is one.
+fn seat_flag(arg: &str) -> Option<usize> {
+    let n = arg.strip_prefix("--model-").or_else(|| arg.strip_prefix("--guide-"))?;
+    n.parse().ok()
+}
+
 fn parse_args() -> Args {
     let args: Vec<String> = env::args().collect();
+
+    // --help used to start a real eight-seat draft, so a typo cost money on
+    // a metered seat. Both of these answer and exit without drafting.
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{USAGE}");
+        std::process::exit(0);
+    }
+    if args.iter().any(|a| a == "--version") {
+        println!("mtg-draft-runner {}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+    let per_seat_flags = validate_args(&args);
 
     let get = |flag: &str| -> Option<String> {
         args.iter()
             .position(|a| a == flag)
             .and_then(|i| args.get(i + 1)).cloned()
     };
+    let count = |flag: &str, default: usize| -> usize {
+        get(flag).map_or(default, |s| {
+            let n = s.parse().unwrap_or_else(|_| die(&format!("{flag} takes a number, got '{s}'")));
+            if n == 0 {
+                die(&format!("{flag} must be at least 1"));
+            }
+            n
+        })
+    };
 
     let set = get("--set").unwrap_or_else(|| "isd".to_string());
-    let players: usize = get("--players")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(8);
+    let players = count("--players", 8);
     let default_model = get("--model").unwrap_or_else(|| "claude".to_string());
-    let best_of: usize = get("--best-of")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3);
+    let best_of = count("--best-of", 3);
     let log = get("--log").unwrap_or_else(|| "draft.log".to_string());
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
 
+    // A --model-N or --guide-N naming a seat outside the pod used to be read
+    // by nobody — the same silent no-op as a misspelled flag, so it is
+    // refused the same way.
+    for (flag, index) in &per_seat_flags {
+        if *index >= players {
+            die(&format!("{flag}: there is no seat {index} with --players {players}"));
+        }
+    }
+
     // Load per-player models: --model sets default, --model-N overrides for player N
     let mut models: Vec<String> = vec![default_model; players];
-    for (i, model) in models.iter_mut().enumerate().take(players) {
-        let flag = format!("--model-{i}");
-        if let Some(m) = get(&flag) {
+    for (i, model) in models.iter_mut().enumerate() {
+        if let Some(m) = get(&format!("--model-{i}")) {
             *model = m;
         }
     }
 
-    // Load guides: --guide applies to all, --guide-N overrides for player N
-    let global_guide = get("--guide").and_then(|path| fs::read_to_string(&path).ok());
-    let mut guides: Vec<Option<String>> = vec![global_guide.clone(); players];
-    for (i, guide) in guides.iter_mut().enumerate().take(players) {
-        let flag = format!("--guide-{i}");
-        if let Some(path) = get(&flag) {
-            if let Ok(contents) = fs::read_to_string(&path) {
-                *guide = Some(contents);
-            }
+    // Load guides: --guide applies to all, --guide-N overrides for player N.
+    // An unreadable guide file is fatal: drafting without the guide the
+    // caller asked for is a different draft than the one requested.
+    let read_guide = |path: &str| -> String {
+        fs::read_to_string(path)
+            .unwrap_or_else(|e| die(&format!("failed to read guide file '{path}': {e}")))
+    };
+    let global_guide = get("--guide").map(|path| read_guide(&path));
+    let mut guides: Vec<Option<String>> = vec![global_guide; players];
+    for (i, guide) in guides.iter_mut().enumerate() {
+        if let Some(path) = get(&format!("--guide-{i}")) {
+            *guide = Some(read_guide(&path));
         }
     }
 
@@ -129,8 +225,30 @@ fn validate_model_specs(models: &[String]) {
     for (i, spec) in models.iter().enumerate() {
         let parts: Vec<&str> = spec.split(':').collect();
         let provider = parts[0];
-        if provider != "gemini" {
-            continue;
+        match provider {
+            "claude" => continue,
+            // Every decision a claude-code seat makes shells out to `claude`.
+            // Unchecked, a run on a machine without the binary drafted the
+            // whole pod first — billing the other seats — and only then
+            // failed every game decision. Refuse before anything is spent.
+            "claude-code" | "cc" => {
+                if !mtg_player::llm::claude_code_available() {
+                    die(&format!(
+                        "seat {i} model '{spec}' needs the Claude Code CLI: `{}` is not runnable (set {} to its path)",
+                        mtg_player::llm::claude_code_binary(),
+                        mtg_player::llm::CLAUDE_CODE_BINARY_ENV
+                    ));
+                }
+                continue;
+            }
+            "gemini" => {}
+            // Defaulting an unknown provider to claude spent real API money
+            // drafting with a model nobody asked for, then printed standings
+            // and exited 0 — indistinguishable from the requested run.
+            other => die(&format!(
+                "seat {i} model '{spec}': unknown provider '{other}' (expected {})",
+                llm_client::ACCEPTED_PROVIDERS
+            )),
         }
         let model = parts.get(1).copied().unwrap_or("gemini-2.5-flash");
         let levels: Vec<&str> = parts.iter().skip(2).copied().collect();
@@ -838,10 +956,13 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
             }
             p
         }
-        _ => {
-            eprintln!("Unknown model provider '{provider}', defaulting to claude");
-            LlmPlayer::new(name)
-        }
+        // Unreachable once validate_model_specs has run, and fatal if it ever
+        // is reached: substituting a seat plays a different game than the one
+        // requested and still prints a winner.
+        other => die(&format!(
+            "unknown model provider '{other}' (expected {})",
+            llm_client::ACCEPTED_PROVIDERS
+        )),
     };
     if let Some(level) = game_thinking {
         p = p.with_thinking_level(level);

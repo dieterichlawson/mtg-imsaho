@@ -1,14 +1,19 @@
 use std::env;
+use std::io::{Read as _, Write as _};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use reqwest::blocking::Client;
 
 use mtg_draft::draft::DraftPick;
+use mtg_player::llm::Cost;
 
 /// Per-model token usage tracking. Thread-safe via Mutex.
 use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write;
-use mtg_player::llm::Cost;
 
 #[derive(Default, Debug)]
 pub struct ModelUsage {
@@ -151,8 +156,8 @@ pub fn print_usage_summary(total_games: usize) {
 
     for (model, u) in &models {
         let cost = usage_cost(u, model);
-        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = ${:.4}",
-            model, u.calls, u.input, u.output, u.cache_read, cost
+        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = {cost}",
+            model, u.calls, u.input, u.output, u.cache_read
         ).unwrap();
     }
     writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
@@ -297,6 +302,12 @@ fn sanitize_schema_for_anthropic(value: &serde_json::Value) -> serde_json::Value
     }
 }
 
+/// Response-format instructions appended to the draft rules for every
+/// backend that runs its schema through [`sanitize_schema_for_anthropic`].
+/// That sanitizer strips `thoughts` out of the schema, so the prompt has to
+/// tell the model to reason elsewhere and not emit the key.
+const STRUCTURED_RESPONSE_FORMAT: &str = "\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.";
+
 /// Shared draft rules (used by all backends).
 fn build_draft_rules(set_name: &str, guide: Option<&str>, card_reference: &str) -> String {
     let guide_section = guide
@@ -373,7 +384,7 @@ impl AnthropicDraftBackend {
     fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
         let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
         let system_prompt = format!(
-            "{}\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.",
+            "{}{STRUCTURED_RESPONSE_FORMAT}",
             build_draft_rules(set_name, guide, card_reference)
         );
         Self {
@@ -516,6 +527,278 @@ impl DraftBackend for AnthropicDraftBackend {
         &self.system_prompt
     }
 
+}
+
+/// How long one draft decision may take before the `claude -p` subprocess is
+/// killed and the call retried. Print mode with thinking runs well past the
+/// API path's two minutes.
+const CLAUDE_CODE_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const MAX_CLAUDE_CODE_ATTEMPTS: u32 = 3;
+
+/// Claude Code draft backend: the same draft protocol as
+/// [`AnthropicDraftBackend`], spoken through the `claude -p` CLI instead of
+/// the Messages API. Whatever the CLI is logged into pays for it, so a
+/// subscription seat spends plan quota and no API money — which is the only
+/// reason to ask for this seat. Mirrors the game-side backend in mtg-player:
+/// one subprocess per decision, the whole draft kept in a single CLI session
+/// (`--session-id` on the first call, `--resume` after), every tool disabled,
+/// and the pick/deck schema handed over as `--json-schema`.
+struct ClaudeCodeDraftBackend {
+    binary: String,
+    /// Model alias/name passed as `--model`; `None` leaves the CLI default.
+    /// This is a CLI alias ("opus", "sonnet"), not an API model id.
+    model: Option<String>,
+    /// Label used for usage accounting.
+    label: String,
+    system_prompt: String,
+    /// The session id once the first call has created it; `--resume`d after.
+    session_id: Option<String>,
+    /// Scratch working directory for the subprocess, so no project
+    /// `CLAUDE.md`, settings, or hooks from the caller's cwd leak into the
+    /// draft prompt.
+    workdir: PathBuf,
+}
+
+impl ClaudeCodeDraftBackend {
+    fn new(model: Option<&str>, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
+        Self::with_binary(&mtg_player::llm::claude_code_binary(), model, set_name, guide, card_reference)
+    }
+
+    fn with_binary(
+        binary: &str,
+        model: Option<&str>,
+        set_name: &str,
+        guide: Option<&str>,
+        card_reference: &str,
+    ) -> Self {
+        let workdir = std::env::temp_dir().join(format!(
+            "mtg-draft-claude-code-{}-{}",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        let _ = std::fs::create_dir_all(&workdir);
+        let label = match model {
+            Some(m) => format!("claude-code:{m}"),
+            None => "claude-code".to_string(),
+        };
+        Self {
+            binary: binary.to_string(),
+            model: model.map(std::string::ToString::to_string),
+            label,
+            system_prompt: format!(
+                "{}{STRUCTURED_RESPONSE_FORMAT}",
+                build_draft_rules(set_name, guide, card_reference)
+            ),
+            session_id: None,
+            workdir,
+        }
+    }
+
+    /// A fresh RFC 4122 version-4 id for `--session-id`.
+    fn fresh_session_id() -> String {
+        let mut b = rand::random::<u128>().to_be_bytes();
+        b[6] = (b[6] & 0x0f) | 0x40;
+        b[8] = (b[8] & 0x3f) | 0x80;
+        let h: Vec<String> = b.iter().map(|x| format!("{x:02x}")).collect();
+        format!(
+            "{}{}{}{}-{}{}-{}{}-{}{}-{}{}{}{}{}{}",
+            h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7],
+            h[8], h[9], h[10], h[11], h[12], h[13], h[14], h[15]
+        )
+    }
+
+    /// One schema-constrained decision. Returns the model's object
+    /// pretty-printed, which is what both callers parse. Retries a spawn
+    /// failure, a non-zero exit, a timeout, unparsable output, or an
+    /// `is_error` result; exhausting the attempts is fatal, exactly as it is
+    /// on the API path — a draft that quietly picks card 0 for the rest of
+    /// the run is worse than one that stops.
+    fn decide(&mut self, message: &str, schema: &serde_json::Value) -> String {
+        let sanitized = sanitize_schema_for_anthropic(schema);
+        for attempt in 0..MAX_CLAUDE_CODE_ATTEMPTS {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(2u64.pow(attempt)));
+            }
+            let started = std::time::Instant::now();
+            match self.call_once(message, &sanitized) {
+                Ok(json) => {
+                    if json["is_error"].as_bool() == Some(true) {
+                        let msg = format!(
+                            "claude -p reported an error (attempt {}/{}, {}ms): {}",
+                            attempt + 1, MAX_CLAUDE_CODE_ATTEMPTS, started.elapsed().as_millis(),
+                            json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
+                        );
+                        eprintln!("{msg}");
+                        mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        continue;
+                    }
+                    if let Some(sid) = json["session_id"].as_str() {
+                        // The id the CLI reports is authoritative; on the
+                        // first call it is the one we asked for.
+                        self.session_id = Some(sid.to_string());
+                    }
+                    let usage = &json["usage"];
+                    record_model_usage(
+                        &self.label,
+                        usage["input_tokens"].as_u64().unwrap_or(0),
+                        usage["output_tokens"].as_u64().unwrap_or(0),
+                        usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
+                        usage["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+                    );
+                    if let Some(object) = Self::structured(&json) {
+                        return serde_json::to_string_pretty(&object)
+                            .unwrap_or_else(|_| object.to_string());
+                    }
+                    let msg = format!(
+                        "claude -p returned no structured object (attempt {}/{}): {}",
+                        attempt + 1, MAX_CLAUDE_CODE_ATTEMPTS,
+                        json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
+                    );
+                    eprintln!("WARN: {msg}");
+                    mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "claude -p failed (attempt {}/{}, {}ms): {e}",
+                        attempt + 1, MAX_CLAUDE_CODE_ATTEMPTS, started.elapsed().as_millis()
+                    );
+                    eprintln!("{msg}");
+                    mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                }
+            }
+        }
+        let msg = format!("claude -p draft seat exhausted all {MAX_CLAUDE_CODE_ATTEMPTS} attempts");
+        mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
+        panic!("{msg}")
+    }
+
+    fn call_once(&mut self, message: &str, schema: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let mut cmd = Command::new(&self.binary);
+        cmd.arg("-p")
+            .args(["--output-format", "json"])
+            .args(["--tools", ""])
+            // The system prompt is sent every call: a resumed session keeps
+            // its history, and restating the prompt is harmless.
+            .args(["--system-prompt", &self.system_prompt])
+            .args(["--json-schema", &schema.to_string()]);
+        match &self.session_id {
+            Some(id) => {
+                cmd.args(["--resume", id]);
+            }
+            None => {
+                cmd.args(["--session-id", &Self::fresh_session_id()]);
+            }
+        }
+        if let Some(m) = &self.model {
+            cmd.args(["--model", m]);
+        }
+        cmd.current_dir(&self.workdir)
+            // A Claude Code session marks its environment so nested
+            // interactive sessions are refused; a print-mode seat spawned
+            // from inside one is fine and must not inherit the mark.
+            .env_remove("CLAUDECODE")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| format!("cannot run {}: {e}", self.binary))?;
+        {
+            let mut stdin = child.stdin.take().ok_or("no stdin")?;
+            stdin.write_all(message.as_bytes()).map_err(|e| format!("write to claude stdin: {e}"))?;
+        }
+        let mut stdout = child.stdout.take().ok_or("no stdout")?;
+        let mut stderr = child.stderr.take().ok_or("no stderr")?;
+
+        // Watchdog: kill the child if it outlives the call timeout. Reading
+        // stdout to EOF below then returns, and the wait sees the kill.
+        let child = Arc::new(Mutex::new(child));
+        let done = Arc::new(AtomicBool::new(false));
+        let timed_out = Arc::new(AtomicBool::new(false));
+        {
+            let child = Arc::clone(&child);
+            let done = Arc::clone(&done);
+            let timed_out = Arc::clone(&timed_out);
+            std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + CLAUDE_CODE_CALL_TIMEOUT;
+                while std::time::Instant::now() < deadline {
+                    if done.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                if !done.load(Ordering::SeqCst) {
+                    timed_out.store(true, Ordering::SeqCst);
+                    if let Ok(mut c) = child.lock() {
+                        let _ = c.kill();
+                    }
+                }
+            });
+        }
+        let stderr_reader = std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = stderr.read_to_string(&mut s);
+            s
+        });
+        let mut out = String::new();
+        let read = stdout.read_to_string(&mut out);
+        done.store(true, Ordering::SeqCst);
+        let status = child.lock().map_err(|_| "child lock poisoned".to_string())?.wait();
+        let err_text = stderr_reader.join().unwrap_or_default();
+        read.map_err(|e| format!("read claude stdout: {e}"))?;
+
+        if timed_out.load(Ordering::SeqCst) {
+            return Err(format!("timed out after {}s", CLAUDE_CODE_CALL_TIMEOUT.as_secs()));
+        }
+        let status = status.map_err(|e| format!("wait: {e}"))?;
+        if !status.success() {
+            // The CLI reports refusals (a usage limit, a bad model name) as a
+            // result object on stdout with a non-zero exit and an empty
+            // stderr — surface whichever stream says why.
+            let reason = if err_text.trim().is_empty() { out.trim() } else { err_text.trim() };
+            let reason = serde_json::from_str::<serde_json::Value>(reason)
+                .ok()
+                .and_then(|j| j["result"].as_str().map(std::string::ToString::to_string))
+                .unwrap_or_else(|| reason.to_string());
+            let snippet: String = reason.chars().take(300).collect();
+            return Err(format!("exit {status}: {snippet}"));
+        }
+        serde_json::from_str(out.trim())
+            .map_err(|e| format!("unparsable result JSON ({e}): {}", out.trim().chars().take(200).collect::<String>()))
+    }
+
+    /// The structured object of a result: the CLI's parsed
+    /// `structured_output` when a schema was given, else the result text
+    /// parsed as JSON.
+    fn structured(json: &serde_json::Value) -> Option<serde_json::Value> {
+        if json["structured_output"].is_object() {
+            return Some(json["structured_output"].clone());
+        }
+        json["result"].as_str().and_then(|t| serde_json::from_str(t.trim()).ok())
+    }
+}
+
+impl Drop for ClaudeCodeDraftBackend {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.workdir);
+    }
+}
+
+impl DraftBackend for ClaudeCodeDraftBackend {
+    fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
+        let schema = pick_schema_for(num_cards);
+        self.decide(message, &schema)
+    }
+
+    // Deckbuilding continues the same CLI session as pick selection, so the
+    // model still has every pack it saw and every pick it made in context.
+    fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
+        let schema = deck_schema_for(pool);
+        self.decide(message, &schema)
+    }
+
+    fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
 }
 
 /// Gemini draft backend using the Interactions API.
@@ -691,6 +974,10 @@ impl DraftBackend for GeminiDraftBackend {
     }
 }
 
+/// The model providers a seat spec may name, for every message that has to
+/// list them.
+pub const ACCEPTED_PROVIDERS: &str = "claude[:model], gemini[:model], claude-code[:model], cc[:model]";
+
 /// LLM client for draft picks and deck building.
 pub struct DraftLlmClient {
     backend: Box<dyn DraftBackend>,
@@ -706,18 +993,33 @@ impl DraftLlmClient {
         let draft_thinking_override = parts.get(2).map(std::string::ToString::to_string);
         let _game_thinking_override = parts.get(3).map(std::string::ToString::to_string);
 
-        if provider_name == "gemini" {
-            let model = model_override.unwrap_or("gemini-2.5-flash");
-            let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
-            Self {
-                backend: Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference)),
+        let backend: Box<dyn DraftBackend> = match provider_name {
+            "gemini" => {
+                let model = model_override.unwrap_or("gemini-2.5-flash");
+                let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
+                Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference))
             }
-        } else {
-            let model = model_override.unwrap_or("claude-sonnet-4-6");
-            Self {
-                backend: Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference)),
+            // The whole point of this seat is that the draft does not bill an
+            // API. Falling through to Anthropic here ran the picks and the
+            // deck build on metered tokens while only the games used the
+            // subscription, and passed a CLI alias like "opus" to the
+            // Messages API as if it were a model id.
+            "claude-code" | "cc" => Box::new(ClaudeCodeDraftBackend::new(
+                model_override, set_name, guide, card_reference,
+            )),
+            "claude" => {
+                let model = model_override.unwrap_or("claude-sonnet-4-6");
+                Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference))
             }
-        }
+            // An unrecognized provider used to default to Anthropic, which
+            // spent real money drafting with a model nobody asked for. Refuse
+            // it the way mtg-runner refuses an unknown seat.
+            other => {
+                eprintln!("Error: unknown model provider '{other}' (expected {ACCEPTED_PROVIDERS})");
+                std::process::exit(1);
+            }
+        };
+        Self { backend }
     }
 
     /// Build the prompt for a draft pick.
@@ -769,5 +1071,180 @@ impl DraftLlmClient {
     /// The full system prompt this client will send to the model.
     pub fn system_prompt(&self) -> &str {
         self.backend.system_prompt()
+    }
+}
+
+/// The Claude Code draft seat drives `claude -p` as a subprocess, so these
+/// stand in a fake `claude` (a shell script that records its argv and stdin
+/// and prints a canned print-mode JSON result) and check the contract the
+/// real CLI is spoken to with — the same harness mtg-player uses for the
+/// game-side backend.
+#[cfg(all(test, unix))]
+mod claude_code_tests {
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+
+    /// A scratch directory holding the fake binary and its recordings.
+    struct Fake {
+        dir: PathBuf,
+    }
+
+    impl Fake {
+        /// `script_body` runs with `$LOG` (argv/stdin recording file) and
+        /// `$CALL` (1-based call counter) set.
+        fn new(name: &str, script_body: &str) -> Fake {
+            let dir = std::env::temp_dir()
+                .join(format!("mtg-draft-fake-claude-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let bin = dir.join("claude");
+            let script = format!(
+                "#!/bin/sh\nLOG=\"{log}\"\nCOUNT=\"{count}\"\n\
+                 if [ \"$1\" = \"--version\" ]; then echo 9.9.9; exit 0; fi\n\
+                 CALL=$(( $(cat \"$COUNT\" 2>/dev/null || echo 0) + 1 )); echo $CALL > \"$COUNT\"\n\
+                 {{ echo \"=== call $CALL\"; for a in \"$@\"; do printf 'ARG: %s\\n' \"$a\"; done; \
+                 echo '--- stdin'; cat; echo; echo '--- end'; }} >> \"$LOG\"\n\
+                 {body}\n",
+                log = dir.join("log.txt").display(),
+                count = dir.join("count").display(),
+                body = script_body
+            );
+            std::fs::write(&bin, script).unwrap();
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+            Fake { dir }
+        }
+
+        fn bin(&self) -> String {
+            self.dir.join("claude").display().to_string()
+        }
+
+        fn log(&self) -> String {
+            std::fs::read_to_string(self.dir.join("log.txt")).unwrap_or_default()
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.log().split("=== call ").skip(1).map(str::to_string).collect()
+        }
+    }
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A fake that always succeeds, echoing back the session id it was given
+    /// and a structured object that reads as a pick of card 2.
+    const OK_BODY: &str = r#"
+SID=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--session-id" ] || [ "$prev" = "--resume" ]; then SID="$a"; fi
+  prev="$a"
+done
+printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s","result":"{\"pick\":2}","structured_output":{"pick":2},"usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":5,"cache_creation_input_tokens":1}}\n' "$SID"
+"#;
+
+    fn arg_after<'a>(call: &'a str, flag: &str) -> Option<&'a str> {
+        let lines: Vec<&str> = call.lines().collect();
+        let idx = lines.iter().position(|l| *l == format!("ARG: {flag}"))?;
+        lines.get(idx + 1)?.strip_prefix("ARG: ")
+    }
+
+    fn backend(fake: &Fake, model: Option<&str>) -> super::ClaudeCodeDraftBackend {
+        super::ClaudeCodeDraftBackend::with_binary(
+            &fake.bin(),
+            model,
+            "Innistrad",
+            None,
+            "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+        )
+    }
+
+    #[test]
+    fn the_first_pick_creates_a_session_and_later_decisions_resume_it() {
+        use super::DraftBackend;
+        let fake = Fake::new("session", OK_BODY);
+        let mut b = backend(&fake, None);
+
+        b.send_pick("Pack 1, Pick 1", 5);
+        b.send_pick("Pack 1, Pick 2", 4);
+        // Deckbuilding must land in the same session, or the model builds a
+        // deck without the draft it just did in context.
+        b.send_deck_building("Build a deck", &["Doomed Traveler".to_string()]);
+
+        let calls = fake.calls();
+        assert_eq!(calls.len(), 3, "three decisions, three subprocesses:\n{}", fake.log());
+        let sid = arg_after(&calls[0], "--session-id").expect("first call sets --session-id");
+        assert_eq!(sid.len(), 36, "session id is a uuid: {sid}");
+        for call in &calls[1..] {
+            assert_eq!(arg_after(call, "--resume"), Some(sid));
+            assert!(arg_after(call, "--session-id").is_none());
+        }
+        for call in &calls {
+            assert!(call.contains("ARG: -p\n"), "print mode");
+            assert_eq!(arg_after(call, "--output-format"), Some("json"));
+            assert_eq!(arg_after(call, "--tools"), Some(""), "tools disabled — the seat only drafts");
+            let sys = arg_after(call, "--system-prompt").expect("system prompt every call");
+            assert!(sys.contains("drafting Magic: The Gathering cards from Innistrad"));
+        }
+        assert!(calls[0].contains("--- stdin\nPack 1, Pick 1"), "the prompt goes on stdin:\n{}", calls[0]);
+    }
+
+    #[test]
+    fn a_pick_is_schema_constrained_to_the_cards_in_the_pack() {
+        use super::DraftBackend;
+        let fake = Fake::new("schema", OK_BODY);
+        let mut b = backend(&fake, None);
+        let response = b.send_pick("Pack 1, Pick 1", 3);
+
+        let call = &fake.calls()[0];
+        let schema: serde_json::Value =
+            serde_json::from_str(arg_after(call, "--json-schema").expect("schema passed")).unwrap();
+        assert_eq!(schema["properties"]["pick"]["enum"], serde_json::json!([0, 1, 2]));
+        // Sanitized exactly like the API path: reasoning happens in the
+        // thinking channel, so `thoughts` is not part of the payload.
+        assert!(schema["properties"].get("thoughts").is_none());
+        assert_eq!(schema["additionalProperties"], false);
+        // The response has to come back as the JSON text main.rs parses.
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["pick"], 2);
+    }
+
+    #[test]
+    fn a_model_suffix_is_passed_as_a_cli_alias_not_an_api_model_id() {
+        use super::DraftBackend;
+        let fake = Fake::new("model", OK_BODY);
+        let mut b = backend(&fake, Some("opus"));
+        b.send_pick("Pack 1, Pick 1", 2);
+        assert_eq!(arg_after(&fake.calls()[0], "--model"), Some("opus"));
+    }
+
+    #[test]
+    fn a_failing_cli_is_retried_and_then_fatal_rather_than_picking_card_zero() {
+        use super::DraftBackend;
+        let fake = Fake::new("fail", "echo 'boom' >&2; exit 3");
+        let mut b = backend(&fake, None);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            b.send_pick("Pack 1, Pick 1", 2);
+        }));
+        assert!(result.is_err(), "an unanswerable draft stops instead of drafting for the model");
+        assert_eq!(fake.calls().len(), super::MAX_CLAUDE_CODE_ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn an_error_result_is_retried_and_a_later_success_wins() {
+        use super::DraftBackend;
+        let body = r#"
+if [ "$CALL" = "1" ]; then
+  printf '{"type":"result","is_error":true,"result":"rate limited","session_id":"s"}\n'
+else
+  printf '{"type":"result","is_error":false,"result":"{\"pick\":1}","structured_output":{"pick":1},"session_id":"s","usage":{}}\n'
+fi
+"#;
+        let fake = Fake::new("retry", body);
+        let mut b = backend(&fake, None);
+        let response = b.send_pick("Pack 1, Pick 1", 2);
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["pick"], 1);
+        assert_eq!(fake.calls().len(), 2);
     }
 }
