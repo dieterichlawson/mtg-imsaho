@@ -95,3 +95,19 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   honestly, match results and standings arithmetic correct, play/draw
   alternating between games of a match, and each seat playing its own
   drafted deck
+- D9 [proposed 2026-09-04, from #202] pod-size fairness: #202 found that
+  `is_c1` and `use_rare_sheet1` both key off `pack_index % 2` while
+  `generate_draft_packs` deals packs with `i % pod_size`, so in an even pod
+  each seat is locked to one parity and half of them can never open a mythic
+  (observed `[6, 0, 3, 0, 5, 0, 3, 0]`). Generalize it: for every `--players`
+  from 2 to 8, tally per seat the rare-sheet mix, the C1/C2 type and the
+  variant mix over a few hundred drafts, and verify no structural property of
+  the collation is constant per seat. Any per-seat constant is the same bug
+- D10 [proposed 2026-09-04, from #218] operator failure handling mid-draft:
+  point `CLAUDE_CODE_BIN` at a script that fails only after N successful
+  calls — non-zero exit, a "usage limit reached" message, a hang — and find
+  out what survives. #218 saw three failed calls in six seconds destroy a
+  whole draft with a Rust backtrace and `Any { .. }` as the message, with
+  nothing on disk to resume from. The fatal may well be right; the question
+  is whether an hour of real drafting can be lost to a transient, whether
+  the error says what happened, and whether anything is checkpointed
