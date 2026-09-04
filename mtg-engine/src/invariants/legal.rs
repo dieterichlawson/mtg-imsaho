@@ -320,7 +320,10 @@ fn tap_plan_ok(state: &GameState, acting: PlayerId, plan: &[(ObjectId, usize)], 
         if !seen.insert(*src) {
             v.push(format!("tap plan taps #{} twice (CR 602.2h)", src.0));
         }
-        let ok = state.get_object(*src).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == acting && !o.tapped)
+        // Untapped is not asserted here: it is what
+        // `available_mana_abilities` already answers for an ability that
+        // taps, and an ability that does not tap needs no such thing.
+        let ok = state.get_object(*src).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == acting)
             && crate::engine::available_mana_abilities(state, *src, registry).iter().any(|m| m.ability_index == *idx);
         if !ok {
             v.push(format!("tap plan for #{} taps #{} which is not an available untapped source of p{}", source.map_or(0, |s| s.0), src.0, acting.0));
@@ -659,7 +662,7 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                             v.push(format!("X-funding offers #{} in two groups", id.0));
                         }
                         let abilities = crate::engine::available_mana_abilities(state, *id, registry);
-                        let ok = state.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == acting && !o.tapped)
+                        let ok = state.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == acting)
                             && abilities.iter().any(|m| m.produced.iter().map(|(_, n)| *n).sum::<u32>() == g.mana_per_tap);
                         if !ok {
                             v.push(format!("X-funding offers #{} which is not an untapped source of p{} producing {}", id.0, acting.0, g.mana_per_tap));

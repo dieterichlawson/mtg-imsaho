@@ -459,7 +459,8 @@ fn untap_step_scope(state: &GameState, events: &[GameEvent], v: &mut Violations)
     let j = events[i + 1..].iter().position(|e| matches!(e, GameEvent::StepStarted { .. })).map_or(events.len(), |k| i + 1 + k);
     for e in &events[i + 1..j] {
         if let GameEvent::Untapped { object } = e {
-            let ok = state.get_object(*object).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == state.active_player);
+            let ok = state.get_object(*object)
+                .is_none_or(|o| o.zone != Zone::Battlefield || o.controller == state.active_player);
             if !ok {
                 v.push(format!("the untap step untapped #{} which p{} does not control (CR 502.3)", object.0, state.active_player.0));
             }

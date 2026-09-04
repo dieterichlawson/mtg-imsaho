@@ -1165,7 +1165,11 @@ fn run_game_loop_inner<F>(
         }
 
         // Determine who needs to act.
-        let acting_player = if let Some(AwaitingAction::DeclareBlockers { defending_player }) = &state.awaiting_action {
+        let acting_player = if matches!(state.awaiting_action, Some(AwaitingAction::DeclareAttackers)) {
+            // CR 508.1: the active player declares attackers. Reading it off
+            // priority happened to agree, since advance_step sets both.
+            state.active_player
+        } else if let Some(AwaitingAction::DeclareBlockers { defending_player }) = &state.awaiting_action {
             *defending_player
         } else if let Some(AwaitingAction::DiscardToHandSize { player, .. }) = &state.awaiting_action {
             *player

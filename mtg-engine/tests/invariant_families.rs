@@ -1251,10 +1251,16 @@ fn the_legend_rule_keep_and_colored_payment_are_checked() {
     let mut s = cur.clone();
     s.move_object(b, Zone::Battlefield, &reg);
     flags_transition(&state, Some(&keep), &s, &reg, "was not kept but is still on the battlefield (CR 704.5j)");
+    // Leaving the battlefield during the same action is legitimate (the kept
+    // legend can still die); ending up under the other player is not.
     let mut s = cur.clone();
-    s.move_object(a, Zone::Graveyard, &reg);
+    s.get_object_mut(a).unwrap().controller = P1;
     flags_transition(&state, Some(&keep), &s, &reg, "the kept #");
     flags_transition(&state, Some(&keep), &s, &reg, "did not stay on the battlefield (CR 704.5j)");
+    let mut s = cur.clone();
+    s.move_object(a, Zone::Graveyard, &reg);
+    assert!(!check_transition(&state, Some(&keep), &s, &reg).iter().any(|m| m.contains("704.5j")),
+        "a kept legend that died in the same action is not a legend-rule violation");
 
     // CR 601.2h: casting spends the colored part of the cost.
     let (mut prev, reg) = base();

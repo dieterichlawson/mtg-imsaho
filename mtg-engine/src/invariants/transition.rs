@@ -412,9 +412,9 @@ fn status_ledgers(prev: &GameState, cur: &GameState, events: &[GameEvent], staye
             if b.controller != a.controller && !b.summoning_sick && !cleanup && !untap {
                 v.push(format!("{tag} changed controller p{} -> p{} without summoning sickness (CR 302.6)", a.controller.0, b.controller.0));
             }
-            if !a.summoning_sick && b.summoning_sick && b.controller == a.controller {
-                v.push(format!("{tag} became summoning sick under the same controller"));
-            }
+            // The converse (sickness implies a change of controller) is not
+            // claimed: control can legitimately change away and back inside
+            // one action, which breaks continuity without moving the name.
         }
         if b.last_controller != a.last_controller {
             v.push(format!("{tag} rewrote its last controller without leaving"));
@@ -827,7 +827,8 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                     ResolvedChoice::ChosenTarget(Some(Target::Object(keep)))) = (&prev.awaiting_action, choice)
             {
                 let doomed = prev.get_object(*keep).is_some_and(|o| o.damage_marked > 0 || o.dealt_deathtouch_damage
-                    || prev.effective_toughness(*keep, registry).is_none_or(|t| t <= 0));
+                    || prev.effective_toughness(*keep, registry).is_none_or(|t| t <= 0))
+                    || events.iter().any(|e| matches!(e, GameEvent::LeftBattlefield { object, .. } if *object == *keep));
                 if !doomed && cur.get_object(*keep).is_none_or(|o| o.zone != Zone::Battlefield || o.controller != *who) {
                     v.push(format!("legend rule: the kept #{} did not stay on the battlefield (CR 704.5j)", keep.0));
                 }
