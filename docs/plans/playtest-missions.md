@@ -1,12 +1,20 @@
 # Nightly playtest crew: personas and mission menu
 
-The nightly playtest routine plays ~30 games of hotseat self-play through
-the real CLI (`mtg-runner --p1 cli --p2 cli` in tmux) — the agent plays
-BOTH seats, so no random players are involved. Each game is assigned a
-persona and a mission. The ledger (`reports/playtests/LEDGER.md`) records
-every mission played; a mission from the last two weeks is off the menu
-unless re-probing a fresh fix. Findings become GitHub issues per
+The nightly playtest routine plays ~30 games a night, most of them hotseat
+self-play through the real CLI (`mtg-runner --p1 cli --p2 cli` in tmux)
+with the agent at both seats. Each game is assigned a persona and a
+mission. The ledger (`reports/playtests/LEDGER.md`) records every mission
+played; a mission from the last two weeks is off the menu unless
+re-probing a fresh fix. Findings become GitHub issues per
 `docs/plans/bug-pipeline.md` (`phase:playtest`).
+
+The menu covers all three targets named in the pipeline's glossary: the
+**engine** (Competitor, Rules Lawyer), the **machine** (Vandal, Operator)
+and the **harness** (Handler). Say which one an issue is about in its
+**Target** line. The Operator and Handler missions are the only ones that
+don't run two `cli` seats; the Handler's `claude-code` seat runs on plan
+quota through `claude -p` — a metered `claude`/`gemini` API seat is never
+allowed, on any mission.
 
 Game setup: pick deck pairs from `decks/` and `decks/coverage/`, or write
 one-off decks into a temp file for a mission (deck files are
@@ -28,6 +36,18 @@ illegal or dubious resolutions do.
 
 **The Vandal** — plays both seats to break the engine. Wins don't matter;
 panics, hangs, stuck prompts, corrupted state, and nonsense output do.
+
+**The Operator** — neither plays to win nor tries to break anything: runs
+the binary the way an operator would and checks it kept its promises.
+Save/resume fidelity, log and screen reconciliation, reproducibility from
+the outside, resource behaviour over a long run. The Vandal asks whether
+the machine survives abuse; the Operator asks whether it told the truth.
+
+**The Handler** — gives one seat to the LLM interface
+(`--p1 claude-code`, `cc` for short) and audits what that seat is *told*
+and what the engine does with its answer: the prompt's contents, the
+response schema, the subprocess contract. Reads
+`mtg-player/src/llm.rs` and `docs/llm-harness.md` before playing.
 
 ## Mission menu
 
@@ -269,9 +289,10 @@ Vandal:
   to that same prompt with the same state
 - V22 marathon: drive one game past turn 150 with both seats durdling;
   watch the turn counter and step header, the log panel and `l` view at
-  extreme length, 40+ card graveyard panes, save-file growth, per-input
-  latency drift, invariant failures, and the exact turn and cause of the
-  deck-out ending
+  extreme length, 40+ card graveyard panes, save-file growth, RSS and CPU
+  over the run, pager behaviour on a 1000+ entry log, per-input latency
+  drift, invariant failures, and the exact turn and cause of the deck-out
+  ending
 - V23 structured-prompt syntax abuse: the declare-attackers and
   declare-blockers parsers take free-form text — feed duplicate indices,
   "all none", "0:0:0", ":0", "0:", one valid plus one invalid entry,
@@ -289,6 +310,49 @@ Vandal:
   sequences at the `/` search and inside a chooser's filter box; never
   crash, hang, corrupt the frame, become unexitable, or mis-scope to a
   zone the searching seat can't see
+
+Operator:
+- M1 save/resume fidelity: play N decisions, kill the process, `--resume`,
+  and verify the resumed game matches what was on screen — board, life,
+  hand counts, and the prompt it lands on — then that it plays out to a
+  conclusion clean under `--check-invariants`. V3 and V14 abuse saves;
+  this one checks an honest save is faithful
+- M2 log and screen reconciliation: with two hotseat seats, verify every
+  visible state change has a `--log` line and that the totals add up
+  (life, cards drawn, mana spent, damage dealt), then comb the log and
+  the save file for information one seat must not see. L25 covers the
+  leak at the prompt; this covers it in the artifacts left behind
+- M3 determinism from the outside: same seed and same scripted keystrokes
+  twice must give a byte-identical `--log` (timestamps aside) and
+  identical saves; `--on-the-play` honoured; different seeds actually
+  differ
+- M4 flag and file matrix: flags in combination rather than one at a time
+  — `--resume` plus everything else — and against a filesystem that
+  fights back: read-only directories, a small tmpfs filled to capacity
+  mid-game, paths that are directories or symlinks. V17 abuses flag
+  values; this walks the combinations and the capacity edge
+
+Handler:
+- H1 prompt protocol: run `--p1 cc --p2 random` with `--log` and read what
+  the LLM seat is told against what the game state actually is — every
+  field of the prompt format in `mtg-player/src/llm.rs` documented and
+  populated, hidden information never in the seat's prompt, the legal
+  actions listed matching what the engine will accept, and no
+  schema-valid answer that the engine then rejects
+- H2 subprocess contract: point `CLAUDE_CODE_BIN` at a wrapper that logs
+  argv and stdin and delegates to the real binary — session ids stable
+  across a game, one subprocess per decision, no leaked processes or temp
+  directories after exit, Ctrl-C or kill, the game never blocking past
+  the call timeout, and end-of-game usage totals that make sense
+- H3 harness failure modes: point `CLAUDE_CODE_BIN` at a script that
+  exits non-zero, hangs, prints invalid JSON, prints a well-formed but
+  illegal action, or answers the previous prompt. Every one must be a
+  clean recovery or a clean failure; none may cause the game to take an
+  action the seat did not choose
+- H4 recap fidelity across resume: `--save` and `--resume` a game with a
+  `cc` seat and check the conversation the resumed seat is handed
+  describes the same game it left — recap contents, turn count, nothing
+  hallucinated and nothing dropped
 
 Agents may invent missions beyond this menu; log them in the ledger so
 they enter the rotation.
