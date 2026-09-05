@@ -212,3 +212,86 @@ fn unstructured_text_results_fall_back_to_the_raw_text() {
     let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
     assert_eq!(p.backend_send_for_test("pick"), "2");
 }
+
+// ── The subprocess contract: timeouts and cleanup (issues #203, #206) ─────
+
+/// The backend's own call timeout, shortened so these run in seconds.
+/// Read per call, so setting it here only caps the other tests in this
+/// binary, which all answer immediately.
+fn short_timeout(secs: u64) {
+    std::env::set_var("MTG_CLAUDE_CODE_TIMEOUT_SECS", secs.to_string());
+}
+
+fn pid_alive(pid: i32) -> bool {
+    std::path::Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// Issue #203: a wrapper script is the documented way to stand in for
+/// `claude`, and any wrapper puts a process between the runner and the CLI.
+/// Killing only the direct child left that descendant holding the stdout
+/// pipe, so the read never saw EOF and the game blocked forever — long past
+/// the timeout, with nothing logged and the child never even reaped.
+#[test]
+fn a_hung_call_times_out_even_when_a_grandchild_holds_stdout() {
+    short_timeout(2);
+    let fake = Fake::new(
+        "hang",
+        "sleep 120 & echo $! > \"$(dirname \"$LOG\")/grandchild.pid\"; sleep 120",
+    );
+    let bin = fake.bin();
+    let dir = fake.dir.clone();
+
+    // The call has to come back on its own. Running it on a thread means a
+    // regression is a failed assertion rather than a test that hangs.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &bin);
+        let _ = tx.send(p.backend_send_for_test("pick"));
+    });
+
+    // Three attempts of 2s each, plus the 2s and 4s retry backoffs.
+    let answer = rx
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("a hung call must give up and return, not block the game forever");
+    assert_eq!(answer, "0", "after every attempt times out, the seat falls back to pass");
+
+    // And the whole tree is gone, not just the process we spawned.
+    let pid: i32 = std::fs::read_to_string(dir.join("grandchild.pid"))
+        .expect("the fake recorded its child")
+        .trim()
+        .parse()
+        .expect("a pid");
+    for _ in 0..50 {
+        if !pid_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("grandchild {pid} outlived the call: killing the direct child is not enough");
+}
+
+/// Issue #206: `Drop` removes a seat's scratch directory, but nothing runs
+/// on a signal or a `kill -9`, so `/tmp/mtg-claude-code-*` accumulated. A
+/// new backend sweeps the directories of runs that are gone.
+#[test]
+fn a_new_backend_sweeps_scratch_directories_of_dead_runs() {
+    let tmp = std::env::temp_dir();
+    // A pid that really has exited, which is the case in the field.
+    let mut done = std::process::Command::new("true").spawn().unwrap();
+    let dead_pid = done.id();
+    done.wait().unwrap();
+    let dead = tmp.join(format!("mtg-claude-code-{dead_pid}-4242424"));
+    std::fs::create_dir_all(dead.join("nested")).unwrap();
+    std::fs::write(dead.join("nested/file"), "x").unwrap();
+    // Our own run's directory must survive the sweep.
+    let live = tmp.join(format!("mtg-claude-code-{}-4242425", std::process::id()));
+    std::fs::create_dir_all(&live).unwrap();
+
+    let fake = Fake::new("sweep", r#"printf '{"type":"result","is_error":false,"result":"1","session_id":"s","usage":{}}
+'"#);
+    let _p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+
+    assert!(!dead.exists(), "a dead run's scratch directory is swept, contents and all");
+    assert!(live.exists(), "a live run's scratch directory is left alone");
+    let _ = std::fs::remove_dir_all(&live);
+}

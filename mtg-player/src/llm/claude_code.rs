@@ -17,8 +17,8 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use super::{LlmBackend, ANTHROPIC_RESPONSE_FORMAT, GAME_RULES};
@@ -31,6 +31,18 @@ pub const BINARY_ENV: &str = "CLAUDE_CODE_BIN";
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Overrides [`CALL_TIMEOUT`], so the timeout path can be exercised in
+/// seconds instead of five minutes. Not something a run should set.
+const CALL_TIMEOUT_ENV: &str = "MTG_CLAUDE_CODE_TIMEOUT_SECS";
+
+fn call_timeout() -> Duration {
+    std::env::var(CALL_TIMEOUT_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(CALL_TIMEOUT, Duration::from_secs)
+}
+
 const MAX_ATTEMPTS: u32 = 3;
 
 /// The binary this process would run for a Claude Code seat.
@@ -51,6 +63,154 @@ pub fn available() -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+}
+
+/// Process groups of `claude -p` children currently in flight, so a signal
+/// can take them down with the run.
+///
+/// A slot holds a child's process-group id while its call is running and 0
+/// otherwise. Fixed size and lock-free because the SIGINT/SIGTERM handler
+/// reads it: everything a signal handler touches has to be
+/// async-signal-safe, which rules out allocating or taking a lock (issue
+/// #206). Four slots is more seats than a run has.
+static LIVE_GROUPS: [AtomicI32; 4] = [
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+    AtomicI32::new(0),
+];
+
+/// Kill a child's whole process group.
+///
+/// `Child::kill` signals only the direct child. When that child is a
+/// wrapper script — which is how `CLAUDE_CODE_BIN` is documented to be
+/// exercised — the real work is a grandchild, which survives, keeps the
+/// runner's stdout pipe open, and is orphaned to init (issues #203, #206).
+/// The children are put in their own process group at spawn precisely so
+/// this can reach all of them.
+#[cfg(unix)]
+fn kill_group(pgid: i32) {
+    // Never signal our own group: that would take the runner with it. A
+    // child whose `setpgid` failed is still in our group, so this is a real
+    // guard, not a formality.
+    if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
+        unsafe { libc::killpg(pgid, libc::SIGKILL) };
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_group(_pgid: i32) {}
+
+/// Kill every in-flight `claude -p` group, then die of the signal we were
+/// sent. Async-signal-safe: `killpg`, `signal` and `raise` only.
+#[cfg(unix)]
+extern "C" fn handle_fatal_signal(sig: libc::c_int) {
+    for slot in &LIVE_GROUPS {
+        let pgid = slot.load(Ordering::Relaxed);
+        if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
+            unsafe { libc::killpg(pgid, libc::SIGKILL) };
+        }
+    }
+    // Re-raise with the default disposition so the exit status is the one
+    // the caller expects from a Ctrl-C.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
+    }
+}
+
+/// Take in-flight subprocesses down with the run on Ctrl-C or SIGTERM.
+///
+/// Without this the runner exits and its `claude -p` child (and whatever
+/// that spawned) is reparented to init and keeps going — with a real seat,
+/// a live model call still spending quota on a game that no longer exists
+/// (issue #206).
+#[cfg(unix)]
+fn install_signal_handlers() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        libc::signal(libc::SIGINT, handle_fatal_signal as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, handle_fatal_signal as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGHUP, handle_fatal_signal as *const () as libc::sighandler_t);
+    });
+}
+
+#[cfg(not(unix))]
+fn install_signal_handlers() {}
+
+/// Whether a process id belongs to a live process.
+#[cfg(unix)]
+fn pid_is_alive(pid: i32) -> bool {
+    // `kill` reads 0 as "my whole process group" and negatives as other
+    // groups, so only a positive pid is a question about one process. No
+    // scratch directory is named with a non-positive pid anyway.
+    if pid <= 0 {
+        return false;
+    }
+    // ESRCH means no such process; EPERM means it exists and is not ours.
+    unsafe { libc::kill(pid, 0) == 0 || *libc::__errno_location() == libc::EPERM }
+}
+
+#[cfg(not(unix))]
+fn pid_is_alive(_pid: i32) -> bool {
+    true
+}
+
+/// The prefix every seat's scratch directory is named with.
+const WORKDIR_PREFIX: &str = "mtg-claude-code-";
+
+/// Delete scratch directories left behind by runs that are no longer
+/// running.
+///
+/// `Drop` removes a seat's own directory, but no destructor runs on a
+/// signal or a `kill -9`, so these piled up in `/tmp` (issue #206). A
+/// directory is named `mtg-claude-code-<pid>-<nonce>`; one whose pid is
+/// gone belongs to a dead run and is ours to remove. A live pid — including
+/// an unrelated process that has since been given that number — is left
+/// alone.
+fn sweep_stale_workdirs() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(rest) = name.strip_prefix(WORKDIR_PREFIX) else { continue };
+        let Some((pid, _nonce)) = rest.split_once('-') else { continue };
+        let Ok(pid) = pid.parse::<i32>() else { continue };
+        if !pid_is_alive(pid) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// A registration in [`LIVE_GROUPS`], cleared when the call ends.
+struct LiveGroup(Option<usize>);
+
+impl LiveGroup {
+    fn register(pgid: i32) -> Self {
+        if pgid > 0 {
+            for (i, slot) in LIVE_GROUPS.iter().enumerate() {
+                if slot
+                    .compare_exchange(0, pgid, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    return Self(Some(i));
+                }
+            }
+        }
+        // More concurrent calls than slots: the call still runs, it just
+        // isn't covered by the signal handler.
+        Self(None)
+    }
+}
+
+impl Drop for LiveGroup {
+    fn drop(&mut self) {
+        if let Some(i) = self.0.take() {
+            LIVE_GROUPS[i].store(0, Ordering::SeqCst);
+        }
+    }
 }
 
 pub(super) struct ClaudeCodeBackend {
@@ -76,8 +236,10 @@ impl ClaudeCodeBackend {
     }
 
     pub(super) fn with_binary(binary: &str, model: Option<&str>) -> Self {
+        install_signal_handlers();
+        sweep_stale_workdirs();
         let workdir = std::env::temp_dir().join(format!(
-            "mtg-claude-code-{}-{}",
+            "{WORKDIR_PREFIX}{}-{}",
             std::process::id(),
             rand::random::<u32>()
         ));
@@ -195,6 +357,23 @@ impl ClaudeCodeBackend {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
+        // Give the child its own process group, so the timeout and the
+        // signal handler can reach everything it spawns and not just the
+        // wrapper script we launched (issues #203, #206).
+        #[cfg(unix)]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                // setpgid(0, 0): the child becomes leader of a new group
+                // whose id is its own pid.
+                if libc::setpgid(0, 0) == 0 {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::last_os_error())
+                }
+            });
+        }
+
         let mut child = cmd.spawn().map_err(|e| format!("cannot run {}: {e}", self.binary))?;
         {
             let mut stdin = child.stdin.take().ok_or("no stdin")?;
@@ -203,46 +382,47 @@ impl ClaudeCodeBackend {
         let mut stdout = child.stdout.take().ok_or("no stdout")?;
         let mut stderr = child.stderr.take().ok_or("no stderr")?;
 
-        // Watchdog: kill the child if it outlives the call timeout. Reading
-        // stdout to EOF below then returns, and the wait sees the kill.
-        let child = Arc::new(Mutex::new(child));
-        let done = Arc::new(AtomicBool::new(false));
-        let timed_out = Arc::new(AtomicBool::new(false));
-        {
-            let child = Arc::clone(&child);
-            let done = Arc::clone(&done);
-            let timed_out = Arc::clone(&timed_out);
-            std::thread::spawn(move || {
-                let deadline = std::time::Instant::now() + CALL_TIMEOUT;
-                while std::time::Instant::now() < deadline {
-                    if done.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(200));
-                }
-                if !done.load(Ordering::SeqCst) {
-                    timed_out.store(true, Ordering::SeqCst);
-                    if let Ok(mut c) = child.lock() {
-                        let _ = c.kill();
-                    }
-                }
-            });
-        }
+        // The group to signal. `setpgid` in `pre_exec` makes it the child's
+        // own pid; if that call failed the child is still in ours, which
+        // `kill_group` refuses to signal.
+        let pgid = i32::try_from(child.id()).unwrap_or(0);
+        let group = LiveGroup::register(pgid);
+
+        // Read stdout on its own thread and wait on the *result*, not on
+        // EOF. Waiting on EOF is what made the timeout toothless: the pipe
+        // only closes when every process holding its write end is gone, so
+        // one surviving grandchild kept the game blocked forever, long past
+        // the timeout, with the killed child never even reaped (issue
+        // #203).
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut out = String::new();
+            let read = stdout.read_to_string(&mut out).map(|_| out);
+            let _ = tx.send(read);
+        });
         let stderr_reader = std::thread::spawn(move || {
             let mut s = String::new();
             let _ = stderr.read_to_string(&mut s);
             s
         });
-        let mut out = String::new();
-        let read = stdout.read_to_string(&mut out);
-        done.store(true, Ordering::SeqCst);
-        let status = child.lock().map_err(|_| "child lock poisoned".to_string())?.wait();
-        let err_text = stderr_reader.join().unwrap_or_default();
-        read.map_err(|e| format!("read claude stdout: {e}"))?;
 
-        if timed_out.load(Ordering::SeqCst) {
-            return Err(format!("timed out after {}s", CALL_TIMEOUT.as_secs()));
-        }
+        let timeout = call_timeout();
+        let Ok(read) = rx.recv_timeout(timeout) else {
+            // Take the whole group down, not just the process we spawned,
+            // then reap our own child — `wait` on it returns as soon as it
+            // dies, whatever its descendants are doing. The reader threads
+            // are left to end when the pipes finally close; the call is
+            // over either way, which is the point of the timeout.
+            kill_group(pgid);
+            drop(group);
+            let _ = child.wait();
+            return Err(format!("timed out after {}s", timeout.as_secs()));
+        };
+        let status = child.wait();
+        drop(group);
+        let err_text = stderr_reader.join().unwrap_or_default();
+        let out = read.map_err(|e| format!("read claude stdout: {e}"))?;
+
         let status = status.map_err(|e| format!("wait: {e}"))?;
         if !status.success() {
             // The CLI reports refusals (a usage limit, a bad model name) as
