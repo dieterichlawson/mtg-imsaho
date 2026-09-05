@@ -15,6 +15,7 @@ use mtg_engine::state::GameState;
 use mtg_engine::view::GameView;
 
 use mtg_player::llm::LlmPlayer;
+use mtg_player::llm::MatchFormat;
 use mtg_player::Player;
 use std::fmt::Write;
 
@@ -897,6 +898,7 @@ fn play_match(
             &mut p2,
             starter,
             card_reference,
+            best_of,
         );
 
         // Engine's winner is a PlayerId (0 = seat_a, 1 = seat_b).
@@ -933,6 +935,7 @@ fn play_game(
     p2: &mut LlmPlayer,
     starting_player: mtg_engine::ids::PlayerId,
     card_reference: &str,
+    best_of: usize,
 ) -> GameOutcome {
     let config = GameConfig {
         player_names: vec![p1.name().to_string(), p2.name().to_string()],
@@ -946,8 +949,9 @@ fn play_game(
     let mut state = engine::setup_game(&config, registry);
 
     // Re-initialize conversations for this game (fresh context per game)
-    p1.init_conversation(&deck_a.entries, card_reference, registry);
-    p2.init_conversation(&deck_b.entries, card_reference, registry);
+    let format = MatchFormat::BestOf(best_of);
+    p1.init_conversation(&deck_a.entries, card_reference, registry, format);
+    p2.init_conversation(&deck_b.entries, card_reference, registry, format);
 
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;

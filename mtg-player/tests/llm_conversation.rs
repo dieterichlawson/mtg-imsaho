@@ -1,5 +1,6 @@
 //! Tests for the LLM player's multi-turn conversation and decklist formatting.
 
+use mtg_player::llm::MatchFormat;
 use mtg_engine::cards::CardRegistry;
 
 #[test]
@@ -40,7 +41,7 @@ fn init_conversation_sets_system_prompt_with_decklists() {
     let _opp_deck = [("Grizzly Bears".to_string(), 4),
         ("Forest".to_string(), 16)];
 
-    player.init_conversation(&your_deck, "Grizzly Bears {1}{G} | Creature — Bear 2/2\nForest | Land", &registry);
+    player.init_conversation(&your_deck, "Grizzly Bears {1}{G} | Creature — Bear 2/2\nForest | Land", &registry, MatchFormat::SingleGame);
 
     let system = player.system_prompt_for_test();
 
@@ -65,7 +66,7 @@ fn conversation_grows_with_messages() {
     let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
 
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, "Mountain | Land", &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
 
     assert_eq!(player.conversation_len_for_test(), 0);
 
@@ -86,7 +87,7 @@ fn build_prompt_includes_board_state() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, "Mountain | Land", &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
 
     // Verify last_log_index starts at 0
     assert_eq!(player.last_log_index_for_test(), 0);
@@ -97,7 +98,7 @@ fn resume_from_log_seeds_conversation() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, "Mountain | Land", &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
 
     assert_eq!(player.conversation_len_for_test(), 0);
     assert_eq!(player.last_log_index_for_test(), 0);
@@ -126,7 +127,7 @@ fn resume_from_empty_log_does_nothing() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, "Mountain | Land", &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
 
     player.resume_from_log(&[], mtg_engine::ids::PlayerId(0));
 
@@ -187,7 +188,7 @@ fn resume_preserves_system_prompt() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("test");
     let deck = vec![("Lightning Bolt".to_string(), 4)];
-    player.init_conversation(&deck, "Mountain | Land", &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
 
     let system_before = player.system_prompt_for_test().to_string();
 
@@ -364,4 +365,55 @@ fn format_decklist_describes_the_back_face_a_transform_produces() {
         "the 13/13 a Test Subject's five hatchling counters buy: {result}"
     );
     assert!(result.contains("13/13"), "back face P/T: {result}");
+}
+
+// ── Match format in the system prompt (issue #210) ───────────────────────
+
+/// A `--best-of 1` seat used to be told "Matches are best-of-three" and
+/// that games 2 and 3 exist, and a plain mtg-runner game — one game, no
+/// tournament — was told the same. Match structure changes how a game 1 is
+/// played, so the prompt has to state the one the seat is actually in.
+#[test]
+fn the_play_draw_section_states_the_match_the_seat_is_in() {
+    let single = MatchFormat::SingleGame.play_draw_section();
+    assert!(single.contains("single game"), "{single}");
+    assert!(!single.contains("best-of-three"), "{single}");
+    assert!(!single.contains("tournament"), "one game is not a tournament: {single}");
+
+    let bo1 = MatchFormat::BestOf(1).play_draw_section();
+    assert!(bo1.contains("best-of-one"), "{bo1}");
+    assert!(bo1.contains("no game 2"), "{bo1}");
+
+    let bo3 = MatchFormat::BestOf(3).play_draw_section();
+    assert!(bo3.contains("best-of-3"), "{bo3}");
+    assert!(bo3.contains("Games 2 to 3"), "{bo3}");
+    assert!(bo3.contains("loser of the previous game"), "{bo3}");
+
+    // Every format still explains what being on the play costs.
+    for section in [single, bo1, bo3] {
+        assert!(section.contains("skips their first draw step"), "{section}");
+    }
+}
+
+#[test]
+fn a_single_game_seat_is_never_told_it_has_a_game_two() {
+    let registry = CardRegistry::with_all_cards();
+    let deck = vec![("Mountain".to_string(), 20)];
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("t");
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
+    let prompt = player.system_prompt_for_test();
+    assert!(prompt.contains("single game"), "prompt: {prompt}");
+    assert!(!prompt.contains("best-of-three"), "the stale boilerplate is gone");
+    assert!(!prompt.contains("Games 2 and 3"), "there is no game 2");
+}
+
+#[test]
+fn a_best_of_three_seat_is_told_about_games_two_and_three() {
+    let registry = CardRegistry::with_all_cards();
+    let deck = vec![("Mountain".to_string(), 20)];
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("t");
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::BestOf(3));
+    let prompt = player.system_prompt_for_test();
+    assert!(prompt.contains("Matches are best-of-3"), "prompt: {prompt}");
+    assert!(prompt.contains("Games 2 to 3"), "prompt: {prompt}");
 }

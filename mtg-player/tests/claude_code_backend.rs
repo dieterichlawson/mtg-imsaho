@@ -6,6 +6,7 @@
 //! tools disabled, and the error/fallback path.
 #![cfg(unix)]
 
+use mtg_player::llm::MatchFormat;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -115,7 +116,7 @@ fn init_restarts_the_session_and_carries_the_deck_info() {
     let registry = mtg_engine::cards::CardRegistry::with_all_cards();
     let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
     p.backend_send_for_test("warm");
-    p.init_conversation(&[("Swamp".to_string(), 17)], "Swamp | Land", &registry);
+    p.init_conversation(&[("Swamp".to_string(), 17)], "Swamp | Land", &registry, MatchFormat::SingleGame);
     assert_eq!(p.conversation_len_for_test(), 0, "init starts a fresh conversation");
     p.backend_send_for_test("after init");
 

@@ -8,6 +8,7 @@ use mtg_engine::ids::PlayerId;
 use mtg_engine::state::GameState;
 use mtg_engine::view::GameView;
 
+use mtg_player::llm::MatchFormat;
 use mtg_player::Player;
 use mtg_player::cli::CliPlayer;
 use mtg_player::llm::LlmPlayer;
@@ -344,10 +345,10 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
     // Build a card reference from all cards in both decks
     let card_reference = build_card_reference(&deck1_entries, &deck2_entries, &registry);
     if let PlayerKind::Llm(ref mut llm) = p1 {
-        llm.init_conversation(&deck1_entries, &card_reference, &registry);
+        llm.init_conversation(&deck1_entries, &card_reference, &registry, MatchFormat::SingleGame);
     }
     if let PlayerKind::Llm(ref mut llm) = p2 {
-        llm.init_conversation(&deck2_entries, &card_reference, &registry);
+        llm.init_conversation(&deck2_entries, &card_reference, &registry, MatchFormat::SingleGame);
     }
 
     // If resuming, feed the existing game log to LLM players so they

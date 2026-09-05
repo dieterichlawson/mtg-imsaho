@@ -148,6 +148,60 @@ pub fn card_faces(
     faces
 }
 
+/// The match a seat is playing, as far as the seat needs to know.
+///
+/// This used to be a paragraph of the fixed `GAME_RULES` const reading
+/// "Matches are best-of-three ... In this tournament", which every seat was
+/// handed — including a `--best-of 1` draft, where there is no game 2, and a
+/// plain `mtg-runner` game, which is not a tournament at all. Match
+/// structure is decision-relevant (how far to go on a risky race, whether to
+/// concede a lost game quickly), so a seat told it has two more games plays
+/// game 1 differently from one that knows the match is decided now (issue
+/// #210).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchFormat {
+    /// One game, standing alone — no match around it and no tournament.
+    SingleGame,
+    /// A match in a tournament, decided over this many games.
+    BestOf(usize),
+}
+
+impl MatchFormat {
+    /// The "## Play/draw" section of the system prompt for this format.
+    #[must_use]
+    pub fn play_draw_section(self) -> String {
+        let mut s = String::from("\n\n## Play/draw\n\n");
+        match self {
+            Self::SingleGame => s.push_str(
+                "This is a single game, not a match: there is no game 2, and nothing \
+carries over from it. The starting player is randomised (a fair coin flip); the \
+mulligan prompt tells you which you are.\n",
+            ),
+            Self::BestOf(1) => s.push_str(
+                "Matches are best-of-one: this game decides the match, and there is no \
+game 2. The starting player is randomised (a fair coin flip); the mulligan prompt \
+tells you which you are.\n",
+            ),
+            Self::BestOf(n) => {
+                let last = n.min(3);
+                writeln!(s, "Matches are best-of-{n}. The starting player for each game is chosen as follows:\n\
+- **Game 1**: randomised (fair coin flip).\n\
+- **Games 2 to {last}**: the loser of the previous game chooses who goes first. In this \
+tournament, the loser ALWAYS elects to play first — going on the draw is effectively \
+never correct in Limited, so there is no decision to make. You will simply find \
+yourself on the play or draw at the start of each game; the mulligan prompt will tell \
+you which.").unwrap();
+            }
+        }
+        s.push_str(
+            "\nThe player on the play skips their first draw step; the player on the draw \
+gets a normal first turn. That means after turn 1 the on-draw player has seen one \
+more card.\n",
+        );
+        s
+    }
+}
+
 /// Shared game rules and strategy — used by all backends.
 const GAME_RULES: &str = r#"## Prompt format
 
@@ -284,14 +338,6 @@ The attacking player picks the worse-for-you option. Either way, exactly one of 
 ## When you're behind
 
 If you're low on life and the board is unfavourable but stable, look for a way to *change* the situation — equipping a creature, casting an aura or buff, or forcing a race with combat tricks — before defaulting to "pass and hope to topdeck". Repeated passing rarely wins from behind; a desperate line that sometimes works beats a safe line that loses for sure.
-
-## Play/draw
-
-Matches are best-of-three. The starting player for each game is chosen as follows:
-- **Game 1**: randomised (fair coin flip).
-- **Games 2 and 3**: the loser of the previous game chooses who goes first. In this tournament, the loser ALWAYS elects to play first — going on the draw is effectively never correct in Limited, so there is no decision to make. You will simply find yourself on the play or draw at the start of each game; the mulligan prompt will tell you which.
-
-The player on the play skips their first draw step; the player on the draw gets a normal first turn. That means after turn 1 the on-draw player has seen one more card.
 
 ## London mulligan
 
@@ -1243,8 +1289,12 @@ impl LlmPlayer {
         your_deck: &[(String, u32)],
         card_reference: &str,
         registry: &mtg_engine::cards::CardRegistry,
+        match_format: MatchFormat,
     ) {
-        let mut deck_info = String::new();
+        // The match structure is a property of the run, not of the rules, so
+        // it is composed here where the caller knows it rather than baked
+        // into the shared `GAME_RULES` const (issue #210).
+        let mut deck_info = match_format.play_draw_section();
         if let Some(guide) = &self.guide {
             deck_info.push_str("\n\n## Guide\n\n");
             deck_info.push_str(guide);
