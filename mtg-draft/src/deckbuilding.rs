@@ -1,3 +1,5 @@
+use mtg_engine::cards::CardRegistry;
+use mtg_engine::types::{Color, ManaSymbol};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -17,6 +19,172 @@ impl DraftDeck {
 }
 
 const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"];
+
+/// The basic land that produces each color, in WUBRG order.
+const BASIC_FOR_COLOR: [(Color, &str); 5] = [
+    (Color::White, "Plains"),
+    (Color::Blue, "Island"),
+    (Color::Black, "Swamp"),
+    (Color::Red, "Mountain"),
+    (Color::Green, "Forest"),
+];
+
+/// How many cards the fallback deck aims to play, and how many lands it
+/// plays alongside them: the standard 23/17 limited split.
+const FALLBACK_SPELLS: usize = 23;
+const FALLBACK_LANDS: u32 = 17;
+
+/// The minimum legal deck size (CR 100.2b).
+const MIN_DECK_SIZE: usize = 40;
+
+/// The colored mana a card's cost demands, or `None` for a card the
+/// registry does not know.
+///
+/// A card with no cost (a land) and a card whose cost is all generic both
+/// come back as an empty set: castable in any deck.
+fn color_requirement(name: &str, registry: &CardRegistry) -> Option<Vec<Color>> {
+    let id = registry.get_id_by_name(name)?;
+    let data = registry.card_data(id)?;
+    let mut colors: Vec<Color> = data
+        .cost
+        .as_ref()
+        .map(|cost| {
+            cost.symbols
+                .iter()
+                .filter_map(|sym| match sym {
+                    ManaSymbol::Colored(c) => Some(*c),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // `Color` is not `Ord`, so dedupe in place, keeping cost order.
+    let mut seen: Vec<Color> = Vec::new();
+    colors.retain(|c| {
+        if seen.contains(c) {
+            false
+        } else {
+            seen.push(*c);
+            true
+        }
+    });
+    Some(colors)
+}
+
+/// Build the deck the runner has to substitute when a seat never produced a
+/// valid one.
+///
+/// This is a last resort, not a deck-building strategy: it exists so a draft
+/// that has already spent its picks can still play a round. It used to dump
+/// the entire pool into the maindeck behind a hard-coded 9 Island / 8 Swamp,
+/// which produced a 59-card five-color pile that could not cast half of
+/// itself (issue #200). Instead, pick the two-color pair the pool actually
+/// supports, play what that pair can cast, and split the lands by the pips
+/// those cards ask for.
+///
+/// The result is always legal: at least `MIN_DECK_SIZE` cards, every
+/// non-land drawn from `pool`, and basics only (CR 100.2b, 100.4).
+#[must_use]
+pub fn fallback_deck(pool: &[String], registry: &CardRegistry) -> DraftDeck {
+    // What each pool card demands. A card the registry does not know is
+    // treated as unplayable rather than guessed at.
+    let requirements: Vec<Option<Vec<Color>>> = pool
+        .iter()
+        .map(|card| color_requirement(card, registry))
+        .collect();
+
+    // The pair that can cast the most of the pool. Pairs are enumerated in
+    // WUBRG order and ties keep the first, so this is deterministic.
+    let mut best_pair = (Color::White, Color::Blue);
+    let mut best_count = 0usize;
+    for (i, (a, _)) in BASIC_FOR_COLOR.iter().enumerate() {
+        for (b, _) in BASIC_FOR_COLOR.iter().skip(i + 1) {
+            let count = requirements
+                .iter()
+                .filter(|req| {
+                    req.as_ref()
+                        .is_some_and(|cs| cs.iter().all(|c| c == a || c == b))
+                })
+                .count();
+            if count > best_count {
+                best_count = count;
+                best_pair = (*a, *b);
+            }
+        }
+    }
+
+    // Play what the pair can cast, in pick order, up to the usual 23.
+    let maindeck: Vec<String> = pool
+        .iter()
+        .zip(requirements.iter())
+        .filter(|(_, req)| {
+            req.as_ref()
+                .is_some_and(|cs| cs.iter().all(|c| *c == best_pair.0 || *c == best_pair.1))
+        })
+        .map(|(card, _)| card.clone())
+        .take(FALLBACK_SPELLS)
+        .collect();
+
+    // Split the lands by the colored pips the chosen cards actually ask
+    // for, rather than by a fixed guess. A deck of nothing but colorless
+    // cards has no pips to weigh, so it gets the pair's first color.
+    let pip_count = |color: Color| -> u32 {
+        maindeck
+            .iter()
+            .filter_map(|card| {
+                let id = registry.get_id_by_name(card)?;
+                let data = registry.card_data(id)?;
+                let cost = data.cost.as_ref()?;
+                Some(
+                    cost.symbols
+                        .iter()
+                        .filter(|sym| matches!(sym, ManaSymbol::Colored(c) if *c == color))
+                        .count() as u32,
+                )
+            })
+            .sum()
+    };
+    let (pips_a, pips_b) = (pip_count(best_pair.0), pip_count(best_pair.1));
+    let count_a = if pips_a + pips_b == 0 {
+        FALLBACK_LANDS
+    } else {
+        // Round to nearest, so a single off-color pip still buys a land.
+        (FALLBACK_LANDS * pips_a).div_ceil(pips_a + pips_b)
+    };
+    let count_b = FALLBACK_LANDS - count_a;
+
+    let basic_for = |color: Color| -> String {
+        BASIC_FOR_COLOR
+            .iter()
+            .find(|(c, _)| *c == color)
+            .map(|(_, name)| (*name).to_string())
+            .expect("every color has a basic land")
+    };
+    let mut lands: HashMap<String, u32> = HashMap::new();
+    for (color, count) in [(best_pair.0, count_a), (best_pair.1, count_b)] {
+        if count > 0 {
+            *lands.entry(basic_for(color)).or_insert(0) += count;
+        }
+    }
+
+    // A pool too small or too scattered to fill 23 slots still has to make
+    // a legal deck; basics are unlimited, so top up with the primary color.
+    let short = MIN_DECK_SIZE.saturating_sub(maindeck.len() + FALLBACK_LANDS as usize);
+    if short > 0 {
+        *lands.entry(basic_for(best_pair.0)).or_insert(0) += short as u32;
+    }
+
+    // Everything the fallback did not play is the sideboard, as it would be
+    // for a deck a seat built.
+    let mut sideboard: Vec<String> = pool.to_vec();
+    for card in &maindeck {
+        if let Some(pos) = sideboard.iter().position(|c| c == card) {
+            sideboard.remove(pos);
+        }
+    }
+
+    DraftDeck { maindeck, lands, sideboard }
+}
 
 /// Parse an LLM's deck building response.
 ///
@@ -207,6 +375,110 @@ pub fn to_decklist(deck: &DraftDeck) -> Vec<(String, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The colors the deck's lands can actually produce.
+    fn land_colors(deck: &DraftDeck) -> Vec<Color> {
+        BASIC_FOR_COLOR
+            .iter()
+            .filter(|(_, basic)| deck.lands.get(*basic).copied().unwrap_or(0) > 0)
+            .map(|(c, _)| *c)
+            .collect()
+    }
+
+    /// A 42-card pool of the shape a draft leaves behind: weighted toward
+    /// one color pair, with a scattering of the other three.
+    fn wide_pool() -> Vec<String> {
+        let red_green = [
+            "Ambush Viper", "Ancient Grudge", "Ashmouth Hound", "Avacyn's Pilgrim",
+            "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bloodcrazed Neonate",
+            "Caravan Vigil", "Crossway Vampire", "Darkthicket Wolf", "Desperate Ravings",
+            "Devil's Play", "Elder of Laurels", "Feral Ridgewolf", "Festerhide Boar",
+            "Full Moon's Rise", "Furor of the Bitten", "Geistflame", "Giant Growth",
+            "Gnaw to the Bone", "Goblin Piker", "Grave Bramble", "Grizzled Outcasts",
+            "Grizzly Bears", "Gutter Grime",
+        ];
+        // The three colors the fallback used to jam into the maindeck behind
+        // hard-coded Islands and Swamps.
+        let off_color = [
+            "Elder Cathar", "Gallows Warden", "Voiceless Spirit",
+            "Curse of the Bloody Tome", "Frightful Delusion", "Claustrophobia",
+            "Walking Corpse", "Dead Weight", "Corpse Lunge", "Bump in the Night",
+            "Divine Reckoning", "Undead Alchemist", "Mirror-Mad Phantasm",
+            "Angelic Overseer", "Sensory Deprivation", "Purify the Grave",
+        ];
+        red_green
+            .iter()
+            .chain(off_color.iter())
+            .map(|s| (*s).to_string())
+            .collect()
+    }
+
+    /// Issue #200: the fallback dumped the whole pool behind a hard-coded
+    /// 9 Island / 8 Swamp, so most of its maindeck was uncastable.
+    #[test]
+    fn fallback_deck_only_plays_what_its_lands_can_cast() {
+        let registry = CardRegistry::with_all_cards();
+        let pool = wide_pool();
+        let deck = fallback_deck(&pool, &registry);
+
+        let available = land_colors(&deck);
+        for card in &deck.maindeck {
+            let needed = color_requirement(card, &registry)
+                .unwrap_or_else(|| panic!("{card} is not a known card"));
+            for color in needed {
+                assert!(
+                    available.contains(&color),
+                    "{card} needs {color:?} but the deck's lands make {available:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fallback_deck_is_a_legal_limited_deck_drawn_from_the_pool() {
+        let registry = CardRegistry::with_all_cards();
+        let pool = wide_pool();
+        let deck = fallback_deck(&pool, &registry);
+
+        assert!(
+            deck.total_cards() >= MIN_DECK_SIZE,
+            "a {} card deck is not legal (CR 100.2b)",
+            deck.total_cards()
+        );
+        assert_eq!(
+            deck.lands.values().sum::<u32>(),
+            FALLBACK_LANDS,
+            "a full pool needs no extra basics to reach 40"
+        );
+        for card in &deck.maindeck {
+            assert!(pool.contains(card), "{card} was never drafted");
+        }
+        for land in deck.lands.keys() {
+            assert!(BASIC_LANDS.contains(&land.as_str()), "{land} is not a basic");
+        }
+    }
+
+    /// A pool too small to fill 23 slots still has to make a legal deck.
+    #[test]
+    fn fallback_deck_tops_up_a_short_pool_with_basics() {
+        let registry = CardRegistry::with_all_cards();
+        let pool: Vec<String> = ["Darkthicket Wolf", "Ambush Viper", "Prey Upon"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let deck = fallback_deck(&pool, &registry);
+        assert!(deck.total_cards() >= MIN_DECK_SIZE, "deck: {deck:?}");
+        assert!(deck.maindeck.len() <= pool.len());
+    }
+
+    /// Whatever the fallback leaves out is the sideboard, as for any deck.
+    #[test]
+    fn fallback_deck_sideboards_the_rest_of_the_pool() {
+        let registry = CardRegistry::with_all_cards();
+        let pool = wide_pool();
+        let deck = fallback_deck(&pool, &registry);
+        assert_eq!(deck.maindeck.len() + deck.sideboard.len(), pool.len());
+    }
 
     #[test]
     fn test_parse_deck_response_object_format() {
