@@ -22,4 +22,5 @@ STATE = {
    'hand':[{'name':'Brimstone Volley'},{'name':'Spider Spawning'},
            {'name':'Midnight Haunting'},{'name':'Blazing Torch'},
            {'name':'Chapel Geist'}]}}
-board.render_board(STATE, sys.argv[1] if len(sys.argv)>1 else 'board.png', scale=3)
+if __name__ == '__main__':
+    board.render_board(STATE, sys.argv[1] if len(sys.argv)>1 else 'board.png', scale=3)
