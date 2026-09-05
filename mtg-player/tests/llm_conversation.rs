@@ -315,3 +315,53 @@ fn rewrite_does_not_touch_card_ids_or_numbers() {
         "Opp took 2 combat damage (18)"
     );
 }
+
+// ── Double-faced cards (issue #205) ──────────────────────────────────────
+
+/// A seat asked whether to transform has to be told what the card becomes.
+/// The back face used to appear nowhere in the conversation, while the
+/// system prompt forbids the seat to assume anything the prompt does not
+/// say — so no transform cost in the set could be evaluated.
+#[test]
+fn card_faces_returns_both_faces_of_a_transforming_card() {
+    let registry = CardRegistry::with_all_cards();
+
+    let faces = mtg_player::llm::card_faces("Delver of Secrets", &registry);
+    let names: Vec<&str> = faces.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, vec!["Delver of Secrets", "Insectile Aberration"]);
+    let (_, back) = &faces[1];
+    assert_eq!((back.power, back.toughness), (Some(3), Some(2)));
+    assert!(
+        back.keywords.iter().any(|k| format!("{k:?}").contains("Flying")),
+        "the back face's keywords come with it: {:?}", back.keywords
+    );
+
+    // The combined name a pack or decklist may use resolves the same way.
+    let combined = mtg_player::llm::card_faces("Delver of Secrets // Insectile Aberration", &registry);
+    assert_eq!(combined.len(), 2);
+
+    // A single-faced card is just itself.
+    let single = mtg_player::llm::card_faces("Grizzly Bears", &registry);
+    assert_eq!(single.len(), 1);
+
+    // An unknown name yields nothing rather than panicking.
+    assert!(mtg_player::llm::card_faces("Not A Card", &registry).is_empty());
+}
+
+#[test]
+fn format_decklist_describes_the_back_face_a_transform_produces() {
+    let registry = CardRegistry::with_all_cards();
+    let entries = vec![
+        ("Delver of Secrets".to_string(), 4),
+        ("Ludevic's Test Subject".to_string(), 1),
+    ];
+    let result = mtg_player::llm::LlmPlayer::format_decklist_for_test(&entries, &registry);
+
+    assert!(result.contains("Insectile Aberration"), "back face named: {result}");
+    assert!(result.contains("3/2"), "back face P/T: {result}");
+    assert!(
+        result.contains("Ludevic's Abomination"),
+        "the 13/13 a Test Subject's five hatchling counters buy: {result}"
+    );
+    assert!(result.contains("13/13"), "back face P/T: {result}");
+}

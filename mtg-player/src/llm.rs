@@ -116,6 +116,38 @@ fn format_reqwest_error(e: &reqwest::Error) -> String {
     format!("{}{}", tag_str, chain.join(" → "))
 }
 
+/// Every face a card name refers to: the card itself, and a
+/// double-faced card's back face under its own name.
+///
+/// A DFC's back face used to appear nowhere in the conversation — not in
+/// the decklist, not in the card reference, and not on the board after the
+/// permanent flipped. A seat was asked "pay {2}{B}{B} to transform?" with
+/// no statement anywhere of what it transforms into, under a system prompt
+/// that forbids it to assume anything the prompt does not say (issue
+/// #205). `back_face_data` was already populated for these cards; nothing
+/// consulted it.
+///
+/// Both faces are returned in printed order, so a caller renders them the
+/// same way it renders any card.
+#[must_use]
+pub fn card_faces(
+    name: &str,
+    registry: &mtg_engine::cards::CardRegistry,
+) -> Vec<(String, mtg_engine::cards::CardData)> {
+    // A decklist may name a DFC either by its front face or as
+    // "Front // Back"; the registry knows both, and the front face is what
+    // the card's data is under.
+    let lookup = name.split(" // ").next().unwrap_or(name);
+    let Some(id) = registry.get_id_by_name(lookup) else { return Vec::new() };
+    let Some(front) = registry.card_data(id) else { return Vec::new() };
+
+    let mut faces = vec![(front.name.clone(), front)];
+    if let Some(back) = registry.get(id).and_then(mtg_engine::cards::CardBehavior::back_face_data) {
+        faces.push((back.name.clone(), back));
+    }
+    faces
+}
+
 /// Shared game rules and strategy — used by all backends.
 const GAME_RULES: &str = r#"## Prompt format
 
@@ -1257,28 +1289,29 @@ impl LlmPlayer {
             writeln!(s, "{count}x {name}").unwrap();
             if !seen.contains(name) {
                 seen.insert(name.clone());
-                if let Some(id) = registry.get_id_by_name(name) {
-                    if let Some(data) = registry.card_data(id) {
-                        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                        let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                            CardType::Creature => "Creature",
-                            CardType::Instant => "Instant",
-                            CardType::Sorcery => "Sorcery",
-                            CardType::Enchantment => "Enchantment",
-                            CardType::Artifact => "Artifact",
-                            CardType::Land => "Land",
-                            CardType::Planeswalker => "Planeswalker",
-                        }).collect();
-                        let subtypes = if data.subtypes.is_empty() { String::new() }
-                            else { format!(" — {}", data.subtypes.join(" ")) };
-                        let pt = match (data.power, data.toughness) {
-                            (Some(p), Some(t)) => format!(" {p}/{t}"),
-                            _ => String::new(),
-                        };
-                        writeln!(s, "  {}{} {}{}{}", name, cost, types.join(" "), subtypes, pt).unwrap();
-                        if !data.oracle_text.is_empty() {
-                            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
-                        }
+                // Both faces of a double-faced card: a seat that is going to
+                // be asked whether to transform has to be told what it
+                // becomes (issue #205).
+                for (face_name, data) in card_faces(name, registry) {
+                    let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+                    let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+                        CardType::Creature => "Creature",
+                        CardType::Instant => "Instant",
+                        CardType::Sorcery => "Sorcery",
+                        CardType::Enchantment => "Enchantment",
+                        CardType::Artifact => "Artifact",
+                        CardType::Land => "Land",
+                        CardType::Planeswalker => "Planeswalker",
+                    }).collect();
+                    let subtypes = if data.subtypes.is_empty() { String::new() }
+                        else { format!(" — {}", data.subtypes.join(" ")) };
+                    let pt = match (data.power, data.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    writeln!(s, "  {}{} {}{}{}", face_name, cost, types.join(" "), subtypes, pt).unwrap();
+                    if !data.oracle_text.is_empty() {
+                        writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
                     }
                 }
             }

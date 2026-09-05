@@ -343,29 +343,30 @@ pub fn build_card_reference(
 
     let mut s = String::new();
     for name in card_names {
-        let lookup = name.split(" // ").next().unwrap_or(name);
-        let Some(id) = registry.get_id_by_name(lookup) else { continue };
-        let Some(data) = registry.card_data(id) else { continue };
-
-        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-        let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-            CardType::Creature => "Creature",
-            CardType::Instant => "Instant",
-            CardType::Sorcery => "Sorcery",
-            CardType::Enchantment => "Enchantment",
-            CardType::Artifact => "Artifact",
-            CardType::Land => "Land",
-            CardType::Planeswalker => "Planeswalker",
-        }).collect();
-        let subtypes = if data.subtypes.is_empty() { String::new() }
-            else { format!(" — {}", data.subtypes.join(" ")) };
-        let pt = match (data.power, data.toughness) {
-            (Some(p), Some(t)) => format!(" {p}/{t}"),
-            _ => String::new(),
-        };
-        writeln!(s, "{}{} | {}{}{}", name, cost, types.join(" "), subtypes, pt).unwrap();
-        if !data.oracle_text.is_empty() {
-            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
+        // Both faces of a double-faced card, each under its own name: a
+        // drafter picking Ludevic's Test Subject is picking the 13/13 on
+        // its back (issue #205).
+        for (face_name, data) in mtg_player::llm::card_faces(name, registry) {
+            let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+            let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+                CardType::Creature => "Creature",
+                CardType::Instant => "Instant",
+                CardType::Sorcery => "Sorcery",
+                CardType::Enchantment => "Enchantment",
+                CardType::Artifact => "Artifact",
+                CardType::Land => "Land",
+                CardType::Planeswalker => "Planeswalker",
+            }).collect();
+            let subtypes = if data.subtypes.is_empty() { String::new() }
+                else { format!(" — {}", data.subtypes.join(" ")) };
+            let pt = match (data.power, data.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            };
+            writeln!(s, "{}{} | {}{}{}", face_name, cost, types.join(" "), subtypes, pt).unwrap();
+            if !data.oracle_text.is_empty() {
+                writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
+            }
         }
     }
     s
