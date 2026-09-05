@@ -524,12 +524,22 @@ For a draft pod (e.g., 8 players x 3 packs = 24 packs):
 
 1. Initialize a `CollationState` with random cursor positions
 2. Generate 24 packs sequentially (simulating packs from the same booster box)
-3. Distribute: packs 0-7 as each player's pack 1, packs 8-15 as pack 2, packs 16-23 as pack 3
+3. Shuffle the 24 packs
+4. Distribute: packs 0-7 as each player's pack 1, packs 8-15 as pack 2, packs 16-23 as pack 3
 
 This preserves the sequential structure: consecutive packs from the same box share
 collation patterns, which is realistic for a draft where all packs come from the
 same (or nearby) boxes.
 
+The shuffle in step 3 is what keeps a seat from being locked to one half of the
+collation. A pack's index in the box decides both its C1/C2 type and which rare
+sheet it draws from, so dealing the box in generation order gave every seat in an
+even-sized pod the same index parity for all three of its packs. All 30 ISD mythic
+slots are on rare sheet 1, so half the pod first-picked every mythic in the draft
+and the other half never opened one, and the same lock split the C1 and C2 commons
+between them (issue #202). Which packs of a box a seat ends up with is arbitrary in
+a real draft, so the deal is where that correlation is broken — the collation
+sequence itself is unchanged.
 
 For 8 players x 3 packs = 24 packs from a 36-pack box, we use 2/3 of a box. For
 4 players x 3 packs = 12 packs, we use 1/3 of a box.

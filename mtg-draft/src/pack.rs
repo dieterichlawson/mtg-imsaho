@@ -2,6 +2,7 @@
 //! See docs/isd-booster-collation.md for full details on the simulation model.
 
 use crate::set_data::SetData;
+use rand::seq::SliceRandom;
 use rand::Rng;
 use serde::Serialize;
 
@@ -452,10 +453,21 @@ pub fn generate_draft_packs(
     let mut state = CollationState::new_random(rng);
 
     // Generate all packs sequentially (simulating one booster box)
-    let all_packs: Vec<BoosterPack> = (0..total_packs)
+    let mut all_packs: Vec<BoosterPack> = (0..total_packs)
         .map(|_| generate_pack(sheets, &mut state, rng))
         .collect();
 
+    // Shuffle the box before dealing it out. A pack's index in the box
+    // decides its C1/C2 type and which rare sheet it drew from, so dealing
+    // in generation order (`i % pod_size`) gave every seat in an
+    // even-sized pod the same index parity for all three of its packs —
+    // forever. All 30 ISD mythic slots live on rare sheet 1, so half the
+    // seats opened every mythic in the draft and the other half opened
+    // none, and the same lock split the C1 and C2 commons between them
+    // (issue #202). Which packs of a box a seat ends up with is arbitrary
+    // in a real draft, so the deal is where the correlation belongs to be
+    // broken, not the collation.
+    all_packs.shuffle(rng);
 
     // Distribute: packs 0..pod_size are pack 1 for each player,
     // pod_size..2*pod_size are pack 2, etc.
@@ -675,6 +687,92 @@ mod tests {
             }
         }
         assert!(seen.0 && seen.1, "common foils occur in both pack types: {seen:?}");
+    }
+
+    /// Issue #202: every pack a seat opened had the same index parity, so
+    /// the rare sheet (and with it every mythic) was locked to half the
+    /// pod. Each seat must be able to open cards from both rare sheets.
+    #[test]
+    fn no_seat_is_locked_to_one_rare_sheet() {
+        let sheets = load_sheets();
+        let mut rng = seeded_rng(2_022);
+
+        const POD: usize = 8;
+        let sheet1: std::collections::HashSet<&String> = sheets.rare_sheet1.iter().collect();
+        let sheet2: std::collections::HashSet<&String> = sheets.rare_sheet2.iter().collect();
+        let only1: Vec<&&String> = sheet1.iter().filter(|c| !sheet2.contains(**c)).collect();
+        let only2: Vec<&&String> = sheet2.iter().filter(|c| !sheet1.contains(**c)).collect();
+        assert!(!only1.is_empty() && !only2.is_empty(), "the sheets differ");
+
+        let mut from_1 = [0usize; POD];
+        let mut from_2 = [0usize; POD];
+        for _ in 0..60 {
+            for (seat, packs) in generate_draft_packs(&sheets, POD, &mut rng).iter().enumerate() {
+                for pack in packs {
+                    if only1.iter().any(|c| ***c == pack.rare) { from_1[seat] += 1; }
+                    if only2.iter().any(|c| ***c == pack.rare) { from_2[seat] += 1; }
+                }
+            }
+        }
+
+        for seat in 0..POD {
+            assert!(
+                from_1[seat] > 0 && from_2[seat] > 0,
+                "seat {seat} opened {} sheet-1-only and {} sheet-2-only rares — \
+                 no seat may be locked to one rare sheet\nsheet 1: {from_1:?}\nsheet 2: {from_2:?}",
+                from_1[seat], from_2[seat]
+            );
+        }
+    }
+
+    /// The same lock split the commons: a seat that only ever opened C1
+    /// packs never saw a C2-run common.
+    #[test]
+    fn no_seat_is_locked_to_one_common_run() {
+        let sheets = load_sheets();
+        let mut rng = seeded_rng(4_040);
+
+        const POD: usize = 8;
+        let c1: std::collections::HashSet<&String> = sheets.common_c1.iter().collect();
+        let c2: std::collections::HashSet<&String> = sheets.common_c2.iter().collect();
+        let only1: Vec<&&String> = c1.iter().filter(|c| !c2.contains(**c)).collect();
+        let only2: Vec<&&String> = c2.iter().filter(|c| !c1.contains(**c)).collect();
+
+        let mut from_1 = [0usize; POD];
+        let mut from_2 = [0usize; POD];
+        for _ in 0..40 {
+            for (seat, packs) in generate_draft_packs(&sheets, POD, &mut rng).iter().enumerate() {
+                for pack in packs {
+                    for card in &pack.commons {
+                        if only1.iter().any(|c| ***c == *card) { from_1[seat] += 1; }
+                        if only2.iter().any(|c| ***c == *card) { from_2[seat] += 1; }
+                    }
+                }
+            }
+        }
+        for seat in 0..POD {
+            assert!(
+                from_1[seat] > 0 && from_2[seat] > 0,
+                "seat {seat}: {} C1-only and {} C2-only commons\nC1: {from_1:?}\nC2: {from_2:?}",
+                from_1[seat], from_2[seat]
+            );
+        }
+    }
+
+    /// Shuffling the box must not lose or duplicate a pack.
+    #[test]
+    fn every_generated_pack_reaches_exactly_one_seat() {
+        let sheets = load_sheets();
+        let mut rng = seeded_rng(5);
+        for pod in [2usize, 3, 8] {
+            let packs = generate_draft_packs(&sheets, pod, &mut rng);
+            assert_eq!(packs.len(), pod);
+            let total: usize = packs.iter().map(Vec::len).sum();
+            assert_eq!(total, pod * 3, "pod {pod} deals every pack exactly once");
+            for seat_packs in &packs {
+                assert_eq!(seat_packs.len(), 3);
+            }
+        }
     }
 
     #[test]
