@@ -64,6 +64,44 @@ fn die(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// Silence the default panic output for a seat's fatal LLM failure.
+///
+/// Exhausting the retries is deliberately fatal, but it is an operational
+/// condition — a usage limit, a CLI outage — not a bug, and the operator
+/// used to get a worker-thread panic with a backtrace followed by a second
+/// panic whose whole message was `Any { .. }`. The panic is still how the
+/// worker unwinds; `report_worker_failure` prints the one line that
+/// matters, so the hook keeps quiet for these and behaves normally for a
+/// real bug (issue #218).
+fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let msg = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied());
+        if msg.is_some_and(|m| m.starts_with(llm_client::FATAL_MARKER)) {
+            return;
+        }
+        default(info);
+    }));
+}
+
+/// Turn a joined worker's panic payload into one operator-facing line.
+///
+/// `context` says where the run stopped — the seat, and the pack and pick
+/// it was on — which the payload itself does not know.
+fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str) -> ! {
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("worker thread failed");
+    let msg = msg.strip_prefix(llm_client::FATAL_MARKER).unwrap_or(msg);
+    die(&format!("{context}: {msg}"));
+}
+
 struct Args {
     set: String,
     players: usize,
@@ -278,6 +316,7 @@ fn validate_model_specs(models: &[String]) {
 // ─── Main ────────────────────────────────────────────────────────────
 
 fn main() {
+    install_panic_hook();
     let args = parse_args();
     validate_model_specs(&args.models);
     let mut rng = rand::thread_rng();
@@ -411,7 +450,21 @@ fn main() {
                         })
                         .collect();
 
-                    handles.into_iter().map(|h| h.join().unwrap()).collect()
+                    handles
+                        .into_iter()
+                        .enumerate()
+                        .map(|(seat, h)| match h.join() {
+                            Ok(result) => result,
+                            Err(payload) => report_worker_failure(
+                                &payload,
+                                &format!(
+                                    "seat {seat} could not make pack {} pick {}",
+                                    round + 1,
+                                    pick_num + 1
+                                ),
+                            ),
+                        })
+                        .collect()
                 });
 
             // Apply picks sequentially (mutates draft state) and log
@@ -500,7 +553,16 @@ substituting {} (the first card). Response: {}",
             }))
             .collect();
 
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
+        handles
+            .into_iter()
+            .enumerate()
+            .map(|(seat, h)| match h.join() {
+                Ok(result) => result,
+                Err(payload) => {
+                    report_worker_failure(&payload, &format!("seat {seat} could not build its deck"))
+                }
+            })
+            .collect()
     });
 
     // Build the decklist collection in seat order now that all workers
@@ -580,7 +642,17 @@ substituting {} (the first card). Response: {}",
                 })
                 .collect();
 
-            handles.into_iter().map(|h| h.join().unwrap()).collect()
+            handles
+                .into_iter()
+                .zip(real_matches.iter())
+                .map(|(h, (a, b))| match h.join() {
+                    Ok(result) => result,
+                    Err(payload) => report_worker_failure(
+                        &payload,
+                        &format!("the match between seat {a} and seat {b} could not finish"),
+                    ),
+                })
+                .collect()
         });
 
         // Log byes

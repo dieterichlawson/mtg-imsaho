@@ -462,7 +462,7 @@ impl AnthropicDraftBackend {
                     if text.is_empty() {
                         let msg = format!("Anthropic returned empty text (attempt {}/6)", attempt + 1);
                         eprintln!("WARN: {msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         continue;
                     }
                     return text;
@@ -472,24 +472,22 @@ impl AnthropicDraftBackend {
                     if code == 529 || code == 429 {
                         let msg = format!("Anthropic {} (attempt {}/6)", code, attempt + 1);
                         eprintln!("{msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
                     let text = resp.text().unwrap_or_default();
                     let msg = format!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
-                    mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
-                    panic!("{}", msg);
+                    fatal(&msg);
                 }
                 Err(e) => {
                     let msg = format!("Anthropic request failed (attempt {}/6): {}", attempt + 1, e);
                     eprintln!("{msg}");
-                    mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
         }
         let msg = "Anthropic draft API exhausted all 6 retries";
-        mtg_player::game_log::write(file!(), line!(), "API_FATAL", msg);
-        panic!("{}", msg)
+        fatal(msg)
     }
 
     fn send_conv_structured(
@@ -534,7 +532,55 @@ impl DraftBackend for AnthropicDraftBackend {
 /// killed and the call retried. Print mode with thinking runs well past the
 /// API path's two minutes.
 const CLAUDE_CODE_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
-const MAX_CLAUDE_CODE_ATTEMPTS: u32 = 3;
+/// How long a seat keeps retrying a failing `claude -p` before the draft
+/// gives up.
+///
+/// This used to be three attempts with `2^attempt` backoff: three tries and
+/// six seconds. The failure a long draft actually meets is a usage limit or
+/// a transient CLI/network outage, which lasts minutes, and an eight-seat
+/// draft is 360 picks over about an hour — so any six-second hiccup at pick
+/// 300 ended the run (issue #218). A wall-clock budget says what is meant
+/// better than an attempt count does: keep trying for ten minutes, backing
+/// off up to a minute between tries.
+const RETRY_BUDGET: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The longest wait between two attempts. Exponential up to here, then flat.
+const MAX_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Overrides [`RETRY_BUDGET`], so the give-up path can be tested in seconds.
+/// Not something a run should set.
+const RETRY_BUDGET_ENV: &str = "MTG_DRAFT_RETRY_BUDGET_SECS";
+
+fn retry_budget() -> std::time::Duration {
+    std::env::var(RETRY_BUDGET_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(RETRY_BUDGET, std::time::Duration::from_secs)
+}
+
+/// How long to wait before attempt number `attempt` (1-based on retries).
+fn retry_backoff(attempt: u32) -> std::time::Duration {
+    MAX_RETRY_BACKOFF.min(std::time::Duration::from_secs(2u64.pow(attempt.min(6))))
+}
+
+/// Prefix on the panic payload of a fatal LLM failure.
+///
+/// Exhausting the retries is deliberately fatal — a draft that quietly
+/// picks card 0 for the rest of the run is worse than one that stops — but
+/// it is an operational condition, not a bug, and the operator used to get
+/// a worker-thread panic with a backtrace followed by a second panic
+/// reading `called Result::unwrap() on an Err value: Any { .. }`. The
+/// panic is still how the worker thread unwinds, but `main` recognises this
+/// prefix, prints one line naming the seat, pack and pick, and exits
+/// through `die` (issue #218).
+pub const FATAL_MARKER: &str = "llm seat fatal: ";
+
+/// Report a fatal LLM failure and unwind out of the seat's worker thread.
+fn fatal(msg: &str) -> ! {
+    mtg_player::game_log::write_at(
+        mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_FATAL", msg);
+    panic!("{FATAL_MARKER}{msg}")
+}
 
 /// Claude Code draft backend: the same draft protocol as
 /// [`AnthropicDraftBackend`], spoken through the `claude -p` CLI instead of
@@ -616,21 +662,30 @@ impl ClaudeCodeDraftBackend {
     /// the run is worse than one that stops.
     fn decide(&mut self, message: &str, schema: &serde_json::Value) -> String {
         let sanitized = sanitize_schema_for_anthropic(schema);
-        for attempt in 0..MAX_CLAUDE_CODE_ATTEMPTS {
+        let deadline = std::time::Instant::now() + retry_budget();
+        let mut attempt = 0u32;
+        loop {
             if attempt > 0 {
-                std::thread::sleep(std::time::Duration::from_secs(2u64.pow(attempt)));
+                let backoff = retry_backoff(attempt);
+                // Sleeping past the budget would spend the whole window on
+                // one wait; stop instead and report.
+                if std::time::Instant::now() + backoff > deadline {
+                    break;
+                }
+                std::thread::sleep(backoff);
             }
+            attempt += 1;
             let started = std::time::Instant::now();
             match self.call_once(message, &sanitized) {
                 Ok(json) => {
                     if json["is_error"].as_bool() == Some(true) {
                         let msg = format!(
-                            "claude -p reported an error (attempt {}/{}, {}ms): {}",
-                            attempt + 1, MAX_CLAUDE_CODE_ATTEMPTS, started.elapsed().as_millis(),
+                            "claude -p reported an error (attempt {}, {}ms): {}",
+                            attempt, started.elapsed().as_millis(),
                             json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                         );
                         eprintln!("{msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
                     if let Some(sid) = json["session_id"].as_str() {
@@ -651,26 +706,27 @@ impl ClaudeCodeDraftBackend {
                             .unwrap_or_else(|_| object.to_string());
                     }
                     let msg = format!(
-                        "claude -p returned no structured object (attempt {}/{}): {}",
-                        attempt + 1, MAX_CLAUDE_CODE_ATTEMPTS,
+                        "claude -p returned no structured object (attempt {}): {}",
+                        attempt,
                         json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                     );
                     eprintln!("WARN: {msg}");
-                    mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                    mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                 }
                 Err(e) => {
                     let msg = format!(
-                        "claude -p failed (attempt {}/{}, {}ms): {e}",
-                        attempt + 1, MAX_CLAUDE_CODE_ATTEMPTS, started.elapsed().as_millis()
+                        "claude -p failed (attempt {}, {}ms): {e}",
+                        attempt, started.elapsed().as_millis()
                     );
                     eprintln!("{msg}");
-                    mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
         }
-        let msg = format!("claude -p draft seat exhausted all {MAX_CLAUDE_CODE_ATTEMPTS} attempts");
-        mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
-        panic!("{msg}")
+        fatal(&format!(
+            "claude -p draft seat gave up after {attempt} attempts over {}s",
+            retry_budget().as_secs()
+        ))
     }
 
     fn call_once(&mut self, message: &str, schema: &serde_json::Value) -> Result<serde_json::Value, String> {
@@ -892,7 +948,7 @@ impl GeminiDraftBackend {
                     if text.is_empty() {
                         let msg = format!("Gemini returned empty text (attempt {}/6, interaction_id: {:?})", attempt + 1, id);
                         eprintln!("WARN: {msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         continue;
                     }
                     return (text, id);
@@ -903,7 +959,7 @@ impl GeminiDraftBackend {
                         let err_text = resp.text().unwrap_or_default();
                         let msg = format!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
                         eprintln!("{msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
                     let text = resp.text().unwrap_or_default();
@@ -911,7 +967,7 @@ impl GeminiDraftBackend {
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = format!("Invalid interaction ID, falling back to fresh conversation ({})", &text[..text.len().min(150)]);
                         eprintln!("WARN: {msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
                         fresh_retry = true;
@@ -921,23 +977,21 @@ impl GeminiDraftBackend {
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
                         let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
                         eprintln!("FATAL: {msg}");
-                        mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
+                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_FATAL", &msg);
                         std::process::exit(1);
                     }
                     let msg = format!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-                    mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
-                    panic!("{}", msg);
+                    fatal(&msg);
                 }
                 Err(e) => {
                     let msg = format!("Gemini request failed (attempt {}/6): {}", attempt + 1, e);
                     eprintln!("{msg}");
-                    mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
         }
         let msg = "Gemini draft API exhausted all 6 retries";
-        mtg_player::game_log::write(file!(), line!(), "API_FATAL", msg);
-        panic!("{}", msg)
+        fatal(msg)
     }
 
     /// Re-serialize the Gemini JSON response to a canonical pretty form.
@@ -1220,16 +1274,43 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert_eq!(arg_after(&fake.calls()[0], "--model"), Some("opus"));
     }
 
+    /// Issue #218: three attempts and six seconds of backoff gave up on the
+    /// failure a long draft actually meets — a usage limit or a transient
+    /// outage lasting minutes. The seat keeps trying for a wall-clock
+    /// budget instead, and only then stops (rather than drafting card 0 for
+    /// the rest of the run).
     #[test]
-    fn a_failing_cli_is_retried_and_then_fatal_rather_than_picking_card_zero() {
+    fn a_failing_cli_is_retried_across_the_budget_and_then_fatal() {
         use super::DraftBackend;
+        // Seconds, not the ten real minutes.
+        std::env::set_var(super::RETRY_BUDGET_ENV, "3");
         let fake = Fake::new("fail", "echo 'boom' >&2; exit 3");
         let mut b = backend(&fake, None);
+        let started = std::time::Instant::now();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             b.send_pick("Pack 1, Pick 1", 2);
         }));
+        std::env::remove_var(super::RETRY_BUDGET_ENV);
+
         assert!(result.is_err(), "an unanswerable draft stops instead of drafting for the model");
-        assert_eq!(fake.calls().len(), super::MAX_CLAUDE_CODE_ATTEMPTS as usize);
+        let payload = result.unwrap_err();
+        let msg = payload.downcast_ref::<String>().expect("a message, not an opaque payload");
+        assert!(
+            msg.starts_with(super::FATAL_MARKER),
+            "main recognises this prefix and reports it as one line: {msg}"
+        );
+        // The first 2s backoff fits in a 3s budget; the 4s one does not.
+        assert!(fake.calls().len() >= 2, "it kept trying while the budget lasted");
+        assert!(started.elapsed() >= std::time::Duration::from_secs(2),
+            "it really waited between attempts rather than burning three in 6ms");
+    }
+
+    /// The default budget is sized for an outage, not for a hiccup.
+    #[test]
+    fn the_retry_budget_outlasts_a_transient_outage() {
+        assert!(super::RETRY_BUDGET >= std::time::Duration::from_secs(300));
+        assert!(super::retry_backoff(1) < super::retry_backoff(3));
+        assert_eq!(super::retry_backoff(20), super::MAX_RETRY_BACKOFF, "backoff is capped");
     }
 
     #[test]
