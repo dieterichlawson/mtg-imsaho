@@ -119,11 +119,16 @@ fn format_reqwest_error(e: &reqwest::Error) -> String {
 /// Shared game rules and strategy — used by all backends.
 const GAME_RULES: &str = r#"## Prompt format
 
-Each prompt you receive has these sections (in order):
+Each prompt you receive has these sections, in this order:
 
-**Recent events** (top): a delta log of game events since your last decision — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's.
+**Header line** (top): `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
 
-**Header line**: `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main 1, Begin Combat, Declare Attackers, Declare Blockers, Combat Damage, End Combat, Main 2, End Step, Cleanup.
+**Recent events** (only if anything happened since your last decision): a delta log of game events — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's.
+
+```
+Recent events:
+p0 drew a card
+```
 
 **Player status**:
 ```
@@ -134,10 +139,15 @@ Fields: hp=life total, cards=hand size, lib=library size, gy=graveyard count, ex
 
 **Mana pool** (only if non-empty): `Mana pool: Green:1, Red:2`
 
-**Boards** (only if non-empty):
+**Boards** (only if non-empty): a `Your board:` / `Opp board:` header with one indented entry per permanent:
 ```
-Your board: 2x Forest, 1x Mountain (tapped), Grizzly Bears (#30) 2/2
-Opp board: 1x Plains, Savannah Lions (#45) 2/1 [S]
+Your board:
+  2x Forest
+  1x Mountain (tapped)
+  Grizzly Bears (#30) 2/2
+Opp board:
+  1x Plains
+  Savannah Lions (#45) 2/1 [S]
 ```
 Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
 - `T` = tapped
@@ -145,13 +155,23 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - `Ndmg` = N damage marked on it
 - `+1/+1:N`, `-1/-1:N`, `loyalty:N` etc. = counter counts
 
-**Stack** (only if non-empty): `Stack: Lightning Bolt targeting Goblin Piker (opp's)` — shows pending spells/abilities with controller tag and targets.
+**Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each tagged with its controller and its targets:
+```
+Stack:
+  Lightning Bolt targeting Goblin Piker (opp's)
+```
 
-**Hand**: `Hand: Forest, Grizzly Bears {1}{G} 2/2, Lightning Bolt {R}` — your hand with mana costs and (for creatures) base P/T.
+**Hand**: a `Hand:` header with one indented card per line, with mana costs and (for creatures) base P/T:
+```
+Hand:
+  Forest
+  Grizzly Bears {1}{G} 2/2
+  Lightning Bolt {R}
+```
 
-**Graveyards** (only if non-empty): one line per player listing the cards.
+**Graveyards** (only if non-empty): a `Your graveyard:` / `Opp graveyard:` header with one indented card per line.
 
-**Flashback available** (only if relevant): cards in your graveyard you can cast for their flashback cost.
+**Flashback available** (only if relevant): cards in your graveyard you can cast for their flashback cost, one indented line each.
 
 **Context line**: a `[CONTEXT]` marker showing the current game state:
 - `[MAIN PHASE 1]` / `[MAIN PHASE 2]` — your main phases. Cast sorceries, creatures, enchantments, artifacts here. Also play lands here.
@@ -162,7 +182,13 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - `[OPPONENT'S TURN: <step>]` — it's the opponent's turn and you have priority. You can cast instants and activate abilities.
 - `[RESPOND TO <controller>'s <spell>]` — something is on the stack waiting to resolve. You can pass to let it resolve, or respond with an instant/ability (e.g. Counterspell).
 
-**Action list** (final line): numbered options separated by spaces, like `0:Pass 1:Tap Forest 2:Cast Kalonian Tusker (tap 2x Forest) 3:Concede`. Pick one by its index. Targeted spells show their chosen target inline (e.g. `Cast Lightning Bolt → Goblin Piker 2/1`); for spells with multiple choices you'll get a follow-up "Choose targets" prompt.
+**Action list** (last): an `Available actions:` header, then the numbered options on one line, comma-separated:
+```
+[MAIN PHASE 1]
+Available actions:
+0: Pass, 1: Tap Forest, 2: Play Forest, 3: Cast Kalonian Tusker (tap 2x Forest), 4: Concede
+```
+Pick one by its index. A cast option names the spell and its tap plan, not its target: when a spell needs a target you pick the action first and a follow-up prompt (`<card name>: select a target:`) lists the legal targets.
 
 ## Key rules
 
@@ -240,61 +266,78 @@ The player on the play skips their first draw step; the player on the draw gets 
 At the start of the game, before turn 1, you'll be asked two pre-game decisions:
 
 1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Choose `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
-2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`. You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
+2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`, with N filled in (`[BOTTOM 2 CARD(S) AFTER MULLIGAN]`; a single card drops the `(S)`). You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
 
 ## Examples
 
 ### Example: main phase, build mana and cast a creature
 
 ```
-Recent events:
-p0 drew a card
+Turn 3 - Main Phase 1 (your turn)
 
-Turn 3 - Main 1 (your turn)
+Recent events:
+you drew a card
+
 You: 20hp, 6cards, 31lib, 0gy, 0exile
 Opp: 20hp, 6cards, 32lib, 0gy, 0exile
-Your board: 2x Forest
-Hand: Forest, Kalonian Tusker {G}{G} 3/3, Kalonian Tusker {G}{G} 3/3, Lightning Bolt {R}
-[MAIN PHASE 1]
+Your board:
+  2x Forest
+Hand:
+  Forest
+  Kalonian Tusker {G}{G} 3/3
+  Kalonian Tusker {G}{G} 3/3
+  Lightning Bolt {R}
 
-0:Pass 1:Tap Forest 2:Tap Forest 3:Play Forest 4:Cast Kalonian Tusker (tap 2x Forest) 5:Concede
+[MAIN PHASE 1]
+Available actions:
+0: Pass, 1: Tap Forest, 2: Tap Forest, 3: Play Forest, 4: Cast Kalonian Tusker (tap 2x Forest), 5: Concede
 ```
 **Pick 4** — auto-tap handles mana, just cast directly. Don't bother with Tap Forest manually.
 
 ### Example: utility step, nothing to do
 
 ```
-Recent events:
-Step: Upkeep
-
 Turn 4 - Upkeep (your turn)
+
 You: 20hp, 5cards, 30lib, 0gy, 0exile
 Opp: 20hp, 6cards, 32lib, 0gy, 0exile
-Your board: 3x Forest, Kalonian Tusker 3/3
-Hand: Forest, Lightning Bolt {R}
-[UPKEEP]
+Your board:
+  3x Forest
+  Kalonian Tusker (#30) 3/3
+Hand:
+  Forest
+  Lightning Bolt {R}
 
-0:Pass 1:Tap Forest 2:Tap Forest 3:Tap Forest 4:Concede
+[UPKEEP]
+Available actions:
+0: Pass, 1: Tap Forest, 2: Tap Forest, 3: Tap Forest, 4: Concede
 ```
 **Pick 0** — no instants you want to cast right now. Tapping a Forest in Upkeep just wastes it (mana pool empties when Upkeep ends).
 
 ### Example: combat trick after attackers are declared
 
 ```
-Recent events:
-p0 declared attackers: Grizzly Bears (#27)
-
 Turn 5 - Declare Attackers (your turn)
+
+Recent events:
+you declared attackers: Grizzly Bears (#27)
+
 You: 20hp, 4cards, 28lib, 1gy, 0exile
 Opp: 18hp, 5cards, 29lib, 0gy, 0exile
-Your board: 2x Forest, Grizzly Bears 2/2 [T]
-Opp board: 2x Plains, Savannah Lions 2/1
-Hand: Giant Growth {G}
-[AFTER ATTACKERS DECLARED]
+Your board:
+  2x Forest
+  Grizzly Bears (#27) 2/2 [T]
+Opp board:
+  2x Plains
+  Savannah Lions (#45) 2/1
+Hand:
+  Giant Growth {G}
 
-0:Pass 1:Tap Forest 2:Cast Giant Growth (tap Forest) 3:Concede
+[AFTER ATTACKERS DECLARED]
+Available actions:
+0: Pass, 1: Tap Forest, 2: Cast Giant Growth (tap Forest), 3: Concede
 ```
-**Pick 2** — cast Giant Growth on your attacking Bears. After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
+**Pick 2** — cast Giant Growth on your attacking Bears (the follow-up target prompt asks which creature). After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
 
 ### Example: timing morbid (a "creature died this turn" effect)
 
@@ -305,22 +348,34 @@ spell** so a creature actually dies, then cast the spell after the damage
 step with the morbid bonus already active.
 
 ```
-Recent events:
-You declared attackers: Tormented Pariah (#5), Elder of Laurels (#4), Villagers of Estwald (#9)
-Opp declared blockers: Ghoulraiser (#60) blocks Elder of Laurels (#4), Rakish Heir (#58) blocks Villagers of Estwald (#9)
-
 Turn 15 - Declare Blockers (your turn)
+
+Recent events:
+you declared attackers: Tormented Pariah (#5), Elder of Laurels (#4), Villagers of Estwald (#9)
+opp declared blockers: Ghoulraiser (#60) blocks Elder of Laurels (#4), Rakish Heir (#58) blocks Villagers of Estwald (#9)
+
 You: 14hp, 1cards, 28lib, 4gy, 0exile
 Opp: 7hp, 3cards, 27lib, 3gy, 1exile
-Your board: 2x Forest, 3x Mountain, Tormented Pariah 3/2 [T], Elder of Laurels 2/3 [T], Villagers of Estwald 2/3 [T]
-Opp board: 2x Swamp (tapped), 2x Mountain (1 tapped), Rakish Heir 2/2 [S], Ghoulraiser 2/2
-Hand: Brimstone Volley {2}{R}
-[AFTER BLOCKERS DECLARED]
+Your board:
+  2x Forest
+  3x Mountain
+  Tormented Pariah (#5) 3/2 [T]
+  Elder of Laurels (#4) 2/3 [T]
+  Villagers of Estwald (#9) 2/3 [T]
+Opp board:
+  2x Swamp (tapped)
+  2x Mountain (1 tapped)
+  Rakish Heir (#58) 2/2 [S]
+  Ghoulraiser (#60) 2/2
+Hand:
+  Brimstone Volley {2}{R}
 
-0:Pass 1:Tap Forest 2:Tap Mountain 3:Cast Brimstone Volley → Opp (tap Mountain, 2x Forest) 4:Concede
+[AFTER BLOCKERS DECLARED]
+Available actions:
+0: Pass, 1: Tap Forest, 2: Tap Mountain, 3: Cast Brimstone Volley (tap Mountain, 2x Forest), 4: Concede
 ```
 
-**Pick 0** — pass first. Combat damage will resolve: Elder of Laurels (2 power) trades with Ghoulraiser (2 toughness), Villagers of Estwald (2 power) trades with Rakish Heir (2 toughness), Tormented Pariah (3 power) gets through unblocked → opp goes from 7 to 4. Several creatures die in combat → morbid is active. THEN, after combat damage, cast Brimstone Volley targeting the opponent for 5 (morbid). 4 → -1 = lethal.
+**Pick 0** — pass first. Combat damage will resolve: Elder of Laurels (2 power) trades with Ghoulraiser (2 toughness), Villagers of Estwald (2 power) trades with Rakish Heir (2 toughness), Tormented Pariah (3 power) gets through unblocked → opp goes from 7 to 4. Several creatures die in combat → morbid is active. THEN, after combat damage, cast Brimstone Volley and pick the opponent at the target prompt for 5 (morbid). 4 → -1 = lethal.
 
 If you cast Brimstone Volley *before* combat damage (i.e. now, during Declare Blockers), nothing has died yet, so it deals only 3 — opp would go to 7 - 3 = 4 from the spell, then 4 - 3 = 1 from Pariah's combat damage, and you'd lose your shot at lethal this turn.
 
@@ -329,49 +384,73 @@ The general rule: when you have a "creature died this turn" effect and you have 
 ### Example: respond to opponent's spell
 
 ```
-Recent events:
-p1 cast Lightning Bolt (#41) targeting Kalonian Tusker (#30)
+Turn 5 - Main Phase 1 (opp's turn)
 
-Turn 5 - Main 1 (opp's turn)
+Recent events:
+opp cast Lightning Bolt (#41) targeting Kalonian Tusker (#30)
+
 You: 20hp, 5cards, 28lib, 1gy, 0exile
 Opp: 18hp, 4cards, 29lib, 1gy, 0exile
-Your board: 3x Island, Kalonian Tusker 3/3
-Stack: Lightning Bolt targeting Kalonian Tusker (your) (opp's)
-Hand: Counterspell {U}{U}, Island
-[RESPOND TO p1's Lightning Bolt]
+Your board:
+  3x Island
+  Kalonian Tusker (#30) 3/3
+Stack:
+  Lightning Bolt targeting Kalonian Tusker (opp's)
+Hand:
+  Counterspell {U}{U}
+  Island
 
-0:Pass 1:Tap Island 2:Tap Island 3:Tap Island 4:Cast Counterspell (tap 2x Island) 5:Concede
+[RESPOND TO opp's Lightning Bolt]
+Available actions:
+0: Pass, 1: Tap Island, 2: Tap Island, 3: Tap Island, 4: Cast Counterspell (tap 2x Island), 5: Concede
 ```
 **Pick 4** — counter the Bolt to save your 3/3. The Tusker would die to 3 damage.
 
 ### Example: declare attackers
 
-```
-Recent events:
-Step: Declare Attackers
+Combat prompts replace the action list with their own space-separated
+index list.
 
+```
 Turn 6 - Declare Attackers (your turn)
+
 You: 20hp, 5cards, 28lib, 0gy, 0exile
 Opp: 14hp, 5cards, 29lib, 1gy, 0exile
-Your board: 3x Forest, Kalonian Tusker 3/3, Kalonian Tusker 3/3
-Opp board: 2x Mountain, Goblin Piker 2/1
-Choose attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
+Your board:
+  3x Forest
+  Kalonian Tusker (#30) 3/3
+  Kalonian Tusker (#31) 3/3
+Opp board:
+  2x Mountain
+  Goblin Piker (#52) 2/1
+
+Choose attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
+Pick indices in 0-1 to attack with, or empty list for no attacks. Forced attackers are auto-included.
 ```
 **Attack with both** — both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
 
 ### Example: declare blockers
 
 ```
-Recent events:
-p0 declared attackers: Kalonian Tusker (#30), Kalonian Tusker (#31)
-
 Turn 6 - Declare Blockers (opp's turn)
+
+Recent events:
+opp declared attackers: Kalonian Tusker (#30), Kalonian Tusker (#31)
+
 You: 17hp, 5cards, 27lib, 0gy, 0exile
 Opp: 14hp, 4cards, 28lib, 0gy, 0exile
-Your board: 3x Mountain, Goblin Piker 2/1, Goblin Piker 2/1
-Opp board: 3x Forest (tapped), Kalonian Tusker 3/3 [T], Kalonian Tusker 3/3 [T]
-Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
+Your board:
+  3x Mountain
+  Goblin Piker (#52) 2/1
+  Goblin Piker (#53) 2/1
+Opp board:
+  3x Forest (tapped)
+  Kalonian Tusker (#30) 3/3 [T]
+  Kalonian Tusker (#31) 3/3 [T]
+
+Attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
+Your blockers: 0:Goblin Piker (#52) 2/1 1:Goblin Piker (#53) 2/1
+Assign each blocker (0..1) to an attacker index, or -1 for no block.
 ```
 **Block both Tuskers** — chump-block both. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
 "#;
@@ -1428,17 +1507,20 @@ impl LlmPlayer {
 
     /// Turn/step header line for the top of every prompt. When a pre-game
     /// phase override is given (mulligan/bottoming), it's used verbatim.
-    fn format_turn_header(view: &GameView, header_override: Option<&str>) -> String {
-        if let Some(h) = header_override {
-            return format!("{h}\n");
-        }
-        let step_name = match view.step {
+    /// The step name the header line shows.
+    ///
+    /// The system prompt tells the model which names to expect, so this is
+    /// the single place they are spelled — `game_rules_documents_every_step`
+    /// checks the list in GAME_RULES against what this returns, which is how
+    /// the two used to drift apart (issue #201).
+    fn step_name(step: Step, first_strike_damage_step: bool) -> &'static str {
+        match step {
             Step::PrecombatMain => "Main Phase 1",
             Step::PostcombatMain => "Main Phase 2",
             Step::BeginCombat => "Begin Combat",
             Step::DeclareAttackers => "Declare Attackers",
             Step::DeclareBlockers => "Declare Blockers",
-            Step::CombatDamage if view.first_strike_damage_step => "First-Strike Combat Damage",
+            Step::CombatDamage if first_strike_damage_step => "First-Strike Combat Damage",
             Step::CombatDamage => "Combat Damage",
             Step::EndCombat => "End Combat",
             Step::Upkeep => "Upkeep",
@@ -1446,7 +1528,32 @@ impl LlmPlayer {
             Step::EndStep => "End Step",
             Step::Untap => "Untap",
             Step::Cleanup => "Cleanup",
-        };
+        }
+    }
+
+    /// The context marker and numbered option list that close every
+    /// action prompt.
+    ///
+    /// GAME_RULES quotes this shape back to the model, and
+    /// `game_rules_shows_the_action_list_it_actually_sends` builds the
+    /// documented example through this function, so the two cannot drift
+    /// (issue #201).
+    fn format_action_prompt(context: Option<&str>, labels: &[String]) -> String {
+        let actions_str: String = labels.iter().enumerate()
+            .map(|(i, label)| format!("{i}: {label}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let context_line = context
+            .map(|c| format!("[{c}]\n"))
+            .unwrap_or_default();
+        format!("{context_line}Available actions:\n{actions_str}\n")
+    }
+
+    fn format_turn_header(view: &GameView, header_override: Option<&str>) -> String {
+        if let Some(h) = header_override {
+            return format!("{h}\n");
+        }
+        let step_name = Self::step_name(view.step, view.first_strike_damage_step);
         let whose_turn = if view.active_player == view.you { "your turn" } else { "opp's turn" };
         format!("Turn {} - {} ({})\n", view.turn_number, step_name, whose_turn)
     }
@@ -2781,16 +2888,7 @@ impl Player for LlmPlayer {
             }
         }
 
-        let actions_str: String = display_labels.iter().enumerate()
-            .map(|(i, label)| format!("{i}: {label}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let context_line = legal.context.as_deref()
-            .map(|c| format!("[{c}]\n"))
-            .unwrap_or_default();
-        let action_prompt = format!(
-            "{context_line}Available actions:\n{actions_str}\n",
-        );
+        let action_prompt = Self::format_action_prompt(legal.context.as_deref(), &display_labels);
         let prompt = self.build_prompt(view, &action_prompt);
 
         if display_labels.len() != legal_actions.len() {
@@ -2865,6 +2963,56 @@ impl LlmPlayer {
     /// mulligan count. Falls back to `MulliganKeep` on malformed responses.
     /// When the mulligan cap has been reached and keep is the only legal
     /// action, returns `MulliganKeep` directly without round-tripping the LLM.
+    /// The keep-or-mulligan prompt.
+    ///
+    /// It leads with the `[MULLIGAN DECISION]` context marker GAME_RULES
+    /// documents and the `[CONTEXT]` section tells the model to key off. It
+    /// used to carry no bracketed context line at all, unlike every other
+    /// prompt the harness sends (issue #201).
+    fn mulligan_prompt(
+        play_draw: &str,
+        mulls_taken: u32,
+        keep_size: i32,
+        opp_mulls_text: &str,
+        hand_text: &str,
+    ) -> String {
+        let plural = if mulls_taken == 1 { "" } else { "s" };
+        format!(
+            "[MULLIGAN DECISION]\n\
+             London mulligan decision — keep or mulligan?\n\
+             \n\
+             {play_draw}. You have taken {mulls_taken} mulligan{plural} so far. \
+If you keep now you will bottom {mulls_taken} card{plural} and play with {keep_size} in hand.\n\
+             {opp_mulls_text}\n\
+             \n\
+             Your opening hand:\n\
+             {hand_text}"
+        )
+    }
+
+    /// The bottom-N-after-mulligan prompt, led by the
+    /// `[BOTTOM N CARD(S) AFTER MULLIGAN]` marker GAME_RULES documents.
+    fn mulligan_bottom_prompt(
+        play_draw: &str,
+        n: usize,
+        opp_mulls_text: &str,
+        hand_text: &str,
+    ) -> String {
+        let plural = if n == 1 { "" } else { "s" };
+        format!(
+            "[BOTTOM {n} CARD{} AFTER MULLIGAN]\n\
+             Bottom {n} card{plural} after mulligan.\n\
+             \n\
+             {play_draw}. You took {n} mulligan{plural} and have kept — pick {n} card{plural} \
+from your hand to put on the bottom of your library.\n\
+             {opp_mulls_text}\n\
+             \n\
+             Your opening hand:\n\
+             {hand_text}",
+            if n == 1 { "" } else { "(S)" }
+        )
+    }
+
     fn choose_mulligan(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         let mull_allowed = legal_actions.iter().any(|a| matches!(a, Action::MulliganMull));
         if !mull_allowed {
@@ -2885,22 +3033,12 @@ impl LlmPlayer {
             "You are on the draw"
         };
 
-        let full_prompt = format!(
-            "London mulligan decision — keep or mulligan?\n\
-             \n\
-             {}. You have taken {} mulligan{} so far. If you keep now you will bottom {} card{} and play with {} in hand.\n\
-             {}\n\
-             \n\
-             Your opening hand:\n\
-             {}",
+        let full_prompt = Self::mulligan_prompt(
             play_draw,
             mulls_taken,
-            if mulls_taken == 1 { "" } else { "s" },
-            mulls_taken,
-            if mulls_taken == 1 { "" } else { "s" },
             keep_size,
-            opp_mulls_text,
-            hand_text,
+            &opp_mulls_text,
+            &hand_text,
         );
 
         let schema = serde_json::json!({
@@ -2957,24 +3095,7 @@ impl LlmPlayer {
             "You are on the draw"
         };
 
-        let full_prompt = format!(
-            "Bottom {} card{} after mulligan.\n\
-             \n\
-             {}. You took {} mulligan{} and have kept — pick {} card{} from your hand to put on the bottom of your library.\n\
-             {}\n\
-             \n\
-             Your opening hand:\n\
-             {}",
-            n,
-            if n == 1 { "" } else { "s" },
-            play_draw,
-            n,
-            if n == 1 { "" } else { "s" },
-            n,
-            if n == 1 { "" } else { "s" },
-            opp_mulls_text,
-            hand_text,
-        );
+        let full_prompt = Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text);
 
         let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
             .map(|i| serde_json::json!(i))
@@ -3364,8 +3485,157 @@ impl LlmPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mtg_engine::cards::CardRegistry;
     use mtg_engine::types::CounterType;
     use std::collections::HashMap;
+
+    // ── The prompt-format contract (issue #201) ──────────────────────────
+    //
+    // GAME_RULES tells the model what a prompt looks like, and the system
+    // prompt then demands it ground every claim in that prompt's text. Eight
+    // documented facts had drifted away from the formatters — inverted
+    // section order, obsolete step names, single-line boards and hands, a
+    // space-separated action list that is comma-separated, mulligan context
+    // markers that were never emitted. These build the documented shapes
+    // through the same code that sends them, so the two cannot drift apart
+    // again without a test failing.
+
+    /// A two-player game far enough along to have a board, a hand and a
+    /// graveyard, so `format_state_body` prints the sections the contract
+    /// describes.
+    fn view_for_contract_test() -> (mtg_engine::state::GameState, CardRegistry) {
+        use mtg_engine::engine::{setup_game, Decklist, GameConfig};
+        let registry = CardRegistry::with_all_cards();
+        let deck = Decklist {
+            entries: vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)],
+        };
+        let config = GameConfig {
+            player_names: vec!["you".into(), "opp".into()],
+            decklists: vec![deck.clone(), deck],
+            starting_life: 20,
+            starting_player: Some(mtg_engine::ids::PlayerId(0)),
+            rng_seed: Some(7),
+        };
+        let state = setup_game(&config, &registry);
+        (state, registry)
+    }
+
+    /// Every step name the header can print is in the documented list.
+    #[test]
+    fn game_rules_documents_every_step_name_it_prints() {
+        let all_steps = [
+            Step::Untap, Step::Upkeep, Step::Draw, Step::PrecombatMain,
+            Step::BeginCombat, Step::DeclareAttackers, Step::DeclareBlockers,
+            Step::CombatDamage, Step::EndCombat, Step::PostcombatMain,
+            Step::EndStep, Step::Cleanup,
+        ];
+        for step in all_steps {
+            for first_strike in [false, true] {
+                let name = LlmPlayer::step_name(step, first_strike);
+                assert!(
+                    GAME_RULES.contains(name),
+                    "the header prints {name:?} for {step:?}, but GAME_RULES never mentions it"
+                );
+            }
+        }
+    }
+
+    /// The action list in GAME_RULES is the one `choose_action` builds.
+    #[test]
+    fn game_rules_shows_the_action_list_it_actually_sends() {
+        let labels: Vec<String> = [
+            "Pass", "Tap Forest", "Play Forest",
+            "Cast Kalonian Tusker (tap 2x Forest)", "Concede",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+        let actual = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels);
+        assert!(
+            GAME_RULES.contains(actual.trim_end()),
+            "GAME_RULES must quote the action list the harness sends. It sends:\n{actual}"
+        );
+    }
+
+    /// The header comes first and "Recent events" follows it, which is the
+    /// opposite of what the contract used to claim.
+    #[test]
+    fn a_prompt_leads_with_the_header_then_recent_events() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let mut player = LlmPlayer::for_prompt_tests("test");
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+
+        let header = prompt.find("Turn ").expect("every prompt has a header line");
+        if let Some(events) = prompt.find("Recent events:") {
+            assert!(header < events, "header comes first:\n{prompt}");
+        }
+        let doc_header = GAME_RULES.find("**Header line**").expect("documented");
+        let doc_events = GAME_RULES.find("**Recent events**").expect("documented");
+        assert!(
+            doc_header < doc_events,
+            "GAME_RULES lists the sections in the order they are sent"
+        );
+    }
+
+    /// Boards, hands and stacks are headers with indented entries, not the
+    /// single comma-separated lines the contract used to show.
+    #[test]
+    fn game_rules_shows_the_board_and_hand_shape_it_actually_sends() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let body = LlmPlayer::format_state_body(&view);
+
+        assert!(body.contains("Hand:\n  "), "the hand is a header plus indented cards:\n{body}");
+        assert!(
+            !body.contains("Hand: Forest"),
+            "the hand is not a single inline list:\n{body}"
+        );
+        for section in ["Your board:\n  ", "Hand:\n  ", "Stack:\n  "] {
+            assert!(
+                GAME_RULES.contains(section),
+                "GAME_RULES must show {section:?}, the shape the harness sends"
+            );
+        }
+    }
+
+    /// Both mulligan prompts carry the context markers GAME_RULES documents.
+    #[test]
+    fn mulligan_prompts_carry_the_documented_context_markers() {
+        let hand = "  0: Forest\n  1: Grizzly Bears {1}{G} 2/2\n";
+        let keep = LlmPlayer::mulligan_prompt("You are on the draw", 0, 7, "", hand);
+        assert!(
+            keep.starts_with("[MULLIGAN DECISION]"),
+            "the keep-or-mulligan prompt leads with its context marker:\n{keep}"
+        );
+        assert!(GAME_RULES.contains("[MULLIGAN DECISION]"));
+
+        let bottom = LlmPlayer::mulligan_bottom_prompt("You are on the draw", 2, "", hand);
+        assert!(
+            bottom.starts_with("[BOTTOM 2 CARD(S) AFTER MULLIGAN]"),
+            "the bottoming prompt leads with its context marker:\n{bottom}"
+        );
+        let one = LlmPlayer::mulligan_bottom_prompt("You are on the play", 1, "", hand);
+        assert!(
+            one.starts_with("[BOTTOM 1 CARD AFTER MULLIGAN]"),
+            "a single card drops the (S):\n{one}"
+        );
+        assert!(GAME_RULES.contains("[BOTTOM N CARD(S) AFTER MULLIGAN]"));
+    }
+
+    /// A cast option names its tap plan, never a target — targets come from
+    /// a follow-up prompt, which is what the contract now says.
+    #[test]
+    fn game_rules_does_not_promise_inline_targets() {
+        assert!(
+            !GAME_RULES.contains("Cast Lightning Bolt → Goblin Piker"),
+            "cast labels never carry a target; the follow-up prompt asks"
+        );
+        assert!(
+            GAME_RULES.contains("select a target:"),
+            "GAME_RULES names the follow-up target prompt the harness sends"
+        );
+    }
 
     #[test]
     fn format_counters_none_returns_none() {
