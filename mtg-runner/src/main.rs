@@ -1,6 +1,7 @@
 use std::env;
 use std::fmt::Write;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
@@ -44,7 +45,10 @@ Options:
   --seed <N>             Deterministic seed for shuffles and random players
   --on-the-play <1|2>    Which seat takes the first turn (default: random, CR 103.1)
   --log <path>           Append the game log to this file
-  --save <path>          Continuously write a resumable save to this file
+  --save <path>          Continuously write a resumable save to this file. The
+                         file is overwritten from the first decision, follows a
+                         symlink, and is left in place at game over holding the
+                         final position
   --resume <path>        Resume from a save file (saved decks/seed win over flags)
   --check-invariants     Check structural invariants at every decision point
   --quiet, -q            Suppress the pre-game banner
@@ -92,11 +96,70 @@ fn stream_game_log(state: &GameState, from: usize) -> usize {
 /// braid their saves into one file (issue #75). The temp name carries the
 /// pid so two writers can't braid the temp either — the last rename wins
 /// whole, which is the most a shared path can promise.
-fn write_save_atomically(path: &str, json: &str) -> std::io::Result<()> {
+fn write_save_atomically(path: &str, json: &str, private: bool) -> std::io::Result<()> {
     let tmp = format!("{}.{}.tmp", path, std::process::id());
-    fs::write(&tmp, json)?;
-    fs::rename(&tmp, path)
+    let write = write_file(&tmp, json, private).and_then(|()| fs::rename(&tmp, path));
+    if write.is_err() {
+        // The failure path used to be what stranded a partial temp file —
+        // on a filesystem that just ran out of space, which is exactly when
+        // the write fails, and every retry left another (issue #214).
+        let _ = fs::remove_file(&tmp);
+    }
+    write
 }
+
+/// Write `json` to `path`, optionally with only this user able to read it.
+///
+/// The hot-reload snapshot is a complete game state — both players' hands
+/// and both libraries in draw order — written to a world-readable /tmp at a
+/// name derived only from the pid, so any other user on the box could read
+/// a live game's answer key (issue #239). Nothing but this process ever
+/// reads it, so 0600 costs nothing. A `--save` file is a path the operator
+/// named and keeps the umask they expect.
+fn write_file(path: &str, json: &str, private: bool) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    if private {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(json.as_bytes())
+}
+
+/// Resolve a `--save` path that is a symlink to the file it points at.
+///
+/// The atomic write renames onto the path, and `rename(2)` does not follow
+/// a final symlink: every save landed *next to* the link and destroyed the
+/// link on the first write, while the target the operator pointed at stayed
+/// empty. `--log`, which opens rather than renames, followed the link as
+/// anyone would expect (issue #215). Following it here restores the
+/// atomicity guarantee (the rename happens in the target's own directory)
+/// and makes the startup writability probe test the directory that will
+/// actually be written.
+fn resolve_save_symlink(path: &str) -> String {
+    let mut current = PathBuf::from(path);
+    // Bounded, so a symlink loop is a refusal rather than a hang.
+    for _ in 0..8 {
+        let Ok(meta) = fs::symlink_metadata(&current) else { break };
+        if !meta.file_type().is_symlink() {
+            break;
+        }
+        let Ok(target) = fs::read_link(&current) else { break };
+        current = if target.is_absolute() {
+            target
+        } else {
+            current.parent().unwrap_or(Path::new(".")).join(target)
+        };
+    }
+    let resolved = current.to_string_lossy().into_owned();
+    if resolved != path {
+        eprintln!("note: --save '{path}' is a symlink; writing through it to '{resolved}'");
+    }
+    resolved
+}
+
 
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
 /// lookup in `main` is an exact-match position scan, so an unrecognized or
@@ -210,7 +273,17 @@ fn main() {
         mtg_player::game_log::init(path)
             .unwrap_or_else(|e| die(&format!("failed to open log file '{path}': {e}")));
     }
+    // `rename(2)` would replace a symlink instead of writing through it, so
+    // resolve it before anything (including the probe below) uses the path.
+    let save_file = save_file.map(|p| resolve_save_symlink(&p));
     if let Some(ref path) = save_file {
+        // A path that already holds something is overwritten from the first
+        // decision on. That is what "write a save to this file" means, but
+        // it is worth one line when the operator has aimed it at a file that
+        // was already there (issue #242).
+        if fs::metadata(path).is_ok_and(|m| m.is_file()) {
+            eprintln!("note: --save '{path}' already exists and will be overwritten");
+        }
         // The probe never touches the save path itself — even a create+
         // delete leaves a momentary empty file that reads as a torn save to
         // anything polling the path (issue #75). A directory is checked
@@ -536,14 +609,14 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // Always write hot-reload save.
-            write_save_atomically(&hot_reload_ref, &json)
+            write_save_atomically(&hot_reload_ref, &json, true)
                 .expect("Failed to write hot-reload save");
             // Also write user-specified save file if set. The path was
             // probed writable at startup, but the disk can still fill or the
             // file be replaced mid-game — that's a user-environment failure,
             // reported cleanly, not a panic (issue #69).
             if let Some(ref path) = save_file_ref {
-                write_save_atomically(path, &json)
+                write_save_atomically(path, &json, false)
                     .unwrap_or_else(|e| die(&format!("failed to write save file '{path}': {e}")));
             }
         }
@@ -611,12 +684,29 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
         return;
     }
 
-    // Clean up save file when game completes normally, plus any temp file a
-    // crash mid-write could have stranded.
+    // The operator's save stays. It used to be unlinked here, silently and
+    // unconditionally — which threw away the one artifact of the final
+    // position, made `--resume` on the path they had been using all game
+    // fail with a missing file, and destroyed whatever else happened to be
+    // at that path, including the very save a `--resume x --save x` was
+    // playing from (issues #237, #242). Saves are written *before* each
+    // decision, so the last one on disk was the state one action before the
+    // end; write the final state over it, which is the state worth keeping.
     if let Some(ref path) = save_file {
-        let _ = fs::remove_file(path);
+        let save = SaveData { state: state.clone(), player_names: player_names.clone() };
+        match serde_json::to_string(&save) {
+            Ok(json) => {
+                if let Err(e) = write_save_atomically(path, &json, false) {
+                    eprintln!("warning: could not write the final save to '{path}': {e}");
+                }
+            }
+            Err(e) => eprintln!("warning: could not serialize the final position: {e}"),
+        }
+        // Only our own temp sibling is ours to remove.
         let _ = fs::remove_file(format!("{}.{}.tmp", path, std::process::id()));
     }
+    // The hot-reload snapshot is this process's scratch file and goes with
+    // it, on this path and on every other (see `unlink_on_exit` above).
     let _ = fs::remove_file(&hot_reload_path);
     let _ = fs::remove_file(format!("{}.{}.tmp", hot_reload_path, std::process::id()));
 
