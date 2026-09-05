@@ -661,3 +661,361 @@ sprite("bust_inquisitor2")([
  "0500ttt0000000....",
  "000tt00000000.....",
 ])
+
+# ── PASS 5: CONTOURS WITH GEOMETRY ───────────────────────────────────
+# The blobbiness turned out to be measurable. Every previous sprite's outline
+# advanced +/-1 px every row or two with irregular run lengths and almost no
+# steps of 2+, which is literally how a scanline algorithm rasterizes an
+# ellipse. I had been hand-drawing ovals without meaning to.
+#
+# These are built from deliberate segments instead: a long flat run, then a
+# diagonal whose run lengths are all EQUAL, then a hard corner of 2px or
+# more. contour.py scores it, so "does this read as a drawn shape" stops
+# being a matter of opinion.
+
+sprite("bust_vampire3")([
+ "......00000000....",   # flat crown
+ "....007777777700..",
+ "...07777777777770.",
+ "...07777777777770.",
+ "...07777777777770.",
+ "...07777777777770.",
+ "...07777777777770.",   # 5-row vertical flat: the temple
+ ".....0000077000...",   # CORNER: cheek steps in 2
+ ".....0b00077000...",
+ ".....077007700b0..",
+ ".....07700770000..",
+ ".....07777777000..",   # 4-row flat: the cheek
+ "......077777700...",   # diagonal, run 1
+ ".......0777700....",   # diagonal, run 1
+ "........07700.....",   # diagonal, run 1 — a clean 45 deg jaw
+ "........07700.....",
+ "........05500.....",   # neck, flat
+ "........05500.....",
+ "..0000005500000...",   # CORNER: shoulders jump out 6
+ "0055555555555555 0",
+ "0500000000000000 0",
+ "0500000000000000 0",
+ "0500000000000000 0",
+ "0500000000000000 0",   # long flat shoulders
+])
+
+sprite("bust_ghoul3")([
+ ".......000000.....",
+ ".....00777777000..",
+ "....077777777770..",
+ "....077777777770..",
+ "....077777777770..",
+ "....077777777770..",
+ "....077777777770..",   # flat temple
+ "......0000770000..",   # CORNER
+ "......0b00770b00..",
+ "......07007700700.",
+ "......07007700700.",
+ "......07777777700.",   # flat cheek
+ "......00707070700.",   # bared teeth: hard verticals, no curve
+ "......00707070700.",
+ ".......070707000..",   # diagonal, run 1
+ "........0707000...",   # diagonal, run 1
+ ".........07000....",   # diagonal, run 1
+ ".........05500....",
+ "......0000550000..",   # CORNER
+ "..00555555555500..",
+ "..0500000000000...",
+ "..0500000000000...",
+ "..0500000000000...",
+])
+
+sprite("bust_inquisitor3")([
+ "0000000000000000 0",   # hat brim: one long flat, hard ends
+ "0555555555555555 0",
+ "0000000000000000 0",
+ ".....00000000.....",   # CORNER: crown steps in 5
+ ".....07777770.....",
+ ".....07777770.....",
+ ".....07777770.....",   # flat crown
+ "....0777777770....",   # CORNER out 1
+ "....0700770070....",
+ "....0700770070....",
+ "....0777777770....",
+ "....0770770770....",
+ "....0777777770....",   # flat cheek
+ ".....07777770.....",   # diagonal, run 1
+ "......077770......",   # diagonal, run 1
+ ".......0770.......",   # diagonal, run 1
+ ".......0550.......",
+ "....000055000000..",   # CORNER
+ "..0055555555555500",
+ "..050000tt00000000",
+ "..05000tt000000000",
+ "..0500tt0000000000",
+ "..050tt00000000000",
+])
+
+# ── PASS 6: FACETED, NOT CURVED, NOT BOXED ───────────────────────────
+# Blown up, pass 4 is a smooth oval and pass 5 is a literal rectangle. The
+# thing a skull actually is sits between them: a POLYGON of five or six
+# planes — crown, temple, cheekbone, jaw, chin — each a short straight run at
+# a DIFFERENT angle, meeting at corners you can point to. Curve has no
+# corners; box has only right angles; a face has neither.
+#
+# Interior likewise: the brow is a hard shadow band, the eye socket is an
+# angled wedge rather than a rectangle, the nose ridge is the one lit edge,
+# and the cheek hollow runs on a diagonal.
+
+sprite("bust_vampire4")([
+ "......077770......",   # crown: shallow, two steps
+ ".....07777770.....",
+ "....0777777770....",
+ "....0777777770....",
+ "....0777777770....",
+ "....0777777770....",   # temple: vertical run of 4
+ "....0555555550....",   # brow: hard horizontal shadow band
+ "....05000000050...",
+ "....0b000000b50...",   # eye sockets: wedges, blood at the outer corner
+ ".....000770000....",
+ ".....06077060.....",   # cheekbone steps in 1 — corner
+ "......0677060.....",   # nose ridge is the lit edge
+ "......0677600.....",
+ "......0655500.....",   # cheek hollow, on the diagonal
+ ".......06660......",   # jaw: 1:2 diagonal
+ ".......05550......",
+ "........050.......",   # chin
+ "........050.......",
+ ".......05550......",   # neck
+ "....000555000.....",
+ "..0055555555000...",   # collar: hard corner out
+ ".05500000000550...",
+ "05500000000005500.",
+ "0500000000000005 0",
+])
+
+sprite("bust_ghoul4")([
+ ".......07770......",
+ "......0777770.....",
+ ".....077777770....",
+ ".....077777770....",
+ ".....077777770....",
+ ".....077777770....",
+ ".....055555550....",   # brow band
+ ".....05000000500..",
+ ".....0b00000b500..",   # sunken sockets
+ "......00007700....",
+ "......0607700.....",   # cheekbone corner
+ "......06770600....",
+ "......0677600.....",
+ "......0700600.....",   # nasal void
+ ".......07060......",
+ ".......00700......",
+ "......0707070.....",   # bared teeth: hard verticals
+ "......0707070.....",
+ ".......05550......",
+ "......005550......",
+ "....00555550000...",
+ "..005555000005500.",
+ "..05000000000005..",
+ "..0500000000000...",
+])
+
+sprite("bust_inquisitor4")([
+ "..00000000000000..",   # brim: one flat, hard ends
+ ".0555555555555550.",
+ "..00000000000000..",
+ "......077770......",   # crown corner in
+ ".....07777770.....",
+ ".....07777770.....",
+ ".....07777770.....",   # temple vertical
+ ".....055555500....",   # brow band, offset right — the head is turned
+ ".....0500000500...",
+ ".....0500000500...",   # sockets in shadow under the brim
+ "......000770......",
+ "......0607700.....",   # cheekbone
+ "......06776000....",
+ "......0655600.....",
+ ".......06660......",   # jaw
+ ".......05550......",
+ "........050.......",
+ "........050.......",
+ ".......05550......",
+ "....000555000.....",
+ "..005555555500....",
+ ".05500tt00005500..",   # collar, and the rapier crossing it
+ "05000tt000000005..",
+ "0000tt0000000000..",
+])
+
+# ── PASS 7: KEEP THE MASS ────────────────────────────────────────────
+# Pass 6 added facets and then carved so much out of the face that only 1px
+# fragments were left — the mass, which was the whole point of pass 4, was
+# gone again. And the crown was still a smooth dome.
+#
+# So the skull is a COFFIN HEXAGON: a flat top, two chamfered upper corners,
+# straight vertical sides, two chamfered lower corners, a flat chin. Six
+# clean segments, gothic by construction, and crisp because every segment is
+# straight. The face stays a solid pale mass; the features are small dark
+# marks cut into it, never large enough to break it up.
+
+sprite("v_vampire")([
+ "......077770......",
+ ".....07777770.....",   # chamfer
+ "....0777777770....",   # chamfer
+ "....0777777770....",
+ "....0777777770....",
+ "....0777777770....",   # straight sides
+ "....0755555570....",   # brow band
+ "....0700770070....",   # eye slots
+ "....07b0770b70....",   # blood glint at the outer corner of each
+ "....0777667770....",
+ "....0777667770....",   # nose shadow, one column
+ "....0777667770....",
+ "....0776666770....",
+ ".....07766770.....",   # chamfer
+ "......077770......",   # chamfer
+ ".......0550.......",   # chin
+ ".......0550.......",
+ "......055550......",   # neck
+ "....0005555000....",
+ "..00555555555500..",   # collar: hard corner
+ ".0550000000000550.",
+ "05500000000000055.",
+ "0500000000000000 0",
+ "0500000000000000 0",
+])
+
+sprite("v_ghoul")([
+ "......077770......",
+ ".....07777770.....",
+ "....0777777770....",
+ "....0777777770....",
+ "....0777777770....",
+ "....0777777770....",
+ "....0755555570....",
+ "....0700770070....",
+ "....07b0770b70....",
+ "....0770660770....",
+ "....0770060770....",   # nasal void, narrow
+ "....0777667770....",
+ "....0700000070....",   # the jaw has come away
+ ".....07070700.....",   # teeth: hard verticals
+ "......070700......",
+ ".......0550.......",
+ "......055550......",
+ "....00055500000...",
+ "..005555550005500.",
+ ".05500000000000550",
+ "05500000000000005.",
+ "0500000000000000..",
+ "0500000000000000..",
+])
+
+sprite("v_inquisitor")([
+ "..00000000000000..",   # hat brim
+ ".0555555555555550.",
+ "..00000000000000..",
+ "......077770......",   # crown, stepped in hard
+ ".....07777770.....",
+ "....0777777770....",
+ "....0777777770....",
+ "....0755555570....",   # brow, deep in the brim's shadow
+ "....0700770070....",
+ "....0700770070....",
+ "....0777667770....",
+ "....0777667770....",
+ "....0776666770....",
+ ".....07766770.....",
+ "......077770......",
+ ".......0550.......",
+ "......055550......",
+ "....0005555000....",
+ "..00555555555500..",
+ ".05500tt00000550..",   # the rapier crosses the collar
+ "05500tt0000000055.",
+ "0500tt0000000000..",
+ "050tt00000000000..",
+])
+
+# ── PASS 8: TURN THE HEAD ────────────────────────────────────────────
+# The coffin hexagon fixed the blobbiness but left a perfectly mirrored face,
+# which reads as a mask or an icon rather than a person. Turning the head a
+# few degrees breaks it: the far chamfer is longer than the near one, the
+# features sit one column off centre, the brow band is shorter on the far
+# side, and one shoulder rides higher than the other.
+
+sprite("t_vampire")([
+ "......07777 0.....",
+ ".....077777770....",   # far chamfer is longer
+ "....07777777770...",
+ "....07777777770...",
+ "....07777777770...",
+ "....07777777770...",
+ "....075555555 0...",   # brow stops short on the far side
+ "....0700770000 0..",
+ "....07b077000b 0..",   # near eye reads full, far eye is foreshortened
+ "....07776607770...",
+ "....07776607770...",
+ "....07766607770...",   # nose sits one column right of centre
+ "....077666677 0...",
+ ".....077666770....",
+ "......0777770.....",
+ ".......05550......",
+ ".......0550.......",
+ "......055500......",
+ "....000555000.....",
+ "..0055555555000...",
+ ".05500000000550...",   # near shoulder rides higher
+ "05500000000005500.",
+ "0500000000000005 0",
+ "050000000000000 0.",
+])
+
+sprite("t_ghoul")([
+ ".....077770.......",
+ "....07777770......",
+ "....077777770.....",
+ "...0777777770.....",
+ "...0777777770.....",
+ "...0777777770.....",
+ "...07555555 0.....",
+ "...0700770000.....",
+ "...07b077000b0....",
+ "...0770660770.....",
+ "...0770060770.....",
+ "...07766607700....",
+ "...0700000070.....",
+ "....070707000.....",   # jaw hangs to one side
+ ".....0707000......",
+ "......05500.......",
+ ".....0555000......",
+ "...00055500000....",
+ "..0555555000550...",
+ ".0550000000000550.",
+ "05500000000000055.",
+ "0500000000000000..",
+ "050000000000000...",
+])
+
+sprite("t_inquisitor")([
+ ".0000000000000000.",   # brim tilted: lower on the near side
+ "0555555555555555 0",
+ ".00000000000000 0.",
+ ".....077770.......",
+ "....07777770......",
+ "....077777770.....",
+ "....077777770.....",
+ "....07555555 0....",
+ "....0700770000....",
+ "....070077000 0...",
+ "....07776607770...",
+ "....07776607770...",
+ "....07766607770...",
+ ".....0776667700...",
+ "......07777770....",
+ ".......055500.....",
+ ".......0550.......",
+ "......055500......",
+ "....000555000.....",
+ "..00555555555500..",
+ ".05500tt000005500.",
+ "05500tt0000000055.",
+ "0500tt00000000000.",
+])
