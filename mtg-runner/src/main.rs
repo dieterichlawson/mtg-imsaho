@@ -160,6 +160,31 @@ fn resolve_save_symlink(path: &str) -> String {
     resolved
 }
 
+/// Delete hot-reload snapshots left by runs that are no longer running.
+///
+/// The snapshot is unlinked on the way out, but no cleanup runs on a
+/// `kill -9`, and one night of playtesting left 91 files and 8.6 MB of dead
+/// game states in /tmp (issue #234). A file is named
+/// `mtg-hot-reload-<pid>.json`; one whose pid is gone belongs to a dead run
+/// and is ours to remove. A live pid is left alone.
+fn sweep_stale_hot_reload_saves() {
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(rest) = name.strip_prefix("mtg-hot-reload-") else { continue };
+        let Some(pid) = rest.strip_suffix(".json").or_else(|| rest.split('.').next()) else { continue };
+        let Ok(pid) = pid.parse::<i32>() else { continue };
+        // `kill(pid, 0)` reads 0 as "my process group" and negatives as
+        // other groups, so only a positive pid asks about one process.
+        // ESRCH means gone; EPERM means alive and someone else's.
+        let alive = pid > 0
+            && unsafe { libc::kill(pid, 0) == 0 || *libc::__errno_location() == libc::EPERM };
+        if !alive {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
 
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
 /// lookup in `main` is an exact-match position scan, so an unrecognized or
@@ -463,11 +488,18 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
     // The path is per-process: a shared fixed path let concurrent runners
     // clobber each other's snapshots, silently swapping a hot-reloaded
     // player into a different game (playtest issue #37).
+    sweep_stale_hot_reload_saves();
     let hot_reload_path = std::env::temp_dir()
         .join(format!("mtg-hot-reload-{}.json", std::process::id()))
         .to_string_lossy()
         .into_owned();
     let hot_reload_ref = hot_reload_path.clone();
+    // Cleared the first time the snapshot cannot be written.
+    let hot_reload_ok = std::cell::Cell::new(true);
+    // Take it with us however this process dies — Ctrl-C at a prompt, a
+    // signal, a closed window. Only the normal-completion path used to
+    // unlink it (issues #234, #239).
+    mtg_player::cli::unlink_on_exit(&hot_reload_path);
 
     // Per-owner count of non-token objects, captured at the first decision
     // point. No effect in the pool creates or destroys real cards, so the
@@ -608,9 +640,21 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
                 player_names: player_names_ref.clone(),
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
-            // Always write hot-reload save.
-            write_save_atomically(&hot_reload_ref, &json, true)
-                .expect("Failed to write hot-reload save");
+            // The hot-reload snapshot, so `rr` works without --save. Nobody
+            // asked for it, so a failure to write it must not take the
+            // operator's game down — it used to `.expect()`, and a full
+            // /tmp panicked the game with a backtrace while the --save
+            // sibling three lines below failed cleanly (issue #214). Say so
+            // once, stop writing it, and let the game go on; `rr` refuses
+            // rather than reloading a snapshot that has gone stale.
+            if hot_reload_ok.get() {
+                if let Err(e) = write_save_atomically(&hot_reload_ref, &json, true) {
+                    hot_reload_ok.set(false);
+                    eprintln!("warning: cannot write the hot-reload snapshot to \
+'{hot_reload_ref}': {e}. `rr` is disabled for the rest of this game; \
+use --save if you need a resumable file.");
+                }
+            }
             // Also write user-specified save file if set. The path was
             // probed writable at startup, but the disk can still fill or the
             // file be replaced mid-game — that's a user-environment failure,

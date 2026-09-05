@@ -43,8 +43,46 @@ extern "C" fn restore_terminal_and_exit(sig: libc::c_int) {
         }
         let seq = b"\x1b[?2004l\x1b[?25h\r\n";
         libc::write(libc::STDOUT_FILENO, seq.as_ptr().cast(), seq.len());
+        unlink_scratch_file();
         libc::_exit(128 + sig);
     }
+}
+
+/// A scratch file this process must take with it when it dies.
+///
+/// The runner writes a hot-reload snapshot of the whole game state before
+/// every decision, whether or not `--save` was given, and used to unlink it
+/// only on the normal-completion path — so Ctrl-C, a signal, or a closed
+/// window stranded a ~100 KB file holding both players' hands and libraries
+/// in a world-readable /tmp, forever (issues #234, #239).
+static SCRATCH_FILE: std::sync::OnceLock<std::ffi::CString> = std::sync::OnceLock::new();
+
+/// Name the file to remove on the way out. Called once, before the game
+/// starts; a second call is ignored.
+pub fn unlink_on_exit(path: &str) {
+    if let Ok(c) = std::ffi::CString::new(path) {
+        let _ = SCRATCH_FILE.set(c);
+    }
+}
+
+/// Remove the registered scratch file.
+///
+/// Async-signal-safe, so the signal handler above can call it: `unlink(2)`
+/// is on the list, and `OnceLock::get` after initialization is a plain
+/// atomic load.
+pub fn unlink_scratch_file() {
+    if let Some(path) = SCRATCH_FILE.get() {
+        unsafe { libc::unlink(path.as_ptr()) };
+    }
+}
+
+/// Ctrl-C at a prompt: put the terminal back, take the scratch file with
+/// us, and exit as an interrupted program does.
+fn quit_at_prompt() -> ! {
+    let _ = execute!(stdout(), event::DisableBracketedPaste);
+    tui_raw_off();
+    unlink_scratch_file();
+    std::process::exit(0);
 }
 
 /// True while a TUI prompt holds the terminal in raw mode, and the raw
@@ -1498,9 +1536,7 @@ impl CliPlayer {
                         break;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = execute!(stdout(), event::DisableBracketedPaste);
-                        tui_raw_off();
-                        std::process::exit(0);
+                        quit_at_prompt();
                     }
                     KeyCode::Backspace => {
                         card_filter.pop();
@@ -2055,9 +2091,7 @@ impl CliPlayer {
             match code {
                 KeyCode::Enter => break,
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    let _ = execute!(out, event::DisableBracketedPaste);
-                    tui_raw_off();
-                    std::process::exit(0);
+                    quit_at_prompt();
                 }
                 // Ctrl-U kills the line (issue #79), here as in the menu reader.
                 KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -2125,8 +2159,7 @@ impl CliPlayer {
                     KeyCode::Char('n' | 'N') if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { let _ = execute!(stdout(), Print("n")); break false; }
                     KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        tui_raw_off();
-                        std::process::exit(0);
+                        quit_at_prompt();
                     }
                     _ => {
                         let msg = format!("Please answer y or n. {}", prompt.trim_start());
@@ -2230,9 +2263,7 @@ impl CliPlayer {
                         break Some(buf.clone());
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = execute!(stdout(), event::DisableBracketedPaste);
-                        tui_raw_off();
-                        std::process::exit(0);
+                        quit_at_prompt();
                     }
                     KeyCode::Backspace => {
                         if let Some(c) = buf.pop() {
@@ -3654,8 +3685,7 @@ impl CliPlayer {
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         let _ = execute!(out, event::DisableBracketedPaste);
-                        tui_raw_off();
-                        std::process::exit(0);
+                        quit_at_prompt();
                     }
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         filter.push(c);

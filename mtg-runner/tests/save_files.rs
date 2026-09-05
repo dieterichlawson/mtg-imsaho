@@ -1,14 +1,19 @@
 //! What the runner does to the files it writes.
 //!
-//! The `--save` file the operator named had two ways of surprising them: it
-//! replaced a symlink instead of writing through it (#215), and it was
+//! Two of them: the `--save` file the operator named, and the hot-reload
+//! snapshot it writes to the temp dir before every decision whether or not
+//! `--save` was given. Both had ways of surprising the operator — a save
+//! that replaced a symlink instead of writing through it (#215), a save
 //! unlinked at game over even when the path held something the runner never
-//! created (#237, #242).
+//! created (#237, #242), a snapshot that panicked the game when the temp dir
+//! was full (#214), and a world-readable snapshot of both players' hands
+//! left behind on every abnormal exit (#234, #239).
 
 #![cfg(unix)]
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn runner() -> Command {
     Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
@@ -129,5 +134,85 @@ fn an_existing_file_at_the_save_path_is_announced() {
         String::from_utf8_lossy(&out.stderr).contains("already exists and will be overwritten"),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Issue #214: the hot-reload snapshot — which nobody asked for — was
+/// written with `.expect()`, so a full temp dir panicked the game with a
+/// backtrace and exit 101, while the `--save` sibling three lines away
+/// failed cleanly.
+#[test]
+fn a_snapshot_that_cannot_be_written_warns_instead_of_panicking() {
+    let scratch = Scratch::new("nospace");
+    let save = scratch.path("g.save");
+
+    let out = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", "/nonexistent-dir-for-this-test")
+        .args(["--p1", "random", "--p2", "random", "--seed", "5", "--quiet"])
+        .args(["--save", &save])
+        .output()
+        .expect("failed to run the runner");
+
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("panicked"), "no panic, no backtrace: {err}");
+    assert_eq!(out.status.code(), Some(0), "the game the operator asked for still finishes: {err}");
+    assert!(err.contains("cannot write the hot-reload snapshot"), "and says so once: {err}");
+    assert_eq!(
+        err.matches("cannot write the hot-reload snapshot").count(),
+        1,
+        "once, not before every decision: {err}"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("Game over!"),
+        "the game played to its end"
+    );
+    assert!(Path::new(&save).exists(), "and the save the operator did ask for was written");
+}
+
+/// Issues #239 and #234: the snapshot is a complete game state — both
+/// hands and both libraries in draw order — and was written mode 644 into a
+/// shared /tmp, then left there by every exit but the normal one. One night
+/// of playtesting stranded 91 files and 8.6 MB.
+#[test]
+fn the_snapshot_is_private_and_a_dead_run_does_not_keep_it() {
+    let scratch = Scratch::new("private");
+    let save = scratch.path("g.save");
+
+    // A game slow enough to still be running when we look at its snapshot.
+    let mut child = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .args(["--p1", "random", "--p2", "random", "--seed", "4242", "--quiet"])
+        .args(["--check-invariants", "--save", &save])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to run the runner");
+    let snapshot = scratch.dir.join(format!("mtg-hot-reload-{}.json", child.id()));
+
+    let mut mode = None;
+    for _ in 0..100 {
+        if let Ok(meta) = std::fs::metadata(&snapshot) {
+            mode = Some(meta.permissions().mode() & 0o777);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let mode = mode.expect("the snapshot is written before every decision");
+    assert_eq!(mode, 0o600, "nothing but this process reads it, and it holds both hands");
+
+    // A kill no cleanup can survive strands it...
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(snapshot.exists(), "precondition: a killed run cannot clean up after itself");
+
+    // ...and the next run reaps it, because its pid is gone.
+    let out = play_a_game(&scratch, &save);
+    assert!(out.status.success());
+    assert!(
+        !snapshot.exists(),
+        "a snapshot whose run is dead is swept: {}",
+        snapshot.display()
     );
 }
