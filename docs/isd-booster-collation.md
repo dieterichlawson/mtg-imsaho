@@ -213,13 +213,41 @@ on two separate 121-card sheets.
 - 6 rares, each appearing **4 times** (24 slots)
 - Kessig Wolf Run appearing **1 time** (1 slot)
 
-Mythics in A run: Liliana of the Veil, Mikaeus the Lunarch, Tree of Redemption,
-Rooftop Storm, Geist of Saint Traft, Grimgrin Corpse-Born, Olivia Voldaren,
-Skaab Ruinator, Balefire Dragon, Reaper from the Abyss, Mirror-Mad Phantasm,
-Essence of the Wild, Elder of Laurels, Sever the Bloodline, Army of the Damned.
+Mythics in A run (2 copies each):
 
-Rares in A run: Angelic Overseer, Falkenrath Marauders, Witchbane Orb,
-Geist-Honored Monk, Grimoire of the Dead, Past in Flames.
+- Angelic Overseer
+- Army of the Damned
+- Balefire Dragon
+- Essence of the Wild
+- Geist of Saint Traft
+- Grimgrin, Corpse-Born
+- Grimoire of the Dead
+- Liliana of the Veil
+- Mikaeus, the Lunarch
+- Mirror-Mad Phantasm
+- Olivia Voldaren
+- Past in Flames
+- Reaper from the Abyss
+- Skaab Ruinator
+- Tree of Redemption
+
+Rares in A run (4 copies each):
+
+- Elder of Laurels
+- Falkenrath Marauders
+- Geist-Honored Monk
+- Rooftop Storm
+- Sever the Bloodline
+- Witchbane Orb
+
+These two lists are checked against `data/sets/isd.json` by
+`mtg-draft/tests/collation_doc.rs`. Six names used to be on the wrong side of
+the split — Rooftop Storm, Elder of Laurels and Sever the Bloodline listed as
+mythics, Angelic Overseer, Grimoire of the Dead and Past in Flames as rares —
+which inverted the stated frequency of each of them and nearly sent a probe
+chasing a generator bug that did not exist (issue #216). The generator derives
+rarity from the copy counts in the data file, never from these lists, so the
+packs were always right; the lists were not.
 
 **C Run** (66 slots):
 - 16 rares, each appearing **4 times** (64 slots)
