@@ -135,6 +135,52 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   crash, hang, corrupt the frame, become unexitable, or mis-scope to a
   zone the searching seat can't see
 
+- V26 the action list as a contract: build a priority with 30-60+ legal
+  actions (many land types, castable spells, activated abilities, equip
+  costs) and check that the displayed list and the engine's `legal_actions`
+  still agree. Does index N do what line N says, at the last index, past the
+  end, and across a page boundary? Is the user TOLD when the list is clipped,
+  and can they still reach what is hidden? Do collapsed duplicate lines act on
+  the right object when the sources are not interchangeable? Is Concede always
+  at the index the screen claims? Read `CliPlayer::choose_action` →
+  `render_paged` → `clip_middle` first, and vary the pane HEIGHT — a short
+  pane is what breaks it. #209 is the LLM-seat face of this question; the
+  `cli` seat does not share that defect, but four others live here
+  (#257, #258, #260, #261)
+- V27 the post-game state machine: reach a game over by all three routes —
+  concede, lethal damage, and deck-out — and ask what the program does
+  AFTERWARDS. Exit code per route; input sent after the game is decided;
+  whether the game-over screen agrees with the tail of `--log`; what `--save`
+  holds at the end and what `--resume` on it does; SIGINT and SIGKILL at the
+  game-over instant; and whether the terminal is left out of raw mode and off
+  the alternate screen. Every previous Vandal night attacked a RUNNING game
+- V28 does the screen tell the truth about the object? Distinct from V7's
+  rendering-at-scale: this is rendering ACCURACY. Build permanents whose real
+  characteristics differ from their printed ones — a transformed DFC, a
+  creature with counters under an anthem under an aura, a graveyard-CDA `*/*`,
+  a granted keyword, a token, an artifact creature, a creature attacking or
+  blocking — and check the battlefield line, `i` inspect, the CARDS reference,
+  `/` search, `d` and `g` all agree with the `--save`, which is the engine's
+  own view and the tiebreaker. A pane that lies is worse than a crash because
+  the player acts on it
+- V29 stack depth as the stressor: L1 checked deep stacks as a RULES question;
+  this asks what the MACHINE does at depth. Get 90+ objects on the stack (a
+  sweeper into a board of death-triggers is the fastest route), then read the
+  STACK pane against the save, verify strict LIFO all the way down (CR 608.1),
+  resize, save/kill/resume, concede, and feed garbage and paste floods to both
+  the priority prompt and the trigger-ordering prompt. Note the ordering prompt
+  is a repeated single choice, not a permutation, so duplicate and partial
+  permutations are not expressible
+- V30 every save the game ever wrote must be loadable: `--save` rewrites the
+  file at every decision, and V3/V14/V20/M1 only ever looked at moments
+  somebody hand-picked. Snapshot the live save on a tight loop for a whole
+  game, then `--resume` every distinct snapshot. Also: is any snapshot ever
+  torn or zero-length; does a SIGKILL mid-write lose the file; does the save
+  lag the screen; does a resume from an arbitrary snapshot land where it
+  claims; and does the file grow without bound. The atomic-write fix from
+  #75/#76 holds (2,173 of 2,173 snapshots resumed on 2026-09-05) — the defects
+  are around the file, not in it (#239, #242)
+
 **The Operator** neither plays to win nor tries to break anything: runs
 the binary the way an operator would and checks it kept its promises.
 The Vandal asks whether the machine survives abuse; the Operator asks
@@ -159,7 +205,7 @@ whether it told the truth.
   fights back: read-only directories, a small tmpfs filled to capacity
   mid-game, paths that are directories or symlinks. V17 abuses flag
   values; this walks the combinations and the capacity edge
-- M5 [proposed 2026-09-04, from #194/#196/#197] audit `--help` against the
+- M5 audit `--help` against the
   code, sentence by sentence. Three of tonight's bugs were one line of usage
   text next to one line of implementation: `--log` says "Append" and
   `game_log::init` passes `.truncate(true)`; the `--resume` note names three

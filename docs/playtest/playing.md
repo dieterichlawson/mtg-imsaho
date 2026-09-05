@@ -125,6 +125,52 @@ contradict the CR.
   abilities are sorcery-speed and once per turn per permanent (CR 606.3,
   118.5). Liliana of the Veil and Garruk Relentless are the only
   implemented walkers and both are 1-ofs, so write a one-off deck
+- C25 the graveyard as a live stat line: play a Boneyard Wurm /
+  Splinterfright / Lumberknot / Wreath of Geists deck into a graveyard-hate
+  deck (Purify the Grave, Ghoulcaller's Bell, Graveyard Shovel, Sever the
+  Bloodline) and verify the characteristic-defining P/T (CR 604.3, layer 7a)
+  recomputes in every zone and at every instant: change the graveyard during
+  declare-blockers and check power BEFORE damage (CR 510.1a), exile creature
+  cards and check the creature dies at the next SBA check when toughness hits
+  0 (CR 704.5f), and stack an anthem and a counter on top to check 7a→7c→7d
+  order. No coverage pairing has both halves; write one-off decks
+- C26 alternative costs and cost reduction: Rooftop Storm ("cast Zombie
+  creature spells without paying their mana costs", CR 118.9) and Heartless
+  Summoning ({2} less, and -1/-1 that kills your own X/1s). Verify the free
+  cast is offered for Zombie CREATURE spells only, that both the paid and the
+  free option appear when you can afford either (CR 601.2b), that a reduction
+  never eats a coloured symbol (CR 601.2f), that an additional cost survives
+  an alternative cost, and that killing the cost source with the spell on the
+  stack does not rebill it (CR 601.2h)
+- C27 the nonbasic mana base: the five check lands (Isolated Chapel, Clifftop
+  Retreat, Woodland Cemetery, Hinterland Harbor, Sulfur Falls) enter tapped or
+  untapped as a replacement checked AS they enter (CR 614.1c) and are never
+  re-evaluated later; Ghost Quarter's search belongs to the DESTROYED land's
+  controller, is optional, finds only basics, enters untapped and does not eat
+  their land drop (CR 701.19, 305.2); the utility lands (Gavony Township,
+  Kessig Wolf Run, Moorland Haunt, Nephalia Drownyard, Stensia Bloodhall) are
+  NOT mana abilities and must use the stack and grant a priority window
+  (CR 605.1a). The two real games reached almost none of these on their own —
+  budget a targeted probe deck for the utility lands
+- C28 the artifact deck and the artifact hate: play the Equipment deck as an
+  artifact deck (Silver-Inlaid Dagger, Butcher's Cleaver, Demonmail Hauberk,
+  Runechanter's Pike, Inquisitor's Flail, Mask of Avacyn, Wooden Stake,
+  Blazing Torch, Manor Gargoyle, Galvanic Juggernaut) into Ancient Grudge,
+  Naturalize and Stony Silence. Verify equip is sorcery-speed and targets only
+  your own creature (CR 702.6b), moving an Equipment (702.6c), Equipment
+  unattaching rather than dying (704.5n), Stony Silence stopping equip and
+  artifact-creature abilities but not land mana, and an artifact creature
+  answering to both creature and artifact removal. Demonmail Hauberk's
+  "Equip—Sacrifice a creature", Runechanter's Pike, Inquisitor's Flail and all
+  four Ancient Grudge modes went undrawn in two games — stack them higher
+- C29 X spells and variable damage: Devil's Play ({X}{R}, flashback {X}{R}{R}{R}
+  — a SECOND independently chosen X), Harvest Pyre (X paid by exiling from your
+  own graveyard), Heretic's Punishment, Blasphemous Act (a cost that varies with
+  the board). Verify X is chosen at announcement and locked (CR 601.2b), X=0 is
+  legal and deals 0, X is 0 in every zone but the stack (CR 202.3b — check a
+  milled Devil's Play's mana value), the exile cost is paid at announcement
+  (601.2h), and Blasphemous Act re-prices as the board changes and never falls
+  below {R}. Its 8-creature floor needs a real go-wide board to reach
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
@@ -226,7 +272,7 @@ illegal or dubious resolutions do.
   scoped to the prompting seat; "reveal" shown to both and "look at"
   only to the chooser and never echoed into the shared log; library
   order not leaked; face-down exile stays hidden
-- L26 [proposed 2026-09-04, from the C24 night and #219/#220] planeswalker
+- L26 planeswalker
   combat leftovers (CR 506.4c, 508.1a, 510.5, 702.19b): send TWO attackers at
   once, one at the player and one at a walker, and verify the blocker prompt
   and the damage split are right for each; kill or bounce the attacked walker
@@ -253,3 +299,55 @@ illegal or dubious resolutions do.
   real ordered zone exists. Needs reanimation or theft, Auras, Equipment,
   flashback and a sweeper; no coverage pairing has all of these, so write
   one-off decks
+- L28 change-of-control effects (CR 613.1b layer 2, 506.4d, 302.6, 404.3,
+  611.2b): Olivia Voldaren's {3}{B}{B}, Traitorous Blood and Grimoire of the
+  Dead are the only three ways in, and layer 2 had never been exercised before
+  2026-09-05. Steal a creature under an anthem and verify it loses the bonus
+  (613.1b); verify summoning sickness under the new controller; steal an
+  attacker AND a blocker after declarations and verify each leaves combat
+  while the attacker stays blocked (506.4d, 509.1h); kill the stolen creature
+  and verify it reaches its OWNER's graveyard (404.3); let Traitorous Blood
+  expire at cleanup and kill Olivia mid-steal (611.2b). Stack two control
+  effects of different durations on one creature — that is where #253 lives.
+  No coverage pairing has these; write one-off decks
+- L29 static prohibitions — "can't be cast", "can't be activated", "can't be
+  targeted" (CR 101.2, 601.2, 605.1a, 702.11e): Nevermore's named card must be
+  ABSENT from the menu, not offered-then-rejected, including its flashback, and
+  must come back the instant Nevermore dies; the name is chosen as it enters
+  (614.12), and may be a card in neither deck. Stony Silence must kill equip and
+  artifact mana abilities but not land mana abilities and not triggered
+  abilities. Witchbane Orb must remove its controller from opponents' target
+  lists entirely — a spell whose only target is that player must vanish from the
+  menu — while self-targeting stays legal, and its ETB destroys only the Curses
+  attached to its controller. Every rule here passed on 2026-09-05; the defects
+  were in how the CLI presents them (#254, #255)
+- L30 alternate win and loss conditions at the empty library (CR 104.2b,
+  104.3c, 614, 704.5b, 121.3): Laboratory Maniac replaces the draw, so with an
+  empty library the draw must WIN immediately as a replacement — not on an SBA,
+  not at the next priority. Kill the Maniac first and verify the ordinary
+  704.5b loss instead; draw TWO from a one-card and a zero-card library and
+  verify draws are sequential with exactly one replacement; verify the Maniac
+  never fires for the opponent's empty draw. The runner enforces no minimum
+  deck size, so a 14-card deck empties by turn 9 — build one
+- L31 the sacrifice family and who does the choosing (CR 701.17, 601.2h,
+  700.2, 603.10a, 115.7, 404.3): a sacrifice paid as a COST happens at
+  announcement, so countering Altar's Reap does not give the creature back and
+  its dies-trigger resolves first; only permanents you CONTROL are in the
+  picker (a stolen creature IS); an unpayable sacrifice cost leaves the menu;
+  "target player sacrifices" (Tribute to Hunger) prompts THAT seat and the
+  caster never sees it; an ability whose cost is sacrificing its own source
+  still resolves; a sweeper's simultaneous deaths must all see each other
+  (603.10a); and sacrifice beats regeneration and indestructible alike
+  (701.17c). Every rule passed on 2026-09-05 — the defect was the log (#263)
+- L32 [proposed 2026-09-05, from the L28 night and #253] redundant and stacked
+  control effects (CR 613.1b, 613.7a, 611.2b): put two control-changing effects
+  with different durations on ONE creature — Traitorous Blood then Olivia's
+  {3}{B}{B} in the same turn, and the reverse order with Olivia killed after
+  the second resolves — and verify layer 2 resolves them by timestamp rather
+  than by "who had it first". Wants a one-off Olivia / Traitorous Blood deck
+- L33 [proposed 2026-09-05, from the L26 night] the walker-combat cases L26
+  could not reach: BOUNCING an attacked planeswalker after blockers (no
+  implemented ISD card returns a walker to hand — this needs a card first), and
+  a DOUBLE striker attacking a walker that dies in the first-strike step
+  (Terror of Kruin Pass, Kruin Outlaw's back face, needs a spell-free turn to
+  transform). Both are CR 510.4/510.5 leftovers from #246's neighbourhood
