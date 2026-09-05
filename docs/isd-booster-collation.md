@@ -347,13 +347,23 @@ the card is consumed from the run but replaced by the foil in the pack):
 
 | Foil Rarity           | Displaces      | Pack type restriction              |
 |-----------------------|----------------|-------------------------------------|
-| Common or Basic Land  | C1 common      | C1 packs only (always with basic land) |
+| Common or Basic Land  | C-run common   | None (see below)                    |
 | Uncommon              | B common        | Any pack type                       |
 | Rare or Mythic Rare   | A common        | Any pack type                       |
 
 Source: ISD lethe.xyz page: "Foil commons (and basic lands) displace C1 commons.
 (As far as I've seen, these are always in packs with basic lands.) Foil uncommons
 displace B commons, and foil rares and mythic rares displace A commons."
+
+The source's "displace C1 commons" is a statement about which slot the foil takes,
+and this document used to read it as "common foils appear only in C1 packs". The
+two readings cannot both hold alongside the rarity table above: packs alternate C1
+and C2 evenly, so a marginal 11/16 common-foil rate would require a 22/16 rate
+inside C1 packs. The simulator therefore lets a common or basic foil displace the
+pack's last C-run common whichever type of pack it is in, which reproduces the
+validated rarity table exactly. Restricting it and substituting an uncommon foil in
+C2 packs — what the code did until issue #204 — inverted the table, producing 48%
+uncommon and 29% common foils.
 
 When a foil displaces a common, the pack has 8 commons + 1 foil instead of 9 commons.
 
@@ -487,14 +497,10 @@ fn generate_foil(rng: &mut Rng, is_c1: bool, commons: &mut Vec<String>) -> Foil 
         FoilRarity::BasicLand
     };
 
-    // Foil commons/basics only appear in C1 packs
-    // If this is a C2 pack and we rolled common/basic, treat as uncommon instead
-    // (This is a simplification; the real interaction is more complex)
-
     // Displace the appropriate common and select a random card of that rarity
     match rarity {
         Common | BasicLand => {
-            // Displace last C1 common (only in C1 packs)
+            // Displace the pack's last C-run common, in either pack type
             commons.pop();
             Foil::Card(random_card_of_rarity(rng, rarity))
         }
@@ -523,6 +529,7 @@ For a draft pod (e.g., 8 players x 3 packs = 24 packs):
 This preserves the sequential structure: consecutive packs from the same box share
 collation patterns, which is realistic for a draft where all packs come from the
 same (or nearby) boxes.
+
 
 For 8 players x 3 packs = 24 packs from a 36-pack box, we use 2/3 of a box. For
 4 players x 3 packs = 12 packs, we use 1/3 of a box.

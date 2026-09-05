@@ -356,10 +356,9 @@ fn generate_foil(
     }
 
     // Non-DFC foil: determine rarity.
-    // 11/16 common, 3/16 uncommon, 7/128 rare, 1/128 mythic, 1/16 basic land
-    //
-    // Common/basic foils only appear in C1 packs. If this is a C2 pack and we
-    // roll common/basic, skip the foil entirely (those foils don't occur in C2).
+    // 11/16 common, 3/16 uncommon, 7/128 rare, 1/128 mythic, 1/16 basic land —
+    // the MTGS model in docs/isd-booster-collation.md, validated against 32
+    // boxes of empirical data.
     let roll: u32 = rng.gen_range(0..128);
     let (rarity, pool) = if roll < 88 {
         (FoilRarity::Common, &sheets.foil_pool_commons)
@@ -373,26 +372,26 @@ fn generate_foil(
         (FoilRarity::BasicLand, &sheets.foil_pool_basics)
     };
 
-    // Common/basic foils only appear in C1 packs
-    if !is_c1 && matches!(rarity, FoilRarity::Common | FoilRarity::BasicLand) {
-        // No foil in this pack — common/basic foils can't appear in C2 packs.
-        // Treat as uncommon foil instead (displaces B common, works in any pack).
-        let card = sheets.foil_pool_uncommons[rng.gen_range(0..sheets.foil_pool_uncommons.len())].clone();
-        remove_from_run(commons, "b");
-        return Foil::NonDfc {
-            card,
-            rarity: FoilRarity::Uncommon,
-            displaced_run: "b".to_string(),
-        };
-    }
-
     let card = pool[rng.gen_range(0..pool.len())].clone();
 
     let displaced_run = match rarity {
         FoilRarity::Common | FoilRarity::BasicLand => {
-            // Displaces C1 common (only in C1 packs, verified above).
+            // The source says a foil common displaces a C-run common — a
+            // statement about which slot it takes, not about which packs it
+            // can appear in. Reading it as "C1 packs only" and handing the
+            // other half of the packs an uncommon foil instead promoted
+            // 12/16 of half the rolls, which inverted the whole
+            // distribution: foils came out 48% uncommon and 29% common
+            // against a documented 18.75% / 68.75% (issue #204). The two
+            // readings cannot both hold anyway — with packs alternating C1
+            // and C2 evenly, a marginal 11/16 common rate would need a
+            // 22/16 rate inside C1 packs.
+            //
+            // Every pack draws C-run commons (5 in a C1 pack, 2 or 4 in a
+            // C2 one), so the last common is always the C-run card this
+            // displaces.
             commons.pop();
-            "c1".to_string()
+            if is_c1 { "c1".to_string() } else { "c2".to_string() }
         }
         FoilRarity::Uncommon => {
             remove_from_run(commons, "b");
@@ -456,6 +455,7 @@ pub fn generate_draft_packs(
     let all_packs: Vec<BoosterPack> = (0..total_packs)
         .map(|_| generate_pack(sheets, &mut state, rng))
         .collect();
+
 
     // Distribute: packs 0..pod_size are pack 1 for each player,
     // pod_size..2*pod_size are pack 2, etc.
@@ -598,6 +598,83 @@ mod tests {
                 "Second common should match sheet position 1"
             );
         }
+    }
+
+    /// A seeded generator, so these distribution checks are the same run
+    /// every time rather than a flake waiting to happen.
+    fn seeded_rng(seed: u64) -> impl Rng {
+        use rand::SeedableRng;
+        rand::rngs::StdRng::seed_from_u64(seed)
+    }
+
+    /// Issue #204: a C2 pack that rolled a common or basic foil was handed
+    /// an uncommon one instead, promoting 12/16 of half the rolls. That
+    /// made a foil more likely to be an uncommon (48%) than a common (29%),
+    /// the opposite of the model in docs/isd-booster-collation.md.
+    #[test]
+    fn foil_rarity_follows_the_documented_distribution() {
+        let sheets = load_sheets();
+        let mut rng = seeded_rng(20_204);
+        let mut state = CollationState::new_random(&mut rng);
+
+        let n = 40_000;
+        let (mut commons, mut uncommons, mut foils) = (0usize, 0usize, 0usize);
+        for _ in 0..n {
+            let pack = generate_pack(&sheets, &mut state, &mut rng);
+            if let Some(Foil::NonDfc { rarity, .. }) = &pack.foil {
+                foils += 1;
+                match rarity {
+                    FoilRarity::Common => commons += 1,
+                    FoilRarity::Uncommon => uncommons += 1,
+                    _ => {}
+                }
+            } else if pack.foil.is_some() {
+                foils += 1;
+            }
+        }
+
+        let p_common = commons as f64 / foils as f64;
+        let p_uncommon = uncommons as f64 / foils as f64;
+        assert!(
+            p_common > p_uncommon,
+            "a foil is a common far more often than an uncommon: \
+             common {p_common:.3}, uncommon {p_uncommon:.3}"
+        );
+        // 11/16 and 3/16 of the 6/7 of foils that are not DFCs.
+        let expected_common = 11.0 / 16.0 * 6.0 / 7.0;
+        let expected_uncommon = 3.0 / 16.0 * 6.0 / 7.0;
+        assert!(
+            (p_common - expected_common).abs() < 0.02,
+            "P(common | foil) = {p_common:.3}, documented {expected_common:.3}"
+        );
+        assert!(
+            (p_uncommon - expected_uncommon).abs() < 0.02,
+            "P(uncommon | foil) = {p_uncommon:.3}, documented {expected_uncommon:.3}"
+        );
+    }
+
+    /// A foil common still takes a C-run common's slot, whichever pack type
+    /// it lands in — the pack keeps its 14 cards.
+    #[test]
+    fn a_common_foil_displaces_a_common_in_either_pack_type() {
+        let sheets = load_sheets();
+        let mut rng = seeded_rng(99);
+        let mut state = CollationState::new_random(&mut rng);
+
+        let mut seen = (false, false);
+        for _ in 0..20_000 {
+            let pack = generate_pack(&sheets, &mut state, &mut rng);
+            if let Some(Foil::NonDfc { rarity: FoilRarity::Common | FoilRarity::BasicLand, displaced_run, .. }) = &pack.foil {
+                assert_eq!(pack.commons.len(), 8, "the foil takes a common's slot");
+                assert_eq!(pack.all_cards().len(), 14);
+                match displaced_run.as_str() {
+                    "c1" => seen.0 = true,
+                    "c2" => seen.1 = true,
+                    other => panic!("a common foil displaces a C-run common, not {other}"),
+                }
+            }
+        }
+        assert!(seen.0 && seen.1, "common foils occur in both pack types: {seen:?}");
     }
 
     #[test]
