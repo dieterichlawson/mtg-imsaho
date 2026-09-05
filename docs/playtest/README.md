@@ -69,6 +69,17 @@ Drive the binary through tmux — the `play-cli` skill documents the house
 patterns. Run with `--log logs/playtest/<game>.log` and `--save` so
 anomalies leave a resumable snapshot.
 
+**If more than one tester is running at once, give each one its own tmux
+socket** (`tmux -L <mission-id> new-session …`, and `-L` on every
+`send-keys`/`capture-pane` after it). The `play-cli` skill opens with
+`tmux kill-session`/`kill-server` as a cleanup step; on the shared default
+socket that kills every other tester's game mid-hand. On 2026-09-05 four
+crews did this to each other and eight games had to be restarted. For the
+same reason, target processes by `--seed` rather than `pgrep -x
+mtg-runner | tail -1`, which will find somebody else's game, and treat
+`logs/playtest/` as shared — do not wipe the whole directory, only your
+own files.
+
 For game and CLI subjects, pick deck pairs from `decks/` and
 `decks/coverage/`, or write one-off decks into a temp file (deck files
 are `COUNT NAME` lines). Check the pairing can actually reach what you
