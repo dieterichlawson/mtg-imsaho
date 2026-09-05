@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -206,6 +205,10 @@ struct DeckBuildResult {
     deck: deckbuilding::DraftDeck,
     attempts: Vec<DeckAttempt>,
     retries: usize,
+    /// True when no attempt produced a valid deck and the runner
+    /// substituted one. A substituted deck is not a drafted deck, and
+    /// every record of the run has to say so (issue #200).
+    fallback: bool,
 }
 
 /// Validate model specs before starting the draft. Catches invalid thinking
@@ -471,12 +474,13 @@ substituting {} (the first card). Response: {}",
 
     let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
         let log_ref = &log;
+        let registry_ref = &registry;
         let handles: Vec<_> = clients
             .iter_mut()
             .zip(pools.iter())
             .enumerate()
             .map(|(seat, (client, pool))| s.spawn(move || {
-                let result = build_deck_with_llm(client, pool);
+                let result = build_deck_with_llm(client, pool, registry_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
                     .iter()
@@ -489,6 +493,7 @@ substituting {} (the first card). Response: {}",
                     &result.deck.sideboard,
                     &attempts,
                     result.retries,
+                    result.fallback,
                 );
                 result
             }))
@@ -653,6 +658,24 @@ substituting {} (the first card). Response: {}",
     // A run whose seats never picked must not look like one that did. This
     // is the last thing printed before "Done", next to the standings it
     // qualifies (issue #195).
+    // Same rule for a seat whose deck the runner had to build: the
+    // standings rank it, so the standings have to say it is not a built
+    // deck (issue #200).
+    let fallback_seats: Vec<usize> = deck_results
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.fallback)
+        .map(|(seat, _)| seat)
+        .collect();
+    if !fallback_seats.is_empty() {
+        eprintln!("\n=== Substituted Decks ===");
+        for seat in &fallback_seats {
+            eprintln!("    Seat {seat}: no valid deck after {} attempts — the runner built \
+this seat's deck, so its results are not a built deck's", deck_results[*seat].retries);
+        }
+        eprintln!("  (grep the log for FALLBACK to see each one)");
+    }
+
     let substituted_total: usize = substituted_picks.iter().sum();
     if substituted_total > 0 {
         eprintln!("\n=== Substituted Picks ===");
@@ -754,6 +777,7 @@ fn parse_pick_response(response: &str, available: &[String]) -> Pick {
 fn build_deck_with_llm(
     client: &mut llm_client::DraftLlmClient,
     pool: &[String],
+    registry: &CardRegistry,
 ) -> DeckBuildResult {
     let prompt = build_deck_prompt(pool);
     let mut last_error = String::new();
@@ -781,7 +805,7 @@ fn build_deck_with_llm(
                 Ok(deck) => {
                     attempts.push(DeckAttempt { prompt: msg, response, error: None });
                     let retries = attempts.len() - 1;
-                    return DeckBuildResult { deck, attempts, retries };
+                    return DeckBuildResult { deck, attempts, retries, fallback: false };
                 }
                 Err(e) => {
                     attempts.push(DeckAttempt { prompt: msg, response, error: Some(e.clone()) });
@@ -795,21 +819,16 @@ fn build_deck_with_llm(
         }
     }
 
-    // Fallback: include all cards, add 17 lands split by color
+    // No attempt produced a valid deck. The draft has already been played,
+    // so the round still has to happen — but the deck it happens with is the
+    // runner's, not the seat's, and everything downstream is told so.
     eprintln!("Warning: deck building failed after {max_retries} attempts, using fallback");
-    let mut lands = HashMap::new();
-    lands.insert("Island".to_string(), 9);
-    lands.insert("Swamp".to_string(), 8);
-
     let retries = attempts.len();
     DeckBuildResult {
-        deck: deckbuilding::DraftDeck {
-            maindeck: pool.to_vec(),
-            lands,
-            sideboard: Vec::new(),
-        },
+        deck: deckbuilding::fallback_deck(pool, registry),
         attempts,
         retries,
+        fallback: true,
     }
 }
 

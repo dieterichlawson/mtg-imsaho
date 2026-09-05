@@ -148,6 +148,7 @@ unusable response, substituted {substituted} (the first card)"),
         sideboard: &[String],
         attempts: &[(&str, &str, Option<&str>)],
         retries: usize,
+        fallback: bool,
         file: &str,
         line: u32,
     ) {
@@ -186,11 +187,19 @@ unusable response, substituted {substituted} (the first card)"),
                 writeln!(content, "  {name}").unwrap();
             }
         }
-        mtg_player::game_log::write(
-            file, line,
-            &format!("[Seat {seat}] DECK ({total} cards, {retries} retries)"),
-            &content,
-        );
+        // A deck nobody built must not read like one that took a few tries
+        // to get right. The header says which it is, and a fallback also
+        // gets its own WARN line so `grep WARN` finds it next to the
+        // unusable picks (issue #200).
+        if fallback {
+            mtg_player::game_log::write(
+                file, line,
+                &format!("[Seat {seat}] WARN deck building failed after {retries} attempt(s); \
+the runner substituted a deck — this seat's deck and results are not a built one"),
+                "",
+            );
+        }
+        mtg_player::game_log::write(file, line, &deck_header(seat, total, retries, fallback), &content);
     }
 
     pub fn match_result(
@@ -292,4 +301,40 @@ macro_rules! log_bye {
 #[macro_export]
 macro_rules! log_standings {
     ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::standings($($args),+, file!(), line!()) }}
+}
+
+/// The label on a seat's final DECK entry.
+///
+/// A deck the runner substituted must not read like one a seat took a few
+/// tries to get right — "(59 cards, 10 retries)" said nothing about the fact
+/// that attempt 10 failed too and no seat built this (issue #200).
+fn deck_header(seat: usize, total: usize, retries: usize, fallback: bool) -> String {
+    if fallback {
+        format!("[Seat {seat}] DECK ({total} cards, FALLBACK after {retries} failed attempts)")
+    } else {
+        format!("[Seat {seat}] DECK ({total} cards, {retries} retries)")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::deck_header;
+
+    #[test]
+    fn a_built_deck_reports_its_retries() {
+        assert_eq!(
+            deck_header(0, 40, 2, false),
+            "[Seat 0] DECK (40 cards, 2 retries)"
+        );
+    }
+
+    /// Issue #200: the fallback used to be indistinguishable from a deck
+    /// that took ten tries and then worked.
+    #[test]
+    fn a_substituted_deck_says_so_in_the_log() {
+        let header = deck_header(0, 40, 10, true);
+        assert!(header.contains("FALLBACK"), "header: {header}");
+        assert!(header.contains("10 failed attempts"), "header: {header}");
+        assert!(!header.contains("retries"), "\"retries\" reads as a deck that got built: {header}");
+    }
 }
