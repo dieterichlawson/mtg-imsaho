@@ -3298,10 +3298,19 @@ pub enum ResolutionChoiceKind {
         /// always collects exactly one per player.
         remaining: usize,
     },
-    /// Choose one card from a revealed set to keep (Forbidden Alchemy).
-    ChooseFromRevealed {
+    /// Choose one of a set of cards the player has *looked at* to keep
+    /// (Forbidden Alchemy).
+    ///
+    /// Looking at a card is not revealing it (CR 701.18a): only the player
+    /// who looked knows what these are, and the one they take goes to a
+    /// hidden zone (CR 400.2). This used to be called `ChooseFromRevealed`
+    /// with a field named `revealed`, and the handler logged the names at
+    /// `Event` accordingly, which put all four cards and the one kept into
+    /// the shared --log and both seats' on-screen LOG pane (issue #217).
+    /// The name is the fix as much as the log level is.
+    ChooseFromLookedAt {
         description: String,
-        revealed: Vec<ObjectId>,
+        looked_at: Vec<ObjectId>,
     },
     /// Search library for a card matching criteria and choose one (Garruk -1, etc.).
     /// All matching cards are shown to the player. They pick one to put into hand.

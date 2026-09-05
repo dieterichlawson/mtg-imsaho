@@ -1327,6 +1327,80 @@ fn forbidden_alchemy_choice_from_top_4() {
     assert_eq!(state.get_object(c4).unwrap().zone, Zone::Graveyard);
 }
 
+/// Forbidden Alchemy looks; it does not reveal.
+///
+/// "Look at the top four cards" is CR 701.18a, not a reveal, and the card
+/// that ends up in hand is in a hidden zone (CR 400.2). Both the four names
+/// and the one kept used to be logged at `Event`, which is above the
+/// `Private` cut that `stream_game_log` and `GameView` filter on — so in a
+/// hotseat game the opponent watched the caster's pick land in hand, and
+/// either player could grep the shared --log for it afterwards (issue
+/// #217). The three cards that go to the graveyard are public; the fourth
+/// is not, and naming the four names it by subtraction.
+#[test]
+fn forbidden_alchemy_does_not_leak_the_cards_it_looked_at() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let names = ["Lightning Bolt", "Grizzly Bears", "Forest", "Giant Growth"];
+    let mut cards = Vec::new();
+    for name in names {
+        let card_id = reg.get_id_by_name(name).unwrap();
+        let obj = state.create_object(card_id, P0, Zone::Library, None, None);
+        state.get_object_mut(obj).unwrap().name = (*name).into();
+        cards.push(obj);
+    }
+    state.players[0].library_order = cards.clone();
+
+    let fa = castable_spell(&mut state, &reg, "Forbidden Alchemy", P0);
+    state = cast_and_resolve(&state, &reg, fa, vec![]);
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenCard(cards[0]),
+        },
+        &reg,
+    );
+    assert_eq!(state.get_object(cards[0]).unwrap().zone, Zone::Hand);
+
+    // Everything a seat can see: the shared --log and the LOG pane both
+    // carry Private-and-above minus Private, i.e. Debug upward.
+    let shared: Vec<&String> = state.game_log.iter()
+        .filter(|e| e.level > mtg_engine::state::LogLevel::Private)
+        .map(|e| &e.message)
+        .collect();
+
+    // The card that went to hand is never named in anything a seat sees...
+    assert!(
+        !shared.iter().any(|m| m.contains("Lightning Bolt")),
+        "the card put into hand is hidden information (CR 400.2):\n{shared:#?}"
+    );
+    // ...and neither is the set of four, which would give it by subtraction
+    // from the three that are publicly in the graveyard.
+    let looked_at_line = shared.iter().find(|m| m.contains("looks at"));
+    assert!(
+        looked_at_line.is_some(),
+        "that the spell looked at cards is public:\n{shared:#?}"
+    );
+    for name in names {
+        assert!(
+            !looked_at_line.unwrap().contains(name),
+            "the looked-at line must not name {name}: {}",
+            looked_at_line.unwrap()
+        );
+    }
+
+    // The caster's own record still has it, at Private.
+    let private: Vec<&String> = state.game_log.iter()
+        .filter(|e| e.level == mtg_engine::state::LogLevel::Private)
+        .map(|e| &e.message)
+        .collect();
+    assert!(
+        private.iter().any(|m| m.contains("Lightning Bolt")),
+        "the player who looked is still told what they saw:\n{private:#?}"
+    );
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Regeneration
 // ══════════════════════════════════════════════════════════════════

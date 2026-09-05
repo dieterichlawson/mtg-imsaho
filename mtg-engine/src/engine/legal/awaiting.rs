@@ -208,7 +208,7 @@ pub(crate) fn legal_actions_while_awaiting(
                         choice: ResolvedChoice::ChosenCard(id),
                     })
                     .collect(),
-                ResolutionChoiceKind::ChooseFromRevealed { revealed, .. } => revealed
+                ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. } => looked_at
                     .iter()
                     .map(|&id| Action::ResolveChoice {
                         choice: ResolvedChoice::ChosenCard(id),
@@ -310,9 +310,9 @@ pub(crate) fn legal_actions_while_awaiting(
                 // The description says what choosing does ("Forbidden
                 // Alchemy: choose a card to put into your hand") — same
                 // rule as YesNo above (issues #87/#95).
-                ResolutionChoiceKind::ChooseFromRevealed { description, .. }
+                ResolutionChoiceKind::ChooseFromLookedAt { description, .. }
                     if !description.is_empty() => description.clone(),
-                ResolutionChoiceKind::ChooseFromRevealed { .. } => {
+                ResolutionChoiceKind::ChooseFromLookedAt { .. } => {
                     format!("{source_name}: choose a card")
                 }
                 ResolutionChoiceKind::ChooseFromLibrary { .. } => {

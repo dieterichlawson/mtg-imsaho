@@ -292,7 +292,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
             use crate::state::ResolutionChoiceKind as K;
             let empty = match choice {
                 K::ChooseTarget { options, .. } => options.is_empty(),
-                K::ChooseFromRevealed { revealed, .. } => revealed.is_empty(),
+                K::ChooseFromLookedAt { looked_at, .. } => looked_at.is_empty(),
                 K::ChooseCardFromHand { cards, .. } => cards.is_empty(),
                 K::ChooseTriggerOrder { options, .. } => options.is_empty(),
                 K::DividePermanentsIntoPiles { permanents, .. } => permanents.is_empty(),

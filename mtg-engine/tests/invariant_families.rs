@@ -899,8 +899,8 @@ fn prompt_sources_and_option_zones_are_checked() {
 
     let mut s = state.clone();
     s.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source: bear,
-        choice: ResolutionChoiceKind::ChooseFromRevealed { description: String::new(), revealed: vec![card] } });
-    flags_core(&s, &reg, "revealed prompt offers #");
+        choice: ResolutionChoiceKind::ChooseFromLookedAt { description: String::new(), looked_at: vec![card] } });
+    flags_core(&s, &reg, "looked-at prompt offers #");
     flags_core(&s, &reg, "which is not in p0's library");
 }
 

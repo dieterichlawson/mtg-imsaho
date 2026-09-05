@@ -649,7 +649,7 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                 }
                 K::YesNo { .. } => expect(v, vec![format!("{:?}", ResolvedChoice::YesNoDecision(true)), format!("{:?}", ResolvedChoice::YesNoDecision(false))]),
                 K::ChooseCardFromHand { cards, .. } => expect(v, cards.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect()),
-                K::ChooseFromRevealed { revealed, .. } => expect(v, revealed.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect()),
+                K::ChooseFromLookedAt { looked_at, .. } => expect(v, looked_at.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect()),
                 K::ChooseFromLibrary { options, .. } => {
                     let mut want: Vec<String> = options.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect();
                     want.push(format!("{:?}", ResolvedChoice::ChosenTarget(None)));

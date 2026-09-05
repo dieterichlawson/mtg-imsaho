@@ -132,14 +132,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             &mut *state, *player, remaining - 1, choice_source, &source, registry);
                     }
                 }
-                (ResolutionChoiceKind::ChooseFromRevealed { revealed, .. },
+                (ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. },
                  ResolvedChoice::ChosenCard(keep_id)) => {
                     // "Put ONE OF THEM into your hand" — one of the cards this
                     // spell looked at. Taken on trust, this was a tutor: name
                     // any card in your library and it came to hand.
-                    if !revealed.contains(keep_id) {
+                    if !looked_at.contains(keep_id) {
                         state.log(LogLevel::Debug, format!(
-                            "choice refused, {keep_id:?} was not among the cards revealed"));
+                            "choice refused, {keep_id:?} was not among the cards looked at"));
                         state.awaiting_action = unanswered;
                         return Applied::ReturnNow;
                     }
@@ -149,12 +149,18 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // graveyard, so it goes through `mill_one` and emits
                     // CreatureCardMilled. Moving them directly hid them from
                     // an opponent's Undead Alchemist.
-                    for &card_id in revealed {
+                    for &card_id in looked_at {
                         if card_id != *keep_id {
                             crate::engine::mill_one(state, card_id, registry);
                         }
                     }
-                    state.log(LogLevel::Event, format!("Kept {keep_name}"));
+                    // The card kept went to a hidden zone (CR 400.2) and was
+                    // never revealed (CR 701.18a), so its name is the chooser's
+                    // alone. That an unnamed card was taken is public — the
+                    // rest land in the graveyard where everyone can count them
+                    // (issue #217).
+                    state.log(LogLevel::Private, format!("Kept {keep_name}"));
+                    state.log(LogLevel::Event, "Kept one card, the rest go to the graveyard".to_string());
                 }
                 (ResolutionChoiceKind::ChooseFromLibrary { searcher, destination, tapped, .. },
                  ResolvedChoice::ChosenCard(chosen_id)) => {

@@ -497,7 +497,7 @@ fn forbidden_alchemy_draws_and_mills() {
 
     state = cast_and_resolve(&state, &reg, fa, vec![]);
 
-    // Should now be awaiting a ChooseFromRevealed choice with 4 revealed cards.
+    // Should now be awaiting a ChooseFromLookedAt choice with 4 looked-at cards.
     assert!(state.awaiting_action.is_some(), "Should be awaiting a choice");
 
     // Choose the first revealed card (lib_cards[0]) to put into hand.

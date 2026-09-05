@@ -33,28 +33,35 @@ impl CardBehavior for ForbiddenAlchemy {
         // open. Every one of them leaves in the answer, and `move_object`
         // takes each out of the order then.
         let library = &state.get_player(controller).library_order;
-        let revealed: Vec<ObjectId> = library.iter().take(4).copied().collect();
+        let looked_at: Vec<ObjectId> = library.iter().take(4).copied().collect();
 
-        if revealed.is_empty() {
-            // No cards to reveal.
-        } else if revealed.len() == 1 {
+        if looked_at.is_empty() {
+            // Nothing to look at.
+        } else if looked_at.len() == 1 {
             // Only 1 card -- auto-put it in hand.
-            let card_id = revealed[0];
+            let card_id = looked_at[0];
             let chosen_name = state.obj_name(card_id);
             state.move_object(card_id, Zone::Hand, registry);
-            state.log(LogLevel::Event, format!("Forbidden Alchemy: {chosen_name} put into hand"));
+            state.log(LogLevel::Private, format!("Forbidden Alchemy: {chosen_name} put into hand"));
+            state.log(LogLevel::Event, "Forbidden Alchemy: a card put into hand".to_string());
         } else {
-            // 2+ cards -- ask the player which one to keep.
-            let names: Vec<String> = revealed.iter()
+            // 2+ cards -- ask the player which one to keep. Which cards they
+            // are is the caster's alone: "look at" is not "reveal" (CR
+            // 701.18a), so the names go in at Private, which neither the
+            // shared --log nor either seat's LOG pane carries (issue #217).
+            let names: Vec<String> = looked_at.iter()
                 .map(|id| state.obj_name(*id))
                 .collect();
-            state.log(LogLevel::Event, format!("Forbidden Alchemy revealed: {}", names.join(", ")));
+            state.log(LogLevel::Private, format!("Forbidden Alchemy looked at: {}", names.join(", ")));
+            state.log(LogLevel::Event,
+                format!("Forbidden Alchemy: p{} looks at the top {} cards of their library",
+                    controller.0, names.len()));
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: controller,
                 source: object_id,
-                choice: ResolutionChoiceKind::ChooseFromRevealed {
+                choice: ResolutionChoiceKind::ChooseFromLookedAt {
                     description: "Forbidden Alchemy: choose a card to put into your hand (rest go to graveyard)".into(),
-                    revealed,
+                    looked_at,
                 },
             });
             // Don't clean up spell yet -- ResolveChoice handler does it.

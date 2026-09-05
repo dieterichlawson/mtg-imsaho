@@ -314,7 +314,7 @@ impl GameView {
                             }).collect()
                         }
                         ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => cards.clone(),
-                        ResolutionChoiceKind::ChooseFromRevealed { revealed, .. } => revealed.clone(),
+                        ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. } => looked_at.clone(),
                         ResolutionChoiceKind::ChooseFromLibrary { options, .. } => options.clone(),
                         _ => vec![],
                     }

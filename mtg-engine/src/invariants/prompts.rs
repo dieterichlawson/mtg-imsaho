@@ -374,15 +374,15 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 library_option(state, *searcher, *o, "library prompt", v);
             }
         }
-        K::ChooseFromRevealed { revealed, .. } => {
-            distinct(revealed, "revealed prompt", v);
-            for r in revealed {
+        K::ChooseFromLookedAt { looked_at, .. } => {
+            distinct(looked_at, "looked-at prompt", v);
+            for r in looked_at {
                 match state.get_object(*r) {
-                    None => v.push(format!("revealed prompt offers missing #{}", r.0)),
-                    Some(o) if o.is_token => v.push(format!("revealed prompt offers token #{}", r.0)),
+                    None => v.push(format!("looked-at prompt offers missing #{}", r.0)),
+                    Some(o) if o.is_token => v.push(format!("looked-at prompt offers token #{}", r.0)),
                     // CR 701.16a: looking moves nothing — the cards are still
                     // in the library until the answer.
-                    _ => library_option(state, player, *r, "revealed prompt", v),
+                    _ => library_option(state, player, *r, "looked-at prompt", v),
                 }
             }
         }
