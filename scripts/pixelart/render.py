@@ -1,9 +1,12 @@
 import sys
 sys.dont_write_bytecode = True
 import json, sys, math
+import engine
 from PIL import Image, ImageDraw
 sys.path.insert(0,'.')
 import art, card
+sys.path.insert(0, 'rd')
+import adopt
 meta = json.load(open('refs/meta.json'))
 def cost_syms(mc):
     out=[]
@@ -15,7 +18,13 @@ def cost_syms(mc):
     return ''.join(out[:5])
 def build(name, greek=True, scale=6):
     m = meta[name]
-    cv = art.finish(name, art.ART[name]())
+    gen = adopt.rows_for(name.lower().replace(' ','_').replace(',','').replace("'",''))
+    if gen is not None:
+        cv = engine.Canvas(engine.AW, engine.AH)
+        for y, row in enumerate(gen):
+            for x, ch in enumerate(row): cv.set(x, y, ch)
+    else:
+        cv = art.finish(name, art.ART[name]())
     c = card.make_card(cv.rows(), m['bucket'], name, m['type_line'],
                        cost_syms(m.get('mana_cost','')), greek=greek)
     return card.to_image(c, scale)
