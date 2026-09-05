@@ -145,6 +145,20 @@ fn bug_control_change_not_reverted_at_eot() {
 
     assert_eq!(state.get_object(creature).unwrap().controller, P1,
         "Control should revert to P1 at end of turn");
+
+    // Issue #256: the steal was announced and the return was not, so a
+    // permanent moved from one side of the board to the other with nothing
+    // in the record. The other duration
+    // (`expire_control_effects`) has always logged the same event.
+    let name = state.obj_name(creature);
+    assert!(
+        state.game_log.iter().any(|e|
+            e.level > mtg_engine::state::LogLevel::Private
+            && e.message.contains(&name)
+            && e.message.contains("returns to p1")),
+        "the return is in the log a player can read:\n{:#?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
 }
 
 /// Issue #253: the durable half of the classic pair.

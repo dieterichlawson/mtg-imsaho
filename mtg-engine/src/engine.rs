@@ -943,10 +943,25 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 })
                 .collect();
             for (target, controller) in reverts {
-                if let Some(obj) = state.objects.get_mut(&target) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.controller = controller;
-                    }
+                if state.get_object(target).is_none_or(|o| o.zone != Zone::Battlefield) {
+                    continue;
+                }
+                let changing = state.get_object(target)
+                    .is_some_and(|o| o.controller != controller);
+                let name = state.obj_name(target);
+                // `change_control`, not a direct assignment: it is the single
+                // correct way to reassign an in-play permanent's controller,
+                // and it carries the summoning-sickness reset (CR 302.6) and
+                // the removal from combat (CR 506.4d) with it (issue #256).
+                state.change_control(target, controller);
+                if changing {
+                    // The other duration (`expire_control_effects`) says so;
+                    // this one moved a permanent from one side of the board
+                    // to the other with no record at all, which in a hotseat
+                    // game is the only signal a player gets (issue #256).
+                    state.log(crate::state::LogLevel::Event, format!(
+                        "{name} returns to p{}: the control effect has ended (CR 514.2)",
+                        controller.0));
                 }
             }
             state.until_end_of_turn.clear();
