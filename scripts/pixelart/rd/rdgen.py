@@ -23,7 +23,8 @@ KEY  = os.environ.get("RD_KEY", "").strip()
 AW, AH = 42, 34                      # the card art window
 SCALE  = int(os.environ.get("RD_SCALE", "3"))   # generate at 3x, downsample
 STYLE  = os.environ.get("RD_STYLE", "rd_plus__default")
-STRENGTH = float(os.environ.get("RD_STRENGTH", "0.62"))
+STRENGTH = float(os.environ.get("RD_STRENGTH", "0.9"))
+SEED_MODE = os.environ.get("RD_SEED_IMAGE", "0") == "1"
 
 sys.path.insert(0, ROOT)
 from PIL import Image
@@ -31,16 +32,56 @@ from PIL import Image
 ORDER = ["Geist of Saint Traft","Doomed Traveler","Chapel Geist","Elite Inquisitor","Midnight Haunting",
  "Snapcaster Mage","Delver of Secrets","Invisible Stalker","Laboratory Maniac","Stitched Drake",
  "Liliana of the Veil","Diregraf Ghoul","Unburial Rites","Bloodline Keeper","Grimgrin, Corpse-Born",
- "Brimstone Volley","Devil's Play","Balefire Dragon","Instigator Gang","Blasphemous Act",
+ "Brimstone Volley","Devil\'s Play","Balefire Dragon","Instigator Gang","Blasphemous Act",
  "Mayor of Avabruck","Kessig Cagebreakers","Garruk Relentless","Spider Spawning","Gatstaf Shepherd",
  "Plains","Island","Swamp","Mountain","Forest","Kessig Wolf Run","Blazing Torch"]
 PILOT = ["Doomed Traveler","Liliana of the Veil","Grimgrin, Corpse-Born","Forest"]
 
-# One shared style clause on every prompt. The subject clause is per card and
-# comes from the real type line, so the model is told what it is looking at.
-STYLE_CLAUSE = ("gothic horror pixel art, Innistrad, moonlit, muted blacks and "
-                "deep greys, cold bone highlights, one blood-red accent, heavy "
-                "shadow, woodcut feel, limited palette, no text")
+# One shared style clause on every prompt — this is what makes 32 separate
+# generations read as one set.
+STYLE_CLAUSE = ("gothic horror pixel art, Innistrad, moonlit night, muted blacks and "
+                "deep greys, cold bone highlights, one blood-red accent, heavy shadow, "
+                "woodcut feel, limited palette, strong silhouette, no text, no border")
+
+# Per-card SUBJECT descriptions, written from actually looking at each of the
+# 32 source paintings earlier in this project. This is the point of the whole
+# approach: the model is told WHAT THE CARD IS, and composes it freshly, so
+# the output is original pixel art that carries the card's identity — not a
+# filtered copy of Wizards' painting.
+PROMPTS = {
+ "Geist of Saint Traft": "a seated translucent hooded spirit on a stone throne, surrounded by dozens of floating candle flames in a dark crypt",
+ "Doomed Traveler": "a lone soldier with a tall spear walking a cobbled road at night, a village with lit windows on the ridge above, full moon",
+ "Chapel Geist": "an empty billowing pale robe with no body inside it, a hanging chain and pendant, dark chapel windows behind",
+ "Elite Inquisitor": "an armoured figure in a pale storm-coat raising a thin rapier, tall gothic windows, a wolf trophy on the wall",
+ "Midnight Haunting": "a stream of white spirits pouring out through a broken window with firelight burning behind it",
+ "Snapcaster Mage": "a dark-haired man in black and silver armour with a glowing teal lantern bound to his forearm, gothic castle behind",
+ "Delver of Secrets": "a bald robed scholar holding up a single glowing moth, specimen jars and birdcages around him in a dim study",
+ "Invisible Stalker": "an empty coat and hat hanging in the air in the rain beside a wet stone wall, nobody inside them",
+ "Laboratory Maniac": "a wild-eyed scientist at a machine with both arms flung up, blue lightning arcing overhead, green reagent vials",
+ "Stitched Drake": "a skeletal undead drake with tattered membrane wings flying over grey ruins, pale moon behind",
+ "Liliana of the Veil": "a pale woman with long dark hair in a deep magenta corset gown, an orange flame burning in each open palm",
+ "Diregraf Ghoul": "a hunched pale zombie in torn wrappings hauling a long rusted scythe through dark woods",
+ "Unburial Rites": "a robed figure leaning over an opening stone sarcophagus with a carved face on its lid, cold crypt windows",
+ "Bloodline Keeper": "a vampire in a long flaring black cloak with arms spread, bats around him, an enormous sickly-green moon, a cathedral spire",
+ "Grimgrin, Corpse-Born": "a huge hulking stitched zombie with iron shoulder plates and a chain hooked to one arm, dead trees behind",
+ "Brimstone Volley": "flaming meteors streaking down on a hard diagonal onto a burning ridge, dead trees in silhouette against the fire",
+ "Devil\'s Play": "a small horned devil crouched on a fallen beam pouring a stream of fire down onto burning wreckage",
+ "Balefire Dragon": "a black dragon with spread wings against a blood-red sky, breathing fire, iron grave-crosses below",
+ "Instigator Gang": "three angry brawlers with fists raised, khaki and sepia, a mob closing in",
+ "Blasphemous Act": "a cathedral interior with bodies strewn down the steps, red banners, a lone armoured figure standing in firelight",
+ "Mayor of Avabruck": "a man in a dark coat leaning on a desk in a lamplit study, a black hound at his knee, cold window behind",
+ "Kessig Cagebreakers": "an iron cage with a snarling wolf pressed against the bars, men in tricorn hats outside it, a torch burning",
+ "Garruk Relentless": "a bearded hunter in a heavy fur mantle holding a great axe across his body, pale spectral forest",
+ "Spider Spawning": "a tide of long-legged spiders descending a dark forest slope, silhouetted against pale fog",
+ "Gatstaf Shepherd": "a shepherd with a tall crook standing among a flock of sheep on a hillside at dusk",
+ "Plains": "a wide low marshy plain, a slit of gold sky through grey cloud, bare trees, a pale stream",
+ "Island": "a tall white waterfall plunging into a dark gorge between sheer cliffs",
+ "Swamp": "a dead gnarled tree and a broken wooden fence in flat green mist",
+ "Mountain": "a dark rocky gorge with a small low sun burning in a warm slit of sky",
+ "Forest": "a violet misty forest of tall pale trunks, fog between them",
+ "Kessig Wolf Run": "an enormous wolf silhouetted on a rocky ridge above a dark valley, moon behind",
+ "Blazing Torch": "a hooded figure seen from behind holding a burning torch aloft, sunset sky, a village far below",
+}
 
 def slug(n): return n.lower().replace(' ','_').replace(',','').replace("'",'')
 
@@ -77,15 +118,26 @@ def get(path):
 def payload_for(name, meta, estimate=False):
     m = meta[name]
     subject = m['type_line'].split('//')[0].strip()
+    subj = PROMPTS.get(name, subject)
     p = {
-        "prompt": f"{name}, {subject}. {STYLE_CLAUSE}",
+        "prompt": f"{subj}. {subject}. {STYLE_CLAUSE}",
         "prompt_style": STYLE,
         "width": AW*SCALE, "height": AH*SCALE,
         "num_images": 1, "seed": 7,
-        "input_image": b64(crop_to_art(f"{ROOT}/refs/{slug(name)}_art.jpg")),
-        "strength": STRENGTH,
         "input_palette": b64(f"{HERE}/palette.png"),
     }
+    # Style references, if any, carry the house look across all 32 without
+    # carrying any card's composition.
+    refs = sorted(os.path.join(HERE, 'style', f) for f in
+                  (os.listdir(os.path.join(HERE, 'style'))
+                   if os.path.isdir(os.path.join(HERE, 'style')) else []))
+    if refs:
+        p["reference_images"] = [b64(r) for r in refs[:9]]
+    # Opt-in only: seed from the original painting at high strength, so it
+    # informs the composition without the result being a pixelation of it.
+    if SEED_MODE:
+        p["input_image"] = b64(crop_to_art(f"{ROOT}/refs/{slug(name)}_art.jpg"))
+        p["strength"] = STRENGTH
     if estimate: p["check_cost"] = True
     return p
 

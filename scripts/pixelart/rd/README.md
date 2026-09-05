@@ -2,15 +2,28 @@
 
 Generates the 32 card illustrations img2img from the cached Scryfall art.
 
-## Why this and not a text prompt
+## Original art, not pixelated paintings
 
-Three API parameters map onto the three things hand-drawing kept failing:
+The default is TEXT-TO-IMAGE. Every card has a hand-written subject
+description in `PROMPTS`, taken from actually looking at that card's source
+painting earlier in this project — so the model is told what the card IS and
+composes it freshly. Chapel Geist is "an empty billowing pale robe with no
+body inside it, a hanging chain and pendant"; Invisible Stalker is "an empty
+coat and hat hanging in the air in the rain, nobody inside them". Identity
+comes from the description; the composition is the generator's own.
 
-| parameter | fixes |
-|---|---|
-| `input_image` + `strength` | composition and card identity come from the real painting, not from recollection |
-| `reference_images` (up to 9, RD Pro) | one house style across all 32 |
-| `input_palette` | output constrained to the 31-colour ramp the frames already use |
+Cohesion comes from two things instead: a shared style clause appended to all
+32 prompts, and any images dropped in `rd/style/`, which are passed as
+`reference_images` (up to 9) so every card inherits one house look without
+inheriting any card's composition.
+
+`input_palette` constrains output to the 30-colour ramp the frames already
+use, so results drop into the existing compositor untouched.
+
+There is an opt-in middle setting, `RD_SEED_IMAGE=1`, which additionally
+seeds from the original painting at strength 0.9 — loose enough to inform
+the composition without the result being a filter over the painting. Lower
+strengths approach pixelation and are deliberately not the default.
 
 ## Run
 
@@ -21,8 +34,9 @@ Three API parameters map onto the three things hand-drawing kept failing:
     python3 rd/rdgen.py --pilot       # 4 cards, one from each problem class
     python3 rd/rdgen.py               # all 32 (resumes; skips existing)
 
-Tunable by env: `RD_STYLE` (default `rd_plus__default`), `RD_STRENGTH`
-(default 0.62 — lower keeps more of the original composition), `RD_SCALE`
+Tunable by env: `RD_STYLE` (default `rd_plus__default`), `RD_SEED_IMAGE=1`
+to seed from the painting, `RD_STRENGTH` (default 0.9; lower means closer to
+the original, which is the thing to avoid), `RD_SCALE`
 (default 3, so generation happens at 126x102 and downsamples to the 42x34
 art window on clean integer boundaries).
 
@@ -38,5 +52,6 @@ iterations lands around $5-15. Prepaid, no subscription. `--estimate` is free.
 
 ## Rights
 
-img2img from Wizards' paintings produces derivative works. Fine for a
-personal prototype; do not distribute.
+Text-to-image output is original work. If `RD_SEED_IMAGE=1` is used, the
+result is derived from Wizards' painting — fine for a personal prototype,
+but do not distribute those.
