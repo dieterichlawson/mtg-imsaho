@@ -2044,7 +2044,7 @@ impl LlmPlayer {
                     spell.name,
                     labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
                 );
-                let idx = self.pick_action_index(&prompt, spell.sacrifice_options.len(), &[]);
+                let idx = self.pick_action_index(&prompt, spell.sacrifice_options.len());
                 Some(spell.sacrifice_options[idx.min(spell.sacrifice_options.len() - 1)])
             }
         };
@@ -2169,7 +2169,7 @@ impl LlmPlayer {
                 ab.description,
                 labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
             );
-            let idx = self.pick_action_index(&prompt, unique_target_sets.len(), &[]);
+            let idx = self.pick_action_index(&prompt, unique_target_sets.len());
             unique_target_sets[idx.min(unique_target_sets.len() - 1)].clone()
         };
 
@@ -2200,7 +2200,7 @@ impl LlmPlayer {
                 ab.name,
                 labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
             );
-            let idx = self.pick_action_index(&prompt, unique_valid_sacs.len(), &[]);
+            let idx = self.pick_action_index(&prompt, unique_valid_sacs.len());
             unique_valid_sacs[idx.min(unique_valid_sacs.len() - 1)]
         };
 
@@ -2232,7 +2232,7 @@ impl LlmPlayer {
         let prompt = format!(
             "{spell_name}:\n{target_list}",
         );
-        let idx = self.pick_action_index(&prompt, options.len(), &[]);
+        let idx = self.pick_action_index(&prompt, options.len());
         options[idx.min(options.len() - 1)].clone()
     }
 
@@ -2757,7 +2757,17 @@ impl LlmPlayer {
     /// only if the response is somehow missing the field entirely.
     /// If the chosen action is Concede, runs the confirmation dialog
     /// before returning.
-    fn pick_action_index(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
+    /// Ask for one index into a list of options the caller has shown.
+    ///
+    /// The returned index belongs to whatever list the prompt displayed —
+    /// this function has no idea what the options mean. It used to also
+    /// screen the choice for Concede against `legal_actions`, which is a
+    /// different list whenever the display collapsed duplicate casts or
+    /// abilities: Concede's display index was then smaller than its legal
+    /// index, `actions.get(idx)` was some unrelated action, and the
+    /// confirmation silently did not happen (issue #209). The guard now
+    /// lives with the caller that knows which action an index means.
+    fn pick_action_index(&mut self, prompt: &str, max: usize) -> usize {
         assert!(max > 0, "pick_action_index requires at least one option");
         let schema = Self::enum_action_schema(max, "action", "Index of the chosen action");
         let response = self.send_message_structured(prompt, &schema);
@@ -2767,11 +2777,6 @@ impl LlmPlayer {
                 self.log("MALFORMED", &format!("response missing valid 'action' field ({response}), defaulting to 0"));
                 0
             });
-        if matches!(actions.get(idx), Some(Action::Concede))
-            && !self.confirm_concede()
-        {
-            return 0;
-        }
         self.log("CHOSE", &format!("action {idx}"));
         idx
     }
@@ -2927,10 +2932,20 @@ impl Player for LlmPlayer {
         if display_labels.len() != legal_actions.len() {
             self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_labels.len()));
         }
-        let idx = self.pick_action_index(&prompt, display_labels.len(), legal_actions);
+        let idx = self.pick_action_index(&prompt, display_labels.len());
 
         if idx >= display_entries.len() {
             return Action::PassPriority;
+        }
+
+        // Confirm a concede here, where the index has been resolved back to
+        // the action it stands for. A priority offer always carries exactly
+        // one Concede and exactly one PassPriority (the engine's legal
+        // -actions invariant), so cancelling means passing.
+        if let DisplayEntry::Direct(action_idx) = &display_entries[idx] {
+            if matches!(legal_actions[*action_idx], Action::Concede) && !self.confirm_concede() {
+                return Action::PassPriority;
+            }
         }
 
         match &display_entries[idx] {
@@ -3654,6 +3669,133 @@ mod tests {
             "a single card drops the (S):\n{one}"
         );
         assert!(GAME_RULES.contains("[BOTTOM N CARD(S) AFTER MULLIGAN]"));
+    }
+
+    // ── The concede confirmation (issue #209) ────────────────────────────
+
+    /// A backend that answers from a script and remembers what it was asked.
+    #[derive(Default)]
+    struct ScriptedBackend {
+        answers: Vec<serde_json::Value>,
+        prompts: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    }
+
+    impl LlmBackend for ScriptedBackend {
+        fn send(&mut self, message: &str) -> String {
+            self.send_with_schema(message, &serde_json::Value::Null).to_string()
+        }
+        fn send_with_schema(&mut self, message: &str, _schema: &serde_json::Value) -> serde_json::Value {
+            self.prompts.borrow_mut().push(message.to_string());
+            if self.answers.is_empty() {
+                return serde_json::Value::Null;
+            }
+            self.answers.remove(0)
+        }
+        fn init(&mut self, _deck_info: &str) {}
+        fn resume(&mut self, _recap: &str) {}
+        fn conversation_len(&self) -> usize { self.prompts.borrow().len() }
+        fn system_prompt(&self) -> &str { "" }
+        fn model_name(&self) -> &str { "scripted" }
+    }
+
+    /// A priority offer whose display list collapses: two ways to cast one
+    /// spell become one option, so Concede's display index (2) is not its
+    /// index in `legal_actions` (3).
+    fn collapsing_priority_offer() -> mtg_engine::engine::LegalActions {
+        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
+        use mtg_engine::ids::ObjectId;
+
+        let spell = ObjectId(41);
+        let cast = |targets: Vec<mtg_engine::actions::Target>| Action::CastSpell {
+            object_id: spell,
+            targets,
+            sacrifice: None,
+            exile_count: None,
+            exile_ids: Vec::new(),
+            alternative_cost: None,
+            tap_plan: Vec::new(),
+        };
+        mtg_engine::engine::LegalActions {
+            actions: vec![
+                Action::PassPriority,
+                cast(vec![mtg_engine::actions::Target::Player(mtg_engine::ids::PlayerId(0))]),
+                cast(vec![mtg_engine::actions::Target::Player(mtg_engine::ids::PlayerId(1))]),
+                Action::Concede,
+            ],
+            combat_prompt: None,
+            castable_spells: vec![CastableSpell {
+                object_id: spell,
+                name: "Geistflame".to_string(),
+                is_flashback: false,
+                target_spec: CastTargetSpec::SingleTarget(vec![
+                    mtg_engine::actions::Target::Player(mtg_engine::ids::PlayerId(0)),
+                    mtg_engine::actions::Target::Player(mtg_engine::ids::PlayerId(1)),
+                ]),
+                tap_plan: Vec::new(),
+                exile_x_from_gy_max: None,
+                sacrifice_options: Vec::new(),
+                additional_cost_label: None,
+                alternative_cost: None,
+            }],
+            activatable_abilities: Vec::new(),
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: None,
+        }
+    }
+
+    fn scripted_player(answers: Vec<serde_json::Value>) -> (LlmPlayer, std::rc::Rc<std::cell::RefCell<Vec<String>>>) {
+        let prompts = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let player = LlmPlayer {
+            name: "t".to_string(),
+            last_log_index: 0,
+            backend: Box::new(ScriptedBackend { answers, prompts: std::rc::Rc::clone(&prompts) }),
+            provider: Provider::Anthropic,
+            guide: None,
+        };
+        (player, prompts)
+    }
+
+    /// Issue #209: the guard tested the picked index against
+    /// `legal_actions` while the index belonged to the collapsed display
+    /// list, so the moment anything collapsed the confirmation was skipped
+    /// and the game ended on an unconfirmed concede.
+    #[test]
+    fn a_concede_is_confirmed_even_when_the_action_list_collapsed() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let legal = collapsing_priority_offer();
+
+        let (mut player, prompts) = scripted_player(vec![
+            serde_json::json!({"action": 2}), // Concede, as displayed
+            serde_json::json!({"confirm": false}), // ... then think better of it
+        ]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        assert_eq!(
+            asked.len(), 2,
+            "the concede confirmation must be asked. Prompts: {asked:#?}"
+        );
+        assert!(
+            asked[0].contains("0: Pass, 1: Cast Geistflame, 2: Concede"),
+            "the display list really did collapse 4 actions to 3 options:\n{}", asked[0]
+        );
+        assert!(asked[1].contains("CONCEDE"), "the second prompt is the confirmation: {}", asked[1]);
+        assert!(matches!(chosen, Action::PassPriority), "a cancelled concede passes instead, got {chosen:?}");
+    }
+
+    /// And a confirmed concede still concedes.
+    #[test]
+    fn a_confirmed_concede_concedes() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let legal = collapsing_priority_offer();
+
+        let (mut player, _prompts) = scripted_player(vec![
+            serde_json::json!({"action": 2}),
+            serde_json::json!({"confirm": true}),
+        ]);
+        assert!(matches!(player.choose_action(&view, &legal), Action::Concede));
     }
 
     /// A cast option names its tap plan, never a target — targets come from
