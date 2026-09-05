@@ -164,6 +164,24 @@ pub fn activate_mana_source(
     ability_index: usize,
     registry: &CardRegistry,
 ) {
+    activate_mana_source_reserving(state, source_id, ability_index, None, registry);
+}
+
+/// As [`activate_mana_source`], but told what the mana being gathered is for.
+///
+/// A filter's own mana cost is paid out of the pool the plan has been filling,
+/// and paying it greedily took the very mana the spell needed: a `{W}{W}` plan
+/// of Plains + Forest + Shimmering Grotto paid the Grotto's `{1}` with the
+/// White and left the Green, so the plan the engine had offered could not be
+/// executed (issue #252). `reserve` is the cost still to be paid, so the
+/// filter spends what that cost does not need.
+pub fn activate_mana_source_reserving(
+    state: &mut GameState,
+    source_id: ObjectId,
+    ability_index: usize,
+    reserve: Option<&ManaCost>,
+    registry: &CardRegistry,
+) {
     let obj = state.get_object(source_id).expect("mana source must exist");
     let card_id = obj.card_id;
     let controller = obj.controller;
@@ -189,9 +207,16 @@ pub fn activate_mana_source(
     // A filter's mana cost is paid before it produces (CR 605.1a — it
     // is still a mana ability, it just isn't free). The tap plan puts
     // cost-bearing abilities last so the mana is already floating.
-    if !ability.cost.symbols.is_empty()
-        && mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &ability.cost).is_err() {
-        return;
+    if !ability.cost.symbols.is_empty() {
+        let ability_cost = ability.cost.clone();
+        let pool = &mut state.get_player_mut(controller).mana_pool;
+        let paid = match reserve {
+            Some(reserve) => mana::auto_pay_reserving(pool, &ability_cost, reserve),
+            None => mana::auto_pay(pool, &ability_cost),
+        };
+        if paid.is_err() {
+            return;
+        }
     }
     if ability.requires_tap {
         state.tap(source_id);
@@ -240,7 +265,7 @@ pub(crate) fn execute_tap_plan_and_pay(
     registry: &CardRegistry,
 ) -> bool {
     for &(src_id, ability_index) in tap_plan {
-        activate_mana_source(state, src_id, ability_index, registry);
+        activate_mana_source_reserving(state, src_id, ability_index, Some(cost), registry);
     }
     mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
 }

@@ -446,7 +446,65 @@ pub fn auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
     try_auto_pay(pool, cost)
 }
 
+/// Pay `cost` from `pool`, spending mana that `reserve` still needs only when
+/// there is nothing else to spend.
+///
+/// The case this exists for: a tap plan for `{W}{W}` taps Plains and Forest
+/// and then activates Shimmering Grotto's `{1}, {T}: Add {W}`. Paying that
+/// `{1}` "colorless first, then W, U, B, R, G" takes the White the spell
+/// needs and leaves the Green spare, so the plan the engine offered could not
+/// be executed and the cast was silently refused (issue #252). Ordering by
+/// what the rest of the cost does not need pays it from the Green.
+///
+/// # Errors
+/// Returns [`ManaError`] if the pool doesn't have enough mana to pay `cost`.
+pub fn auto_pay_reserving(
+    pool: &mut ManaPool,
+    cost: &ManaCost,
+    reserve: &ManaCost,
+) -> Result<(), ManaError> {
+    try_auto_pay_with_order(pool, cost, &generic_payment_order(pool, reserve))
+}
+
+/// The fixed order generic costs are paid in when nothing is being reserved.
+const GENERIC_ORDER: [ManaType; 6] = [
+    ManaType::Colorless,
+    ManaType::White, ManaType::Blue, ManaType::Black,
+    ManaType::Red, ManaType::Green,
+];
+
+/// Which mana to spend on a generic cost first, given what `reserve` still
+/// needs from the same pool: the biggest surplus first, so mana another cost
+/// depends on is spent last. Ties keep [`GENERIC_ORDER`], so a plan stays
+/// deterministic.
+fn generic_payment_order(pool: &ManaPool, reserve: &ManaCost) -> Vec<ManaType> {
+    let mut needed: std::collections::BTreeMap<ManaType, u32> = std::collections::BTreeMap::new();
+    for sym in &reserve.symbols {
+        match sym {
+            ManaSymbol::Colored(color) => *needed.entry(ManaType::from(*color)).or_default() += 1,
+            ManaSymbol::Colorless(n) => *needed.entry(ManaType::Colorless).or_default() += n,
+            // Generic can be paid with anything, so it plays no part in
+            // deciding which mana is precious; X is not a cost yet.
+            ManaSymbol::Generic(_) | ManaSymbol::X => {}
+        }
+    }
+    let mut order = GENERIC_ORDER.to_vec();
+    order.sort_by_key(|mt| {
+        let surplus = i64::from(pool.get(*mt)) - i64::from(needed.get(mt).copied().unwrap_or(0));
+        std::cmp::Reverse(surplus)
+    });
+    order
+}
+
 fn try_auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
+    try_auto_pay_with_order(pool, cost, &GENERIC_ORDER)
+}
+
+fn try_auto_pay_with_order(
+    pool: &mut ManaPool,
+    cost: &ManaCost,
+    generic_order: &[ManaType],
+) -> Result<(), ManaError> {
     // 1. Pay colored requirements.
     for sym in &cost.symbols {
         if let ManaSymbol::Colored(color) = sym {
@@ -477,13 +535,7 @@ fn try_auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
             return Err(ManaError::InsufficientMana);
         }
         let mut remaining = generic_needed;
-        // Pay from colorless first, then from each color.
-        let types = [
-            ManaType::Colorless,
-            ManaType::White, ManaType::Blue, ManaType::Black,
-            ManaType::Red, ManaType::Green,
-        ];
-        for mt in types {
+        for &mt in generic_order {
             if remaining == 0 { break; }
             let available = pool.get(mt);
             let to_use = available.min(remaining);

@@ -129,7 +129,8 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                 // what's left for X.
                 let mut probe = state.clone();
                 for &(source_id, ability_index) in tap_plan {
-                    activate_mana_source(&mut probe, source_id, ability_index, registry);
+                    activate_mana_source_reserving(
+                        &mut probe, source_id, ability_index, Some(&non_x_cost), registry);
                 }
                 let _ = mana::auto_pay(&mut probe.get_player_mut(player).mana_pool, &non_x_cost);
                 crate::funding::build_options(&probe, player, registry)
@@ -219,21 +220,30 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // what it produces can depend on state it also changes (Deranged
         // Assistant milling its own cost away), and `auto_pay` drains the
         // pool as it goes, so a failed payment cannot simply be unwound.
+        let pay = if has_x { cost.without_x() } else { cost.clone() };
         {
             let mut probe = state.clone();
             for &(source_id, ability_index) in tap_plan {
-                activate_mana_source(&mut probe, source_id, ability_index, registry);
+                // The cost being funded is passed along so a filter's own
+                // mana cost is not paid with mana this spell needs (#252).
+                activate_mana_source_reserving(
+                    &mut probe, source_id, ability_index, Some(&pay), registry);
             }
-            let pay = if has_x { cost.without_x() } else { cost.clone() };
             if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
-                state.log(crate::state::LogLevel::Debug, format!(
-                    "{}: cast refused, submitted funding cannot pay the cost (CR 601.2h)",
+                // An offered action that cannot be executed is an engine
+                // contract violation, not a player mistake — but it used to
+                // be logged where no player would ever see it, so selecting
+                // the action just redrew the prompt with no explanation at
+                // all (issue #252).
+                state.log(crate::state::LogLevel::Event, format!(
+                    "{}: cast refused, the offered funding cannot pay the cost (CR 601.2h)",
                     card_name(&state, registry, object_id)));
                 return Applied::ReturnNow;
             }
         }
         for &(source_id, ability_index) in tap_plan {
-            activate_mana_source(&mut *state, source_id, ability_index, registry);
+            activate_mana_source_reserving(
+                &mut *state, source_id, ability_index, Some(&pay), registry);
         }
 
         if has_x {

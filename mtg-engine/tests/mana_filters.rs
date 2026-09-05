@@ -170,9 +170,13 @@ fn every_tap_plan_the_solver_returns_actually_pays_the_cost() {
         &["Island", "Island", "Shimmering Grotto", "Shimmering Grotto"],
         &["Plains", "Island", "Swamp", "Mountain", "Forest"],
         &["Shimmering Grotto", "Shimmering Grotto", "Plains", "Plains"],
+        // One white source, one off-colour source, one filter: the board
+        // where paying the filter's {1} greedily ate the {W} (issue #252).
+        &["Plains", "Forest", "Shimmering Grotto"],
+        &["Island", "Mountain", "Shimmering Grotto"],
     ];
     let costs: &[&str] = &["Orchard Spirit", "Chapel Geist", "Walking Corpse",
-                           "Brimstone Volley", "Darkthicket Wolf"];
+                           "Brimstone Volley", "Darkthicket Wolf", "Elite Inquisitor"];
 
     let mut exercised = 0;
     for board in boards {
@@ -193,7 +197,11 @@ fn every_tap_plan_the_solver_returns_actually_pays_the_cost() {
             // Run the plan, then check the cost is payable from what it made.
             let mut sim = state.clone();
             for &(source_id, ability_index) in tap_plan {
-                mtg_engine::engine::activate_mana_source(&mut sim, source_id, ability_index, &reg);
+                // The cast path tells each source what the mana is for, so
+                // the guard has to as well — running the plan without that
+                // is not the plan the engine runs (issue #252).
+                mtg_engine::engine::activate_mana_source_reserving(
+                    &mut sim, source_id, ability_index, Some(&cost), &reg);
             }
             assert!(mtg_engine::mana::can_pay(&sim.get_player(P0).mana_pool, &cost),
                 "board {board:?}, spell {spell_name}: the plan {tap_plan:?} left \
@@ -230,4 +238,53 @@ fn a_mana_ability_does_not_use_the_stack() {
         "and it has already resolved — the mana is in the pool");
     assert!(state.awaiting_action.is_none(),
         "with nobody asked to respond in between");
+}
+
+/// Issue #252: an offered cast that could not be executed.
+///
+/// Plains, Forest and a Shimmering Grotto, holding Elite Inquisitor `{W}{W}`.
+/// The planner's route is Plains for one `{W}`, Forest for the `{G}` that
+/// pays the Grotto's `{1}`, and the Grotto for the other `{W}`. Paying that
+/// `{1}` "colorless first, then W, U, B, R, G" took the White instead, so the
+/// pool ended `W:1 G:1`, the cast was refused by its own funding rehearsal,
+/// and selecting the action did nothing at all — no cast, no mana tapped, no
+/// message.
+#[test]
+fn a_filter_pays_its_cost_with_mana_the_spell_does_not_need() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Plains", P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    let spell = spell_in_hand(&mut state, &reg, "Elite Inquisitor", P0);
+
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))
+        .expect("the spell is castable: tap Forest, filter it, tap Plains");
+
+    // Submit it the way a player does. An offered action has to be
+    // executable; this one used to be a silent no-op.
+    let after = mtg_engine::engine::submit_action(&state, &action, &reg);
+    assert!(
+        after.stack.iter().any(|e| matches!(e,
+            mtg_engine::state::StackEntry::Spell(id) if *id == spell)),
+        "the cast the engine offered has to happen. Pool after the plan: {:?}",
+        after.get_player(P0).mana_pool.mana
+    );
+}
+
+/// The same board, one mana short: the action must not be offered at all
+/// rather than offered and refused (CR 601.2h).
+#[test]
+fn an_unfundable_spell_is_not_offered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Forest", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    let spell = spell_in_hand(&mut state, &reg, "Elite Inquisitor", P0);
+
+    assert!(!castable(&state, &reg, spell),
+        "one filter and one Forest make one white mana, not two");
 }

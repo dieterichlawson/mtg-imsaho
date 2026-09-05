@@ -27,7 +27,8 @@ pub use costs::{
     cost_to_cast, effective_spell_cost, pay_exile_creatures,
 };
 pub use mana_sources::{
-    activate_mana_source, available_mana_abilities, can_pay_with_sources, pay_cost_with_sources,
+    activate_mana_source, activate_mana_source_reserving, available_mana_abilities,
+    can_pay_with_sources, pay_cost_with_sources,
 };
 pub use targeting::can_be_targeted_by;
 pub(crate) use targeting::can_target_player;
