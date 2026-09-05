@@ -924,13 +924,27 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             }
 
             // Remove "until end of turn" effects.
-            // First, revert control changes before clearing.
-            for effect in &state.until_end_of_turn {
-                if let crate::state::TemporaryEffect::ChangeControl { target, original_controller } = effect {
-                    if let Some(obj) = state.objects.get_mut(target) {
-                        if obj.zone == Zone::Battlefield {
-                            obj.controller = *original_controller;
-                        }
+            // First, revert control changes before clearing. A permanent
+            // under a durable "for as long as you control this" effect goes
+            // to *that* effect rather than back where the temporary one
+            // found it: both apply in layer 2, and the one that outlives the
+            // cleanup step is the one still standing afterwards
+            // (CR 613.7a, issue #253).
+            let reverts: Vec<(ObjectId, PlayerId)> = state.until_end_of_turn.iter()
+                .filter_map(|effect| match effect {
+                    crate::state::TemporaryEffect::ChangeControl { target, original_controller } => {
+                        let durable = state.control_effects.iter()
+                            .find(|e| e.object == *target)
+                            .map(|e| e.controller);
+                        Some((*target, durable.unwrap_or(*original_controller)))
+                    }
+                    _ => None,
+                })
+                .collect();
+            for (target, controller) in reverts {
+                if let Some(obj) = state.objects.get_mut(&target) {
+                    if obj.zone == Zone::Battlefield {
+                        obj.controller = controller;
                     }
                 }
             }

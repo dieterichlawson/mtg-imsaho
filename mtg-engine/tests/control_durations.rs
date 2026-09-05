@@ -146,3 +146,68 @@ fn bug_control_change_not_reverted_at_eot() {
     assert_eq!(state.get_object(creature).unwrap().controller, P1,
         "Control should revert to P1 at end of turn");
 }
+
+/// Issue #253: the durable half of the classic pair.
+///
+/// Traitorous Blood takes a creature "until end of turn"; Olivia's
+/// "{3}{B}{B}: Gain control of target Vampire for as long as you control
+/// Olivia Voldaren" is then pointed at the creature you now control.
+/// Targeting a Vampire you already control is legal — "target Vampire" has
+/// no "you don't control" clause — and the effect still applies, in layer 2,
+/// with its own timestamp and its own duration (CR 613.1b, 613.7a, 611.2b).
+/// When the temporary effect ends in the cleanup step the later one is still
+/// there, so the creature stays.
+///
+/// The engine returned early whenever the target was already yours, so the
+/// ability was a five-mana no-op that logged a steal which had not happened,
+/// and the creature went home at cleanup.
+#[test]
+fn olivia_keeps_what_traitorous_blood_only_borrowed() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let vampire = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+    assert!(state.has_subtype(vampire, "Vampire", &reg), "test precondition");
+
+    // Steal it until end of turn...
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(vampire)]);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0, "test precondition");
+
+    // ...then point Olivia at the creature you now control.
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(
+        state.control_effects.iter().any(|e| e.object == vampire && e.source == olivia),
+        "the ability records its effect even when the target is already yours"
+    );
+
+    advance_to_cleanup(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0,
+        "Traitorous Blood's effect ended; Olivia's did not, so the Vampire stays");
+
+    // And it is Olivia's effect holding it: lose her and it goes home — to
+    // its owner, not to the player Traitorous Blood took it from for a turn.
+    state.move_object(olivia, Zone::Graveyard, &reg);
+    state.expire_control_effects();
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1,
+        "with no control effect left, the permanent is its owner's again (CR 110.2)");
+}
+
+/// The same shape without Olivia: a plain "until end of turn" steal still
+/// goes home, which is what the durable effect above has to be distinguished
+/// from rather than break.
+#[test]
+fn a_borrowed_creature_with_no_durable_effect_still_goes_home() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let vampire = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(vampire)]);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0);
+
+    advance_to_cleanup(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1);
+}

@@ -2219,12 +2219,23 @@ impl GameState {
     ) {
         let Some(source_obj) = self.get_object(source) else { return };
         let source_controller = source_obj.controller;
-        let Some(obj) = self.get_object(object) else { return };
-        let original_controller = obj.controller;
-        if original_controller == source_controller {
+        if self.get_object(object).is_none() {
             return;
         }
         let _ = registry;
+        // The effect exists even when the object is already yours. Nothing in
+        // CR 611/613 makes a redundant layer-2 effect fail to happen, and the
+        // "gain control ... for as long as" template is specifically the
+        // durable half of a pair: steal a creature with Traitorous Blood
+        // ("until end of turn"), then point Olivia Voldaren at it, and when
+        // the temporary effect ends in the cleanup step the later-timestamped
+        // one is still there. Returning early on
+        // `controller == source_controller` made that line a five-mana no-op
+        // whose log claimed a steal that had not happened (issue #253).
+        let original_controller = self.base_controller(object).unwrap_or(source_controller);
+        // Re-activating on the same object under the same source is the same
+        // effect with a fresh timestamp, not a second one to unwind later.
+        self.control_effects.retain(|e| !(e.object == object && e.source == source));
         self.change_control(object, source_controller);
         self.control_effects.push(ControlEffect {
             object,
@@ -2233,6 +2244,31 @@ impl GameState {
             source,
             source_controller,
         });
+    }
+
+    /// Who a permanent goes back to once every control-changing effect on it
+    /// has ended.
+    ///
+    /// Its default controller (CR 110.2) — the player who put it onto the
+    /// battlefield — not whoever a temporary effect happens to have handed it
+    /// to at this moment. Reading the momentary controller is how a durable
+    /// effect created on top of a Traitorous Blood steal would have recorded
+    /// "give it back to the thief".
+    #[must_use]
+    pub fn base_controller(&self, object: ObjectId) -> Option<PlayerId> {
+        // A durable "for as long as" effect already worked this out.
+        if let Some(effect) = self.control_effects.iter().find(|e| e.object == object) {
+            return Some(effect.original_controller);
+        }
+        // Otherwise an until-end-of-turn steal may be in force.
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::ChangeControl { target, original_controller } = effect {
+                if *target == object {
+                    return Some(*original_controller);
+                }
+            }
+        }
+        self.get_object(object).map(|o| o.controller)
     }
 
     /// End every control effect whose condition has stopped being true, giving

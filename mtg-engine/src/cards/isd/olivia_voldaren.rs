@@ -157,8 +157,11 @@ impl CardBehavior for OliviaVoldaren {
                         // the stolen Vampires where they were.
                         let stolen_name = state.obj_name(*target_id);
                         state.gain_control_while_source_controlled(*target_id, object_id, registry);
-                        state.log(crate::state::LogLevel::Event,
-                            format!("Olivia Voldaren gains control of {stolen_name}"));
+                        // CR 602.2a: "you" is the player who activated the
+                        // ability, not the permanent it was activated on.
+                        state.log(crate::state::LogLevel::Event, format!(
+                            "p{} gains control of {stolen_name} for as long as they control Olivia Voldaren",
+                            activator.0));
                     }
                 }
             }
