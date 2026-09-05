@@ -1,11 +1,12 @@
-//! Attacking planeswalkers (CR 508.1a, 510.1c, 702.19d/i).
+//! Attacking planeswalkers (CR 508.1a, 510.1a, 510.1c, 702.19b).
 //!
 //! Garruk Relentless and Liliana of the Veil are in the pool, so a
 //! planeswalker on the defending side is a legal attack target: the attacker
 //! still defends against the walker's controller, its combat damage removes
-//! loyalty instead of life, trample overflow follows what is being attacked,
-//! and a walker that leaves before damage takes the damage with it (no
-//! redirect to the player — that rule left the game in 2018).
+//! loyalty instead of life, trample overflow past *blockers* lands on the
+//! walker and never on its controller, and a walker that leaves before
+//! damage takes the damage with it (no redirect to the player — that rule
+//! left the game in 2018).
 
 mod common;
 
@@ -144,10 +145,17 @@ fn trample_overflow_lands_on_the_attacked_walker() {
         "exactly lethal to the walker leaves nothing to spill to the player");
 }
 
-/// Trample past the walker itself: damage beyond its remaining loyalty may be
-/// assigned to its controller (CR 702.19i).
+/// Trample does not carry past the walker itself.
+///
+/// A creature attacking a planeswalker assigns its combat damage among that
+/// walker and its blockers and nowhere else (CR 510.1a); trample carries
+/// excess past *blockers*, to "the player or planeswalker the creature is
+/// attacking" (CR 702.19b) — which for this attacker is the walker.
+/// Damage beyond a walker's loyalty is simply not dealt anywhere. This used
+/// to spill onto the defending player, asserted here as correct (issue
+/// #246).
 #[test]
-fn trample_past_the_walker_spills_to_the_player() {
+fn trample_past_an_attacked_walker_does_not_reach_its_controller() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
@@ -160,8 +168,35 @@ fn trample_past_the_walker_spills_to_the_player() {
     combat::deal_combat_damage(&mut state, &reg);
     check_state_based_actions(&mut state, &reg);
 
-    assert_eq!(state.get_object(garruk).unwrap().zone, Zone::Graveyard, "2 of the 6 finish the walker");
-    assert_eq!(state.get_player(P1).life, 16, "and the other 4 trample through");
+    assert_eq!(state.get_object(garruk).unwrap().zone, Zone::Graveyard, "the 6 finish the walker");
+    assert_eq!(state.get_player(P1).life, 20,
+        "the other 4 are not dealt to anything: trample never crosses from an \
+         attacked planeswalker to its controller");
+}
+
+/// The same, blocked: lethal to the blocker, and every point of the rest to
+/// the walker rather than some of it to the player.
+#[test]
+fn trample_over_a_blocker_lands_entirely_on_the_attacked_walker() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 7, 7);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::Trample);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, liliana, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+
+    submit_attack_on_walker(&mut state, attacker, liliana, &reg);
+    state.step = Step::DeclareBlockers;
+    combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &reg);
+    combat::deal_combat_damage(&mut state, &reg);
+    check_state_based_actions(&mut state, &reg);
+
+    assert_eq!(state.get_object(liliana).unwrap().zone, Zone::Graveyard,
+        "2 lethal to the blocker, the remaining 5 to the walker");
+    assert_eq!(state.get_player(P1).life, 20,
+        "and none of it to the player (CR 510.1a)");
 }
 
 /// The walker is destroyed before combat damage: the attack has nothing left

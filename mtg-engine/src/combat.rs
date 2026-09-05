@@ -348,10 +348,18 @@ fn deal_damage_step(
             // Unblocked: deal damage to what it attacks.
             if attacker_power > 0 {
                 match attacked_walker {
+                    // All of it lands on the walker, trample or not. A
+                    // creature attacking a planeswalker assigns its combat
+                    // damage among that walker and its blockers and nowhere
+                    // else (CR 510.1a); trample carries excess past
+                    // *blockers*, not past what is being attacked (CR
+                    // 702.19b). Damage beyond a walker's loyalty is simply
+                    // not dealt anywhere — it used to spill onto the
+                    // defending player, which no version of trample has ever
+                    // done (issue #246).
                     Some(walker) if walker_still_there => {
-                        deal_walker_damage_with_trample_spill(
-                            state, attacker_id, walker, defending_player,
-                            attacker_power, has_trample, registry);
+                        deal_damage_to_creature(
+                            state, attacker_id, walker, attacker_power, registry);
                     }
                     Some(_) => {} // attacked walker is gone: no combat damage
                     None => deal_damage_to_player(
@@ -427,14 +435,15 @@ fn deal_damage_step(
                 }
             }
 
-            // Trample: remaining damage goes to whatever is being attacked —
-            // the defending player, or the attacked planeswalker (CR 702.19d).
+            // Trample: once every blocker has been assigned lethal damage,
+            // the rest goes to what is being attacked — the defending
+            // player, or the attacked planeswalker, and never both
+            // (CR 702.19b).
             if has_trample && remaining_power > 0 {
                 match attacked_walker {
                     Some(walker) if walker_still_there => {
-                        deal_walker_damage_with_trample_spill(
-                            state, attacker_id, walker, defending_player,
-                            remaining_power, true, registry);
+                        deal_damage_to_creature(
+                            state, attacker_id, walker, remaining_power, registry);
                     }
                     Some(_) => {} // attacked walker is gone: overflow lands nowhere
                     None => deal_damage_to_player(
@@ -450,37 +459,6 @@ fn deal_damage_step(
 #[must_use]
 pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
     state.subtypes_of(creature_id, registry)
-}
-
-/// Combat damage aimed at an attacked planeswalker. Without trample the whole
-/// amount hits the walker (loyalty, via the shared damage pipeline). With
-/// trample, damage beyond the walker's remaining loyalty may be assigned to
-/// its controller instead (CR 702.19i), and the engine assigns exactly
-/// lethal-to-the-walker then spills the rest, matching how it fills blockers.
-fn deal_walker_damage_with_trample_spill(
-    state: &mut GameState,
-    attacker: ObjectId,
-    walker: ObjectId,
-    defending_player: PlayerId,
-    amount: u32,
-    has_trample: bool,
-    registry: &CardRegistry,
-) {
-    let to_walker = if has_trample {
-        let loyalty = state.get_object(walker)
-            .and_then(|o| o.counters.get(&crate::types::CounterType::Loyalty).copied())
-            .unwrap_or(0);
-        amount.min(loyalty)
-    } else {
-        amount
-    };
-    if to_walker > 0 {
-        deal_damage_to_creature(state, attacker, walker, to_walker, registry);
-    }
-    let spill = amount - to_walker;
-    if spill > 0 {
-        deal_damage_to_player(state, attacker, defending_player, spill, registry);
-    }
 }
 
 /// Deal combat damage from a source creature to a target creature.
