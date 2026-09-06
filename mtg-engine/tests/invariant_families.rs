@@ -787,14 +787,14 @@ fn object_contract_violations_are_flagged() {
     state.get_object_mut(aura).unwrap().attached_to = Some(bear);
     clean(&state, &reg);
 
+    // CR 614.12b: an entry waiting on an enters-as-a-copy choice has not
+    // happened, so the permanent cannot be on the battlefield meanwhile.
     let mut s = state.clone();
-    s.get_object_mut(bear).unwrap().entering_copy_source = true;
-    flags_core(&s, &reg, "no enters-as-copy choice in flight (CR 614.1d)");
-    // With the copy prompt up the guard is legitimate.
-    s.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source: bear, choice: ResolutionChoiceKind::ChooseTarget {
-        description: String::new(), options: vec![Target::Object(aura)], optional: true,
-        effect: PendingEffect::CopyCreature { source_id: bear } } });
-    assert!(!check_core(&s, &reg).iter().any(|m| m.contains("614.1d")), "{:?}", check_core(&s, &reg));
+    s.pending_entry_choices.push(bear);
+    flags_core(&s, &reg, "still queued for its enters-as-copy choice (CR 614.12b)");
+    // Queued while still in the zone it is coming from is the normal state.
+    s.move_object(bear, Zone::Hand, &reg);
+    assert!(!check_core(&s, &reg).iter().any(|m| m.contains("614.12b")), "{:?}", check_core(&s, &reg));
 
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().keywords.push(Keyword::Flying);

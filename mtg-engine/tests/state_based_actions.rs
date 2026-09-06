@@ -10,7 +10,6 @@ use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameResult;
 use mtg_engine::types::*;
-use mtg_engine::state::PendingEffect;
 
 /// Issue #86: a loss is never silent. The reason is recorded on the player
 /// for the end-of-game report and a Milestone line lands in the game log —
@@ -571,8 +570,9 @@ fn reg() -> CardRegistry {
     CardRegistry::with_all_cards()
 }
 
-/// Enter an Evil Twin through the real entry chokepoint (move_object).
-fn enter_twin(state: &mut mtg_engine::state::GameState, r: &CardRegistry) -> mtg_engine::ids::ObjectId {
+/// Start an Evil Twin's entry through the real chokepoint (move_object). It
+/// does not arrive: the entry waits on the CR 614.12b copy choice.
+fn begin_entering_twin(state: &mut mtg_engine::state::GameState, r: &CardRegistry) -> mtg_engine::ids::ObjectId {
     let card = r.get_id_by_name("Evil Twin").unwrap();
     let twin = state.create_object(card, P0, Zone::Hand, Some(0), Some(0));
     state.get_object_mut(twin).unwrap().name = "Evil Twin".into();
@@ -580,82 +580,81 @@ fn enter_twin(state: &mut mtg_engine::state::GameState, r: &CardRegistry) -> mtg
     twin
 }
 
-/// The guard is armed at entry, so SBA doesn't kill the 0/0 before the copy
-/// choice resolves.
+/// The 0/0 window is gone: a permanent whose copy choice is outstanding is
+/// not on the battlefield, so there is nothing for state-based actions to
+/// kill and nothing needs an exemption from them (CR 614.12b).
 #[test]
-fn guard_armed_at_entry_protects_before_copy_resolves() {
+fn an_unanswered_copy_choice_keeps_the_permanent_off_the_battlefield() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let twin = enter_twin(&mut state, &r);
+    let twin = begin_entering_twin(&mut state, &r);
 
-    assert!(state.get_object(twin).unwrap().entering_copy_source,
-        "move_object must arm the copy-guard at entry");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
+        "the entry waits for the answer rather than entering as a 0/0");
+    assert!(state.pending_entry_choices.contains(&twin));
     while mtg_engine::sba::check_state_based_actions(&mut state, &r) {}
-    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield,
-        "the 0/0 must survive SBA while the copy choice is pending");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
+        "state-based actions have nothing to say about it");
 }
 
-/// After copying, the guard is disarmed and the permanent is once again
-/// subject to SBA death.
+/// Answered with a creature, it enters as that creature — and is then an
+/// ordinary permanent, subject to state-based actions like any other.
 #[test]
-fn copy_success_disarms_guard_and_is_mortal_again() {
+fn a_copy_enters_as_the_creature_and_is_mortal() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let bears = named_permanent(&mut state, &r, "Grizzly Bears", P1);
-    let twin = enter_twin(&mut state, &r);
+    let twin = begin_entering_twin(&mut state, &r);
 
-    // Resolve the copy onto Grizzly Bears.
-    engine::apply_pending_effect(
-        &mut state, &Target::Object(bears),
-        &PendingEffect::CopyCreature { source_id: twin }, &r,
-    );
-    assert!(!state.get_object(twin).unwrap().entering_copy_source,
-        "copy resolution must disarm the guard");
+    mtg_engine::replacement::record_entry_choice(
+        &mut state, twin, mtg_engine::state::EnterAsCopyChoice::Copy(bears), &r);
 
-    // It's now a 2/2 — lethal damage plus SBA must kill it.
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &r), "Grizzly Bears");
+
+    // It's a 2/2 — lethal damage plus SBA must kill it.
     state.get_object_mut(twin).unwrap().damage_marked = 5;
     while mtg_engine::sba::check_state_based_actions(&mut state, &r) {}
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
-        "a resolved Evil Twin must die to lethal damage like any creature");
+        "an Evil Twin that entered as a copy dies to lethal damage like any creature");
 }
 
-/// Declining the copy disarms the guard, so the printed 0/0 dies to SBA.
+/// Declining is an answer: the permanent enters as its printed 0/0 and dies
+/// to CR 704.5f immediately, exactly as the Evil Twin ruling says.
 #[test]
-fn declining_copy_lets_the_0_0_die() {
+fn declining_the_copy_enters_a_0_0_that_dies() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let _other = named_permanent(&mut state, &r, "Grizzly Bears", P1);
-    let twin = enter_twin(&mut state, &r);
+    let twin = begin_entering_twin(&mut state, &r);
 
-    // Present the copy choice, then decline it.
-    let behavior = r.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &[], &r);
-    assert!(state.awaiting_action.is_some(), "copy choice should be pending");
-
+    // The engine raises the choice; decline it.
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &r);
+    assert!(state.awaiting_action.is_some(), "the copy choice should be up");
     let mut state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) },
         &r,
     );
-    assert!(!state.get_object(twin).unwrap().entering_copy_source,
-        "declining must disarm the guard");
-    // The game loop runs SBAs after the choice resolves; the disarmed 0/0 dies.
+
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield,
+        "declining still enters the permanent");
     while mtg_engine::sba::check_state_based_actions(&mut state, &r) {}
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
         "a declined Evil Twin is a 0/0 and dies to SBA");
 }
 
-/// With no other creature to copy, the guard is disarmed and the 0/0 dies.
+/// With no creature on the battlefield there is no choice to make, so the
+/// entry is not held up — it enters as a 0/0 and dies.
 #[test]
-fn no_target_lets_the_0_0_die() {
+fn nothing_to_copy_enters_a_0_0_that_dies() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let twin = enter_twin(&mut state, &r);
+    let twin = begin_entering_twin(&mut state, &r);
 
-    let behavior = r.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &[], &r);
-    assert!(!state.get_object(twin).unwrap().entering_copy_source,
-        "no legal target must disarm the guard");
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &r);
+    assert!(state.awaiting_action.is_none(), "no creatures, so nothing is asked");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
     while mtg_engine::sba::check_state_based_actions(&mut state, &r) {}
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
         "an Evil Twin with nothing to copy dies to SBA");

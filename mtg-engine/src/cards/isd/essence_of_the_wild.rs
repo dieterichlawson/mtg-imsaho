@@ -40,8 +40,8 @@ impl CardBehavior for EssenceOfTheWild {
         use crate::replacement::{ReplaceableEvent, Replacement};
         let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
         // Not itself, only creatures, only ours, and only once.
-        let (controller, card_id) = match state.get_object(self_id) {
-            Some(o) => (o.controller, o.card_id),
+        let controller = match state.get_object(self_id) {
+            Some(o) => o.controller,
             None => return None,
         };
         let is_creature = state.is_creature(e.object, registry);
@@ -49,7 +49,9 @@ impl CardBehavior for EssenceOfTheWild {
             return None;
         }
         let mut e = e.clone();
-        e.copy_of = Some(card_id);
+        // CR 706.2: a copy of this permanent, so that an Essence which is
+        // itself a copy of something passes on what it copied.
+        e.copy_of = Some(self_id);
         Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
     }
 }

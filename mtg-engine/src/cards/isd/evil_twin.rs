@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
-                   TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+                   TargetFilter, TargetRequirement};
 use crate::ids::ObjectId;
-use crate::state::{GameState, PendingEffect};
+use crate::state::{EnterAsCopyChoice, GameState};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Evil Twin {2}{U}{B} 0/0 Shapeshifter.
@@ -24,55 +24,54 @@ impl CardBehavior for EvilTwin {
             power: Some(0),
             toughness: Some(0),
             oracle_text: "You may have this creature enter as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\"".into(),
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EntersBattlefield,
-                    description: "you may copy a creature".into(),
-                target_requirement: None,
-                },
-            ],
             ..Default::default()
         }
     }
 
-    fn has_etb_handler(&self) -> bool { true }
-
-
-    fn enters_with_pending_copy_choice(&self) -> bool { true }
+    /// CR 614.12b: "You may have this creature enter as a copy of any
+    /// creature on the battlefield" is a replacement effect applied as it
+    /// enters, not a triggered ability. The engine defers the entry until
+    /// the choice is answered and records the answer on the object; this
+    /// turns that answer into the copy.
+    ///
+    /// Doing it through an ETB trigger — as this card used to — put a
+    /// printed 0/0 onto the battlefield with the choice sitting on the
+    /// stack: it survived state-based actions only because of a bespoke
+    /// exemption, the copied creature's "enters tapped" never applied
+    /// (CR 614.1c), and both players got a priority window that the rules
+    /// do not have.
+    fn chooses_copy_as_it_enters(&self) -> bool { true }
 
     // "except it has '{U}{B}, {T}: Destroy target creature with the same
     // name as this creature'" — the copy carries an Evil Twin-granted
     // ability, so the collectors must consult this behavior for it.
     fn grants_abilities_to_copies(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
-
-        // "a copy of ANY CREATURE on the battlefield" — a choice, not a
-        // target (CR 115.1, 614.12b), so hexproof and protection do not
-        // restrict it. Using the targeting helper hid an opponent's hexproof
-        // creature, which is a perfectly legal thing to copy.
-        let targets = crate::cards::helpers::creature_choices_except(state, object_id, registry);
-
-        // "You may" — present an optional choice. If no creatures exist or the
-        // player declines, Evil Twin stays as a 0/0 and dies to SBA.
-        if targets.is_empty() {
-            // No choice will be presented — disarm the guard now so SBA can
-            // clean up the 0/0.
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.entering_copy_source = false;
-            }
-        } else {
-            crate::cards::helpers::present_optional_target_choice(
-                state,
-                object_id,
-                controller,
-                targets,
-                PendingEffect::CopyCreature { source_id: object_id },
-                "Evil Twin: you may choose a creature to copy",
-                registry,
-            );
+    fn replace_event(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<crate::replacement::Replacement> {
+        use crate::replacement::{ReplaceableEvent, Replacement};
+        let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
+        // Only its own arrival, and only if a copy effect has not already
+        // decided what it enters as (CR 616.1 — an Essence of the Wild the
+        // controller also has out settles it first).
+        if e.object != self_id || e.copy_of.is_some() {
+            return None;
         }
+        let EnterAsCopyChoice::Copy(source) = state
+            .get_object(self_id)
+            .map_or(EnterAsCopyChoice::Unasked, |o| o.entering_copy_choice)
+        else {
+            // Declined, or nothing to copy: it enters as its printed 0/0.
+            return None;
+        };
+        let mut e = e.clone();
+        e.copy_of = Some(source);
+        Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {

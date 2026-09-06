@@ -2,7 +2,7 @@ use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
-use crate::types::{Zone, Supertype};
+use crate::types::Zone;
 use super::*;
 
 /// Finalize a spell cast: fire `SpellCast`, bump the per-turn counter, and
@@ -134,126 +134,26 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             crate::destruction::sacrifice(state, *id, registry);
             state.log(LogLevel::Event, format!("{source_name}: sacrificed {name}"));
         }
-        (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
-            // The copy applies to the permanent that raised the choice. Killed
-            // in response (a printed 0/0 until the copy lands), the card in
-            // the graveyard is a new object the choice no longer concerns
-            // (CR 400.7) — writing the copy onto it made a permanent copy in
-            // the graveyard that a reanimation brought back as the copied
-            // creature.
-            if !state.get_object(*source_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(obj) = state.get_object_mut(*source_id) {
-                    obj.entering_copy_source = false;
-                }
-                return;
-            }
-            // CR 707.8: copying a transformed permanent copies the face that
-            // is up, and the copy shows that face.
-            let target_transformed = state.get_object(*target_id).is_some_and(|o| o.is_transformed);
-            // Copy the target creature's copiable characteristics onto the
-            // source permanent (CR 707.2), including the legendary supertype.
-            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary) =
-                match state.get_object(*target_id) {
-                    Some(o) => {
-                        // CR 707.2: only *copiable* values are copied — what is
-                        // printed on the card (as modified by other copy
-                        // effects), not what non-copy effects have since done to
-                        // it. The Evil Twin ruling spells this out: "It doesn't
-                        // copy ... any non-copy effects that have changed its
-                        // power, toughness, types, color, or so on."
-                        //
-                        // That distinction is exactly the object-vector /
-                        // face-data split: `obj.subtypes` and `obj.colors` hold
-                        // runtime grants for a real card — Olivia Voldaren's
-                        // "Vampire", Grimoire of the Dead's "Zombie" and black —
-                        // and only stand in for printed values on a token, which
-                        // has no registry face. Reading the object vectors
-                        // directly copied those grants; the `printed_*`
-                        // accessors take the face when there is one and fall
-                        // back to the object only for a faceless token.
-                        let kw = state.printed_keywords_of(o.id, registry);
-                        let (power, toughness) = state.printed_pt_of(o.id, registry);
-                        // Legendary is copiable (CR 707.2); read the object flag
-                        // or fall back to the printed supertype.
-                        let legendary = o.is_legendary
-                            || state.face_data(o.id, registry)
-                                .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
-                        (state.name_of(o.id, registry), power, toughness, o.card_id,
-                         state.printed_card_types_of(o.id, registry),
-                         state.printed_subtypes_of(o.id, registry),
-                         kw, state.printed_colors_of(o.id, registry), legendary)
-                    }
-                    None => {
-                        // The chosen creature no longer exists (a token that
-                        // ceased). The copy never applies — disarm the SBA
-                        // copy-guard so the printed 0/0 can die rather than
-                        // sitting exempt forever.
-                        if let Some(obj) = state.get_object_mut(*source_id) {
-                            obj.entering_copy_source = false;
-                        }
-                        return;
-                    }
-                };
-
-            // CR 706.2: whatever card's copy effect this is, that card may have
-            // added abilities of its own ("except it has ..."). Record it before
-            // `card_id` is overwritten — this is the only place the granting
-            // card's identity is still known, and the engine never needs to know
-            // WHICH card it is.
-            let grantor = state.get_object(*source_id).map(|o| o.card_id);
-
-            if let Some(obj) = state.get_object_mut(*source_id) {
-                // Setting `card_id` is what makes this object a copy: every
-                // characteristics accessor now resolves through the copied
-                // card's face. The object-level vectors are only carried over
-                // when the *source* had runtime grants of its own (a token's
-                // printed types, or a subtype some effect added to it) — they
-                // are grants, not a duplicate of the copied face.
-                obj.card_id = card_id;
-                obj.name.clone_from(&name);
-                obj.power = power;
-                obj.toughness = toughness;
-                obj.keywords = keywords;
-                obj.card_types = card_types;
-                obj.subtypes = subtypes;
-                obj.colors = colors;
-                obj.is_legendary = is_legendary;
-                obj.copy_grantor = grantor;
-                obj.is_transformed = target_transformed;
-                // The copy has resolved — disarm the SBA copy-guard so the
-                // permanent is once again subject to state-based actions.
-                obj.entering_copy_source = false;
-            }
-            let copy_name = state.get_object(*source_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(LogLevel::Event,
-                format!("{copy_name} enters as a copy of {}", state.obj_name(*target_id)));
-
-            // CR 614.12: the permanent enters AS the copy, so the abilities
-            // that trigger on it entering are the COPIED creature's. The copy
-            // is modelled here as a choice resolving after entry, so those
-            // triggers have to be raised now — otherwise copying a creature
-            // with an enters-the-battlefield ability silently lost it.
+        (Target::Object(target_id), PendingEffect::EnterAsCopy { object }) => {
+            // CR 614.12b: the answer to "you may have this enter as a copy
+            // of any creature on the battlefield". The permanent is not on
+            // the battlefield yet — recording the answer is what lets it
+            // finish entering, and its own replacement effect turns the
+            // answer into `copy_of` on the way in. Everything the copy is
+            // (its copiable values, the ETB triggers it enters with, whether
+            // it enters tapped) therefore happens as part of entering, with
+            // no window in between.
             //
-            // This queues the copied card's ETB trigger rather than re-emitting
-            // `EnteredBattlefield`: the entering event already happened and
-            // every watcher saw it, and firing it twice would double-count for
-            // things like Champion of the Parish.
-            if let Some(behavior) = registry.get(card_id) {
-                if behavior.has_etb_handler() {
-                    let etb_kind = crate::cards::TriggerKind::EntersBattlefield;
-                    if behavior.should_trigger(state, *source_id, &etb_kind, registry) {
-                        let controller = state.get_object(*source_id)
-                            .map_or(PlayerId(0), |o| o.controller);
-                        state.pending_triggers.push(crate::triggers::PendingTrigger::new(
-                            crate::triggers::TriggerSource::new(
-                                *source_id, card_id, controller,
-                                format!("{copy_name} (copy) enters the battlefield"),
-                            ),
-                            crate::triggers::TriggerEvent::SelfEntered,
-                        ));
-                    }
-                }
-            }
+            // A chosen creature that is gone by now (a token that ceased) is
+            // no longer a legal answer, so the permanent enters as itself.
+            let choice = if state.get_object(*target_id)
+                .is_some_and(|o| o.zone == crate::types::Zone::Battlefield)
+            {
+                crate::state::EnterAsCopyChoice::Copy(*target_id)
+            } else {
+                crate::state::EnterAsCopyChoice::Declined
+            };
+            crate::replacement::record_entry_choice(state, *object, choice, registry);
         }
         (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
             // Grant flashback to the chosen card until end of turn.

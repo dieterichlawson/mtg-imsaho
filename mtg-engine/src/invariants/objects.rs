@@ -5,9 +5,7 @@
 use super::{player_ok, Violations};
 use crate::cards::CardRegistry;
 use crate::ids::CardId;
-use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind, StackEntry};
-use crate::triggers::TriggerEvent;
+use crate::state::GameState;
 use crate::types::{CardType, CounterType, Supertype, Zone};
 
 pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
@@ -293,22 +291,6 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
     }
 }
 
-/// Whether an enters-as-copy decision for `id` is still in flight: its
-/// enters trigger is queued or on the stack, or its copy prompt is up.
-fn copy_choice_live(state: &GameState, id: ObjectId) -> bool {
-    let trigger_waiting = state.stack.iter()
-        .filter_map(|e| match e { StackEntry::Trigger(t) => Some(t), _ => None })
-        .chain(state.pending_triggers.iter())
-        .chain(state.pending_trigger_pushes_ap.iter())
-        .chain(state.pending_trigger_pushes_nap.iter())
-        .any(|t| t.source.id == id && matches!(t.event, TriggerEvent::SelfEntered));
-    let prompt_up = matches!(&state.awaiting_action,
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseTarget { effect: PendingEffect::CopyCreature { source_id }, .. }, ..
-        }) if *source_id == id);
-    trigger_waiting || prompt_up
-}
-
 /// What every card hook leaves behind on an object — the contract card code
 /// is held to whichever card wrote the field.
 fn contract(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
@@ -317,11 +299,13 @@ fn contract(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
         let tag = format!("#{} ({})", id.0, obj.name);
         let on_bf = obj.zone == Zone::Battlefield;
 
-        // CR 614.1d: the state-based-action copy-guard is armed only while
-        // the enters-as-copy choice is live; afterwards the permanent is an
-        // ordinary one again.
-        if obj.entering_copy_source && !copy_choice_live(state, id) {
-            v.push(format!("{tag} is exempt from state-based actions with no enters-as-copy choice in flight (CR 614.1d)"));
+        // CR 614.12b: an entry waiting on an enters-as-a-copy choice has not
+        // happened. The permanent is still wherever it came from, and its
+        // recorded answer is `Unasked` until it is given one — a permanent on
+        // the battlefield in that state would be the 0/0 window this design
+        // exists to remove.
+        if state.pending_entry_choices.contains(&id) && on_bf {
+            v.push(format!("{tag} is on the battlefield while still queued for its enters-as-copy choice (CR 614.12b)"));
         }
 
         if !obj.is_token {

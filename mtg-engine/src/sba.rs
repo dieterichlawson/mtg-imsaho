@@ -70,21 +70,18 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             let obj = state.get_object(id);
             let damage = obj.map_or(0, |o| o.damage_marked);
             let deathtouch = obj.is_some_and(|o| o.dealt_deathtouch_damage);
-            // Skip creatures whose "enters as a copy" choice is still pending
-            // (CR 614.1d) — their printed 0/0 P/T is replaced once the copy
-            // resolves. The guard is the transient `entering_copy_source`
-            // flag, armed at entry and cleared when the choice concludes
-            // (success, decline, or no legal target). It is deliberately NOT
-            // the static `enters_as_copy()` card property, which would leave
-            // every such permanent permanently unkillable.
-            let entering_copy = state.get_object(id).is_some_and(|o| o.entering_copy_source);
+            // Nothing is exempt here. A permanent whose "enters as a copy"
+            // choice is still outstanding is not on the battlefield at all
+            // (CR 614.12b — the choice is made as it enters, and the entry
+            // waits for it), so the 0/0 window this used to carve an
+            // exemption for no longer exists.
             match effective_t {
-                Some(t) if t <= 0 && !entering_copy => {
+                Some(t) if t <= 0 => {
                     // Rule 704.5f: 0 or less toughness — not destruction,
                     // indestructible and regeneration do NOT prevent this.
                     zero_toughness_ids.push(id);
                 }
-                Some(t) if !entering_copy && (i32::try_from(damage).unwrap_or(i32::MAX) >= t || (deathtouch && damage > 0)) => {
+                Some(t) if i32::try_from(damage).unwrap_or(i32::MAX) >= t || (deathtouch && damage > 0) => {
                     // Rules 704.5g/h: lethal damage or deathtouch — destruction,
                     // checked via try_destroy (indestructible / regeneration apply).
                     destroyed_ids.push(id);

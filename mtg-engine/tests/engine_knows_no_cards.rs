@@ -103,7 +103,6 @@ const REVIEWED_SINGLE_USER: &[(&str, &str)] = &[
     ("CantBlockThisTurn", "general: 'target creature can't block this turn'"),
     ("DestroyCreature", "general: destroy a creature, card supplies only the log name"),
     ("ReturnToHand", "general: return a permanent to its owner's hand"),
-    ("CopyCreature", "general: CR 706 copy effect; the copy grantor is generic"),
 ];
 
 #[test]

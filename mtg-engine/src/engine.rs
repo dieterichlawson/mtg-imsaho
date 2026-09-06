@@ -1162,6 +1162,11 @@ fn run_game_loop_inner<F>(
         // triggered abilities onto the stack. Repeat until neither produces
         // new work. Triggers resolve through the normal priority cycle,
         // giving players a chance to respond between each resolution.
+        // CR 614.12b: a permanent whose controller must choose what it
+        // enters as is not on the battlefield until they have. Ask before
+        // anything else looks at the board — the entry itself is waiting on
+        // the answer, so SBAs and triggers have nothing to say about it yet.
+        crate::replacement::process_pending_entry_choices(state, registry);
         loop {
             let mut any_work = false;
             loop {

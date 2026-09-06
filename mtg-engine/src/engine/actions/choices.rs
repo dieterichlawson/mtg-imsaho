@@ -88,14 +88,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             behavior.on_declined_choice(&mut *state, choice_source, registry);
                         }
                     }
-                    // If this was an "enters as a copy" choice (Evil Twin)
-                    // and the player declined, the copy never resolves —
-                    // disarm the SBA guard so the printed 0/0 can die.
-                    // (On accept, the CopyCreature handler already did.)
-                    if let crate::state::PendingEffect::CopyCreature { source_id } = effect {
-                        if let Some(obj) = state.get_object_mut(*source_id) {
-                            obj.entering_copy_source = false;
-                        }
+                    // "You may have this enter as a copy" declined (CR
+                    // 614.12b): record the answer and let the permanent
+                    // finish entering as its printed self. For Evil Twin
+                    // that is a 0/0, and state-based actions will have it.
+                    if let crate::state::PendingEffect::EnterAsCopy { object } = effect {
+                        crate::replacement::record_entry_choice(
+                            &mut *state, *object, crate::state::EnterAsCopyChoice::Declined, registry);
                     }
                 }
                 (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, remaining, player, description, .. },

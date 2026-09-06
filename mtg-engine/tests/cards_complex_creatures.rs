@@ -1781,26 +1781,30 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
 // ── Evil Twin ──────────────────────────────────────────
 
 #[test]
-fn evil_twin_copies_creature_on_etb() {
+fn evil_twin_enters_as_a_copy_of_a_chosen_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let opponent_creature = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    // CR 614.12b: the choice is made as it enters, so the entry waits for it.
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(twin, Zone::Battlefield, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(), "should present a copy choice");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
+        "and nothing is on the battlefield until it is answered");
 
-    let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(Target::Object(opponent_creature))),
+        },
+        &reg,
+    );
 
-    // ETB now presents an optional choice instead of auto-copying.
-    assert!(state.awaiting_action.is_some(), "Should present a copy choice");
-
-    // Resolve the choice by selecting the opponent's creature.
-    let target = mtg_engine::actions::Target::Object(opponent_creature);
-    let effect = mtg_engine::state::PendingEffect::CopyCreature { source_id: twin };
-    state.awaiting_action = None;
-    mtg_engine::engine::apply_pending_effect(&mut state, &target, &effect, &reg);
-
-    // Evil Twin should have copied Grizzly Bears stats.
+    // Evil Twin should have entered with Grizzly Bears' stats.
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(twin).unwrap().name, "Grizzly Bears");
     assert_eq!(state.get_object(twin).unwrap().power, Some(2));
     assert_eq!(state.get_object(twin).unwrap().toughness, Some(2));
@@ -1821,17 +1825,8 @@ fn evil_twin_copying_legendary_triggers_legend_rule() {
     let original = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
     assert!(state.get_object(original).unwrap().is_legendary);
 
-    // Evil Twin (also P0) enters and copies it.
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-    let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
-    state.awaiting_action = None;
-    engine::apply_pending_effect(
-        &mut state,
-        &Target::Object(original),
-        &mtg_engine::state::PendingEffect::CopyCreature { source_id: twin },
-        &reg,
-    );
+    // Evil Twin (also P0) enters as a copy of it.
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(original));
 
     // The copy is legendary and shares the original's name.
     assert!(state.get_object(twin).unwrap().is_legendary,
@@ -3477,12 +3472,12 @@ fn an_evil_twin_that_enters_as_an_essence_is_not_exempt_from_state_based_actions
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     named_permanent(&mut state, &reg, "Essence of the Wild", P0);
-    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
-    let mut state = cast_and_resolve(&state, &reg, twin, vec![]);
+    // The Twin's controller declines its own copy choice, so the Essence's
+    // replacement is the one that decides what enters (CR 616.1).
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, None);
 
     let obj = state.get_object(twin).unwrap();
     assert_eq!(obj.name, "Essence of the Wild", "the replacement applied");
-    assert!(!obj.entering_copy_source, "no copy choice is coming for an Essence (CR 614.1d)");
 
     state.get_object_mut(twin).unwrap().damage_marked = 6;
     mtg_engine::sba::check_state_based_actions(&mut state, &reg);

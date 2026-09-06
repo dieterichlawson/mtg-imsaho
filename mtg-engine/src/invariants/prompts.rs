@@ -200,7 +200,7 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
     // id (the prompt's and the choice's); they name the same object.
     let inner = match choice {
         K::ChooseTarget { effect: PendingEffect::CardEffect { source_id, .. }, .. }
-        | K::ChooseTarget { effect: PendingEffect::CopyCreature { source_id }, .. }
+        | K::ChooseTarget { effect: PendingEffect::EnterAsCopy { object: source_id }, .. }
         | K::ChooseTarget { effect: PendingEffect::TokenAttacks { source_id, .. }, .. }
         | K::ChooseFromLibrary { source_id, .. }
         | K::ChooseCardName { source_id, .. }
@@ -233,7 +233,7 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 PendingEffect::AddCounters { .. } => Some(("counter", true, false)),
                 PendingEffect::DebuffUntilEOT { .. } => Some(("debuff", true, false)),
                 PendingEffect::CantBlockThisTurn { .. } => Some(("can't-block", true, false)),
-                PendingEffect::CopyCreature { .. } => Some(("copy", true, false)),
+                PendingEffect::EnterAsCopy { .. } => Some(("enter-as-copy", true, false)),
                 PendingEffect::SacrificeCreature { .. } => Some(("sacrifice", true, true)),
                 _ => None,
             };

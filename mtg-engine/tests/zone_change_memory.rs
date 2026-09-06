@@ -53,29 +53,33 @@ fn copied_types_keywords_and_legendary_flag_do_not_survive_leaving_the_battlefie
     assert!(!state.is_legendary(bear, &reg));
 }
 
-/// Evil Twin models "enters as a copy" as a choice raised by its ETB. Killed
-/// in response, the card in the graveyard is a new object the choice does
-/// not concern: the copy must not be written onto it.
+/// CR 614.12b: the chosen creature is part of the answer, and by the time the
+/// answer arrives it may be gone (a token that ceased, a creature killed in
+/// response to the spell). The permanent then enters as its printed self —
+/// nothing is copied from an object that no longer exists.
 #[test]
-fn a_copy_choice_answered_after_the_source_died_copies_nothing() {
+fn a_copy_choice_whose_creature_is_gone_copies_nothing() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-    let twin_card = state.get_object(twin).unwrap().card_id;
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
-    // The choice is up, and the Twin is killed before it is answered.
-    state.get_object_mut(twin).unwrap().entering_copy_source = true;
-    state.move_object(twin, Zone::Graveyard, &reg);
+    // The Twin is in hand and its entry is waiting on the choice.
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
+    let twin_card = state.get_object(twin).unwrap().card_id;
+    state.move_object(twin, Zone::Battlefield, &reg);
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
+        "the entry waits for the choice (CR 614.12b)");
     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
         player: P0,
         source: twin,
         choice: ResolutionChoiceKind::ChooseTarget {
             description: "copy".into(),
             options: vec![Target::Object(bear)],
-            optional: false,
-            effect: PendingEffect::CopyCreature { source_id: twin },
+            optional: true,
+            effect: PendingEffect::EnterAsCopy { object: twin },
         },
     });
+    // The chosen creature leaves before the answer is submitted.
+    state.move_object(bear, Zone::Graveyard, &reg);
 
     let state = mtg_engine::engine::submit_action(
         &state,
@@ -84,10 +88,10 @@ fn a_copy_choice_answered_after_the_source_died_copies_nothing() {
     );
 
     let o = state.get_object(twin).unwrap();
-    assert_eq!(o.card_id, twin_card, "the graveyard card is still an Evil Twin");
+    assert_eq!(o.zone, Zone::Battlefield, "it still enters");
+    assert_eq!(o.card_id, twin_card, "as an Evil Twin, having copied nothing");
     assert!(o.copy_grantor.is_none());
     assert_eq!(state.name_of(twin, &reg), "Evil Twin");
-    assert!(!o.entering_copy_source, "the SBA copy-guard is disarmed either way");
 }
 
 /// CR 707.8/707.8a: a copy of a transformed permanent copies the face that is
@@ -125,22 +129,7 @@ fn an_evil_twin_copying_a_transformed_permanent_shows_the_back_face_and_cannot_t
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let smith = named_permanent(&mut state, &reg, "Village Ironsmith", P1);
     mtg_engine::cards::helpers::apply_transform(&mut state, smith, &reg);
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-        player: P0,
-        source: twin,
-        choice: ResolutionChoiceKind::ChooseTarget {
-            description: "copy".into(),
-            options: vec![Target::Object(smith)],
-            optional: false,
-            effect: PendingEffect::CopyCreature { source_id: twin },
-        },
-    });
-    let mut state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(smith))) },
-        &reg,
-    );
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(smith));
 
     assert_eq!(state.name_of(twin, &reg), "Ironfang");
     assert!(state.has_subtype(twin, "Werewolf", &reg) && !state.has_subtype(twin, "Human", &reg));

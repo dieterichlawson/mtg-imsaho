@@ -298,6 +298,17 @@ pub struct GameState {
     #[serde(default)]
     pub pending_triggers: Vec<crate::triggers::PendingTrigger>,
 
+    /// Permanents whose entry is waiting on an enters-as-a-copy choice
+    /// (CR 614.12b). `move_object` puts an object here instead of moving it
+    /// when its controller has not been asked yet; the engine drains the
+    /// queue before any player receives priority, and each answer completes
+    /// that object's move. A queue rather than a single slot because a batch
+    /// entry (Grimoire of the Dead returning every creature card in every
+    /// graveyard) can need several answers, and one `awaiting_action` cannot
+    /// hold them all.
+    #[serde(default)]
+    pub pending_entry_choices: Vec<ObjectId>,
+
     /// CR 603.3d: triggers collected but not yet pushed onto the stack
     /// because they need target selection (or are queued behind one that does).
     /// AP triggers must all be pushed before NAP triggers; within each bucket,
@@ -536,6 +547,7 @@ impl GameState {
             submit_seq: 0,
             observe_every_submit: false,
             pending_triggers: Vec::new(),
+            pending_entry_choices: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
@@ -597,7 +609,7 @@ impl GameState {
             x_value: None,
             chosen_mode: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
-            entering_copy_source: false,
+            entering_copy_choice: EnterAsCopyChoice::Unasked,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
@@ -742,7 +754,7 @@ impl GameState {
             x_value: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
             chosen_mode: None,
-            entering_copy_source: false,
+            entering_copy_choice: EnterAsCopyChoice::Unasked,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
@@ -905,6 +917,26 @@ impl GameState {
     }
 
     pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) {
+        // CR 614.12b: a permanent that chooses what to enter as makes that
+        // choice as part of entering — before it is on the battlefield, not
+        // from a trigger afterwards. If the choice has not been made, this
+        // entry is deferred: the object stays where it is, the engine asks
+        // its controller before anyone receives priority, and the answer
+        // re-runs this move. Nothing ever sees the permanent on the
+        // battlefield as its printed self with the choice outstanding.
+        if to == Zone::Battlefield
+            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
+            && self.objects.get(&id)
+                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
+            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
+                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
+        {
+            if !self.pending_entry_choices.contains(&id) {
+                self.pending_entry_choices.push(id);
+            }
+            return;
+        }
+
         // Collect log info before mutating.
         let log_msg = self.objects.get(&id).and_then(|obj| {
             if obj.zone == Zone::Battlefield && to != Zone::Battlefield && obj.power.is_some() {
@@ -1106,6 +1138,15 @@ impl GameState {
                 obj.last_attached_to_player = None;
                 obj.summoning_sick = true;
             }
+
+            // CR 400.7: leaving the battlefield makes this a new object, and a
+            // new object has not been asked what to enter as. An Evil Twin
+            // that entered as a copy, died, and is reanimated chooses again —
+            // and one whose controller declined must not stay declined for the
+            // rest of the game.
+            if to != Zone::Battlefield {
+                obj.entering_copy_choice = EnterAsCopyChoice::Unasked;
+            }
         }
 
         // CR 506.4c: a creature that leaves the battlefield is removed from
@@ -1120,23 +1161,6 @@ impl GameState {
             self.remove_from_combat(id);
         }
 
-        // CR 614.1d: a permanent that "enters as a copy" via a player choice
-        // (Evil Twin) resolves that choice through an ETB trigger, so it
-        // briefly exists as its printed 0/0 before the copy applies. Arm the
-        // SBA copy-guard AT ENTRY — the single moment before any SBA runs —
-        // so the 0/0 isn't destroyed in the window before the trigger
-        // resolves. The guard is a transient flag cleared when the copy
-        // decision concludes (see the CopyCreature handler and the copy-choice
-        // resolution path); SBA consults only that flag, never a static
-        // card property.
-        if to == Zone::Battlefield && from != Some(Zone::Battlefield)
-            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
-                .is_some_and(super::cards::CardBehavior::enters_with_pending_copy_choice)
-        {
-            if let Some(obj) = self.objects.get_mut(&id) {
-                obj.entering_copy_source = true;
-            }
-        }
 
         // CR 614.12: "As [this] enters, choose ..." happens as it enters, so
         // the choice is made here rather than from a trigger on the stack.
@@ -1254,8 +1278,8 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) {
         let id = entering.object;
-        if let Some(card_id) = entering.copy_of {
-            self.become_copy_of(id, card_id, registry);
+        if let Some(source) = entering.copy_of {
+            self.become_copy_of(id, source, registry);
         }
         for (counter_type, count) in &entering.counters {
             self.add_counters(id, *counter_type, *count);
@@ -1267,75 +1291,73 @@ impl GameState {
         }
     }
 
-    /// Give `entering_id` the copiable values of `card_id` (CR 706.2).
-    fn become_copy_of(
+    /// Give `dest` the copiable values of the permanent `source` (CR 706.2).
+    ///
+    /// Copiable values are what is printed on the card *as modified by other
+    /// copy effects* — not what non-copy effects have since done to it. That
+    /// distinction is exactly the face-data / object-vector split: the
+    /// `printed_*` accessors read the face when there is one and fall back to
+    /// the object only for a token, which has none. Reading the object
+    /// vectors directly would copy Olivia Voldaren's granted "Vampire" and
+    /// Grimoire of the Dead's granted black, which the Evil Twin ruling says
+    /// a copy does not get.
+    ///
+    /// Taking the *permanent* rather than a `CardId` is what makes a copy of
+    /// a copy right: an object that is itself a copy carries the copied
+    /// card's id, so its copiable values are read straight off it.
+    pub(crate) fn become_copy_of(
         &mut self,
-        entering_id: ObjectId,
-        card_id: crate::ids::CardId,
+        dest: ObjectId,
+        source: ObjectId,
         registry: &crate::cards::CardRegistry,
     ) {
-        // Get copiable values from card data (the authoritative source for characteristics).
-        let source_data = Some(card_id).and_then(|card_id| {
-            registry.card_data(card_id).map(|d| {
-                (
-                    d.name.clone(),
-                    d.power.unwrap_or(0),
-                    d.toughness.unwrap_or(0),
-                    // Derive colors from mana cost.
-                    d.cost.as_ref().map(|c| {
-                        let mut cols = Vec::new();
-                        for sym in &c.symbols {
-                            if let crate::types::ManaSymbol::Colored(c) = sym {
-                                if !cols.contains(c) { cols.push(*c); }
-                            }
-                        }
-                        cols
-                    }).unwrap_or_default(),
-                    d.card_types.clone(),
-                    d.subtypes.clone(),
-                    d.keywords.clone(),
-                    d.oracle_text.clone(),
-                )
-            })
-        });
+        let Some(src) = self.get_object(source) else { return };
+        let source_card = src.card_id;
+        // CR 707.8: copying a transformed permanent copies the face that is
+        // up, and the copy shows that face.
+        let transformed = src.is_transformed;
+        // Legendary is copiable (CR 707.2): the object flag, or the printed
+        // supertype when nothing has set one.
+        let legendary = src.is_legendary
+            || self.face_data(source, registry)
+                .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
+        let name = self.name_of(source, registry);
+        let (power, toughness) = self.printed_pt_of(source, registry);
+        let keywords = self.printed_keywords_of(source, registry);
+        let card_types = self.printed_card_types_of(source, registry);
+        let subtypes = self.printed_subtypes_of(source, registry);
+        let colors = self.printed_colors_of(source, registry);
+        let oracle_text = self.face_data(source, registry).map(|d| d.oracle_text.clone());
 
-        if let Some((name, power, toughness, colors, card_types, subtypes, keywords, oracle_text)) = source_data {
-            let old_name = self.get_object(entering_id).map(|o| o.name.clone()).unwrap_or_default();
-            if let Some(obj) = self.get_object_mut(entering_id) {
-                // CR 706.2: a copy has the copied card's copiable values, and
-                // its abilities with them. `card_id` is what every ability,
-                // trigger and replacement lookup reads, so a copy that left it
-                // alone kept its own abilities — a Village Bell-Ringer entering
-                // as an Essence of the Wild still untapped the team.
-                //
-                // The card it was printed as goes into `copy_grantor`, which is
-                // where `move_object` looks to give it back on the way out. This
-                // is the same convention `effects.rs` uses for Evil Twin's copy;
-                // this path is the one that was not following it.
-                if obj.card_id != card_id {
-                    obj.copy_grantor = Some(obj.card_id);
-                    obj.card_id = card_id;
-                }
-                // CR 614.1d: whether an enters-as-copy choice is still coming
-                // is a property of the card it now is. The guard armed for
-                // the printed card (Evil Twin arriving as an Essence of the
-                // Wild) would otherwise stay set for good — an Essence exempt
-                // from state-based actions, since no choice ever clears it.
-                obj.entering_copy_source = registry.get(card_id)
-                    .is_some_and(super::cards::CardBehavior::enters_with_pending_copy_choice);
-                obj.name.clone_from(&name);
-                obj.power = Some(power);
-                obj.toughness = Some(toughness);
-                obj.colors = colors;
-                obj.card_types = card_types;
-                obj.subtypes = subtypes;
-                obj.keywords = keywords;
-                obj.instance_continuous_effects = Some(vec![]);
-                obj.instance_oracle_text = Some(oracle_text);
+        let old_name = self.get_object(dest).map(|o| o.name.clone()).unwrap_or_default();
+        if let Some(obj) = self.get_object_mut(dest) {
+            // CR 706.2: `card_id` is what every ability, trigger and
+            // replacement lookup reads, so it is what makes this object a
+            // copy. The card it is printed as goes into `copy_grantor`: it is
+            // where `move_object` looks to give the printed card back on the
+            // way out, and where a copy effect with an "except it has ..."
+            // clause (Evil Twin) is found.
+            if obj.card_id != source_card {
+                obj.copy_grantor = Some(obj.card_id);
+                obj.card_id = source_card;
             }
-            self.log(LogLevel::Event,
-                format!("{old_name} enters as a copy of {name} ({power}/{toughness})"));
+            obj.name.clone_from(&name);
+            obj.power = power;
+            obj.toughness = toughness;
+            obj.colors = colors;
+            obj.card_types = card_types;
+            obj.subtypes = subtypes;
+            obj.keywords = keywords;
+            obj.is_legendary = legendary;
+            obj.is_transformed = transformed;
+            obj.instance_continuous_effects = Some(vec![]);
+            obj.instance_oracle_text = oracle_text;
         }
+        let pt = match (power, toughness) {
+            (Some(p), Some(t)) => format!(" ({p}/{t})"),
+            _ => String::new(),
+        };
+        self.log(LogLevel::Event, format!("{old_name} enters as a copy of {name}{pt}"));
     }
 
     /// Get an object by ID.
@@ -3034,12 +3056,29 @@ pub struct GameObject {
     #[serde(default)]
     pub abilities_activated_this_turn: std::collections::BTreeSet<usize>,
 
-    /// Whether this permanent is an entering-battlefield copy source (replacement effect).
-    /// When true, other creatures entering the battlefield under the same controller
-    /// enter as a copy of this permanent instead of their original form (CR 614.1d).
-    /// Used by Essence of the Wild and similar cards.
+    /// The enters-as-a-copy choice this card's controller made for it
+    /// (CR 614.12b, Evil Twin). Recorded *before* the object is put onto the
+    /// battlefield, and read by the card's own replacement effect as it
+    /// enters, so the permanent is never on the battlefield as its printed
+    /// self with the choice still outstanding. Reset on every zone change
+    /// (CR 400.7) — a new object makes a new choice.
     #[serde(default)]
-    pub entering_copy_source: bool,
+    pub entering_copy_choice: EnterAsCopyChoice,
+}
+
+/// Whether a permanent that chooses what to enter as has been asked yet, and
+/// what its controller answered (CR 614.12b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum EnterAsCopyChoice {
+    /// The controller has not been asked. Nothing may enter in this state:
+    /// `move_object` defers the entry until the choice is made.
+    #[default]
+    Unasked,
+    /// Asked, and declined — "you may" (CR 614.12b). The permanent enters as
+    /// its printed self, which for Evil Twin is a 0/0 that dies immediately.
+    Declined,
+    /// Asked, and answered with the permanent to enter as a copy of.
+    Copy(ObjectId),
 }
 
 /// A player's state.
@@ -3541,10 +3580,12 @@ pub enum PendingEffect {
 
     /// Sacrifice the chosen creature (generic sacrifice, e.g. Liliana -2).
     SacrificeCreature { source_name: String },
-    /// Copy the chosen creature onto the source permanent (Evil Twin clone effect).
-    /// The source becomes a copy of the target, except it retains any extra abilities
-    /// stored via `card_state` markers.
-    CopyCreature { source_id: ObjectId },
+    /// The answer to "you may have this permanent enter as a copy of any
+    /// creature on the battlefield" (CR 614.12b — Evil Twin). `object` is
+    /// the permanent that is *about to* enter: it is still on the stack (or
+    /// wherever it is coming from), and recording the answer is what releases
+    /// its deferred entry.
+    EnterAsCopy { object: ObjectId },
 
 
 

@@ -526,6 +526,38 @@ pub fn named_permanent(
     id
 }
 
+/// Put a card that chooses what to enter as (Evil Twin) onto the battlefield,
+/// answering that choice (CR 614.12b) with `copy_of` — or `None` to decline.
+///
+/// The card object starts in `owner`'s hand, because the choice is made
+/// *before* the permanent enters: `move_object` defers the entry until the
+/// answer is recorded, which is what this reproduces without a full cast.
+pub fn enters_as_copy_of(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    name: &str,
+    owner: PlayerId,
+    copy_of: Option<ObjectId>,
+) -> ObjectId {
+    let card_id = registry.get_id_by_name(name)
+        .unwrap_or_else(|| panic!("Unknown card: {name}"));
+    let data = registry.card_data(card_id)
+        .unwrap_or_else(|| panic!("No card data for: {name}"));
+    let id = state.create_object(card_id, owner, Zone::Hand, data.power, data.toughness);
+    if let Some(obj) = state.get_object_mut(id) {
+        obj.name = name.into();
+    }
+    let choice = match copy_of {
+        Some(source) => mtg_engine::state::EnterAsCopyChoice::Copy(source),
+        None => mtg_engine::state::EnterAsCopyChoice::Declined,
+    };
+    mtg_engine::replacement::record_entry_choice(state, id, choice, registry);
+    if let Some(obj) = state.get_object_mut(id) {
+        obj.summoning_sick = false;
+    }
+    id
+}
+
 /// Process triggers, auto-resolving any "choose target player" choices by picking the opponent.
 /// Repeats until all triggers and their choices are fully resolved.
 pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &CardRegistry) {

@@ -316,17 +316,16 @@ fn a_creature_that_should_be_dead_is_flagged() {
     assert_flags(&state, &reg, "deathtouch damage");
 }
 
+/// CR 614.12b: a permanent whose enters-as-a-copy choice is still queued has
+/// not entered. There is no exemption to leak any more — being on the
+/// battlefield in that state is itself the violation.
 #[test]
-fn a_leaked_copy_entry_exemption_is_flagged() {
+fn a_permanent_on_the_battlefield_awaiting_its_copy_choice_is_flagged() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let leak = ready_creature(&mut state, P0, 0, 0);
-    {
-        let o = state.get_object_mut(leak).unwrap();
-        o.entering_copy_source = true;
-        o.summoning_sick = false;
-    }
-    assert_flags(&state, &reg, "copy-entry window");
+    let queued = ready_creature(&mut state, P0, 0, 0);
+    state.pending_entry_choices.push(queued);
+    assert_flags(&state, &reg, "queued for its enters-as-copy choice");
 }
 
 #[test]

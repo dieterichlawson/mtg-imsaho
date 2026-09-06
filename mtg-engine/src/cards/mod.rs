@@ -523,12 +523,6 @@ pub trait CardBehavior: Send + Sync {
         None
     }
 
-    /// Whether this permanent asks its controller for a copy choice as it
-    /// enters (Evil Twin).
-    ///
-    /// Not a replacement effect, despite living next to them before: it
-    /// guards the printed 0/0 from state-based actions while the choice is
-    /// pending, rather than changing how anything enters.
     /// CR 614.12: "**As** [this] enters, choose ..." is a replacement effect,
     /// not a triggered ability. The choice is made as the permanent enters,
     /// before anyone receives priority — there is no window in which the
@@ -539,7 +533,18 @@ pub trait CardBehavior: Send + Sync {
     /// NOT also declare an `EntersBattlefield` triggered ability.
     fn chooses_as_it_enters(&self) -> bool { false }
 
-    fn enters_with_pending_copy_choice(&self) -> bool { false }
+    /// Whether this card's controller is asked, as it enters, what to have
+    /// it enter as a copy of (CR 614.12b — Evil Twin).
+    ///
+    /// The choice is part of entering, so a card that returns true is not
+    /// moved onto the battlefield until it has been answered: `move_object`
+    /// defers the entry and the engine asks first. The card reads the
+    /// recorded answer in its own `replace_event` and sets `copy_of` from
+    /// it. There is therefore no window in which the permanent is on the
+    /// battlefield as its printed self — which for Evil Twin is a 0/0 that
+    /// state-based actions would have destroyed, and which used to be
+    /// papered over with an SBA exemption flag.
+    fn chooses_copy_as_it_enters(&self) -> bool { false }
 
     /// Whether this card's copy effect grants abilities to the copy
     /// (CR 706.2 "except it has <ability>" — Evil Twin). `copy_grantor`

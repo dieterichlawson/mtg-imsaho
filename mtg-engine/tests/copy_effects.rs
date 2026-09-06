@@ -11,14 +11,15 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::state::{GameState, PendingEffect};
+use mtg_engine::state::GameState;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
 use mtg_engine::types::*;
 
-fn copy_onto(state: &mut GameState, reg: &CardRegistry, copier: ObjectId, victim: ObjectId) {
-    mtg_engine::engine::apply_pending_effect(
-        state, &Target::Object(victim),
-        &PendingEffect::CopyCreature { source_id: copier }, reg);
+/// Bring an Evil Twin in as a copy of `victim`, through the real entering
+/// path: the choice is answered first (CR 614.12b), and the copy is applied
+/// as the permanent enters.
+fn twin_copying(state: &mut GameState, reg: &CardRegistry, victim: ObjectId) -> ObjectId {
+    enters_as_copy_of(state, reg, "Evil Twin", P0, Some(victim))
 }
 
 // ── Evil Twin: choosing is not targeting ─────────────────────────
@@ -30,17 +31,17 @@ fn evil_twin_may_copy_a_hexproof_creature_it_could_not_target() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let hexproof = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
     state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
         target: hexproof, keyword: Keyword::Hexproof,
     });
     assert!(state.has_keyword(hexproof, Keyword::Hexproof, &reg), "test precondition");
 
-    // Drive Evil Twin's own enters-the-battlefield handler, so this covers the
-    // card's candidate list rather than the helper in isolation.
-    let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
+    // Start the entry and let the engine raise the choice, so this covers the
+    // real candidate list rather than a helper in isolation.
+    state.move_object(twin, Zone::Battlefield, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
 
     let options = match &state.awaiting_action {
         Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
@@ -62,14 +63,13 @@ fn copying_a_token_preserves_its_keywords() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let token = *state.create_token_with_subtypes(
         "Spirit", P1, 1, 1, vec![Color::White], vec![CardType::Creature],
         vec![Keyword::Flying], vec!["Spirit".into()], &reg)
         .first().expect("token created");
     assert!(state.has_keyword(token, Keyword::Flying, &reg), "test precondition");
 
-    copy_onto(&mut state, &reg, twin, token);
+    let twin = twin_copying(&mut state, &reg, token);
 
     assert!(state.has_keyword(twin, Keyword::Flying, &reg),
         "the copy has the token's flying — a generic token has no registry \
@@ -83,19 +83,26 @@ fn a_copy_fires_the_copied_creatures_etb_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     // Fiend Hunter's ETB exiles a creature — an unmistakable ability.
     let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P1);
 
-    state.pending_triggers.clear();
-    copy_onto(&mut state, &reg, twin, hunter);
+    let twin = twin_copying(&mut state, &reg, hunter);
+    // The entering event is collected by the engine's own trigger pass.
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
 
-    let queued = state.pending_triggers.iter().any(|t| matches!(t,
-        PendingTrigger { source: TriggerSource { id: object_id, .. }, event: TriggerEvent::SelfEntered }
-        if *object_id == twin));
+    // The permanent entered already bearing the copied card's abilities, so
+    // the ordinary entering event raises the copied creature's trigger.
+    let queued = state.pending_trigger_pushes_ap.iter()
+        .chain(state.pending_trigger_pushes_nap.iter())
+        .chain(state.pending_triggers.iter())
+        .any(|t| matches!(t,
+            PendingTrigger { source: TriggerSource { id: object_id, .. }, event: TriggerEvent::SelfEntered }
+            if *object_id == twin))
+        || state.stack.iter().any(|e| matches!(e,
+            mtg_engine::state::StackEntry::Trigger(t) if t.source.id == twin));
     assert!(queued,
-        "copying a creature with an enters-the-battlefield ability must raise \
-         that ability for the copy (CR 614.12); it was silently lost");
+        "entering as a copy of a creature with an enters-the-battlefield \
+         ability must raise that ability for the copy (CR 614.12)");
 }
 
 /// Copying something with no ETB ability raises nothing.
@@ -104,11 +111,10 @@ fn a_copy_of_a_vanilla_creature_raises_no_etb_trigger() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let vanilla = named_permanent(&mut state, &reg, "Walking Corpse", P1);
 
     state.pending_triggers.clear();
-    copy_onto(&mut state, &reg, twin, vanilla);
+    let _twin = twin_copying(&mut state, &reg, vanilla);
 
     assert!(state.pending_triggers.is_empty(),
         "Walking Corpse has no enters-the-battlefield ability, so nothing \
@@ -226,15 +232,17 @@ fn evil_twin_is_not_marked_as_a_copy_until_the_choice_is_made() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     ready_creature(&mut state, P1, 3, 3);
-    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
-    state = cast_and_resolve(&state, &reg, twin, vec![]);
-    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(twin, Zone::Battlefield, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
 
     assert!(state.awaiting_action.is_some(),
         "with a creature on the battlefield, the copy choice must be offered");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
+        "and the permanent does not enter until it is answered (CR 614.12b)");
     assert!(state.get_object(twin).is_some_and(|o| o.copy_grantor.is_none()),
-        "and until it is answered nothing has been copied, so the 'except it \
-         has' ability must not be granted yet");
+        "so nothing has been copied, and the 'except it has' ability is not \
+         granted yet");
 }
 
 /// After the copy, the granted ability is still reachable — the copy changes
@@ -246,16 +254,17 @@ fn evil_twin_keeps_its_granted_ability_after_copying() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-
-    reg.get(state.get_object(twin).unwrap().card_id).unwrap()
-        .on_enter_battlefield(&mut state, twin, &[], &reg);
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(twin, Zone::Battlefield, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
 
     assert!(state.awaiting_action.is_some(), "the copy choice is offered");
     state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
         choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
     }, &reg);
 
+    // It entered this turn; the ability taps, so let it settle (CR 302.6).
+    state.get_object_mut(twin).unwrap().summoning_sick = false;
     add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Black, 1)]);
     assert!(offers_ability_of(&state, &reg, twin),
         "{{U}}{{B}}, {{T}}: Destroy target creature with the same name — the \
@@ -263,28 +272,35 @@ fn evil_twin_keeps_its_granted_ability_after_copying() {
          looking abilities up from the new card_id must not lose it");
 }
 
-/// CR 614.1d: "enter as a copy" is a replacement effect, so the permanent is
-/// already the copy when it arrives. Evil Twin's printed body is 0/0, and a
-/// 0/0 on the battlefield dies to SBA 704.5f — so entry has to hold the
-/// state-based check off until the copy has had its chance to apply.
+/// CR 614.12b: "enter as a copy" is a replacement effect, so the permanent is
+/// already the copy when it arrives — and until the choice is answered it has
+/// not arrived at all. Evil Twin's printed body is 0/0, which SBA 704.5f
+/// would destroy; there is no such window to protect any more, because the
+/// deferred entry keeps the card out of the battlefield entirely.
 #[test]
-fn evil_twin_survives_state_based_actions_while_its_copy_choice_is_pending() {
+fn no_0_0_is_ever_exposed_while_the_copy_choice_is_pending() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Something to copy, so the choice is not a silent no-op.
-    ready_creature(&mut state, P1, 2, 2);
+    let bear = ready_creature(&mut state, P1, 2, 2);
 
-    // Enter through the real chokepoint, which arms the copy guard.
+    // Enter through the real chokepoint, which defers the entry.
     let card_id = reg.get_id_by_name("Evil Twin").unwrap();
     let twin = state.create_object(card_id, P0, Zone::Hand, Some(0), Some(0));
     state.get_object_mut(twin).unwrap().name = "Evil Twin".into();
     state.move_object(twin, Zone::Battlefield, &reg);
 
     mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Hand),
+        "nothing is on the battlefield for state-based actions to destroy");
 
+    // Answering completes the entry, as the copy.
+    mtg_engine::replacement::record_entry_choice(
+        &mut state, twin, mtg_engine::state::EnterAsCopyChoice::Copy(bear), &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield),
-        "the printed 0/0 must not be swept away before the copy applies");
+        "and what enters is a 2/2, which survives");
 }
 
 // ── CR 707.2: copiable values only ───────────────────────────────
@@ -312,8 +328,7 @@ fn a_copy_does_not_pick_up_a_subtype_granted_by_a_non_copy_effect() {
     state.get_object_mut(victim).unwrap().subtypes.push("Vampire".into());
     assert!(state.has_subtype(victim, "Vampire", &reg), "granted subtype is live");
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-    copy_onto(&mut state, &reg, twin, victim);
+    let twin = twin_copying(&mut state, &reg, victim);
 
     assert!(state.has_subtype(twin, "Snake", &reg),
         "the copy has the printed subtypes");
@@ -334,8 +349,7 @@ fn a_copy_does_not_pick_up_a_color_granted_by_a_non_copy_effect() {
     assert!(state.colors_of(victim, &reg).contains(&Color::Black),
         "granted colour is live");
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-    copy_onto(&mut state, &reg, twin, victim);
+    let twin = twin_copying(&mut state, &reg, victim);
 
     assert!(state.colors_of(twin, &reg).contains(&Color::Green),
         "the copy is the printed colour");
@@ -355,8 +369,7 @@ fn a_copy_of_a_token_still_takes_the_tokens_printed_characteristics() {
         vec![Keyword::Flying], vec!["Spirit".into()], &reg);
     let token = ids[0];
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
-    copy_onto(&mut state, &reg, twin, token);
+    let twin = twin_copying(&mut state, &reg, token);
 
     assert!(state.has_subtype(twin, "Spirit", &reg), "token subtypes still copied");
     assert!(state.has_keyword(twin, Keyword::Flying, &reg), "and its keywords");
@@ -412,9 +425,8 @@ fn a_copy_derives_the_copied_cards_colors_from_its_cost() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let victim = named_permanent(&mut state, &reg, "Walking Corpse", P1);
-    copy_onto(&mut state, &reg, twin, victim);
+    let twin = twin_copying(&mut state, &reg, victim);
 
     let colors = &state.get_object(twin).unwrap().colors;
     assert_eq!(colors, &vec![Color::Black],

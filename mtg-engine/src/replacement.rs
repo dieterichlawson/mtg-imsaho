@@ -33,8 +33,13 @@ pub struct EnteringPermanent {
     pub controller: PlayerId,
     pub tapped: bool,
     pub counters: Vec<(CounterType, u32)>,
-    /// The card it enters as a copy of (CR 706.9), if any.
-    pub copy_of: Option<CardId>,
+    /// The permanent it enters as a copy of (CR 706.9), if any.
+    ///
+    /// A permanent rather than a card: CR 706.2 copies the *copiable values*
+    /// of the chosen object, which for an object that is itself a copy are
+    /// the copied ones, and for a token are the token's own. Naming the card
+    /// lost both.
+    pub copy_of: Option<ObjectId>,
 }
 
 /// An event a replacement effect may act on before it happens.
@@ -151,6 +156,70 @@ pub fn for_entering(
         .unwrap_or(after_copy)
 }
 
+/// Ask for the enters-as-a-copy choices that deferred entries are waiting on
+/// (CR 614.12b), one at a time.
+///
+/// `move_object` queues an object here rather than putting it onto the
+/// battlefield with the choice unanswered. The engine calls this before any
+/// player receives priority; each answer records itself through
+/// `record_entry_choice`, which completes that object's entry and comes back
+/// here for the next one. A queue rather than a single prompt because one
+/// effect can bring several such cards in at once (Grimoire of the Dead
+/// returns every creature card in every graveyard).
+pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegistry) {
+    while state.awaiting_action.is_none() {
+        let Some(&object) = state.pending_entry_choices.first() else { return };
+        let Some(controller) = state.get_object(object).map(|o| o.controller) else {
+            state.pending_entry_choices.remove(0);
+            continue;
+        };
+        // "A copy of any creature on the battlefield" is a choice, not a
+        // target (CR 115.1, 614.12b), so hexproof and protection do not
+        // narrow it.
+        let options: Vec<crate::actions::Target> = state
+            .all_objects_in_zone(Zone::Battlefield)
+            .iter()
+            .filter(|o| state.is_creature(o.id, registry))
+            .map(|o| crate::actions::Target::Object(o.id))
+            .collect();
+        if options.is_empty() {
+            // Nothing to copy: the choice cannot be made, so the permanent
+            // enters as its printed self.
+            record_entry_choice(state, object, crate::state::EnterAsCopyChoice::Declined, registry);
+            continue;
+        }
+        let name = state.obj_name(object);
+        crate::cards::helpers::present_optional_target_choice(
+            state,
+            object,
+            controller,
+            options,
+            crate::state::PendingEffect::EnterAsCopy { object },
+            &format!("{name}: you may have it enter as a copy of a creature on the battlefield"),
+            registry,
+        );
+    }
+}
+
+/// Record the answer to an enters-as-a-copy choice and finish that object's
+/// entry.
+///
+/// The entry was deferred (see `GameState::move_object`), so this is where it
+/// actually happens — with the answer already on the object, the card's own
+/// replacement effect can turn it into `copy_of` as it enters.
+pub fn record_entry_choice(
+    state: &mut GameState,
+    object: ObjectId,
+    choice: crate::state::EnterAsCopyChoice,
+    registry: &CardRegistry,
+) {
+    if let Some(obj) = state.get_object_mut(object) {
+        obj.entering_copy_choice = choice;
+    }
+    state.pending_entry_choices.retain(|&id| id != object);
+    state.move_object(object, Zone::Battlefield, registry);
+}
+
 /// Which half of the entering-replacement order a pass keeps.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pass {
@@ -182,8 +251,13 @@ fn run_entering_pass(
     // is — see `apply`'s note. On the second pass those abilities are the
     // copied card's, if a copy effect decided one: a Grimgrin entering as an
     // Essence does not have "enters tapped", because it is not a Grimgrin.
+    // On the second pass the entering permanent's own arrival abilities are
+    // the *copied* permanent's, if a copy effect decided one: a Grimgrin
+    // entering as an Essence does not have "enters tapped", because it is
+    // not a Grimgrin. `copy_of` names the permanent, so its card is what
+    // those abilities are read from.
     let own = match (pass, entering.copy_of) {
-        (Pass::EverythingElse, Some(copied)) => Some(copied),
+        (Pass::EverythingElse, Some(copied)) => state.get_object(copied).map(|o| o.card_id),
         _ => state.get_object(entering.object).map(|o| o.card_id),
     };
     if let Some(card_id) = own {

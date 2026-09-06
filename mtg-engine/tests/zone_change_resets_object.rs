@@ -22,16 +22,8 @@ fn a_copy_reverts_to_its_printed_card_on_leaving_the_battlefield() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
     let victim = named_permanent(&mut state, &reg, "Bloodgift Demon", P1);
-
-    // Resolve the copy the way the ETB choice does.
-    mtg_engine::engine::apply_pending_effect(
-        &mut state,
-        &mtg_engine::actions::Target::Object(victim),
-        &mtg_engine::state::PendingEffect::CopyCreature { source_id: twin },
-        &reg,
-    );
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(victim));
     assert_eq!(state.name_of(twin, &reg), "Bloodgift Demon", "test precondition: it copied");
 
     state.move_object(twin, Zone::Graveyard, &reg);
