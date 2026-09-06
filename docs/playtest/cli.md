@@ -180,6 +180,76 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   claims; and does the file grow without bound. The atomic-write fix from
   #75/#76 holds (2,173 of 2,173 snapshots resumed on 2026-09-05) — the defects
   are around the file, not in it (#239, #242)
+- V31 [tried 2026-09-06 → #294, #295, #296] auto-pass as a contract (distinct
+  from V10's priority-mash): `f` promises "passes until your next Main Phase 1"
+  and four break conditions. Read `CliPlayer::should_break_pass` and
+  `try_engage_auto_pass` first, enumerate the clauses, then build a state for
+  each and check the code, the header label and `play-cli.md` all agree. Ask what
+  is silently declined (a cast, an equip, six ability modes), where the mode can
+  be seen (only on mandatory-choice screens), and how it is turned off (it
+  isn't). Mandatory decisions are safe — the auto-pass path is gated on
+  `has_pass`, and every mandatory choice in this program lacks a Pass option — so
+  hunt the contract, not the rules. #269 is what makes the extra stops visible at
+  all, and fixing it will HIDE #295's stops without removing them
+- V32 [tried 2026-09-06 → #281, #282, #283, #284] the input line as an editor:
+  is the string rendered after the `>` the string Enter submits? Read `read_line`,
+  `read_line_with_search` and their `echoed_chars`/`echoed_cols` bookkeeping
+  first, then break it at every prompt — Backspace on full and empty buffers,
+  Ctrl-U, a line past the echo cap, and multi-byte text deleted one keypress at a
+  time (CJK, a combining mark, a ZWJ emoji: three `char`s, one cluster, three
+  different erase widths). The end state to hunt is a line that renders EMPTY
+  over a non-empty buffer, because Enter then means "attack with everything" at a
+  prompt that says `enter=none`. Also check what the echo and the `Invalid input
+  '…'` notice do to bytes they were handed — neither strips control characters
+  nor clips the notice — and whether the buffer survives an error reprompt, a
+  pane, a resize, a seat change and `--save`/`--resume` (it does; the echo is
+  what does not). The `/` search box and the chooser filter box redraw from the
+  string each keystroke and are immune, which is the shape of the fix. Unreached:
+  the trigger-ordering prompt
+- V33 [tried 2026-09-06 → #288, #290, comments on #249/#254/#261/#262] the escape
+  hatch: enumerate every prompt from `cli.rs` — action menu, the three
+  `prompt_target*` choosers, `prompt_x_funding`, `prompt_exile_from_graveyard`,
+  `prompt_pile_division`, `library_search_ui`, `choose_attackers`,
+  `choose_blockers`, `confirm_yn` — and for each ask three questions: is there a
+  way to back out and does it work, what does a bare Enter do and is that written
+  on screen, and what has irreversibly happened once you commit. The 2026-09-06
+  sweep found the idle key means "cancel" at one chooser and "cast the spell" at
+  two others, that `prompt_target_optional` has no Cancel row at all, and that an
+  ability's X cost is paid before the prompt that asks for X. Re-run it after any
+  prompt is added or a cancel is wired up; the unswept corners are
+  `ChooseCardType`, `ChoosePile`, `ChooseCardName` and an X ability that also
+  carries a sacrifice cost
+- V34 [tried 2026-09-06 → #293] what the save forgets (distinct from V3's honest
+  reload, V14's corrupted saves, V20's contention, V30's every-snapshot-loadable
+  and M1's faithful screen — all of which ask whether the save LOADS, not whether
+  it round-trips every FIELD): read the struct that gets serialized before you
+  play and hunt a `GameState` field that is not in it. Then reach a state thick
+  with ephemeral, turn-scoped state — damage marked, an "until end of turn" pump
+  or protection or control change in flight, the land drop spent, floating mana,
+  declared attackers and blockers, a once-per-turn ability already used (a
+  planeswalker's loyalty, CR 606.3), the werewolf "spells cast last turn" count,
+  morbid, summoning sickness, the mulligan count — save, kill, `--resume`, and
+  compare. The behavioural check outranks the screen: does the pumped creature
+  still hit for the bonus, can you play a SECOND land, does the werewolf still
+  transform on schedule, does one more point of damage still kill the creature
+  that was already wounded. Cheapest rigorous form: let the resumed process write
+  its own save at the same decision and deep-diff the two. On 2026-09-06 all 15
+  probes came back identical — `GameState` round-trips; what `--resume` restarts
+  rather than restores lives OUTSIDE it (#248 the seats, #293 the action
+  counter), so look there next
+- V35 [tried 2026-09-06 → #287, #289, #291, comment on #260] the refusal: when
+  the machine says no, does it say why? Feed every prompt the PLAUSIBLE illegal
+  input a real player would try, not V1/V2/V23's garbage — a blocker assigned to
+  a flyer, `N>pwM` with M out of range, a blocker index that is a live ATTACKER
+  index, X above max, "none" with a must-attack creature — and check each refusal
+  names the object AND the reason, survives to the reprompt, refuses the
+  declaration whole, and leaves `--log` and `--save` byte-identical. Nothing
+  illegal is ever OFFERED (targets, loyalty abilities, sick attackers,
+  unaffordable casts and defenders are all pre-filtered), so the bugs live
+  entirely in the wording: read `choose_attackers`'s `bad` list,
+  `choose_blockers`'s parse-and-range match arm, and the `show_error` closure's
+  sleep-then-clear before you play. Unreached: a menace/`min_blockers` refusal,
+  and a protection-based TARGETING refusal
 
 **The Operator** neither plays to win nor tries to break anything: runs
 the binary the way an operator would and checks it kept its promises.
