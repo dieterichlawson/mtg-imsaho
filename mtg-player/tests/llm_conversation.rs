@@ -417,3 +417,55 @@ fn a_best_of_three_seat_is_told_about_games_two_and_three() {
     assert!(prompt.contains("Matches are best-of-3"), "prompt: {prompt}");
     assert!(prompt.contains("Games 2 to 3"), "prompt: {prompt}");
 }
+
+/// The recap a resumed seat is handed must reach `--log` in full, not as a
+/// count of entries. It is the only description the seat gets of the game it
+/// lost, and with only `"Resumed with N log entries"` in the file there was
+/// nothing for a tester to check the resumed conversation against (issue
+/// #208).
+#[test]
+fn resume_logs_the_recap_body_not_just_a_count() {
+    let registry = CardRegistry::with_all_cards();
+    let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("P1");
+    let deck = vec![("Mountain".to_string(), 20)];
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::SingleGame);
+
+    let log_path = std::env::temp_dir()
+        .join(format!("mtg-resume-recap-log-{}", std::process::id()));
+    let _ = std::fs::remove_file(&log_path);
+    mtg_player::game_log::init(log_path.to_str().unwrap()).unwrap();
+
+    let game_log = vec![
+        "Game started".to_string(),
+        "p0 drew 7 cards".to_string(),
+        "── Turn 1 (p0) ──".to_string(),
+        "p0 played Mountain".to_string(),
+        "p1 cast Doomed Traveler".to_string(),
+    ];
+    player.resume_from_log(&game_log, mtg_engine::ids::PlayerId(0));
+
+    let logged = std::fs::read_to_string(&log_path).unwrap_or_default();
+    let _ = std::fs::remove_file(&log_path);
+
+    assert!(logged.contains("RESUME (5 log entries)"),
+        "the entry count stays greppable in the label: {logged}");
+    assert!(logged.contains("Game resumed. Here is the complete game log so far:"),
+        "the recap's opening line reaches the log: {logged}");
+    assert!(logged.contains("The game continues from this point"),
+        "the recap's closing line reaches the log: {logged}");
+    // Every entry is present, in the player-relative form the seat was
+    // actually sent — p0 is the resuming player, so its lines read as "You"
+    // and p1's as "Opp". Logging the sent text rather than the raw engine log
+    // is the point: it is what the seat has to be audited against.
+    for line in [
+        "Game started",
+        "You drew 7 cards",
+        "── Turn 1 (your turn) ──",
+        "You played Mountain",
+        "Opp cast Doomed Traveler",
+    ] {
+        assert!(logged.contains(line), "recap line {line:?} reaches the log: {logged}");
+    }
+    assert!(!logged.contains("p0 played Mountain"),
+        "the log carries the rewritten recap, not the raw engine entries: {logged}");
+}

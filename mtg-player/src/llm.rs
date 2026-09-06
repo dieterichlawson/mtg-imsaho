@@ -1329,7 +1329,17 @@ impl LlmPlayer {
         self.backend.resume(&recap);
         // Set log index to current length so we don't re-send these entries.
         self.last_log_index = game_log.len();
-        self.log("RESUME", &format!("Resumed with {} log entries", game_log.len()));
+        // Log the recap body, not just its size. It is the largest message
+        // the seat is handed after the system prompt and the only account it
+        // gets of the game it lost, so a bare count left the resumed
+        // conversation unauditable — the recap had to be reconstructed by
+        // hand from the save file to check it at all (issue #208). Logged the
+        // way `init_conversation` logs the system prompt; the entry count
+        // stays in the label so `grep RESUME` still summarizes at a glance.
+        self.log(
+            &format!("RESUME ({} log entries)", game_log.len()),
+            &recap,
+        );
     }
 
     fn format_decklist(entries: &[(String, u32)], registry: &mtg_engine::cards::CardRegistry) -> String {
