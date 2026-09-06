@@ -763,12 +763,23 @@ use --save if you need a resumable file.");
         mtg_player::cli::reset_terminal_for_exit();
     }
 
+    // Name a seat by its number AND its deck. The deck name alone is
+    // ambiguous in a mirror match — the standard way to test one deck against
+    // itself — where winner and loser render as the same string and the
+    // headline reads "Game over! rg wins! (rg conceded)", saying the same
+    // player both won and lost, with nothing to say which seat did which.
+    // p0/p1 is the labelling the game log and the TUI header already use
+    // (issue #115, issue #251).
+    let seat_label = |id: mtg_engine::ids::PlayerId| {
+        format!("p{} ({})", id.0, player_names[id.0 as usize])
+    };
+
     // Say HOW the game was decided, not only who won (issue #86): every
     // lost player's recorded LossReason joins the headline.
     let losses: Vec<String> = state.players.iter()
         .filter(|p| p.lost)
         .filter_map(|p| p.loss_reason.map(|r|
-            format!("{} {}", player_names[p.id.0 as usize], r.describe())))
+            format!("{} {}", seat_label(p.id), r.describe())))
         .collect();
     let loss_suffix = if losses.is_empty() {
         String::new()
@@ -777,7 +788,7 @@ use --save if you need a resumable file.");
     };
     let result_msg = match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
-            let name = &player_names[id.0 as usize];
+            let name = seat_label(*id);
             format!("Game over! {name} wins!{loss_suffix}")
         }
         Some(mtg_engine::state::GameResult::Draw) => {
