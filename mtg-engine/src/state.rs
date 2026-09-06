@@ -980,6 +980,20 @@ impl GameState {
             let owner = self.objects.get(&id).map_or(PlayerId(0), |o| o.owner);
             self.get_player_mut(owner).library_order.retain(|&other| other != id);
         }
+        // The same for the graveyard's own order (CR 404.2), kept here for
+        // the same reason: a pile that is only ordered when someone remembers
+        // to order it is not a pile.
+        {
+            let owner = self.objects.get(&id).map_or(PlayerId(0), |o| o.owner);
+            if from == Some(Zone::Graveyard) && to != Zone::Graveyard {
+                self.get_player_mut(owner).graveyard_order.retain(|&other| other != id);
+            }
+            if to == Zone::Graveyard && from != Some(Zone::Graveyard) {
+                let pile = &mut self.get_player_mut(owner).graveyard_order;
+                pile.retain(|&other| other != id);
+                pile.push(id);
+            }
+        }
         // Capture controller before any mutation: CR 603.10c requires LTB
         // triggers to be controlled by whoever controlled the permanent
         // immediately before it left the battlefield.
@@ -1421,7 +1435,17 @@ impl GameState {
                 _ => true,
             }
         }).collect();
-        result.sort_by_key(|o| o.id);
+        // CR 404.2: a graveyard is an ordered pile, and its order is arrival
+        // order — not the order the cards happened to be created in when the
+        // decklist was built, which is what sorting by id gives (issue #222).
+        // Anything not in the recorded pile (a card put there by a path that
+        // predates the order) sorts after what is, by id.
+        if zone == Zone::Graveyard {
+            let pile = &self.get_player(player).graveyard_order;
+            result.sort_by_key(|o| (pile.iter().position(|&id| id == o.id).unwrap_or(usize::MAX), o.id));
+        } else {
+            result.sort_by_key(|o| o.id);
+        }
         result
     }
 
@@ -3166,6 +3190,12 @@ pub struct PlayerState {
     pub has_drawn_from_empty: bool,
     /// Order of cards in library (first element is top of library).
     pub library_order: Vec<ObjectId>,
+    /// CR 404.2: the graveyard is a single face-up pile with an order, and
+    /// that order is arrival order — first element is the bottom, last is the
+    /// card that got there most recently. Public information, and the answer
+    /// to "which three cards did that mill just put here".
+    #[serde(default)]
+    pub graveyard_order: Vec<ObjectId>,
     /// Number of mulligans this player has taken during the opening-hand phase.
     /// Used to determine how many cards must be bottomed after keeping.
     #[serde(default)]
@@ -3189,6 +3219,7 @@ impl PlayerState {
             loss_reason: None,
             has_drawn_from_empty: false,
             library_order: Vec::new(),
+            graveyard_order: Vec::new(),
             mulligan_count: 0,
             mulligan_kept: false,
         }

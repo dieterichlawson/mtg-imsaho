@@ -264,12 +264,12 @@ pub(crate) fn exile_prompt(
     if !exile_ids.is_empty() {
         return None;
     }
+    // CR 404.2: the graveyard has an order and the player looks at it in
+    // that order, so the picker offers it in arrival order rather than the
+    // order the decklist happened to create the cards in (issue #222).
     let gy = |only_creatures: bool| -> Vec<ObjectId> {
-        state.objects_in_id_order().into_iter()
-            .filter(|o| {
-                o.zone == Zone::Graveyard && o.owner == player && o.id != spell
-                    && (!only_creatures || state.is_creature(o.id, registry))
-            })
+        state.objects_in_zone(Zone::Graveyard, player).into_iter()
+            .filter(|o| o.id != spell && (!only_creatures || state.is_creature(o.id, registry)))
             .map(|o| o.id)
             .collect()
     };

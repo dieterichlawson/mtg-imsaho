@@ -1287,7 +1287,11 @@ impl CliPlayer {
         }
         // Priority 6: recently seen cards in graveyards (both players,
         // most recent first — instants/sorceries that just resolved,
-        // creatures that just died). Graveyard order is chronological.
+        // creatures that just died). The graveyard is an ordered pile
+        // (CR 404.2) and the engine keeps it in arrival order, so the last
+        // entry really is the card that just got there — this used to be an
+        // assertion the engine did not honour, and `.rev()` showed whichever
+        // card happened to have the highest object id (issue #222).
         for (_, cards) in &view.graveyards {
             for c in cards.iter().rev() {
                 add(&c.name, c.card_id);
