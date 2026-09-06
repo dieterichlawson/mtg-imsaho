@@ -11,7 +11,7 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
-use mtg_engine::state::{AwaitingAction, GameState, LONDON_MULLIGAN_CAP};
+use mtg_engine::state::{AwaitingAction, GameState, OPENING_HAND_SIZE};
 use mtg_engine::types::*;
 
 /// Build a minimal 40-card decklist for each player so that `setup_game`
@@ -147,34 +147,32 @@ fn mull_once_then_bottom_one() {
     assert!(!hand_ids(&state, P0).contains(&bottom_card));
 }
 
-// ── Mull-to-cap path ────────────────────────────────────────────────
+// ── No mulligan cap (CR 103.4) ──────────────────────────────────────
 
-/// P0 mulls to the cap (3 mulls) and is then forced to keep. They must
-/// bottom 3. Legal actions on the 4th prompt should NOT include mull.
-#[test]
-fn mull_to_cap_forces_keep_and_bottoms_three() {
-    let (mut state, reg) = fresh_game();
-    let mut p0_mulls_taken = 0;
-    let mut p0_saw_forced_keep = false;
-
-    engine::run_mulligan_phase(&mut state, &reg, |gs, player, legal| {
+/// Drive P0 through `mulls` mulligans, asserting the mulligan is on offer
+/// at every count, then keep and bottom the cards the engine asks for.
+/// Returns the bottoming count the engine demanded.
+fn mulligan_n_times(state: &mut GameState, reg: &mtg_engine::cards::CardRegistry, mulls: usize) -> usize {
+    let mut taken = 0;
+    let mut bottomed = 0;
+    engine::run_mulligan_phase(state, reg, |gs, player, legal| {
         if player == P0 {
             match &gs.awaiting_action {
                 Some(AwaitingAction::MulliganDecision { .. }) => {
-                    let has_mull = legal.actions.iter()
-                        .any(|a| matches!(a, Action::MulliganMull));
-                    if p0_mulls_taken < LONDON_MULLIGAN_CAP as usize {
-                        assert!(has_mull, "mull should be legal at count {p0_mulls_taken}");
-                        p0_mulls_taken += 1;
+                    // CR 103.4: there is no cap, so both answers are always
+                    // offered — including well past the old mull-to-4 house rule.
+                    assert!(
+                        legal.actions.iter().any(|a| matches!(a, Action::MulliganMull)),
+                        "mulligan should be legal at count {taken}"
+                    );
+                    if taken < mulls {
+                        taken += 1;
                         return Action::MulliganMull;
                     }
-                    // At cap: mulligan should NOT be offered.
-                    assert!(!has_mull, "mull should not be legal at cap");
-                    p0_saw_forced_keep = true;
                     return Action::MulliganKeep;
                 }
                 Some(AwaitingAction::BottomAfterMulligan { count, .. }) => {
-                    assert_eq!(*count, LONDON_MULLIGAN_CAP as usize);
+                    bottomed = *count;
                     let hand = hand_ids(gs, P0);
                     return Action::BottomCards {
                         cards: hand.iter().take(*count).copied().collect(),
@@ -186,14 +184,49 @@ fn mull_to_cap_forces_keep_and_bottoms_three() {
         // P1 keeps unconditionally.
         Action::MulliganKeep
     });
+    assert_eq!(taken, mulls);
+    bottomed
+}
 
-    assert!(p0_saw_forced_keep, "P0 should have seen the forced-keep prompt");
+/// The old house rule stopped offering the mulligan after three. CR 103.4
+/// has no such limit: a fifth mulligan is legal and costs a fifth card.
+#[test]
+fn mulligans_are_offered_past_the_old_cap_of_three() {
+    let (mut state, reg) = fresh_game();
+    let bottomed = mulligan_n_times(&mut state, &reg, 5);
+
+    assert_eq!(bottomed, 5, "five mulligans bottom five cards (CR 103.4)");
+    assert_eq!(state.get_player(P0).mulligan_count, 5);
     assert!(!engine::in_mulligan_phase(&state));
-    assert_eq!(state.get_player(P0).mulligan_count, LONDON_MULLIGAN_CAP);
-    // Mull-to-4: 7 drawn, 3 bottomed → hand size 4.
-    assert_eq!(hand_ids(&state, P0).len(), 4);
-    // Library should contain (40 - 4) = 36 cards.
-    assert_eq!(library_len(&state, P0), 36);
+    // 7 drawn, 5 bottomed → a two-card hand.
+    assert_eq!(hand_ids(&state, P0).len(), 2);
+    assert_eq!(library_len(&state, P0), 38);
+}
+
+/// At seven mulligans the bottoming obligation is the whole hand, so the
+/// player keeps nothing — the rule's own floor, reached without a cap.
+#[test]
+fn seven_mulligans_keep_an_empty_hand() {
+    let (mut state, reg) = fresh_game();
+    let bottomed = mulligan_n_times(&mut state, &reg, 7);
+
+    assert_eq!(bottomed, OPENING_HAND_SIZE);
+    assert_eq!(state.get_player(P0).mulligan_count, 7);
+    assert!(hand_ids(&state, P0).is_empty(), "a seven-mulligan keep is an empty hand");
+    assert_eq!(library_len(&state, P0), 40);
+}
+
+/// Past seven the obligation stops growing: a player cannot be asked to
+/// bottom more cards than the seven they hold.
+#[test]
+fn bottoming_never_exceeds_the_hand() {
+    let (mut state, reg) = fresh_game();
+    let bottomed = mulligan_n_times(&mut state, &reg, 9);
+
+    assert_eq!(bottomed, OPENING_HAND_SIZE, "nine mulligans still bottom only seven");
+    assert_eq!(state.get_player(P0).mulligan_count, 9);
+    assert!(hand_ids(&state, P0).is_empty());
+    assert_eq!(library_len(&state, P0), 40);
 }
 
 // ── Per-player independence ────────────────────────────────────────

@@ -105,19 +105,17 @@ pub(crate) fn legal_actions_while_awaiting(
         },
         AwaitingAction::MulliganDecision { player } => {
             let mull_count = state.get_player(*player).mulligan_count;
-            let mut actions = vec![Action::MulliganKeep];
-            if mull_count < crate::state::LONDON_MULLIGAN_CAP {
-                actions.push(Action::MulliganMull);
-            }
+            // CR 103.4 puts no limit on the number of mulligans, so the
+            // offer is unconditional. A player who keeps after seven of them
+            // bottoms their whole hand and keeps nothing.
+            let actions = vec![Action::MulliganKeep, Action::MulliganMull];
             LegalActions {
                 actions,
                 combat_prompt: None,
                 castable_spells: vec![],
                 activatable_abilities: vec![],
                 context: Some(format!(
-                    "MULLIGAN DECISION (mulligans taken: {}/{})",
-                    mull_count,
-                    crate::state::LONDON_MULLIGAN_CAP
+                    "MULLIGAN DECISION (mulligans taken: {mull_count})"
                 )),
                 resolution_prompt: None,
             }

@@ -3271,9 +3271,12 @@ pub enum AwaitingAction {
     BottomAfterMulligan { player: PlayerId, count: usize },
 }
 
-/// London mulligan cap: house rule, stop offering mulligans once a player
-/// has taken this many. (Mull-to-4: after 3 mulligans you must keep.)
-pub const LONDON_MULLIGAN_CAP: u32 = 3;
+/// The opening hand a London mulligan always redraws to (CR 103.2, 103.4).
+/// It is also the ceiling on the bottoming obligation: a player who has
+/// mulliganed seven or more times keeps an empty hand, and cannot be asked
+/// to bottom more cards than they hold. CR 103.4 puts no cap on the number
+/// of mulligans themselves.
+pub const OPENING_HAND_SIZE: usize = 7;
 
 /// Describes what kind of mid-resolution choice is needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]

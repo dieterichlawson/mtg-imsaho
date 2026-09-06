@@ -46,6 +46,17 @@ static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>
 /// and need the budget to think at all. Depth is steered by
 /// `output_config.effort` on everything that takes adaptive thinking.
 #[must_use]
+/// True once a further mulligan cannot change what this seat keeps.
+///
+/// CR 103.4 allows any number of mulligans; after seven, the bottoming
+/// obligation is the whole hand, so every subsequent mulligan draws seven
+/// and bottoms seven for the same empty keep. An automated seat that kept
+/// answering "mulligan" here would never finish the game, so the seat
+/// stops asking. The engine still offers the action.
+fn mulligan_is_dominated(view: &GameView) -> bool {
+    view.your_mulligan_count as usize >= mtg_engine::state::OPENING_HAND_SIZE
+}
+
 pub fn thinking_param(model: &str) -> serde_json::Value {
     let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
     if wants_budget {
@@ -355,7 +366,7 @@ If you're low on life and the board is unfavourable but stable, look for a way t
 
 At the start of the game, before turn 1, you'll be asked two pre-game decisions:
 
-1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Choose `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
+1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Choose `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. There is no limit on the number of mulligans (CR 103.4), but taking more than a couple is rarely right, and at seven the hand you keep is empty. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
 2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`, with N filled in (`[BOTTOM 2 CARD(S) AFTER MULLIGAN]`; a single card drops the `(S)`). You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
 
 ## Examples
@@ -3095,7 +3106,7 @@ impl LlmPlayer {
     /// Decide keep or mulligan for the London opening-hand phase.
     /// Sends a structured-JSON prompt with the current hand and the
     /// mulligan count. Falls back to `MulliganKeep` on malformed responses.
-    /// When the mulligan cap has been reached and keep is the only legal
+    /// When a further mulligan cannot change the kept hand and keep is the only sensible
     /// action, returns `MulliganKeep` directly without round-tripping the LLM.
     /// The keep-or-mulligan prompt.
     ///
@@ -3149,11 +3160,21 @@ from your hand to put on the bottom of your library.\n\
 
     fn choose_mulligan(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         let mull_allowed = legal_actions.iter().any(|a| matches!(a, Action::MulliganMull));
-        if !mull_allowed {
-            // Forced keep at the mull-to-4 cap. No decision to make — skip
-            // the LLM call. The model will see the resulting "p<n> keeps"
-            // line in the next prompt's recent-events section.
-            self.log("AUTO-KEEP", "mulligan cap reached, forced to keep");
+        // CR 103.4 caps nothing, and the engine offers the mulligan at every
+        // count. Past seven, though, every remaining choice is the same
+        // choice: the kept hand is empty either way, so a seat that keeps
+        // answering "mull" would loop forever without ever changing the
+        // game. Stop asking once the answer cannot matter — this is a policy
+        // floor for an automated seat, not a rule.
+        if !mull_allowed || mulligan_is_dominated(view) {
+            self.log(
+                "AUTO-KEEP",
+                if mull_allowed {
+                    "seven mulligans taken: any further mulligan keeps the same empty hand"
+                } else {
+                    "no mulligan on offer, forced to keep"
+                },
+            );
             return Action::MulliganKeep;
         }
 
@@ -3192,8 +3213,9 @@ from your hand to put on the bottom of your library.\n\
                 Action::MulliganMull
             }
             Some(true) => {
-                // Requested to mulligan past the cap — log and force keep.
-                self.log_rejected("Requested mulligan past cap — forcing keep");
+                // The engine did not offer the mulligan (it always does at
+                // this prompt, so this is a malformed legal-action list).
+                self.log_rejected("Requested a mulligan that was not on offer — forcing keep");
                 Action::MulliganKeep
             }
             Some(false) => {

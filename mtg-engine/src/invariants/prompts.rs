@@ -8,7 +8,7 @@ use super::{player_ok, Violations};
 use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind, LONDON_MULLIGAN_CAP};
+use crate::state::{AwaitingAction, GameState, OPENING_HAND_SIZE, PendingEffect, ResolutionChoiceKind};
 use crate::types::{CardType, ManaSymbol, Step, Zone};
 
 fn distinct(ids: &[ObjectId], what: &str, v: &mut Violations) {
@@ -122,9 +122,10 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                         }
                     }
                     AwaitingAction::BottomAfterMulligan { count, .. } => {
-                        if !ps.mulligan_kept || *count != ps.mulligan_count as usize
-                            || *count == 0 || *count > LONDON_MULLIGAN_CAP as usize
-                        {
+                        // CR 103.4: one card per mulligan, capped at the
+                        // hand itself (seven-plus mulligans keep nothing).
+                        let owed = (ps.mulligan_count as usize).min(OPENING_HAND_SIZE);
+                        if !ps.mulligan_kept || *count != owed || *count == 0 {
                             v.push(format!("bottoming prompt for p{}: bottom {count} after {} mulligans, kept={}",
                                 player.0, ps.mulligan_count, ps.mulligan_kept));
                         }
@@ -178,13 +179,15 @@ fn mulligan_shape(state: &GameState, v: &mut Violations) {
         }
     }
     for p in &state.players {
-        if p.lost || p.has_drawn_from_empty || p.land_plays_remaining != 1 || p.mulligan_count > LONDON_MULLIGAN_CAP {
+        // A mulligan count is not turn state and is unbounded (CR 103.4),
+        // so it is not checked here.
+        if p.lost || p.has_drawn_from_empty || p.land_plays_remaining != 1 {
             v.push(format!("{w}: p{} already has turn state (lost={}, drew from empty={}, land plays={}, mulligans={})",
                 p.id.0, p.lost, p.has_drawn_from_empty, p.land_plays_remaining, p.mulligan_count));
         }
     }
     for (p, c) in &state.pending_mulligan_bottoms {
-        if !player_ok(state, *p) || *c > LONDON_MULLIGAN_CAP as usize {
+        if !player_ok(state, *p) || *c > OPENING_HAND_SIZE {
             v.push(format!("{w}: queued bottoming of {c} for p{}", p.0));
         }
     }

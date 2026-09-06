@@ -19,7 +19,12 @@ pub(crate) fn mulligan_keep(state: &mut GameState, registry: &CardRegistry) -> A
         state.get_player_mut(player).mulligan_kept = true;
         // Record this player's bottom obligation now so it'll be drained
         // once every player has finished the keep/mull sub-phase.
-        state.pending_mulligan_bottoms.push((player, mull_count as usize));
+        // CR 103.4: bottom one card per mulligan taken — but never more
+        // cards than the hand holds. At seven or more mulligans the whole
+        // opening hand goes back and the player keeps nothing.
+        let bottom_count =
+            (mull_count as usize).min(crate::state::OPENING_HAND_SIZE);
+        state.pending_mulligan_bottoms.push((player, bottom_count));
         // Advance the within-round position past this player.
         state.mulligan_round_position += 1;
         advance_mulligan_phase(&mut *state, registry);
@@ -32,7 +37,6 @@ pub(crate) fn mulligan_mull(state: &mut GameState, registry: &CardRegistry) -> A
             Some(AwaitingAction::MulliganDecision { player }) => *player,
             _ => panic!("MulliganMull without MulliganDecision awaiting"),
         };
-        assert!(state.get_player(player).mulligan_count < crate::state::LONDON_MULLIGAN_CAP, "MulliganMull attempted after reaching the mulligan cap");
         // Put the entire hand on the bottom of the library (temporarily;
         // it will be shuffled immediately) and draw seven fresh cards.
         let hand_ids: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)

@@ -13,7 +13,7 @@ use crate::actions::{Action, CombatPrompt, ResolvedChoice, Target};
 use crate::cards::{CardRegistry, SacrificeCost, TargetRequirement};
 use crate::engine::LegalActions;
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, LONDON_MULLIGAN_CAP};
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::{CardType, ContinuousEffect, CounterType, Keyword, Zone};
 use std::collections::{BTreeSet, HashSet};
 
@@ -595,10 +595,10 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
             }
         }
         Some(AwaitingAction::MulliganDecision { .. }) => {
-            let capped = state.get_player(acting).mulligan_count >= LONDON_MULLIGAN_CAP;
+            // CR 103.4: both answers are always on offer, at every count.
             let keeps = legal.actions.iter().filter(|a| matches!(a, Action::MulliganKeep)).count();
             let mulls = legal.actions.iter().filter(|a| matches!(a, Action::MulliganMull)).count();
-            if keeps != 1 || mulls != usize::from(!capped) {
+            if keeps != 1 || mulls != 1 {
                 v.push(format!("mulligan offer has {keeps} keep and {mulls} mulligan entries at {} mulligans (CR 103.5)",
                     state.get_player(acting).mulligan_count));
             }
