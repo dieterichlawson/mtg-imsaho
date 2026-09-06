@@ -79,6 +79,15 @@ pub struct PermanentView {
     /// two curses on opposite players rendered identically (issue #81).
     pub attached_to_player: Option<PlayerId>,
     pub keywords: Vec<Keyword>,
+    /// The permanent's live subtypes (CR 205.3): the active face's, plus
+    /// anything an effect granted — Olivia Voldaren's "becomes a Vampire",
+    /// Grimoire of the Dead's "Zombie". Every "as long as ... is a Human"
+    /// card in the set turns on this, and no pane could read it (issue #297).
+    pub subtypes: Vec<String>,
+    /// Protections in force, described (CR 702.16). Not a keyword, so it
+    /// cannot ride in `keywords`, and a timed one (Spare from Evil) is
+    /// invisible without it (issue #243).
+    pub protections: Vec<String>,
     /// Oracle text of the card (from the registry). Used by display code to
     /// surface short effect summaries for attached auras/equipment.
     pub oracle_text: String,
@@ -197,6 +206,8 @@ impl GameView {
                     attached_to: obj.attached_to,
                     attached_to_player: obj.attached_to_player,
                     keywords,
+                    subtypes: state.subtypes_of(obj.id, registry),
+                    protections: state.protections_of(obj.id, registry),
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),

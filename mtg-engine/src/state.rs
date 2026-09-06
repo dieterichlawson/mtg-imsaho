@@ -2022,6 +2022,48 @@ impl GameState {
         false
     }
 
+    /// Every protection in force on `id`, described (CR 702.16).
+    ///
+    /// Protection is not a `Keyword` — it lives in `ContinuousEffect` and
+    /// `TemporaryEffect` with a filter attached — so no pane could render it
+    /// even in principle, while the engine acted on it in three places at
+    /// once (issue #243). This is the one reader that turns it back into
+    /// something a player can be shown.
+    #[must_use]
+    pub fn protections_of(
+        &self,
+        id: ObjectId,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<String> {
+        use crate::types::ContinuousEffect;
+        let mut out: Vec<String> = Vec::new();
+        self.walk_effects(
+            id,
+            &|e| matches!(e,
+                ContinuousEffect::ProtectionFrom { .. } | ContinuousEffect::ProtectionFromSubtype { .. }),
+            registry,
+            &mut |e, _src| {
+                match e {
+                    ContinuousEffect::ProtectionFrom { filter, .. } =>
+                        out.push(format!("protection from {}", filter.describe())),
+                    ContinuousEffect::ProtectionFromSubtype { subtype, .. } =>
+                        out.push(format!("protection from {subtype}s")),
+                    _ => {}
+                }
+                true
+            },
+        );
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::GrantProtection { target, filter } = effect {
+                if *target == id {
+                    out.push(format!("protection from {}", filter.describe()));
+                }
+            }
+        }
+        out.dedup();
+        out
+    }
+
     /// Check if a creature has protection from a given source.
     /// Returns true if the target has protection from the source's subtypes or matches
     /// a `ProtectionFrom` filter. Used for targeting, blocking, and damage prevention.

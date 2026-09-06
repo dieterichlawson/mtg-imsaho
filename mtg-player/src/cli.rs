@@ -1029,6 +1029,43 @@ impl CliPlayer {
     /// were invisible everywhere in the CLI except the log line that added
     /// them (issue #82); loyalty stays with the planeswalker line's own
     /// `[N loyalty]` rendering (#58).
+    /// Join a battlefield row's three parts, shortening the elastic middle
+    /// rather than the tail when the row does not fit.
+    ///
+    /// `head` (name, P/T, counters) and `tail` (tap / sickness / damage
+    /// flags) are what the row is read for; the attachment and keyword list
+    /// in between is the part that grows without bound. Truncating the whole
+    /// string dropped the tail first.
+    fn elide_middle(head: &str, elastic: &str, tail: &str, max_w: usize) -> String {
+        // `max_w` is the panel's budget; leave room for the "Nx " prefix a
+        // collapsed row adds.
+        let budget = max_w.saturating_sub(4);
+        let fixed = head.chars().count() + tail.chars().count();
+        if fixed + elastic.chars().count() <= budget {
+            return format!("{head}{elastic}{tail}");
+        }
+        let room = budget.saturating_sub(fixed);
+        if room <= 1 {
+            return format!("{head}{tail}");
+        }
+        let kept: String = elastic.chars().take(room - 1).collect();
+        format!("{head}{kept}…{tail}")
+    }
+
+    /// Whether `[S]` means anything for this permanent.
+    ///
+    /// Summoning sickness restricts a *creature*'s attacks and `{T}`
+    /// abilities (CR 302.6) and nothing else, so the raw object flag is
+    /// meaningless on a planeswalker or an enchantment that has just
+    /// resolved (issue #221) and misleading on a creature with haste (#139).
+    /// One helper, so every pane answers it the same way — the battlefield
+    /// row learned the haste half and the inspector never did.
+    fn is_summoning_sick(perm: &PermanentView) -> bool {
+        perm.summoning_sick
+            && perm.card_types.contains(&CardType::Creature)
+            && !perm.keywords.contains(&mtg_engine::types::Keyword::Haste)
+    }
+
     fn counters_suffix(counters: &HashMap<mtg_engine::types::CounterType, u32>) -> String {
         let mut parts: Vec<String> = counters.iter()
             .filter(|&(ct, n)| *ct != mtg_engine::types::CounterType::Loyalty && *n > 0)
@@ -1086,11 +1123,39 @@ impl CliPlayer {
                 }
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(color), Print("  Lands: "), ResetColor);
+                // Every other row in this panel is clipped to `max_w`; this
+                // one was printed at full length and wrote straight over the
+                // CARDS column, wrapping and displacing the whole frame once
+                // a real nonbasic mana base was on the battlefield (issue
+                // #244). The entries are coloured individually, so the budget
+                // is spent entry by entry rather than clipping one string.
+                let mut spent = "  Lands: ".chars().count();
                 for (i, (name, untapped, tapped)) in summary.iter().enumerate() {
+                    let total = untapped + tapped;
+                    let suffix = if *tapped > 0 && *untapped > 0 {
+                        format!(" ({tapped} tapped)")
+                    } else if *tapped > 0 {
+                        " (tapped)".to_string()
+                    } else {
+                        String::new()
+                    };
+                    let sep = if i > 0 { ", " } else { "" };
+                    let entry_len = sep.chars().count()
+                        + format!("{total}x ").chars().count()
+                        + name.chars().count()
+                        + suffix.chars().count();
+                    if spent + entry_len > max_w {
+                        let left = summary.len() - i;
+                        let more = format!("{sep}+{left} more");
+                        if spent + more.chars().count() <= max_w {
+                            let _ = execute!(out, SetForegroundColor(color), Print(more), ResetColor);
+                        }
+                        break;
+                    }
+                    spent += entry_len;
                     if i > 0 {
                         let _ = execute!(out, SetForegroundColor(color), Print(", "), ResetColor);
                     }
-                    let total = untapped + tapped;
                     let _ = execute!(out, SetForegroundColor(color), Print(format!("{total}x ")), ResetColor);
                     if let Some(bg) = CliPlayer::basic_land_bg(name) {
                         let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
@@ -1098,11 +1163,8 @@ impl CliPlayer {
                     } else {
                         let _ = execute!(out, SetForegroundColor(color), Print(name), ResetColor);
                     }
-                    if *tapped > 0 && *untapped > 0 {
-                        let _ = execute!(out, SetForegroundColor(color),
-                            Print(format!(" ({tapped} tapped)")), ResetColor);
-                    } else if *tapped > 0 {
-                        let _ = execute!(out, SetForegroundColor(color), Print(" (tapped)"), ResetColor);
+                    if !suffix.is_empty() {
+                        let _ = execute!(out, SetForegroundColor(color), Print(suffix), ResetColor);
                     }
                 }
                 *row += 1;
@@ -1147,14 +1209,37 @@ impl CliPlayer {
                 // A hasty creature isn't slowed by summoning sickness —
                 // '[S]' read as "cannot attack" on a creature whose attack
                 // was perfectly legal (issue #139).
-                let sick = c.summoning_sick
-                    && !c.keywords.contains(&mtg_engine::types::Keyword::Haste);
-                let flags = format!("{}{}",
+                let sick = Self::is_summoning_sick(c);
+                let flags = format!("{}{}{}",
                     if c.tapped { " [T]" } else { "" },
-                    if sick { " [S]" } else { "" });
-                format!("{}{}{}{}{}{}", c.name, pt,
-                    CliPlayer::counters_suffix(&c.counters), auras, dmg, flags)
-            }).collect();
+                    if sick { " [S]" } else { "" },
+                    dmg);
+                // The permanent's live keywords and protections. A flying
+                // token rendered exactly like a ground creature, and a
+                // creature that had lost defender still read "Defender" from
+                // its printed card — the block decision is made off this line
+                // (issue #243).
+                let mut abilities: Vec<String> = c.keywords.iter()
+                    .map(|k| format!("{k:?}").to_lowercase())
+                    .collect();
+                abilities.extend(c.protections.iter().cloned());
+                let kw = if abilities.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", abilities.join(", "))
+                };
+                // head is what must survive, elastic is what may be elided:
+                // the flags used to be last and were the first thing a long
+                // attachment list pushed off the end, so a tapped, damaged,
+                // summoning-sick voltron creature read as a clean untapped
+                // one (issue #270).
+                (format!("{}{}{}", c.name, pt, CliPlayer::counters_suffix(&c.counters)),
+                 format!("{auras}{kw}"),
+                 flags)
+            }).collect::<Vec<(String, String, String)>>()
+                .into_iter()
+                .map(|(head, elastic, flags)| Self::elide_middle(&head, &elastic, &flags, max_w))
+                .collect();
             for (n, label) in collapse(creature_labels) {
                 let truncated: String = counted_line(n, &label).chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
@@ -2335,7 +2420,7 @@ impl CliPlayer {
                 };
                 let flags = format!("{}{}",
                     if perm.tapped { " [T]" } else { "" },
-                    if perm.summoning_sick { " [S]" } else { "" });
+                    if Self::is_summoning_sick(perm) { " [S]" } else { "" });
                 let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
                     let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
                         .copied().unwrap_or(0);
@@ -2358,7 +2443,7 @@ impl CliPlayer {
                 };
                 let flags = format!("{}{}",
                     if perm.tapped { " [T]" } else { "" },
-                    if perm.summoning_sick { " [S]" } else { "" });
+                    if Self::is_summoning_sick(perm) { " [S]" } else { "" });
                 let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
                     let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
                         .copied().unwrap_or(0);
@@ -2394,7 +2479,30 @@ impl CliPlayer {
                         CardType::Artifact => "Artifact",
                         CardType::Planeswalker => "Planeswalker",
                     }).collect();
-                    let _ = execute!(out, Print(format!("  Type: {}\n", types.join(" "))));
+                    // CR 205.3: the type line is types AND subtypes, and
+                    // the subtypes are the live ones — the printed ones plus
+                    // anything an effect granted. Every "as long as ... is a
+                    // Human" card in the set turns on a fact this page used
+                    // to refuse to state (issue #297).
+                    let type_line = if perm.subtypes.is_empty() {
+                        types.join(" ")
+                    } else {
+                        format!("{} — {}", types.join(" "), perm.subtypes.join(" "))
+                    };
+                    let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
+
+                    // The permanent's live keywords and protections, which
+                    // the view has always computed and no pane ever printed:
+                    // a flying token rendered as a ground creature and a
+                    // creature that had lost defender still read "Defender"
+                    // (issues #243, #297).
+                    let mut abilities: Vec<String> = perm.keywords.iter()
+                        .map(|k| format!("{k:?}"))
+                        .collect();
+                    abilities.extend(perm.protections.iter().cloned());
+                    if !abilities.is_empty() {
+                        let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
+                    }
 
                     if let (Some(p), Some(t)) = (perm.power, perm.toughness) {
                         let _ = execute!(out, Print(format!("  Base P/T: {p}/{t}\n")));
@@ -2420,7 +2528,9 @@ impl CliPlayer {
                     let controller = if perm.controller == view.you { "You" } else { "Opponent" };
                     let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
                     let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
-                    let _ = execute!(out, Print(format!("  Summoning sick: {}\n", perm.summoning_sick)));
+                    if Self::is_summoning_sick(perm) {
+                        let _ = execute!(out, Print("  Summoning sick: true\n".to_string()));
+                    }
                     let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
 
                     // Attachments, by what they are: an Aura enchants
@@ -4477,6 +4587,8 @@ mod tests {
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
+            subtypes: vec![],
+            protections: vec![],
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],

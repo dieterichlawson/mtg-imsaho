@@ -395,6 +395,37 @@ pub enum CreatureFilter {
     Blocking,
 }
 
+impl CreatureFilter {
+    /// A short phrase naming what this filter matches, for a screen that has
+    /// to say what a permanent has protection from. "non-Human creatures",
+    /// not `Not(HasSubtype("Human"))`.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            CreatureFilter::ControlledByYou => "creatures you control".into(),
+            CreatureFilter::ControlledByOpponent => "creatures your opponents control".into(),
+            CreatureFilter::ControlledByYouToken => "creature tokens you control".into(),
+            CreatureFilter::ControlledByAttachedPlayer => "creatures the enchanted player controls".into(),
+            CreatureFilter::HasSubtype(s) => format!("{s}s"),
+            CreatureFilter::HasCardType(t) => format!("{t:?}s").to_lowercase(),
+            CreatureFilter::HasKeyword(k) => format!("creatures with {k:?}").to_lowercase(),
+            CreatureFilter::Attacking => "attacking creatures".into(),
+            CreatureFilter::Blocking => "blocking creatures".into(),
+            CreatureFilter::And(parts) => parts.iter()
+                .map(CreatureFilter::describe).collect::<Vec<_>>().join(" and "),
+            CreatureFilter::Or(parts) => parts.iter()
+                .map(CreatureFilter::describe).collect::<Vec<_>>().join(" or "),
+            // "non-Human creatures" reads better than "not Humans", and the
+            // negation of a subtype is how every protection in this set is
+            // written.
+            CreatureFilter::Not(inner) => match inner.as_ref() {
+                CreatureFilter::HasSubtype(s) => format!("non-{s} creatures"),
+                other => format!("anything that is not {}", other.describe()),
+            },
+        }
+    }
+}
+
 /// Where a continuous effect applies.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EffectScope {
