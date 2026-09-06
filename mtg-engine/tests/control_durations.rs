@@ -33,6 +33,40 @@ fn olivia_with_a_stolen_vampire() -> (mtg_engine::state::GameState, mtg_engine::
     (state, olivia, vampire, reg)
 }
 
+/// Olivia's ability reads "target Vampire" — no "another", no "you don't
+/// control" — so she is a legal target for her own ability, as is any Vampire
+/// you already control. The effect changes nothing right now, and it is still
+/// a real layer-2 effect with its own timestamp (CR 613.1b, 613.7a): it is
+/// what keeps the permanent when an until-end-of-turn steal wears off.
+///
+/// The invariant checker used to call `controller == original_controller`
+/// structurally impossible and abort the game on it (issue #286), which every
+/// `--check-invariants` run over a decklist with an Olivia in it could hit.
+#[test]
+fn olivia_may_take_a_vampire_its_controller_already_controls() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let mine = named_permanent(&mut state, &reg, "Markov Patrician", P0);
+
+    for target in [mine, olivia] {
+        activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(target)]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        assert_eq!(state.get_object(target).unwrap().controller, P0,
+            "control does not visibly change");
+        assert!(state.control_effects.iter().any(|c| c.object == target),
+            "but the effect is recorded (CR 613.1b)");
+        let complaints: Vec<String> = mtg_engine::invariants::check_settled(&state, &reg)
+            .into_iter()
+            .filter(|m| m.contains("control effect"))
+            .collect();
+        assert!(complaints.is_empty(),
+            "a redundant control effect is legal, got {complaints:?}");
+    }
+}
+
 /// An opponent taking Olivia — no zone change at all — ends the effect.
 #[test]
 fn stolen_vampires_returned_when_olivia_control_changes_without_zone_change() {

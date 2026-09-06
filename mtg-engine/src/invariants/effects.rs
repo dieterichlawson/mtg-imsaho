@@ -89,7 +89,20 @@ pub(super) fn check_settled(state: &GameState, _registry: &CardRegistry, v: &mut
     // once SBAs have settled, and is about permanents that are there.
     for c in &state.control_effects {
         let what = format!("control effect over #{}", c.object.0);
-        if c.controller != c.source_controller || c.controller == c.original_controller {
+        // The player the effect gives the permanent to is the player who has
+        // to keep controlling its source ("gain control ... for as long as
+        // you control Olivia Voldaren").
+        //
+        // `controller == original_controller` is NOT a violation. A control
+        // effect that changes nothing right now is still a real layer-2
+        // effect with its own timestamp (CR 613.1b, 613.7a): Olivia's ability
+        // says "target Vampire", with no "another" and no "you don't
+        // control", so she is a legal target for her own ability, as is any
+        // Vampire you already control. The effect has to be recorded — that
+        // is what makes it outlast an until-end-of-turn steal — and this
+        // check used to abort the game on it (issue #286, and every fuzz seed
+        // where a random player took the offered menu entry).
+        if c.controller != c.source_controller {
             v.push(format!("{what}: p{} took it via p{}'s source from p{}", c.controller.0, c.source_controller.0, c.original_controller.0));
         }
         if !player_ok(state, c.controller) || !player_ok(state, c.original_controller) {
