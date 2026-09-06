@@ -46,6 +46,9 @@ Options:
   --model <spec>         Model for every seat  (default claude)
   --model-<N> <spec>     Model for seat N alone (0-based)
   --best-of <N>          Games per tournament match  (default 3)
+  --seed <N>             Seed for packs, shuffles and play/draw. A run without
+                         one generates a seed and logs it, so any draft can be
+                         re-run by passing the seed from its log header
   --guide <path>         Draft guide file prepended to every seat's prompt
   --guide-<N> <path>     Draft guide file for seat N alone (0-based)
   --log <path>           Write the run log here  (default draft.log)
@@ -112,6 +115,10 @@ struct Args {
     /// Where each seat's guide was read from, for the log header. The text
     /// alone doesn't say which file a seat was handed (issue #207).
     guide_paths: Vec<Option<String>>,
+    /// Root seed for every random choice the run makes. Always set: a run
+    /// given no `--seed` generates one and logs it, so that a draft nobody
+    /// thought to seed can still be re-run afterwards (issue #212).
+    seed: u64,
     log: String,
     quiet: bool,
 }
@@ -123,7 +130,7 @@ struct Args {
 /// silently dropped and its default silently used — a typo'd `--model` drafted
 /// with a model nobody asked for, on a seat that bills per token.
 fn validate_args(args: &[String]) -> Vec<(String, usize)> {
-    const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log"];
+    const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log", "--seed"];
     const BOOL_FLAGS: &[&str] = &["--quiet", "-q"];
     let mut indexed = Vec::new();
     let mut i = 1;
@@ -191,6 +198,12 @@ fn parse_args() -> Args {
     let best_of = count("--best-of", 3);
     let log = get("--log").unwrap_or_else(|| "draft.log".to_string());
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+    // No --seed means "pick one and write it down", not "be unrepeatable":
+    // an interesting draft is usually only recognized as interesting after
+    // it has finished.
+    let seed = get("--seed").map_or_else(rand::random::<u64>, |s| {
+        s.parse().unwrap_or_else(|_| die(&format!("--seed takes a number, got '{s}'")))
+    });
 
     // A --model-N or --guide-N naming a seat outside the pod used to be read
     // by nobody — the same silent no-op as a misspelled flag, so it is
@@ -234,9 +247,31 @@ fn parse_args() -> Args {
         best_of,
         guides,
         guide_paths,
+        seed,
         log,
         quiet,
     }
+}
+
+/// The seed for one match, derived from the run's root seed and the match's
+/// coordinates rather than drawn from a shared RNG.
+///
+/// The matches in a round are played on parallel threads, so anything drawn
+/// sequentially would depend on thread scheduling and the run would not
+/// replay. Derived this way, a match's games are the same games whichever
+/// order the threads happen to run in.
+///
+/// The mix is SplitMix64's finalizer over the coordinates — plain arithmetic,
+/// so it does not depend on a hasher whose output may change between compiler
+/// versions and silently break replay of an older run.
+fn match_seed(root: u64, round: usize, seat_a: usize, seat_b: usize) -> u64 {
+    let mut z = root
+        ^ (round as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (seat_a as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)
+        ^ (seat_b as u64).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 /// One round-trip with the model during deck building.
@@ -326,7 +361,8 @@ fn main() {
     install_panic_hook();
     let args = parse_args();
     validate_model_specs(&args.models);
-    let mut rng = rand::thread_rng();
+    // One seeded root RNG, so the packs a run deals can be dealt again.
+    let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(args.seed);
 
     // Load set data
     let set_path = PathBuf::from(format!("data/sets/{}.json", args.set));
@@ -352,7 +388,7 @@ fn main() {
     // Create streaming log file
     let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
     log_header!(log, &set_data.set_name, args.players, args.best_of,
-        args.models.as_slice(), args.guide_paths.as_slice());
+        args.models.as_slice(), args.guide_paths.as_slice(), args.seed);
 
     if !args.quiet {
         eprintln!(
@@ -646,6 +682,10 @@ substituting {} (the first card). Response: {}",
                     let card_ref = &card_reference;
                     let best_of = args.best_of;
                     let quiet = args.quiet;
+                    // Computed here, on the main thread, from the match's own
+                    // coordinates — not drawn inside the worker, where the
+                    // draw order would be whatever the scheduler chose.
+                    let seed = match_seed(args.seed, round_num, a, b);
                     s.spawn(move || play_match(
                         &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
                         &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
@@ -653,6 +693,7 @@ substituting {} (the first card). Response: {}",
                         best_of,
                         quiet,
                         card_ref,
+                        seed,
                     ))
                 })
                 .collect();
@@ -949,6 +990,7 @@ fn play_match(
     best_of: usize,
     _quiet: bool,
     card_reference: &str,
+    seed: u64,
 ) -> MatchResult {
     let wins_needed = best_of / 2 + 1;
     let mut wins_a = 0;
@@ -968,11 +1010,17 @@ fn play_match(
     let mut p2 = make_game_player(b.model_spec, &name_b, b.guide);
 
     // Play/draw per MTG tournament rules, delegated to the engine helpers:
-    //   Game 1: engine::random_starting_player() — fair coin flip.
+    //   Game 1: a fair coin flip.
     //   Games 2+: engine::next_starter_loser_plays() — the loser of the
     //   previous game always elects to play first (the strategically
     //   dominant choice in Limited); drawn games keep the previous starter.
-    let mut starter = engine::random_starting_player(2);
+    //
+    // The flip and each game's engine seed come off this match's own RNG
+    // rather than the thread's, so a seeded run replays its games and not
+    // only its packs (issue #212).
+    let mut match_rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed);
+    let mut starter = mtg_engine::ids::PlayerId(
+        if rand::Rng::gen_bool(&mut match_rng, 0.5) { 1 } else { 0 });
 
     while wins_a < wins_needed && wins_b < wins_needed {
         let outcome = play_game(
@@ -986,6 +1034,7 @@ fn play_match(
             starter,
             card_reference,
             best_of,
+            rand::Rng::gen(&mut match_rng),
         );
 
         // Engine's winner is a PlayerId (0 = seat_a, 1 = seat_b).
@@ -1023,14 +1072,15 @@ fn play_game(
     starting_player: mtg_engine::ids::PlayerId,
     card_reference: &str,
     best_of: usize,
+    rng_seed: u64,
 ) -> GameOutcome {
     let config = GameConfig {
         player_names: vec![p1.name().to_string(), p2.name().to_string()],
         decklists: vec![deck_a.clone(), deck_b.clone()],
         starting_life: 20,
         starting_player: Some(starting_player),
-        // A fresh seed per game.
-        rng_seed: None,
+        // Derived from the match's seed, so the shuffles replay (issue #212).
+        rng_seed: Some(rng_seed),
     };
 
     let mut state = engine::setup_game(&config, registry);

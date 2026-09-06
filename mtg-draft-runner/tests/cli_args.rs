@@ -234,3 +234,111 @@ fn every_seat_s_draft_system_prompt_and_guide_reach_the_log() {
     assert!(logged.contains("Seat 0 guide:") && logged.contains("Seat 1 guide:"),
         "the header names each seat's guide file:\n{logged}");
 }
+
+// ── reproducibility ─────────────────────────────────────────────────
+
+/// Run a draft far enough to log its header and packs, then kill it.
+///
+/// The stub blocks at the first pick, which is after the packs are generated
+/// and written, so this reaches everything these tests assert on without ever
+/// contacting a model.
+#[cfg(unix)]
+fn draft_log_through_packs(extra: &[&str], tag: &str) -> String {
+    let stub = blocking_stub(tag);
+    let log = std::env::temp_dir()
+        .join(format!("mtg-draft-seed-{tag}-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log);
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().expect("package dir has a workspace parent");
+
+    let mut args: Vec<String> = ["--model", "cc", "--players", "2", "--best-of", "1", "--quiet"]
+        .iter().map(|s| (*s).to_string()).collect();
+    args.extend(extra.iter().map(|s| (*s).to_string()));
+    args.push("--log".to_string());
+    args.push(log.to_string_lossy().into_owned());
+
+    let mut child = runner()
+        .current_dir(workspace_root)
+        .args(&args)
+        .env("CLAUDE_CODE_BIN", &stub)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn runner");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let mut logged = String::new();
+    while std::time::Instant::now() < deadline {
+        logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if logged.contains("[Seat 1] DRAFT SYSTEM PROMPT") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&stub);
+    let _ = std::fs::remove_file(&log);
+    logged
+}
+
+/// The numbered card lines of every logged pack, in order.
+fn pack_cards(log: &str) -> Vec<&str> {
+    log.lines()
+        .map(str::trim)
+        .filter(|l| l.split_once(". ").is_some_and(|(n, _)| n.parse::<u32>().is_ok()))
+        .collect()
+}
+
+/// The seed recorded in the log header.
+fn logged_seed(log: &str) -> u64 {
+    log.lines()
+        .find_map(|l| l.trim_start_matches(['║', ' ']).strip_prefix("seed: "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("the header records a seed:\n{log}"))
+}
+
+/// Two runs with the same `--seed` deal the same packs.
+///
+/// Every source of randomness came from an unrecorded `thread_rng()`, so an
+/// interesting draft could never be looked at again: those packs would not
+/// exist a second time (issue #212).
+#[test]
+#[cfg(unix)]
+fn a_seeded_draft_deals_the_same_packs_twice() {
+    let log_a = draft_log_through_packs(&["--seed", "4242"], "seed-a");
+    let log_b = draft_log_through_packs(&["--seed", "4242"], "seed-b");
+    let (a, b) = (pack_cards(&log_a), pack_cards(&log_b));
+
+    assert!(!a.is_empty(), "packs were logged at all");
+    assert_eq!(a, b, "the same seed deals the same packs");
+
+    let log_c = draft_log_through_packs(&["--seed", "9999"], "seed-c");
+    assert_ne!(a, pack_cards(&log_c), "a different seed deals different packs");
+}
+
+/// A run given no `--seed` generates one and logs it, so a draft nobody
+/// thought to seed is still re-runnable from its own record afterwards —
+/// which is when a draft usually turns out to have been worth keeping.
+#[test]
+#[cfg(unix)]
+fn an_unseeded_draft_logs_a_seed_that_replays_it() {
+    let first = draft_log_through_packs(&[], "noseed-a");
+    let seed = logged_seed(&first);
+
+    let second = draft_log_through_packs(&[], "noseed-b");
+    assert_ne!(seed, logged_seed(&second),
+        "unseeded runs still differ from each other");
+
+    let replay = draft_log_through_packs(&["--seed", &seed.to_string()], "replay");
+    assert_eq!(pack_cards(&first), pack_cards(&replay),
+        "passing the logged seed back reproduces the run's packs");
+}
+
+#[test]
+fn a_non_numeric_seed_is_refused() {
+    let out = runner().args(["--seed", "abc"]).output().expect("failed to run");
+    assert_clean_refusal(&out, "--seed abc");
+    assert!(stderr(&out).contains("--seed takes a number"), "stderr: {}", stderr(&out));
+}

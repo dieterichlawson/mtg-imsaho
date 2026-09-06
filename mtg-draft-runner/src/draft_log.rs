@@ -23,6 +23,7 @@ impl DraftLogger {
         best_of: usize,
         models: &[String],
         guide_paths: &[Option<String>],
+        seed: u64,
         file: &str,
         line: u32,
     ) {
@@ -43,6 +44,9 @@ impl DraftLogger {
         // was told to do, so a header that records only set/players/best-of/
         // model described a different run than the one that happened
         // (issue #207). Silent when no seat has one, which is the default.
+        // The seed is what makes the run re-runnable, so it goes in the
+        // header whether it was asked for or generated (issue #212).
+        lines.push(format!("seed: {seed}"));
         let guides_used = guide_paths.iter().any(Option::is_some);
         if guides_used {
             let all_same_guide = guide_paths.iter().all(|g| g == &guide_paths[0]);
