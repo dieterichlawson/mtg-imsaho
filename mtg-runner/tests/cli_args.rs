@@ -378,3 +378,30 @@ fn resume_does_not_call_the_seed_ignored_when_it_is_not() {
         "one seed replays one game");
     let _ = std::fs::remove_file(&save);
 }
+
+/// `--help` must not tell an operator that `--seed` is ignored on a resume.
+///
+/// Only the *engine* RNG comes from the save (`GameState.rng_state`); the
+/// seats' RNG does not, so `--seed` still seeds the random/AI seats and
+/// dropping it is exactly what makes a resumed replay non-reproducible.
+/// #196 corrected the stderr note that said otherwise and left the same claim
+/// standing in `USAGE`, so an operator who read `--help` and dropped `--seed`
+/// walked straight back into #196 (issue #232).
+#[test]
+fn help_does_not_claim_the_saved_seed_beats_the_seed_flag() {
+    let output = runner().arg("--help").output().expect("failed to run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let resume_text = stdout.split("--resume").nth(1)
+        .unwrap_or_else(|| panic!("--help documents --resume:\n{stdout}"));
+    // Everything up to the next flag is --resume's own paragraph.
+    let resume_text = resume_text.split("\n  --").next().unwrap_or(resume_text);
+
+    assert!(!resume_text.contains("decks/seed win over flags"),
+        "the retracted claim is gone: {resume_text}");
+    assert!(resume_text.contains("decks win over flags"),
+        "the true half — saved decks do win — is kept: {resume_text}");
+    assert!(resume_text.contains("--seed") && resume_text.contains("seats"),
+        "and --help says what --seed actually still does, matching the note the \
+         program prints on stderr for the same combination: {resume_text}");
+}

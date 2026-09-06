@@ -49,7 +49,9 @@ Options:
                          file is overwritten from the first decision, follows a
                          symlink, and is left in place at game over holding the
                          final position
-  --resume <path>        Resume from a save file (saved decks/seed win over flags)
+  --resume <path>        Resume from a save file (saved decks win over flags;
+                         --seed does not change the saved shuffle but still
+                         seeds the random/AI seats — keep it to replay a resume)
   --check-invariants     Check structural invariants at every decision point
   --quiet, -q            Suppress the pre-game banner
   --help, -h             Print this help and exit
