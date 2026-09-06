@@ -655,7 +655,8 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                     want.push(format!("{:?}", ResolvedChoice::ChosenTarget(None)));
                     expect(v, want);
                 }
-                K::ChooseCardType { options, .. } | K::ChooseCardName { options, .. } | K::ChooseTriggerOrder { options, .. } => {
+                K::ChooseCardType { options, .. } | K::ChooseCardName { options, .. }
+                | K::ChooseTriggerOrder { options, .. } | K::ChooseDamageAssignmentOrder { options, .. } => {
                     expect(v, options.iter().enumerate().map(|(i, n)| format!("{:?}", ResolvedChoice::ChosenIndex(i, n.clone()))).collect());
                 }
                 K::ChoosePile { .. } => {

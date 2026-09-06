@@ -149,6 +149,147 @@ pub fn declare_blockers_with_registry(
     declare_blockers(state, &valid);
 }
 
+/// Announce the damage assignment order for every blocked attacker
+/// (CR 509.2), prompting the attacking player once per attacker blocked by
+/// two or more creatures.
+///
+/// This is a turn-based action of the declare blockers step: it happens
+/// after blockers are declared and before any player gets priority, and the
+/// announced order stands for both combat damage steps (CR 510.4). An
+/// attacker blocked by exactly one creature has only one possible order and
+/// is recorded without asking.
+///
+/// Sets `awaiting_action` and returns when a real choice is needed; the
+/// answer comes back through `ChooseDamageAssignmentOrder`, which appends
+/// the chosen blocker and calls this again.
+pub fn announce_damage_assignment_order(state: &mut GameState, registry: &CardRegistry) {
+    let attacking_player = state.active_player;
+    loop {
+        let Some((attacker, remaining)) = next_unordered_attacker(state) else {
+            return;
+        };
+        if remaining.len() == 1 {
+            // One blocker left to place: the order is forced.
+            place_in_damage_assignment_order(state, attacker, remaining[0]);
+            log_completed_order(state, attacker);
+            continue;
+        }
+        let options = damage_order_labels(state, &remaining, registry);
+        let placed = state.combat.as_ref()
+            .and_then(|c| c.damage_assignment_order.get(&attacker))
+            .map_or(0, Vec::len);
+        let description = format!(
+            "Damage assignment order for {} (CR 509.2): choose the blocker to              be assigned damage {} — each one must be assigned lethal damage              before any is assigned to the next",
+            state.obj_name(attacker),
+            if placed == 0 { "first".to_string() } else { format!("{}", ordinal(placed + 1)) },
+        );
+        state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+            player: attacking_player,
+            source: attacker,
+            choice: crate::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+                description,
+                attacker,
+                remaining,
+                options,
+            },
+        });
+        return;
+    }
+}
+
+/// Append `blocker` to `attacker`'s announced damage assignment order.
+pub(crate) fn place_in_damage_assignment_order(
+    state: &mut GameState,
+    attacker: ObjectId,
+    blocker: ObjectId,
+) {
+    if let Some(combat) = state.combat.as_mut() {
+        combat.damage_assignment_order.entry(attacker).or_default().push(blocker);
+    }
+}
+
+/// The next blocked attacker whose order is incomplete, with the blockers
+/// that still have to be placed. Attackers are taken in object-id order so
+/// the sequence of prompts is deterministic.
+fn next_unordered_attacker(state: &GameState) -> Option<(ObjectId, Vec<ObjectId>)> {
+    let combat = state.combat.as_ref()?;
+    for attacker in combat.attackers.keys().copied() {
+        let blockers = combat.blocker_assignments.get(&attacker)?;
+        if blockers.is_empty() {
+            continue;
+        }
+        let placed = combat.damage_assignment_order.get(&attacker);
+        let remaining: Vec<ObjectId> = blockers.iter().copied()
+            .filter(|b| !placed.is_some_and(|o| o.contains(b)))
+            .collect();
+        if !remaining.is_empty() {
+            return Some((attacker, remaining));
+        }
+    }
+    None
+}
+
+/// Log an attacker's order once every blocker has a place in it. Only worth
+/// saying when there was a choice to make.
+fn log_completed_order(state: &mut GameState, attacker: ObjectId) {
+    let order = state.combat.as_ref()
+        .and_then(|c| c.damage_assignment_order.get(&attacker))
+        .cloned()
+        .unwrap_or_default();
+    if order.len() < 2 {
+        return;
+    }
+    let names: Vec<String> = order.iter().map(|&b| state.obj_name(b)).collect();
+    let attacker_name = state.obj_name(attacker);
+    state.log(crate::state::LogLevel::Event, format!(
+        "p{} announced the damage assignment order for {}: {} (CR 509.2)",
+        state.active_player.0, attacker_name, names.join(", ")));
+}
+
+/// Labels for the blockers still to be ordered. Two same-named creatures
+/// blocking one attacker are exactly the case where the order matters and
+/// the names do not distinguish them, so every repeated label carries the
+/// P/T, its marked damage and the object id — the tail the target pickers
+/// use.
+fn damage_order_labels(
+    state: &GameState,
+    blockers: &[ObjectId],
+    registry: &CardRegistry,
+) -> Vec<String> {
+    let mut labels: Vec<String> = blockers.iter()
+        .map(|&b| {
+            let pt = match (state.effective_power(b, registry), state.effective_toughness(b, registry)) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            };
+            let name = state.get_object(b).map_or_else(|| "?".to_string(), |o| o.name.clone());
+            format!("{name}{pt}")
+        })
+        .collect();
+    let repeated: Vec<bool> = labels.iter()
+        .map(|l| labels.iter().filter(|x| *x == l).count() > 1)
+        .collect();
+    for (i, &b) in blockers.iter().enumerate() {
+        if repeated[i] {
+            let damage = state.get_object(b).map_or(0, |o| o.damage_marked);
+            let dmg = if damage > 0 { format!(", {damage} damage") } else { String::new() };
+            labels[i] = format!("{} [#{}{dmg}]", labels[i], b.0);
+        }
+    }
+    labels
+}
+
+fn ordinal(n: usize) -> String {
+    match n {
+        1 => "first".into(),
+        2 => "second".into(),
+        3 => "third".into(),
+        4 => "fourth".into(),
+        5 => "fifth".into(),
+        _ => format!("{n}th"),
+    }
+}
+
 /// The minimum number of creatures that must block `att_id` for any block to
 /// be legal (CR 509.1b): 1 for most creatures, 2+ under menace
 /// (CR 702.111b) or a `MinimumBlockers` continuous effect (e.g. Terror of
@@ -327,9 +468,25 @@ fn deal_damage_step(
         let has_trample = state.has_keyword(attacker_id, Keyword::Trample, registry);
         let has_deathtouch_attacker = state.has_keyword(attacker_id, Keyword::Deathtouch, registry);
 
-        let blockers = combat.blocker_assignments.get(&attacker_id)
+        // CR 510.1c: damage is assigned to the blockers in the damage
+        // assignment order the attacking player announced in the declare
+        // blockers step (CR 509.2) — not in the order the blocks happened
+        // to be declared in. Both damage steps use the same announced
+        // order (CR 510.4). Anything the announcement did not cover (a
+        // state saved before it existed) keeps declaration order, and any
+        // blocker missing from the order is assigned last rather than
+        // dropped.
+        let declared = combat.blocker_assignments.get(&attacker_id)
             .cloned()
             .unwrap_or_default();
+        let announced = combat.damage_assignment_order.get(&attacker_id);
+        let mut blockers: Vec<ObjectId> = announced
+            .map(|order| order.iter().copied().filter(|b| declared.contains(b)).collect())
+            .unwrap_or_default();
+        let unannounced: Vec<ObjectId> = declared.iter().copied()
+            .filter(|b| !blockers.contains(b))
+            .collect();
+        blockers.extend(unannounced);
 
         let was_blocked = combat.blocked_attackers.contains(&attacker_id)
             || state.combat.as_ref().is_some_and(|c| c.blocked_attackers.contains(&attacker_id));

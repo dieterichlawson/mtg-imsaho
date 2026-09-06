@@ -295,6 +295,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                 K::ChooseFromLookedAt { looked_at, .. } => looked_at.is_empty(),
                 K::ChooseCardFromHand { cards, .. } => cards.is_empty(),
                 K::ChooseTriggerOrder { options, .. } => options.is_empty(),
+                K::ChooseDamageAssignmentOrder { options, .. } => options.is_empty(),
                 K::DividePermanentsIntoPiles { permanents, .. } => permanents.is_empty(),
                 _ => false,
             };

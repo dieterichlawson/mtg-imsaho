@@ -175,6 +175,24 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.log(LogLevel::Event, format!("p{}: found nothing", searcher.0));
                     crate::cards::helpers::shuffle_library(&mut *state, searcher);
                 }
+                (ResolutionChoiceKind::ChooseDamageAssignmentOrder { attacker, remaining, options, .. },
+                 ResolvedChoice::ChosenIndex(index, _)) => {
+                    // CR 509.2: the chosen blocker takes the next place in
+                    // this attacker's damage assignment order. The prompt is
+                    // re-raised until every blocker has a place.
+                    let Some(&blocker) = remaining.get(*index) else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} blockers offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
+                    let attacker = *attacker;
+                    crate::combat::place_in_damage_assignment_order(&mut *state, attacker, blocker);
+                    crate::combat::announce_damage_assignment_order(&mut *state, registry);
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
                 (ResolutionChoiceKind::ChooseTriggerOrder { options, ap_queue, indices, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
                     // CR 603.3b: the chosen trigger goes on the stack next.

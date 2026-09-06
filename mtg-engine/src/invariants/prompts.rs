@@ -431,6 +431,42 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 v.push("pay-or-not prompt with an unannounced X".into());
             }
         }
+        K::ChooseDamageAssignmentOrder { attacker, remaining, options, .. } => {
+            let w = "damage-assignment-order prompt";
+            // CR 509.2: the order is announced by the attacking player, over
+            // the creatures blocking one of their attackers, and only where
+            // there is something to choose between.
+            if remaining.len() != options.len() || remaining.len() < 2 {
+                v.push(format!("{w} with {} options for {} blockers", options.len(), remaining.len()));
+            }
+            if player != state.active_player {
+                v.push(format!("{w} asks p{}, not the attacking player p{}",
+                    player.0, state.active_player.0));
+            }
+            if source != *attacker {
+                v.push(format!("{w} sourced at #{} while ordering #{}'s blockers",
+                    source.0, attacker.0));
+            }
+            match state.combat.as_ref() {
+                None => v.push(format!("{w} outside combat")),
+                Some(c) => {
+                    if !c.attackers.contains_key(attacker) {
+                        v.push(format!("{w} for #{} which is not attacking", attacker.0));
+                    }
+                    let assigned = c.blocker_assignments.get(attacker);
+                    let placed = c.damage_assignment_order.get(attacker);
+                    for b in remaining {
+                        if !assigned.is_some_and(|v2| v2.contains(b)) {
+                            v.push(format!("{w} offers #{} which is not blocking #{}", b.0, attacker.0));
+                        }
+                        if placed.is_some_and(|o| o.contains(b)) {
+                            v.push(format!("{w} re-offers #{} which already has a place in the order", b.0));
+                        }
+                    }
+                }
+            }
+            distinct(remaining, w, v);
+        }
         K::ChooseTriggerOrder { options, ap_queue, indices, .. } => {
             let w = "trigger-order prompt";
             let q = if *ap_queue { &state.pending_trigger_pushes_ap } else { &state.pending_trigger_pushes_nap };

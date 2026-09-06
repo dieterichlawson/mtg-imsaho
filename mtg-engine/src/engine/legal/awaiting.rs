@@ -271,7 +271,8 @@ pub(crate) fn legal_actions_while_awaiting(
                         choice: ResolvedChoice::ChosenIndex(i, name.clone()),
                     })
                     .collect(),
-                ResolutionChoiceKind::ChooseTriggerOrder { options, .. } => options
+                ResolutionChoiceKind::ChooseTriggerOrder { options, .. }
+                | ResolutionChoiceKind::ChooseDamageAssignmentOrder { options, .. } => options
                     .iter()
                     .enumerate()
                     .map(|(i, name)| Action::ResolveChoice {
@@ -294,7 +295,8 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseCardName { description, .. }
                 | ResolutionChoiceKind::ChooseXFunding { description, .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. }
-                | ResolutionChoiceKind::ChooseTriggerOrder { description, .. } => {
+                | ResolutionChoiceKind::ChooseTriggerOrder { description, .. }
+                | ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. } => {
                     description.clone()
                 }
                 // The description says what is being decided AND carries the

@@ -114,5 +114,10 @@ pub(crate) fn declare_blockers(state: &mut GameState, assignments: &[(ObjectId, 
         }
         state.awaiting_action = None;
         state.consecutive_passes = 0;
+        // CR 509.2: with blockers declared, and before any player receives
+        // priority, the attacking player announces the damage assignment
+        // order among the creatures blocking each of their attackers. This
+        // sets `awaiting_action` when there is a choice to make.
+        combat::announce_damage_assignment_order(&mut *state, registry);
     Applied::Continue
 }

@@ -3161,8 +3161,17 @@ pub struct CombatState {
     /// attacker -> the planeswalker it attacks.
     #[serde(default)]
     pub planeswalker_defenders: std::collections::BTreeMap<ObjectId, ObjectId>,
-    /// Map of attacker `ObjectId` -> list of blockers assigned to it.
+    /// Map of attacker `ObjectId` -> list of blockers assigned to it, in the
+    /// order the blocks were declared.
     pub blocker_assignments: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
+    /// Map of attacker `ObjectId` -> its blockers in the damage assignment
+    /// order the attacking player announced (CR 509.2). Announced once, in
+    /// the declare blockers step, and used by both combat damage steps
+    /// (CR 510.4 — first strike does not re-announce it). Empty for an
+    /// unblocked attacker; declaration order is the fallback for a state
+    /// that predates the announcement.
+    #[serde(default)]
+    pub damage_assignment_order: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
     /// Attackers that became blocked when blockers were declared. Blocked-ness
     /// is permanent for the combat (CR 509.2): an attacker whose blockers all
     /// leave combat is still blocked (deals no combat damage without trample),
@@ -3394,6 +3403,22 @@ pub enum ResolutionChoiceKind {
         /// Positions of the group's triggers in that queue, parallel to
         /// `options`.
         indices: Vec<usize>,
+    },
+    /// CR 509.2: the attacking player announces the damage assignment order
+    /// among the creatures blocking one attacker. Answered by `ChosenIndex`
+    /// over `options`: the chosen blocker takes the next place in the order,
+    /// so the one chosen first is assigned damage first and must be assigned
+    /// lethal damage before any is assigned to the one after it (CR 510.1c).
+    /// Raised once per attacker blocked by two or more creatures, and
+    /// re-raised until that attacker's order is complete.
+    ChooseDamageAssignmentOrder {
+        description: String,
+        /// The attacker whose blockers are being ordered.
+        attacker: ObjectId,
+        /// Blockers not yet placed in the order, parallel to `options`.
+        remaining: Vec<ObjectId>,
+        /// Display names of those blockers.
+        options: Vec<String>,
     },
     /// Divide permanents into two piles (Liliana of the Veil -6).
     /// The choosing player selects a subset to form pile 1; the rest form pile 2.
