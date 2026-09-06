@@ -76,8 +76,10 @@ impl Clone for ModelUsage {
 /// Known model pricing ($/`MTok`). (input, output, `cache_read`, `cache_write`)
 /// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08)
 
-/// This crate's usage record as the shared cost model reads it. The two
-/// structs are the same five counters kept once per crate.
+/// This crate's usage record as the shared cost model reads it — the token
+/// counters, kept once per crate. Anything the shared struct carries that
+/// this crate does not track (the game harness's `rejected` answer count)
+/// defaults; costing reads none of it.
 fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
     mtg_player::llm::LlmModelUsage {
         input: u.input,
@@ -85,6 +87,7 @@ fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
         cache_read: u.cache_read,
         cache_create: u.cache_create,
         calls: u.calls,
+        ..Default::default()
     }
 }
 

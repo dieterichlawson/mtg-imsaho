@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use mtg_player::llm::{cost, is_plan_quota, model_prices, total_cost, Cost, LlmModelUsage};
 
 fn usage(input: u64, output: u64, cache_read: u64, cache_create: u64) -> LlmModelUsage {
-    LlmModelUsage { input, output, cache_read, cache_create, calls: 1 }
+    LlmModelUsage { input, output, cache_read, cache_create, calls: 1, ..Default::default() }
 }
 
 #[test]

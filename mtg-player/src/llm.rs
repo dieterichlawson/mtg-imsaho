@@ -25,6 +25,12 @@ pub struct LlmModelUsage {
     pub cache_read: u64,
     pub cache_create: u64,
     pub calls: u64,
+    /// Calls that came back but whose answer the harness could not use, so it
+    /// substituted a fallback (a default action, a forced keep, X=0). Counted
+    /// separately from `calls` because a rejected answer is a *successful*
+    /// call — without this, a seat that never once chose anything reported
+    /// the same "70 calls" as a healthy one (issue #211).
+    pub rejected: u64,
 }
 
 static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>>> =
@@ -57,6 +63,12 @@ fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache
     entry.output += output;
     entry.cache_read += cache_read;
     entry.cache_create += cache_create;
+}
+
+/// A call whose answer was unusable. See `LlmModelUsage::rejected`.
+fn record_llm_rejected(model: &str) {
+    let mut map = LLM_MODEL_USAGE.lock().unwrap();
+    map.entry(model.to_string()).or_default().rejected += 1;
 }
 
 fn record_anthropic_llm_usage(model: &str, json: &serde_json::Value) {
@@ -1444,6 +1456,20 @@ impl LlmPlayer {
         self.backend.model_name()
     }
 
+    /// The seat answered, but the answer could not be used, so the harness
+    /// substituted a fallback. Logged exactly as before and also counted, so
+    /// the run summary can say it happened: the transport failure is loud on
+    /// stderr, but this — the answer-was-garbage case — was recorded only in
+    /// an optional `--log` file under a label a reader had to know to grep
+    /// for, and a game in which every single decision was made by the
+    /// fallback looked, on screen, like a seat that had played normally
+    /// (issue #211).
+    #[track_caller]
+    fn log_rejected(&self, content: &str) {
+        self.log("MALFORMED", content);
+        record_llm_rejected(self.backend.model_name());
+    }
+
     #[track_caller]
     fn log(&self, label: &str, content: &str) {
         self.log_at(crate::game_log::LogLevel::Info, label, content);
@@ -2761,7 +2787,7 @@ impl LlmPlayer {
         // clamp to empty (X = 0) so the cast still completes rather than
         // crashing. Log the issue for investigation.
         if let Err(e) = mtg_engine::funding::validate(&funding, options) {
-            self.log("MALFORMED", &format!("invalid X funding response ({e}), defaulting to X=0"));
+            self.log_rejected(&format!("invalid X funding response ({e}), defaulting to X=0"));
             funding = FundingResponse::default();
         }
         self.log("CHOSE", &format!("X funding sum = {}", funding.x_value()));
@@ -2834,7 +2860,7 @@ impl LlmPlayer {
         let idx = response["action"].as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX))
             .filter(|n| *n < max)
             .unwrap_or_else(|| {
-                self.log("MALFORMED", &format!("response missing valid 'action' field ({response}), defaulting to 0"));
+                self.log_rejected(&format!("response missing valid 'action' field ({response}), defaulting to 0"));
                 0
             });
         self.log("CHOSE", &format!("action {idx}"));
@@ -3167,7 +3193,7 @@ from your hand to put on the bottom of your library.\n\
             }
             Some(true) => {
                 // Requested to mulligan past the cap — log and force keep.
-                self.log("MALFORMED", "Requested mulligan past cap — forcing keep");
+                self.log_rejected("Requested mulligan past cap — forcing keep");
                 Action::MulliganKeep
             }
             Some(false) => {
@@ -3175,7 +3201,7 @@ from your hand to put on the bottom of your library.\n\
                 Action::MulliganKeep
             }
             None => {
-                self.log("MALFORMED", &format!("Mulligan response missing 'mull' bool ({response}), defaulting to keep"));
+                self.log_rejected(&format!("Mulligan response missing 'mull' bool ({response}), defaulting to keep"));
                 Action::MulliganKeep
             }
         }
@@ -3234,7 +3260,7 @@ from your hand to put on the bottom of your library.\n\
                 .collect()
         });
         let fallback = || -> Action {
-            self.log("MALFORMED", "Invalid bottom_indices — defaulting to first legal bottom option");
+            self.log_rejected("Invalid bottom_indices — defaulting to first legal bottom option");
             legal_actions[0].clone()
         };
 

@@ -807,9 +807,20 @@ use --save if you need a resumable file.");
     if !usage.is_empty() {
         let mut usage_lines = String::new();
         for (model, stats) in &usage {
+            // A rejected answer is a call that succeeded, so the call count
+            // alone reads as a healthy seat even when the harness chose every
+            // move itself. Say so here, where a reader who never passes --log
+            // will see it (issue #211).
+            let rejected = if stats.rejected == 0 {
+                String::new()
+            } else {
+                format!(", {} answer{} rejected → fallback",
+                    stats.rejected, if stats.rejected == 1 { "" } else { "s" })
+            };
             writeln!(usage_lines,
-                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create",
-                model, stats.calls, stats.input, stats.output, stats.cache_read, stats.cache_create
+                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create{}",
+                model, stats.calls, stats.input, stats.output,
+                stats.cache_read, stats.cache_create, rejected
             ).unwrap();
         }
         println!("{}", usage_lines.trim());
