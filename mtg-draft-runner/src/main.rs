@@ -109,6 +109,9 @@ struct Args {
     models: Vec<String>,
     best_of: usize,
     guides: Vec<Option<String>>,
+    /// Where each seat's guide was read from, for the log header. The text
+    /// alone doesn't say which file a seat was handed (issue #207).
+    guide_paths: Vec<Option<String>>,
     log: String,
     quiet: bool,
 }
@@ -213,11 +216,14 @@ fn parse_args() -> Args {
         fs::read_to_string(path)
             .unwrap_or_else(|e| die(&format!("failed to read guide file '{path}': {e}")))
     };
-    let global_guide = get("--guide").map(|path| read_guide(&path));
+    let global_path = get("--guide");
+    let global_guide = global_path.as_ref().map(|path| read_guide(path));
     let mut guides: Vec<Option<String>> = vec![global_guide; players];
-    for (i, guide) in guides.iter_mut().enumerate() {
+    let mut guide_paths: Vec<Option<String>> = vec![global_path; players];
+    for i in 0..players {
         if let Some(path) = get(&format!("--guide-{i}")) {
-            *guide = Some(read_guide(&path));
+            guides[i] = Some(read_guide(&path));
+            guide_paths[i] = Some(path);
         }
     }
 
@@ -227,6 +233,7 @@ fn parse_args() -> Args {
         models,
         best_of,
         guides,
+        guide_paths,
         log,
         quiet,
     }
@@ -344,7 +351,8 @@ fn main() {
 
     // Create streaming log file
     let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
-    log_header!(log, &set_data.set_name, args.players, args.best_of, args.models.as_slice());
+    log_header!(log, &set_data.set_name, args.players, args.best_of,
+        args.models.as_slice(), args.guide_paths.as_slice());
 
     if !args.quiet {
         eprintln!(
@@ -390,10 +398,17 @@ fn main() {
         })
         .collect();
 
-    // Log the system prompt once. The shared draft rules / card reference
-    // are identical across seats; only the per-backend response-format
-    // suffix may differ. Logging seat 0's prompt is representative.
-    log_system_prompt!(log, clients[0].system_prompt());
+    // Log every seat's system prompt, not seat 0's as a stand-in for the pod:
+    // `--guide-N` and `--model-N` make them differ by construction, and a
+    // draft has no seed to replay, so anything absent from the log is gone
+    // (issue #207). Seats that match an earlier seat verbatim — the usual
+    // case — are logged as a reference to it, so the common run's log is no
+    // larger than before.
+    for seat in 0..clients.len() {
+        let prompt = clients[seat].system_prompt();
+        let same_as = (0..seat).find(|&earlier| clients[earlier].system_prompt() == prompt);
+        log_system_prompt!(log, seat, prompt, same_as);
+    }
 
     // Picks the run had to make on a seat's behalf, per seat. Reported at
     // the end: a draft where a seat never made a choice must not present

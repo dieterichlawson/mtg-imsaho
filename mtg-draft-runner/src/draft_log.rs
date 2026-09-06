@@ -17,7 +17,15 @@ impl DraftLogger {
         Self
     }
 
-    pub fn header(set_name: &str, players: usize, best_of: usize, models: &[String], file: &str, line: u32) {
+    pub fn header(
+        set_name: &str,
+        players: usize,
+        best_of: usize,
+        models: &[String],
+        guide_paths: &[Option<String>],
+        file: &str,
+        line: u32,
+    ) {
         let all_same = models.iter().all(|m| m == &models[0]);
 
         let mut lines: Vec<String> = Vec::new();
@@ -29,6 +37,22 @@ impl DraftLogger {
         } else {
             for (seat, model) in models.iter().enumerate() {
                 lines.push(format!("Seat {seat}: {model}"));
+            }
+        }
+        // Name the guide each seat drafted under. A guide changes what a seat
+        // was told to do, so a header that records only set/players/best-of/
+        // model described a different run than the one that happened
+        // (issue #207). Silent when no seat has one, which is the default.
+        let guides_used = guide_paths.iter().any(Option::is_some);
+        if guides_used {
+            let all_same_guide = guide_paths.iter().all(|g| g == &guide_paths[0]);
+            if all_same_guide {
+                // `guide_paths[0]` is Some here: all seats equal, at least one Some.
+                lines.push(format!("guide: {}", guide_paths[0].as_deref().unwrap_or("none")));
+            } else {
+                for (seat, guide) in guide_paths.iter().enumerate() {
+                    lines.push(format!("Seat {seat} guide: {}", guide.as_deref().unwrap_or("none")));
+                }
             }
         }
 
@@ -56,8 +80,31 @@ impl DraftLogger {
         mtg_player::game_log::write(file, line, &format!("--- {title} ---"), "");
     }
 
-    pub fn system_prompt(prompt: &str, file: &str, line: u32) {
-        mtg_player::game_log::write(file, line, "DRAFT SYSTEM PROMPT", prompt);
+    /// One seat's draft system prompt. A draft has no seed and cannot be
+    /// replayed, so the log is its whole record — and the prompts are not
+    /// interchangeable: `--guide-N` splices a per-seat guide into the seat's
+    /// prompt and `--model-N` can change the response-format suffix. Logging
+    /// seat 0's as representative therefore hid what the other seats were
+    /// told, under an untagged label that read as the pod's one prompt
+    /// (issue #207).
+    ///
+    /// Seats whose prompt is byte-identical to an earlier seat's are recorded
+    /// as a reference to it rather than repeated — the shared draft rules and
+    /// card reference dominate the text, and the common case is every seat
+    /// alike — but any seat that differs is logged in full.
+    pub fn system_prompt(seat: usize, prompt: &str, same_as: Option<usize>, file: &str, line: u32) {
+        match same_as {
+            Some(other) => mtg_player::game_log::write(
+                file, line,
+                &format!("[Seat {seat}] DRAFT SYSTEM PROMPT (identical to seat {other})"),
+                "",
+            ),
+            None => mtg_player::game_log::write(
+                file, line,
+                &format!("[Seat {seat}] DRAFT SYSTEM PROMPT"),
+                prompt,
+            ),
+        }
     }
 
     pub fn pack_contents(seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
