@@ -497,8 +497,11 @@ fn cleanup_reverts_control_changes() {
     assert_eq!(state.get_object(creature).unwrap().controller, P1);
 
     // Steal creature until end of turn.
-    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::ChangeControl { target: creature, original_controller: P1 });
-    state.get_object_mut(creature).unwrap().controller = P0;
+    let timestamp = state.next_control_timestamp();
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::ChangeControl {
+        target: creature, controller: P0, timestamp,
+    });
+    state.change_control(creature, P0);
     assert_eq!(state.get_object(creature).unwrap().controller, P0);
 
     advance_to_cleanup(&mut state, &reg);

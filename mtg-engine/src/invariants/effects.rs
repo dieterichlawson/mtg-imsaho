@@ -49,10 +49,18 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
     // began after this turn's untap step) leaves the permanent summoning
     // sick under its new controller.
     for e in &state.until_end_of_turn {
-        if let TemporaryEffect::ChangeControl { target, original_controller } = e {
+        if let TemporaryEffect::ChangeControl { target, controller, .. } = e {
             if let Some(o) = state.get_object(*target) {
-                if o.zone == Zone::Battlefield && o.controller != *original_controller && !o.summoning_sick {
-                    v.push(format!("#{} ({}) was taken from p{} this turn but is not summoning sick (CR 302.6)", target.0, o.name, original_controller.0));
+                // Sick only while this effect is the one in force: a later
+                // effect handing the permanent somewhere else is a control
+                // change of its own, and this one no longer says anything
+                // about the creature's summoning sickness.
+                let in_force = state.derived_controller(*target) == Some(*controller);
+                if o.zone == Zone::Battlefield && in_force
+                    && o.base_controller != *controller && !o.summoning_sick
+                {
+                    v.push(format!("#{} ({}) was taken from p{} this turn but is not summoning sick (CR 302.6)",
+                        target.0, o.name, o.base_controller.0));
                 }
             }
         }

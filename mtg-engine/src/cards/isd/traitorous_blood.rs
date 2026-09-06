@@ -32,9 +32,19 @@ impl CardBehavior for TraitorousBlood {
         if let Some(Target::Object(creature_id)) = targets.first() {
             if state.get_object(*creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let controller = crate::cards::helpers::controller_of(state, object_id);
-                // Save original controller for revert at end of turn.
-                let original = crate::cards::helpers::controller_of(state, *creature_id);
-                state.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: *creature_id, original_controller: original });
+                // CR 613.7a: one more layer-2 effect, with the latest
+                // timestamp, rather than a note about who had the creature a
+                // moment ago. Where it goes when this ends is derived from
+                // whatever else is still in force at that point — which is
+                // how a creature stolen back from an Olivia Voldaren whose
+                // Olivia then dies comes home instead of staying with the
+                // thief (issue #285).
+                let timestamp = state.next_control_timestamp();
+                state.until_end_of_turn.push(TemporaryEffect::ChangeControl {
+                    target: *creature_id,
+                    controller,
+                    timestamp,
+                });
                 // Gain control (summoning-sick for the new controller) and untap.
                 // The haste grant below lets it attack this turn anyway.
                 state.change_control(*creature_id, controller);

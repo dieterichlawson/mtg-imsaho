@@ -309,6 +309,14 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_choices: Vec<ObjectId>,
 
+    /// Monotonic timestamp handed to each control-changing effect as it is
+    /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
+    /// one ends the permanent goes to whichever of the rest is latest — a
+    /// question that cannot be answered from the order two separate lists
+    /// happen to be in.
+    #[serde(default)]
+    pub next_effect_timestamp: u64,
+
     /// CR 603.3d: triggers collected but not yet pushed onto the stack
     /// because they need target selection (or are queued behind one that does).
     /// AP triggers must all be pushed before NAP triggers; within each bucket,
@@ -388,7 +396,12 @@ pub enum TemporaryEffect {
     /// Grant protection from creatures matching a filter (e.g., Spare from Evil).
     GrantProtection { target: ObjectId, filter: crate::types::CreatureFilter },
     /// Temporary control change; reverts at cleanup (e.g., Traitorous Blood).
-    ChangeControl { target: ObjectId, original_controller: PlayerId },
+    /// CR 611.2b/613.7a: an until-end-of-turn control change (Traitorous
+    /// Blood). `controller` is who it hands the permanent to and `timestamp`
+    /// is where it sits among the other control effects; the permanent's
+    /// default controller is on the object itself, so this effect ending
+    /// re-derives rather than restoring a snapshot.
+    ChangeControl { target: ObjectId, controller: PlayerId, timestamp: u64 },
     /// Grant flashback to a card in the graveyard (e.g., Snapcaster Mage).
     GrantFlashback { target: ObjectId, cost: crate::types::ManaCost },
     /// "Prevent all combat damage that would be dealt this turn by creatures
@@ -548,6 +561,7 @@ impl GameState {
             observe_every_submit: false,
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
+            next_effect_timestamp: 0,
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
@@ -580,6 +594,7 @@ impl GameState {
             name: String::new(), // Set by caller or setup_game
             owner,
             controller: owner,
+            base_controller: owner,
             zone,
             tapped: false,
             summoning_sick: zone == Zone::Battlefield,
@@ -725,6 +740,7 @@ impl GameState {
             name: name.to_string(),
             owner,
             controller: owner,
+            base_controller: owner,
             zone: Zone::Battlefield,
             tapped: false,
             summoning_sick: true,
@@ -1137,6 +1153,10 @@ impl GameState {
                 obj.card_state.clear();
                 obj.last_attached_to_player = None;
                 obj.summoning_sick = true;
+                // CR 110.2a: whoever put it onto the battlefield is its
+                // controller by default, and stays so under every control
+                // effect that later ends.
+                obj.base_controller = obj.controller;
             }
 
             // CR 400.7: leaving the battlefield makes this a new object, and a
@@ -2258,39 +2278,62 @@ impl GameState {
         // Re-activating on the same object under the same source is the same
         // effect with a fresh timestamp, not a second one to unwind later.
         self.control_effects.retain(|e| !(e.object == object && e.source == source));
-        self.change_control(object, source_controller);
+        let timestamp = self.next_control_timestamp();
         self.control_effects.push(ControlEffect {
             object,
             controller: source_controller,
             original_controller,
             source,
             source_controller,
+            timestamp,
         });
+        // Layer 2 is re-derived from every effect in force, so a permanent
+        // already under a later-timestamped effect stays where it is.
+        if let Some(controller) = self.derived_controller(object) {
+            self.change_control(object, controller);
+        }
+    }
+
+    /// Take the next control-effect timestamp (CR 613.7a).
+    pub fn next_control_timestamp(&mut self) -> u64 {
+        self.next_effect_timestamp += 1;
+        self.next_effect_timestamp
     }
 
     /// Who a permanent goes back to once every control-changing effect on it
-    /// has ended.
-    ///
-    /// Its default controller (CR 110.2) — the player who put it onto the
-    /// battlefield — not whoever a temporary effect happens to have handed it
-    /// to at this moment. Reading the momentary controller is how a durable
-    /// effect created on top of a Traitorous Blood steal would have recorded
-    /// "give it back to the thief".
+    /// has ended: its default controller (CR 110.2a), the player who put it
+    /// onto the battlefield.
     #[must_use]
     pub fn base_controller(&self, object: ObjectId) -> Option<PlayerId> {
-        // A durable "for as long as" effect already worked this out.
-        if let Some(effect) = self.control_effects.iter().find(|e| e.object == object) {
-            return Some(effect.original_controller);
-        }
-        // Otherwise an until-end-of-turn steal may be in force.
-        for effect in &self.until_end_of_turn {
-            if let TemporaryEffect::ChangeControl { target, original_controller } = effect {
-                if *target == object {
-                    return Some(*original_controller);
-                }
-            }
-        }
-        self.get_object(object).map(|o| o.controller)
+        self.get_object(object).map(|o| o.base_controller)
+    }
+
+    /// Who controls `object` according to the control-changing effects
+    /// currently in force (CR 613.7a): the latest-timestamped one that
+    /// applies, or its default controller when none does.
+    ///
+    /// This is the question every "the effect ended, now what?" path has to
+    /// ask. Each such path used to answer it from a snapshot the effect took
+    /// when it was created, which is not the same question: a Traitorous
+    /// Blood cast on a creature Olivia Voldaren had stolen recorded "give it
+    /// back to the thief", and when Olivia died first the cleanup step handed
+    /// the creature to a player with no effect on it at all — permanently
+    /// (issue #285).
+    #[must_use]
+    pub fn derived_controller(&self, object: ObjectId) -> Option<PlayerId> {
+        let durable = self.control_effects.iter()
+            .filter(|e| e.object == object)
+            .map(|e| (e.timestamp, e.controller));
+        let temporary = self.until_end_of_turn.iter()
+            .filter_map(|e| match e {
+                TemporaryEffect::ChangeControl { target, controller, timestamp } if *target == object =>
+                    Some((*timestamp, *controller)),
+                _ => None,
+            });
+        durable.chain(temporary)
+            .max_by_key(|(timestamp, _)| *timestamp)
+            .map(|(_, controller)| controller)
+            .or_else(|| self.base_controller(object))
     }
 
     /// End every control effect whose condition has stopped being true, giving
@@ -2314,12 +2357,22 @@ impl GameState {
         }
         self.control_effects.retain(|e| !ended.contains(e));
         for effect in ended {
-            if self.get_object(effect.object).is_some_and(|o| o.zone == Zone::Battlefield) {
-                let name = self.obj_name(effect.object);
-                self.change_control(effect.object, effect.original_controller);
+            if self.get_object(effect.object).is_none_or(|o| o.zone != Zone::Battlefield) {
+                continue;
+            }
+            // With this effect gone, control is whatever the remaining ones
+            // say (CR 613.7a) — an until-end-of-turn steal on the same
+            // permanent keeps it until the cleanup step, rather than this
+            // effect's own record of who had it first winning.
+            let Some(controller) = self.derived_controller(effect.object) else { continue };
+            let changing = self.get_object(effect.object)
+                .is_some_and(|o| o.controller != controller);
+            let name = self.obj_name(effect.object);
+            self.change_control(effect.object, controller);
+            if changing {
                 self.log(LogLevel::Event, format!(
                     "{name} returns to p{}: the control effect's condition no longer holds",
-                    effect.original_controller.0));
+                    controller.0));
             }
         }
         true
@@ -2932,6 +2985,17 @@ pub struct GameObject {
     pub name: String,
     pub owner: PlayerId,
     pub controller: PlayerId,
+    /// CR 110.2a: the player who put this permanent onto the battlefield.
+    /// Control-changing effects (layer 2) are applied on top of this, and it
+    /// is who the permanent goes back to once every one of them has ended.
+    /// Stamped on entry, so it is a fact about the object rather than a
+    /// snapshot some effect took of whoever held it at the time.
+    ///
+    /// A save written before this field existed has no answer for it; those
+    /// load as p0, which is only wrong for a permanent p1 put onto the
+    /// battlefield while a control effect on it was live.
+    #[serde(default = "first_player")]
+    pub base_controller: PlayerId,
     pub zone: Zone,
 
     // Battlefield state
@@ -3081,6 +3145,12 @@ pub enum EnterAsCopyChoice {
     Copy(ObjectId),
 }
 
+/// Serde fallback for `GameObject::base_controller` in saves written before
+/// the field existed.
+fn first_player() -> PlayerId {
+    PlayerId(0)
+}
+
 /// A player's state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerState {
@@ -3181,6 +3251,11 @@ pub struct ControlEffect {
     /// Who has to keep controlling `source`. The effect ends if `source`
     /// leaves the battlefield or comes under anyone else's control.
     pub source_controller: PlayerId,
+    /// When this effect was created (CR 613.7a). Two control effects on one
+    /// permanent are applied in this order, so the highest timestamp is the
+    /// one whose controller the permanent actually has.
+    #[serde(default)]
+    pub timestamp: u64,
 }
 
 /// Combat state, tracking attackers and blockers.

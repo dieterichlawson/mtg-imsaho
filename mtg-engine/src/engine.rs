@@ -925,22 +925,26 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             }
 
             // Remove "until end of turn" effects.
-            // First, revert control changes before clearing. A permanent
-            // under a durable "for as long as you control this" effect goes
-            // to *that* effect rather than back where the temporary one
-            // found it: both apply in layer 2, and the one that outlives the
-            // cleanup step is the one still standing afterwards
-            // (CR 613.7a, issue #253).
-            let reverts: Vec<(ObjectId, PlayerId)> = state.until_end_of_turn.iter()
+            // First, revert control changes before clearing. Who a permanent
+            // goes to is derived from the control effects that are still in
+            // force once this one is gone (CR 613.7a): a durable "for as long
+            // as you control this" effect that outlives the cleanup step
+            // keeps it (issue #253), and with nothing left it goes to its
+            // default controller (CR 110.2a) — not to whoever happened to
+            // hold it when the temporary effect was created, which for a
+            // creature stolen back from a thief was the thief (issue #285).
+            let ending: Vec<ObjectId> = state.until_end_of_turn.iter()
                 .filter_map(|effect| match effect {
-                    crate::state::TemporaryEffect::ChangeControl { target, original_controller } => {
-                        let durable = state.control_effects.iter()
-                            .find(|e| e.object == *target)
-                            .map(|e| e.controller);
-                        Some((*target, durable.unwrap_or(*original_controller)))
-                    }
+                    crate::state::TemporaryEffect::ChangeControl { target, .. } => Some(*target),
                     _ => None,
                 })
+                .collect();
+            // The effects are removed first so the derivation sees the board
+            // as it will be, not as it is.
+            state.until_end_of_turn.retain(|e|
+                !matches!(e, crate::state::TemporaryEffect::ChangeControl { .. }));
+            let reverts: Vec<(ObjectId, PlayerId)> = ending.into_iter()
+                .filter_map(|target| state.derived_controller(target).map(|c| (target, c)))
                 .collect();
             for (target, controller) in reverts {
                 if state.get_object(target).is_none_or(|o| o.zone != Zone::Battlefield) {

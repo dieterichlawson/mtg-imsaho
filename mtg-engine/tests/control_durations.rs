@@ -67,6 +67,70 @@ fn olivia_may_take_a_vampire_its_controller_already_controls() {
     }
 }
 
+/// Issue #285, the line that cost a player their own creature: p1's Olivia
+/// steals p0's Vampire, p0 takes it back with Traitorous Blood, then kills
+/// Olivia. Both effects have ended by the cleanup step, and with no
+/// control-changing effect left the permanent is controlled by the player who
+/// put it onto the battlefield (CR 110.2a, 613.1b).
+#[test]
+fn a_creature_stolen_back_and_then_freed_goes_home_not_to_the_thief() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P1);
+
+    let interloper = named_permanent(&mut state, &reg, "Vampire Interloper", P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P1);
+
+    // p1's Olivia takes it, "for as long as you control Olivia".
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(interloper)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(interloper).unwrap().controller, P1, "test precondition");
+
+    // p0 takes their own creature back until end of turn.
+    let blood = spell_in_hand(&mut state, &reg, "Traitorous Blood", P0);
+    state.get_object_mut(blood).unwrap().controller = P0;
+    reg.get(state.get_object(blood).unwrap().card_id).unwrap()
+        .on_resolve(&mut state, blood, &[Target::Object(interloper)], &reg);
+    assert_eq!(state.get_object(interloper).unwrap().controller, P0,
+        "test precondition: p0 has it back");
+
+    // Olivia dies. Her effect ends; the until-end-of-turn one has not.
+    state.move_object(olivia, Zone::Graveyard, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert_eq!(state.get_object(interloper).unwrap().controller, P0,
+        "the later effect is still in force, so the creature stays with p0 (CR 613.7a)");
+
+    // Cleanup ends the last effect. Nothing is left, so it is p0's creature.
+    advance_to_cleanup(&mut state, &reg);
+    assert_eq!(state.get_object(interloper).unwrap().controller, P0,
+        "with no control effect left the permanent goes to its default \
+         controller — the player who put it onto the battlefield (CR 110.2a)");
+    assert!(state.control_effects.is_empty());
+}
+
+/// The mirror line, which #253 fixed and must keep working: the durable
+/// effect is created *after* the temporary one, so it is the later timestamp
+/// and it keeps the creature when the temporary one ends at cleanup.
+#[test]
+fn a_durable_effect_created_after_a_steal_keeps_the_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let victim = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+
+    // p0 steals it until end of turn, then points Olivia at it.
+    let blood = spell_in_hand(&mut state, &reg, "Traitorous Blood", P0);
+    reg.get(state.get_object(blood).unwrap().card_id).unwrap()
+        .on_resolve(&mut state, blood, &[Target::Object(victim)], &reg);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(victim)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    advance_to_cleanup(&mut state, &reg);
+
+    assert_eq!(state.get_object(victim).unwrap().controller, P0,
+        "Olivia's effect outlives the cleanup step and keeps the creature");
+}
+
 /// An opponent taking Olivia — no zone change at all — ends the effect.
 #[test]
 fn stolen_vampires_returned_when_olivia_control_changes_without_zone_change() {

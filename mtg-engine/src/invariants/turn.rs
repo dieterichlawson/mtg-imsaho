@@ -64,9 +64,9 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
         }
     }
     for e in &state.until_end_of_turn {
-        if let TemporaryEffect::ChangeControl { target, original_controller } = e {
-            if !player_ok(state, *original_controller) {
-                v.push(format!("control change of #{} from p{} who is not a player", target.0, original_controller.0));
+        if let TemporaryEffect::ChangeControl { target, controller, .. } = e {
+            if !player_ok(state, *controller) {
+                v.push(format!("control change of #{} to p{} who is not a player", target.0, controller.0));
             }
         }
     }

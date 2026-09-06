@@ -1215,7 +1215,8 @@ fn untap_scope_theft_sickness_and_shuffles_are_checked() {
     // CR 302.6: a creature taken this turn is summoning sick.
     let mut s = state.clone();
     s.change_control(theirs, P0);
-    s.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: theirs, original_controller: P1 });
+    let timestamp = s.next_control_timestamp();
+    s.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: theirs, controller: P0, timestamp });
     clean(&s, &reg);
     s.get_object_mut(theirs).unwrap().summoning_sick = false;
     flags_core(&s, &reg, "was taken from p1 this turn but is not summoning sick (CR 302.6)");
