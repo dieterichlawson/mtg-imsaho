@@ -289,16 +289,19 @@ pub(crate) fn has_castable_with_potential_mana(
         }
     }
 
-    // Also check activated abilities that cost mana.
-    for obj in state.objects_in_zone(Zone::Battlefield, player) {
-        if let Some(behavior) = registry.get(obj.card_id) {
-            for ab in behavior.activated_abilities(state, obj.id, registry) {
-                if mana::can_pay(&potential, &ab.cost) && (!ab.requires_tap || !obj.tapped) {
-                    return true;
-                }
-            }
-        }
-    }
-
+    // Activated abilities are NOT re-derived here. This used to ask only
+    // "is the mana cost affordable out of every source I control?", which is
+    // a laxer question than the one `legal_actions` asks and disagreed with
+    // it constantly: it counted an ability that is sorcery-speed-only outside
+    // a main phase, one with no legal target (an Equipment's equip with no
+    // creature to equip), one Stony Silence forbids, one on a
+    // summoning-sick creature, and one whose cost can only be paid by
+    // counting the source's own mana ability — which the payment then has to
+    // tap. Any Equipment on the battlefield stopped both seats at every
+    // priority window for the rest of the game (issue #269).
+    //
+    // `legal::abilities::activated` already answers it properly, autotap
+    // included, so an ability that really is activatable appears in
+    // `legal.actions` and the caller counts it there.
     false
 }

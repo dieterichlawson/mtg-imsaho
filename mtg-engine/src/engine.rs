@@ -1259,11 +1259,28 @@ fn run_game_loop_inner<F>(
         // Auto-pass: if the player has no meaningful actions, auto-pass.
         // Mana abilities alone aren't meaningful UNLESS the player could cast
         // something after tapping — compute potential mana to check.
+        //
+        // "Alone" means a plain tap-for-mana. A mana ability with a side
+        // effect is a game action in its own right: Deranged Assistant's
+        // "{T}, Mill a card: Add {C}" grows every graveyard-keyed creature in
+        // the deck, and excluding it unconditionally meant a player who
+        // controlled one and had nothing else to do was never offered it at
+        // all (issue #266). `has_side_effects` is the flag that draws exactly
+        // this line, and it was set on that card and consulted nowhere near
+        // here.
+        let is_bare_mana_ability = |a: &Action| match a {
+            Action::ActivateManaAbility { object_id, ability_index } => {
+                !available_mana_abilities(state, *object_id, registry)
+                    .iter()
+                    .any(|ma| ma.ability_index == *ability_index && ma.has_side_effects)
+            }
+            _ => false,
+        };
         let has_meaningful_action = legal.combat_prompt.is_some()
             || state.awaiting_action.is_some()
-            || legal.actions.iter().any(|a| !matches!(a,
-                Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
-            ))
+            || legal.actions.iter().any(|a|
+                !matches!(a, Action::PassPriority | Action::Concede)
+                    && !is_bare_mana_ability(a))
             || has_castable_with_potential_mana(state, acting_player, registry);
 
         let action = if has_meaningful_action {
