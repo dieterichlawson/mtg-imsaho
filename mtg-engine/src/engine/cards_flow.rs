@@ -36,6 +36,7 @@ pub(crate) fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: Obj
 #[must_use = "'if you do' effects depend on how many cards were actually drawn"]
 pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) -> usize {
     let mut drawn: usize = 0;
+    let mut ran_out = false;
     for _ in 0..count {
         let card_id = {
             let player_state = state.get_player_mut(player);
@@ -46,29 +47,40 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
             state.events.push(GameEvent::CardDrawn { player, object: id });
             drawn += 1;
         } else {
-            // The failed attempt is a real game event and the usual way a
-            // mill race ends — logged, not silent (issue #86): the loss it
-            // leads to (CR 704.5b) otherwise appeared from nowhere.
-            state.log(LogLevel::Info,
-                format!("p{} tried to draw from an empty library", player.0));
-            // CR 614: drawing from an empty library can be replaced
-            // (Laboratory Maniac wins instead). The effect does whatever it
-            // does; either way the draw does not happen.
-            crate::replacement::apply(
-                state,
-                crate::replacement::ReplaceableEvent::DrawsFromEmptyLibrary { player },
-                registry,
-            );
-            // Otherwise SBA will catch the empty library draw.
+            ran_out = true;
             break;
         }
     }
+    // The summary of what was drawn goes first, because that is the order the
+    // draws happened in: CR 121.3 makes a multi-card draw N individual draws,
+    // one at a time, so a draw that runs the library out succeeded on the
+    // cards before it and only then failed. Logging the failure from inside
+    // the loop and the summary after it printed those backwards — "tried to
+    // draw from an empty library" above the four cards that were drawn first,
+    // and, when Laboratory Maniac replaced the failed draw, "p0 drew a card"
+    // two lines *after* "p0 wins the game" (issue #236).
     if drawn > 0 {
         if drawn == 1 {
             state.log(LogLevel::Info, format!("p{} drew a card", player.0));
         } else {
             state.log(LogLevel::Info, format!("p{} drew {} cards", player.0, drawn));
         }
+    }
+    if ran_out {
+        // The failed attempt is a real game event and the usual way a
+        // mill race ends — logged, not silent (issue #86): the loss it
+        // leads to (CR 704.5b) otherwise appeared from nowhere.
+        state.log(LogLevel::Info,
+            format!("p{} tried to draw from an empty library", player.0));
+        // CR 614: drawing from an empty library can be replaced
+        // (Laboratory Maniac wins instead). The effect does whatever it
+        // does; either way the draw does not happen.
+        // Otherwise SBA will catch the empty library draw.
+        crate::replacement::apply(
+            state,
+            crate::replacement::ReplaceableEvent::DrawsFromEmptyLibrary { player },
+            registry,
+        );
     }
     drawn
 }

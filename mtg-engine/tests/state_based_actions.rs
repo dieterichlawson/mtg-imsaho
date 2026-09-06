@@ -712,3 +712,57 @@ fn a_creature_shrunk_by_its_anthems_death_dies_of_its_marked_damage() {
         "the repeated check finds the now-1/1 Pilgrim with 1 damage marked \
          and destroys it too (CR 704.3: checks repeat; damage stays marked)");
 }
+
+/// A draw that runs the library out logs its successful draws BEFORE the
+/// failure, because that is the order they happened in.
+///
+/// CR 121.3 makes a multi-card draw N individual draws performed one at a
+/// time, so a draw of 5 from a 4-card library drew four cards and then failed
+/// the fifth. The failure was logged from inside the per-card loop and the
+/// summary after it, so the log read backwards — the empty-library line above
+/// the four draws that preceded it (issue #236).
+#[test]
+fn a_partial_draw_logs_its_successes_before_the_empty_library_failure() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Draw, P0);
+    stock_library(&mut state, &reg, P0, 4);
+
+    let drawn = engine::draw_cards(&mut state, P0, 5, &reg);
+    assert_eq!(drawn, 4, "four cards were there to draw");
+
+    let messages: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    let drew = messages.iter().position(|m| m.contains("p0 drew 4 cards"))
+        .unwrap_or_else(|| panic!("the successful draws are logged: {messages:?}"));
+    let failed = messages.iter().position(|m| m.contains("tried to draw from an empty library"))
+        .unwrap_or_else(|| panic!("the failed draw is logged: {messages:?}"));
+    assert!(drew < failed,
+        "the four draws that happened first are logged first: {messages:?}");
+}
+
+/// The same ordering, with Laboratory Maniac replacing the failed draw.
+///
+/// This is the case where the inversion said something impossible: the
+/// replacement ends the game as the draw fails (CR 104.3a), so a summary
+/// emitted after the loop landed *after* "p0 wins the game" — the log claimed
+/// a card was drawn once the game was already over (issue #236).
+#[test]
+fn a_draw_that_wins_with_laboratory_maniac_logs_the_draw_before_the_win() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Laboratory Maniac", P0);
+    stock_library(&mut state, &reg, P0, 1);
+
+    // Draw two off a one-card library: the first draw succeeds, the second
+    // finds the library empty and is replaced by the Maniac's win.
+    let drawn = engine::draw_cards(&mut state, P0, 2, &reg);
+    assert_eq!(drawn, 1, "one card was there to draw");
+    assert!(state.result.is_some(), "the Maniac ended the game on the failed draw");
+
+    let messages: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    let drew = messages.iter().position(|m| m.contains("p0 drew a card"))
+        .unwrap_or_else(|| panic!("the successful draw is logged: {messages:?}"));
+    let won = messages.iter().position(|m| m.contains("wins the game"))
+        .unwrap_or_else(|| panic!("the win is logged: {messages:?}"));
+    assert!(drew < won,
+        "nothing is drawn after the game has already been won: {messages:?}");
+}
