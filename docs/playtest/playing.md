@@ -171,6 +171,75 @@ contradict the CR.
   milled Devil's Play's mana value), the exile cost is paid at announcement
   (601.2h), and Blasphemous Act re-prices as the board changes and never falls
   below {R}. Its 8-creature floor needs a real go-wide board to reach
+- C30 [tried 2026-09-06; no engine bug found, see #257] tempo as pseudo-removal:
+  play a real WU bounce/tap/pacify deck (Silent Departure + flashback, Feeling of
+  Dread, Claustrophobia, Grasp of Phantoms, Hysterical Blindness, Avacynian
+  Priest, Rebuke, Ghostly Possession) against a creature deck, and touch the
+  opponent's board at every point in combat: tap before attackers (CR 508.1a) vs
+  after (508.1e/506.4), tap or bounce a declared blocker (509.1h/506.4c), bounce
+  an enchanted creature (704.5m + 400.7), and hold Claustrophobia over several
+  untap steps. All of that held over four games and ~1500 actions. Unreached:
+  Grasp of Phantoms (never drawn in four games) and a bounce of a creature
+  enchanted at that moment — start there
+- C31 [tried 2026-09-06 → #301] card-advantage engines and exact draw accounting:
+  Think Twice, Desperate Ravings, Forbidden Alchemy, Divination, Bloodgift Demon,
+  Curiosity, Sturmgeist, Murder of Crows, Mindshrieker. Win on cards against a
+  real aggro clock and reconcile library/hand/graveyard/exile by hand after EVERY
+  draw effect. Verify Desperate Ravings draws both cards before discarding
+  exactly one at random from the full post-draw hand (cast it 4+ times and record
+  the choices — the discard is correct and is logged nowhere, #301), that
+  Forbidden Alchemy moves exactly 4/1/3 and keeps all four secret (CR 400.2,
+  701.18a), that Bloodgift Demon can target either player (115.4) with the target
+  chosen on the stack (603.3d), that Curiosity fires on damage to a PLAYER and
+  not to a creature, that Mindshrieker's +X/+X is the milled card's mana value
+  and stacks (layer 7c), and that flashback exiles on resolution (702.34a). The
+  coverage decks are far too thin — write a one-off UBr engine deck. Murder of
+  Crows' body and a 12+ card cleanup discard went unreached in five games
+- C32 [tried 2026-09-06; every CR claim held, see #243] lifelink and life as a
+  resource — the gap C22 recorded as "lifelink untestable". Race a burn deck with
+  Markov Patrician, Butcher's Cleaver, Disciple of Griselbrand, Gnaw to the Bone
+  and Paraselene, and reconcile every life transition against the log. Verify
+  lifelink is part of the damage event and not a trigger — no stack object, life
+  gained in the same event as the damage, including for a lifelinker that dies to
+  that same combat damage (CR 702.15a, 510.2) — and that damage to a creature
+  counts. Butcher's Cleaver is the sharpest probe: equip it to a non-Human and
+  then to a Human and compare, and reach a type change (Moonmist on a Human
+  Werewolf) to see the grant drop and come back. Then close on life as a clock:
+  prevented damage gains nothing, lifegain in response to lethal saves you, and
+  the game ends at exactly 0 on the next SBA check (704.5a). Unreached: a
+  lifelinker blocked by MULTIPLE creatures — every lifelinker in the pool has 1-3
+  toughness, so a rational defender never gang-blocks
+- C33 [tried 2026-09-06 → #300] self-mill as a resource engine (distinct from
+  C12, which raced an OPPONENT's library to zero): the graveyard is the payoff
+  and running yourself low is the risk. Mulch, Dream Twist, Armored Skaab,
+  Splinterfright, Boneyard Wurm, Skaab Ruinator (cast from the graveyard by
+  exiling three creature cards), Memory's Journey, Past in Flames and Spider
+  Spawning against a real clock. Verify the additional cost is paid at
+  announcement and the card leaves the menu when it cannot be paid (CR 601.2f,
+  601.2h), that graveyard-count P/T recomputes live — including mid-combat, after
+  blockers (604.3) — that every mill moves exactly N from the top and the zone
+  totals still sum to the deck, and that milling your library to zero does NOT
+  lose: the loss is on the next DRAW (104.3c, 704.5b). A deliberately small
+  (~32-card) probe deck reaches library 0 in a handful of turns where a 60 never
+  will. Unreached: Moldgraf Monstrosity's death trigger and a Past in Flames into
+  Spider Spawning turn
+- C34 [tried 2026-09-06 → #302] the defensive deck and the life-total exchange:
+  Tree of Redemption ("{T}: Exchange your life total with this creature's
+  toughness") behind Grave Bramble, Manor Gargoyle, Somberwald Spider and
+  One-Eyed Scarecrow, with Gavony Township as the slow win condition, against a
+  real aggro deck that will attack into it. The exchange is a layer-7b set (CR
+  613.4b): verify the value handed to the player is the MODIFIED toughness, that
+  anthems and +1/+1 counters re-apply on top of the set value (7b→7c→7d), that
+  marked damage is neither laundered nor mistaken for toughness, and that a Tree
+  whose new toughness is at or below its marked damage dies at the next SBA check
+  (704.5g). All of that held; what did not is that the ability writes the
+  object's BASE toughness instead of a 7b effect (#302) — the copy and
+  zone-change readers are patched by hand, so re-probe any NEW reader of base
+  P/T. Defender is absent from the eligible-attackers list rather than
+  offered-and-rejected (702.3b), and Manor Gargoyle's indestructible correctly
+  switches off while its {1} has removed defender. Unreached: a second
+  P/T-setting effect on the Tree (ISD has none), and exchanging to exactly 0 life
+  — a 0-toughness Tree dies to 704.5f before it can be tapped
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
@@ -339,15 +408,71 @@ illegal or dubious resolutions do.
   still resolves; a sweeper's simultaneous deaths must all see each other
   (603.10a); and sacrifice beats regeneration and indestructible alike
   (701.17c). Every rule passed on 2026-09-05 — the defect was the log (#263)
-- L32 [proposed 2026-09-05, from the L28 night and #253] redundant and stacked
-  control effects (CR 613.1b, 613.7a, 611.2b): put two control-changing effects
-  with different durations on ONE creature — Traitorous Blood then Olivia's
-  {3}{B}{B} in the same turn, and the reverse order with Olivia killed after
-  the second resolves — and verify layer 2 resolves them by timestamp rather
-  than by "who had it first". Wants a one-off Olivia / Traitorous Blood deck
-- L33 [proposed 2026-09-05, from the L26 night] the walker-combat cases L26
-  could not reach: BOUNCING an attacked planeswalker after blockers (no
-  implemented ISD card returns a walker to hand — this needs a card first), and
-  a DOUBLE striker attacking a walker that dies in the first-strike step
-  (Terror of Kruin Pass, Kruin Outlaw's back face, needs a spell-free turn to
-  transform). Both are CR 510.4/510.5 leftovers from #246's neighbourhood
+- L32 [tried 2026-09-06 → #285, #286] redundant and stacked control effects
+  (CR 613.1b, 613.7a, 611.2b, 110.2a): put two control-changing effects with
+  different durations on ONE creature. Traitorous Blood THEN Olivia's {3}{B}{B}
+  is correct and survives cleanup (#253's fix holds); the REVERSE order — Olivia
+  steals it, you take it back with Traitorous Blood, then kill Olivia — hands the
+  creature to the thief permanently at your own cleanup, because the revert
+  snapshots a controller instead of deriving one from the effects still in force
+  (#285). Re-probe both orders after that fix, and note that a control effect
+  whose controller equals its original controller now aborts the run under
+  `--check-invariants` (#286). Still unreached: two DURABLE effects contesting one
+  permanent — one Olivia is reachable, two is not. Wants a one-off Olivia /
+  Traitorous Blood deck
+- L33 [tried 2026-09-06 → #292; both halves PASSED] the walker-combat cases L26
+  could not reach, and a correction: **Lost in the Mist** ({3}{U}{U}, "Counter
+  target spell. Return target permanent to its owner's hand") takes
+  `TargetFilter::Any`, so a planeswalker IS in its target list — the guide's old
+  claim that no implemented card returns a walker to hand was wrong, and the
+  walker's own controller can supply the spell it needs. Bounce an attacked
+  walker after blockers and between the two damage steps (the attacker must deal
+  nothing, and nothing may fall through to the player), and attack a walker with
+  Terror of Kruin Pass (Kruin Outlaw's back face, needs a spell-free turn to
+  transform) so it dies in the first-strike step — the regular step must then do
+  nothing at all (CR 510.4/510.5). All of that held on 2026-09-06 and #246's fix
+  holds on the first-strike path. Still unreached: a BLOCKED attacker aimed at a
+  walker on the first-strike path, and Terror's menace grant
+- L34 [tried 2026-09-06 → #298, #299; every CR claim held] "enters with counters"
+  as a replacement effect, not a trigger (CR 614.1c, 614.12, 616.1, 603.6b,
+  704.5f): cast Mikaeus, the Lunarch for X=0 and Unbreathing Horde with no other
+  Zombie, and verify each is a real 0/0 that dies at the next SBA check — check
+  the `--save` and the battlefield line on the FIRST frame after resolution,
+  never a later one. Change the count with the Horde's spell on the stack (Purify
+  the Grave exiling a Zombie card from your own graveyard) and verify it enters
+  with the count at RESOLUTION, not at announcement. Put Mentor of the Meek out
+  and verify it triggers on a Mikaeus entering with 1 counter and does NOT on one
+  entering with 3 (603.6b). Add Heartless Summoning for the 7c-vs-7d layer check
+  — and read the X-funding cap while it is out, which is where #298 lives. Feed
+  the Horde one damage source at a time and verify ALL of it is prevented for
+  exactly one counter. Untried: two sources damaging the Horde simultaneously
+  (CR 614.5 — one counter or two?), and Ludevic's Test Subject's transform.
+  Needs one-off decks
+- L35 [tried 2026-09-06; every CR claim held, see #65 and #243] lethal damage,
+  deathtouch and trample assignment (CR 510.1c-d, 702.2b-c, 702.19b, 704.5g,
+  514.2): Kessig Wolf Run's {X}{R}{G} is the only route to a deathtouch trampler,
+  so pump a Typhoid Rats and double- or triple-block it — lethal is 1 per blocker
+  (702.2c) and every other point tramples (702.19b). Also: damage already marked
+  lowers what an ordinary trampler must assign (510.1c); Dead Weight's -2/-2
+  kills a creature carrying damage that never touched its toughness (704.5g);
+  marked damage clears at cleanup (514.2); a 0-power deathtoucher destroys
+  nothing (702.2b). The defects here are the assignment choice never being
+  offered (#65 — with trample that silent choice now moves life totals, not just
+  which blocker dies) and the granted keyword never being shown (#243). Write
+  one-off decks; no coverage pairing has both halves
+- L36 [tried 2026-09-06 → #297; every CR claim held] protection and the DEBT
+  rules (CR 702.16a-e, 509.1b, 701.17): Spare from Evil grants "protection from
+  non-Human creatures until end of turn"; Grave Bramble and Elite Inquisitor
+  carry static protection from subtypes, so there are three ways in, not one.
+  Verify all four letters — Damage prevented with the battlefield line showing no
+  damage marker (702.16d), Enchant/Equip, Block ABSENT from the legal set rather
+  than offered-then-rejected (509.1b), Target gone from the menu — and then what
+  protection does NOT stop: a spell or Equipment source, because it is protection
+  from non-Human *creatures* and a Brimstone Volley must still kill it; sacrifice;
+  -X/-X; a 0-toughness SBA. Check the two asymmetries (it may still block a
+  non-Human, and a Human may still block it) and that it is gone next turn. Put
+  Mask of Avacyn on the same creature for the contrast that makes the keywords
+  distinguishable: hexproof removes it from an opponent's target list where this
+  protection never does. Unreached: the -X/-X and destroy-all halves — build a
+  deck that actually draws Dead Weight, and note a sorcery sweeper can never be
+  cast while an until-EOT grant from the other seat is up
