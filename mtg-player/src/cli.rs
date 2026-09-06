@@ -1409,22 +1409,12 @@ impl CliPlayer {
                 if row >= max_row { break; }
             }
 
-            // Oracle text (word-wrapped), skipping lines that just repeat keywords
+            // Oracle text (word-wrapped), minus the lines the panel already
+            // prints for itself above and below.
             if !card.oracle_text.is_empty() {
-                let keyword_names: Vec<&str> = vec![
-                    "Flying", "First strike", "Double strike", "Trample", "Deathtouch",
-                    "Lifelink", "Vigilance", "Flash", "Reach", "Haste", "Defender",
-                    "Hexproof", "Intimidate", "Menace", "Indestructible",
-                ];
-                let lines: Vec<&str> = card.oracle_text.split('\n').collect();
-                let non_keyword_text: Vec<&str> = lines.iter()
-                    .filter(|line| {
-                        let trimmed = line.trim().trim_end_matches(',');
-                        !keyword_names.iter().any(|kw| trimmed.eq_ignore_ascii_case(kw))
-                    })
-                    .copied()
-                    .collect();
-                let text = non_keyword_text.join("\n");
+                let kept = Self::card_panel_oracle_lines(
+                    &card.oracle_text, card.flashback_cost.is_some());
+                let text = kept.join("\n");
                 if !text.trim().is_empty() {
                     let wrapped = Self::wrap_text(text.trim(), content_w);
                     for line in wrapped {
@@ -4178,6 +4168,57 @@ impl CliPlayer {
     }
 }
 
+impl CliPlayer {
+    /// The oracle-text lines the CARDS panel should print, given that the
+    /// panel prints its own keyword line above them and its own flashback
+    /// line below.
+    ///
+    /// A line is dropped when the panel already says what it says. The old
+    /// filter dropped only a line that was *exactly one* keyword name, so two
+    /// common shapes printed twice in a ~22-column panel (issue #265):
+    ///
+    /// - a keyword line naming more than one keyword — Elite Inquisitor's
+    ///   "First strike, vigilance" under the generated "First strike,
+    ///   Vigilance";
+    /// - the flashback cost, which every flashback card's oracle text carries
+    ///   with its reminder text, under the generated "Flashback {cost}".
+    ///
+    /// Dropping the oracle's flashback line rather than the generated one
+    /// takes the reminder text with it, which is what was eating Army of the
+    /// Damned's whole card box.
+    fn card_panel_oracle_lines(oracle_text: &str, has_flashback_line: bool) -> Vec<&str> {
+        const KEYWORD_NAMES: &[&str] = &[
+            "Flying", "First strike", "Double strike", "Trample", "Deathtouch",
+            "Lifelink", "Vigilance", "Flash", "Reach", "Haste", "Defender",
+            "Hexproof", "Intimidate", "Menace", "Indestructible",
+        ];
+        // Every comma-separated part is a keyword name, so the generated
+        // keyword line above already carries the whole line.
+        let all_keywords = |line: &str| {
+            let mut parts = line.split(',').map(str::trim).filter(|p| !p.is_empty()).peekable();
+            parts.peek().is_some()
+                && parts.all(|p| {
+                    let p = p.trim_end_matches('.');
+                    KEYWORD_NAMES.iter().any(|kw| p.eq_ignore_ascii_case(kw))
+                })
+        };
+        oracle_text
+            .split('\n')
+            .filter(|line| {
+                let trimmed = line.trim();
+                if all_keywords(trimmed) {
+                    return false;
+                }
+                // The generated line below prints the cost without the
+                // reminder text; only drop this when there is one.
+                !(has_flashback_line
+                    && trimmed.len() >= "flashback ".len()
+                    && trimmed[.."flashback ".len()].eq_ignore_ascii_case("flashback "))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4204,6 +4245,55 @@ mod tests {
         assert_eq!(CliPlayer::clip_middle("Pass priority", 113), "Pass priority");
         assert_eq!(CliPlayer::clip_middle("abcdef", 1), "…");
         assert_eq!(CliPlayer::clip_middle("abcdef", 0), "");
+    }
+
+    /// The CARDS panel prints its own keyword line and its own flashback
+    /// line; the oracle text must not repeat either of them.
+    ///
+    /// The old filter matched only a line that was exactly one keyword name,
+    /// so Elite Inquisitor's "First strike, vigilance" printed under the
+    /// generated "First strike, Vigilance", and every flashback card printed
+    /// its cost twice within four lines — in a ~22-column panel, where Army
+    /// of the Damned's box was entirely consumed by two copies of its
+    /// flashback cost plus reminder text (issue #265).
+    #[test]
+    fn the_cards_panel_does_not_repeat_keywords_or_the_flashback_cost() {
+        // A keyword line naming more than one keyword — the Elite Inquisitor
+        // case. Dropped; the real rules text is kept.
+        let inquisitor = "First strike, vigilance\n\
+                          Protection from Vampires, from Werewolves, and from Zombies";
+        let kept = CliPlayer::card_panel_oracle_lines(inquisitor, false);
+        assert_eq!(kept, vec!["Protection from Vampires, from Werewolves, and from Zombies"],
+            "the duplicated keyword line goes, the rules text stays: {kept:?}");
+
+        // The flashback line, with its reminder text — the Army of the Damned
+        // case. Dropped only when the panel prints its own flashback line.
+        let army = "Create thirteen tapped 2/2 black Zombie creature tokens.\n\
+                    Flashback {7}{B}{B}{B} (You may cast this card from your \
+                    graveyard for its flashback cost. Then exile it.)";
+        let kept = CliPlayer::card_panel_oracle_lines(army, true);
+        assert_eq!(kept.len(), 1, "only the real text survives: {kept:?}");
+        assert!(kept[0].starts_with("Create thirteen"), "{kept:?}");
+
+        // With no generated flashback line there is nothing to duplicate, so
+        // the oracle's own line is the only record and must be kept.
+        let kept = CliPlayer::card_panel_oracle_lines(army, false);
+        assert_eq!(kept.len(), 2, "nothing is dropped with no flashback line: {kept:?}");
+
+        // The single-keyword case the old filter did handle still works, in
+        // both the bare and trailing-comma forms.
+        for line in ["Flying", "flying", "Flying,", "Deathtouch"] {
+            assert!(CliPlayer::card_panel_oracle_lines(line, false).is_empty(),
+                "{line:?} is already on the keyword line");
+        }
+
+        // A line that merely mentions a keyword is rules text, not a repeat.
+        let mentions = "Target creature gains flying until end of turn.";
+        assert_eq!(CliPlayer::card_panel_oracle_lines(mentions, false), vec![mentions],
+            "a sentence about a keyword is not a keyword line");
+        let flashback_prose = "Whenever you cast a spell with flashback, draw a card.";
+        assert_eq!(CliPlayer::card_panel_oracle_lines(flashback_prose, true), vec![flashback_prose],
+            "a sentence mentioning flashback is not the flashback line");
     }
 
     fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
