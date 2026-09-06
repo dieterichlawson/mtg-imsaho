@@ -118,6 +118,12 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // bullet in GAME_RULES in mtg-player/src/llm.rs so the agent's
         // system prompt stays accurate.
         let has_x = cost.has_x();
+        // A reduction the printed cost had no generic pips to absorb comes
+        // off the announced X instead (CR 601.2b then 601.2f).
+        let x_discount = match &method {
+            CastMethod::Alternative(_) => 0,
+            CastMethod::Normal => cost_to_cast(&state, registry, card_id, player, &method).x_discount,
+        };
 
         if has_x {
             let non_x_cost = cost.without_x();
@@ -133,10 +139,12 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                         &mut probe, source_id, ability_index, Some(&non_x_cost), registry);
                 }
                 let _ = mana::auto_pay(&mut probe.get_player_mut(player).mana_pool, &non_x_cost);
-                crate::funding::build_options(&probe, player, registry)
+                let mut options = crate::funding::build_options(&probe, player, registry);
+                options.x_discount = x_discount;
+                options
             };
 
-            if probe_options.max_x > 0 {
+            if probe_options.max_announceable_x() > 0 {
                 // Stash context; leave spell in hand. Set up the prompt.
                 let spell_name = card_name(&state, registry, object_id);
                 state.pending_spell_cast = Some(crate::state::PendingSpellCast {
@@ -156,7 +164,8 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                     player,
                     source: object_id,
                     choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
-                        description: format!("{spell_name}: choose X funding (0-{})", probe_options.max_x),
+                        description: format!("{spell_name}: choose X funding (0-{})",
+                            probe_options.max_announceable_x()),
                         options: probe_options,
                         source_id: object_id,
                         is_ability: false,

@@ -420,8 +420,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         ).expect("non-X mana should be payable after tap_plan");
 
                         // Step 3: apply the funding response (pays X by
-                        // tapping funding sources + draining pool).
-                        let x = crate::funding::apply(&mut *state, player, options, response, registry);
+                        // tapping funding sources + draining pool). A cost
+                        // reduction with no generic pips to come off pays for
+                        // the first `x_discount` of X, so the announced value
+                        // is the funded mana plus that (CR 601.2f).
+                        let funded = crate::funding::apply(&mut *state, player, options, response, registry);
+                        let x = funded + options.x_discount;
                         state.log(LogLevel::Event, format!("Funded X = {x}"));
 
                         // Step 4: pay additional costs (CR 601.2b), through

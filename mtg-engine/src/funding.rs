@@ -89,8 +89,30 @@ pub struct FundingOptions {
     pub pool: BTreeMap<ManaType, u32>,
     /// Groups of eligible tap sources, sorted by (category, name).
     pub groups: Vec<FundingGroup>,
-    /// Ceiling on X = pool total + sum of group contributions.
+    /// Ceiling on the mana this response may fund = pool total + sum of
+    /// group contributions.
     pub max_x: u32,
+    /// Generic cost reduction that comes off the announced X rather than off
+    /// the printed cost (CR 601.2f). The first `x_discount` of X costs no
+    /// mana, so the largest X the player may announce is `max_x + x_discount`
+    /// and a response funds `X - x_discount`.
+    #[serde(default)]
+    pub x_discount: u32,
+}
+
+impl FundingOptions {
+    /// The largest X the player may announce: the mana they can produce plus
+    /// the part of X a cost reduction pays for (CR 601.2b, 601.2f).
+    #[must_use]
+    pub fn max_announceable_x(&self) -> u32 {
+        self.max_x + self.x_discount
+    }
+
+    /// The mana a response must fund to announce `x`.
+    #[must_use]
+    pub fn mana_for_x(&self, x: u32) -> u32 {
+        x.saturating_sub(self.x_discount)
+    }
 }
 
 /// A player's response to a [`ResolutionChoiceKind::ChooseXFunding`] prompt.
@@ -367,6 +389,8 @@ pub fn build_options(
         pool,
         groups,
         max_x,
+        // Set by the caster, which is where the spell's cost is known.
+        x_discount: 0,
     }
 }
 
@@ -470,6 +494,7 @@ mod tests {
             pool: BTreeMap::new(),
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 3)],
             max_x: 3,
+            x_discount: 0,
         };
         let response = FundingResponse::default();
         assert_eq!(validate(&response, &options), Ok(()));
@@ -482,6 +507,7 @@ mod tests {
             pool: BTreeMap::new(),
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 2)],
             max_x: 2,
+            x_discount: 0,
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Forest".into(), 1);
@@ -497,6 +523,7 @@ mod tests {
             pool: BTreeMap::new(),
             groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
             max_x: 2,
+            x_discount: 0,
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Sol Ring".into(), 1);
@@ -516,6 +543,7 @@ mod tests {
             pool: BTreeMap::new(),
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 2)],
             max_x: 2,
+            x_discount: 0,
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Swamp".into(), 3);
@@ -537,6 +565,7 @@ mod tests {
             pool,
             groups: vec![],
             max_x: 1,
+            x_discount: 0,
         };
         let mut response = FundingResponse::default();
         response.pool.insert(ManaType::Black, 2);
@@ -559,6 +588,7 @@ mod tests {
             pool,
             groups: vec![],
             max_x: 1, // artificially low
+            x_discount: 0,
         };
         let mut response = FundingResponse::default();
         response.pool.insert(ManaType::Black, 2);

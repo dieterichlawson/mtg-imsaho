@@ -3199,7 +3199,7 @@ impl CliPlayer {
 
         let _ = execute!(out, cursor::MoveTo(col, r),
             SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-            Print(clip(&format!("  Max X = {}", options.max_x))),
+            Print(clip(&format!("  Max X = {}", options.max_announceable_x()))),
             SetAttribute(Attribute::Reset), ResetColor);
         r += 1;
         let pool_summary: Vec<String> = [
@@ -3224,9 +3224,9 @@ impl CliPlayer {
         let _ = out.flush();
 
         let hint = if can_cancel {
-            format!("  X (0-{}, c = cancel the cast) = ", options.max_x)
+            format!("  X (0-{}, c = cancel the cast) = ", options.max_announceable_x())
         } else {
-            format!("  X (0-{}) = ", options.max_x)
+            format!("  X (0-{}) = ", options.max_announceable_x())
         };
         let x: u32 = loop {
             // Clear the input row before each attempt (same as the combat
@@ -3246,9 +3246,9 @@ impl CliPlayer {
             // on a stray keypress (issue #123). It re-prompts now — X=0 is
             // still available by typing 0.
             let notice = match input.parse::<u32>() {
-                Ok(n) if n <= options.max_x => break n,
+                Ok(n) if n <= options.max_announceable_x() => break n,
                 _ if input.is_empty() => "  Enter a value for X.".to_string(),
-                _ => format!("  Enter an integer between 0 and {}.", options.max_x),
+                _ => format!("  Enter an integer between 0 and {}.", options.max_announceable_x()),
             };
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine),
                 Print(notice));
@@ -3261,7 +3261,10 @@ impl CliPlayer {
         // the end (X isn't achievable due to multi-mana-source quanta) is
         // rounded down by dropping excess.
         let mut response = FundingResponse::default();
-        let mut remaining = x;
+        // A cost reduction with no generic pips to come off pays for the
+        // first `x_discount` of X, so only the rest is funded with mana
+        // (CR 601.2f).
+        let mut remaining = options.mana_for_x(x);
 
         // Pool: drain largest buckets first.
         let mut pool_sorted: Vec<(ManaType, u32)> = options.pool.iter()

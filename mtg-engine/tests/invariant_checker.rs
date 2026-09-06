@@ -588,6 +588,7 @@ fn incoherent_prompts_and_stashes_are_flagged() {
                 pool: std::collections::BTreeMap::new(),
                 groups: vec![],
                 max_x: 1,
+                x_discount: 0,
             },
             source_id: src,
             is_ability: false,

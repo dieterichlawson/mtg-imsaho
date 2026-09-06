@@ -2758,11 +2758,20 @@ impl LlmPlayer {
             "additionalProperties": false,
         });
 
+        let discount_note = if options.x_discount > 0 {
+            format!(
+                " A cost reduction already pays for {} of X, so X = {} + everything you allocate, \
+                 up to {}.",
+                options.x_discount, options.x_discount, options.max_announceable_x(),
+            )
+        } else {
+            String::new()
+        };
         let prompt_text = format!(
             "{description}\n\
-             X = sum of all allocated amounts. Legal X values: 0 to {}.\n\
+             X = sum of all allocated amounts. Legal X values: 0 to {}.{discount_note}\n\
              Sources with variable output or cost-bearing activation (e.g. pain lands) aren't listed — tap those manually first to float the mana.",
-            options.max_x,
+            options.max_announceable_x(),
         );
         let full_prompt = self.build_prompt(view, &prompt_text);
         let response = self.send_message_structured(&full_prompt, &schema);

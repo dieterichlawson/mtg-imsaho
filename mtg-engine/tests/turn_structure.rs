@@ -612,7 +612,7 @@ fn a_cast_time_prompt_belongs_to_the_caster_for_priority() {
         source: play,
         choice: mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
             description: "X".into(),
-            options: mtg_engine::funding::FundingOptions { pool: std::collections::BTreeMap::new(), groups: vec![], max_x: 1 },
+            options: mtg_engine::funding::FundingOptions { pool: std::collections::BTreeMap::new(), groups: vec![], max_x: 1, x_discount: 0 },
             source_id: play,
             is_ability: false,
         },

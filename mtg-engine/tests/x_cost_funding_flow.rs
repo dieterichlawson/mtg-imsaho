@@ -388,3 +388,73 @@ fn ability_x_funding_refuses_cancel() {
             choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
         "an ability's funding prompt refuses a cancel and stays up");
 }
+
+// ── CR 601.2b then 601.2f: a reduction comes off the announced X ─────────
+
+/// Heartless Summoning says creature spells cost {2} less. Mikaeus, the
+/// Lunarch costs `{X}{W}` — there is no printed generic pip for the {2} to
+/// come off, so it comes off X instead: X is announced first (CR 601.2b) and
+/// the total cost is then the mana cost with X substituted, minus the
+/// reduction (CR 601.2f). On three lands the legal maximum is X = 4, and
+/// X = 2 costs a single Plains.
+#[test]
+fn a_reduction_with_no_generic_to_take_comes_off_the_announced_x() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &registry, "Heartless Summoning", P0);
+    let mikaeus = spell_in_hand(&mut state, &registry, "Mikaeus, the Lunarch", P0);
+    named_permanent(&mut state, &registry, "Plains", P0);
+    named_permanent(&mut state, &registry, "Swamp", P0);
+    named_permanent(&mut state, &registry, "Swamp", P0);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let cast = legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == mikaeus))
+        .expect("Mikaeus should be castable")
+        .clone();
+    let post_cast = engine::submit_action(&state, &cast, &registry);
+
+    let options = extract_funding(&post_cast);
+    assert_eq!(options.x_discount, 2, "the whole {{2}} lands on X");
+    assert_eq!(options.max_announceable_x(), 4,
+        "two lands' worth of mana plus the {{2}} the reduction pays for");
+    assert_eq!(options.mana_for_x(2), 0, "X = 2 is paid entirely by the reduction");
+
+    // Announce X = 2 by funding nothing: the reduction covers it.
+    let after = engine::submit_action(
+        &post_cast,
+        &Action::ResolveChoice { choice: ResolvedChoice::XFunding(FundingResponse::default()) },
+        &registry,
+    );
+    assert_eq!(after.get_object(mikaeus).unwrap().x_value, Some(2),
+        "the announced X is the funded mana plus the reduction (CR 601.2f)");
+    let untapped = ["Plains", "Swamp"].iter()
+        .map(|n| after.objects_in_zone(Zone::Battlefield, P0).iter()
+            .filter(|o| o.name == *n && !o.tapped).count())
+        .sum::<usize>();
+    assert_eq!(untapped, 2, "only the {{W}} was paid — one land tapped, two left");
+}
+
+/// The control: with no reduction in play the same spell has no discount and
+/// X costs a mana each.
+#[test]
+fn an_x_spell_with_no_reduction_funds_every_point_of_x() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mikaeus = spell_in_hand(&mut state, &registry, "Mikaeus, the Lunarch", P0);
+    named_permanent(&mut state, &registry, "Plains", P0);
+    named_permanent(&mut state, &registry, "Swamp", P0);
+    named_permanent(&mut state, &registry, "Swamp", P0);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let cast = legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == mikaeus))
+        .expect("Mikaeus should be castable")
+        .clone();
+    let post_cast = engine::submit_action(&state, &cast, &registry);
+
+    let options = extract_funding(&post_cast);
+    assert_eq!(options.x_discount, 0);
+    assert_eq!(options.max_announceable_x(), 2, "three lands, one of them the {{W}}");
+    assert_eq!(options.mana_for_x(2), 2);
+}

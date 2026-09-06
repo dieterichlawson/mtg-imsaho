@@ -33,6 +33,15 @@ pub struct SpellCost {
     pub mana: ManaCost,
     /// What must be paid besides mana (CR 601.2b).
     pub additional: Option<AdditionalCost>,
+    /// Cost reduction the printed cost had no generic pips left to absorb,
+    /// which an announced X can absorb instead (CR 601.2b then 601.2f).
+    ///
+    /// `{X}{W}` under Heartless Summoning's "creature spells cost {2} less"
+    /// has no `{2}` to take the reduction off, so the whole reduction lands
+    /// here: announcing X = 4 makes the cost `{4}{W}`, and `{4}{W}` − `{2}`
+    /// is `{2}{W}`. Zero for a cost with no X, where an unabsorbed reduction
+    /// simply goes nowhere (a cost never drops below its colored pips).
+    pub x_discount: u32,
 }
 
 /// Determine what casting `card_id` costs `player` right now (CR 601.2f).
@@ -58,8 +67,10 @@ pub fn cost_to_cast(
             .or_else(|| data.as_ref().and_then(|d| d.cost.clone()))
             .unwrap_or_else(|| ManaCost::new(vec![])),
     };
+    let (mana, unabsorbed) = reduce(&base, total_reduction(state, registry, card_id, player));
     SpellCost {
-        mana: reduce(&base, total_reduction(state, registry, card_id, player)),
+        x_discount: if base.has_x() { unabsorbed } else { 0 },
+        mana,
         additional: data.and_then(|d| d.additional_cost),
     }
 }
@@ -126,9 +137,17 @@ fn spell_matches(registry: &CardRegistry, card_id: CardId, filter: &SpellFilter)
 
 /// CR 601.2f: a reduction comes off the generic portion; coloured
 /// requirements are never reduced.
-fn reduce(cost: &ManaCost, mut reduction: u32) -> ManaCost {
+/// Apply a generic cost reduction, returning the reduced cost and whatever
+/// reduction the cost had no generic pips to absorb.
+///
+/// The remainder matters for an `{X}` cost: X is announced first and becomes
+/// part of the generic portion, so a reduction with nothing to take off the
+/// printed cost still comes off the announced X (CR 601.2b, 601.2f). It used
+/// to be discarded here, which made Heartless Summoning do nothing at all for
+/// Mikaeus, the Lunarch (issue #298).
+fn reduce(cost: &ManaCost, mut reduction: u32) -> (ManaCost, u32) {
     if reduction == 0 {
-        return cost.clone();
+        return (cost.clone(), 0);
     }
     let mut symbols = Vec::new();
     for sym in &cost.symbols {
@@ -141,7 +160,7 @@ fn reduce(cost: &ManaCost, mut reduction: u32) -> ManaCost {
             other => symbols.push(other.clone()),
         }
     }
-    ManaCost::new(symbols)
+    (ManaCost::new(symbols), reduction)
 }
 
 /// Everything a caller needs to know about a spell's additional cost

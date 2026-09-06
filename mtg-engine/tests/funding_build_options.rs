@@ -113,7 +113,7 @@ fn funding_validation_enforces_its_bounds_exactly() {
     };
     let mut pool = BTreeMap::new();
     pool.insert(ManaType::Green, 1);
-    let options = FundingOptions { pool, groups: vec![group], max_x: 3 };
+    let options = FundingOptions { pool, groups: vec![group], max_x: 3, x_discount: 0 };
 
     let ok = |taps_amt: u32, pool_amt: u32| {
         let mut taps = BTreeMap::new();
