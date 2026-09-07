@@ -874,3 +874,141 @@ fn a_zero_toughness_creature_card_off_the_battlefield_is_not_a_dead_creature() {
         "a creature card in the graveyard is not a permanent the death check \
          applies to, got: {v:?}");
 }
+
+/// The bookkeeping that has to be internally consistent before anything
+/// reads it: the object map, the library's two views, and the attachment
+/// graph.
+#[test]
+fn the_object_map_and_the_library_views_agree_with_themselves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let library = stock_library(&mut state, &reg, P0, 3);
+    for id in &library {
+        state.get_object_mut(*id).unwrap().name = "Forest".into();
+    }
+
+    // An object filed under an id that is not its own: the map key and the
+    // object's own id are the same handle, or nothing that looks one up by
+    // id gets the object it asked for.
+    let mut s = state.clone();
+    let stray = s.get_object(bear).unwrap().clone();
+    s.objects.insert(ObjectId(4242), stray);
+    assert_flags(&s, &reg, "not stored under its own id");
+
+    // And an id the allocator has not handed out yet.
+    let mut s = state.clone();
+    let mut ahead = s.get_object(bear).unwrap().clone();
+    ahead.id = ObjectId(4242);
+    s.objects.insert(ObjectId(4242), ahead);
+    assert_flags(&s, &reg, "at or past next_object_id");
+
+    // CR 401.2: the library's order and its zone are the same set, both ways.
+    let mut s = state.clone();
+    s.get_player_mut(P0).library_order.push(library[0]);
+    assert_flags(&s, &reg, "listed twice in library_order");
+
+    let mut s = state.clone();
+    s.get_player_mut(P0).library_order.push(ObjectId(4242));
+    assert_flags(&s, &reg, "library_order lists missing object 4242");
+
+    let mut s = state.clone();
+    s.get_object_mut(library[0]).unwrap().zone = Zone::Hand;
+    assert_flags(&s, &reg, "but its zone is Hand");
+
+    let mut s = state.clone();
+    s.get_player_mut(P0).library_order.retain(|id| *id != library[0]);
+    assert_flags(&s, &reg, "in library zone but not in library_order");
+
+    let mut s = state.clone();
+    s.get_object_mut(library[0]).unwrap().owner = P1;
+    assert_flags(&s, &reg, "library_order lists");
+
+    // Attached to an object and to a player at once.
+    let mut s = state.clone();
+    let aura = named_permanent(&mut s, &reg, "Pacifism", P0);
+    s.get_object_mut(aura).unwrap().attached_to = Some(bear);
+    s.get_object_mut(aura).unwrap().attached_to_player = Some(P1);
+    assert_flags(&s, &reg, "attached to both an object and a player");
+
+    // An attachment ring that never reaches a host standing on its own.
+    let mut s = state.clone();
+    let a = named_permanent(&mut s, &reg, "Pacifism", P0);
+    let b = named_permanent(&mut s, &reg, "Pacifism", P0);
+    s.get_object_mut(a).unwrap().attached_to = Some(b);
+    s.get_object_mut(b).unwrap().attached_to = Some(a);
+    assert_flags(&s, &reg, "sits in an attachment cycle");
+
+    // A stack entry whose object is not in the stack zone.
+    let mut s = state.clone();
+    s.stack.push(StackEntry::Spell(bear));
+    assert_flags(&s, &reg, "stack entry Spell(");
+
+    // Nothing in this pool uses the command zone.
+    let mut s = state.clone();
+    s.get_object_mut(library[0]).unwrap().zone = Zone::Command;
+    assert_flags(&s, &reg, "in the unused command zone");
+
+    // A stamp from a turn that has not happened.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().attacked_on_turn = Some(state.turn_number + 5);
+    assert_flags(&s, &reg, "attacked on future turn");
+}
+
+/// Combat's maps only ever name creatures that were declared as attackers,
+/// combat itself only exists in the combat steps, and a declaration names
+/// each attacker once (issue #108).
+#[test]
+fn combats_maps_only_name_declared_attackers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let bystander = ready_creature(&mut state, P0, 2, 2);
+    let mut c = CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(attacker, P1);
+    state.combat = Some(c);
+
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().blocked_attackers.insert(bystander);
+    assert_flags(&s, &reg, "blocked_attackers holds");
+
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().blocker_assignments.insert(bystander, vec![]);
+    assert_flags(&s, &reg, "blocker_assignments holds");
+
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().planeswalker_defenders.insert(bystander, attacker);
+    assert_flags(&s, &reg, "planeswalker_defenders holds");
+
+    // CR 508.1a: combat exists only in the combat steps.
+    let mut s = state.clone();
+    s.step = Step::PrecombatMain;
+    assert_flags(&s, &reg, "combat state present in step PrecombatMain");
+
+    // CR 508.1: one entry per attacker in the declaration.
+    let mut s = state.clone();
+    s.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(attacker, P1), (attacker, P1)] });
+    assert_flags(&s, &reg, "AttackersDeclared lists attacker");
+}
+
+/// CR 704.5i/704.5n: a planeswalker at zero loyalty is gone, and an Aura on
+/// the battlefield attached to nothing is gone with it.
+#[test]
+fn a_dead_planeswalker_and_an_unattached_aura_are_flagged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let aura = named_permanent(&mut state, &reg, "Pacifism", P0);
+    state.get_object_mut(aura).unwrap().attached_to = Some(bear);
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().attached_to = None;
+    assert_flags(&s, &reg, "on the battlefield unattached");
+
+    let mut s = state.clone();
+    let walker = named_permanent(&mut s, &reg, "Liliana of the Veil", P0);
+    s.get_object_mut(walker).unwrap().counters.insert(CounterType::Loyalty, 0);
+    assert_flags(&s, &reg, "alive at 0 loyalty");
+}
