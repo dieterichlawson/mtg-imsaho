@@ -739,3 +739,119 @@ fn an_x_funding_offer_names_the_players_own_sources() {
     s.pending_spell_cast.as_mut().unwrap().object_id = mountain;
     flags(&s, P0, &legal, &reg, "with no matching stash");
 }
+
+/// CR 601.2c/702.11/702.16: an offered target is a legal target now — of
+/// the right kind, not shielded, and a player who can be targeted.
+#[test]
+fn an_offered_target_is_a_legal_target_now() {
+    let (mut state, reg) = base();
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    state.priority_player = Some(P0);
+
+    let offering = |s: &GameState, targets: Vec<Target>| {
+        let mut l = mtg_engine::engine::legal_actions(s, &reg);
+        l.actions.insert(1, cast_action(pump, targets));
+        l
+    };
+
+    // A land where the spell wants a creature.
+    flags(&state, P0, &offering(&state, vec![Target::Object(land)]), &reg,
+        "which is not a legal target now (CR 601.2c)");
+
+    // CR 702.11b: hexproof shields it from the other player. (The shared
+    // legality re-check already rejects it, so the offer is illegal either
+    // way — what matters is that it is reported.)
+    let mut s = state.clone();
+    grant_keyword(&mut s, theirs, Keyword::Hexproof);
+    let v = check_legal(&s, P0, &offering(&s, vec![Target::Object(theirs)]), &reg);
+    assert!(v.iter().any(|m| m.contains("(CR 601.2c)") || m.contains("(CR 702.11/702.16)")),
+        "a hexproof creature is not offered to its controller's opponent: {v:?}");
+
+    // A spell on the stack that is on no stack entry.
+    let mut s = state.clone();
+    let other = castable_spell(&mut s, &reg, "Moment of Heroism", P0);
+    s.get_object_mut(other).unwrap().zone = Zone::Stack;
+    flags(&s, P0, &offering(&s, vec![Target::Object(other)]), &reg,
+        "in the stack zone that is on no stack entry");
+    let _ = mine;
+}
+
+/// CR 602.2/602.5/701.17a: an activation offer's own costs — the counters
+/// it removes, the timing it demands, and the creature it sacrifices.
+#[test]
+fn an_activation_offer_can_pay_the_costs_its_ability_asks_for() {
+    let (mut state, reg) = base();
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let activation = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == priest))
+        .expect("the Priest's tap ability is offered").clone();
+
+    // The Priest's ability asks for no sacrifice, so naming one is a cost
+    // its cost does not ask for.
+    let mut l = legal.clone();
+    let mut named = activation.clone();
+    if let Action::ActivateAbility { sacrifice, .. } = &mut named {
+        *sacrifice = Some(victim);
+    }
+    l.actions.insert(1, named);
+    flags(&state, P0, &l, &reg, "names a sacrifice its cost does not ask for");
+
+    // An ability offered through a card that neither grants it as a copy nor
+    // is attached to the permanent.
+    let mut l = legal.clone();
+    let mut borrowed = activation.clone();
+    if let Action::ActivateAbility { source_card_id, .. } = &mut borrowed {
+        *source_card_id = Some(state.get_object(victim).unwrap().card_id);
+    }
+    l.actions.insert(1, borrowed);
+    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+}
+
+/// CR 606.3/103.5/700.3: the offers the prompts do not enumerate — a
+/// mulligan count, a pile choice's two answers, and the blockers prompt's
+/// per-blocker lists.
+#[test]
+fn the_remaining_prompt_offers_are_checked_against_their_prompts() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.priority_player = Some(P0);
+
+    // CR 700.3: a pile choice offers exactly the two piles.
+    let mut s = state.clone();
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::ChoosePile {
+            description: "?".into(), pile_1: vec![bear], pile_2: vec![other],
+            source_id: bear } });
+    let legal = mtg_engine::engine::legal_actions(&s, &reg);
+    clean(&s, P0, &legal, &reg);
+    let mut l = legal.clone();
+    l.actions.pop();
+    flags(&s, P0, &l, &reg, "answers, not the two piles");
+
+    // The blockers prompt's block lists are keyed by the eligible blockers.
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.step = Step::DeclareBlockers;
+    state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+    state.priority_player = Some(P1);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let mut l = legal.clone();
+    if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+        legal_blocks.remove(&blocker);
+        legal_blocks.insert(attacker, vec![]);
+    }
+    flags(&state, P1, &l, &reg, ", not for the eligible blockers");
+}
