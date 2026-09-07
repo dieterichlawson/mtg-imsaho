@@ -59,6 +59,7 @@ const INVARIANT_SELF_TESTS: &[&str] = &[
     "invariant_event_window.rs",
     "invariant_legal_offers.rs",
     "invariant_prompt_shapes.rs",
+    "invariant_object_shapes.rs",
 ];
 
 fn is_invariant_self_test(name: &str) -> bool {

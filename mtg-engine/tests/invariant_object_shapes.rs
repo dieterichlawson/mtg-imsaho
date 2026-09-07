@@ -1,0 +1,393 @@
+//! Self-tests for the object-shape invariants (`mtg_engine::invariants`'s
+//! `objects`, `permanents` and `effects` families): what a game object may
+//! look like in each zone, what may be attached to what, and what an
+//! effect record may say.
+//!
+//! Same contract as the other invariant self-tests — the checker is the
+//! fuzzer's only pair of eyes, so every clause needs an object that
+//! violates it.
+
+mod common;
+use common::*;
+use mtg_engine::cards::CardRegistry;
+use mtg_engine::ids::{CardId, ObjectId};
+use mtg_engine::invariants::{check_core, check_settled};
+use mtg_engine::actions::Target;
+use mtg_engine::types::*;
+
+fn base() -> (GameState, CardRegistry) {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.turn_number = 3;
+    (state, reg)
+}
+
+#[track_caller]
+fn flags(state: &GameState, reg: &CardRegistry, needle: &str) {
+    let v = check_core(state, reg);
+    assert!(v.iter().any(|m| m.contains(needle)),
+        "expected a violation containing {needle:?}, got: {v:?}");
+}
+
+#[track_caller]
+fn flags_settled(state: &GameState, reg: &CardRegistry, needle: &str) {
+    let v = check_settled(state, reg);
+    assert!(v.iter().any(|m| m.contains(needle)),
+        "expected a settled violation containing {needle:?}, got: {v:?}");
+}
+
+/// CR 102.1: every player id stored on an object names a real player. Five
+/// fields carry one, and each is its own way to hand the checker a seat
+/// that is not there.
+#[test]
+fn every_player_id_on_an_object_is_range_checked() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+
+    let cases: [(&str, fn(&mut mtg_engine::state::GameObject, PlayerId)); 5] = [
+        ("owner", |o, p| o.owner = p),
+        ("controller", |o, p| o.controller = p),
+        ("last_controller", |o, p| o.last_controller = Some(p)),
+        ("attached_to_player", |o, p| o.attached_to_player = Some(p)),
+        ("last_attached_to_player", |o, p| o.last_attached_to_player = Some(p)),
+    ];
+
+    for (what, set) in cases {
+        let mut s = state.clone();
+        set(s.get_object_mut(bear).unwrap(), ghost);
+        flags(&s, &reg, &format!("{what} p2 is not a player (of 2)"));
+    }
+}
+
+/// CR 200.1/205.2c/110.4/305.9: what a card is, everywhere. A face the
+/// registry knows, at least one type, and a type the zone allows.
+#[test]
+fn an_objects_types_and_face_are_checked_in_every_zone() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+
+    // A token copy of a card the registry does not know.
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.is_token = true;
+        o.card_id = CardId(424_242);
+    }
+    flags(&s, &reg, "token copy of unregistered card 424242");
+
+    // Nothing at all for a type.
+    let mut s = state.clone();
+    // A runtime P/T would make it a creature (CR 205.1b), so it has none.
+    let blank = s.create_object(CardId(0), P0, Zone::Battlefield, None, None);
+    {
+        let o = s.get_object_mut(blank).unwrap();
+        o.is_token = true;
+        o.card_types = vec![];
+        o.name = "Wolf Token".into();
+        o.subtypes = vec!["Wolf".into()];
+    }
+    flags(&s, &reg, "has no card type");
+
+    // CR 304.4/307.4: an instant or sorcery never stays on the battlefield.
+    let mut s = state.clone();
+    s.get_object_mut(card).unwrap().zone = Zone::Battlefield;
+    flags(&s, &reg, "is an instant/sorcery on the battlefield (CR 304.4/307.4)");
+
+    // CR 110.4: and what is on the battlefield is a permanent type.
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.is_token = true;
+        o.card_id = CardId(0);
+        o.name = "Token".into();
+        o.subtypes = vec![];
+        o.card_types = vec![CardType::Instant];
+        // A runtime P/T would make it a creature (CR 205.1b), which is a
+        // permanent type — the clause under test is about having none.
+        o.power = None;
+        o.toughness = None;
+    }
+    flags(&s, &reg, "on the battlefield has no permanent type (CR 110.4)");
+
+    // CR 305.9: a land is played, never put on the stack.
+    let mut s = state.clone();
+    let forest = spell_in_hand(&mut s, &reg, "Forest", P0);
+    s.get_object_mut(forest).unwrap().zone = Zone::Stack;
+    flags(&s, &reg, "is a land on the stack (CR 305.9)");
+}
+
+/// CR 107.3g/702.34a: X and the flashback mark belong to specific cards in
+/// specific zones.
+#[test]
+fn x_and_the_flashback_mark_belong_where_they_are_written() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+
+    // CR 107.3g: X on a permanent whose cost has no X.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().x_value = Some(2);
+    flags(&s, &reg, "carries x_value but its cost has no X");
+
+    // CR 702.34a: only a card can be cast with flashback...
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.is_token = true;
+        o.card_id = CardId(0);
+        o.name = "Bear Token".into();
+        o.subtypes = vec!["Bear".into()];
+        o.cast_with_flashback = true;
+        o.zone = Zone::Stack;
+    }
+    flags(&s, &reg, "is a token cast with flashback");
+
+    // ...and only an instant or a sorcery.
+    let mut s = state.clone();
+    let creature = spell_in_hand(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(creature).unwrap().zone = Zone::Stack;
+    s.get_object_mut(creature).unwrap().cast_with_flashback = true;
+    flags(&s, &reg, "cast with flashback is neither instant nor sorcery");
+    let _ = card;
+}
+
+/// CR 400.7: a card off the battlefield is its printed self. Nothing it
+/// picked up there comes with it.
+#[test]
+fn a_card_off_the_battlefield_keeps_nothing_it_picked_up_there() {
+    let (mut state, reg) = base();
+    let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+
+    let cases: [(&str, fn(&mut mtg_engine::state::GameObject)); 5] = [
+        ("keeps instance effects/text (CR 400.7)",
+            |o| o.instance_oracle_text = Some("gains flying".into())),
+        ("is summoning sick", |o| o.summoning_sick = true),
+        ("remembers attacking", |o| o.attacked_on_turn = Some(3)),
+        ("keeps a damage record", |o| o.dealt_deathtouch_damage = true),
+        ("remembers activations this turn (CR 400.7)",
+            |o| { o.abilities_activated_this_turn.insert(0); }),
+    ];
+    for (needle, corrupt) in cases {
+        let mut s = state.clone();
+        corrupt(s.get_object_mut(card).unwrap());
+        flags(&s, &reg, needle);
+    }
+
+    // CR 701.19: a regeneration shield is a battlefield thing.
+    let mut s = state.clone();
+    s.get_object_mut(card).unwrap().regeneration_shields = 1;
+    flags(&s, &reg, "keeps a regeneration shield");
+
+    // CR 205.4b: the legendary cache never claims more than the face.
+    let mut s = state.clone();
+    s.get_object_mut(card).unwrap().is_legendary = true;
+    flags(&s, &reg, "is flagged legendary but its face is not");
+}
+
+/// CR 120.3/120.3c: marked damage lives on a battlefield creature, with a
+/// record of what dealt it, and never on a planeswalker.
+#[test]
+fn marked_damage_lives_on_a_battlefield_creature() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    let lili = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, lili, 3);
+
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(land).unwrap();
+        o.damage_marked = 1;
+        o.damaged_by.push(bear);
+    }
+    flags(&s, &reg, "damage marked but is no battlefield creature (CR 120.3)");
+
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().damage_marked = 1;
+    flags(&s, &reg, "damage marked but no record of what dealt it");
+
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().dealt_deathtouch_damage = true;
+    flags(&s, &reg, "was dealt deathtouch damage but has none marked");
+
+    // CR 120.3c: damage to a planeswalker is loyalty, not marked damage.
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(lili).unwrap();
+        o.damage_marked = 1;
+        o.damaged_by.push(bear);
+    }
+    flags(&s, &reg, "is a planeswalker with damage marked (CR 120.3c)");
+
+    // CR 606.3: the loyalty sentinel is only ever on a planeswalker.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().abilities_activated_this_turn.insert(999);
+    flags(&s, &reg, "used a loyalty ability but is no planeswalker");
+}
+
+/// CR 303.4/701.3a: attachment is a battlefield fact, and only an Aura
+/// whose enchant ability names players is ever attached to one.
+#[test]
+fn attachment_is_a_battlefield_fact_about_the_right_kind_of_thing() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let card = spell_in_hand(&mut state, &reg, "Pacifism", P0);
+
+    // Attached while not on the battlefield.
+    let mut s = state.clone();
+    s.get_object_mut(card).unwrap().attached_to = Some(bear);
+    flags(&s, &reg, "is attached to something");
+
+    // A player enchanted by something that is no Aura.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().attached_to_player = Some(P1);
+    flags(&s, &reg, "is attached to a player but is no Aura (CR 303.4)");
+
+    // An Aura that enchants creatures, attached to a player.
+    let mut s = state.clone();
+    let aura = named_permanent(&mut s, &reg, "Pacifism", P0);
+    s.get_object_mut(aura).unwrap().attached_to = None;
+    s.get_object_mut(aura).unwrap().attached_to_player = Some(P1);
+    flags(&s, &reg, "enchants a player but its enchant ability does not allow one");
+    flags_settled(&s, &reg, "enchants creatures but is attached to a player");
+
+    // The shadow of a past attachment is not kept on the battlefield.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().last_attached_to_player = Some(P1);
+    flags(&s, &reg, "on the battlefield keeps a last-attached-to-player shadow");
+
+    // CR 303.4d/301.5c: an attached Aura or Equipment is not a creature.
+    let mut s = state.clone();
+    let host = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(other).unwrap().attached_to = Some(host);
+    s.get_object_mut(other).unwrap().subtypes.push("Aura".into());
+    s.get_object_mut(other).unwrap().card_types.push(CardType::Enchantment);
+    flags_settled(&s, &reg, "is a creature attached to something (CR 303.4d/301.5c)");
+}
+
+/// CR 111.4/205.3/707.8: a token is named after its subtypes, a subtype
+/// belongs to its card type, and the name cache agrees with the face.
+#[test]
+fn a_tokens_name_and_types_describe_what_it_is() {
+    let (mut state, reg) = base();
+    let wolf = state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+
+    // CR 111.4: the name is the subtypes plus "Token".
+    let mut s = state.clone();
+    s.get_object_mut(wolf).unwrap().name = "Bear Token".into();
+    flags(&s, &reg, "token name is not its subtypes");
+    let mut s = state.clone();
+    s.get_object_mut(wolf).unwrap().name = "Wolf".into();
+    flags(&s, &reg, "token name does not end in");
+
+    // A token with subtypes and no creature type.
+    let mut s = state.clone();
+    s.get_object_mut(wolf).unwrap().card_types = vec![CardType::Artifact];
+    flags(&s, &reg, "is a token with subtypes");
+
+    // CR 205.3: an Aura is an Enchantment, an Equipment an Artifact.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().subtypes.push("Equipment".into());
+    flags(&s, &reg, "has subtype Equipment without type Artifact (CR 205.3)");
+
+    // CR 707.8: the cached name is the face that is up.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().name = "Something Else".into();
+    flags(&s, &reg, "name cache says");
+
+    // CR 208.1: power and toughness come as a pair.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().toughness = None;
+    flags(&s, &reg, "(CR 208.1)");
+
+    // CR 111.8: a token on the battlefield has never changed zones.
+    let mut s = state.clone();
+    s.get_object_mut(wolf).unwrap().zone_change_count = 1;
+    flags(&s, &reg, "is a token that changed zones");
+
+    // Loyalty counters on a non-planeswalker.
+    let mut s = state.clone();
+    s.add_counters(bear, CounterType::Loyalty, 1);
+    flags(&s, &reg, "holds loyalty counters but is no planeswalker");
+
+    // The unused day/night designation stays unused.
+    let mut s = state.clone();
+    s.day_night = Some(mtg_engine::state::DayNight::Day);
+    flags(&s, &reg, "day/night designation set but nothing in this pool uses it");
+}
+
+/// CR 700.2: a modal spell on the stack has exactly one of its own modes
+/// chosen, and a spell that is not modal has none.
+#[test]
+fn a_modal_spell_on_the_stack_chose_one_of_its_modes() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let modal = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
+    let state = cast_onto_stack(&state, &reg, modal, vec![Target::Object(bear)]);
+
+    // A spell with no modes carrying a chosen one is checked elsewhere; the
+    // gap here is a modal spell whose mode is missing or out of range.
+    let modal_card = state.get_object(modal).unwrap().card_id;
+    if matches!(reg.get(modal_card).map(|b| b.target_requirement()),
+                Some(mtg_engine::cards::TargetRequirement::ModalChoice(_))) {
+        let mut s = state.clone();
+        s.get_object_mut(modal).unwrap().chosen_mode = None;
+        flags(&s, &reg, "is a modal spell on the stack with no mode chosen (CR 700.2)");
+        let mut s = state.clone();
+        s.get_object_mut(modal).unwrap().chosen_mode = Some(99);
+        flags(&s, &reg, "(CR 700.2)");
+    }
+}
+
+/// CR 614.12b: a permanent still waiting on its enters-as-a-copy choice has
+/// not entered the battlefield.
+#[test]
+fn a_permanent_waiting_on_its_copy_choice_is_not_on_the_battlefield() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.pending_entry_choices.push(bear);
+    flags(&state, &reg, "is on the battlefield while still queued for its enters-as-copy choice (CR 614.12b)");
+}
+
+/// CR 400.7/702.34a/611.2b: an effect record points at something that can
+/// carry it, for as long as the rules let it.
+#[test]
+fn every_effect_record_points_at_something_that_can_carry_it() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    let buried = named_card_in_graveyard(&mut state, &reg, "Moment of Heroism", P0);
+    let creature_card = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let cost = state.face_data(buried, &reg).unwrap().cost.unwrap();
+
+    // CR 702.34a: flashback is granted to an instant or a sorcery card.
+    let mut s = state.clone();
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantFlashback {
+        target: creature_card, cost: cost.clone() });
+    flags_settled(&s, &reg, "which is no instant or sorcery");
+
+    let mut s = state.clone();
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantFlashback {
+        target: ObjectId(4242), cost: cost.clone() });
+    flags_settled(&s, &reg, "flashback granted to");
+
+    let mut s = state.clone();
+    let token = s.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantFlashback {
+        target: token, cost });
+    flags_settled(&s, &reg, "flashback granted to token #");
+
+    // A control effect over something that is not a creature.
+    let mut s = state.clone();
+    s.control_effects.push(mtg_engine::state::ControlEffect {
+        object: land, controller: P1, original_controller: P0,
+        source: bear, source_controller: P0, timestamp: 1 });
+    flags_settled(&s, &reg, "control effect over #");
+    let _ = buried;
+}
