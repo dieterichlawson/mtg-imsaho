@@ -118,7 +118,17 @@ fn the_save_outlives_the_game_and_holds_the_final_position() {
         .expect("failed to run the runner");
     let text = String::from_utf8_lossy(&resumed.stdout);
     assert!(text.contains("Game over!"), "resumed a finished game: {text}");
-    assert!(text.contains("Total actions: 0"), "nothing was left to play: {text}");
+    // The count is the GAME's, not the session's (issue #293) — so "nothing
+    // was left to play" is that every action of it predates the resume, not
+    // that the summary prints a zero.
+    let line = text.lines().find(|l| l.starts_with("Total actions: "))
+        .unwrap_or_else(|| panic!("the summary reports a count: {text}"));
+    let (n, before) = line.trim_start_matches("Total actions: ")
+        .split_once(" (")
+        .unwrap_or_else(|| panic!("a resumed game names what predates the resume: {line}"));
+    assert_eq!(format!("{n} before this resume)"), before,
+        "nothing was left to play: {line}");
+    assert_ne!(n, "0", "and the game's own length is reported, not the session's: {line}");
 }
 
 /// A path that already holds something gets a word about it, since the save

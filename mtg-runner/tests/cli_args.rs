@@ -399,9 +399,13 @@ fn help_does_not_claim_the_saved_seed_beats_the_seed_flag() {
 
     assert!(!resume_text.contains("decks/seed win over flags"),
         "the retracted claim is gone: {resume_text}");
-    assert!(resume_text.contains("decks win over flags"),
-        "the true half — saved decks do win — is kept: {resume_text}");
+    assert!(resume_text.contains("decks and seats\n                         win over the flags"),
+        "the true half — the saved decks AND seats do win (issue #248) — is kept: {resume_text}");
     assert!(resume_text.contains("--seed") && resume_text.contains("seats"),
         "and --help says what --seed actually still does, matching the note the \
          program prints on stderr for the same combination: {resume_text}");
+    // Issue #248: the two flags whose absence changes who is playing are
+    // named, because their absence used to hand seat 2 to a random bot.
+    assert!(resume_text.contains("--p1/--p2"),
+        "--help names the seat flags: {resume_text}");
 }
