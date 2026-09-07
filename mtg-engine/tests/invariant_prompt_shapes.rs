@@ -739,3 +739,62 @@ fn a_hand_prompt_reads_the_hand_of_the_player_it_asks() {
             description: "d".into(), options: vec!["Creature".into()], controller: P1 } });
     flags(&s, &reg, "card-type prompt for p1 answered by p0");
 }
+
+/// CR 508.4b: a token put onto the battlefield attacking chooses whom it
+/// attacks — a token its controller controls, inside combat, from a list
+/// that does not include itself.
+#[test]
+fn a_token_attacks_prompt_is_about_a_token_in_combat() {
+    let (mut state, reg) = base();
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let lili = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    set_loyalty(&mut state, lili, 3);
+    state.step = Step::DeclareAttackers;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(source, P1);
+    state.combat = Some(c);
+    let token = state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    let other_token = state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+
+    let prompt = |token_id: ObjectId, remaining: Vec<ObjectId>, options: Vec<Target>|
+        AwaitingAction::ResolutionChoice {
+            player: P0, source,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "d".into(), options, optional: false,
+                effect: PendingEffect::TokenAttacks {
+                    token_id, remaining, source_id: source } } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(token, vec![other_token],
+        vec![Target::Player(P1), Target::Object(lili)]));
+    quiet_about(&s, &reg, "token-attacks prompt");
+
+    // A token the asking player does not control.
+    let mut s = state.clone();
+    s.get_object_mut(token).unwrap().controller = P1;
+    s.awaiting_action = Some(prompt(token, vec![], vec![Target::Player(P1)]));
+    flags(&s, &reg, "which p0 does not control on the battlefield");
+
+    // Outside combat there is nothing to attack into.
+    let mut s = state.clone();
+    s.combat = None;
+    s.step = Step::PrecombatMain;
+    s.awaiting_action = Some(prompt(token, vec![], vec![Target::Player(P1)]));
+    flags(&s, &reg, "token-attacks prompt outside combat");
+
+    // The token being asked about is not one of the ones still to ask.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(token, vec![token], vec![Target::Player(P1)]));
+    flags(&s, &reg, "lists the token among the remaining ones");
+
+    // CR 508.4b: what it may attack is an opponent or their planeswalker.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(token, vec![], vec![Target::Player(P0)]));
+    flags(&s, &reg, "which is no opponent or opposing planeswalker (CR 508.4b)");
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(token, vec![], vec![Target::Object(source)]));
+    flags(&s, &reg, "which is no opponent or opposing planeswalker (CR 508.4b)");
+}
