@@ -629,3 +629,113 @@ fn the_blockers_prompt_is_the_board_read_back() {
     }
     flags(&state, P1, &l, &reg, "requires 1 blockers for #");
 }
+
+/// Stony Silence turns off artifacts' activated abilities (CR 613.1),
+/// mana abilities and tap plans included — an offer that ignores it is an
+/// offer of a game the rules do not allow.
+#[test]
+fn nothing_an_artifact_could_do_is_offered_under_stony_silence() {
+    let (mut state, reg) = base();
+    let ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
+    state.get_object_mut(ring).unwrap().summoning_sick = false;
+    let pump = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(legal.actions.iter().any(|a| matches!(a,
+        Action::ActivateManaAbility { object_id, .. } if *object_id == ring)),
+        "precondition: the ring's mana ability is offered without the lock");
+
+    // Now the lock is down, and the same menu is illegal.
+    let mut s = state.clone();
+    named_permanent(&mut s, &reg, "Stony Silence", P0);
+    assert!(s.global_effects(&reg).iter().any(|e|
+        matches!(e, ContinuousEffect::PreventArtifactAbilities)),
+        "precondition: the lock is in force");
+    flags(&s, P0, &legal, &reg, "offered under Stony Silence");
+
+    // A tap plan that taps the artifact is the same offer by another name.
+    let mut l = legal.clone();
+    l.actions.insert(1, Action::CastSpell {
+        object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+        exile_count: None, exile_ids: vec![], alternative_cost: None,
+        tap_plan: vec![(ring, 0)] });
+    flags(&s, P0, &l, &reg, "tap plan taps artifact #");
+}
+
+/// The collapsed views the interactive and LLM players act through offer
+/// the same game as the flat list.
+#[test]
+fn the_collapsed_views_offer_the_same_game_as_the_flat_list() {
+    let (mut state, reg) = base();
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(!legal.castable_spells.is_empty() && !legal.activatable_abilities.is_empty(),
+        "precondition: both collapsed views have an entry");
+    clean(&state, P0, &legal, &reg);
+
+    let mut l = legal.clone();
+    l.castable_spells.clear();
+    flags(&state, P0, &l, &reg, "do not match the cast actions");
+
+    let mut l = legal.clone();
+    l.activatable_abilities.clear();
+    flags(&state, P0, &l, &reg, "do not match the activation actions");
+
+    let mut l = legal.clone();
+    l.activatable_abilities[0].option_combos.clear();
+    flags(&state, P0, &l, &reg, "option(s) for");
+
+    // A menu, not a multiset — in the collapsed views too.
+    let mut l = legal.clone();
+    let dup = l.castable_spells[0].clone();
+    l.castable_spells.push(dup);
+    flags(&state, P0, &l, &reg, "listed twice");
+    let mut l = legal.clone();
+    let dup = l.activatable_abilities[0].clone();
+    l.activatable_abilities.push(dup);
+    flags(&state, P0, &l, &reg, "listed twice");
+
+    // A flashback entry names a card in the graveyard.
+    let mut l = legal.clone();
+    l.castable_spells[0].is_flashback = true;
+    flags(&state, P0, &l, &reg, "is marked flashback but is not in the graveyard");
+    let _ = pump;
+}
+
+/// CR 601.2b/605.3a: an X-funding prompt offers the acting player's own
+/// untapped sources, each in one group, matched to the stash that raised it.
+#[test]
+fn an_x_funding_offer_names_the_players_own_sources() {
+    let (mut state, reg) = base();
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2)]);
+    let mountain = named_permanent(&mut state, &reg, "Mountain", P0);
+    let state = cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]);
+    assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
+        "precondition: a funding prompt is up");
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    clean(&state, P0, &legal, &reg);
+
+    // A source the acting player does not control.
+    let mut s = state.clone();
+    s.get_object_mut(mountain).unwrap().controller = P1;
+    let mut l = mtg_engine::engine::legal_actions(&state, &reg);
+    if let Some(ResolutionChoiceKind::ChooseXFunding { options, .. }) = &mut l.resolution_prompt {
+        if let Some(g) = options.groups.first_mut() {
+            g.source_ids.push(mountain);
+        }
+    }
+    flags(&s, P0, &l, &reg, "which is not an untapped source of p0");
+
+    // The prompt and the stash name the same spell.
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().object_id = mountain;
+    flags(&s, P0, &legal, &reg, "with no matching stash");
+}
