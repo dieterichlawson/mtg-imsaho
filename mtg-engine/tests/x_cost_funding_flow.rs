@@ -355,8 +355,56 @@ fn spell_x_funding_can_be_cancelled_with_nothing_spent() {
     let _ = extract_funding(&recast);
 }
 
+/// Issue #262: the same, at the exile-cost prompt. Nothing is paid there
+/// either — the spell is still in its origin zone with `pending_spell_cast`
+/// set — so backing out is a pure un-stash.
+#[test]
+fn an_exile_cost_prompt_can_be_cancelled_with_nothing_spent() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let drake = spell_in_hand(&mut state, &registry, "Stitched Drake", P0);
+    let mut in_gy = Vec::new();
+    for _ in 0..3 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.move_object(c, Zone::Graveyard, &registry);
+        in_gy.push(c);
+    }
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Colorless, 2)]);
+
+    let post_cast = engine::submit_action(&state, &Action::CastSpell {
+        object_id: drake, targets: vec![], sacrifice: None, exile_count: None,
+        exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+    }, &registry);
+    assert!(matches!(post_cast.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseExileFromGraveyard { .. }, .. })),
+        "the exile-cost prompt is up");
+
+    let cancelled = engine::submit_action(&post_cast, &Action::ResolveChoice {
+        choice: ResolvedChoice::CancelCast,
+    }, &registry);
+
+    assert!(cancelled.awaiting_action.is_none(), "prompt is gone");
+    assert_eq!(cancelled.get_object(drake).unwrap().zone, Zone::Hand,
+        "the spell is still in hand");
+    assert!(cancelled.stack.is_empty(), "nothing was cast");
+    assert!(cancelled.pending_spell_cast.is_none(), "the stash is cleared");
+    for c in &in_gy {
+        assert_eq!(cancelled.get_object(*c).unwrap().zone, Zone::Graveyard,
+            "no card was exiled");
+    }
+    assert!(cancelled.game_log.iter().any(|e| e.message.contains("cast cancelled")),
+        "and the player is told: {:#?}",
+        cancelled.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
 /// An X-cost ABILITY's activation costs are already paid by funding time,
-/// so a cancel there is refused like any non-answer: the prompt stays.
+/// so a cancel there is refused like any non-answer: the prompt stays. The
+/// same holds for the `CancelCast` spelling — narrowing that arm to the
+/// cast-time prompts is what keeps an ability's paid costs from being
+/// stranded (issue #262).
 #[test]
 fn ability_x_funding_refuses_cancel() {
     let registry = CardRegistry::with_all_cards();
@@ -380,13 +428,15 @@ fn ability_x_funding_refuses_cancel() {
             choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }, .. })) {
         return;
     }
-    let after = engine::submit_action(&post, &Action::ResolveChoice {
-        choice: ResolvedChoice::ChosenTarget(None),
-    }, &registry);
-    assert!(matches!(after.awaiting_action,
-        Some(AwaitingAction::ResolutionChoice {
-            choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
-        "an ability's funding prompt refuses a cancel and stays up");
+    for refusal in [ResolvedChoice::ChosenTarget(None), ResolvedChoice::CancelCast] {
+        let after = engine::submit_action(&post, &Action::ResolveChoice {
+            choice: refusal.clone(),
+        }, &registry);
+        assert!(matches!(after.awaiting_action,
+            Some(AwaitingAction::ResolutionChoice {
+                choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
+            "an ability's funding prompt refuses {refusal:?} and stays up");
+    }
 }
 
 // ── CR 601.2b then 601.2f: a reduction comes off the announced X ─────────

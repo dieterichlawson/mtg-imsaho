@@ -363,7 +363,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // (tap, counters, sacrifice) are already paid by funding
                 // time, so cancel is refused there like any non-answer.
                 (ResolutionChoiceKind::ChooseXFunding { is_ability: false, .. },
-                 ResolvedChoice::ChosenTarget(None)) => {
+                 ResolvedChoice::ChosenTarget(None) | ResolvedChoice::CancelCast) => {
                     let pending = state.pending_spell_cast.take();
                     let name = pending.as_ref()
                         .map(|p| card_name(&*state, registry, p.object_id))
@@ -541,12 +541,24 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.awaiting_action = None;
                     return Applied::Replace(crate::engine::submit_action_inner(state, &cast, registry));
                 }
-                // Player cancelled a cast mid-prompt (rarely reached —
-                // only when a fixed-count exile choice couldn't be
-                // satisfied after validation retries).
-                (_, ResolvedChoice::CancelCast) => {
-                    state.log(LogLevel::Event, "Cast cancelled".into());
-                    state.pending_spell_cast = None;
+                // The player backed out of an exile-cost prompt (the human's
+                // escape, issue #262; also how a seat answers a fixed-count
+                // exile choice it cannot satisfy).
+                //
+                // Narrow on purpose: this is a CAST-time prompt, so
+                // `pending_spell_cast` is what has to be un-stashed. The arm
+                // used to match ANY pending prompt, which would have dropped
+                // an ability's funding question while leaving
+                // `pending_ability_effect` stranded and its activation costs
+                // spent. Anything else paired with `CancelCast` falls to the
+                // refusal below, and the question stands.
+                (ResolutionChoiceKind::ChooseExileFromGraveyard { .. },
+                 ResolvedChoice::CancelCast) => {
+                    let pending = state.pending_spell_cast.take();
+                    let name = pending.as_ref()
+                        .map(|p| card_name(&*state, registry, p.object_id))
+                        .unwrap_or_else(|| "spell".into());
+                    state.log(LogLevel::Event, format!("{name}: cast cancelled"));
                 }
                 // An answer of the wrong shape for the question asked — a
                 // yes/no handed to a "choose a target" prompt. Same rule as a

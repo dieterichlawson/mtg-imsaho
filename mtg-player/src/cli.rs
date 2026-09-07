@@ -271,6 +271,17 @@ enum TargetInput {
     Invalid,
 }
 
+/// One line typed at the exile-cost picker (see
+/// `prompt_exile_from_graveyard`).
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum ExileEntry {
+    /// Abandon the cast: nothing is paid and the spell stays where it is.
+    Cancel,
+    Chosen(Vec<usize>),
+    /// Say why, and ask again.
+    Reject(String),
+}
+
 /// One round of an "up to N targets" prompt (see `prompt_target_up_to`).
 ///
 /// It serves both "up to N" slots — a bare `UpToTargets` spell and the wide
@@ -4013,9 +4024,70 @@ impl CliPlayer {
         }
     }
 
+    /// The prompt line for the exile-cost picker. No variant mentions a
+    /// blank line: blank is not an answer here any more (issue #262).
+    fn exile_prompt_hint(min: usize, max: usize) -> String {
+        if max == 0 {
+            // The degenerate case: no index exists to type.
+            "  n = exile nothing (X = 0), c = cancel the cast: ".to_string()
+        } else if min == max {
+            format!("  indices (space-separated, exactly {min}, c = cancel the cast): ")
+        } else {
+            "  indices (space-separated, n = none, c = cancel the cast): ".to_string()
+        }
+    }
+
+    /// One line typed at the exile-cost picker.
+    fn parse_exile_entry(input: &str, option_count: usize, min: usize, max: usize) -> ExileEntry {
+        let trimmed = input.trim();
+        if trimmed.eq_ignore_ascii_case("c") || trimmed.eq_ignore_ascii_case("cancel") {
+            return ExileEntry::Cancel;
+        }
+        // The deliberate empty selection, in the vocabulary the combat
+        // prompts already use. It is still refused below when the cost
+        // demands a card, which is the point: X=0 stays reachable and a
+        // fixed-count cost stays un-guessable.
+        let indices: Vec<usize> = if trimmed.eq_ignore_ascii_case("n")
+            || trimmed.eq_ignore_ascii_case("none")
+        {
+            Vec::new()
+        } else if trimmed.is_empty() {
+            return ExileEntry::Reject(
+                "  Enter indices, n for none, or c to cancel the cast.".to_string());
+        } else {
+            let parsed: Result<Vec<usize>, _> = trimmed.split_whitespace()
+                .map(str::parse::<usize>)
+                .collect();
+            let Ok(v) = parsed else {
+                return ExileEntry::Reject("  Invalid input.".to_string());
+            };
+            v
+        };
+        if indices.iter().any(|&i| i >= option_count) {
+            return ExileEntry::Reject("  Index out of range.".to_string());
+        }
+        let mut sorted = indices.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.len() != indices.len() {
+            return ExileEntry::Reject("  Duplicate indices.".to_string());
+        }
+        if indices.len() < min || indices.len() > max {
+            return ExileEntry::Reject(format!("  Need between {min} and {max} indices."));
+        }
+        ExileEntry::Chosen(indices)
+    }
+
     /// Ask the human which graveyard cards to exile as an additional cost.
-    /// Lists candidates with indices; accepts a space-separated list. Empty
-    /// input picks the minimum subset (typically the first `min` options).
+    ///
+    /// Lists candidates with indices and accepts a space-separated list.
+    /// Empty input re-prompts; `n`/`none` is the explicit empty selection
+    /// (Harvest Pyre's X=0); `c`/`cancel` abandons the whole cast. Everywhere
+    /// else in this CLI the idle key is the SAFE key (#123), and here it used
+    /// to commit — burning Harvest Pyre for X=0, or silently exiling
+    /// `options[0]` for a fixed-count cost, from a card the player never
+    /// chose (issue #262). Nothing has been paid at this point: the spell is
+    /// still in its origin zone with `pending_spell_cast` set.
     fn prompt_exile_from_graveyard(
         view: &GameView,
         options: &[mtg_engine::ids::ObjectId],
@@ -4025,57 +4097,65 @@ impl CliPlayer {
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
-        // Rendered inside the TUI frame — bare println! straddled the panel
-        // borders and let the previous frame bleed through mid-sentence (#56).
-        Self::render(view, None, Some(description), &view.display_log, "", None);
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
         let w = term_w as usize;
         let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
         let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
-        let mut r = cursor::position().unwrap_or((0, 20)).1;
-        let mut out = stdout();
 
-        let count_line = if min == max {
-            format!("  Choose exactly {min} card{}.", if min == 1 { "" } else { "s" })
-        } else {
-            format!("  Choose between {min} and {max} cards.")
-        };
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Yellow), Print(clip(&count_line)), ResetColor);
-        r += 1;
-        for (i, &id) in options.iter().enumerate() {
-            // Cost and P/T, like the hand and graveyard panels — Corpse
-            // Lunge's damage IS the exiled card's power, and the picker
-            // showed names only (issue #132).
-            let label = view.graveyards.iter()
-                .flat_map(|(_, cards)| cards.iter())
-                .find(|c| c.object_id == id)
-                .map(|c| {
-                    let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
-                    let pt = match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    };
-                    format!("{}{}{}", c.name, cost, pt)
-                })
-                .unwrap_or_else(|| Self::perm_name(view, id));
+        // The whole prompt in one closure, as the combat prompts do it: an
+        // info pane or a resize has to be able to repaint it, or the screen
+        // is left showing the pane and not the question (#120, #250).
+        let draw = || -> u16 {
+            // Rendered inside the TUI frame — bare println! straddled the
+            // panel borders and let the previous frame bleed through
+            // mid-sentence (#56).
+            Self::render(view, None, Some(description), &view.display_log, "", None);
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let mut out = stdout();
+            let count_line = if min == max {
+                format!("  Choose exactly {min} card{}.", if min == 1 { "" } else { "s" })
+            } else {
+                format!("  Choose between {min} and {max} cards.")
+            };
             let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                SetAttribute(Attribute::Reset),
-                Print(clip(&format!(": {label}"))));
+                SetForegroundColor(Color::Yellow), Print(clip(&count_line)), ResetColor);
             r += 1;
-        }
-        let _ = execute!(out, cursor::MoveTo(col, r));
-        let _ = out.flush();
-
-        // "blank = minimum" only makes sense when there is a real range.
-        let hint = if min == max {
-            format!("  indices (space-separated, blank = first {min}): ")
-        } else {
-            format!("  indices (space-separated, blank = minimum {min}): ")
+            for (i, &id) in options.iter().enumerate() {
+                // Cost and P/T, like the hand and graveyard panels — Corpse
+                // Lunge's damage IS the exiled card's power, and the picker
+                // showed names only (issue #132).
+                let label = view.graveyards.iter()
+                    .flat_map(|(_, cards)| cards.iter())
+                    .find(|c| c.object_id == id)
+                    .map(|c| {
+                        let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                        let pt = match (c.power, c.toughness) {
+                            (Some(p), Some(t)) => format!(" {p}/{t}"),
+                            _ => String::new(),
+                        };
+                        format!("{}{}{}", c.name, cost, pt)
+                    })
+                    .unwrap_or_else(|| Self::perm_name(view, id));
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
+                    SetAttribute(Attribute::Reset),
+                    Print(clip(&format!(": {label}"))));
+                r += 1;
+            }
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetAttribute(Attribute::Dim),
+                Print(clip("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect]")),
+                SetAttribute(Attribute::Reset));
+            r += 1;
+            let _ = execute!(out, cursor::MoveTo(col, r));
+            let _ = out.flush();
+            r
         };
+        let mut r = draw();
+
+        let hint = Self::exile_prompt_hint(min, max);
         let mut error: Option<String> = None;
         loop {
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
@@ -4085,39 +4165,31 @@ impl CliPlayer {
                 std::thread::sleep(std::time::Duration::from_millis(700));
                 let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
             }
-            let input = Self::read_line(&hint);
-            let trimmed = input.trim();
-            let indices: Vec<usize> = if trimmed.is_empty() {
-                (0..min).collect()
-            } else {
-                let parsed: Result<Vec<usize>, _> = trimmed.split_whitespace()
-                    .map(str::parse::<usize>)
-                    .collect();
-                let Ok(v) = parsed else {
-                    error = Some("  Invalid input.".into());
-                    continue;
-                };
-                v
-            };
-            if indices.iter().any(|&i| i >= options.len()) {
-                error = Some("  Index out of range.".into());
-                continue;
+            let input = Self::read_line_redrawing(&hint, &|| { draw(); });
+            // Info panes, then repaint this prompt (issue #120).
+            match input.as_str() {
+                "l" => { Self::show_log(&view.display_log); r = draw(); continue; }
+                "g" => { Self::show_graveyards(view); r = draw(); continue; }
+                "e" => { Self::show_exile(view); r = draw(); continue; }
+                "d" => { Self::show_deck_browser(view); r = draw(); continue; }
+                "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
+                _ => {}
             }
-            let mut sorted = indices.clone();
-            sorted.sort_unstable();
-            sorted.dedup();
-            if sorted.len() != indices.len() {
-                error = Some("  Duplicate indices.".into());
-                continue;
+            match Self::parse_exile_entry(&input, options.len(), min, max) {
+                // Cancel is unconditionally safe here: this prompt is raised
+                // from exactly one place (the cast handler), always with
+                // `pending_spell_cast` set, and the engine's arm for it
+                // un-stashes that and leaves the spell where it was.
+                ExileEntry::Cancel =>
+                    return Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
+                ExileEntry::Reject(msg) => { error = Some(msg); continue; }
+                ExileEntry::Chosen(indices) => {
+                    let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
+                        .map(|i| options[i])
+                        .collect();
+                    return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
+                }
             }
-            if indices.len() < min || indices.len() > max {
-                error = Some(format!("  Need between {min} and {max} indices."));
-                continue;
-            }
-            let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
-                .map(|i| options[i])
-                .collect();
-            return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
         }
     }
 
@@ -5121,6 +5193,54 @@ mod tests {
             choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         };
         assert!(CliPlayer::action_object_ids(&yes).is_empty());
+    }
+
+    /// Issue #262: bare Enter used to be a committed answer at the
+    /// exile-cost prompt — X=0 for Harvest Pyre, or a silently auto-picked
+    /// card for a fixed-count cost. Everywhere else in this CLI the idle key
+    /// is the SAFE key (#123).
+    #[test]
+    fn an_idle_key_at_the_exile_prompt_commits_nothing() {
+        for (min, max) in [(0usize, 3usize), (1, 1), (2, 2)] {
+            let e = CliPlayer::parse_exile_entry("", 3, min, max);
+            assert!(matches!(e, ExileEntry::Reject(_)), "min={min} max={max}: {e:?}");
+            assert_eq!(CliPlayer::parse_exile_entry("   ", 3, min, max), e,
+                "whitespace is the same non-answer");
+        }
+        // And nothing in the prompt line invites it.
+        for (min, max) in [(0usize, 3usize), (1, 1), (0, 0)] {
+            let hint = CliPlayer::exile_prompt_hint(min, max);
+            assert!(!hint.contains("blank"), "min={min} max={max}: {hint}");
+            assert!(hint.contains("cancel"), "min={min} max={max}: {hint}");
+        }
+    }
+
+    /// The escape and the deliberate empty selection are different keys, and
+    /// the empty one is still refused when the cost demands a card.
+    #[test]
+    fn the_exile_prompt_has_a_cancel_and_a_none() {
+        for word in ["c", "cancel", "CANCEL"] {
+            assert_eq!(CliPlayer::parse_exile_entry(word, 3, 1, 1), ExileEntry::Cancel);
+        }
+        // Harvest Pyre for X=0.
+        assert_eq!(CliPlayer::parse_exile_entry("n", 3, 0, 3), ExileEntry::Chosen(vec![]));
+        assert_eq!(CliPlayer::parse_exile_entry("none", 3, 0, 3), ExileEntry::Chosen(vec![]));
+        // A fixed-count cost cannot be answered with nothing.
+        assert!(matches!(CliPlayer::parse_exile_entry("n", 3, 1, 1), ExileEntry::Reject(_)));
+    }
+
+    /// The refusals that were already right stay word for word.
+    #[test]
+    fn the_exile_prompt_keeps_its_existing_refusals() {
+        assert_eq!(CliPlayer::parse_exile_entry("0 1", 3, 2, 2), ExileEntry::Chosen(vec![0, 1]));
+        assert_eq!(CliPlayer::parse_exile_entry("x", 3, 1, 1),
+            ExileEntry::Reject("  Invalid input.".into()));
+        assert_eq!(CliPlayer::parse_exile_entry("5", 3, 1, 1),
+            ExileEntry::Reject("  Index out of range.".into()));
+        assert_eq!(CliPlayer::parse_exile_entry("0 0", 3, 2, 2),
+            ExileEntry::Reject("  Duplicate indices.".into()));
+        assert_eq!(CliPlayer::parse_exile_entry("0", 3, 2, 2),
+            ExileEntry::Reject("  Need between 2 and 2 indices.".into()));
     }
 
     /// Issue #288: a bare Enter meant three different things at the three

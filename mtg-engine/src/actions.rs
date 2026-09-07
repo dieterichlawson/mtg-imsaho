@@ -137,10 +137,15 @@ pub enum ResolvedChoice {
     /// `ExileCreaturesFromGraveyard(n)` (Stitched Drake / Skaab
     /// Ruinator / etc. — fixed count).
     ChosenExileSet(Vec<ObjectId>),
-    /// Cancel the cast in progress. Used when a fixed-count exile-choice
-    /// prompt can't be satisfied (agent returned an invalid subset twice).
-    /// The engine rolls back: spell stays in hand, no mana tapped, no
-    /// cards exiled.
+    /// Cancel the cast in progress: the human's escape at the exile-cost
+    /// prompt (issue #262), and how a seat answers a fixed-count
+    /// exile-choice prompt it cannot satisfy. The engine rolls back: the
+    /// spell stays in its origin zone, no mana tapped, no cards exiled.
+    ///
+    /// Honoured only at a cast-time prompt, where `pending_spell_cast` is
+    /// set. At an ability's funding prompt — whose activation costs are
+    /// already paid — or any other choice, it is refused like any answer of
+    /// the wrong shape, and the question stands.
     CancelCast,
 }
 
