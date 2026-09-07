@@ -829,3 +829,47 @@ fn curiosity_decline_draw() {
         .count();
     assert_eq!(hand_after, hand_before, "Should NOT have drawn a card when declining");
 }
+
+// ── The source that died dealing the damage ───────────────────────
+
+/// CR 603.10 and last-known information: an ability that triggers on combat
+/// damage triggers even though its source died in the same damage step. The
+/// event happened while it was on the battlefield, and combat damage is dealt
+/// simultaneously (CR 510.2) — the deaths that follow are state-based actions
+/// after the fact.
+///
+/// Trample is what makes this reachable: a trampling attacker assigns only
+/// lethal damage to its blockers and the rest to the player, so it can damage
+/// a player and still be dealt lethal damage back. Bloodcrazed Neonate is 2/1,
+/// so a 1/1 blocker kills it; the blocker is indestructible so that the Neonate
+/// is the ONLY thing that leaves the battlefield in this window — a trade
+/// would let the collector find some other death and pass for the wrong reason.
+#[test]
+fn a_combat_damage_trigger_fires_from_a_source_that_died_dealing_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let neonate = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    grant_keyword(&mut state, neonate, Keyword::Trample);
+    let blocker = ready_creature(&mut state, P1, 1, 1);
+    grant_keyword(&mut state, blocker, Keyword::Indestructible);
+
+    submit_declare_attackers(&mut state, &[(neonate, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, neonate)], &reg);
+
+    let life_before = state.get_player(P1).life;
+    combat::deal_combat_damage(&mut state, &reg);
+    assert_eq!(state.get_player(P1).life, life_before - 1,
+        "one damage trampled over the 1/1, so the Neonate did damage a player");
+
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(neonate).unwrap().zone, Zone::Graveyard,
+        "the 1/1 dealt it lethal damage back");
+    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Battlefield,
+        "and the indestructible blocker is the one thing that did not leave");
+
+    triggers::collect_triggers(&mut state, &reg);
+    assert!(state.stack.iter().any(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(_))),
+        "the Neonate's 'deals combat damage to a player' trigger still went on \
+         the stack: it triggered before it died");
+}

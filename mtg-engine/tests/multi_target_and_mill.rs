@@ -30,6 +30,15 @@ fn card_in_library(state: &mut GameState, reg: &CardRegistry, name: &str, owner:
     id
 }
 
+/// Undead Alchemist's tokens are nameless — a 2/2 black Zombie — so they are
+/// counted by what they are rather than by `name`.
+fn zombie_tokens(state: &GameState, reg: &CardRegistry) -> usize {
+    state.objects.values()
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield
+            && state.has_subtype(o.id, "Zombie", reg))
+        .count()
+}
+
 fn cast_actions_for(state: &GameState, reg: &CardRegistry, spell: ObjectId) -> Vec<Vec<Target>> {
     mtg_engine::engine::legal_actions(state, reg).actions.iter()
         .filter_map(|a| match a {
@@ -285,4 +294,42 @@ fn a_library_search_only_touches_the_card_it_puts_onto_the_battlefield() {
     assert!(state.events.iter().any(|e|
         matches!(e, GameEvent::LibraryShuffled { player } if *player == P0)),
         "a search shuffles the library it read");
+}
+
+/// "Whenever a creature card is put into an **opponent's** graveyard from
+/// their library" — so an Alchemist watching its own controller's mill does
+/// nothing at all.
+///
+/// Whether a watcher cares is the collector's decision, not the miller's: it
+/// skips watchers controlled by the milled player. Both halves are here
+/// because the skip is a single comparison, and a test that only shows the
+/// trigger firing on an opponent passes just as well when it fires on
+/// everyone.
+#[test]
+fn undead_alchemist_does_not_watch_its_own_controllers_mill() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let mine = card_in_library(&mut state, &reg, "Walking Corpse", P0);
+    let theirs = card_in_library(&mut state, &reg, "Walking Corpse", P1);
+
+    // P0, who controls the Alchemist, mills their own creature card.
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.move_object(mine, Zone::Graveyard, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(mine).unwrap().zone, Zone::Graveyard,
+        "the milled player controls the Alchemist, so the card was not exiled");
+    assert_eq!(zombie_tokens(&state, &reg), 0, "and no Zombie was made");
+
+    // The same mill, one library over, is the one it watches.
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.move_object(theirs, Zone::Graveyard, &reg);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Exile,
+        "an opponent milled, so the Alchemist exiled the card");
+    assert_eq!(zombie_tokens(&state, &reg), 1, "and made a Zombie for it");
 }

@@ -106,13 +106,6 @@ mtg-engine/src/state.rs: replace != with == in GameState::move_object
 mtg-engine/src/state.rs: replace && with || in GameState::move_object
 mtg-engine/src/state.rs: replace + with * in GameState::create_token_with_subtypes
 mtg-engine/src/state.rs: replace == with != in GameState::move_object
-mtg-engine/src/state.rs: replace match guard o.zone == Zone::Battlefield with true in GameState::has_keyword
-mtg-engine/src/state.rs: replace match guard obj.tapped with true in GameState::untap
-mtg-engine/src/triggers/collect/damage.rs: replace && with || in combat_damage
-mtg-engine/src/triggers/collect/mod.rs: replace == with != in was_on_the_battlefield
-mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::cards::TriggerKind::EndCombat in step_started
-mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::types::Step::EndCombat in step_started
-mtg-engine/src/triggers/collect/zones.rs: replace == with != in entered_battlefield
 # invariants.rs remainders after the checker battery (12 raw mutants, three
 # normalized lines; see mutation-testing.md for which are near-equivalent):
 mtg-engine/src/invariants.rs: replace == with != in check_core

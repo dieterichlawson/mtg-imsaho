@@ -106,3 +106,31 @@ mtg-engine/src/mana.rs: replace -= with += in compute_autotap
 mtg-engine/src/mana.rs: replace -= with /= in compute_autotap
 mtg-engine/src/mana.rs: replace > with == in compute_autotap
 mtg-engine/src/mana.rs: replace > with >= in compute_autotap
+
+# No card in the pool has an EndCombat triggered ability, so the two arms that
+# map that step to that trigger kind are unreachable. (The `if *step ==
+# Step::EndCombat` block above them, which flushes the delayed token-exile
+# queue, IS reachable and is not accepted.)
+mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::cards::TriggerKind::EndCombat in step_started
+mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::types::Step::EndCombat in step_started
+
+# `was_on_the_battlefield(..) && is_creature(..)` guarding a combat-damage
+# trigger. Both operands are always true where this runs: only creatures deal
+# combat damage (CR 510.1), and a source that dealt it and then died has its
+# `CreatureDied` in the same event window, so `was_on_the_battlefield` finds
+# it. Deleting either half survives too — verified by hand. The conjunction is
+# defensive, and the half that carries the rule (CR 603.10, an ability
+# triggers though its source has left) is pinned by
+# `a_combat_damage_trigger_fires_from_a_source_that_died_dealing_it`.
+mtg-engine/src/triggers/collect/damage.rs: replace && with || in combat_damage
+
+# `entered_battlefield`'s watcher pre-filter, `(zone == Battlefield || zone ==
+# Graveyard)`. `CardBehavior::trigger_zones` is the authoritative gate a few
+# lines below, and it defaults to `[Battlefield]` with no card overriding it —
+# so the graveyard half admits candidates the real gate then rejects, and
+# flipping it changes nothing. Masks two sites in the same function that ARE
+# killed: the battlefield half by
+# `the_spirit_a_death_trigger_leaves_is_a_creature_entering` and the trigger-kind
+# comparison by `undead_alchemist_mills_instead_of_damage`. Becomes productive
+# again the day a card watches creatures entering from a graveyard.
+mtg-engine/src/triggers/collect/zones.rs: replace == with != in entered_battlefield
