@@ -251,6 +251,49 @@ enum UpToPick {
 /// Display width of one character in terminal columns (CJK and other wide
 /// characters take two cells). Clipping by `char` count let 20 wide chars
 /// overflow a 40-column region and wrap over neighbouring panels (#109).
+/// The printable form of typed or pasted text.
+///
+/// Control and escape bytes become a visible placeholder instead of being
+/// written to the terminal, where they are *executed*: a pasted `ESC[1;1H`
+/// moved the cursor home and painted over the frame, and the error notice
+/// then replayed it on every re-render (issue #282). A paste of ordinary
+/// terminal output — a log line with colour codes — contains them by
+/// accident.
+fn sanitize_for_display(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { '\u{00b7}' } else { c }).collect()
+}
+
+/// The user's input, quoted for an error notice: sanitised so a pasted
+/// escape sequence is not re-executed on every render (#282), and clipped so
+/// one long entry cannot wrap over the whole frame and splice the prompt row
+/// into itself (#283). The echo is capped, so the player never sees how long
+/// the line is until they press Enter — the notice must not be the place
+/// they find out.
+fn quote_input(input: &str) -> String {
+    const MAX: usize = 40;
+    let shown = sanitize_for_display(input);
+    if str_cols(&shown) <= MAX {
+        return shown;
+    }
+    format!("{}\u{2026}", clip_cols(&shown, MAX))
+}
+
+/// Repaint an input line from the buffer, clipped to `cap` display columns.
+///
+/// The readers used to keep a parallel model of what was on screen and paint
+/// deltas into it. It desynchronised from the buffer three ways — a grapheme
+/// cluster erased more cells than it owned, a zero-width mark erased none,
+/// and a wide character that did not fit was skipped while a narrower one
+/// after it was not — and once it did, the line rendered EMPTY while the
+/// buffer still held a character, so Enter attacked with everything or cast
+/// for max X (issue #281). Painting the whole line from the buffer cannot
+/// drift from it.
+fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: usize) {
+    let shown = clip_cols(&sanitize_for_display(buf), cap);
+    let _ = execute!(out, cursor::MoveTo(col, row), Clear(ClearType::UntilNewLine), Print(shown));
+    let _ = out.flush();
+}
+
 fn col_width(c: char) -> usize {
     unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)
 }
@@ -1858,7 +1901,7 @@ impl CliPlayer {
             // A silent re-render is indistinguishable from a hung game —
             // same rule as the main menu (#76, issue #122).
             notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                input, labels.len() - 1));
+                quote_input(&input), labels.len() - 1));
         }
     }
 
@@ -1905,7 +1948,7 @@ impl CliPlayer {
                 if idx == options.len() + 1 { return UpToPick::Cancel; }
             }
             notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                input, labels.len() - 1));
+                quote_input(&input), labels.len() - 1));
         }
     }
 
@@ -1944,7 +1987,7 @@ impl CliPlayer {
                 if idx == options.len() { return None; }
             }
             notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                input, labels.len() - 1));
+                quote_input(&input), labels.len() - 1));
         }
     }
 
@@ -2262,27 +2305,15 @@ impl CliPlayer {
         // menu reader's, #53). Input beyond the cap still lands in `buf`,
         // it just isn't painted.
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let start_col = cursor::position().map(|(x, _)| x as usize).unwrap_or(0);
-        let echo_cap = (term_w as usize).saturating_sub(start_col + 1);
-        // Echo is tracked in display COLUMNS, not chars — 20 CJK chars are
-        // 40 cells and used to overflow a char-counted cap (#109).
-        let mut echoed_chars: usize = 0;
-        let mut echoed_cols: usize = 0;
+        let (start_col, start_row) = cursor::position().unwrap_or((0, 0));
+        let echo_cap = (term_w as usize).saturating_sub(start_col as usize + 1);
         let mut buf = String::new();
         loop {
             let Some(ev) = read_event_guarded() else { continue };
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                for c in first.chars() {
-                    buf.push(c);
-                    let w = col_width(c);
-                    if echoed_cols + w <= echo_cap {
-                        let _ = execute!(out, Print(c.to_string()));
-                        echoed_chars += 1;
-                        echoed_cols += w;
-                    }
-                }
-                let _ = out.flush();
+                buf.push_str(first);
+                repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
             let Event::Key(KeyEvent { code, modifiers, .. }) = ev else { continue };
@@ -2294,35 +2325,15 @@ impl CliPlayer {
                 // Ctrl-U kills the line (issue #79), here as in the menu reader.
                 KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                     buf.clear();
-                    while echoed_cols > 0 {
-                        let _ = execute!(out, Print("\x08 \x08"));
-                        echoed_cols -= 1;
-                    }
-                    echoed_chars = 0;
-                    let _ = out.flush();
+                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 }
                 KeyCode::Backspace => {
-                    if let Some(c) = buf.pop() {
-                        // Unechoed tail chars (beyond the cap) erase nothing.
-                        if buf.chars().count() < echoed_chars {
-                            for _ in 0..col_width(c) {
-                                let _ = execute!(out, Print("\x08 \x08"));
-                                echoed_cols = echoed_cols.saturating_sub(1);
-                            }
-                            echoed_chars -= 1;
-                            let _ = out.flush();
-                        }
-                    }
+                    buf.pop();
+                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 }
                 KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                     buf.push(c);
-                    let w = col_width(c);
-                    if echoed_cols + w <= echo_cap {
-                        let _ = execute!(out, Print(c.to_string()));
-                        let _ = out.flush();
-                        echoed_chars += 1;
-                        echoed_cols += w;
-                    }
+                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 }
                 // Unbound chords are ignored, never typed (#51).
                 _ => {}
@@ -2348,38 +2359,57 @@ impl CliPlayer {
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
         tui_raw_on();
+        // Line-buffered, like every other prompt in this program. Reading a
+        // single key meant the first 'y' ANYWHERE in what the player was
+        // typing ended the game: "maybe" conceded on its third character,
+        // with no Enter, while they were still typing (issue #249). The
+        // answer is short, but "the keystroke that ends the game" cannot be
+        // one the player has not finished choosing.
+        let echo_col = px + u16::try_from(prompt.chars().count()).unwrap_or(0);
+        let echo_cap = (term_w as usize).saturating_sub(echo_col as usize + 1);
+        let mut buf = String::new();
         let answer = loop {
-            if let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() {
-                match code {
-                    // Bare y/n only: a control/alt chord must not answer a
-                    // confirmation prompt (#51).
-                    KeyCode::Char('y' | 'Y') if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { let _ = execute!(stdout(), Print("y")); break true; }
-                    KeyCode::Char('n' | 'N') if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => { let _ = execute!(stdout(), Print("n")); break false; }
-                    KeyCode::Esc => { let _ = execute!(stdout(), Print("n")); break false; }
-                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        quit_at_prompt();
-                    }
-                    _ => {
-                        let msg = format!("Please answer y or n. {}", prompt.trim_start());
-                        let clipped: String = msg.chars()
-                            .take((term_w as usize).saturating_sub(px as usize + 1))
-                            .collect();
-                        let _ = execute!(stdout(), cursor::MoveTo(px, py),
-                            Clear(ClearType::UntilNewLine), Print(clipped));
-                        let _ = stdout().flush();
+            let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() else {
+                continue;
+            };
+            match code {
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    quit_at_prompt();
+                }
+                // Escape is "no" on its own — it is not text, so it needs no
+                // Enter.
+                KeyCode::Esc => break false,
+                KeyCode::Backspace => {
+                    buf.pop();
+                    repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
+                }
+                KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    buf.clear();
+                    repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
+                }
+                KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                    buf.push(c);
+                    repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
+                }
+                KeyCode::Enter => {
+                    match buf.trim().to_lowercase().as_str() {
+                        "y" | "yes" => break true,
+                        "n" | "no" | "" => break false,
+                        _ => {
+                            let msg = format!("Please answer y or n. {}", prompt.trim_start());
+                            let clipped: String = msg.chars()
+                                .take((term_w as usize).saturating_sub(px as usize + 1))
+                                .collect();
+                            let _ = execute!(stdout(), cursor::MoveTo(px, py),
+                                Clear(ClearType::UntilNewLine), Print(clipped));
+                            let _ = stdout().flush();
+                            buf.clear();
+                        }
                     }
                 }
+                _ => {}
             }
         };
-        // The answer is one keypress, but players type it line-style —
-        // 'n' then Enter, like every other prompt here. The trailing Enter
-        // used to fall through to the freshly drawn action menu and pass
-        // priority, burning the phase and the floating mana (issue #127).
-        // Drain the short type-ahead window: a keystroke must never answer
-        // a prompt the player has not been shown (#71's rule).
-        while event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
-            let _ = event::read();
-        }
         if !was_raw {
             tui_raw_off();
         }
@@ -2405,10 +2435,9 @@ impl CliPlayer {
         let gutter = w / 5;
         let mid_w = w.saturating_sub(gutter + if has_right { gutter + 2 } else { 1 });
         let echo_cap = mid_w.saturating_sub("  > ".len());
-        // Tracked in display COLUMNS, like read_line — a char-counted cap
-        // still overflowed with wide characters (#109).
-        let mut echoed_chars: usize = 0;
-        let mut echoed_cols: usize = 0;
+        // The line is repainted from `buf` (see `repaint_input_line`), so
+        // there is no parallel echo model to drift from it (#281).
+        let (start_col, start_row) = cursor::position().unwrap_or((0, 0));
 
         // Bracketed paste, enabled only for this raw-mode read: without it a
         // multi-line paste arrives as N keystroke sequences whose embedded
@@ -2418,20 +2447,23 @@ impl CliPlayer {
         // line lands in the buffer, and nothing submits until a real Enter.
         let _ = execute!(out, event::EnableBracketedPaste);
 
+        // An event peeked for the `rr` chord that turned out not to be the
+        // second `r` is handled here rather than dropped: consuming it
+        // destroyed whatever the player typed next, Enter included, inside a
+        // 300 ms window (issue #284).
+        let mut pending: Option<Event> = None;
         let result = loop {
-            let Some(ev) = read_event_guarded() else { continue };
+            let ev = match pending.take() {
+                Some(ev) => ev,
+                None => match read_event_guarded() {
+                    Some(ev) => ev,
+                    None => continue,
+                },
+            };
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                for c in first.chars() {
-                    buf.push(c);
-                    let w = col_width(c);
-                    if echoed_cols + w <= echo_cap {
-                        let _ = execute!(out, Print(c.to_string()));
-                        echoed_chars += 1;
-                        echoed_cols += w;
-                    }
-                }
-                let _ = out.flush();
+                buf.push_str(first);
+                repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
             if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
@@ -2441,21 +2473,21 @@ impl CliPlayer {
                     }
                     KeyCode::Char('r') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         // Wait briefly for a second 'r' to trigger hot reload.
+                        // Anything else that arrives in the window is put
+                        // back for the next turn of the loop, not eaten.
                         if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
-                            if let Some(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) = read_event_guarded() {
-                                HOT_RELOAD_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
-                                tui_raw_off();
-                                break Some("__hot_reload__".into());
+                            match read_event_guarded() {
+                                Some(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) => {
+                                    HOT_RELOAD_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+                                    tui_raw_off();
+                                    break Some("__hot_reload__".into());
+                                }
+                                other => pending = other,
                             }
                         }
                         // Single 'r' — treat as normal input.
                         buf.push('r');
-                        if echoed_cols < echo_cap {
-                            let _ = execute!(out, Print("r"));
-                            let _ = out.flush();
-                            echoed_chars += 1;
-                            echoed_cols += 1;
-                        }
+                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                     KeyCode::Enter => {
                         break Some(buf.clone());
@@ -2464,17 +2496,8 @@ impl CliPlayer {
                         quit_at_prompt();
                     }
                     KeyCode::Backspace => {
-                        if let Some(c) = buf.pop() {
-                            // Erase on screen only what was echoed.
-                            if buf.chars().count() < echoed_chars {
-                                for _ in 0..col_width(c) {
-                                    let _ = execute!(out, Print("\x08 \x08"));
-                                    echoed_cols = echoed_cols.saturating_sub(1);
-                                }
-                                echoed_chars -= 1;
-                                let _ = out.flush();
-                            }
-                        }
+                        buf.pop();
+                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                     // Ctrl-U: kill the line, the standard readline binding
                     // and the documented recovery from a garbled prompt.
@@ -2483,12 +2506,7 @@ impl CliPlayer {
                     // the recovery step exists for (issue #79).
                     KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                         buf.clear();
-                        while echoed_cols > 0 {
-                            let _ = execute!(out, Print("\x08 \x08"));
-                            echoed_cols -= 1;
-                        }
-                        echoed_chars = 0;
-                        let _ = out.flush();
+                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                     // Unbound chords are ignored, never typed: Ctrl-L must
                     // not become the 'l' shortcut, and crossterm reports the
@@ -2497,13 +2515,7 @@ impl CliPlayer {
                     // silently pick menu entries (#51).
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         buf.push(c);
-                        let w = col_width(c);
-                        if echoed_cols + w <= echo_cap {
-                            let _ = execute!(out, Print(c.to_string()));
-                            let _ = out.flush();
-                            echoed_chars += 1;
-                            echoed_cols += w;
-                        }
+                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                     _ => {}
                 }
@@ -4381,7 +4393,7 @@ impl Player for CliPlayer {
             // Invalid input: say so (issue #76 — a silent re-render at a
             // full-screen menu is indistinguishable from a hung game).
             notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                input, display.len().saturating_sub(1)));
+                quote_input(&input), display.len().saturating_sub(1)));
         }
     }
 

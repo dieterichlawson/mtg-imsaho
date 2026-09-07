@@ -296,11 +296,40 @@ fn declining_a_concede_costs_nothing() {
     g.expect("2: Concede", T);
     g.answer("2\r");
     g.expect("Are you sure", T);
-    g.answer("q"); // junk: must re-prompt, not concede
+    g.answer("q\r"); // junk: must re-prompt, not concede
     g.expect("Please answer y or n", T);
     g.answer("n\r"); // decline, line-style
     // Back at the same window: the land play is still on offer, and the
     // game has not advanced past our turn or ended.
+    g.expect("1: Play land", T);
+    g.expect_absent("Game over", Duration::from_secs(1));
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
+/// Issue #249: the confirmation is line-buffered like every other prompt, so
+/// a word the player is still typing cannot end the game on its third
+/// character. "maybe" contains a 'y'.
+#[test]
+fn typing_a_word_containing_y_does_not_concede() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+    g.expect("2: Concede", T);
+    g.answer("2\r");
+    g.expect("Are you sure", T);
+
+    // No Enter: nothing has been answered yet.
+    g.send("maybe");
+    g.expect_absent("Game over", Duration::from_secs(1));
+
+    // And submitting it is junk, not a concession.
+    g.answer("\r");
+    g.expect("Please answer y or n", T);
+    g.answer("n\r");
     g.expect("1: Play land", T);
     g.expect_absent("Game over", Duration::from_secs(1));
 
