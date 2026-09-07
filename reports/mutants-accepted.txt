@@ -361,3 +361,4 @@ mtg-engine/src/mana.rs: replace && with || in compute_autotap
 # `simultaneous_triggers_are_ordered_by_their_controller`, which asserts the
 # tail IS there on two identically-named sources.
 mtg-engine/src/triggers.rs: replace > with >= in process_pending_trigger_pushes
+mtg-engine/src/invariants/events.rs: replace match guard on_bf(state, *tid) with true in spells_and_lands

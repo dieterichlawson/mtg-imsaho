@@ -87,9 +87,6 @@ fn spells_and_lands(state: &GameState, registry: &CardRegistry, events: &[GameEv
                         if state.has_card_type(*object, CardType::Land, registry) {
                             v.push(format!("{what} but it is a land (CR 305.9)"));
                         }
-                        if quiet && on_bf(state, *object) {
-                            // Unreachable but keeps the shape symmetric.
-                        }
                         // CR 702.11b/702.16b: chosen targets could be targeted.
                         if quiet {
                             for t in &o.targets {

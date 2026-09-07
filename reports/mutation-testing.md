@@ -436,3 +436,48 @@ ten preference tests were killing nothing the two property tests do not.
 Running total: 17 tests deleted, one dead function (`PendingTrigger::kind`)
 deleted with them, two replacements written at the level the guide asks
 for.
+
+## The cast clause's target legality (issue #276, events.rs)
+
+`spells_and_lands` reads a cast spell's chosen targets and asks whether the
+spell could have pointed at them — hexproof on a creature (CR 702.11b), on a
+player (CR 702.11c), protection from the spell (CR 702.16b). It is the
+checker's only look at target legality after the fact, so a clause that goes
+quiet there takes a whole class of illegal cast out of ~110k fuzzed games a
+night while the run stays green. That is the "oracle clause" bucket, and the
+highest value per test in this repo.
+
+Four survivors were re-run against current master and triaged:
+
+- **`replace && with || in spells_and_lands`** (the hexproof arm's
+  "and controlled by an opponent"). Under `||` every spell pointed at an
+  opponent's creature — the commonest legal cast in the game — is reported
+  as targeting something with hexproof. It survived because no self-test
+  targeted an opponent's creature at all: the existing cast test pumps the
+  caster's own bear. Killed by
+  `a_cast_events_targets_are_ones_the_spell_could_have_chosen`, whose first
+  assertion is that the ordinary case passes in silence.
+- **`replace match guard … with false`** and **`replace != with ==`** on the
+  player arm. The first blinds CR 702.11c entirely; the second asks whether
+  the *caster* has hexproof instead of the target. Witchbane Orb is in the
+  pool and is the one card that grants it, so both are reachable. Killed by
+  `a_cast_event_may_not_target_a_player_with_hexproof`, which checks the
+  violation fires for an opponent the Orb protects and does not fire for a
+  player targeting themselves under their own Orb.
+- **`replace && with || in spells_and_lands`** at the dead
+  `if quiet && on_bf(state, *object) {}` — an empty block whose comment said
+  "unreachable but keeps the shape symmetric". Deleted, which removes the
+  mutant, the reader's confusion and the drift risk in one move.
+
+### Accepted
+
+`replace match guard on_bf(state, *tid) with true in spells_and_lands`
+
+The guard narrows the target arm to objects still on the battlefield. Widened
+to `true`, the arm also runs for a target that has left — and CR 400.7 makes
+an object off the battlefield its printed self, so `has_keyword(Hexproof)`
+and `has_protection_from` both answer false for it and no violation is
+produced. Reaching a difference needs a printed hexproof or protection card
+in a non-battlefield zone that the checker still sees named as a target,
+which no card in this pool produces. Watched surviving under its own mutant
+after the three kills above were in place.

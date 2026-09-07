@@ -151,6 +151,73 @@ fn a_cast_event_describes_a_spell_on_the_stack() {
     quiet_about(&s, &reg, "(CR 608.2n)");
 }
 
+/// CR 702.11b/702.11c: the other half of the cast clause — what the spell
+/// was allowed to point at. This is the checker's only look at target
+/// legality after the fact, so a clause that goes quiet here takes a whole
+/// class of illegal cast out of ~110k fuzzed games a night while the run
+/// stays green.
+///
+/// Both halves matter and only one of them is obvious: hexproof stops a
+/// spell an *opponent* controls (CR 702.11b), so an ordinary removal spell
+/// pointed at an opponent's ordinary creature — the commonest legal cast in
+/// the game — has to pass in silence.
+#[test]
+fn a_cast_events_targets_are_ones_the_spell_could_have_chosen() {
+    let (mut state, reg) = base();
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    state.priority_player = Some(P0);
+    let cast = cast_onto_stack(&state, &reg, pump, vec![Target::Object(theirs)]);
+
+    // An opponent's ordinary creature is a legal target and says nothing.
+    quiet_about(&cast, &reg, "hexproof");
+    quiet_about(&cast, &reg, "protection from it");
+
+    // CR 702.11b: hexproof stops a spell an opponent controls.
+    let mut s = cast.clone();
+    grant_keyword(&mut s, theirs, Keyword::Hexproof);
+    flags(&s, &reg, "which has hexproof from p0 (CR 702.11b)");
+
+    // And only an opponent's: your own hexproof creature is a legal target
+    // for your own spell, which is what the controller half of the test is.
+    let mut s = cast.clone();
+    s.get_object_mut(pump).unwrap().targets = vec![Target::Object(mine)];
+    grant_keyword(&mut s, mine, Keyword::Hexproof);
+    quiet_about(&s, &reg, "hexproof");
+}
+
+/// CR 702.11c: the same rule for a player. Witchbane Orb is the one card in
+/// this pool that grants it, and the clause is worth its own case because
+/// it is the only place the checker asks whether a *player* could have been
+/// targeted at all.
+#[test]
+fn a_cast_event_may_not_target_a_player_with_hexproof() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    state.priority_player = Some(P0);
+    let cast = cast_onto_stack(&state, &reg, pump, vec![Target::Object(bear)]);
+
+    // Targeting an opponent an Orb protects.
+    let mut s = cast.clone();
+    named_permanent(&mut s, &reg, "Witchbane Orb", P1);
+    s.get_object_mut(pump).unwrap().targets = vec![Target::Player(P1)];
+    flags(&s, &reg, "targets p1 who has hexproof (CR 702.11c)");
+
+    // Your own Orb does not stop you targeting yourself: hexproof is about
+    // spells your OPPONENTS control.
+    let mut s = cast.clone();
+    named_permanent(&mut s, &reg, "Witchbane Orb", P0);
+    s.get_object_mut(pump).unwrap().targets = vec![Target::Player(P0)];
+    quiet_about(&s, &reg, "who has hexproof");
+
+    // And an Orb on the table stops nothing when no player is targeted.
+    let mut s = cast.clone();
+    named_permanent(&mut s, &reg, "Witchbane Orb", P1);
+    quiet_about(&s, &reg, "who has hexproof");
+}
+
 /// CR 305.1/305.2: what a `LandPlayed` event says — one land, on your own
 /// main phase with an empty stack, arriving unattached, with its
 /// `EnteredBattlefield`.
