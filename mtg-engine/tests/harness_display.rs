@@ -352,42 +352,6 @@ fn the_step_and_card_type_predicates_say_what_they_mean() {
     }
 }
 
-/// A tap plan is shown as a short list, grouping runs of the same name.
-///
-/// The engine puts this string into resolution-prompt descriptions
-/// ("Screeching Bat: pay {2}{B}? tap 2x Swamp, Sol Ring"), so a player
-/// deciding whether to pay is reading it.
-#[test]
-fn a_tap_plan_is_shown_as_a_short_grouped_list() {
-    use mtg_engine::cards::helpers::format_tap_plan_names;
-
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let a = named_permanent(&mut state, &reg, "Mountain", P0);
-    let b = named_permanent(&mut state, &reg, "Mountain", P0);
-    let c = named_permanent(&mut state, &reg, "Forest", P0);
-
-    assert_eq!(format_tap_plan_names(&state, &[]), "",
-        "an empty plan has nothing to say");
-    // `obj_name` disambiguates duplicates with an id tail, so two Mountains
-    // read as distinct names — a plan that groups needs two sources the
-    // display really calls the same thing.
-    let name_a = state.obj_name(a);
-    let name_b = state.obj_name(b);
-    let name_c = state.obj_name(c);
-    assert_eq!(format_tap_plan_names(&state, &[(a, 0)]), format!("tap {name_a}"),
-        "one source is named, without a count");
-    assert_eq!(format_tap_plan_names(&state, &[(a, 0), (a, 0)]), format!("tap 2x {name_a}"),
-        "a run of the same name is counted");
-    assert_eq!(format_tap_plan_names(&state, &[(a, 0), (a, 0), (c, 0)]),
-        format!("tap 2x {name_a}, {name_c}"),
-        "and the run ends where the name changes");
-    assert_eq!(format_tap_plan_names(&state, &[(a, 0), (c, 0), (a, 0)]),
-        format!("tap {name_a}, {name_c}, {name_a}"),
-        "the plan's own order is kept, so the same name can appear twice");
-    let _ = name_b;
-}
-
 /// A prompt's own description is what the player is shown; the generic
 /// header is the fallback for a prompt that did not write one.
 ///
@@ -501,4 +465,37 @@ fn an_offered_ability_carries_its_own_description() {
     // offers it.
     assert!(!entry.target_options.is_empty(),
         "the Priest taps a creature, so the entry offers one: {entry:?}");
+}
+
+/// CR 400.2/603.3d: the stack is public and a trigger's targets are chosen as
+/// it goes on the stack, so both seats can see what it is pointed at. Issue
+/// #134 — the panel never showed them.
+///
+/// The accessor that carries them is used by the stack view and by the log
+/// line naming the target (issue #135), and by nothing else: stubbing it to
+/// return no targets at all passed the whole suite. This is that surface,
+/// which is where the two issues were filed about.
+#[test]
+fn the_stack_view_shows_what_a_trigger_is_pointed_at() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+
+    let card_id = state.get_object(hunter).unwrap().card_id;
+    let mut source = mtg_engine::triggers::TriggerSource::new(
+        hunter, card_id, P0, "you may exile another target creature");
+    source.chosen_targets = vec![Target::Object(victim)];
+    state.stack.push(mtg_engine::state::StackEntry::Trigger(
+        mtg_engine::triggers::PendingTrigger::new(
+            source, mtg_engine::triggers::TriggerEvent::SelfEntered)));
+
+    for seat in [P0, P1] {
+        let view = mtg_engine::view::GameView::for_player(&state, seat, &reg);
+        let item = view.stack.iter()
+            .find(|s| s.controller == P0)
+            .unwrap_or_else(|| panic!("p{}'s view shows the trigger", seat.0));
+        assert_eq!(item.targets, vec![Target::Object(victim)],
+            "and says what it is pointed at, from either seat");
+    }
 }

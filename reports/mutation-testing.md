@@ -323,3 +323,71 @@ The audit that produced it, over what this campaign has pinned so far:
 What did not change: the ceremony. A mutation-motivated test still is not
 done until it has been watched failing under its exact mutant, because an
 early round of this campaign produced four kills that were not kills.
+
+## Auditing the campaign's own tests — 2026-09-07
+
+`docs/mutation-testing-guide.md` was written after most of this campaign's
+tests, so the tests were read back against it. Ninety-odd
+mutation-motivated tests; six failed and were deleted, one function went
+with them, and one was replaced at the right level.
+
+**Deleted, for pinning a heuristic:**
+
+- `flexibility_counts_the_colors_a_source_can_make_and_not_colorless`
+- `a_sources_score_is_the_demand_for_every_color_it_makes`
+- `hand_demand_adds_up_every_pip_in_every_cost`
+
+All three assert the autotap planner's ranking inputs and the sort order
+they produce. Nothing about a plan is right or wrong because of them — the
+planner chooses among plans that are all correct, and the guide's own
+worked example says so in as many words. Writing them was the same
+mistake the guide was written to stop, made in the same session that
+wrote the guide.
+
+**Deleted, for pinning presentation:**
+
+- `funding_groups_come_back_in_a_stable_order` — a funding response names
+  its groups by NAME, so their position carries nothing. Any order the
+  comparator produces is deterministic, which is the only property the
+  replay check needs.
+- `a_tap_plan_is_shown_as_a_short_grouped_list` — the exact rendering of
+  "tap 2x Swamp, Sol Ring", down to where the runs break. Which sources a
+  plan taps is the rules question, and it is pinned where the planner
+  lives. (This one also carried a `let _ = name_b;` to silence a warning
+  about a binding it no longer needed — a test contorting itself around
+  its own subject.)
+
+**Deleted, for restating a getter:**
+
+- `a_triggers_kind_and_chosen_targets_are_readable` constructed a
+  `PendingTrigger` by hand and asserted two accessors returned what had
+  just been put in. Following it found something better than a test:
+  `PendingTrigger::kind()` had **no callers at all** — every site calls
+  `trigger.event.kind()` directly — so the wrapper is deleted.
+  `chosen_targets()` turned out to be live but genuinely uncovered:
+  stubbing it to return nothing passed the entire suite. Its two callers
+  are the stack panel (issue #134) and the log line naming a trigger's
+  target (issue #135), so it is now covered at that surface instead —
+  `the_stack_view_shows_what_a_trigger_is_pointed_at`, from both seats,
+  because the stack is public (CR 400.2).
+
+**Kept, on the line:**
+
+- `a_spells_player_target_list_puts_the_caster_first` pins an ordering,
+  which the guide usually calls arid — but issue #138 is a filed bug about
+  exactly that order (the chooser reads "You / Opponent", and the order
+  flipped with the seat). The order is a UX contract someone hit.
+- `the_step_and_card_type_predicates_say_what_they_mean` is a table of CR
+  facts (502/514 on priority, 110.4a on permanent types) rather than a
+  restatement of a card's own data.
+- `a_source_produces_colorless_only_if_an_ability_says_colorless` sits
+  beside the three deleted scoring tests but is not one of them: whether a
+  source can make {C} decides whether a plan is *correct* (CR 107.4c),
+  not which of several correct plans is preferred.
+- The exact-string log assertions in `log_attribution.rs` stay. The log is
+  a deliverable there — its header says so — and the issues behind those
+  tests (#86, #263, #264, #299, #301) are all "the log could not answer an
+  obvious question".
+
+The mutants the deleted tests had been killing are on
+`reports/mutants-accepted.txt` with the reason each is arid.

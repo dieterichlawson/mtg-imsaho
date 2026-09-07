@@ -220,12 +220,7 @@ impl PendingTrigger {
         self.source.card_id
     }
 
-    /// The trigger kind, used to look up the matching `TriggeredAbilityDef`.
-    #[must_use]
-    pub fn kind(&self) -> Option<crate::cards::TriggerKind> {
-        self.event.kind()
-    }
-
+    /// The targets chosen as this trigger went on the stack (CR 603.3d).
     #[must_use]
     pub fn chosen_targets(&self) -> &[Target] {
         &self.source.chosen_targets

@@ -1277,24 +1277,3 @@ fn a_collected_trigger_carries_its_own_abilitys_text() {
     assert!(!collected.iter().any(|d| d.contains("return exiled card")),
         "and not the leaves trigger's, got {collected:?}");
 }
-
-/// The two accessors the stack view and the target machinery read a trigger
-/// through: the kind it looks its ability up by, and the targets chosen for
-/// it as it went on the stack (CR 603.3d).
-#[test]
-fn a_triggers_kind_and_chosen_targets_are_readable() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
-    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
-    let card_id = state.get_object(hunter).unwrap().card_id;
-
-    let mut source = TriggerSource::new(hunter, card_id, P0, "you may exile another target creature");
-    source.chosen_targets = vec![Target::Object(victim)];
-    let trigger = PendingTrigger::new(source, TriggerEvent::SelfEntered);
-
-    assert_eq!(trigger.kind(), Some(mtg_engine::cards::TriggerKind::EntersBattlefield),
-        "an enters trigger looks its ability up as an enters trigger");
-    assert_eq!(trigger.chosen_targets(), &[Target::Object(victim)],
-        "and carries the target chosen as it went on the stack (CR 603.3d)");
-}

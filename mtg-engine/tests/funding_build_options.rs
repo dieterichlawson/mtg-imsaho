@@ -261,27 +261,3 @@ fn a_summoning_sick_dork_cannot_fund_x_but_a_ready_one_can() {
         "haste lifts the restriction (CR 702.10b)");
     assert_eq!(hasty.max_x, 2);
 }
-
-/// The groups come back sorted by category and then by name, so the prompt a
-/// player answers is in the same order every time — and so a saved answer
-/// keyed by position replays.
-#[test]
-fn funding_groups_come_back_in_a_stable_order() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_permanent(&mut state, &registry, "Swamp", P0);
-    named_permanent(&mut state, &registry, "Mountain", P0);
-    named_permanent(&mut state, &registry, "Avacyn's Pilgrim", P0);
-    named_permanent(&mut state, &registry, "Sol Ring", P0);
-
-    let options = funding::build_options(&state, P0, &registry);
-    let order: Vec<(FundingCategory, &str)> = options.groups.iter()
-        .map(|g| (g.category, g.name.as_str()))
-        .collect();
-    assert_eq!(order, vec![
-        (FundingCategory::Lands, "Mountain"),
-        (FundingCategory::Lands, "Swamp"),
-        (FundingCategory::Rocks, "Sol Ring"),
-        (FundingCategory::Dorks, "Avacyn's Pilgrim"),
-    ], "lands, then rocks, then dorks; alphabetical within each");
-}

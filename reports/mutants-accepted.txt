@@ -291,3 +291,45 @@ mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_s
 # directly, so a stale one is reported by the nightly fuzzer rather than
 # passing silently.
 mtg-engine/src/engine/actions/abilities.rs: delete ! in activate_ability
+
+# ── Retired tests, 2026-09-07 ────────────────────────────────────────────
+#
+# Six mutation-motivated tests were deleted for failing the standard in
+# docs/mutation-testing-guide.md — they pinned a heuristic, a presentation
+# order, a display format or a getter, none of which an engine user could see
+# go wrong. The mutants they had been killing come back here, with the reason
+# each is arid rather than untested.
+
+# The autotap planner's ranking inputs: how many colours a source can make,
+# and how much the rest of the hand wants them. Nothing about a plan is right
+# or wrong because of these — they choose among plans that are all correct,
+# and the contract they serve (an offered plan pays the cost; a declined one
+# had no plan) is property-tested in mana.rs. The deleted tests asserted the
+# scores and the resulting sort order directly, which is the guide's worked
+# example of what not to write.
+mtg-engine/src/mana.rs: replace source_flexibility -> usize with 0
+mtg-engine/src/mana.rs: replace source_flexibility -> usize with 1
+mtg-engine/src/mana.rs: replace source_sort_key -> (ManaSourceKind, usize, u32) with (Default::default(), 0, 0)
+mtg-engine/src/mana.rs: replace source_sort_key -> (ManaSourceKind, usize, u32) with (Default::default(), 0, 1)
+mtg-engine/src/mana.rs: replace source_sort_key -> (ManaSourceKind, usize, u32) with (Default::default(), 1, 0)
+mtg-engine/src/mana.rs: replace source_sort_key -> (ManaSourceKind, usize, u32) with (Default::default(), 1, 1)
+mtg-engine/src/mana.rs: replace += with *= in build_hand_demand
+mtg-engine/src/mana.rs: replace += with -= in build_hand_demand
+mtg-engine/src/mana.rs: replace += with *= in hand_demand_score
+mtg-engine/src/mana.rs: replace += with -= in hand_demand_score
+
+# The funding prompt's group ordering. A response names groups by NAME, so
+# position carries nothing, and any order the comparator produces is
+# deterministic — which is the property the replay check depends on. Masks the
+# other `==` sites in the same function, which ARE killed, by
+# `a_summoning_sick_dork_cannot_fund_x_but_a_ready_one_can`.
+mtg-engine/src/funding.rs: replace == with != in build_options
+
+# How a tap plan is rendered into a prompt's description — the grouping of
+# runs ("tap 2x Swamp, Sol Ring") and the counting behind it. WHICH sources a
+# plan taps is the rules question and is pinned where the planner lives; how
+# the list is punctuated is not, and any correct rendering says the same
+# thing.
+mtg-engine/src/cards/helpers.rs: replace += with *= in format_tap_plan_names
+mtg-engine/src/cards/helpers.rs: replace += with -= in format_tap_plan_names
+mtg-engine/src/cards/helpers.rs: replace == with != in format_tap_plan_names

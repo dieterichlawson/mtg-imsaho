@@ -766,61 +766,6 @@ mod tests {
         assert!(!can_produce_color(&colorless, Color::Green));
     }
 
-    #[test]
-    fn flexibility_counts_the_colors_a_source_can_make_and_not_colorless() {
-        let dual = make_source(1, ManaSourceKind::BasicMana,
-            dual_abilities(ManaType::Red, ManaType::Green));
-        assert_eq!(source_flexibility(&dual), 2);
-        assert_eq!(source_flexibility(&make_source(2, ManaSourceKind::BasicMana,
-            vec![mono_ability(ManaType::Red)])), 1);
-        assert_eq!(source_flexibility(&make_source(3, ManaSourceKind::BasicMana,
-            vec![mono_ability(ManaType::Colorless)])), 0,
-            "colorless is not a color (CR 105.1)");
-    }
-
-    /// Demand is the count of coloured pips across the rest of the hand, added
-    /// up — one pip per symbol, every cost counted.
-    #[test]
-    fn hand_demand_adds_up_every_pip_in_every_cost() {
-        let demand = build_hand_demand(&[
-            ManaCost::new(vec![ManaSymbol::Colored(Color::White), ManaSymbol::Colored(Color::White)]),
-            ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::White)]),
-            ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]),
-        ]);
-        assert_eq!(demand.get(&Color::White).copied(), Some(3));
-        assert_eq!(demand.get(&Color::Green).copied(), Some(1));
-        assert_eq!(demand.get(&Color::Red).copied(), None, "generic demands no colour");
-    }
-
-    /// A source's score is the demand for every colour it makes, added up, so
-    /// a dual land carries the demand of both halves and is tapped later than
-    /// either mono land.
-    #[test]
-    fn a_sources_score_is_the_demand_for_every_color_it_makes() {
-        let demand = build_hand_demand(&[
-            ManaCost::new(vec![ManaSymbol::Colored(Color::Red), ManaSymbol::Colored(Color::Red)]),
-            ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]),
-        ]);
-        let mountain = make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]);
-        let forest = make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]);
-        let dual = make_source(3, ManaSourceKind::BasicMana,
-            dual_abilities(ManaType::Red, ManaType::Green));
-        let wastes = make_source(4, ManaSourceKind::BasicMana,
-            vec![mono_ability(ManaType::Colorless)]);
-
-        assert_eq!(hand_demand_score(&mountain, &demand), 2);
-        assert_eq!(hand_demand_score(&forest, &demand), 1);
-        assert_eq!(hand_demand_score(&dual, &demand), 3);
-        assert_eq!(hand_demand_score(&wastes, &demand), 0);
-
-        // Which is what the sort key carries: same tier, the dual is tapped
-        // after either mono land, and the colorless source before both.
-        let key = |s: &ManaSource| source_sort_key(s, &demand);
-        assert!(key(&wastes) < key(&forest));
-        assert!(key(&forest) < key(&mountain));
-        assert!(key(&mountain) < key(&dual));
-    }
-
     // ---- the tap planner's one contract ----
     //
     // `compute_autotap` picks WHICH sources to tap, and that choice is a
