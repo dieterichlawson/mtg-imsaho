@@ -160,17 +160,6 @@ mtg-engine/src/triggers/collect/mod.rs: replace == with != in was_on_the_battlef
 mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::cards::TriggerKind::EndCombat in step_started
 mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::types::Step::EndCombat in step_started
 mtg-engine/src/triggers/collect/zones.rs: replace == with != in entered_battlefield
-mtg-engine/src/types.rs: delete match arm Step::Untap | Step::Cleanup in Step::has_priority
-mtg-engine/src/types.rs: replace CardType::is_permanent -> bool with true
-mtg-engine/src/types.rs: replace Step::has_priority -> bool with false
-mtg-engine/src/types.rs: replace Step::has_priority -> bool with true
-mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseCardFromHand{cards, ..} in GameView::for_player
-mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseFromLibrary{options, ..} in GameView::for_player
-mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseFromRevealed{revealed, ..} in GameView::for_player
-mtg-engine/src/view.rs: delete match arm ResolutionChoiceKind::ChooseTarget{options, ..} in GameView::for_player
-mtg-engine/src/view.rs: delete match arm crate::state::AwaitingAction::ResolutionChoice{choice, ..} in GameView::for_player
-mtg-engine/src/view.rs: replace != with == in GameView::for_player
-mtg-engine/src/view.rs: replace >= with < in GameView::for_player
 # invariants.rs remainders after the checker battery (12 raw mutants, three
 # normalized lines; see mutation-testing.md for which are near-equivalent):
 mtg-engine/src/invariants.rs: replace == with != in check_core

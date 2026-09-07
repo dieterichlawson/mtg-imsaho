@@ -10,6 +10,7 @@
 mod common;
 use common::*;
 use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+use mtg_engine::actions::Target;
 use mtg_engine::types::*;
 
 /// The view reports effective P/T wherever the card is.
@@ -251,4 +252,102 @@ fn the_view_and_the_prompt_name_which_combat_damage_step_this_is() {
     mtg_engine::engine::advance_step(&mut state, &reg);
     assert_eq!(state.step, Step::EndCombat);
     assert!(!mtg_engine::view::GameView::for_player(&state, P0, &reg).first_strike_damage_step);
+}
+
+/// The names a prompt asks about reach the player who has to answer.
+///
+/// A prompt can name cards in a hidden zone — a hand, a library, the cards
+/// an effect looked at — and the object ids alone say nothing. `for_player`
+/// resolves them into `revealed_names`, one match arm per prompt kind, and
+/// an arm that goes missing leaves that prompt unreadable.
+#[test]
+fn a_prompt_that_names_hidden_cards_carries_their_names() {
+    use mtg_engine::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let in_hand = spell_in_hand(&mut state, &reg, "Moment of Heroism", P1);
+    let in_library = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P1, Zone::Library, None, None);
+    state.get_object_mut(in_library).unwrap().name = "Forest".into();
+    state.get_player_mut(P1).library_order.push(in_library);
+
+    let cases = [
+        ("a target picker", K::ChooseTarget {
+            description: "d".into(), options: vec![Target::Object(in_hand)],
+            optional: false,
+            effect: PendingEffect::CardEffect { source_id: source, key: String::new() },
+        }, in_hand),
+        ("a hand prompt", K::ChooseCardFromHand {
+            description: "d".into(), player: P1, cards: vec![in_hand],
+            discard_immediately: true, remaining: 1,
+        }, in_hand),
+        ("a look at cards", K::ChooseFromLookedAt {
+            description: "d".into(), looked_at: vec![in_library],
+        }, in_library),
+        ("a library search", K::ChooseFromLibrary {
+            description: "d".into(), options: vec![in_library], searcher: P1,
+            source_id: source, destination: Zone::Hand, tapped: false,
+        }, in_library),
+    ];
+
+    for (what, choice, named) in cases {
+        let mut s = state.clone();
+        s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: P1, source, choice,
+        });
+        let view = mtg_engine::view::GameView::for_player(&s, P1, &reg);
+        assert!(view.revealed_names.contains_key(&named),
+            "{what} names #{} from a hidden zone, so the view carries its name; \
+             revealed_names = {:?}", named.0, view.revealed_names);
+    }
+
+    // With no prompt up there is nothing to reveal.
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    assert!(view.revealed_names.is_empty(),
+        "nothing is revealed with no prompt up: {:?}", view.revealed_names);
+}
+
+/// The view is one seat's view: the opponents list is everyone else, and
+/// the display log starts at Info.
+#[test]
+fn the_view_is_one_seats_view_of_the_game() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.log(mtg_engine::state::LogLevel::Debug, "p0 tapped Forest for G".to_string());
+    state.log(mtg_engine::state::LogLevel::Info, "p0 played a land".to_string());
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    assert_eq!(view.opponents.len(), 1, "a two-player game has one opponent");
+    assert_eq!(view.opponents[0].id, P1, "and it is the other seat, not this one");
+
+    assert!(view.display_log.iter().any(|l| l.contains("played a land")),
+        "the display log starts at Info: {:?}", view.display_log);
+    assert!(!view.display_log.iter().any(|l| l.contains("tapped Forest")),
+        "and stops below it: {:?}", view.display_log);
+}
+
+/// CR 117.1/110.4: two predicates the whole engine reads through.
+#[test]
+fn the_step_and_card_type_predicates_say_what_they_mean() {
+    // CR 502/514: no player receives priority in the untap or cleanup step.
+    for step in [Step::Untap, Step::Cleanup] {
+        assert!(!step.has_priority(), "{step:?} gives nobody priority");
+    }
+    for step in [Step::Upkeep, Step::Draw, Step::PrecombatMain, Step::BeginCombat,
+                 Step::DeclareAttackers, Step::DeclareBlockers, Step::CombatDamage,
+                 Step::EndCombat, Step::PostcombatMain, Step::EndStep] {
+        assert!(step.has_priority(), "{step:?} is a step with priority");
+    }
+
+    // CR 110.4a: the five permanent types, and nothing else.
+    for ty in [CardType::Land, CardType::Creature, CardType::Enchantment,
+               CardType::Artifact, CardType::Planeswalker] {
+        assert!(ty.is_permanent(), "{ty:?} is a permanent type");
+    }
+    for ty in [CardType::Instant, CardType::Sorcery] {
+        assert!(!ty.is_permanent(), "{ty:?} is never a permanent");
+    }
 }
