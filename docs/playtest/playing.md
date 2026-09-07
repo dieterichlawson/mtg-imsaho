@@ -241,6 +241,89 @@ contradict the CR.
   P/T-setting effect on the Tree (ISD has none), and exchanging to exactly 0 life
   — a 0-toughness Tree dies to 704.5f before it can be tapped
 
+- C35 [tried 2026-09-07 → #329, #331] the token deck vs the sweeper — the token
+  as an object under anthems, doubling and mass removal. Write one-off decks (no
+  coverage pairing has both halves): a go-wide side of Midnight Haunting, Moan of
+  the Unhallowed, Army of the Damned, Doomed Traveler, Mausoleum Guard, Gutter
+  Grime and Walking Corpse under Parallel Lives, Intangible Virtue, Glorious
+  Anthem and Gavony Township, against Divine Reckoning, Blasphemous Act, Rolling
+  Temblor, Sever the Bloodline, Curse of Death's Hold and Tribute to Hunger.
+  Verify Parallel Lives replaces the creation event exactly once and only for its
+  own controller (CR 614.1b — cast the SAME card from both seats with one
+  Parallel Lives out and compare 4 tokens to 2), that 7c anthems stack on a token
+  and 7d Township counters go on top of them, and that a nontoken creature gets
+  the anthems but not Intangible Virtue. The sharpest reachable states: a Curse
+  of Death's Hold that turns every 1/1 token into a 0/0 dying on arrival (614.1b
+  → 7c → 704.5f in one resolution), a graveyard that has swallowed six dead
+  tokens and one creature card so Spider Spawning must count exactly ONE (111.7 —
+  tokens are not creature cards), and Army of the Damned doubled to 26 Zombie
+  tokens so Blasphemous Act prices at exactly {R} and Sever the Bloodline exiles
+  all 26 with no exile residue. Note that Sever the Bloodline's Oracle text is
+  "and all other creatures with the same name as that creature", with NO "its
+  controller controls" clause, and the engine's cross-controller exile is
+  correct. Every CR claim above held; the defects are the log (#329: only Kessig
+  Cagebreakers and Spider Spawning got #92's fix, so Army of the Damned still
+  says "13" when 26 enter) plus token names carrying a " Token" suffix CR 111.4
+  does not give them (#331). Unreached: Kessig Cagebreakers' tapped-and-attacking
+  Wolves under a doubler, Endless Ranks of the Dead's upkeep count, Elder of
+  Laurels, and a second Parallel Lives for the 4x case — stack those higher
+- C36 [tried 2026-09-07; no engine bug found] the +1/+1 counter as an
+  accumulating clock — combat-damage triggers over a long game. Play the vampire
+  shell (Stromkirk Noble, Bloodcrazed Neonate, Rakish Heir, Falkenrath Marauders,
+  Curse of Stalked Prey, Bloodline Keeper, Vampiric Fury) against a deck that
+  blocks and removes, and reconcile every counter by hand against `--log` each
+  combat. Verify one trigger per combat damage EVENT and never per point (CR
+  510.2 — a 7-power hit gives one Heir trigger, not seven); that stacking three
+  or four triggers on one attacker is ONE CR 603.3b ordering prompt, not two
+  groups, and that when the Curse's controller differs from the Heir's the active
+  player's triggers go on the stack first (CR 101.4) — the only route is the
+  opponent casting Curse of Stalked Prey on THEMSELVES, which is legal and
+  reaches the split in one turn; that combat damage to a blocking creature and to
+  a planeswalker fire nothing at all (CR 508.1a) while trample excess reaching
+  the player DOES fire it (CR 702.19b) even when the trampler dies in the same
+  step and CR 121.1 then drops the counter; that a first-striker deals damage
+  once and gets one set of counters (CR 510.4/510.5); and that counters survive
+  cleanup, tap/untap and Vampiric Fury expiring while vanishing on a zone change
+  (a Marauders with 8 counters reads 2/2 in exile, CR 400.7/111.2). Bloodline
+  Keeper's transform is correctly absent at four Vampires and offered at five,
+  and layer 7c/7d stacked right (2/2 base + counters + Lord of Lineage anthem +
+  Vampiric Fury = 9/7). `decks/rb-vampires.txt` is adequate but too thin on
+  Rakish Heir and the Curse to reach the stacking cases reliably — write one-offs.
+  Unreached: a double-striker's two damage steps (no double strike in these decks
+  — needs Terror of Kruin Pass), a counter-carrying creature dying and being
+  reanimated as a new object, and a Rakish Heir killed by first-strike damage
+  before the regular damage step
+- C37 [tried 2026-09-07 → #328] creature TYPE as a live resource: make every
+  Human-conditional in the pool re-read itself while the types move under it
+  (CR 613.1d layer 4 feeding layers 6 and 7c). Three one-off deck pairs (Angelic
+  Overseer / Cloistered Youth / Villagers of Estwald / Mayor of Avabruck /
+  Butcher's Cleaver / Bonds of Faith / Moonmist / Village Bell-Ringer against
+  Geistflame / Brimstone Volley / Smite the Monstrous / Slayer of the Wicked /
+  Elite Inquisitor). Everything held over three games: ONE Bonds of Faith on a
+  werewolf DFC switched between its +2/+2 half and its can't-attack-or-block half
+  on each transform with no re-target and no new object (the Werewolf face was
+  ABSENT from the attacker list, not offered-and-rejected, 509.1b/508.1a);
+  Howlpack Alpha's Werewolf/Wolf anthem dropped a Wolf token 3/3→2/2 the instant
+  it flipped back; Butcher's Cleaver lost lifelink in the same window as an
+  instant-speed Moonmist (Cloistered Youth 4/1 lifelink → Unholy Fiend 6/3 none)
+  and never granted it to an Angel; Angelic Overseer's grant appeared mid-stack
+  when a flash Human (Village Bell-Ringer) resolved and fizzled the Smite the
+  Monstrous already targeting it (608.2b), removed it from Geistflame's and
+  Smite's target lists while it was up, and vanished at the very SBA that killed
+  the last Human; Slayer of the Wicked and Smite the Monstrous both read the
+  CURRENT type/power. Two corrections for whoever takes this next: Furor of the
+  Bitten is NOT a type changer — its Oracle text is "+2/+2 and attacks each
+  combat if able" — and every ISD werewolf front face is already "Human
+  Werewolf", so there is no printed-vs-current delta for Slayer or Elite
+  Inquisitor to get wrong; the only clean Human→non-Human flip in the pool is
+  Cloistered Youth → Unholy Fiend (Horror). Unreached: lethal damage MARKED on
+  the Overseer while indestructible and then losing the last Human in the same
+  window (needs a 4-power ground attacker for the Angel to block — Night
+  Revelers, never drawn); Night Revelers' own "haste as long as an opponent
+  controls a Human"; the Overseer and a werewolf DFC on the battlefield together;
+  and CR 613.7 dependency, which looks unreachable — ISD's other type effects
+  (Olivia Voldaren, Grimoire of the Dead) only ADD a subtype and are off-colour
+
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
 illegal or dubious resolutions do.
@@ -476,3 +559,78 @@ illegal or dubious resolutions do.
   protection never does. Unreached: the -X/-X and destroy-all halves — build a
   deck that actually draws Dead Weight, and note a sorcery sweeper can never be
   cast while an until-EOT grant from the other seat is up
+- L37 [tried 2026-09-07 → #330, #332] abilities that function outside the
+  battlefield (CR 112.6, 113.6): flashback, Skaab Ruinator's graveyard cast,
+  Burning Vengeance, Runic Repetition and Back from the Brink audited as one
+  family. Write one-off self-mill decks — Armored Skaab and Dream Twist fill a
+  graveyard in five turns where a 60 never will. Verify a flashback card is
+  offered only to the player whose graveyard it is in (CR 702.34a — put a Dream
+  Twist in EACH graveyard and count the menu rows), that a flashback SORCERY and
+  the Skaab Ruinator graveyard cast are absent from an upkeep/draw/end-step menu
+  rather than offered-and-rejected, and that all three exits exile: resolution, a
+  counter (Frightful Delusion while the caster is tapped out) and a fizzle
+  (flashback Devil's Play for X=0 at your own 3/1 Kessig Wolf, then Geistflame it
+  in response — CR 608.2b). All of that held, as did Skaab Ruinator's cost paying
+  at announcement from your OWN graveyard only (CR 601.2f/h) and leaving the menu
+  below three creature cards, and Runic Repetition's "exiled + you own + has
+  flashback" filter — including the positive case of a card exiled by Purify the
+  Grave rather than by flashback. What broke: Burning Vengeance tests
+  `cast_with_flashback` instead of "cast from your graveyard", so Skaab
+  Ruinator's own permission (and a Rooftop Storm cast) never trigger it (#330),
+  and every exile-zone target renders as `obj#NN` because `perm_name` skips exile
+  (#332). Unreached: Back from the Brink, Past in Flames, Snapcaster-granted
+  flashback under Burning Vengeance, Memory's Journey, Mirror-Mad Phantasm,
+  Corpse Lunge, Harvest Pyre, Make a Wish, Creeping Renaissance — budget a deck
+  with a real six-land mana base, this one stalled on three
+- L38 [tried 2026-09-07 → #323, #324] the replacement effect that turns one event
+  into a completely different one (CR 614.1, 616.1): **Undead Alchemist** replaces
+  a Zombie's combat damage to a player with a mill, so the damage never happens
+  and everything downstream of "was damage dealt?" must agree. Put Curse of
+  Stalked Prey on the defender and Curiosity on an attacking Zombie and verify
+  neither fires, while a non-Zombie (Moon Heron) in the SAME damage step still
+  moves life and still triggers the Curse. Attack with four Zombies at once —
+  four separate mills, one per source, not one of the sum (the 2011 ruling) — and
+  check a blocked Zombie mills nothing, a token Zombie mills normally, and a
+  trampling Skaab Goliath spills only the excess past a Grave Bramble whose
+  protection prevents the assigned lethal (702.19b + 702.16d). Two Alchemists
+  exile the card once and make two tokens. Verify the second ability is
+  opponent-only and library-only (Dream Twist at yourself and Armored Skaab's
+  self-mill must NOT fire it; a discarded creature must not either) and that
+  milling to zero loses on the next DRAW (104.3c, 704.5b), not when the library
+  empties. All of that held. Where it breaks is CR 616.1: the affected player
+  never chooses the order when two effects modify one damage event — `damage.rs`
+  runs prevention → multiplier → replacement with no prompt, so Inquisitor's
+  Flail on a Zombie mills 2×power (#323), and `replacement.rs::apply` still
+  documents that pool as unreachable. Unreached: lifelink on a Zombie is
+  impossible in ISD (Butcher's Cleaver grants it only to Humans), so "no damage
+  event means no lifelink" stays unverified; Ghoulcaller's Bell's "each player
+  mills a card" as a one-event two-player probe went undrawn in two games
+- L39 [tried 2026-09-07 → #319, #333, #334] the card NAME as a game object: the
+  legend rule, "same name" effects, copies and Nevermore. Write three one-off
+  decks — 4-ofs of Olivia Voldaren / Grimgrin, Corpse-Born / Liliana of the Veil
+  with Evil Twin and Cackling Counterpart; a WBG Sever the Bloodline deck with
+  Moan of the Unhallowed and the Gatstaf/Estwald werewolf DFCs; a WU Nevermore
+  deck with Think Twice (for the flashback) and Urgent Exorcism (to kill the
+  Nevermore). CR 704.5j is per player AND per name: two players may each keep
+  their own copy of the same legend (an Evil Twin copying the opponent's Grimgrin
+  is the cheapest way in), only the duplicate's controller is offered the
+  keep-choice, and the loser goes to its OWNER's graveyard — Olivia's {3}{B}{B}
+  stealing the other Olivia is the one line in the pool that tests 404.3, and it
+  needs the THIEF to hold the two black sources. A copy fires the rule too, and a
+  losing token ceases to exist (111.7) while a losing Evil Twin reverts to "Evil
+  Twin" in the graveyard (400.7). Sever the Bloodline's Oracle is "all other
+  creatures with the same name" with NO controller clause (check
+  `data/oracle_cache.json` before believing otherwise): it takes every same-named
+  creature on the battlefield, tokens of both players included, and gathers by
+  the face that is up, so a Sever on Villagers of Estwald leaves a transformed
+  Howlpack of Estwald standing (712.8a). Nevermore's chooser is a filtered card
+  list: verify the banned spell and its FLASHBACK are absent from both seats'
+  menus while plainly affordable, that a card in neither deck is nameable and
+  harmless, and that the ban lifts in the same priority window the enchantment
+  dies. All of that held. What did not: `become_copy_of` writes an empty
+  instance-effect list, so anything entering as a copy loses the copied card's
+  static abilities (#319 — a copied Grimgrin untaps and attacks every turn), and
+  no pane, log line or board text ever prints the Legendary supertype (#333).
+  Unreached: Essence of the Wild (not drafted into any deck), Geist of Saint
+  Traft's and Garruk Relentless's own legend-rule instances, and whether Garruk
+  Relentless and Garruk, the Veil-Cursed correctly coexist under one controller
