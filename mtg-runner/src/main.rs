@@ -421,6 +421,15 @@ there is nothing to resume",
             eprintln!("note: this save predates seat recording, so the seats come from the \
 flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup you saved");
         }
+        // Every other save/flag disagreement on this path is announced, and
+        // this is the one that loses work: the save path is not part of the
+        // save, so `--resume X` alone reads X and never writes to it again.
+        // The file sits on disk looking current while the game plays on
+        // (issue #317).
+        if save_file.is_none() {
+            eprintln!("note: --resume without --save; this game is not being saved and '{path}' \
+stops here — pass --save {path} to keep writing it");
+        }
         if !quiet {
             println!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
                 path, save.state.turn_number, save.player_names[0], save.player_names[1],
