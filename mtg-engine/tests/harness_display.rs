@@ -122,3 +122,133 @@ fn no_ability_label_renders_an_internal_object_id() {
         "{} ability label(s) render an internal handle the player cannot map to \
          anything:\n  {}", offenders.len(), offenders.join("\n  "));
 }
+
+/// A loyalty ability is offered with the cost the card prints.
+///
+/// The view builds each label from the ability's loyalty change, adding the
+/// sign only when the card's own text doesn't already carry it. Get the
+/// sign test wrong in either direction and the player is shown a doubled
+/// cost — "+1: +1: Each player discards a card", or "+0: 0: Deal 3 damage".
+#[test]
+fn a_loyalty_ability_is_labelled_with_the_cost_the_card_prints() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Liliana of the Veil prints a plus ability and two minus abilities;
+    // Garruk Relentless prints two zero-cost ones.
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, liliana, 3);
+    set_loyalty(&mut state, garruk, 3);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+
+    for id in [liliana, garruk] {
+        let shown = &view.battlefield.iter()
+            .find(|p| p.object_id == id).expect("on the battlefield")
+            .loyalty_abilities;
+        let printed = reg.get(state.get_object(id).unwrap().card_id).unwrap()
+            .loyalty_abilities(&state, id);
+        assert_eq!(shown.len(), printed.len(), "every loyalty ability is offered");
+        for (ab, (index, label)) in printed.iter().zip(shown) {
+            assert_eq!(*index, ab.ability_index);
+            assert_eq!(label, ab.description.trim(),
+                "the label is the printed text, with its cost written once: \
+                 loyalty change {} rendered as {label:?}", ab.loyalty_change);
+        }
+    }
+}
+
+/// The full log is the game's record, not the players' — it keeps the
+/// Debug-level bookkeeping the display log hides, and still drops the
+/// Private lines that are one player's hidden information (issue #119).
+#[test]
+fn the_full_log_keeps_debug_lines_and_drops_private_ones() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    state.log(mtg_engine::state::LogLevel::Private, "p0 looked at Delver's top card".to_string());
+    state.log(mtg_engine::state::LogLevel::Debug, "p0 tapped Forest for G".to_string());
+    state.log(mtg_engine::state::LogLevel::Info, "p0 played a land".to_string());
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+
+    assert!(view.full_log.iter().any(|l| l.contains("tapped Forest")),
+        "the full log keeps Debug lines: {:?}", view.full_log);
+    assert!(view.full_log.iter().any(|l| l.contains("played a land")),
+        "and everything above them: {:?}", view.full_log);
+    assert!(!view.full_log.iter().any(|l| l.contains("top card")),
+        "but never a Private line, not even for the player it belongs to: {:?}",
+        view.full_log);
+
+    assert!(!view.display_log.iter().any(|l| l.contains("tapped Forest")),
+        "the display log starts one level higher: {:?}", view.display_log);
+}
+
+/// Nevermore's chosen name is public information, so the view carries it.
+/// Without it the player sees an enchantment with no indication of which
+/// card it is turning off.
+#[test]
+fn the_view_reports_the_name_a_nevermore_chose() {
+    use mtg_engine::types::ContinuousEffect;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let nevermore = named_permanent(&mut state, &reg, "Nevermore", P0);
+    state.get_object_mut(nevermore).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::PreventCastingNamed { name: "Lightning Bolt".into() },
+    ]);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+
+    for seat in [P0, P1] {
+        let view = mtg_engine::view::GameView::for_player(&state, seat, &reg);
+        let row = view.battlefield.iter()
+            .find(|p| p.object_id == nevermore).expect("on the battlefield");
+        assert_eq!(row.named_card.as_deref(), Some("Lightning Bolt"),
+            "p{} must be able to read the banned name off the Nevermore", seat.0);
+        assert_eq!(view.battlefield.iter()
+            .find(|p| p.object_id == bears).unwrap().named_card, None,
+            "a permanent that named nothing carries no name");
+    }
+}
+
+/// CR 510.4: the two combat damage steps are distinct, and the view has to
+/// say which one the player is in — the first-strike half and the regular
+/// half offer the same actions and would otherwise be indistinguishable
+/// (issue #140).
+#[test]
+fn the_view_and_the_prompt_name_which_combat_damage_step_this_is() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 4, 4);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    // First instance: first-strike damage, with a second step to come.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    assert!(view.first_strike_damage_step,
+        "the first of the two damage steps is flagged as the first-strike one");
+    assert_eq!(mtg_engine::engine::legal_actions(&state, &reg).context.as_deref(),
+        Some("FIRST-STRIKE COMBAT DAMAGE"), "and the prompt says so too");
+
+    // Second instance: regular damage, nothing further pending.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    assert!(!view.first_strike_damage_step,
+        "the regular damage step is the same Step with the flag off — the view \
+         must not report it as the first-strike half");
+    assert_eq!(mtg_engine::engine::legal_actions(&state, &reg).context.as_deref(),
+        Some("COMBAT DAMAGE"), "and the prompt names it the regular half");
+
+    // A step that is not the combat damage step is never either of them.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat);
+    assert!(!mtg_engine::view::GameView::for_player(&state, P0, &reg).first_strike_damage_step);
+}
