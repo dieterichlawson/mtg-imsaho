@@ -198,3 +198,29 @@ quiet case — an ability whose target stays legal announces nothing.
   exactly when p0 is casting — and every test of the list cast from p0. The
   ability path had a both-seats test; the cast path had none. Killed by
   `a_spells_player_target_list_puts_the_caster_first`.
+
+**Shard 2 — the trigger-order prompt, the view, and one equivalent mutant.**
+
+- `process_pending_trigger_pushes` tags a *repeated* option in a CR 603.3b
+  ordering prompt with its source's P/T and object id (issue #116).
+  Deleting the `(Some(p), Some(t))` arm drops the P/T, and `> 1` → `>= 1`
+  tags every option including distinguishable ones. Nothing pinned the
+  tail's shape or its absence. Killed by
+  `simultaneous_triggers_are_ordered_by_their_controller` (now asserting
+  `[source 3/2, #<id>]` on each option) and by
+  `distinct_trigger_options_are_not_given_a_source_tail`.
+- `GameView::for_player` had four unpinned pieces of what the player is
+  shown: the loyalty-ability label's sign (`loyalty_change > 0`, three
+  surviving comparisons), the full log's level floor
+  (`e.level > LogLevel::Private`, three more), Nevermore's chosen name
+  (`PreventCastingNamed` arm), and the first-strike damage step flag
+  (`step == CombatDamage && combat_damage_step_pending`). The same
+  `combat_damage_step_pending` guard names the step in `legal_actions`'
+  prompt context and survived being forced either way. All killed by four
+  tests in `harness_display.rs`; see
+  `the_view_and_the_prompt_name_which_combat_damage_step_this_is`.
+- `CardBehavior::self_static_pt_mod -> Some((0, 0))` is equivalent. The
+  trait default returns `None`, and both call sites
+  (`effective_power`/`effective_toughness`) do nothing but `power += p` on
+  a `Some`, so `Some((0, 0))` and `None` are indistinguishable by any
+  observation the engine can make. Accepted.

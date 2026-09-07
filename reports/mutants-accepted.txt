@@ -64,3 +64,6 @@ mtg-engine/src/cards/kalonian_tusker.rs: delete field subtypes from struct CardD
 mtg-engine/src/cards/pacifism.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for Pacifism>::card_data
 mtg-engine/src/cards/savannah_lions.rs: delete field subtypes from struct CardData expression in <impl CardBehavior for SavannahLions>::card_data
 mtg-engine/src/cards/swords_to_plowshares.rs: replace > with >= in <impl CardBehavior for SwordsToPlowshares>::on_resolve
+# Identity mutant: both call sites only add the pair to P/T, so Some((0,0))
+# and the default None are indistinguishable.
+mtg-engine/src/cards/mod.rs: replace CardBehavior::self_static_pt_mod -> Option<(i32, i32)> with Some((0, 0))
