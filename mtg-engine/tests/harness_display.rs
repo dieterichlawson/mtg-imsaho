@@ -439,3 +439,60 @@ fn a_prompt_shows_its_own_description_and_falls_back_to_a_header() {
         "Forbidden Alchemy: choose a card to put into your hand");
     assert_eq!(described(looked_at("")), format!("{source_name}: choose a card"));
 }
+
+/// The header a player gets while something is on the stack names WHOSE
+/// spell they are responding to, from their own seat: "your" for the one
+/// they cast, and the other player by number.
+///
+/// Both seats are asked because the clause is one comparison, and read from
+/// one seat a version that has it backwards says something plausible.
+#[test]
+fn the_respond_header_names_whose_spell_it_is_from_each_seat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let bolt = castable_spell(&mut state, &reg, "Geistflame", P0);
+    let state = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
+
+    let header = |seat| {
+        let mut s = state.clone();
+        s.priority_player = Some(seat);
+        mtg_engine::engine::legal_actions(&s, &reg).context.unwrap_or_default()
+    };
+    let spell_name = state.obj_name(bolt);
+    assert_eq!(header(P0), format!("RESPOND TO your {spell_name}"),
+        "p0 cast it, so p0 is told it is theirs");
+    assert_eq!(header(P1), format!("RESPOND TO p0's {spell_name}"),
+        "and p1 is told whose it is");
+}
+
+/// An offered ability carries its own description — the sentence the card
+/// prints — so the entry a player picks says what it does.
+///
+/// The lookup finds the ability by index among the ones its source has, and
+/// a lookup that matched the wrong one leaves the label empty on every card
+/// with a single ability, which is most of them.
+#[test]
+fn an_offered_ability_carries_its_own_description() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    state.priority_player = Some(P0);
+
+    let offered = mtg_engine::engine::legal_actions(&state, &reg).activatable_abilities;
+    let entry = offered.iter().find(|a| a.object_id == priest)
+        .expect("the Priest's tap ability is offered");
+    let printed = reg.get(state.get_object(priest).unwrap().card_id)
+        .expect("registered")
+        .activated_abilities(&state, priest, &reg)
+        .into_iter()
+        .find(|a| a.ability_index == entry.ability_index)
+        .expect("the ability it says it is")
+        .description;
+    assert!(!entry.description.is_empty(), "the offer is labelled");
+    assert_eq!(entry.description, printed,
+        "and the label is this ability's own sentence, not another's");
+}
