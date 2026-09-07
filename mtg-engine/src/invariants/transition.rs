@@ -638,6 +638,9 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
 
     let mut acted = false;
     match action {
+        // Not a game action, and never submitted through the loop — the
+        // harness stopping is not a transition to check (issue #233).
+        Action::AbandonGame => {}
         Action::PlayLand { object_id } => {
             acted = true;
             if prev.get_object(*object_id).is_none_or(|o| o.zone != Zone::Hand)
@@ -984,6 +987,7 @@ fn action_name(a: &Action) -> &'static str {
         Action::BottomCards { .. } => "BottomCards",
         Action::Concede => "Concede",
         Action::ResolveChoice { .. } => "ResolveChoice",
+        Action::AbandonGame => "AbandonGame",
     }
 }
 

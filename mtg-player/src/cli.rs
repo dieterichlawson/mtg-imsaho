@@ -2645,6 +2645,8 @@ impl CliPlayer {
     fn format_action(view: &GameView, action: &Action) -> String {
         match action {
             Action::PassPriority => "Pass priority".into(),
+            // Never offered: the harness stopping is not a menu row (#233).
+            Action::AbandonGame => "Abandon game".into(),
             Action::PlayLand { object_id } =>
                 format!("Play land {}", Self::perm_name(view, *object_id)),
             Action::CastSpell { object_id, targets, tap_plan, sacrifice, .. } => {
@@ -4961,7 +4963,7 @@ impl CliPlayer {
                 // offer, and adding a number to them would say nothing.
                 _ => {}
             },
-            Action::PassPriority | Action::Concede
+            Action::PassPriority | Action::Concede | Action::AbandonGame
             | Action::MulliganKeep | Action::MulliganMull => {}
         }
         ids
@@ -5332,8 +5334,13 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "__hot_reload__" => {
-                    // Hot reload triggered by rapid 'rr' in raw mode.
-                    return Action::Concede;
+                    // Hot reload triggered by rapid 'rr' in raw mode. This is
+                    // the PROCESS stopping, not a seat quitting: it used to be
+                    // spelled `Concede`, which the engine recorded, so asking
+                    // for a rebuild wrote "p0 conceded" permanently into the
+                    // run's --log followed by a fresh GAME_START and a replay
+                    // of the same game (issue #233).
+                    return Action::AbandonGame;
                 }
                 "l" => {
                     Self::show_log(&view.display_log);

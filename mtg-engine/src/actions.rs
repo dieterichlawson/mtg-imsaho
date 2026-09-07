@@ -109,6 +109,18 @@ pub enum Action {
 
     /// Respond to a mid-resolution choice.
     ResolveChoice { choice: ResolvedChoice },
+
+    /// Stop the game loop without playing: the PROCESS is finishing, not the
+    /// game. A hot reload, or a runner giving up on a game that has run past
+    /// its action budget.
+    ///
+    /// Not a game action, so it is never offered by `legal_actions`, changes
+    /// no state, decides no winner and writes no log line. It used to be
+    /// spelled `Concede`, which the engine dutifully recorded — so asking for
+    /// a rebuild wrote "p0 conceded" permanently into the run's `--log`,
+    /// followed by a fresh GAME_START and a replay of the same game, and
+    /// anyone reading that log concluded a seat had quit (issue #233).
+    AbandonGame,
 }
 
 /// A player's response to a mid-resolution choice.
@@ -286,6 +298,7 @@ impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Action::PassPriority => write!(f, "Pass priority"),
+            Action::AbandonGame => write!(f, "Abandon game (harness)"),
             Action::PlayLand { object_id } => write!(f, "Play land {object_id}"),
             Action::CastSpell { object_id, targets, sacrifice, alternative_cost, .. } => {
                 let alt_prefix = if alternative_cost.is_some() { "Cast spell (alt cost) " } else { "Cast spell " };

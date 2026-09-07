@@ -561,10 +561,12 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
     let streamed_log_ref = &streamed_log;
     // The decision itself, separated so the callback can record what was chosen.
     let mut choose = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions, action_count: u64| -> mtg_engine::actions::Action {
+        // The runner giving up on a game that has run past its budget is the
+        // HARNESS stopping, not a seat quitting. It used to inject a
+        // `Concede`, which the engine recorded and the summary reported as
+        // "<deck> conceded" — a loss nobody chose (issue #233).
         if action_count >= max_actions {
-            if let Some(concede_idx) = legal.actions.iter().position(|a| matches!(a, mtg_engine::actions::Action::Concede)) {
-                return legal.actions[concede_idx].clone();
-            }
+            return mtg_engine::actions::Action::AbandonGame;
         }
 
         let view = GameView::for_player(game_state, acting_player, &CardRegistry::with_all_cards());
@@ -841,6 +843,10 @@ use --save if you need a resumable file.");
         Some(mtg_engine::state::GameResult::Draw) => {
             format!("Game over! It's a draw!{loss_suffix}")
         }
+        // No result and the budget is spent: the runner stopped, the game
+        // did not end. It used to be reported as a concede (issue #233).
+        None if action_count >= max_actions => format!(
+            "Game abandoned: {max_actions} actions without a result — no winner."),
         None => {
             "Game ended without a result.".to_string()
         }

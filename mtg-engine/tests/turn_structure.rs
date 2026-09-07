@@ -675,3 +675,35 @@ fn the_activator_keeps_priority_after_funding_an_x_ability_on_the_opponents_turn
     assert!(log[funded..].iter().any(|m| m.contains("Kessig Wolf Run ability resolved")),
         "and the ability resolved afterwards:\n{}", log[funded..].join("\n"));
 }
+
+/// Issue #233: a hot reload, or a runner giving up on a game past its action
+/// budget, is the HARNESS stopping — not a seat quitting. It used to be
+/// spelled `Concede`, which the engine dutifully recorded, so asking for a
+/// rebuild wrote "p0 conceded" into the run's `--log`, followed by a fresh
+/// GAME_START and a replay of the same game.
+#[test]
+fn abandoning_the_game_loop_decides_nothing_and_records_nothing() {
+    use mtg_engine::actions::Action;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let _ = ready_creature(&mut state, P0, 2, 2);
+    state.priority_player = Some(P0);
+
+    let mut calls = 0;
+    let mut seq_at_abandon = 0;
+    engine::run_game_loop(&mut state, &reg, |state, _acting, _legal| {
+        calls += 1;
+        seq_at_abandon = state.submit_seq;
+        Action::AbandonGame
+    });
+
+    assert_eq!(calls, 1, "the loop stops at the first one");
+    assert!(!state.is_game_over(), "no winner, no loser, no result");
+    assert!(state.players.iter().all(|p| !p.lost), "nobody lost");
+    assert_eq!(state.submit_seq, seq_at_abandon,
+        "the abandon itself submitted nothing");
+    assert!(!state.game_log.iter().any(|e| e.message.contains("conceded")),
+        "and nothing was written about it: {:#?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}

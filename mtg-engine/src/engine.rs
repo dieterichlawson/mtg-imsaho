@@ -383,6 +383,9 @@ pub(crate) fn submit_action_inner(state: &GameState, action: &Action, registry: 
         Action::DiscardCards { cards } =>
             actions::simple::discard_cards(&mut new_state, cards, registry),
         Action::Concede => actions::simple::concede(&mut new_state, registry),
+        // Not a game action: the harness is stopping. The game loop returns
+        // before ever reaching here; a direct submit is a no-op (issue #233).
+        Action::AbandonGame => Applied::ReturnNow,
 
         Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids,
                             alternative_cost, tap_plan } =>
@@ -1315,6 +1318,12 @@ fn run_game_loop_inner<F>(
         };
 
         // CR 117.3c: a cast or activation completed through a cast-time
+        // The harness is stopping, not the game: leave the state exactly as
+        // it stands, decide nothing, record nothing (issue #233).
+        if matches!(action, Action::AbandonGame) {
+            return;
+        }
+
         // prompt (X funding, an exile cost) leaves priority with the player
         // who cast or activated — read off the prompt before it is consumed.
         let cast_prompt_player = cast_time_prompt_player(state);
@@ -1384,6 +1393,9 @@ fn run_game_loop_inner<F>(
                 // opponent.
                 state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
             }
+
+            // Handled above, before the submit.
+            Action::AbandonGame => unreachable!("AbandonGame returns from the loop"),
         }
     }
 }
