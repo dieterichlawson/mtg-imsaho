@@ -333,3 +333,31 @@ mtg-engine/src/funding.rs: replace == with != in build_options
 mtg-engine/src/cards/helpers.rs: replace += with *= in format_tap_plan_names
 mtg-engine/src/cards/helpers.rs: replace += with -= in format_tap_plan_names
 mtg-engine/src/cards/helpers.rs: replace == with != in format_tap_plan_names
+
+# ── Retired preference tests, 2026-09-07 (second pass) ───────────────────
+#
+# Ten autotap tests and one prompt-formatting test deleted for the same
+# reason as the six before them: they pinned which of several correct
+# answers the engine happens to give. The autotap ones predate the mutation
+# campaign — they are the planner's original tests — but they fail the
+# standard in docs/mutation-testing-guide.md just as squarely, and the user
+# asked for them to be held to it.
+#
+# Re-sweeping compute_autotap and its helpers after the deletions found NO
+# regression: 111 of 131 flips in compute_autotap still caught, and 60 of 60
+# in the helpers. The preference tests were killing nothing the property
+# tests do not.
+
+# `compute_autotap`'s scarcity check — "could another untapped source cover
+# this colour instead?" — which is how it decides WHICH of several sources to
+# spend. Same disposition as the rest of the planner's internals above.
+mtg-engine/src/mana.rs: replace != with == in compute_autotap
+mtg-engine/src/mana.rs: replace && with || in compute_autotap
+
+# The disambiguating tail on a CR 603.3b ordering prompt's rows. Adding it to
+# rows that already read differently makes the prompt noisier, not wrong; the
+# half that matters — two byte-identical rows DO get a tail, so a player can
+# tell which trigger they are ordering (issue #116) — is pinned by
+# `simultaneous_triggers_are_ordered_by_their_controller`, which asserts the
+# tail IS there on two identically-named sources.
+mtg-engine/src/triggers.rs: replace > with >= in process_pending_trigger_pushes

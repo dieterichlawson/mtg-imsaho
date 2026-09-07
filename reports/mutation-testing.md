@@ -391,3 +391,48 @@ wrote the guide.
 
 The mutants the deleted tests had been killing are on
 `reports/mutants-accepted.txt` with the reason each is arid.
+
+### Second pass: the tests the campaign did not write
+
+The first audit found the mutation campaign's own tests by their commit
+messages, which missed two things: the campaign's earlier rounds, whose
+commits do not say "mutant", and the planner's ORIGINAL tests, which
+predate the campaign and fail the same standard.
+
+Three routes found the full set — commits touching the mutants ledgers, a
+scan for test comments naming the instrument ("shard 2", "survived the
+suite", "nothing pinned"), and the campaign window. 88 tests outside the
+six invariant self-test files, plus those files entire.
+
+**Eleven more deleted.** Ten are the autotap planner's original tests, and
+they say what they are in their own comments: "Should tap Forest, not
+Harbor", "Should tap Plains", "Should use Forest and Island, not Harbor".
+Every one names which of several correct plans the planner picks.
+`autotap_dual_for_generic` is the clearest case — its comment argues with
+itself mid-sentence ("hand needs U less... actually hand needs U more.
+Wait:") before landing on whatever the implementation did.
+
+The eleventh, `distinct_trigger_options_are_not_given_a_source_tail`,
+asserts a prompt row does NOT grow a disambiguating tail when it is
+already distinct. The half that matters — two byte-identical rows DO get
+one, so a player can tell which trigger they are ordering (issue #116) —
+is asserted elsewhere. Adding a tail where it is not needed is noise, not
+wrongness.
+
+**Two of the ten were replaced, not just dropped.** Issue #114 is a real
+symptom: a tap plan stranded a spell the remaining sources could have
+paid for. `a_plan_does_not_strand_a_spell_the_rest_of_the_board_could_pay_for`
+states that, over three boards, by asking the planner for a second plan
+off whatever the first left untapped. It survives any retune of the
+heuristic; the tests it replaces did not.
+
+**No coverage was lost.** Re-sweeping after the deletions: 111 of 131
+flips in `compute_autotap` still caught (the same 20 survivors as before,
+all already accepted bar two), and 60 of 60 across `free_abilities_first`,
+`ability_cost`, `ability_total_mana`, `ability_producing`,
+`can_produce_color`, `can_produce_colorless` and `source_flexibility`. The
+ten preference tests were killing nothing the two property tests do not.
+
+Running total: 17 tests deleted, one dead function (`PendingTrigger::kind`)
+deleted with them, two replacements written at the level the guide asks
+for.

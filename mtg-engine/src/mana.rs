@@ -987,80 +987,6 @@ mod tests {
         ]
     }
 
-    /// Issue #114, shape 1: generic pips must prefer colorless-only sources
-    /// over the deck's only colored ones, even when the colorless source
-    /// carries a utility ability. 2x Mountain (only red), Swamp, 2x Stensia
-    /// Bloodhall (colorless + utility): casting {2}{B} used to pay the
-    /// generic with both Mountains, stranding the {1}{R} spell in hand.
-    #[test]
-    fn autotap_generic_prefers_colorless_utility_land_over_only_colored_sources() {
-        let cost = ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Black)]);
-        let sources = vec![
-            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
-            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
-            make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Black)]),
-            make_source(4, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Colorless)]),
-            make_source(5, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Colorless)]),
-        ];
-        let hand = vec![
-            ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Red)]),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &hand).unwrap();
-        let tapped: Vec<u64> = plan.iter().map(|&(id, _)| id.0).collect();
-        assert!(tapped.contains(&3), "the Swamp pays {{B}}: {tapped:?}");
-        assert!(tapped.contains(&4) && tapped.contains(&5),
-            "generic comes from the colorless utility lands, preserving red: {tapped:?}");
-        assert!(!tapped.contains(&1) && !tapped.contains(&2),
-            "both Mountains stay untapped for the {{1}}{{R}} spell in hand: {tapped:?}");
-    }
-
-    /// Issue #114, shape 3: {2}{W} with 2x Plains + Sol Ring used to tap all
-    /// three (four mana for a three-mana spell). Sol Ring's colorless pays
-    /// the generic exactly, leaving a Plains untapped.
-    #[test]
-    fn autotap_generic_prefers_colorless_rock_over_second_plains() {
-        let cost = ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::White)]);
-        let sol = ManaAbilityDef {
-            ability_index: 0,
-            description: "Add {C}{C}".into(),
-            produced: vec![(ManaType::Colorless, 2)],
-            requires_tap: true,
-            cost: ManaCost::free(),
-            has_side_effects: false,
-        };
-        let sources = vec![
-            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
-            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
-            make_source(3, ManaSourceKind::NonBasicMana, vec![sol]),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan.len(), 2, "two taps, not three: {plan:?}");
-        let tapped: Vec<u64> = plan.iter().map(|&(id, _)| id.0).collect();
-        assert!(tapped.contains(&3), "Sol Ring pays the generic: {tapped:?}");
-    }
-
-    /// Color preservation must not out-rank side effects: paying {1} from
-    /// Deranged Assistant (colorless, mills a card) is worse than paying it
-    /// from a non-redundant Forest.
-    #[test]
-    fn autotap_generic_still_avoids_side_effect_sources() {
-        let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-        let deranged = ManaAbilityDef {
-            ability_index: 0,
-            description: "Add {C}".into(),
-            produced: vec![(ManaType::Colorless, 1)],
-            requires_tap: true,
-            cost: ManaCost::free(),
-            has_side_effects: true,
-        };
-        let sources = vec![
-            make_source(1, ManaSourceKind::HasSideEffects, vec![deranged]),
-            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan[0].0, ObjectId(2), "the Forest pays; the miller stays untapped");
-    }
-
     #[test]
     fn autotap_basic_three_forests() {
         // Cost {1}{G}{G}, 3 Forests available.
@@ -1081,45 +1007,6 @@ mod tests {
     }
 
     #[test]
-    fn autotap_prefers_mono_over_dual() {
-        // Cost {G}, sources: Forest + Hinterland Harbor (G/U). Should tap Forest.
-        let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
-        let sources = vec![
-            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
-            make_source(2, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Green, ManaType::Blue)),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].0, ObjectId(1)); // Forest, not Harbor
-    }
-
-    #[test]
-    fn autotap_opportunity_cost_tiers() {
-        // Cost {G}, sources: Forest (BasicMana) + Wolf Run land (HasUtilityAbility).
-        // Both produce green. Should tap Forest.
-        let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
-        let sources = vec![
-            make_source(1, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Green)]),
-            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan[0].0, ObjectId(2)); // BasicMana Forest
-    }
-
-    #[test]
-    fn autotap_creature_deprioritized() {
-        // Cost {W}, sources: Plains (BasicMana) + Avacyn's Pilgrim (Creature).
-        // Should tap Plains.
-        let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
-        let sources = vec![
-            make_source(1, ManaSourceKind::Creature, vec![mono_ability(ManaType::White)]),
-            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan[0].0, ObjectId(2)); // Plains
-    }
-
-    #[test]
     fn autotap_creature_used_when_only_source() {
         // Cost {W}, only source is Avacyn's Pilgrim. Must tap it.
         let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
@@ -1128,35 +1015,6 @@ mod tests {
         ];
         let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
         assert_eq!(plan[0].0, ObjectId(1));
-    }
-
-    #[test]
-    fn autotap_side_effects_last() {
-        // Cost {1}, sources: Sol Ring (BasicMana, 2 colorless) + Deranged Assistant (HasSideEffects, 1 colorless).
-        // Should tap Sol Ring.
-        let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-        let sol_ring = ManaAbilityDef {
-            ability_index: 0,
-            description: "Add {C}{C}".into(),
-            produced: vec![(ManaType::Colorless, 2)],
-            requires_tap: true,
-            cost: ManaCost::free(),
-            has_side_effects: false,
-        };
-        let deranged = ManaAbilityDef {
-            ability_index: 0,
-            description: "Add {C}".into(),
-            produced: vec![(ManaType::Colorless, 1)],
-            requires_tap: true,
-            cost: ManaCost::free(),
-            has_side_effects: true,
-        };
-        let sources = vec![
-            make_source(1, ManaSourceKind::HasSideEffects, vec![deranged]),
-            make_source(2, ManaSourceKind::BasicMana, vec![sol_ring]),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan[0].0, ObjectId(2)); // Sol Ring
     }
 
     #[test]
@@ -1214,43 +1072,56 @@ mod tests {
         assert_eq!(plan.len(), 1);
     }
 
+    /// Issue #114's symptom, which is what the hand-preservation heuristic is
+    /// FOR: a plan for the spell being cast must not strand a spell still in
+    /// hand that the remaining sources could have paid for.
+    ///
+    /// Stated as the symptom rather than as the choice. The heuristic behind
+    /// it — colour demand, opportunity-cost tiers, mono before dual — is a
+    /// knob that has been turned twice already, and a test naming which land
+    /// gets tapped freezes the knob instead of the promise
+    /// (docs/mutation-testing-guide.md).
     #[test]
-    fn autotap_scarcity_ordering() {
-        // Cost {G}{U}, sources: Hinterland Harbor (G/U), Forest, Island.
-        // Should assign Forest→G, Island→U (not use Harbor for either).
-        let cost = ManaCost::new(vec![
-            ManaSymbol::Colored(Color::Green),
-            ManaSymbol::Colored(Color::Blue),
-        ]);
-        let sources = vec![
-            make_source(1, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Green, ManaType::Blue)),
-            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
-            make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Blue)]),
+    fn a_plan_does_not_strand_a_spell_the_rest_of_the_board_could_pay_for() {
+        // (what the board is, cast this, with this still in hand)
+        let cases: [(&str, Vec<ManaSource>, ManaCost, ManaCost); 3] = [
+            ("Forest and a Green/Blue dual",
+             vec![make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+                  make_source(2, ManaSourceKind::NonBasicMana,
+                              dual_abilities(ManaType::Green, ManaType::Blue))],
+             ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]),
+             ManaCost::new(vec![ManaSymbol::Colored(Color::Blue)])),
+            ("two Mountains, a Swamp and two colorless utility lands",
+             vec![make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+                  make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+                  make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Black)]),
+                  make_source(4, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Colorless)]),
+                  make_source(5, ManaSourceKind::HasUtilityAbility, vec![mono_ability(ManaType::Colorless)])],
+             ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Black)]),
+             ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Red)])),
+            ("a Plains and a colorless rock",
+             vec![make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+                  make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+                  make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Colorless)])],
+             ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)]),
+             ManaCost::new(vec![ManaSymbol::Colored(Color::White)])),
         ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[]).unwrap();
-        assert_eq!(plan.len(), 2);
-        // Should use Forest and Island, not Harbor.
-        let ids: Vec<ObjectId> = plan.iter().map(|p| p.0).collect();
-        assert!(ids.contains(&ObjectId(2))); // Forest
-        assert!(ids.contains(&ObjectId(3))); // Island
-    }
 
-    #[test]
-    fn autotap_hand_preservation() {
-        // Cost {G}, hand has a {U}{G} spell.
-        // Sources: Forest (mono G) + Harbor (G/U).
-        // Should tap Forest to preserve Harbor's U for the other spell.
-        let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
-        let hand_costs = vec![ManaCost::new(vec![
-            ManaSymbol::Colored(Color::Blue),
-            ManaSymbol::Colored(Color::Green),
-        ])];
-        let sources = vec![
-            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
-            make_source(2, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Green, ManaType::Blue)),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &hand_costs).unwrap();
-        assert_eq!(plan[0].0, ObjectId(1)); // Forest, preserving Harbor
+        for (board, sources, casting, in_hand) in cases {
+            let plan = compute_autotap(&casting, &ManaPool::new(), &sources, &[in_hand.clone()])
+                .unwrap_or_else(|| panic!("{board}: the spell being cast is payable"));
+            assert!(plan_pays(&plan, &ManaPool::new(), &sources, &casting),
+                "{board}: the plan pays what it was asked for");
+
+            let tapped: Vec<ObjectId> = plan.iter().map(|&(id, _)| id).collect();
+            let left: Vec<ManaSource> = sources.iter()
+                .filter(|s| !tapped.contains(&s.object_id))
+                .cloned()
+                .collect();
+            assert!(compute_autotap(&in_hand, &ManaPool::new(), &left, &[]).is_some(),
+                "{board}: {in_hand} was still castable off the untapped sources before \
+                 the plan for {casting} took them — it is not now (issue #114)");
+        }
     }
 
     #[test]
@@ -1284,29 +1155,4 @@ mod tests {
         assert!(compute_autotap(&cost, &ManaPool::new(), &sources, &[]).is_none());
     }
 
-    #[test]
-    fn autotap_dual_for_generic() {
-        // Cost {1}{G}, sources: Forest + Hinterland Harbor (G/U), hand has {U} spell.
-        // Should tap Forest for {G}, and for the generic {1} should tap Harbor
-        // but use the U ability (lower hand demand) since hand needs U less... actually
-        // hand needs U more. So it should use G ability to preserve U.
-        // Wait: hand has {U} spell, so U demand is 1. G demand is 0 (the current spell
-        // doesn't count). So for generic, Harbor should produce G (demand 0) not U (demand 1).
-        let cost = ManaCost::new(vec![
-            ManaSymbol::Generic(1),
-            ManaSymbol::Colored(Color::Green),
-        ]);
-        let hand_costs = vec![ManaCost::new(vec![ManaSymbol::Colored(Color::Blue)])];
-        let sources = vec![
-            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
-            make_source(2, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Green, ManaType::Blue)),
-        ];
-        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &hand_costs).unwrap();
-        assert_eq!(plan.len(), 2);
-        // Forest for the green pip.
-        assert_eq!(plan[0].0, ObjectId(1));
-        // Harbor for generic, should pick ability 0 (Green, demand=0) over ability 1 (Blue, demand=1).
-        assert_eq!(plan[1].0, ObjectId(2));
-        assert_eq!(plan[1].1, 0); // Green ability
-    }
 }
