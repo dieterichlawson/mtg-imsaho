@@ -3269,6 +3269,95 @@ impl CliPlayer {
 
     // ── Combat ─────────────────────────────────────────────────────
 
+    /// Which half of a declare-attackers entry is out of range, or `None`
+    /// when every index names something on the screen.
+    ///
+    /// `N` and `N>pwM` index two different lists — the eligible attackers
+    /// and the planeswalkers the defender controls (CR 508.1a). The two
+    /// range checks used to be OR'd into one bucket keyed by the ATTACKER
+    /// index, so `0>pw1` against one planeswalker answered "Invalid
+    /// attacker(s): 0. Valid range is 0-1." — naming an index that was
+    /// legal, against the list that was not indexed (issue #287).
+    ///
+    /// Messages are unprefixed; the caller indents them like every other
+    /// refusal in the prompt.
+    fn attack_index_error(
+        indices: &[usize],
+        walker_attacks: &[(usize, usize)],
+        eligible_len: usize,
+        walkers_len: usize,
+    ) -> Option<String> {
+        // The creature half first: it is what `eligible[..]` is indexed
+        // with, and it stays the named error even when the pw index is bad
+        // too. The duplicate-index guard runs before this, so it cannot
+        // repeat.
+        let bad_attackers: Vec<usize> = indices.iter().copied()
+            .chain(walker_attacks.iter().map(|&(a, _)| a))
+            .filter(|&a| a >= eligible_len)
+            .collect();
+        if !bad_attackers.is_empty() {
+            return Some(format!("Invalid attacker(s): {}. Valid range is 0-{}.",
+                bad_attackers.iter().map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>().join(", "),
+                eligible_len.saturating_sub(1)));
+        }
+        // One planeswalker can be named by two attackers ("0>pw9 1>pw9"),
+        // so this half needs the dedup the other half gets for free.
+        let mut bad_walkers: Vec<usize> = walker_attacks.iter()
+            .map(|&(_, w)| w).filter(|&w| w >= walkers_len).collect();
+        bad_walkers.sort_unstable();
+        bad_walkers.dedup();
+        if bad_walkers.is_empty() {
+            return None;
+        }
+        let named = bad_walkers.iter().map(|w| format!("pw{w}"))
+            .collect::<Vec<_>>().join(", ");
+        Some(if walkers_len == 0 {
+            format!("No planeswalker {named} to attack — the defender controls none, \
+                     so use a bare number to attack the player.")
+        } else {
+            format!("No planeswalker {named}. Attackable planeswalkers are pw0-pw{}.",
+                walkers_len - 1)
+        })
+    }
+
+    /// One `blocker:attacker` pair, resolved to indices.
+    ///
+    /// The range check used to ride on the same match arm as the parse, so
+    /// a well-formed pair whose blocker index was live in the OTHER list on
+    /// the same screen ("2:0" with two blockers and three attackers) was
+    /// answered with "Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'"
+    /// — a lecture on the syntax it had just used correctly (issue #289).
+    /// "This isn't a pair of numbers" and "this number isn't on the screen"
+    /// are different answers.
+    fn parse_block_pair(pair: &str, n_blockers: usize, n_attackers: usize)
+        -> Result<(usize, usize), String>
+    {
+        const SYNTAX: &str = "Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.";
+        let parts: Vec<&str> = pair.split(':').collect();
+        if parts.len() != 2 {
+            return Err(SYNTAX.into());
+        }
+        let (Ok(b), Ok(a)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) else {
+            return Err(SYNTAX.into());
+        };
+        if b >= n_blockers {
+            return Err(if n_blockers == 0 {
+                "You have no blockers.".to_string()
+            } else {
+                format!("No blocker {b}. Your blockers are 0-{}.", n_blockers - 1)
+            });
+        }
+        if a >= n_attackers {
+            return Err(if n_attackers == 0 {
+                "There are no attackers.".to_string()
+            } else {
+                format!("No attacker {a}. Attackers are 0-{}.", n_attackers - 1)
+            });
+        }
+        Ok((b, a))
+    }
+
     fn choose_attackers(view: &GameView, prompt: &CombatPrompt) -> Action {
         let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player: defending,
                                             defending_planeswalkers } = prompt else {
@@ -3439,11 +3528,9 @@ impl CliPlayer {
                     show_error("  Duplicate attacker index: list each creature at most once.", r);
                     continue;
                 }
-                let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len())
-                    .chain(walker_attacks.iter().filter(|&&(a, w)|
-                        a >= eligible.len() || w >= defending_planeswalkers.len()).map(|&(a, _)| a))
-                    .collect();
-                if bad.is_empty() {
+                let index_error = Self::attack_index_error(
+                    &indices, &walker_attacks, eligible.len(), defending_planeswalkers.len());
+                if index_error.is_none() {
                     let chosen: Vec<ObjectId> = indices.iter().map(|&i| eligible[i])
                         .chain(walker_attacks.iter().map(|&(a, _)| eligible[a]))
                         .collect();
@@ -3459,11 +3546,16 @@ impl CliPlayer {
                             .collect(),
                     };
                 }
-                show_error(&format!("  Invalid attacker(s): {}. Valid range is 0-{}.",
-                    bad.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "),
-                    eligible.len() - 1), r);
-            } else {
+                if let Some(msg) = index_error {
+                    show_error(&format!("  {msg}"), r);
+                }
+            } else if defending_planeswalkers.is_empty() {
                 show_error("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.", r);
+            } else {
+                // The prompt advertises N>pwM two rows above; a player who
+                // mistypes it should be shown the form, not told to enter
+                // plain numbers.
+                show_error("  Invalid input. Enter numbers like '0 2', '0>pw0', 'all', 'a', or 'none'.", r);
             }
         }
     }
@@ -3576,42 +3668,35 @@ impl CliPlayer {
             let mut assignments = Vec::new();
             let mut error: Option<String> = None;
             for pair in input.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
-                let parts: Vec<&str> = pair.split(':').collect();
-                if parts.len() != 2 {
-                    error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
+                let (b, a) = match Self::parse_block_pair(
+                    pair, eligible_blockers.len(), attacker_ids.len())
+                {
+                    Ok(indices) => indices,
+                    Err(msg) => { error = Some(msg); break; }
+                };
+                let (blocker, attacker) = (eligible_blockers[b], attacker_ids[a]);
+                // CR 509.1b: refuse an illegal pairing here, loudly — the
+                // engine would drop it, and a silently vanished block cost
+                // real games (issue #40).
+                if !legal_blocks.get(&blocker).is_some_and(|atts| atts.contains(&attacker)) {
+                    error = Some(format!(
+                        "{} can't legally block {} (evasion or a blocking restriction).",
+                        Self::perm_name(view, blocker), Self::perm_name(view, attacker)));
                     break;
                 }
-                match (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
-                    (Ok(b), Ok(a)) if b < eligible_blockers.len() && a < attacker_ids.len() => {
-                        let (blocker, attacker) = (eligible_blockers[b], attacker_ids[a]);
-                        // CR 509.1b: refuse an illegal pairing here, loudly —
-                        // the engine would drop it, and a silently vanished
-                        // block cost real games (issue #40).
-                        if !legal_blocks.get(&blocker).is_some_and(|atts| atts.contains(&attacker)) {
-                            error = Some(format!(
-                                "{} can't legally block {} (evasion or a blocking restriction).",
-                                Self::perm_name(view, blocker), Self::perm_name(view, attacker)));
-                            break;
-                        }
-                        // The same pair twice is one block, not two.
-                        if assignments.contains(&(blocker, attacker)) {
-                            continue;
-                        }
-                        // CR 509.1b: one blocker, one attacker — refuse here,
-                        // loudly, like the illegal-pairing case above.
-                        if assignments.iter().any(|&(b, _)| b == blocker) {
-                            error = Some(format!(
-                                "{} can block only one attacker (CR 509.1b).",
-                                Self::perm_name(view, blocker)));
-                            break;
-                        }
-                        assignments.push((blocker, attacker));
-                    }
-                    _ => {
-                        error = Some("Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.".into());
-                        break;
-                    }
+                // The same pair twice is one block, not two.
+                if assignments.contains(&(blocker, attacker)) {
+                    continue;
                 }
+                // CR 509.1b: one blocker, one attacker — refuse here, loudly,
+                // like the illegal-pairing case above.
+                if assignments.iter().any(|&(b, _)| b == blocker) {
+                    error = Some(format!(
+                        "{} can block only one attacker (CR 509.1b).",
+                        Self::perm_name(view, blocker)));
+                    break;
+                }
+                assignments.push((blocker, attacker));
             }
 
             // CR 509.1b: an attacker that can't be blocked by fewer than N
@@ -4972,6 +5057,91 @@ mod tests {
             choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         };
         assert!(CliPlayer::action_object_ids(&yes).is_empty());
+    }
+
+    /// Issue #287: `N` and `N>pwM` draw on two index spaces (CR 508.1a —
+    /// each attacker is sent at the defending player or at a planeswalker
+    /// that player controls). The refusal names the half that was actually
+    /// wrong; a legal creature index is never blamed for a mistyped `pwM`.
+    #[test]
+    fn a_mistyped_planeswalker_index_is_refused_as_a_planeswalker_index() {
+        let msg = CliPlayer::attack_index_error(&[], &[(0, 1)], 2, 1)
+            .expect("pw1 is out of range");
+        assert!(msg.contains("pw1"), "names the bad planeswalker index: {msg}");
+        assert!(msg.contains("pw0"), "points at the one that exists: {msg}");
+        assert!(!msg.contains("Invalid attacker"), "attacker 0 was legal: {msg}");
+        assert!(!msg.contains("0-1"), "the attacker range is not the answer: {msg}");
+    }
+
+    /// The zero-planeswalker case: `0>pw0` where the defender controls none
+    /// used to answer "Invalid attacker(s): 0. Valid range is 0-0."
+    #[test]
+    fn a_walker_attack_with_no_planeswalkers_says_there_are_none() {
+        let msg = CliPlayer::attack_index_error(&[], &[(0, 0)], 1, 0)
+            .expect("there is no pw0");
+        assert!(msg.contains("pw0"), "got {msg}");
+        assert!(msg.contains("controls none"), "got {msg}");
+        assert!(!msg.contains("Invalid attacker"), "got {msg}");
+    }
+
+    /// The half that was already right must not swing the other way.
+    #[test]
+    fn an_out_of_range_creature_index_is_still_refused_as_an_attacker_index() {
+        assert_eq!(CliPlayer::attack_index_error(&[5], &[], 2, 1).as_deref(),
+            Some("Invalid attacker(s): 5. Valid range is 0-1."));
+        assert_eq!(CliPlayer::attack_index_error(&[], &[(5, 0)], 2, 1).as_deref(),
+            Some("Invalid attacker(s): 5. Valid range is 0-1."),
+            "a bad creature index inside an N>pwM token is still a creature-index error");
+        assert!(CliPlayer::attack_index_error(&[], &[(5, 9)], 2, 1).unwrap()
+            .contains("Invalid attacker(s): 5"),
+            "with both halves wrong the creature half is named first");
+        assert_eq!(CliPlayer::attack_index_error(&[0, 1], &[(0, 0)], 2, 1), None,
+            "every index names something on the screen");
+    }
+
+    /// Issue #289: `2:0` is a well-formed pair whose blocker index is a live
+    /// index in the OTHER list on the same screen. The range guard used to
+    /// ride on the parse's match arm, so it was answered by demonstrating
+    /// the syntax it had just used correctly.
+    #[test]
+    fn an_out_of_range_blocker_index_is_refused_by_name_and_range() {
+        let e = CliPlayer::parse_block_pair("2:0", 2, 3).unwrap_err();
+        assert_eq!(e, "No blocker 2. Your blockers are 0-1.");
+        assert!(!e.contains("blocker:attacker"),
+            "an in-range-looking pair is not a syntax error: {e}");
+    }
+
+    /// And the two lists are not swapped — which is exactly the mistake the
+    /// attack prompt made for `pw` indices.
+    #[test]
+    fn an_out_of_range_attacker_index_names_the_attacker_list() {
+        assert_eq!(CliPlayer::parse_block_pair("0:9", 4, 1).unwrap_err(),
+            "No attacker 9. Attackers are 0-0.");
+        assert_eq!(CliPlayer::parse_block_pair("4:0", 4, 1).unwrap_err(),
+            "No blocker 4. Your blockers are 0-3.");
+    }
+
+    /// Reclassifying the range failures must not reclassify the real syntax
+    /// failures.
+    #[test]
+    fn a_genuinely_malformed_block_pair_still_gets_the_syntax_message() {
+        for p in [":0", "0:", "0:0:0", "abc:0", "-1:0", "0", "::"] {
+            assert_eq!(CliPlayer::parse_block_pair(p, 4, 4).unwrap_err(),
+                "Invalid. Use 'blocker:attacker' pairs like '0:0 1:1'.",
+                "{p} is a syntax error");
+        }
+    }
+
+    /// The happy path still maps blocker-first, attacker-second, and an
+    /// empty combat list never underflows a range message.
+    #[test]
+    fn a_well_formed_in_range_block_pair_resolves_to_its_two_indices() {
+        assert_eq!(CliPlayer::parse_block_pair("1:0", 4, 1), Ok((1, 0)));
+        assert_eq!(CliPlayer::parse_block_pair("0:0", 1, 1), Ok((0, 0)));
+        assert_eq!(CliPlayer::parse_block_pair("0:0", 0, 0).unwrap_err(),
+            "You have no blockers.");
+        assert_eq!(CliPlayer::parse_block_pair("0:0", 1, 0).unwrap_err(),
+            "There are no attackers.");
     }
 
     /// The CARDS panel prints its own keyword line and its own flashback
