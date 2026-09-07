@@ -234,3 +234,40 @@ below zero). Killed by
 three points. `replace < with <=` on the same line is equivalent — it only
 changes the zero-cost case, where `-0` is `0` and `0` is never greater
 than a `u32` loyalty count, so neither reading takes the branch. Accepted.
+
+## The invariant checker, self-tested (issues #274–#279)
+
+Six of the weekly sweep's ten shards landed on `mtg-engine/src/invariants/`
+— ~390 surviving mutants across `mod.rs`, `transition.rs`, `turn.rs`,
+`events.rs`, `prompts.rs`, `stack.rs`, `legal.rs`, `objects.rs`,
+`permanents.rs` and `effects.rs`. They are all the same finding.
+
+The checker is the fuzzing oracle: ~110k invariant-checked games run
+nightly, and the fuzzer reports only what the checker reports. So a mutant
+that blinds one clause is invisible — the games still pass, and the clause
+stops being a clause. What the sweep found is that most of the checker's
+clauses had a message and no state that produced it: `invariant_checker.rs`
+and `invariant_families.rs` covered the families, but only a fraction of
+the individual clauses inside them.
+
+The fix is one test per clause, in the shape those two files already used:
+build a healthy state, corrupt exactly one property, assert the message.
+Where a clause is conditional — a scope test, a stand-down, a disjunction —
+the neighbouring state that must NOT produce the message is asserted too,
+because that is the half a mutant flips.
+
+Four new files carry the clauses that did not fit the existing two:
+
+| file | family |
+| --- | --- |
+| `invariant_event_window.rs` | `events.rs` — what this action's events say the next decision point must look like |
+| `invariant_legal_offers.rs` | `legal.rs` — the menu offers exactly the game the rules allow |
+| `invariant_prompt_shapes.rs` | `prompts.rs` — a prompt is answerable, addressed right, and asks about things that are there |
+| `invariant_object_shapes.rs` | `objects.rs`/`permanents.rs`/`effects.rs` — what an object may look like in each zone |
+
+Two suite guards (`no_test_assembles_combat_state_by_hand`,
+`no_test_ends_the_turn_by_hand`) now share one list of the invariant
+self-tests. Both guards exist to stop an ordinary test standing in for the
+engine; an invariant self-test writes exactly those fields on purpose,
+because the state the engine would never leave behind is the thing it is
+asking the checker about.
