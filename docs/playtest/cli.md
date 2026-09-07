@@ -251,6 +251,82 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   sleep-then-clear before you play. Unreached: a menace/`min_blockers` refusal,
   and a protection-based TARGETING refusal
 
+- V36 [tried 2026-09-07 → #325, #326, #327] the trigger-ordering prompt as a
+  reader: `ChooseTriggerOrder` (CR 603.3b) is the last unswept input in the
+  CLI and the only one that takes an ordering. Read `triggers.rs`'s
+  `distinguishable` gate and `choices.rs`'s `ChosenIndex` arm first — the
+  prompt is a REPEATED single index, re-raised until only interchangeable
+  triggers remain, so duplicate and partial permutations are inexpressible
+  and V23's #108 shape cannot recur. Cheapest big group: N Unruly Mobs dying
+  to one Rolling Temblor is N(N-1) distinguishable triggers (four Mobs = 12);
+  both players trading 1/1s in combat gets AP and NAP groups in one event.
+  The reader itself is clean — 24 hostile inputs all refused with a named
+  notice, `--save`/`--log` byte-identical, panes return to the same prompt —
+  so hunt the SHELL: `choose_action`'s `naming_cards` gate (`card_count > 8
+  && all ChosenIndex`, added for Nevermore in #255) also swallows this prompt
+  and `ChooseDamageAssignmentOrder`, so past 8 options the ordering becomes
+  the card browser with no board, no stack and no shortcuts (#325), and the
+  `--log` writes N identical lines for N distinct choices because #116's
+  `[source #id]` tail never reached it (#326). Verify the answer with two
+  `--resume`s of one saved trigger prompt answered in opposite orders — the
+  save round-trips the prompt exactly. Unreached: an ordering whose FINAL
+  board state differs (no order-dependent trigger pair is cheap in ISD; try
+  Curse of the Bloody Tome on yourself plus Delver of Secrets at one upkeep),
+  a 9+ `ChooseDamageAssignmentOrder`, and Ctrl-C/Ctrl-D at the prompt
+- V37 [tried 2026-09-07 → #318, #320, #321, #322] the cardinality prompts as a
+  family: every question that takes a SET under a constraint — exactly N, up to
+  N, at least one. Read the readers first, because there is almost no reader:
+  `legal/awaiting.rs::BottomAfterMulligan` and `cards_flow.rs::legal_discard_actions`
+  both call `combinations()` and hand the CLI one menu row per COMBINATION, so
+  bottoming and cleanup discard are the single-index menu (V26's reader) with
+  N-card labels; Brain Weevil's "discards two cards" is `library_search_ui` run
+  twice; "up to N targets" is a chain of `prompt_target_up_to` single choosers;
+  and the only genuine multi-select is `prompt_exile_from_graveyard` (Skaab
+  Ruinator exactly-3, Skaab Goliath 2, Makeshift Mauler/Stitched Drake 1,
+  Harvest Pyre min=0/max=graveyard). Reach them with one-off decks: 15
+  long-named cards for bottoming, `20 Island / 20 Armored Skaab / 20 Makeshift
+  Mauler` for the exile cost, Dream Twist + Memory's Journey for up-to-3. Send
+  each empty, short, long, duplicated (`0 0 1`), out-of-range, negative,
+  `99999999999999999999`, comma-separated, double-spaced, tabbed, 4 KB, and the
+  panes. The reader itself is sound and the chosen set always reconciled against
+  `--save`; the bugs are around it — the enumerated rows are built with
+  `MenuLabel::plain`, so they carry no ids and `clip_menu_page`'s #136/#258
+  disambiguation cannot fire while `fit_menu_label` head-clips exactly the card
+  that distinguishes them (#318); the exile hint is 61 columns in a 58-column
+  panel (#320); `7 - mull_count` underflows past seven mulligans (#321); and an
+  unbound key dropped between two digits fuses them into a third accepted index
+  (#322). Pane WIDTH is the variable for #318/#320 and 100 columns is the worst
+  case, not 80. Unreached: a cleanup discard of 2+ (needs a hand of nine, which
+  the ISD pool would not give), `prompt_pile_division` (Liliana's ultimate),
+  Divine Reckoning, Forbidden Alchemy, Mulch, Make a Wish, Creeping
+  Renaissance, Ghoulcaller's Chant, Moan of the Unhallowed, Sever the
+  Bloodline, Grimoire of the Dead, and Skaab Goliath's exactly-2
+- V38 [tried 2026-09-07 → #313, #314, #315, #316, #317] the resume boundary as
+  a state machine (distinct from V3's honest reload, V14's corrupted saves,
+  V20's contention, V30's every-snapshot-loadable and V34's every-field): the
+  save is valid, the surrounding REQUEST is not. `--resume` takes a file plus a
+  fresh argv and the two can disagree. Read `main`'s resume block first — it
+  narrates `--deck1/2`, `--seed`, `--p1/2` and stays silent on the rest. Then:
+  resume one snapshot into two concurrent processes and play them divergently
+  (independent and correct); resume it twice in sequence (diverges, so state is
+  restored not replayed); chain six resumes of 5 decisions with
+  `--resume X --save X --log X` and deep-diff the final save against one
+  uninterrupted 30-decision run (0 fields differ — GameState round-trips);
+  SIGKILL mid-play 20 times and resume whatever landed (20/20, no torn or
+  zero-length file, no stray `.tmp`); resume from a directory, /dev/null, a
+  zero-byte file, a half-truncated save, a dangling symlink and a missing path
+  (all exit 1, honest message, no panic). What breaks is everything the save is
+  NOT: the `--log` high-water mark restarts at 0 so the whole history is
+  re-emitted under fresh timestamps (#313), a decided game resumes instead of
+  refusing (#316), `SaveData.seats` picks the player backend and the model with
+  no flag and `--quiet` deletes the only line that says so (#314),
+  `player_names` reaches stdout and the log unescaped (#315), and no `--save`
+  means the file you resumed from silently freezes (#317). Ask of every field
+  in `SaveData`: who controls it, and what does the runner PRINT it into.
+  Unreached: resume against a mid-write reader (V20's ground), the LLM
+  `resume_from_log` recap path (no metered seats), and whether any
+  save-sourced string reaches a PROMPT rather than the banner
+
 **The Operator** neither plays to win nor tries to break anything: runs
 the binary the way an operator would and checks it kept its promises.
 The Vandal asks whether the machine survives abuse; the Operator asks
