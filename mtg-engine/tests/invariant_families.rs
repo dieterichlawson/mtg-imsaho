@@ -454,6 +454,30 @@ fn combat_bookkeeping_is_step_gated_and_names_creatures() {
     flags_settled(&s, &reg, "not a creature but still in combat (CR 506.4)");
     flags_settled(&s, &reg, "attacks p0, not the defending player p1 (CR 506.2)");
     flags_settled(&s, &reg, "which is not a planeswalker of the defending player");
+
+    // CR 506.2, the other direction: a planeswalker the DEFENDING player
+    // controls is a legal thing to attack, and saying so is the half a
+    // corruption test cannot see. Every case above has Liliana on the
+    // attacker's own side, so a clause that flagged every planeswalker
+    // defender — or none — reads the same from there.
+    let mut s = state.clone();
+    s.step = Step::DeclareBlockers;
+    let theirs = named_permanent(&mut s, &reg, "Garruk Relentless", P1);
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(bear, P1);
+    c.blocker_assignments.insert(bear, vec![]);
+    c.planeswalker_defenders.insert(bear, theirs);
+    s.combat = Some(c);
+    clean(&s, &reg);
+
+    // And the clause only speaks about a planeswalker that is still there.
+    // One that died mid-combat is off the battlefield, and CR 506.4 removes
+    // it from combat rather than making the attack illegal — so an attacker
+    // still pointed at it is not a violation of this rule.
+    let mut gone = s.clone();
+    gone.move_object(theirs, Zone::Graveyard, &reg);
+    clean(&gone, &reg);
 }
 
 // ── events ───────────────────────────────────────────────────────────────

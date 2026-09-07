@@ -387,3 +387,55 @@ fn a_tap_plan_is_shown_as_a_short_grouped_list() {
         "the plan's own order is kept, so the same name can appear twice");
     let _ = name_b;
 }
+
+/// A prompt's own description is what the player is shown; the generic
+/// header is the fallback for a prompt that did not write one.
+///
+/// Issue #87: the header was shown unconditionally, and it says what KIND of
+/// decision this is without saying what the decision is about. Delver of
+/// Secrets' "you may reveal the top card" names that card in its description
+/// (CR 701.20a), and under the header the choice was blind — the player was
+/// asked yes or no about a card they could not see.
+///
+/// Both halves are here because the clause is a `!is_empty()` guard on a
+/// match arm: a version that always takes the description shows an empty
+/// label for the prompts that have none, and a version that never takes it
+/// is issue #87 again.
+#[test]
+fn a_prompt_shows_its_own_description_and_falls_back_to_a_header() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let looked = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P0, Zone::Library, None, None);
+    state.get_object_mut(looked).unwrap().name = "Forest".into();
+    state.get_player_mut(P0).library_order.push(looked);
+
+    let described = |choice| {
+        let mut s = state.clone();
+        s.priority_player = None;
+        s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: P0, source, choice,
+        });
+        mtg_engine::engine::legal_actions(&s, &reg).context.unwrap_or_default()
+    };
+
+    let yes_no = |description: &str| K::YesNo {
+        description: description.into(), source_card: source,
+    };
+    assert_eq!(described(yes_no("Delver of Secrets: reveal Forest?")),
+        "Delver of Secrets: reveal Forest?",
+        "the description says what is being decided AND what it is about");
+    let source_name = state.obj_name(source);
+    assert_eq!(described(yes_no("")), format!("{source_name}: choose yes or no"),
+        "and a prompt with nothing to add falls back to the header");
+
+    let looked_at = |description: &str| K::ChooseFromLookedAt {
+        description: description.into(), looked_at: vec![looked],
+    };
+    assert_eq!(described(looked_at("Forbidden Alchemy: choose a card to put into your hand")),
+        "Forbidden Alchemy: choose a card to put into your hand");
+    assert_eq!(described(looked_at("")), format!("{source_name}: choose a card"));
+}
