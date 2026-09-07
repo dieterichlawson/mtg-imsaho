@@ -146,6 +146,12 @@ pub struct StackItemView {
     pub name: String,
     pub controller: PlayerId,
     pub targets: Vec<crate::actions::Target>,
+    /// The announced value of X (CR 601.2b), for a spell or ability that has
+    /// one. The stack is a public zone (CR 400.2) and X is announced as the
+    /// spell is cast, so both seats are entitled to it — and without it here
+    /// no view could show it, so a Devil's Play for 12 and one for 0 were
+    /// character-for-character identical on screen (issue #259).
+    pub x_value: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -323,6 +329,7 @@ impl GameView {
                                 .map_or_else(|| "Unknown".into(), |d| d.name),
                             controller: obj.controller,
                             targets: obj.targets.clone(),
+                            x_value: obj.x_value,
                         })
                     }
                     crate::state::StackEntry::Trigger(trigger) => {
@@ -335,9 +342,11 @@ impl GameView {
                             // goes on the stack and are public — the panel
                             // never showed them (issue #134).
                             targets: trigger.chosen_targets().to_vec(),
+                            // A triggered ability announces no X.
+                            x_value: None,
                         })
                     }
-                    crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, .. } => {
+                    crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
                         Some(StackItemView {
                             object_id: *source_id,
                             card_id: *behavior_card_id,
@@ -345,6 +354,7 @@ impl GameView {
                                 .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name)),
                             controller: *activator,
                             targets: targets.clone(),
+                            x_value: *x_value,
                         })
                     }
                 }

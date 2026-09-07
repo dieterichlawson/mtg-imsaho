@@ -133,6 +133,7 @@ Your blockers:
 - **`d` C-m** = browse deck
 - **`l` C-m** = view full log
 - **`i` C-m** = inspect battlefield (detailed creature stats)
+- **`s` C-m** = view the whole stack (the STACK panel shows only what fits)
 - **`/`** = card search (type immediately, no C-m needed first)
 
 ### Auto-Pass Behavior

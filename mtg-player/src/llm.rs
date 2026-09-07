@@ -1758,7 +1758,12 @@ impl LlmPlayer {
                         .collect();
                     format!(" targeting {}", target_names.join(", "))
                 };
-                writeln!(s, "  {}{} ({})", i.name, targets_str, who).unwrap();
+                // The announced X is public (CR 601.2b, 400.2) — without it
+                // a Devil's Play for 12 and one for 0 read identically here
+                // too, so the seat could not tell what it was responding to
+                // (issue #259).
+                let x = i.x_value.map_or_else(String::new, |x| format!(" (X={x})"));
+                writeln!(s, "  {}{x}{} ({})", i.name, targets_str, who).unwrap();
             }
         }
 

@@ -896,36 +896,40 @@ impl CliPlayer {
             let _ = execute!(out, cursor::MoveTo(1, 1),
                 SetAttribute(Attribute::Dim), Print("(empty)"), SetAttribute(Attribute::Reset));
         } else {
+            // One row is held back for the "N more" marker, so a stack the
+            // panel cannot hold says so rather than looking short: it used to
+            // render until it ran out of rows and stop, cutting the last
+            // entry mid-entry, with 44 objects off screen and nothing saying
+            // there were any (issue #247).
+            let max_w = left_w.saturating_sub(1);
+            let body_h = stack_h.saturating_sub(1);
             let mut srow: u16 = 1;
+            let mut shown = 0usize;
             for item in &view.stack {
-                if srow >= u16::try_from(stack_h).unwrap_or(u16::MAX) { break; }
-                let who = if item.controller == view.you { "you" } else { "opp" };
-                let text = format!("{} ({})", item.name, who);
-                // Wrap if too long for panel.
-                let max_w = left_w.saturating_sub(1);
+                if srow as usize >= body_h { break; }
+                let text = Self::stack_entry_headline(view, item);
+                let mut fitted = true;
                 for line in Self::word_wrap(&text, max_w) {
-                    if srow as usize >= stack_h { break; }
+                    if srow as usize >= body_h { fitted = false; break; }
                     let _ = execute!(out, cursor::MoveTo(1, srow), Print(&line));
                     srow += 1;
                 }
                 for target in &item.targets {
-                    if srow >= u16::try_from(stack_h).unwrap_or(u16::MAX) { break; }
-                    let target_name = match target {
-                        mtg_engine::actions::Target::Object(id) => {
-                            // perm_name carries the (your)/(opp) marker and
-                            // resolves non-battlefield objects too (#100).
-                            format!(" -> {}", Self::perm_name(view, *id))
-                        }
-                        mtg_engine::actions::Target::Player(pid) => {
-                            if *pid == view.you { " -> you".into() } else { " -> opp".into() }
-                        }
-                        mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-                    };
-                    let truncated: String = target_name.chars().take(left_w.saturating_sub(1)).collect();
+                    if srow as usize >= body_h { fitted = false; break; }
+                    let line = clip_cols(&Self::stack_target_line(view, target), max_w);
                     let _ = execute!(out, cursor::MoveTo(1, srow),
-                        SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
                     srow += 1;
                 }
+                if !fitted { break; }
+                shown += 1;
+            }
+            if shown < view.stack.len() {
+                let marker = clip_cols(
+                    &format!(" … {} more — s to see them all", view.stack.len() - shown), max_w);
+                let _ = execute!(out,
+                    cursor::MoveTo(1, u16::try_from(body_h).unwrap_or(u16::MAX)),
+                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
             }
         }
 
@@ -2093,7 +2097,7 @@ impl CliPlayer {
         }
         // Panel keys before the numeric parse, as before.
         if let Some(c) = t.chars().next() {
-            if t.chars().count() == 1 && "lgedi/".contains(c) {
+            if t.chars().count() == 1 && "lgedis/".contains(c) {
                 return TargetInput::Panel(c);
             }
         }
@@ -2176,6 +2180,7 @@ impl CliPlayer {
                         'e' => Self::show_exile(view),
                         'd' => Self::show_deck_browser(view),
                         'i' => Self::show_battlefield_inspector(view),
+                        's' => Self::show_stack(view),
                         _ => Self::run_card_search(view, &labels, menu_offset),
                     }
                 }
@@ -2369,15 +2374,15 @@ impl CliPlayer {
         // invisible modal mode that swallowed keystrokes (issue #107).
         match (has_pass, is_chooser, has_right) {
             (true, _, true) =>
-                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
             (true, _, false) =>
-                "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile]",
+                "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
             (false, true, true) =>
-                "  [enter=cancel] [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+                "  [enter=cancel] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
             (false, true, false) =>
-                "  [enter=cancel] [d=deck] [l=log] [g=gy] [e=exile]",
-            (false, false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
-            (false, false, false) => "  [d=deck] [l=log] [g=gy] [e=exile]",
+                "  [enter=cancel] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
+            (false, false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
+            (false, false, false) => "  [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
         }
     }
 
@@ -3296,6 +3301,61 @@ impl CliPlayer {
     }
 
     /// Full-screen exile view, shared like `show_graveyards` (issue #120).
+    /// The headline of one stack entry: what it is, whose it is, and its
+    /// announced X.
+    ///
+    /// X is announced as the spell is cast (CR 601.2b) and the stack is a
+    /// public zone (CR 400.2), so both seats are entitled to it — a Devil's
+    /// Play for 12 and one for 0 used to be character-for-character
+    /// identical on screen, which made responding to an X spell guesswork
+    /// (issue #259).
+    fn stack_entry_headline(view: &GameView, item: &mtg_engine::view::StackItemView) -> String {
+        let who = if item.controller == view.you { "you" } else { "opp" };
+        match item.x_value {
+            Some(x) => format!("{} (X={x}) ({who})", item.name),
+            None => format!("{} ({who})", item.name),
+        }
+    }
+
+    /// " -> Grizzly Bears 2/2 (opp)" for one chosen target.
+    fn stack_target_line(view: &GameView, target: &Target) -> String {
+        match target {
+            // perm_name carries the (your)/(opp) marker and resolves
+            // non-battlefield objects too (#100).
+            Target::Object(id) => format!(" -> {}", Self::perm_name(view, *id)),
+            Target::Player(pid) =>
+                if *pid == view.you { " -> you".into() } else { " -> opp".into() },
+            Target::Illegal =>
+                unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
+        }
+    }
+
+    /// The whole stack, paged, top first.
+    ///
+    /// The STACK panel is a third of the pane tall and used to render into it
+    /// until it ran out of rows and then stop — no count, no marker, and the
+    /// last entry cut off mid-entry, so a 94-object stack looked like a
+    /// two-and-a-half object one. CR 405.1 makes the stack public in full,
+    /// and there was no other view in the CLI that showed it (issue #247).
+    fn show_stack(view: &GameView) {
+        let mut lines: Vec<InfoLine> = Vec::new();
+        if view.stack.is_empty() {
+            lines.push(InfoLine::Plain("  (empty)".into()));
+        } else {
+            lines.push(InfoLine::Bold(format!(
+                " {} object(s) on the stack, top first:", view.stack.len())));
+            for (i, item) in view.stack.iter().enumerate() {
+                lines.push(InfoLine::Plain(format!(
+                    "  {i}: {}", Self::stack_entry_headline(view, item))));
+                for target in &item.targets {
+                    lines.push(InfoLine::Dim(format!("     {}",
+                        Self::stack_target_line(view, target).trim_start())));
+                }
+            }
+        }
+        Self::show_paged_lines(" STACK", &lines, false);
+    }
+
     fn show_exile(view: &GameView) {
         let mut lines: Vec<InfoLine> = Vec::new();
         let your_exile: Vec<_> = view.exile.iter().filter(|c| c.owner == view.you).collect();
@@ -3679,7 +3739,7 @@ impl CliPlayer {
             // at every other prompt (issue #120).
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect]"),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack]"),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -3749,6 +3809,7 @@ impl CliPlayer {
                 "e" => { Self::show_exile(view); r = draw(); continue; }
                 "d" => { Self::show_deck_browser(view); r = draw(); continue; }
                 "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
+                "s" => { Self::show_stack(view); r = draw(); continue; }
                 _ => {}
             }
 
@@ -3904,7 +3965,7 @@ impl CliPlayer {
             // (CR 404.2, 406.3) — advertise the info panes here (#120).
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect]"),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack]"),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -3950,6 +4011,7 @@ impl CliPlayer {
                 "e" => { Self::show_exile(view); r = draw(); continue; }
                 "d" => { Self::show_deck_browser(view); r = draw(); continue; }
                 "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
+                "s" => { Self::show_stack(view); r = draw(); continue; }
                 _ => {}
             }
 
@@ -4379,7 +4441,7 @@ impl CliPlayer {
             }
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print(clip("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect]")),
+                Print(clip("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack]")),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -4411,6 +4473,7 @@ impl CliPlayer {
                 "e" => { Self::show_exile(view); r = draw(); continue; }
                 "d" => { Self::show_deck_browser(view); r = draw(); continue; }
                 "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
+                "s" => { Self::show_stack(view); r = draw(); continue; }
                 _ => {}
             }
             match Self::parse_exile_entry(&input, options.len(), min, max) {
@@ -5002,6 +5065,10 @@ impl Player for CliPlayer {
                 }
                 "i" => {
                     Self::show_battlefield_inspector(view);
+                    continue;
+                }
+                "s" => {
+                    Self::show_stack(view);
                     continue;
                 }
                 "f" => {
@@ -5822,6 +5889,32 @@ mod tests {
         let mut c = creature(id, name, controller);
         c.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(0)));
         c
+    }
+
+    /// Issue #259: X is announced as the spell is cast (CR 601.2b) and the
+    /// stack is a public zone (CR 400.2), so both seats are entitled to it.
+    /// A Devil's Play for 12 and one for 0 used to be character-for-character
+    /// identical on screen.
+    #[test]
+    fn a_stack_entry_shows_its_announced_x() {
+        let v = view(Step::PrecombatMain, 15, true);
+        let mut item = mtg_engine::view::StackItemView {
+            object_id: ObjectId(22),
+            card_id: mtg_engine::ids::CardId(0),
+            name: "Devil's Play".to_string(),
+            controller: PlayerId(0),
+            targets: vec![],
+            x_value: Some(3),
+        };
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (X=3) (you)");
+        item.x_value = Some(0);
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (X=0) (you)");
+
+        // A spell without an X says nothing about one.
+        item.x_value = None;
+        item.name = "Geistflame".to_string();
+        item.controller = PlayerId(1);
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Geistflame (opp)");
     }
 
     /// Issue #295: the declare-attackers stop tested whether the opponent
