@@ -144,3 +144,20 @@ mtg-engine/src/triggers/collect/zones.rs: replace == with != in entered_battlefi
 # pass's `copy_of: next.copy_of` — is not accepted and is killed by three
 # Essence of the Wild tests.
 mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass
+
+# X-cost funding: three survivors out of 109 flips in build_options/apply/
+# validate, each unreachable rather than untested.
+#
+# `mana_per_tap == 0 || amount == 0`: a group with no output is filtered out
+# before it can be built, and the `amount == 0` half makes the loop body a
+# no-op either way (`0 / per_tap` taps nothing), so `&&` and `||` do the same
+# thing.
+mtg-engine/src/funding.rs: replace || with && in apply
+# `if after_amount > before_amount` measures what a tap ADDED. Activating a
+# mana ability only ever adds, so `>=` differs only for the types it did not
+# touch, and those contribute `after - before == 0`.
+mtg-engine/src/funding.rs: replace > with >= in apply
+# `validate`'s zero-output branch, whose own comment says it cannot happen —
+# `build_options` filters such a group out. Defensive against an invariant
+# break, so it is kept rather than deleted; `apply` would divide by zero.
+mtg-engine/src/funding.rs: replace > with == in validate

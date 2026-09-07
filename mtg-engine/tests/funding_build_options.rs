@@ -127,3 +127,161 @@ fn funding_validation_enforces_its_bounds_exactly() {
     assert!(ok(3, 0).is_err(), "three taps from a two-source group overflows");
     assert!(ok(0, 2).is_err(), "draining 2 from a pool of 1 overdraws");
 }
+
+/// `funding::apply` is the half that spends: it drains the pool the player
+/// named, taps the sources the group allocations pay for, and drains what
+/// those taps produced. Its contract is one sentence — after it runs, X is
+/// what the response said and the pool has lost exactly the mana the response
+/// named from it, no more — and everything inside is arithmetic serving that.
+///
+/// Checked over every valid response to one board rather than a handful of
+/// chosen ones, because the interesting failures are off-by-one: a group whose
+/// sources produce two mana at a time (Sol Ring) taps `amount / 2` of them,
+/// and the mana the taps made is drained back out rather than left floating
+/// for the next spell.
+#[test]
+fn applying_a_funding_response_spends_exactly_what_it_named() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &registry, "Forest", P0);
+    named_permanent(&mut state, &registry, "Forest", P0);
+    named_permanent(&mut state, &registry, "Sol Ring", P0);
+    named_permanent(&mut state, &registry, "Sol Ring", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+
+    let options = funding::build_options(&state, P0, &registry);
+    let per_tap: Vec<u32> = options.groups.iter().map(|g| g.mana_per_tap).collect();
+    assert!(per_tap.contains(&2), "the board carries a two-mana group: {per_tap:?}");
+    assert!(per_tap.contains(&1), "and a one-mana group: {per_tap:?}");
+
+    // Every allocation the options admit: each group at 0, per_tap, 2*per_tap,
+    // ... up to its ceiling, crossed with every pool drain.
+    let group_choices: Vec<Vec<(String, u32)>> = options.groups.iter()
+        .map(|g| (0..=g.source_ids.len())
+            .map(|n| (g.name.clone(), u32::try_from(n).unwrap() * g.mana_per_tap))
+            .collect())
+        .collect();
+    let pool_choices: Vec<Vec<(ManaType, u32)>> = options.pool.iter()
+        .map(|(&mt, &avail)| (0..=avail).map(|n| (mt, n)).collect())
+        .collect();
+
+    let mut checked = 0usize;
+    for taps in cartesian(&group_choices) {
+        for drains in cartesian(&pool_choices) {
+            let response = funding::FundingResponse {
+                pool: drains.iter().copied().filter(|&(_, n)| n > 0).collect(),
+                taps: taps.iter().cloned().filter(|&(_, n)| n > 0).collect(),
+            };
+            if funding::validate(&response, &options).is_err() {
+                continue;
+            }
+            let mut after = state.clone();
+            let x = funding::apply(&mut after, P0, &options, &response, &registry);
+            checked += 1;
+
+            assert_eq!(x, response.x_value(), "X is the response's own sum: {response:?}");
+
+            // Every type, not just the ones the pool started with: what the
+            // taps produced has to be drained too, and a Forest produces green
+            // into a pool that had none.
+            for mt in [ManaType::White, ManaType::Blue, ManaType::Black,
+                       ManaType::Red, ManaType::Green, ManaType::Colorless] {
+                let before = options.pool.get(&mt).copied().unwrap_or(0);
+                let drained = response.pool.get(&mt).copied().unwrap_or(0);
+                assert_eq!(after.get_player(P0).mana_pool.get(mt), before - drained,
+                    "{mt:?} lost exactly what {response:?} named — the taps paid for X, \
+                     so what they produced is gone too, not left floating");
+            }
+
+            for group in &options.groups {
+                let allocated = response.taps.get(&group.name).copied().unwrap_or(0);
+                let expected = (allocated / group.mana_per_tap) as usize;
+                let tapped = group.source_ids.iter()
+                    .filter(|&&id| after.get_object(id).is_some_and(|o| o.tapped))
+                    .count();
+                assert_eq!(tapped, expected,
+                    "{} funds {allocated} by tapping {expected} of its sources, \
+                     each worth {}: {response:?}", group.name, group.mana_per_tap);
+                assert!(group.source_ids.iter().take(expected)
+                    .all(|&id| after.get_object(id).is_some_and(|o| o.tapped)),
+                    "and it taps the first ones, so a plan is reproducible");
+            }
+        }
+    }
+    assert!(checked > 20, "the sweep covered {checked} responses, which is too few");
+}
+
+/// Every way to pick one entry from each list.
+fn cartesian<T: Clone>(lists: &[Vec<T>]) -> Vec<Vec<T>> {
+    let mut out = vec![vec![]];
+    for list in lists {
+        out = out.iter()
+            .flat_map(|prefix| list.iter().map(move |item| {
+                let mut next = prefix.clone();
+                next.push(item.clone());
+                next
+            }))
+            .collect();
+    }
+    out
+}
+
+/// CR 302.6: a creature that has not been under its controller's control
+/// since their most recent turn began cannot pay a `{T}` cost, so a
+/// summoning-sick mana dork cannot fund X. Haste is the exception.
+///
+/// Lands are never summoning-sick, and every other test on this file uses
+/// lands, so the whole clause was resting on nothing: a version that excluded
+/// every creature, sick or not, passed them all.
+#[test]
+fn a_summoning_sick_dork_cannot_fund_x_but_a_ready_one_can() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    let pilgrim = named_permanent(&mut state, &registry, "Avacyn's Pilgrim", P0);
+
+    // `named_permanent` puts it down ready, which is the half that has to work.
+    let ready = funding::build_options(&state, P0, &registry);
+    let dorks = ready.groups.iter().find(|g| g.name == "Avacyn's Pilgrim")
+        .expect("a ready mana dork funds X");
+    assert_eq!(dorks.category, FundingCategory::Dorks);
+    assert_eq!(ready.max_x, 2, "the Mountain and the Pilgrim");
+
+    state.get_object_mut(pilgrim).unwrap().summoning_sick = true;
+    let sick = funding::build_options(&state, P0, &registry);
+    assert!(sick.groups.iter().all(|g| g.name != "Avacyn's Pilgrim"),
+        "a summoning-sick dork cannot tap for X: {:?}",
+        sick.groups.iter().map(|g| &g.name).collect::<Vec<_>>());
+    assert_eq!(sick.max_x, 1, "only the Mountain is left");
+
+    grant_keyword(&mut state, pilgrim, Keyword::Haste);
+    let hasty = funding::build_options(&state, P0, &registry);
+    assert!(hasty.groups.iter().any(|g| g.name == "Avacyn's Pilgrim"),
+        "haste lifts the restriction (CR 702.10b)");
+    assert_eq!(hasty.max_x, 2);
+}
+
+/// The groups come back sorted by category and then by name, so the prompt a
+/// player answers is in the same order every time — and so a saved answer
+/// keyed by position replays.
+#[test]
+fn funding_groups_come_back_in_a_stable_order() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &registry, "Swamp", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Avacyn's Pilgrim", P0);
+    named_permanent(&mut state, &registry, "Sol Ring", P0);
+
+    let options = funding::build_options(&state, P0, &registry);
+    let order: Vec<(FundingCategory, &str)> = options.groups.iter()
+        .map(|g| (g.category, g.name.as_str()))
+        .collect();
+    assert_eq!(order, vec![
+        (FundingCategory::Lands, "Mountain"),
+        (FundingCategory::Lands, "Swamp"),
+        (FundingCategory::Rocks, "Sol Ring"),
+        (FundingCategory::Dorks, "Avacyn's Pilgrim"),
+    ], "lands, then rocks, then dorks; alphabetical within each");
+}

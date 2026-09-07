@@ -82,16 +82,6 @@ mtg-engine/src/engine/targeting.rs: replace < with == in combinations
 mtg-engine/src/engine/targeting.rs: replace < with > in target_combinations
 mtg-engine/src/engine/targeting.rs: replace == with != in combinations
 mtg-engine/src/engine/targeting.rs: replace == with != in valid_targets_for_req
-mtg-engine/src/funding.rs: delete ! in build_options
-mtg-engine/src/funding.rs: replace && with || in build_options
-mtg-engine/src/funding.rs: replace += with *= in apply
-mtg-engine/src/funding.rs: replace / with * in apply
-mtg-engine/src/funding.rs: replace == with != in build_options
-mtg-engine/src/funding.rs: replace > with < in apply
-mtg-engine/src/funding.rs: replace > with == in apply
-mtg-engine/src/funding.rs: replace > with == in validate
-mtg-engine/src/funding.rs: replace > with >= in apply
-mtg-engine/src/funding.rs: replace || with && in apply
 mtg-engine/src/state.rs: delete ! in GameState::become_copy_of
 mtg-engine/src/state.rs: delete ! in GameState::effects_controlled_by
 mtg-engine/src/state.rs: delete ! in GameState::global_effects
