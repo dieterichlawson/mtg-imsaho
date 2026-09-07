@@ -258,13 +258,7 @@ impl LilianaOfTheVeil {
 
         // Everyone has chosen. Now the cards leave their hands together.
         for card in &chosen {
-            let name = state.obj_name(*card);
-            let owner = state.get_object(*card).map(|o| o.owner);
-            state.discard_card(*card, registry);
-            if let Some(owner) = owner {
-                state.log(crate::state::LogLevel::Event,
-                    format!("Liliana +1: p{} discarded {name}", owner.0));
-            }
+            state.discard_card_for(*card, "Liliana +1", registry);
         }
         if let Some(obj) = state.get_object_mut(self_id) {
             obj.card_state.retain(|k, _| !k.starts_with("liliana_"));

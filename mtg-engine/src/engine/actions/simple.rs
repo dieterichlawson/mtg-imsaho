@@ -39,22 +39,13 @@ pub(crate) fn play_land(state: &mut GameState, object_id: ObjectId, registry: &C
 pub(crate) fn discard_cards(state: &mut GameState, cards: &[ObjectId], registry: &CardRegistry) -> Applied {
         let is_hand_size = matches!(&state.awaiting_action,
             Some(AwaitingAction::DiscardToHandSize { .. }));
-        let player = match &state.awaiting_action {
-            Some(AwaitingAction::DiscardToHandSize { player, .. }) => *player,
-            _ => state.active_player,
-        };
-        let names: Vec<String> = cards.iter()
-            .map(|&id| card_name(&state, registry, id))
-            .collect();
+        // One line per card, written by `discard_card` itself — the loop used
+        // to log a second set of lines here, so every discard appeared twice.
         for &card_id in cards {
-            state.discard_card(card_id, registry);
-        }
-        if is_hand_size {
-            state.log(LogLevel::Event,
-                format!("p{} discarded {} (cleanup)", player.0, names.join(", ")));
-        } else {
-            for name in &names {
-                state.log(LogLevel::Event, format!("p{} discarded {}", player.0, name));
+            if is_hand_size {
+                state.discard_card_for(card_id, "cleanup", registry);
+            } else {
+                state.discard_card(card_id, registry);
             }
         }
         state.awaiting_action = None;

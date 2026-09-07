@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::engine::draw_cards;
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 use crate::actions::Target;
 
@@ -66,8 +66,7 @@ impl CardBehavior for MurderOfCrows {
         let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
             .iter().map(|o| o.id).collect();
         if hand.len() == 1 {
-            state.discard_card(hand[0], registry);
-            state.log(LogLevel::Event, "Drew and discarded a card".to_string());
+            state.discard_card_for(hand[0], "Murder of Crows", registry);
         } else if !hand.is_empty() {
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: controller,

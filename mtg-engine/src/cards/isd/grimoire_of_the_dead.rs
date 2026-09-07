@@ -88,10 +88,7 @@ impl CardBehavior for GrimoireOfTheDead {
             // (CR 601.2h).
             0 => {}
             1 => {
-                let name = state.obj_name(hand[0]);
-                state.discard_card(hand[0], registry);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Grimoire of the Dead: p{} discarded {name} to pay the cost", controller.0));
+                state.discard_card_for(hand[0], "Grimoire of the Dead cost", registry);
             }
             _ => {
                 // Which card to discard is the player's choice, made while

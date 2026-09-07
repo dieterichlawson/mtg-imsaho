@@ -32,7 +32,7 @@ impl CardBehavior for DesperateRavings {
         // "then discard a card AT RANDOM".
         let to_discard = state.choose_at_random(&hand, 1).first().copied();
         if let Some(discard_id) = to_discard {
-            state.discard_card(discard_id, registry);
+            state.discard_card_for(discard_id, "Desperate Ravings (at random)", registry);
         }
     }
 }

@@ -74,9 +74,8 @@ impl CardBehavior for FrightfulDelusion {
             .iter().map(|o| o.id).collect();
         if hand.len() == 1 {
             // No choice to make with one card, so do not ask for one.
-            state.discard_card(hand[0], registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("p{} discarded a card", payer.0));
+            let source = state.obj_name(self_id);
+            state.discard_card_for(hand[0], &source, registry);
         } else if !hand.is_empty() {
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: payer,

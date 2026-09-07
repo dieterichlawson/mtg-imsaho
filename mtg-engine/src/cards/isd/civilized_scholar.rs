@@ -127,10 +127,7 @@ impl CardBehavior for CivilizedScholar {
             // Only one card — auto-discard and check creature.
             let discard_id = hand[0];
             let is_creature = Self::is_creature_card(state, discard_id, registry);
-            state.discard_card(discard_id, registry);
-            let discard_name = state.get_object(discard_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(crate::state::LogLevel::Event,
-                format!("Civilized Scholar: p{} discarded {}", controller.0, discard_name));
+            state.discard_card_for(discard_id, "Civilized Scholar", registry);
             if is_creature {
                 // "untap this creature, **then** transform it" — in that order,
                 // with no priority in between (ruling, 2011-09-22).

@@ -2701,8 +2701,42 @@ impl GameState {
     /// thirteen call sites; a site that forgot the event silently broke every
     /// discard watcher (Murder of Crows, Civilized Scholar's transform).
     pub fn discard_card(&mut self, id: ObjectId, registry: &crate::cards::CardRegistry) {
+        self.discard_card_inner(id, None, registry);
+    }
+
+    /// Discard a card, naming the effect that caused it: "Liliana +1: p0
+    /// discarded Forest". Prefer this over [`GameState::discard_card`]
+    /// wherever a source is known — a discard the log cannot attribute is a
+    /// card leaving a hand for no visible reason.
+    pub fn discard_card_for(
+        &mut self,
+        id: ObjectId,
+        source: &str,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        self.discard_card_inner(id, Some(source), registry);
+    }
+
+    fn discard_card_inner(
+        &mut self,
+        id: ObjectId,
+        source: Option<&str>,
+        registry: &crate::cards::CardRegistry,
+    ) {
         let Some(player) = self.get_object(id).map(|o| o.owner) else { return; };
+        // A discard is public: the card moves into a public zone (CR 400.2),
+        // and CR 701.8a's discard is not a hidden action. Logged HERE rather
+        // than at each caller, because a caller that forgets loses the line
+        // entirely — Desperate Ravings' random discard was the one path that
+        // did, so a card moved hand→graveyard and the log said only "drew 2
+        // cards" (issue #301).
+        let name = self.obj_name(id);
         self.move_object(id, Zone::Graveyard, registry);
+        let line = match source {
+            Some(s) => format!("{s}: p{} discarded {name}", player.0),
+            None => format!("p{} discarded {name}", player.0),
+        };
+        self.log(LogLevel::Event, line);
         self.events.push(crate::events::GameEvent::Discarded { player, object: id });
     }
 

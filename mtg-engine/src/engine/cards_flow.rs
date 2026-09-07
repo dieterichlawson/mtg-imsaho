@@ -176,10 +176,7 @@ pub fn discard_cards(
     // nothing to decide — asking would be a prompt with one answer.
     if hand.len() <= count {
         for card in &hand {
-            let name = state.obj_name(*card);
-            state.discard_card(*card, registry);
-            state.log(LogLevel::Event,
-                format!("{source}: p{} discarded {name}", player.0));
+            state.discard_card_for(*card, source, registry);
             notify_discard(state, source_id, *card, registry);
         }
         if hand.len() < count {

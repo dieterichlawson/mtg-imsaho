@@ -113,9 +113,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // discards them together once the last one has chosen
                     // — see `discard_immediately`.
                     if *discard_immediately {
-                        let name = state.obj_name(*discard_id);
-                        state.discard_card(*discard_id, registry);
-                        state.log(LogLevel::Event, format!("Discarded {name}"));
+                        // The description is "<source>: choose a card to
+                        // discard", so its head names the effect. The log line
+                        // used to be a bare "Discarded Forest" — no player, no
+                        // source, indistinguishable between seats.
+                        let source = description.split(':').next().unwrap_or("Discard").to_string();
+                        state.discard_card_for(*discard_id, &source, registry);
                     }
                     // Notify the source card about the discard (e.g., Civilized Scholar
                     // checks if the discarded card was a creature to trigger transform).
