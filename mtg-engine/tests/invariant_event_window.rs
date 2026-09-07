@@ -725,3 +725,52 @@ fn a_block_that_evasion_forbids_is_flagged() {
     s.get_object_mut(blocker).unwrap().tapped = true;
     flags(&s, &reg, "blocker is tapped (CR 509.1a)");
 }
+
+/// CR 509.1b/702.16e/702.16f/302.6: the remaining ways a declared block or
+/// a dealt damage is one the rules forbid, and the summoning sickness a
+/// creature that arrived this action carries.
+#[test]
+fn protection_and_summoning_sickness_are_checked_in_the_event_window() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.step = Step::DeclareBlockers;
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+    state.priority_player = Some(P0);
+    clean(&state, &reg);
+
+    // CR 702.16f: an attacker with protection from the blocker.
+    let mut s = state.clone();
+    s.get_object_mut(attacker).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::ProtectionFromSubtype { subtype: "Bear".into(), scope: EffectScope::OnSelf },
+    ]);
+    flags(&s, &reg, "the attacker has protection from the blocker (CR 702.16f)");
+
+    // A blocker that cannot block at all.
+    let mut s = state.clone();
+    s.get_object_mut(blocker).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::PreventBlock { scope: EffectScope::OnSelf },
+    ]);
+    flags(&s, &reg, "blocker can't block");
+
+    // CR 702.16e: damage from a source the target has protection from.
+    let mut s = state.clone();
+    s.step = Step::CombatDamage;
+    s.get_object_mut(blocker).unwrap().damage_marked = 2;
+    s.get_object_mut(blocker).unwrap().damaged_by.push(attacker);
+    s.get_object_mut(blocker).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::ProtectionFromSubtype { subtype: "Bear".into(), scope: EffectScope::OnSelf },
+    ]);
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: attacker, target: DamageTarget::Object(blocker), amount: 2 }];
+    flags(&s, &reg, "the target has protection from the source (CR 702.16e)");
+
+    // CR 302.6: a creature that arrived this action is summoning sick.
+    let (mut s, _) = (base().0, ());
+    let arrived = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(arrived).unwrap().summoning_sick = false;
+    s.events = vec![GameEvent::EnteredBattlefield { object: arrived, controller: P0 }];
+    flags(&s, &reg, "entered this action but is not summoning sick (CR 302.6)");
+}
