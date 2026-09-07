@@ -625,6 +625,7 @@ impl GameState {
             is_token: false,
             is_legendary: false,
             cast_with_flashback: false,
+            cast_from_zone: None,
             instance_oracle_text: None,
             instance_continuous_effects: None,
             card_state: std::collections::BTreeMap::new(),
@@ -778,6 +779,7 @@ impl GameState {
             is_token: true,
             is_legendary: false,
             cast_with_flashback: false,
+            cast_from_zone: None,
             instance_oracle_text: None,
             instance_continuous_effects: None,
             card_state: std::collections::BTreeMap::new(),
@@ -1165,11 +1167,12 @@ impl GameState {
                 obj.instance_oracle_text = None;
             }
 
-            // Clear cast_with_flashback when moving back to hand or library
-            // (e.g. Runic Repetition returns an exiled flashback card to hand).
-            // The flag is set during cast and would otherwise persist.
+            // Clear the marks left by a cast when moving back to hand or
+            // library (e.g. Runic Repetition returns an exiled flashback card
+            // to hand). They are set during cast and would otherwise persist.
             if matches!(to, Zone::Hand | Zone::Library) {
                 obj.cast_with_flashback = false;
+                obj.cast_from_zone = None;
             }
 
             // CR 107.3b: X is a value chosen for one particular cast. It means
@@ -3280,6 +3283,19 @@ pub struct GameObject {
     /// Whether this spell was cast using flashback (exiled instead of going to graveyard).
     #[serde(default)]
     pub cast_with_flashback: bool,
+
+    /// The zone this spell was cast from (CR 601.2a), recorded as it goes on
+    /// the stack. "Whenever you cast a spell from your graveyard" (Burning
+    /// Vengeance) is a question about the event, and by the time a trigger is
+    /// dispatched the spell has already left the zone it was cast from, so
+    /// nothing else can answer it.
+    ///
+    /// It is not the same question as `cast_with_flashback`: flashback is one
+    /// of three ways to cast a spell out of a graveyard in this pool, next to
+    /// a card's own permission (Skaab Ruinator) and an alternative cost
+    /// (Rooftop Storm). Asking the flashback flag missed the other two.
+    #[serde(default)]
+    pub cast_from_zone: Option<Zone>,
 
     /// Per-instance oracle text override (e.g., Bonds of Faith conditional effect).
     /// When set, aura parsing uses this instead of the card's static oracle text.

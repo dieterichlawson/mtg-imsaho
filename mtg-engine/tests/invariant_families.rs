@@ -106,6 +106,7 @@ fn object_zone_and_identity_rules_are_checked() {
     let rites = spell_in_hand(&mut s, &reg, "Unburial Rites", P0);
     s.get_object_mut(rites).unwrap().zone = Zone::Graveyard;
     s.get_object_mut(rites).unwrap().cast_with_flashback = true;
+    s.get_object_mut(rites).unwrap().cast_from_zone = Some(Zone::Graveyard);
     flags_core(&s, &reg, "cast with flashback is in Graveyard (CR 702.34a)");
 
     let mut s = state.clone();

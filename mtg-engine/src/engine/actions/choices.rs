@@ -460,11 +460,16 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
 
                         // Step 5: move spell to stack, set metadata,
                         // push StackEntry.
+                        // Read before the move, for the same reason the eager
+                        // cast path does: after it, nothing remembers the zone
+                        // the spell was cast from (CR 601.2a).
+                        let cast_from = state.get_object(pending.object_id).map(|o| o.zone);
                         state.move_object(pending.object_id, Zone::Stack, registry);
                         {
                             let obj = state.get_object_mut(pending.object_id)
                                 .expect("spell must exist after moving to stack");
                             obj.targets.clone_from(&pending.targets);
+                            obj.cast_from_zone = cast_from;
                             if pending.is_flashback {
                                 obj.cast_with_flashback = true;
                             }

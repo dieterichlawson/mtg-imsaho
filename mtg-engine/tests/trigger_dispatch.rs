@@ -348,6 +348,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
     let bolt_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
     let flashback_spell = state.create_object(bolt_card_id, P0, Zone::Stack, Some(2), Some(2));
     state.get_object_mut(flashback_spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(flashback_spell).unwrap().cast_from_zone = Some(Zone::Graveyard);
 
     let log_before = state.game_log.len();
     let vengeance_card_id = state.get_object(vengeance).unwrap().card_id;

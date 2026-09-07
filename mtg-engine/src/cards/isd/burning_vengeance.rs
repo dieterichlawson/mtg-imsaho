@@ -25,8 +25,8 @@ impl CardBehavior for BurningVengeance {
                     description: "deal 2 damage to any target".into(),
                     // CR 603.3d: target chosen as the trigger goes on the stack.
                     // The trigger will be enumerated for ALL spell casts; the
-                    // handler filters to flashback casts only by checking the
-                    // spell's `cast_with_flashback` flag.
+                    // condition below filters to the ones cast from a
+                    // graveyard.
                     target_requirement: Some(TargetRequirement::AnyTarget),
                 },
             ],
@@ -36,13 +36,20 @@ impl CardBehavior for BurningVengeance {
 
     // "Whenever you cast a spell from your graveyard" — both restrictions
     // are part of the trigger condition (CR 603.2) and gate dispatch.
+    //
+    // The zone is asked directly. Asking `cast_with_flashback` instead named
+    // only one of the three ways a spell leaves a graveyard onto the stack in
+    // this pool: Skaab Ruinator's own permission and Rooftop Storm's
+    // alternative cost are both "cast from your graveyard" and both went
+    // unnoticed.
     fn should_trigger_on_spell_cast(&self, state: &GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _registry: &CardRegistry) -> bool {
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             None => return false,
         };
         caster == controller
-            && state.get_object(spell_id).is_some_and(|o| o.cast_with_flashback)
+            && state.get_object(spell_id)
+                .is_some_and(|o| o.cast_from_zone == Some(crate::types::Zone::Graveyard))
     }
 
     /// The trigger condition is `should_trigger_on_spell_cast` above and is

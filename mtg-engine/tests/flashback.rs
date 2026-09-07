@@ -974,6 +974,7 @@ fn runic_repetition_clears_the_flashback_flag_on_the_returned_card() {
         let obj = state.get_object_mut(devils).unwrap();
         obj.name = "Devil's Play".into();
         obj.cast_with_flashback = true;
+        obj.cast_from_zone = Some(Zone::Graveyard);
     }
 
     state.move_object(devils, Zone::Hand, &registry);
@@ -1154,4 +1155,74 @@ fn a_granted_flashback_belongs_to_the_card_it_was_granted_to() {
         &state, &cast_action(granted, vec![Target::Object(victim)]), &reg);
     assert_eq!(after.get_object(granted).map(|o| o.zone), Some(Zone::Stack),
         "the granted card goes on the stack");
+}
+
+// ── "Cast from your graveyard" is a zone, not a keyword ────────────
+
+/// CR 601.2a: a spell is cast from a zone, and the zone is part of the event
+/// other abilities trigger on. The engine records it as the spell goes on the
+/// stack, because after that the spell is on the stack and nothing else
+/// remembers where it came from.
+#[test]
+fn the_zone_a_spell_was_cast_from_is_recorded_on_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let from_hand = castable_spell(&mut state, &reg, "Think Twice", P0);
+    let state_hand = engine::submit_action(&state, &cast_action(from_hand, vec![]), &reg);
+    assert_eq!(state_hand.get_object(from_hand).unwrap().cast_from_zone, Some(Zone::Hand));
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let card = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    let after = engine::submit_action(&state, &cast_action(card, vec![]), &reg);
+    assert_eq!(after.get_object(card).unwrap().cast_from_zone, Some(Zone::Graveyard),
+        "a flashback cast comes from the graveyard");
+}
+
+/// CR 603.2: Burning Vengeance triggers on "you cast a spell from your
+/// graveyard", and flashback is only one of the ways to do that. Skaab
+/// Ruinator's own permission ("you may cast this card from your graveyard")
+/// is another, and it went unnoticed for as long as the condition asked
+/// whether the spell had been cast *with flashback* — the one card in the
+/// pool that can leave a graveyard onto the stack without it was the one card
+/// the trigger missed (issue #330).
+#[test]
+fn burning_vengeance_triggers_on_a_non_flashback_cast_from_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_permanent(&mut state, &reg, "Burning Vengeance", P0);
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+    // "As an additional cost, exile three creature cards from your graveyard."
+    let fodder: Vec<ObjectId> = (0..3)
+        .map(|_| named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0))
+        .collect();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let entry = engine::legal_actions(&state, &reg).castable_spells
+        .into_iter().find(|c| c.object_id == ruinator)
+        .expect("test precondition: Skaab Ruinator is castable from its own graveyard");
+    assert!(entry.from_graveyard && !entry.is_flashback,
+        "test precondition: this is the non-flashback kind of graveyard cast");
+
+    let mut after = engine::submit_action(&state, &Action::CastSpell {
+        object_id: ruinator,
+        targets: vec![],
+        sacrifice: None,
+        exile_count: Some(3),
+        exile_ids: fodder,
+        alternative_cost: None,
+        tap_plan: vec![],
+    }, &reg);
+    assert_eq!(after.get_object(ruinator).unwrap().zone, Zone::Stack,
+        "test precondition: the cast went through");
+
+    process_triggers_auto_target_opponent(&mut after, &reg);
+
+    assert_eq!(after.get_player(P1).life, 18,
+        "casting a spell from your graveyard is what Burning Vengeance triggers on, \
+         however the permission to do it was granted (CR 603.2)");
 }

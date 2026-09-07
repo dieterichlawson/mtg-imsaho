@@ -272,11 +272,16 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         costs::pay_additional_cost(
             state, registry, card_id, object_id, player, sacrifice, exile_count, exile_ids);
 
-        // Move to stack and store targets.
+        // Move to stack and store targets. The zone the spell was cast from
+        // (CR 601.2a) is read before the move, because after it the spell is
+        // on the stack and nothing else remembers where it came from — which
+        // is the whole of "whenever you cast a spell from your graveyard".
+        let cast_from = state.get_object(object_id).map(|o| o.zone);
         state.move_object(object_id, Zone::Stack, registry);
         {
             let obj = state.get_object_mut(object_id).expect("spell must exist after moving to stack");
             obj.targets = targets.to_vec();
+            obj.cast_from_zone = cast_from;
             if is_flashback {
                 obj.cast_with_flashback = true;
             }

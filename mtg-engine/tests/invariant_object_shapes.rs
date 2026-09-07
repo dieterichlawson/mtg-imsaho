@@ -140,6 +140,7 @@ fn x_and_the_flashback_mark_belong_where_they_are_written() {
         o.name = "Bear".into();
         o.subtypes = vec!["Bear".into()];
         o.cast_with_flashback = true;
+        o.cast_from_zone = Some(Zone::Graveyard);
         o.zone = Zone::Stack;
     }
     flags(&s, &reg, "is a token cast with flashback");
@@ -149,6 +150,7 @@ fn x_and_the_flashback_mark_belong_where_they_are_written() {
     let creature = spell_in_hand(&mut s, &reg, "Grizzly Bears", P0);
     s.get_object_mut(creature).unwrap().zone = Zone::Stack;
     s.get_object_mut(creature).unwrap().cast_with_flashback = true;
+    s.get_object_mut(creature).unwrap().cast_from_zone = Some(Zone::Graveyard);
     flags(&s, &reg, "cast with flashback is neither instant nor sorcery");
     let _ = card;
 }
@@ -594,6 +596,7 @@ fn the_copy_and_flashback_marks_name_the_kinds_of_card_that_can_carry_them() {
     let bolt = spell_in_hand(&mut s, &reg, "Geistflame", P0);
     s.move_object(bolt, Zone::Exile, &reg);
     s.get_object_mut(bolt).unwrap().cast_with_flashback = true;
+    s.get_object_mut(bolt).unwrap().cast_from_zone = Some(Zone::Graveyard);
     let v = check_core(&s, &reg);
     assert!(!v.iter().any(|m| m.contains("neither instant nor sorcery")),
         "Geistflame has flashback and is an instant: {v:?}");
@@ -602,5 +605,28 @@ fn the_copy_and_flashback_marks_name_the_kinds_of_card_that_can_carry_them() {
     let creature = spell_in_hand(&mut s, &reg, "Grizzly Bears", P0);
     s.move_object(creature, Zone::Exile, &reg);
     s.get_object_mut(creature).unwrap().cast_with_flashback = true;
+    s.get_object_mut(creature).unwrap().cast_from_zone = Some(Zone::Graveyard);
     flags(&s, &reg, "neither instant nor sorcery");
+
+    // CR 702.34a: flashback casts the card from your graveyard, so the two
+    // marks a cast leaves behind have to agree. Different abilities read
+    // different ones — the exile on resolution reads the flashback flag,
+    // "whenever you cast a spell from your graveyard" reads the zone — and a
+    // spell carrying only one of them is a cast half the game can see
+    // (issue #330).
+    let mut s = state.clone();
+    let bolt = spell_in_hand(&mut s, &reg, "Geistflame", P0);
+    s.move_object(bolt, Zone::Exile, &reg);
+    s.get_object_mut(bolt).unwrap().cast_with_flashback = true;
+    flags(&s, &reg, "cast with flashback was cast from None");
+
+    let mut s = state.clone();
+    let bolt = spell_in_hand(&mut s, &reg, "Geistflame", P0);
+    s.move_object(bolt, Zone::Exile, &reg);
+    {
+        let o = s.get_object_mut(bolt).unwrap();
+        o.cast_with_flashback = true;
+        o.cast_from_zone = Some(Zone::Hand);
+    }
+    flags(&s, &reg, "cast with flashback was cast from Some(Hand)");
 }

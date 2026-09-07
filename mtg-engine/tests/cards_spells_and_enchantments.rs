@@ -502,6 +502,7 @@ fn burning_vengeance_triggers_on_flashback() {
         None,
     );
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().cast_from_zone = Some(Zone::Graveyard);
     state.get_object_mut(spell).unwrap().name = "Think Twice".into();
 
     // Fire SpellCast event. CR 603.3d: "deals 2 damage to any target" needs a
@@ -561,6 +562,7 @@ fn burning_vengeance_ignores_an_opponents_flashback_cast() {
     let spell = state.create_object(
         reg.get_id_by_name("Think Twice").unwrap(), P1, Zone::Stack, None, None);
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().cast_from_zone = Some(Zone::Graveyard);
     state.get_object_mut(spell).unwrap().name = "Think Twice".into();
 
     state.events.push(GameEvent::SpellCast { player: P1, object: spell });
@@ -590,6 +592,7 @@ fn burning_vengeances_trigger_sits_above_the_spell_that_caused_it() {
     let spell = state.create_object(
         reg.get_id_by_name("Think Twice").unwrap(), P0, Zone::Stack, None, None);
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().cast_from_zone = Some(Zone::Graveyard);
     state.get_object_mut(spell).unwrap().name = "Think Twice".into();
     state.stack.push(mtg_engine::state::StackEntry::Spell(spell));
 

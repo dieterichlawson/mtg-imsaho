@@ -115,6 +115,16 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             if !types.contains(&CardType::Instant) && !types.contains(&CardType::Sorcery) {
                 v.push(format!("{tag} cast with flashback is neither instant nor sorcery"));
             }
+            // CR 702.34a: flashback casts the card *from your graveyard*, so
+            // the two marks a cast leaves have to agree. They are written a
+            // line apart and read by different abilities — "was this cast with
+            // flashback" (the exile on resolution) and "was this cast from a
+            // graveyard" (Burning Vengeance) — and a state where one is set
+            // without the other is one where an ability sees half the cast.
+            if obj.cast_from_zone != Some(Zone::Graveyard) {
+                v.push(format!("{tag} cast with flashback was cast from {:?} (CR 702.34a)",
+                    obj.cast_from_zone));
+            }
         }
 
         // CR 400.7: a non-token card off the battlefield is its printed self —

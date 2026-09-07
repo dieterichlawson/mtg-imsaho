@@ -238,6 +238,7 @@ fn burning_vengeance_deals_its_damage_after_being_destroyed() {
     let vengeance = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
     let spell = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
     state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().cast_from_zone = Some(Zone::Graveyard);
 
     resolve_after_source_dies_targeting(&mut state, &reg, vengeance,
         TriggerEvent::SpellCast { caster: P0, spell_id: spell }, vec![Target::Player(P1)]);
