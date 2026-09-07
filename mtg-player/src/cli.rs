@@ -3648,20 +3648,34 @@ impl CliPlayer {
         // merged with its text into garbage (issue #110).
         let w = term_w as usize;
         let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
-        let show_error = |msg: &str, r: u16| {
-            let clipped: String = msg.chars().take(mid_w).collect();
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
-                SetForegroundColor(Color::Red), Print(clipped), ResetColor);
-            let _ = stdout().flush();
-            std::thread::sleep(std::time::Duration::from_millis(900));
+        // A refusal is drawn under the prompt and LEFT there while the player
+        // retypes: it used to be printed, slept on for 900 ms and then
+        // erased, so the message was on screen exactly while the program was
+        // not listening and gone by the time it was — the "silent re-render
+        // is indistinguishable from a hung game" symptom #76 was filed to
+        // prevent, on a timer (issue #291). Everywhere else in this CLI a
+        // notice is a render input that survives until the next keystroke.
+        let paint_notice = |msg: Option<&str>, r: u16| {
             let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = msg {
+                let _ = execute!(stdout(), SetForegroundColor(Color::Red),
+                    Print(clip_cols(msg, mid_w)), ResetColor);
+            }
+            // Back to the prompt row: `read_line` prints its prompt at the
+            // cursor, so leaving it here put the prompt on the end of the
+            // notice.
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = stdout().flush();
         };
+        let mut notice: Option<String> = None;
 
         loop {
             // Clear the row before re-prompting: a rejected entry's characters
             // otherwise stay on screen and visually merge with the next
             // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            // The last refusal, held until this attempt is answered (#291).
+            paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
                 "  Attack (numbers/all/none, enter=none)> ", &|| { draw(); });
 
@@ -3684,7 +3698,7 @@ impl CliPlayer {
             // attackers is always legal (must-attack is enforced below).
             if input.is_empty() || input == "none" || input == "n" {
                 if !must_attack.is_empty() {
-                    show_error(&forced_error(&must_attack.iter().copied().collect::<Vec<_>>()), r);
+                    notice = Some(forced_error(&must_attack.iter().copied().collect::<Vec<_>>()));
                     continue;
                 }
                 return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
@@ -3728,7 +3742,7 @@ impl CliPlayer {
                 let before_dedup = listed.len();
                 listed.dedup();
                 if listed.len() != before_dedup {
-                    show_error("  Duplicate attacker index: list each creature at most once.", r);
+                    notice = Some("  Duplicate attacker index: list each creature at most once.".to_string());
                     continue;
                 }
                 let index_error = Self::attack_index_error(
@@ -3739,7 +3753,7 @@ impl CliPlayer {
                         .collect();
                     let missing = missing_forced(&chosen);
                     if !missing.is_empty() {
-                        show_error(&forced_error(&missing), r);
+                        notice = Some(forced_error(&missing));
                         continue;
                     }
                     return Action::DeclareAttackers {
@@ -3750,15 +3764,15 @@ impl CliPlayer {
                     };
                 }
                 if let Some(msg) = index_error {
-                    show_error(&format!("  {msg}"), r);
+                    notice = Some(format!("  {msg}"));
                 }
             } else if defending_planeswalkers.is_empty() {
-                show_error("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.", r);
+                notice = Some("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.".to_string());
             } else {
                 // The prompt advertises N>pwM two rows above; a player who
                 // mistypes it should be shown the form, not told to enter
                 // plain numbers.
-                show_error("  Invalid input. Enter numbers like '0 2', '0>pw0', 'all', 'a', or 'none'.", r);
+                notice = Some("  Invalid input. Enter numbers like '0 2', '0>pw0', 'all', 'a', or 'none'.".to_string());
             }
         }
     }
@@ -3837,18 +3851,32 @@ impl CliPlayer {
         let mut r = draw();
 
         // In-pane rejection rendering, as at the attack prompt (#110).
-        let show_error = |msg: &str, r: u16| {
-            let clipped: String = msg.chars().take(mid_w).collect();
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
-                SetForegroundColor(Color::Red), Print(clipped), ResetColor);
-            let _ = stdout().flush();
-            std::thread::sleep(std::time::Duration::from_millis(900));
+        // A refusal is drawn under the prompt and LEFT there while the player
+        // retypes: it used to be printed, slept on for 900 ms and then
+        // erased, so the message was on screen exactly while the program was
+        // not listening and gone by the time it was — the "silent re-render
+        // is indistinguishable from a hung game" symptom #76 was filed to
+        // prevent, on a timer (issue #291). Everywhere else in this CLI a
+        // notice is a render input that survives until the next keystroke.
+        let paint_notice = |msg: Option<&str>, r: u16| {
             let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = msg {
+                let _ = execute!(stdout(), SetForegroundColor(Color::Red),
+                    Print(clip_cols(msg, mid_w)), ResetColor);
+            }
+            // Back to the prompt row: `read_line` prints its prompt at the
+            // cursor, so leaving it here put the prompt on the end of the
+            // notice.
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = stdout().flush();
         };
+        let mut notice: Option<String> = None;
 
         loop {
-            // Same stale-row clearing as the attack prompt (issue #35).
+            // Same stale-row clearing as the attack prompt (issue #35), and
+            // the same held-until-answered notice row (issue #291).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
                 "  Block (blocker:attacker / enter=none)> ", &|| { draw(); });
 
@@ -3925,7 +3953,7 @@ impl CliPlayer {
                 None => return Action::DeclareBlockers { assignments },
                 // In-pane, not println! over the LOG panel (#110's fix,
                 // applied to the blocker prompt too).
-                Some(msg) => show_error(&format!("  {msg}"), r),
+                Some(msg) => notice = Some(format!("  {msg}")),
             }
         }
     }
@@ -3994,10 +4022,23 @@ impl CliPlayer {
         } else {
             format!("  X (0-{}) = ", options.max_announceable_x())
         };
+        // The refusal goes on its own row and stays there while the player
+        // retypes. It used to be written over the PROMPT row and slept on,
+        // so the message and the prompt were never on screen together —
+        // first the message and no prompt, then the prompt and no message
+        // (issue #291).
+        let mut notice: Option<String> = None;
         let x: u32 = loop {
             // Clear the input row before each attempt (same as the combat
             // prompts), so a rejected entry doesn't merge with the next.
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = &notice {
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
+                    SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
+            }
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = stdout().flush();
             let input = Self::read_line(&hint);
             let input = input.trim();
             // Cancelling a spell's X prompt backs out of the whole cast —
@@ -4011,15 +4052,11 @@ impl CliPlayer {
             // bare Enter used to commit the cast for X=0, burning the card
             // on a stray keypress (issue #123). It re-prompts now — X=0 is
             // still available by typing 0.
-            let notice = match input.parse::<u32>() {
+            notice = Some(match input.parse::<u32>() {
                 Ok(n) if n <= options.max_announceable_x() => break n,
                 _ if input.is_empty() => "  Enter a value for X.".to_string(),
                 _ => format!("  Enter an integer between 0 and {}.", options.max_announceable_x()),
-            };
-            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine),
-                Print(notice));
-            let _ = stdout().flush();
-            std::thread::sleep(std::time::Duration::from_millis(700));
+            });
         };
 
         // Distribute X: drain from pool (larger color buckets first), then
@@ -4113,13 +4150,18 @@ impl CliPlayer {
         let hint = "  pile 1 indices (space-separated, blank = empty pile 1): ";
         let mut error: Option<String> = None;
         loop {
+            // The last refusal sits on its own row while the player retypes,
+            // and goes when they answer. It used to be printed over the
+            // prompt row, slept on for 700 ms and erased, so it was on screen
+            // only while the program refused to read (issue #291).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            if let Some(msg) = error.take() {
-                let _ = execute!(stdout(), Print(clip(&msg)));
-                let _ = stdout().flush();
-                std::thread::sleep(std::time::Duration::from_millis(700));
-                let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = &error {
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
+                    SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
             }
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = stdout().flush();
             let input = Self::read_line(hint);
             let trimmed = input.trim();
             let indices: Vec<usize> = if trimmed.is_empty() {
@@ -4286,13 +4328,18 @@ impl CliPlayer {
         let hint = Self::exile_prompt_hint(min, max);
         let mut error: Option<String> = None;
         loop {
+            // The last refusal sits on its own row while the player retypes,
+            // and goes when they answer. It used to be printed over the
+            // prompt row, slept on for 700 ms and erased, so it was on screen
+            // only while the program refused to read (issue #291).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            if let Some(msg) = error.take() {
-                let _ = execute!(stdout(), Print(clip(&msg)));
-                let _ = stdout().flush();
-                std::thread::sleep(std::time::Duration::from_millis(700));
-                let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            if let Some(msg) = &error {
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
+                    SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
             }
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = stdout().flush();
             let input = Self::read_line_redrawing(&hint, &|| { draw(); });
             // Info panes, then repaint this prompt (issue #120).
             match input.as_str() {
