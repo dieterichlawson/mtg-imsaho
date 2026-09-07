@@ -49,6 +49,22 @@ fn test_files() -> Vec<PathBuf> {
     files
 }
 
+/// The invariant self-tests, which build states the engine never produces
+/// on purpose: their subject is that the fuzzing oracle flags exactly the
+/// corruption the helpers below refuse to make. The guards that keep
+/// ordinary tests from standing in for the engine do not apply to them.
+const INVARIANT_SELF_TESTS: &[&str] = &[
+    "invariant_checker.rs",
+    "invariant_families.rs",
+    "invariant_event_window.rs",
+    "invariant_legal_offers.rs",
+    "invariant_prompt_shapes.rs",
+];
+
+fn is_invariant_self_test(name: &str) -> bool {
+    INVARIANT_SELF_TESTS.contains(&name)
+}
+
 /// A comment that points at `foo.rs` must point at a file that exists.
 ///
 /// These references used to carry line numbers as well (`engine.rs:4085`), and
@@ -467,6 +483,12 @@ fn no_test_ends_the_turn_by_hand() {
     let mut offenders = Vec::new();
     for path in test_files() {
         let file = path.file_name().unwrap().to_string_lossy().to_string();
+        // An invariant self-test writes these fields to build the state the
+        // engine would never leave behind, which is the thing it is asking
+        // the checker about.
+        if is_invariant_self_test(&file) {
+            continue;
+        }
         let Ok(text) = fs::read_to_string(&path) else { continue };
         for (n, line) in text.lines().enumerate() {
             if line.trim_start().starts_with("//") {
@@ -839,11 +861,9 @@ fn no_test_assembles_combat_state_by_hand() {
     for path in test_files() {
         let Ok(text) = fs::read_to_string(&path) else { continue };
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        // `common/mod.rs` is where the helper that builds it lives, and
-        // `invariant_checker.rs` builds deliberately malformed combat states
-        // — its subject is that the fuzzing oracle flags exactly the states
-        // the helpers refuse to produce.
-        if name == "mod.rs" || name == "invariant_checker.rs" || name == "invariant_families.rs" {
+        // `common/mod.rs` is where the helper that builds it lives, and the
+        // invariant self-tests build deliberately malformed combat states.
+        if name == "mod.rs" || is_invariant_self_test(&name) {
             continue;
         }
         for (n, line) in text.lines().enumerate() {
