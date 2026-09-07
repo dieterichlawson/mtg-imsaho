@@ -2264,3 +2264,367 @@ fn the_step_walk_is_announced_step_by_step() {
     s.active_player = P1;
     flags_transition(&prev, None, &s, &reg, "active player p0 -> p1 over 0 turn(s)");
 }
+
+/// CR 400.7/121.3/701.20a: every zone change is announced from the zone the
+/// object was in, and the verbs pair with the moves they name.
+#[test]
+fn the_zone_ledger_pairs_every_verb_with_its_move() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let card = spell_in_hand(&mut prev, &reg, "Moment of Heroism", P0);
+    let library = stock_library(&mut prev, &reg, P0, 3);
+    for id in &library {
+        prev.get_object_mut(*id).unwrap().name = "Forest".into();
+    }
+
+    // A move announced from the wrong zone.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().zone = Zone::Graveyard;
+    s.get_object_mut(bear).unwrap().zone_change_count += 1;
+    s.events = vec![GameEvent::ObjectMoved { object: bear, from: Zone::Hand, to: Zone::Graveyard }];
+    flags_transition(&prev, None, &s, &reg, "announced a move from Hand while in Battlefield");
+
+    // A move announced to somewhere the object did not end up.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().zone = Zone::Graveyard;
+    s.get_object_mut(bear).unwrap().zone_change_count += 1;
+    s.events = vec![GameEvent::ObjectMoved { object: bear, from: Zone::Battlefield, to: Zone::Exile }];
+    flags_transition(&prev, None, &s, &reg, "last announced moving to Exile but is in Graveyard");
+
+    // The verbs: each names a move the ledger has to contain.
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::CardDrawn { player: P0, object: library[0] }];
+    flags_transition(&prev, None, &s, &reg, "CardDrawn #");
+    flags_transition(&prev, None, &s, &reg, "without the matching zone change");
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::Discarded { player: P0, object: card }];
+    flags_transition(&prev, None, &s, &reg, "Discarded #");
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::CreatureCardMilled { object: library[0], milled_player: P0 }];
+    flags_transition(&prev, None, &s, &reg, "CreatureCardMilled #");
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::SpellCast { player: P0, object: card }];
+    flags_transition(&prev, None, &s, &reg, "SpellCast #");
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::LandPlayed { player: P0, object: card }];
+    flags_transition(&prev, None, &s, &reg, "LandPlayed #");
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::EnteredBattlefield { object: card, controller: P0 }];
+    flags_transition(&prev, None, &s, &reg, "EnteredBattlefield #");
+
+    // CR 121.3: a draw takes the top card.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).library_order.retain(|id| *id != library[2]);
+    s.move_object(library[2], Zone::Hand, &reg);
+    s.events.push(GameEvent::CardDrawn { player: P0, object: library[2] });
+    flags_transition(&prev, None, &s, &reg, "from below the top 1 of a library that starts");
+
+    // CR 701.20a: without a shuffle, the order that stays is the order it was.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).library_order.swap(0, 2);
+    flags_transition(&prev, None, &s, &reg, "was reordered without a shuffle (CR 701.20a)");
+    s.events.push(GameEvent::LibraryShuffled { player: P0 });
+    no_transition_flag(&prev, None, &s, &reg, "(CR 701.20a)");
+
+    // CR 121.1: a drawn card came out of that player's library.
+    let mut s = next(&prev);
+    s.move_object(card, Zone::Hand, &reg);
+    s.events.push(GameEvent::CardDrawn { player: P0, object: card });
+    flags_transition(&prev, None, &s, &reg, "which was not in p0's library (CR 121.1)");
+}
+
+/// CR 120.3/302.6/508.1/701.15a: the per-object status ledgers each need a
+/// witness in the event buffer.
+#[test]
+fn the_status_ledgers_each_need_their_witness() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+
+    // Tapping and untapping are edges, each with its own event.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().tapped = true;
+    flags_transition(&prev, None, &s, &reg, "became tapped with no Tapped event");
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().tapped = true;
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().tapped = false;
+    flags_transition(&p, None, &s, &reg, "became untapped with no Untapped event");
+
+    // CR 120.3: marked damage shrinks only through regeneration or cleanup.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().damage_marked = 1;
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().damage_marked = 0;
+    flags_transition(&p, None, &s, &reg, "lost marked damage (1 + 0 -> 0) with no regeneration or cleanup");
+
+    // Deathtouch is a property of damage that was actually dealt.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().dealt_deathtouch_damage = true;
+    flags_transition(&prev, None, &s, &reg, "marked with deathtouch damage that was never dealt");
+
+    // CR 701.15a: regenerating taps and removes from combat.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().regeneration_shields = 1;
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().regeneration_shields = 0;
+    flags_transition(&p, None, &s, &reg, "regenerated without tapping (CR 701.15a)");
+
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().regeneration_shields = 1;
+    p.get_object_mut(bear).unwrap().tapped = true;
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().regeneration_shields = 0;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(bear, P1);
+    s.combat = Some(c);
+    flags_transition(&p, None, &s, &reg, "regenerated but is still in combat (CR 701.15a)");
+
+    // The last controller is written when the object leaves, not before.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().last_controller = Some(P1);
+    flags_transition(&prev, None, &s, &reg, "rewrote its last controller without leaving");
+
+    // CR 508.1: an attack stamp comes from a declaration.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().attacked_on_turn = Some(3);
+    flags_transition(&prev, None, &s, &reg, "was stamped as attacking without a declaration (CR 508.1)");
+}
+
+/// CR 119/704.5a/704.5b/121.4: life moves through its events, and a loss
+/// says why in a way the state bears out.
+#[test]
+fn every_loss_says_why_in_a_way_the_state_bears_out() {
+    let (mut prev, reg) = base();
+    named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+
+    // The chain has to start where the player was and end where they are.
+    let mut s = next(&prev);
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 19, new_life: 18 }];
+    flags_transition(&prev, None, &s, &reg, "life chain starts at 19 but they had 20");
+    let mut s = next(&prev);
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 }];
+    flags_transition(&prev, None, &s, &reg, "life chain ends at 18 but they have 20");
+
+    let lost = |life: i32, reason: mtg_engine::events::LossReason, prev: &GameState| {
+        let mut s = next(prev);
+        s.get_player_mut(P1).life = life;
+        s.get_player_mut(P1).lost = true;
+        s.get_player_mut(P1).loss_reason = Some(reason);
+        s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+        s.events = vec![GameEvent::PlayerLost { player: P1, reason },
+                        GameEvent::GameEnded { result: mtg_engine::state::GameResult::Winner(P0) }];
+        s
+    };
+
+    // CR 704.5a: losing to 0 life means the life went to 0.
+    let s = lost(20, mtg_engine::events::LossReason::LifeReachedZero, &prev);
+    flags_transition(&prev, None, &s, &reg, "without their life reaching 0 (CR 704.5a)");
+
+    // CR 704.5b: losing to an empty draw is recorded as one.
+    let s = lost(20, mtg_engine::events::LossReason::DrewFromEmptyLibrary, &prev);
+    flags_transition(&prev, None, &s, &reg, "that is not recorded (CR 704.5b)");
+
+    // Conceding is an action the conceding player took, holding priority.
+    let mut p = prev.clone();
+    p.priority_player = Some(P0);
+    let s = lost(20, mtg_engine::events::LossReason::Conceded, &p);
+    flags_transition(&p, None, &s, &reg, "conceded without holding priority on a Concede action");
+
+    // "The opponent won" is a claim about the result.
+    let mut s = lost(20, mtg_engine::events::LossReason::OpponentWon, &prev);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P1));
+    flags_transition(&prev, None, &s, &reg, "lost because the opponent won, but the result is");
+
+    // CR 121.4: a failed draw is from a library that is actually empty.
+    let mut p = prev.clone();
+    stock_library(&mut p, &reg, P1, 2);
+    let mut s = next(&p);
+    s.get_player_mut(P1).has_drawn_from_empty = true;
+    flags_transition(&p, None, &s, &reg, "empty library that holds 2 cards (CR 121.4)");
+}
+
+/// CR 106.4/500.4: mana appears only through `ManaAdded` and leaves only by
+/// payment, an emptying, or the end of a step.
+#[test]
+fn mana_appears_and_leaves_only_the_ways_the_rules_allow() {
+    let (mut prev, reg) = base();
+    named_permanent(&mut prev, &reg, "Forest", P0);
+    add_mana(&mut prev, P0, &[(ManaType::Green, 2)]);
+
+    // Mana out of nowhere.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 3);
+    flags_transition(&prev, None, &s, &reg, "3 Green mana after 2 + 0 added (CR 106.4)");
+    s.events = vec![GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 }];
+    no_transition_flag(&prev, None, &s, &reg, "(CR 106.4)");
+
+    // Mana that vanished with nothing paid.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 1);
+    flags_transition(&prev, None, &s, &reg, "with nothing paid and no step ending (CR 500.4)");
+    s.events = vec![GameEvent::ManaPoolEmptied { player: P0 }];
+    no_transition_flag(&prev, None, &s, &reg, "(CR 500.4)");
+}
+
+/// CR 405.2: only the action that put something on the stack put something
+/// on the stack, and it went on top of what was there.
+#[test]
+fn an_action_grows_the_stack_only_from_the_top() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let land = spell_in_hand(&mut prev, &reg, "Forest", P0);
+    let pump = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    prev.priority_player = Some(P0);
+
+    let play = Action::PlayLand { object_id: land };
+    let cur = mtg_engine::engine::submit_action(&prev, &play, &reg);
+    clean_transition(&prev, Some(&play), &cur, &reg);
+
+    // A land drop that also put a spell on the stack.
+    let mut s = cur.clone();
+    s.get_object_mut(pump).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(pump));
+    flags_transition(&prev, Some(&play), &s, &reg, "non-trigger entries on the stack");
+
+    // A cast that also removed what was under it.
+    let mut p = prev.clone();
+    let under = castable_spell(&mut p, &reg, "Moment of Heroism", P0);
+    p.get_object_mut(under).unwrap().zone = Zone::Stack;
+    p.stack.push(StackEntry::Spell(under));
+    let mut s = next(&p);
+    s.stack.clear();
+    let cast = cast_action(pump, vec![Target::Object(bear)]);
+    flags_transition(&p, Some(&cast), &s, &reg, "disturbed the stack below the top");
+}
+
+/// CR 601.2h/602.2f: casting and activating pay their costs out of the
+/// pool, and the ledger sees the whole cost, not only its coloured pips.
+#[test]
+fn a_cast_and_an_activation_each_spend_their_whole_cost() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    add_mana(&mut prev, P0, &[(ManaType::White, 2)]);
+    prev.priority_player = Some(P0);
+    let cast = cast_action(pump, vec![Target::Object(bear)]);
+    let cur = mtg_engine::engine::submit_action(&prev, &cast, &reg);
+    clean_transition(&prev, Some(&cast), &cur, &reg);
+
+    // CR 601.2a: the card moved.
+    let mut s = cur.clone();
+    s.get_object_mut(pump).unwrap().zone_change_count = prev.get_object(pump).unwrap().zone_change_count;
+    flags_transition(&prev, Some(&cast), &s, &reg, "announced but the card never moved (CR 601.2a)");
+
+    // The whole cost, generic included: the pool may not come out ahead of
+    // what it started with less the cost.
+    let mut s = cur.clone();
+    let started = prev.get_player(P0).mana_pool.total();
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::White, started);
+    flags_transition(&prev, Some(&cast), &s, &reg, "for a total cost of");
+
+    // CR 602.2f: an activation cost is paid the same way.
+    let (mut prev, reg) = base();
+    let priest = named_permanent(&mut prev, &reg, "Avacynian Priest", P0);
+    prev.get_object_mut(priest).unwrap().summoning_sick = false;
+    named_permanent(&mut prev, &reg, "Grizzly Bears", P1);
+    add_mana(&mut prev, P0, &[(ManaType::White, 1)]);
+    prev.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&prev, &reg);
+    let activate = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == priest))
+        .expect("the ability is offered").clone();
+    let cur = mtg_engine::engine::submit_action(&prev, &activate, &reg);
+    clean_transition(&prev, Some(&activate), &cur, &reg);
+    let mut s = cur.clone();
+    let started = prev.get_player(P0).mana_pool.total();
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::White, started);
+    flags_transition(&prev, Some(&activate), &s, &reg, "(CR 602.2f)");
+}
+
+/// CR 605.3/606.5: a mana ability changes nothing but the pool, and a
+/// loyalty ability goes on the stack.
+#[test]
+fn a_mana_ability_changes_only_the_pool_and_a_loyalty_ability_uses_the_stack() {
+    let (mut prev, reg) = base();
+    let forest = named_permanent(&mut prev, &reg, "Forest", P0);
+    prev.priority_player = Some(P0);
+    let tap = Action::ActivateManaAbility { object_id: forest, ability_index: 0 };
+    let cur = mtg_engine::engine::submit_action(&prev, &tap, &reg);
+    clean_transition(&prev, Some(&tap), &cur, &reg);
+
+    let mut s = cur.clone();
+    s.step = Step::BeginCombat;
+    flags_transition(&prev, Some(&tap), &s, &reg, "changed the step, priority, or the stack (CR 605.3)");
+
+    // Tapping something that was already tapped.
+    let mut p = prev.clone();
+    p.get_object_mut(forest).unwrap().tapped = true;
+    let mut s = next(&p);
+    s.events = vec![GameEvent::Tapped { object: forest }];
+    flags_transition(&p, Some(&tap), &s, &reg, "which was already tapped");
+
+    // CR 606.5: a loyalty ability uses the stack.
+    let (mut prev, reg) = base();
+    let lili = named_permanent(&mut prev, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut prev, lili, 3);
+    prev.priority_player = Some(P0);
+    let plus = Action::ActivateLoyaltyAbility { object_id: lili, ability_index: 0, targets: vec![] };
+    let cur = mtg_engine::engine::submit_action(&prev, &plus, &reg);
+    clean_transition(&prev, Some(&plus), &cur, &reg);
+    let mut s = cur.clone();
+    s.stack.clear();
+    flags_transition(&prev, Some(&plus), &s, &reg, "did not go on the stack (CR 606.5)");
+}
+
+/// CR 103.5/514.1: the mulligan and cleanup actions do what they say.
+#[test]
+fn the_mulligan_and_discard_actions_each_do_what_they_say() {
+    let (mut prev, reg) = base();
+    stock_library(&mut prev, &reg, P0, 20);
+    for _ in 0..7 {
+        spell_in_hand(&mut prev, &reg, "Moment of Heroism", P0);
+    }
+    prev.priority_player = None;
+    prev.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+
+    // Keeping draws nothing and is recorded.
+    let keep = Action::MulliganKeep;
+    let cur = mtg_engine::engine::submit_action(&prev, &keep, &reg);
+    let mut s = cur.clone();
+    s.get_player_mut(P0).mulligan_kept = false;
+    flags_transition(&prev, Some(&keep), &s, &reg, "kept but is not recorded as having kept");
+    let mut s = cur.clone();
+    s.events.push(GameEvent::CardDrawn { player: P0, object: prev.get_player(P0).library_order[0] });
+    flags_transition(&prev, Some(&keep), &s, &reg, "keeping a hand drew cards");
+
+    // CR 103.5: a mulligan shuffles, then draws, and the count moves.
+    let mull = Action::MulliganMull;
+    let cur = mtg_engine::engine::submit_action(&prev, &mull, &reg);
+    let mut s = cur.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::LibraryShuffled { .. }));
+    flags_transition(&prev, Some(&mull), &s, &reg, "mulliganed without shuffling (CR 103.5)");
+    let mut s = cur.clone();
+    s.get_player_mut(P0).mulligan_count = prev.get_player(P0).mulligan_count;
+    flags_transition(&prev, Some(&mull), &s, &reg, "mulliganed without the count moving (CR 103.5)");
+
+    // CR 514.1: a cleanup discard moves exactly the cards it names.
+    let mut p = base().0;
+    let hand: Vec<ObjectId> = (0..3)
+        .map(|_| spell_in_hand(&mut p, &reg, "Moment of Heroism", P0))
+        .collect();
+    p.priority_player = None;
+    p.step = Step::Cleanup;
+    p.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 1 });
+    let discard = Action::DiscardCards { cards: vec![hand[0]] };
+    let cur = mtg_engine::engine::submit_action(&p, &discard, &reg);
+    clean_transition(&p, Some(&discard), &cur, &reg);
+
+    let mut s = cur.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::Discarded { .. }));
+    flags_transition(&p, Some(&discard), &s, &reg, "(CR 514.1)");
+    let mut s = cur.clone();
+    s.move_object(hand[0], Zone::Hand, &reg);
+    flags_transition(&p, Some(&discard), &s, &reg, "hand went");
+}
