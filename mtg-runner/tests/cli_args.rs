@@ -409,3 +409,75 @@ fn help_does_not_claim_the_saved_seed_beats_the_seed_flag() {
     assert!(resume_text.contains("--p1/--p2"),
         "--help names the seat flags: {resume_text}");
 }
+
+/// `--log` appends (issue #194), and `state.game_log` is part of the save.
+/// So streaming the resumed game's log from index 0 wrote the whole saved
+/// history back into the file a second time, under the resume's timestamps
+/// and behind a second byte-identical `GAME_START`: one game resumed six
+/// times was recorded as six games, each with its own opening hand, and the
+/// growth was quadratic in the number of resumes (issue #313).
+///
+/// A fresh `--log` shows it most plainly — everything the file holds after a
+/// resume is the resume's own doing.
+#[test]
+fn a_resume_does_not_replay_the_saved_history_into_the_log() {
+    let save = a_save_file("logreplay");
+    let log = std::env::temp_dir()
+        .join(format!("mtg-runner-resume-log-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log);
+
+    let output = runner_at_root()
+        .args(["--p1", "random", "--p2", "random",
+               "--resume", &save.to_string_lossy(),
+               "--log", &log.to_string_lossy(), "--quiet"])
+        .output()
+        .expect("failed to run");
+    assert_eq!(output.status.code(), Some(0),
+        "stderr: {}", String::from_utf8_lossy(&output.stderr));
+
+    let text = std::fs::read_to_string(&log).expect("the resume writes a log");
+    let _ = std::fs::remove_file(&save);
+    let _ = std::fs::remove_file(&log);
+
+    assert_eq!(text.matches("GAME_START").count(), 1,
+        "one session, one GAME_START:\n{text}");
+    assert!(!text.contains("drew 7 cards"),
+        "the opening hands predate the resume and are already in the save; \
+         re-emitting them makes the file claim the game was played twice:\n{text}");
+    assert!(text.contains("RESUMED"),
+        "and the file says a resume happened, and where the history it is \
+         missing came from:\n{text}");
+}
+
+/// The save path is not part of the save, so `--resume X` alone reads X and
+/// never writes to it again: the file sits on disk looking current while the
+/// game plays on, and everything since the resume is lost if the process
+/// dies. Every other save/flag disagreement on this path is announced on
+/// stderr; this is the one that loses work, so it is announced too
+/// (issue #317).
+#[test]
+fn a_resume_with_nothing_to_save_to_says_so() {
+    let save = a_save_file("nosave");
+    let path = save.to_string_lossy().into_owned();
+
+    let unsaved = runner_at_root()
+        .args(["--p1", "random", "--p2", "random", "--resume", &path, "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&unsaved.stderr);
+    assert!(stderr.contains("not being saved") && stderr.contains(&*path),
+        "the note names the file that stops here and how to keep writing it:\n{stderr}");
+
+    // And it is about the missing flag, not about resuming: a resume that
+    // was given somewhere to write says nothing.
+    let saved = runner_at_root()
+        .args(["--p1", "random", "--p2", "random", "--resume", &path,
+               "--save", &path, "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&saved.stderr);
+    assert!(!stderr.contains("not being saved"),
+        "--resume X --save X is the saving case and needs no note:\n{stderr}");
+
+    let _ = std::fs::remove_file(&save);
+}

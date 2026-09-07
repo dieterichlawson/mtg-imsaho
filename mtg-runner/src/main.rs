@@ -440,6 +440,11 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
     let mut p1 = make_player(&p1_spec, "P1", seed.map(|s| s.wrapping_add(1)));
     let mut p2 = make_player(&p2_spec, "P2", seed.map(|s| s.wrapping_add(2)));
 
+    // Engine log entries the save already carries — the ones a resumed
+    // game's --log must not repeat (issue #313). Zero for a fresh game,
+    // whose setup entries are the first thing the file should hold.
+    let already_logged = if resume_file.is_some() { state.game_log.len() } else { 0 };
+
     // Log game metadata.
     {
         let p1_model = if let PlayerKind::Llm(ref llm) = p1 { llm.model_name().to_string() } else { p1_spec.to_string() };
@@ -457,6 +462,14 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
             p2_model, player_names[1],
         );
         mtg_player::game_log::write(file!(), line!(), "GAME_START", &meta);
+        // A resume is a distinct event in the file, and says where the
+        // history before it lives — the replay that used to stand in for
+        // saying so is gone (issue #313).
+        if let Some(ref path) = resume_file {
+            mtg_player::game_log::write(file!(), line!(), "RESUMED", &format!(
+                "from {} at turn {}, {} actions and {already_logged} log entries already played",
+                path, state.turn_number, state.submit_seq));
+        }
     }
 
     // Initialize LLM player conversations with decklists.
@@ -557,7 +570,20 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
     // High-water mark of engine log entries already streamed to --log
     // (issue #77). A Cell so both the per-decision callback and the
     // end-of-game flush below can advance it.
-    let streamed_log = std::cell::Cell::new(0usize);
+    //
+    // On a resume it starts at the end of the loaded history, not at 0.
+    // `--log` appends (issue #194), so starting at 0 wrote the whole saved
+    // game back into the file a second time, under the resume's timestamps
+    // and behind a second byte-identical GAME_START: one game resumed six
+    // times was recorded as six games, with six opening hands, and the
+    // growth was quadratic in the number of resumes (issue #313). The
+    // RESUMED record above is what tells a reader of a *fresh* --log that
+    // the history it is missing is in the save.
+    //
+    // A fresh game starts at 0: `setup_game` has already logged the shuffle,
+    // the opening hands and the mulligan phase, and those are the first lines
+    // the file should hold.
+    let streamed_log = std::cell::Cell::new(already_logged);
     let streamed_log_ref = &streamed_log;
     // The decision itself, separated so the callback can record what was chosen.
     let mut choose = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions, action_count: u64| -> mtg_engine::actions::Action {
