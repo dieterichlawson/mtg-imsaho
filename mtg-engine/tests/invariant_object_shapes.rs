@@ -391,3 +391,70 @@ fn every_effect_record_points_at_something_that_can_carry_it() {
     flags_settled(&s, &reg, "control effect over #");
     let _ = buried;
 }
+
+/// CR 704.5m/301.5/702.16c/603.8: what an attachment on the battlefield may
+/// be attached to once state-based actions have settled.
+#[test]
+fn an_attachment_on_the_battlefield_sits_where_the_rules_allow() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    let aura = named_permanent(&mut state, &reg, "Pacifism", P0);
+    state.get_object_mut(aura).unwrap().attached_to = Some(bear);
+    assert_eq!(check_settled(&state, &reg), Vec::<String>::new());
+
+    // CR 704.5m: an Aura that enchants creatures, on a land.
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().attached_to = Some(land);
+    flags_settled(&s, &reg, "enchants creatures but is attached to non-creature #");
+
+    // CR 702.16c: nothing is attached to what has protection from it.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::ProtectionFromSubtype {
+            subtype: "Aura".into(), scope: EffectScope::OnSelf },
+    ]);
+    flags_settled(&s, &reg, "which has protection from it (CR 702.16c)");
+
+    // CR 301.5: Equipment equips creatures, never players.
+    let mut s = state.clone();
+    let blade = named_permanent(&mut s, &reg, "Butcher's Cleaver", P0);
+    s.get_object_mut(blade).unwrap().attached_to = None;
+    s.get_object_mut(blade).unwrap().attached_to_player = Some(P1);
+    flags_settled(&s, &reg, "is Equipment attached to a player (CR 301.5)");
+}
+
+/// CR 603.8: at a fixed point no unflagged permanent's state-trigger
+/// condition is true — the state-based-action loop would have fired it.
+#[test]
+fn a_state_trigger_whose_condition_holds_has_fired() {
+    let (mut state, reg) = base();
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 3);
+    assert!(!check_settled(&state, &reg).iter()
+        .any(|m| m.contains("state trigger condition holds")),
+        "setup: at three loyalty the condition does not hold");
+
+    // "When Garruk Relentless has two or fewer loyalty counters on him,
+    // transform him" — with the trigger neither on the stack nor flagged.
+    let mut s = state.clone();
+    set_loyalty(&mut s, garruk, 2);
+    s.get_object_mut(garruk).unwrap().state_trigger_on_stack = false;
+    flags_settled(&s, &reg, "state trigger condition holds but the trigger has not fired (CR 603.8)");
+}
+
+/// CR 611.2b/400.7: a control effect names the player who has to keep
+/// controlling its source, and dies with the source or the object.
+#[test]
+fn a_control_effect_outlives_neither_its_source_nor_its_object() {
+    let (mut state, reg) = base();
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+    state.gain_control_while_source_controlled(vampire, olivia, &reg);
+    assert_eq!(check_settled(&state, &reg), Vec::<String>::new());
+
+    // The effect gives the permanent to whoever controls the source.
+    let mut s = state.clone();
+    s.control_effects[0].source_controller = P1;
+    flags_settled(&s, &reg, "'s source from p");
+}
