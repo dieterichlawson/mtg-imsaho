@@ -380,6 +380,20 @@ fn triggers_still_queued_at_priority_are_flagged() {
     let v = check_settled(&state, &reg);
     assert!(v.iter().any(|m| m.contains("3 collected trigger(s) still queued")),
         "all three queues are counted: {v:?}");
+
+    // The clause is about a player HOLDING PRIORITY with triggers still
+    // queued. Mid-resolution nobody does, and a prompt is the choice the
+    // queue is waiting on — neither is a violation.
+    let needle = "collected trigger(s) still queued";
+    let mut s = state.clone();
+    s.priority_player = None;
+    assert!(!check_settled(&s, &reg).iter().any(|m| m.contains(needle)),
+        "no one holds priority mid-resolution, so the queue may still be full");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(mtg_engine::state::AwaitingAction::MulliganDecision { player: P0 });
+    assert!(!check_settled(&s, &reg).iter().any(|m| m.contains(needle)),
+        "a queue waiting on a prompt is the prompt doing its job");
 }
 
 #[test]
@@ -391,6 +405,17 @@ fn a_creature_without_power_or_toughness_is_flagged() {
     let blank = named_permanent(&mut state, &reg, "Forest", P0);
     state.get_object_mut(blank).unwrap().card_types.push(CardType::Creature);
     assert_flags(&state, &reg, "no power/toughness");
+
+    // Half a P/T box is no better: the death rules need both numbers, so
+    // either one missing is the violation.
+    for (power, toughness) in [(Some(2), None), (None, Some(2))] {
+        let mut s = game_at_step(Step::PrecombatMain, P0);
+        let half = named_permanent(&mut s, &reg, "Forest", P0);
+        s.get_object_mut(half).unwrap().card_types.push(CardType::Creature);
+        s.get_object_mut(half).unwrap().power = power;
+        s.get_object_mut(half).unwrap().toughness = toughness;
+        assert_flags(&s, &reg, "no power/toughness");
+    }
 }
 
 #[test]
@@ -612,4 +637,240 @@ fn incoherent_prompts_and_stashes_are_flagged() {
     assert!(state.pending_spell_cast.is_some(), "setup: the cast is stashed");
     state.awaiting_action = None;
     assert_flags(&state, &reg, "leak");
+}
+
+/// Every kind of prompt that can be raised with an empty list is a stuck
+/// game, not just the target picker. Each arm of the `empty` match is its
+/// own clause; the suite pinned only `ChooseTarget`.
+#[test]
+fn every_kind_of_empty_prompt_is_flagged() {
+    use mtg_engine::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut base = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut base, P0, 1, 1);
+
+    let empties = [
+        ("a target picker", K::ChooseTarget {
+            description: "pick".into(),
+            options: vec![],
+            optional: false,
+            effect: PendingEffect::CardEffect { source_id: src, key: String::new() },
+        }),
+        ("cards looked at", K::ChooseFromLookedAt {
+            description: "keep one".into(),
+            looked_at: vec![],
+        }),
+        ("a discard", K::ChooseCardFromHand {
+            description: "discard".into(),
+            player: P0,
+            cards: vec![],
+            discard_immediately: true,
+            remaining: 1,
+        }),
+        ("a trigger order", K::ChooseTriggerOrder {
+            description: "order".into(),
+            options: vec![],
+            ap_queue: true,
+            indices: vec![],
+        }),
+        ("a damage assignment order", K::ChooseDamageAssignmentOrder {
+            description: "order".into(),
+            attacker: src,
+            remaining: vec![],
+            options: vec![],
+        }),
+        ("a pile division", K::DividePermanentsIntoPiles {
+            description: "divide".into(),
+            permanents: vec![],
+            target_player: P1,
+            source_id: src,
+        }),
+    ];
+
+    for (what, choice) in empties {
+        let mut state = base.clone();
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: P0, source: src, choice,
+        });
+        let v = check_settled(&state, &reg);
+        assert!(v.iter().any(|m| m.contains("nothing to choose")),
+            "{what} with an empty list is a stuck game, got: {v:?}");
+    }
+
+    // The same prompts with something in them are fine.
+    base.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: src,
+        choice: K::ChooseTriggerOrder {
+            description: "order".into(),
+            options: vec!["a".into(), "b".into()],
+            ap_queue: true,
+            indices: vec![0, 1],
+        },
+    });
+    assert!(!check_settled(&base, &reg).iter().any(|m| m.contains("nothing to choose")),
+        "a prompt with options is not a stuck game");
+}
+
+/// An X-funding prompt is answered by reaching for the stash it was raised
+/// with; without it, answering panics. The ability half of that pairing was
+/// unpinned — only the spell half had a test.
+#[test]
+fn an_ability_funding_prompt_without_its_stash_is_flagged() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut state, P0, 1, 1);
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0,
+        source: src,
+        choice: K::ChooseXFunding {
+            description: "fund".into(),
+            options: mtg_engine::funding::FundingOptions {
+                pool: std::collections::BTreeMap::new(),
+                groups: vec![],
+                max_x: 1,
+                x_discount: 0,
+            },
+            source_id: src,
+            is_ability: true,
+        },
+    });
+
+    assert_flags(&state, &reg, "no pending_ability_effect stashed");
+    assert!(!check_settled(&state, &reg).iter()
+        .any(|m| m.contains("no pending_spell_cast stashed")),
+        "an ability prompt is not missing a SPELL stash");
+}
+
+/// Every prompt names the player who has to answer it, and a prompt
+/// addressed to a seat that does not exist is unanswerable — the game is
+/// stuck and, worse, reading through the id panics.
+#[test]
+fn a_prompt_addressed_to_no_one_is_flagged() {
+    use mtg_engine::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut base = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut base, P0, 1, 1);
+    let ghost = mtg_engine::ids::PlayerId(u8::try_from(base.players.len()).unwrap());
+
+    // A resolution choice.
+    let mut state = base.clone();
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: ghost,
+        source: src,
+        choice: K::ChooseTarget {
+            description: "pick".into(),
+            options: vec![Target::Object(src)],
+            optional: false,
+            effect: PendingEffect::CardEffect { source_id: src, key: String::new() },
+        },
+    });
+    assert_flags(&state, &reg, "awaiting_action prompts out-of-range p2");
+
+    // And each of the three prompts that share the guarded arm.
+    for (what, awaiting) in [
+        ("a mulligan", AwaitingAction::MulliganDecision { player: ghost }),
+        ("bottoming after a mulligan", AwaitingAction::BottomAfterMulligan {
+            player: ghost, count: 1 }),
+        ("a discard to hand size", AwaitingAction::DiscardToHandSize {
+            player: ghost, discard_count: 1 }),
+    ] {
+        let mut state = base.clone();
+        state.awaiting_action = Some(awaiting);
+        let v = check_settled(&state, &reg);
+        assert!(v.iter().any(|m| m.contains("awaiting_action prompts out-of-range p2")),
+            "{what} addressed to a seat that does not exist, got: {v:?}");
+    }
+
+    // The same prompts addressed to a real seat say nothing.
+    let mut state = base.clone();
+    state.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P1 });
+    assert!(!check_settled(&state, &reg).iter().any(|m| m.contains("out-of-range")),
+        "a mulligan prompt for a real seat is fine");
+}
+
+/// The checker runs on states that are already corrupt — that is its job —
+/// so every id it reads through is range-checked first. A player id one
+/// past the end is the case that turns a missing check into a panic instead
+/// of a message.
+#[test]
+fn a_player_id_past_the_last_seat_is_reported_not_dereferenced() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ghost = mtg_engine::ids::PlayerId(u8::try_from(state.players.len()).unwrap());
+
+    state.num_spells_cast_this_turn.insert(ghost, 1);
+    assert_flags(&state, &reg, "spell count for p2 who is not a player");
+
+    // A life-change event for a seat that does not exist: the last-link
+    // check has to range-check before it compares against that seat's life.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.events.push(mtg_engine::events::GameEvent::LifeChanged {
+        player: ghost, old: 20, new_life: 18 });
+    let v = check_settled(&state, &reg);
+    assert!(!v.iter().any(|m| m.contains("last LifeChanged says")),
+        "a seat that does not exist has no life to disagree with, got: {v:?}");
+}
+
+/// Everything in the stack zone is accounted for by exactly one thing: a
+/// stack entry, the resolution in progress, or the cast still being paid
+/// for — and the cast that excuses it has to be the cast OF it.
+#[test]
+fn a_half_cast_spell_excuses_only_itself_from_the_stack_zone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+    let decoy = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+    for _ in 0..2 {
+        named_permanent(&mut state, &reg, "Mountain", P0);
+    }
+    let _ = ready_creature(&mut state, P1, 2, 2);
+
+    let cast = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, mtg_engine::actions::Action::CastSpell { object_id, .. } if *object_id == dp))
+        .expect("Devil's Play castable");
+    let mut state = mtg_engine::engine::submit_action(&state, &cast, &reg);
+    assert!(state.pending_spell_cast.is_some(), "setup: the cast is stashed");
+
+    // A cast that is still being paid for can have the card in the stack
+    // zone already — it is on no stack entry until the payment completes.
+    state.get_object_mut(dp).unwrap().zone = Zone::Stack;
+    assert!(!state.stack.iter().any(|e| e.as_spell() == Some(dp)),
+        "setup: and is on no stack entry yet");
+    assert!(!check_core(&state, &reg).iter()
+        .any(|m| m.contains("in stack zone but on no stack entry")),
+        "the cast in progress accounts for it");
+
+    // The same spell in the stack zone with the stash naming a different
+    // card is unaccounted for.
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().object_id = decoy;
+    assert_flags(&s, &reg, "in stack zone but on no stack entry");
+}
+
+/// CR 704.3: state-based actions look at permanents on the battlefield.
+/// A creature card anywhere else has no toughness to die of, however small
+/// its characteristic-defining ability makes it.
+#[test]
+fn a_zero_toughness_creature_card_off_the_battlefield_is_not_a_dead_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Geist-Honored Monk's P/T is the number of creatures you control
+    // (CR 208.2), so with an empty battlefield the card in the graveyard
+    // reads 0/0 — a size no permanent could survive.
+    let card_id = reg.get_id_by_name("Geist-Honored Monk").unwrap();
+    let monk = state.create_object(card_id, P0, Zone::Graveyard, Some(0), Some(0));
+    state.get_object_mut(monk).unwrap().name = "Geist-Honored Monk".into();
+    assert_eq!(state.effective_toughness(monk, &reg), Some(0),
+        "setup: the CDA reads 0 with no creatures on the battlefield");
+    assert!(state.is_creature(monk, &reg), "setup: it is still a creature card");
+
+    let v = check_settled(&state, &reg);
+    assert!(!v.iter().any(|m| m.contains("alive at toughness")),
+        "a creature card in the graveyard is not a permanent the death check \
+         applies to, got: {v:?}");
 }
