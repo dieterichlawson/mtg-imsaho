@@ -407,6 +407,78 @@ fn an_unnamed_exile_cost_is_only_payable_with_enough_of_the_right_cards() {
     }), "CREATURE cards: three instants will not do");
 }
 
+/// "As an additional cost to cast this spell, exile X cards from your
+/// graveyard" — Harvest Pyre, where X is the damage and the cost at once.
+/// What is named has to be really available (CR 601.2h): cards in YOUR
+/// graveyard, each named once, and never the spell itself, which CR 601.2a
+/// has already moved to the stack.
+#[test]
+fn an_exile_x_cost_takes_named_cards_only_from_your_own_graveyard() {
+    let submit = |name_them: &dyn Fn(&GameState, ObjectId, ObjectId, ObjectId) -> Vec<ObjectId>| {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let mine = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+        let other = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
+        let theirs = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+        let victim = ready_creature(&mut state, P1, 2, 5);
+        let pyre = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+        let ids = name_them(&state, mine, other, theirs);
+        let after = mtg_engine::engine::submit_action(&state, &Action::CastSpell {
+            object_id: pyre,
+            targets: vec![Target::Object(victim)],
+            sacrifice: None,
+            exile_count: Some(u32::try_from(ids.len()).unwrap()),
+            exile_ids: ids,
+            alternative_cost: None,
+            tap_plan: vec![],
+        }, &reg);
+        (after.get_object(pyre).map(|o| o.zone), after)
+    };
+
+    let (zone, after) = submit(&|_, mine, other, _| vec![mine, other]);
+    assert_eq!(zone, Some(Zone::Stack), "two cards from your own graveyard is a legal X=2");
+    assert!(after.objects.values()
+        .filter(|o| o.zone == Zone::Exile && o.owner == P0).count() == 2,
+        "and they are the ones exiled");
+
+    let (zone, _) = submit(&|_, mine, _, theirs| vec![mine, theirs]);
+    assert_eq!(zone, Some(Zone::Hand),
+        "an opponent's graveyard card is not yours to exile, so the cast did not happen");
+
+    let (zone, _) = submit(&|_, mine, _, _| vec![mine, mine]);
+    assert_eq!(zone, Some(Zone::Hand),
+        "the same card named twice is one card, not two (CR 601.2h)");
+
+    // And with nothing named the engine takes them itself, from the same
+    // graveyard the rule says: an X of 2 exiles two of the caster's cards and
+    // leaves the opponent's where it is.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // The opponent's card is created FIRST, so it sorts ahead of the caster's
+    // in the id order the picker walks: a filter that let it through would
+    // take it before reaching either of theirs.
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
+    let victim = ready_creature(&mut state, P1, 2, 5);
+    let pyre = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+    let after = mtg_engine::engine::submit_action(&state, &Action::CastSpell {
+        object_id: pyre,
+        targets: vec![Target::Object(victim)],
+        sacrifice: None,
+        exile_count: Some(2),
+        exile_ids: vec![],
+        alternative_cost: None,
+        tap_plan: vec![],
+    }, &reg);
+    assert_eq!(after.get_object(pyre).map(|o| o.zone), Some(Zone::Stack),
+        "two cards were there to take");
+    assert_eq!(after.objects_in_zone(Zone::Graveyard, P0).len(), 0,
+        "both of the caster's cards went");
+    assert_eq!(after.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "and the opponent's did not: it was never a candidate");
+}
+
 /// CR 601.2h: a cast whose submitted funding (pool + tap plan) cannot pay the
 /// mana cost is refused with the state untouched. The engine used to panic
 /// here ("legal_actions should have verified mana availability") — but neither

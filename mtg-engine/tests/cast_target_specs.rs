@@ -217,3 +217,31 @@ fn up_to_n_offers_the_same_candidates_as_one() {
             "the single-target spell offers it too: {single:?}");
     }
 }
+
+/// CR 601.2b: the mode is chosen as the spell is cast, and the spell on the
+/// stack records which one — the invariant checker asks it back, and a
+/// resolution that depended on the mode would read it there.
+///
+/// The engine reads the mode off the targets rather than being told it,
+/// because neither client sends one: it takes the first mode whose candidates
+/// contain everything named. Ghoulcaller's Chant is "return target creature
+/// card from your graveyard" or "return two target Zombie creature cards",
+/// so one Zombie is mode one and two Zombies is mode two.
+#[test]
+fn a_modal_spells_chosen_mode_is_read_back_off_its_targets() {
+    let (mut state, reg) = base();
+    let a = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let b = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+
+    let mode_for = |targets: Vec<Target>| {
+        let after = mtg_engine::engine::submit_action(
+            &state, &cast_action(chant, targets), &reg);
+        after.get_object(chant).expect("on the stack").chosen_mode
+    };
+
+    assert_eq!(mode_for(vec![Target::Object(a)]), Some(0),
+        "one creature card is the first mode");
+    assert_eq!(mode_for(vec![Target::Object(a), Target::Object(b)]), Some(1),
+        "two Zombie cards is the second — and only the second can hold both");
+}

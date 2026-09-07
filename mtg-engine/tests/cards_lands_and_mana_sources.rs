@@ -911,6 +911,32 @@ fn stony_silence_blocks_artifact_mana_abilities() {
     assert!(!has_mana_ability, "Sol Ring mana ability should be blocked by Stony Silence");
 }
 
+/// The same rule, one layer down: the autotap planner gathers the sources it
+/// may tap, and an artifact is not one of them under Stony Silence.
+///
+/// A separate list from the one above — `legal_actions` offers the mana
+/// ability, and `gather_mana_sources` decides what a spell's tap plan may
+/// reach — so the guard is written twice and only one copy was asserted. With
+/// the other one inverted, an artifact funds nothing even with no Stony
+/// Silence in play, and a Sol Ring on an otherwise empty board casts nothing.
+#[test]
+fn the_tap_planner_reaches_an_artifact_unless_stony_silence_says_otherwise() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+    named_permanent(&mut state, &reg, "Sol Ring", P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    // {3}: one Forest plus the two the Sol Ring makes, and not otherwise.
+    let spell = spell_in_hand(&mut state, &reg, "Butcher's Cleaver", P0);
+
+    assert!(can_cast(&state, &reg, spell),
+        "the plan taps the Forest and the Sol Ring — no floating mana needed");
+
+    named_permanent(&mut state, &reg, "Stony Silence", P0);
+    assert!(!can_cast(&state, &reg, spell),
+        "and under Stony Silence the Forest alone is one mana short");
+}
+
 #[test]
 fn stony_silence_does_not_block_non_artifact_mana() {
     // Stony Silence should NOT affect non-artifact mana abilities (lands, creatures).

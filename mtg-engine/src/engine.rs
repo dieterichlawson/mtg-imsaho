@@ -40,6 +40,7 @@ pub(crate) use mana_sources::{
     gather_mana_sources, plan_autotap_for_cost, prevents_artifact_abilities,
 };
 pub(crate) use targeting::{
+    arity_ok,
     matches_target_filter,
     build_cast_target_spec, combinations, detect_modal_choice_mode, generate_ability_targets,
     generate_cast_actions_with_targets,

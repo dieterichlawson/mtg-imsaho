@@ -61,6 +61,9 @@ pub(crate) fn detect_modal_choice_mode(
     // For non-empty targets, find the first mode whose valid targets contain all chosen targets.
     if !targets.is_empty() {
         for (i, mode_req) in modes.iter().enumerate() {
+            if !arity_ok(mode_req, targets.len()) {
+                continue;
+            }
             let valid = valid_targets_for_req(state, caster, spell_id, mode_req, behavior, registry);
             if targets.iter().all(|t| valid.contains(t)) {
                 return i;
@@ -70,6 +73,25 @@ pub(crate) fn detect_modal_choice_mode(
     // For empty targets (or no mode matched), default to mode 0.
     0
 }
+/// Whether `n` chosen targets is a count the requirement allows (CR 601.2c).
+///
+/// The counting half of the vocabulary, beside the half that decides the
+/// candidates. `detect_modal_choice_mode` reads a cast's mode back off its
+/// targets and needs both — "return target creature card" and "return two
+/// target Zombie cards" can name the same two cards, and only the number
+/// tells them apart — and the stack invariant asks the same question of a
+/// spell already on it.
+pub(crate) fn arity_ok(req: &crate::cards::TargetRequirement, n: usize) -> bool {
+    use crate::cards::TargetRequirement as R;
+    match req {
+        R::None => n == 0,
+        R::UpToTargets(k, _) => n <= *k,
+        R::TwoTargets(a, b) => (0..=n).any(|x| arity_ok(a, x) && arity_ok(b, n - x)),
+        R::ModalChoice(modes) => modes.iter().any(|m| arity_ok(m, n)),
+        _ => n == 1,
+    }
+}
+
 /// The requirement that decides the *candidates*, with any "up to N" peeled
 /// off.
 ///
@@ -576,6 +598,27 @@ pub(crate) fn valid_targets_for_req(
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
+        }
+        // Two instances of the word "target" name two things, and what this
+        // answers is "which things could either of them name" — the union of
+        // the two slots. Whether a particular pair is legal is a positional
+        // question that `targets_are_legal` answers slot by slot, and how the
+        // pairs are enumerated is `generate_cast_actions_with_targets`'s job;
+        // both match `TwoTargets` themselves before reaching here.
+        //
+        // Falling through to the catch-all returned nothing, and the one
+        // caller that hands a `TwoTargets` down whole read that as "no legal
+        // target": `detect_modal_choice_mode` could never recognise
+        // Ghoulcaller's Chant's second mode, so a Chant returning two Zombies
+        // recorded itself as the one-card mode (CR 601.2b).
+        TargetRequirement::TwoTargets(first, second) => {
+            let mut targets = valid_targets_for_req(state, caster, spell_id, first, behavior, registry);
+            for t in valid_targets_for_req(state, caster, spell_id, second, behavior, registry) {
+                if !targets.contains(&t) {
+                    targets.push(t);
+                }
+            }
+            targets
         }
         // "Up to N target X" offers the same candidates as "target X" — CR
         // 601.2c chooses the number of targets first and then the targets

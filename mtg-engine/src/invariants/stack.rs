@@ -26,16 +26,7 @@ fn check_targets(state: &GameState, what: &str, targets: &[Target], v: &mut Viol
     }
 }
 
-/// Whether `n` chosen targets is a count the requirement allows (CR 601.2c).
-pub(super) fn arity_ok(req: &TargetRequirement, n: usize) -> bool {
-    match req {
-        TargetRequirement::None => n == 0,
-        TargetRequirement::UpToTargets(k, _) => n <= *k,
-        TargetRequirement::TwoTargets(a, b) => (0..=n).any(|x| arity_ok(a, x) && arity_ok(b, n - x)),
-        TargetRequirement::ModalChoice(modes) => modes.iter().any(|m| arity_ok(m, n)),
-        _ => n == 1,
-    }
-}
+pub(super) use crate::engine::arity_ok;
 
 fn check_trigger(state: &GameState, registry: &CardRegistry, where_: &str, t: &PendingTrigger, v: &mut Violations) {
     let src = &t.source;
