@@ -460,9 +460,24 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.stack.push(crate::state::StackEntry::Spell(pending.object_id));
 
                         // Step 6: fire SpellCast + bookkeeping.
+                        let printed = state.face_data(pending.object_id, registry)
+                            .and_then(|d| d.cost.clone());
+                        let payment = crate::engine::effects::CastPayment {
+                            is_flashback: pending.is_flashback,
+                            alternative: match (&pending.alternative_cost, pending.is_flashback) {
+                                (Some(c), false) => Some(c),
+                                _ => None,
+                            },
+                            // The stashed cost is the non-X portion, already
+                            // reduced; the X the player just announced is
+                            // reported on its own.
+                            printed: printed.as_ref(),
+                            paid: None,
+                            x: Some(x),
+                        };
                         finalize_spell_cast(
                             &mut *state, player, pending.object_id,
-                            pending.is_flashback, &pending.targets, registry,
+                            &payment, &pending.targets, registry,
                         );
                     }
                 }

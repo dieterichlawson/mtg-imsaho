@@ -300,6 +300,18 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                 obj.x_value = Some(0);
             }
         }
-        finalize_spell_cast(&mut *state, player, object_id, is_flashback, targets, registry);
+        // What the log says about the cost paid (CR 601.2b/601.2f/118.9).
+        let printed = state.face_data(object_id, registry).and_then(|d| d.cost.clone());
+        let payment = crate::engine::effects::CastPayment {
+            is_flashback,
+            alternative: match &method {
+                CastMethod::Alternative(c) if !is_flashback => Some(c),
+                _ => None,
+            },
+            printed: printed.as_ref(),
+            paid: Some(&cost),
+            x: if has_x { Some(0) } else { None },
+        };
+        finalize_spell_cast(&mut *state, player, object_id, &payment, targets, registry);
     Applied::Continue
 }

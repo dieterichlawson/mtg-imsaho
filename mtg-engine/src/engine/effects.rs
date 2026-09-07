@@ -14,7 +14,7 @@ pub(crate) fn finalize_spell_cast(
     state: &mut GameState,
     player: PlayerId,
     object_id: ObjectId,
-    is_flashback: bool,
+    payment: &CastPayment,
     targets: &[crate::actions::Target],
     registry: &CardRegistry,
 ) {
@@ -26,7 +26,7 @@ pub(crate) fn finalize_spell_cast(
     *state.num_spells_cast_this_turn.entry(player).or_insert(0) += 1;
 
     let name = card_name(state, registry, object_id);
-    let suffix = if is_flashback { " (flashback)" } else { "" };
+    let suffix = payment.annotation();
     let target_str = if targets.is_empty() {
         String::new()
     } else {
@@ -40,6 +40,64 @@ pub(crate) fn finalize_spell_cast(
     };
     state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
     state.consecutive_passes = 0;
+}
+
+/// Which cost a spell was actually cast for, for the one line the log writes
+/// about the cast.
+///
+/// Flashback was annotated and every other alternative cost was not, so a
+/// Rooftop Storm free cast read exactly like a paid one — the only difference
+/// in the log was the *absence* of `p0 tapped <land> for mana` lines, which is
+/// no signal at all when the caster had floating mana (issue #264). A cost
+/// reduction had the same weakness in a milder form: the reader had to count
+/// the tap lines to notice the {2} came off.
+#[derive(Debug, Default)]
+pub(crate) struct CastPayment<'a> {
+    /// Cast from the graveyard for its flashback cost (CR 702.34a), itself an
+    /// alternative cost — kept separate because it has a name players use.
+    pub is_flashback: bool,
+    /// The alternative cost that replaced the mana cost (CR 601.2b, 118.9).
+    pub alternative: Option<&'a crate::types::ManaCost>,
+    /// The printed mana cost, and what was actually paid, when a cost
+    /// reduction (CR 601.2f) made the two differ.
+    pub printed: Option<&'a crate::types::ManaCost>,
+    pub paid: Option<&'a crate::types::ManaCost>,
+    /// The announced value of X (CR 601.2b), when the spell had one.
+    pub x: Option<u32>,
+}
+
+impl CastPayment<'_> {
+    /// The parenthetical the cast line carries: `" (flashback)"`,
+    /// `" (alternative cost {0})"`, `" (paid {3}{U}, reduced from {5}{U})"`,
+    /// `" (X=3)"` — or nothing, for a plain cast at the printed cost.
+    fn annotation(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if self.is_flashback {
+            parts.push("flashback".to_string());
+        } else if let Some(alt) = self.alternative {
+            // CR 118.9 distinguishes paying {0} from casting without paying
+            // the mana cost, so print the cost rather than a phrase: Rooftop
+            // Storm's is literally "you may pay {0}".
+            let rendered = alt.to_string();
+            parts.push(if rendered.is_empty() {
+                "alternative cost {0}".to_string()
+            } else {
+                format!("alternative cost {rendered}")
+            });
+        } else if let (Some(printed), Some(paid)) = (self.printed, self.paid) {
+            if printed != paid {
+                parts.push(format!("paid {paid}, reduced from {printed}"));
+            }
+        }
+        if let Some(x) = self.x {
+            parts.push(format!("X={x}"));
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", parts.join(", "))
+        }
+    }
 }
 /// Complete a suspended spell resolution once its choice chain has finished.
 ///
