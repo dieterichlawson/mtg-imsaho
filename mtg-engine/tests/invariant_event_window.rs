@@ -622,3 +622,106 @@ fn a_turn_start_finds_the_board_reset() {
     s.events = vec![GameEvent::TurnStarted { player: P1, turn: 3 }];
     flags(&s, &reg, "p0 is active on turn 3 in Upkeep");
 }
+
+/// CR 506.2/506.3/508.1: what an `AttackersDeclared` event says about each
+/// creature it names — whom it attacks, that combat knows it, that it is a
+/// creature its controller controls, and that the declaration stamped it.
+#[test]
+fn an_attackers_declared_event_describes_a_legal_attack() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.priority_player = Some(P0);
+    clean(&state, &reg);
+
+    // A declaration with no combat at all.
+    let mut s = state.clone();
+    s.combat = None;
+    flags(&s, &reg, "AttackersDeclared but no combat state");
+
+    // CR 506.2: an attack is at the defending player.
+    let mut s = state.clone();
+    s.events = vec![GameEvent::AttackersDeclared { attackers: vec![(attacker, P0)] }];
+    flags(&s, &reg, "attacks p0, not the defending player (CR 506.2)");
+
+    // Combat's own map knows it.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().attackers.remove(&attacker);
+    flags(&s, &reg, "is not in combat");
+
+    // CR 508.1: the declaration stamps the turn it attacked on.
+    let mut s = state.clone();
+    s.get_object_mut(attacker).unwrap().attacked_on_turn = None;
+    flags(&s, &reg, "is not stamped as attacking this turn (CR 508.1)");
+
+    // CR 508.1a: an attacker is its controller's own.
+    let mut s = state.clone();
+    s.get_object_mut(attacker).unwrap().controller = P1;
+    flags(&s, &reg, "is controlled by p1 (CR 508.1a)");
+
+    // CR 506.3: and it is a creature.
+    let mut s = state.clone();
+    let land = named_permanent(&mut s, &reg, "Forest", P0);
+    s.get_object_mut(land).unwrap().attacked_on_turn = Some(s.turn_number);
+    s.get_object_mut(land).unwrap().tapped = true;
+    s.combat.as_mut().unwrap().attackers.insert(land, P1);
+    s.events.push(GameEvent::Tapped { object: land });
+    s.events = s.events.iter().cloned().map(|e| match e {
+        GameEvent::AttackersDeclared { mut attackers } => {
+            attackers.push((land, P1));
+            GameEvent::AttackersDeclared { attackers }
+        }
+        other => other,
+    }).collect();
+    flags(&s, &reg, "is not a creature (CR 506.3)");
+
+    // CR 508.1c: nothing that can't attack was declared.
+    let mut s = state.clone();
+    s.get_object_mut(attacker).unwrap().instance_continuous_effects = Some(vec![
+        ContinuousEffect::PreventAttack { scope: EffectScope::OnSelf },
+    ]);
+    flags(&s, &reg, "can't attack (CR 508.1c)");
+}
+
+/// CR 509.1a/509.1b/702.9b/702.13b/702.16f: an evasion ability a blocker
+/// cannot answer makes the declared block illegal.
+#[test]
+fn a_block_that_evasion_forbids_is_flagged() {
+    let reg = registry();
+
+    let blocked = |grant: Option<Keyword>| {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.turn_number = 3;
+        // A green attacker and a white blocker, so they share no color and
+        // intimidate has something to say (CR 702.13b).
+        let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+        let blocker = named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+        state.step = Step::DeclareAttackers;
+        submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+        state.step = Step::DeclareBlockers;
+        submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
+        state.priority_player = Some(P0);
+        // Granted after the declaration: the engine would refuse to declare
+        // the block, and the clause exists to catch a block that became
+        // illegal some other way.
+        if let Some(kw) = grant {
+            grant_keyword(&mut state, attacker, kw);
+        }
+        (state, blocker)
+    };
+
+    let (clean_state, blocker) = blocked(None);
+    quiet_about(&clean_state, &reg, "declared block");
+
+    let (s, _) = blocked(Some(Keyword::Flying));
+    flags(&s, &reg, "a flier blocked by neither flying nor reach (CR 702.9b)");
+
+    let (s, _) = blocked(Some(Keyword::Intimidate));
+    flags(&s, &reg, "intimidate blocked by a non-artifact sharing no color (CR 702.13b)");
+
+    // A blocker that is tapped is no blocker at all (CR 509.1a).
+    let (mut s, _) = blocked(None);
+    s.get_object_mut(blocker).unwrap().tapped = true;
+    flags(&s, &reg, "blocker is tapped (CR 509.1a)");
+}
