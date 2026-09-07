@@ -1942,7 +1942,16 @@ impl CliPlayer {
 
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
-    fn run_card_search(view: &GameView, actions: &[MenuLabel], menu_offset: usize) {
+    /// `message` is the prompt's own header — the pending notice, or
+    /// `legal.context`, or a chooser's title. It used to be dropped while the
+    /// search box was open: the rule above the option list went blank, which
+    /// at an ordinary priority menu costs the step name and at a mandatory
+    /// prompt costs the question itself, since the description is the only
+    /// thing on screen saying what the numbered rows are for (issue #327).
+    /// The search overlay changes what is in the CARDS gutter, not what the
+    /// game is asking.
+    fn run_card_search(view: &GameView, actions: &[MenuLabel], message: Option<&str>,
+                       menu_offset: usize) {
         // The search box is part of the right panel, which is only drawn at
         // >= 100 columns. Entering search mode on a narrower terminal showed
         // nothing at all and silently swallowed every keystroke until an
@@ -1966,7 +1975,7 @@ impl CliPlayer {
 
         loop {
             // Re-render with current filter
-            let _ = Self::render_paged(view, Some(actions), None, &view.display_log, &card_filter, None, menu_offset);
+            let _ = Self::render_paged(view, Some(actions), message, &view.display_log, &card_filter, None, menu_offset);
 
             // Move actual cursor to the search box in the right gutter
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -2265,7 +2274,7 @@ impl CliPlayer {
                         'd' => Self::show_deck_browser(view),
                         'i' => Self::show_battlefield_inspector(view),
                         's' => Self::show_stack(view),
-                        _ => Self::run_card_search(view, &labels, menu_offset),
+                        _ => Self::run_card_search(view, &labels, Some(&title), menu_offset),
                     }
                 }
                 // A silent re-render is indistinguishable from a hung game —
@@ -5330,7 +5339,7 @@ impl Player for CliPlayer {
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {
-                Self::run_card_search(view, &display_labels, menu_offset);
+                Self::run_card_search(view, &display_labels, context.as_deref(), menu_offset);
                 continue;
             }
             let input = input.unwrap();

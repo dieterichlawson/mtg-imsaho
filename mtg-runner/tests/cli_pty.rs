@@ -170,6 +170,14 @@ impl PtyGame {
         }
     }
 
+    /// Forget everything read so far, so the next `expect` searches only
+    /// what arrives from here on. Needed to assert that something is drawn
+    /// *again* — `expect` searches the whole history, and a header that was
+    /// on screen a moment ago would satisfy it whether or not it survived.
+    fn forget(&mut self) {
+        self.seen.clear();
+    }
+
     /// Drain quietly for `window`, then assert the stream does NOT contain
     /// `needle` — for "this input must have done nothing" checks.
     fn expect_absent(&mut self, needle: &str, window: Duration) {
@@ -253,6 +261,32 @@ fn boots_answers_prompts_and_recovers_from_junk() {
     g.expect("[enter=pass]", T);
 
     // Ctrl-C exits promptly and cleanly.
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
+/// Issue #327: opening the `/` card search redrew the frame with the menu's
+/// header dropped, so the rule above the option list went blank. At a
+/// priority menu that costs the step name; at a mandatory prompt with no
+/// Pass option it costs the question itself, because the header is the only
+/// thing on screen saying what the numbered rows are for. The overlay
+/// changes what is in the CARDS gutter, not what the game is asking.
+#[test]
+fn the_card_search_keeps_the_header_of_the_prompt_under_it() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+    g.expect("MAIN PHASE", T);
+
+    // From here on, only the search overlay's own repaint counts: the header
+    // was on screen a moment ago, and that is not what is being asked.
+    g.forget();
+    g.answer("/");
+    g.expect("MAIN PHASE", T);
+
+    g.send("\x1b");
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
