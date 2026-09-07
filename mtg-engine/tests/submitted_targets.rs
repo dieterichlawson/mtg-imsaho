@@ -20,6 +20,8 @@
 mod common;
 
 use common::*;
+use mtg_engine::cards::CardRegistry;
+use mtg_engine::state::GameState;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::types::*;
 
@@ -363,6 +365,46 @@ fn an_exile_cost_cannot_be_paid_from_an_opponents_graveyard() {
         "their card stays in their graveyard");
     assert_eq!(state.get_object(spell).unwrap().zone, Zone::Hand,
         "the cast did not happen");
+}
+
+/// The same cost with nothing named: "exile three creature cards from your
+/// graveyard" submitted with an empty `exile_ids`, which is how a client asks
+/// the engine to take them. CR 601.2h still applies — the cast happens only
+/// if there are three cards it could take — and each word of "three creature
+/// cards from YOUR graveyard" gets a board where it is the only thing
+/// standing in the way.
+#[test]
+fn an_unnamed_exile_cost_is_only_payable_with_enough_of_the_right_cards() {
+    let cast_gets_as_far_as_the_cost = |fill: &dyn Fn(&mut GameState, &CardRegistry)| {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+        fill(&mut state, &reg);
+        state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+        let after = mtg_engine::engine::submit_action(
+            &state, &cast_action(ruinator, vec![]), &reg);
+        // A payable cost asks which three cards to exile (the client answers
+        // with a `ChosenExileSet`); an unpayable one refuses the cast, leaving
+        // the state exactly as it was.
+        after.awaiting_action.is_some()
+    };
+
+    assert!(cast_gets_as_far_as_the_cost(&|s, reg| {
+        for _ in 0..3 { named_card_in_graveyard(s, reg, "Walking Corpse", P0); }
+    }), "three creature cards in your own graveyard pays it");
+
+    assert!(!cast_gets_as_far_as_the_cost(&|s, reg| {
+        for _ in 0..2 { named_card_in_graveyard(s, reg, "Walking Corpse", P0); }
+    }), "two does not — and the Ruinator itself is on the stack, not a third");
+
+    assert!(!cast_gets_as_far_as_the_cost(&|s, reg| {
+        for _ in 0..3 { named_card_in_graveyard(s, reg, "Walking Corpse", P1); }
+    }), "YOUR graveyard: an opponent's creature cards are not yours to exile");
+
+    assert!(!cast_gets_as_far_as_the_cost(&|s, reg| {
+        for _ in 0..3 { named_card_in_graveyard(s, reg, "Geistflame", P0); }
+    }), "CREATURE cards: three instants will not do");
 }
 
 /// CR 601.2h: a cast whose submitted funding (pool + tap plan) cannot pay the

@@ -12,6 +12,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
+use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
 // ── System tests: flashback mechanics ──────────────────────────────
@@ -126,6 +127,55 @@ fn a_cast_from_graveyard_is_not_labelled_as_flashback() {
         .expect("Skaab Ruinator is castable from its owner's graveyard");
     assert!(entry.from_graveyard, "it is offered as a cast from the graveyard");
     assert!(!entry.is_flashback, "and it is not flashback: nothing exiles it afterwards");
+}
+
+/// "As an additional cost to cast this spell, exile three creature cards from
+/// your graveyard" (CR 601.2h). Each word of that counts the candidates, and
+/// the count decides whether the spell is offered at all — so each word gets a
+/// board where it is the only thing standing in the way.
+#[test]
+fn skaab_ruinators_additional_cost_counts_three_of_your_own_creature_cards() {
+    let ruinator_is_offered = |setup: &dyn Fn(&mut GameState, &CardRegistry) -> ObjectId| {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let ruinator = setup(&mut state, &reg);
+        state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+        mtg_engine::engine::legal_actions(&state, &reg).castable_spells
+            .iter().any(|c| c.object_id == ruinator)
+    };
+
+    assert!(ruinator_is_offered(&|s, reg| {
+        let r = named_card_in_graveyard(s, reg, "Skaab Ruinator", P0);
+        for _ in 0..3 { named_card_in_graveyard(s, reg, "Walking Corpse", P0); }
+        r
+    }), "three creature cards in your own graveyard is the cost");
+
+    assert!(!ruinator_is_offered(&|s, reg| {
+        let r = named_card_in_graveyard(s, reg, "Skaab Ruinator", P0);
+        for _ in 0..2 { named_card_in_graveyard(s, reg, "Walking Corpse", P0); }
+        r
+    }), "two is not three");
+
+    assert!(!ruinator_is_offered(&|s, reg| {
+        let r = named_card_in_graveyard(s, reg, "Skaab Ruinator", P0);
+        for _ in 0..3 { named_card_in_graveyard(s, reg, "Walking Corpse", P1); }
+        r
+    }), "YOUR graveyard — an opponent's creature cards are not yours to exile");
+
+    assert!(!ruinator_is_offered(&|s, reg| {
+        let r = named_card_in_graveyard(s, reg, "Skaab Ruinator", P0);
+        for _ in 0..3 { named_card_in_graveyard(s, reg, "Geistflame", P0); }
+        r
+    }), "CREATURE cards — three instants will not do");
+
+    // And the Ruinator does not pay for itself: it is a creature card in that
+    // same graveyard, and CR 601.2a has already moved it to the stack.
+    assert!(!ruinator_is_offered(&|s, reg| {
+        let r = named_card_in_graveyard(s, reg, "Skaab Ruinator", P0);
+        for _ in 0..2 { named_card_in_graveyard(s, reg, "Walking Corpse", P0); }
+        r
+    }), "two others plus itself is still two");
 }
 
 /// A card with flashback in hand is an ordinary card: cast for {R}, resolved

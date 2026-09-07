@@ -394,6 +394,41 @@ fn a_flashback_cast_still_says_flashback() {
         "flashback is named once, not twice; got {cast_line:?}");
 }
 
+/// A discard that runs the hand out says so — "discard two" against a
+/// one-card hand is a discard of one, and the log is where a resumed seat or
+/// an LLM reading the recap finds out which.
+#[test]
+fn a_discard_says_when_the_hand_ran_out_under_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // "Target player discards two cards" — Brain Weevil's is the two-card ask.
+    spell_in_hand(&mut state, &reg, "Geistflame", P1);
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    state.get_object_mut(weevil).unwrap().summoning_sick = false;
+
+    mtg_engine::engine::discard_cards(&mut state, P1, 2, weevil, "Brain Weevil", &reg);
+    let lines = log_lines(&state);
+    assert!(index_of(&lines, "Brain Weevil: p1 discarded 1 of 2 — their hand ran out").is_some(),
+        "one card went and the ask was two, and the log says both: {lines:?}");
+
+    // An empty hand is its own line, not this one.
+    state.game_log.clear();
+    mtg_engine::engine::discard_cards(&mut state, P1, 2, weevil, "Brain Weevil", &reg);
+    let lines = log_lines(&state);
+    assert!(index_of(&lines, "Brain Weevil: p1 has no cards to discard").is_some(), "{lines:?}");
+    assert!(index_of(&lines, "hand ran out").is_none(),
+        "nothing ran out under a discard that never started: {lines:?}");
+
+    // And a discard that took everything it asked for carries no such aside.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    spell_in_hand(&mut state, &reg, "Geistflame", P1);
+    spell_in_hand(&mut state, &reg, "Dream Twist", P1);
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    mtg_engine::engine::discard_cards(&mut state, P1, 2, weevil, "Brain Weevil", &reg);
+    assert!(index_of(&log_lines(&state), "hand ran out").is_none(),
+        "two cards for a two-card ask: {:?}", log_lines(&state));
+}
+
 /// A mill that runs the library out says so.
 ///
 /// Issue #86: the failed draw at the end of a mill race was silent, and the

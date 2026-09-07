@@ -181,6 +181,14 @@ fn a_cost_modifier_reaches_the_spells_its_text_names() {
          "{3}{G}{G}{G} less {2} is {1}{G}{G}{G}"),
         ("Heartless Summoning", "Lightning Bolt", &[], false,
          "the reduction is for creature spells, and this is an instant"),
+        // A reduction that does not divide the generic part evenly, so
+        // "take two off five" and any other arithmetic on the same two
+        // numbers give different answers: 5 - 2 is 3, and every other way
+        // to combine 5 and 2 is not. Manor Gargoyle is {5}.
+        ("Heartless Summoning", "Manor Gargoyle", &[(ManaType::Colorless, 3)], true,
+         "{5} less {2} is {3}"),
+        ("Heartless Summoning", "Manor Gargoyle", &[(ManaType::Colorless, 2)], false,
+         "and {3} is not payable with two mana"),
         ("Rooftop Storm", "Walking Corpse", &[], true,
          "'you may pay {0} rather than pay the mana cost for Zombie creature spells'"),
         ("Rooftop Storm", "Grizzly Bears", &[], false,
