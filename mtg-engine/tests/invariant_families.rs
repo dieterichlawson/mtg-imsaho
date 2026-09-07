@@ -1853,6 +1853,12 @@ fn turn_and_result_clauses_each_have_a_violating_state() {
         .any(|m| m.contains("draw step on the first turn")),
         "a draw step on turn 3 is an ordinary draw step");
 
+    // A two-player engine has two players. (Nothing else in the state may
+    // name the seat that goes, so this is checked on a bare board.)
+    let mut s = base().0;
+    s.players.pop();
+    flags_core(&s, &reg, "1 players in a two-player engine");
+
     // CR 104.4a: a draw is a draw for every player.
     let mut s = state.clone();
     s.result = Some(mtg_engine::state::GameResult::Draw);
