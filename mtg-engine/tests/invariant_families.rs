@@ -1379,3 +1379,443 @@ fn the_whole_cost_leaves_the_pool_not_just_its_colored_part() {
     flags_transition(&prev, Some(&cast), &s, &reg, "for a total cost of");
     flags_transition(&prev, Some(&cast), &s, &reg, "(CR 601.2h)");
 }
+
+// ── the pass contract and the trigger ledger ─────────────────────────────
+
+/// The state the game loop reaches after a `PassPriority`. `submit_action`
+/// only counts the pass; moving priority, resolving the top of the stack
+/// and ending the step are the loop's half of CR 117.4, and the transition
+/// checker judges the pair together.
+fn after_pass(prev: &GameState, reg: &CardRegistry) -> GameState {
+    let mut state = mtg_engine::engine::submit_action(prev, &Action::PassPriority, reg);
+    let n = u32::try_from(prev.players.len()).unwrap_or(u32::MAX);
+    if state.consecutive_passes >= n {
+        if state.stack.is_empty() {
+            state.priority_player = None;
+            mtg_engine::engine::advance_step(&mut state, reg);
+        } else {
+            mtg_engine::stack::resolve_top_of_stack(&mut state, reg);
+            state.consecutive_passes = 0;
+            state.priority_player = Some(state.active_player);
+        }
+    } else if let Some(current) = state.priority_player {
+        state.priority_player = Some(state.next_player(current));
+    }
+    state
+}
+
+#[track_caller]
+fn no_transition_flag(prev: &GameState, action: Option<&Action>, cur: &GameState,
+                      reg: &CardRegistry, needle: &str) {
+    let v = check_transition(prev, action, cur, reg);
+    assert!(!v.iter().any(|m| m.contains(needle)),
+        "expected no transition violation containing {needle:?}, got: {v:?}");
+}
+
+/// CR 117.4: a lone pass moves priority and changes nothing else.
+///
+/// `pass_contract` is the transition checker's statement of that, and it is
+/// the clause the fuzzer leans on to notice a pass that quietly did
+/// something. Each half of its "left passes=N priority=P prompt=B" test is
+/// its own way for a pass to be wrong.
+#[test]
+fn a_lone_pass_must_move_priority_and_nothing_else() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    prev.priority_player = Some(P0);
+    prev.consecutive_passes = 0;
+    let pass = Action::PassPriority;
+    let cur = after_pass(&prev, &reg);
+    assert_eq!(cur.priority_player, Some(P1), "precondition: priority moved");
+    clean_transition(&prev, Some(&pass), &cur, &reg);
+
+    // The one event has to be the passer's own.
+    let mut s = cur.clone();
+    s.events = vec![GameEvent::PriorityPassed { player: P1 }];
+    flags_transition(&prev, Some(&pass), &s, &reg, "a lone pass by p0 produced 1 event(s)");
+
+    // Passes stand at exactly one afterwards.
+    let mut s = cur.clone();
+    s.consecutive_passes = 2;
+    flags_transition(&prev, Some(&pass), &s, &reg, "left passes=2");
+
+    // Priority is with the other player.
+    let mut s = cur.clone();
+    s.priority_player = Some(P0);
+    flags_transition(&prev, Some(&pass), &s, &reg, "priority=Some(PlayerId(0))");
+
+    // And a pass raises no prompt.
+    let mut s = cur.clone();
+    s.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+    flags_transition(&prev, Some(&pass), &s, &reg, "prompt=true");
+
+    // "Changed nothing else" is judged on a digest of the whole position,
+    // counters included — a pass that quietly grew a +1/+1 counter is
+    // exactly the corruption this clause exists to catch.
+    let mut s = cur.clone();
+    s.add_counters(bear, CounterType::PlusOnePlusOne, 1);
+    flags_transition(&prev, Some(&pass), &s, &reg, "changed the game (CR 117.4)");
+}
+
+/// CR 117.4 again, for the second pass: on an empty stack it ends the step,
+/// and over a stack it resolves the top.
+#[test]
+fn the_pass_that_empties_the_stack_must_resolve_its_top() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    add_mana(&mut prev, P0, &[(ManaType::White, 2)]);
+    prev.priority_player = Some(P0);
+    let prev = cast_onto_stack(&prev, &reg, pump, vec![Target::Object(bear)]);
+
+    // Both players have passed with the spell on the stack: this pass
+    // resolves it.
+    let mut prev = prev;
+    prev.consecutive_passes = 1;
+    prev.priority_player = Some(P0);
+    let pass = Action::PassPriority;
+    let cur = after_pass(&prev, &reg);
+    assert!(cur.stack.is_empty(), "precondition: the pass resolved the spell");
+    clean_transition(&prev, Some(&pass), &cur, &reg);
+
+    // The pass count resets.
+    let mut s = cur.clone();
+    s.consecutive_passes = 1;
+    flags_transition(&prev, Some(&pass), &s, &reg, "passes stand at 1 after everyone passed");
+
+    // The resolved spell is off the stack.
+    let mut s = cur.clone();
+    s.stack = prev.stack.clone();
+    flags_transition(&prev, Some(&pass), &s, &reg, "is still on the stack after resolving");
+
+    // Priority goes back to the active player (CR 117.3b).
+    let mut s = cur.clone();
+    s.priority_player = Some(P1);
+    flags_transition(&prev, Some(&pass), &s, &reg, "(CR 117.3b)");
+
+    // And the spell actually resolved rather than being lost.
+    let mut s = cur.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::SpellResolved { .. }));
+    s.get_object_mut(pump).unwrap().zone = Zone::Stack;
+    flags_transition(&prev, Some(&pass), &s, &reg, "left the top of the stack without resolving");
+    flags_transition(&prev, Some(&pass), &s, &reg,
+        "resolved but is still in the stack zone with no resolution in progress");
+
+    // A card still in the stack zone is fine while its resolution is in
+    // progress — that is what a prompt raised mid-resolution looks like.
+    s.resolving_spell = Some(pump);
+    no_transition_flag(&prev, Some(&pass), &s, &reg, "still in the stack zone");
+    no_transition_flag(&prev, Some(&pass), &s, &reg, "left the top of the stack without resolving");
+
+    // A spell that DID resolve and is somehow still in the stack zone is
+    // the first complaint, not the second: it did not leave without
+    // resolving, it resolved and stayed.
+    let mut s = cur.clone();
+    s.get_object_mut(pump).unwrap().zone = Zone::Stack;
+    flags_transition(&prev, Some(&pass), &s, &reg,
+        "resolved but is still in the stack zone with no resolution in progress");
+    no_transition_flag(&prev, Some(&pass), &s, &reg,
+        "left the top of the stack without resolving");
+}
+
+/// Resolution takes the top off and may remove things under it; it never
+/// adds a non-trigger entry or reorders the survivors (CR 608.2n).
+#[test]
+fn resolving_the_top_leaves_a_subsequence_of_what_was_under_it() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let first = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    let second = castable_spell(&mut prev, &reg, "Moment of Heroism", P0);
+    add_mana(&mut prev, P0, &[(ManaType::White, 4)]);
+    prev.priority_player = Some(P0);
+    let prev = cast_onto_stack(&prev, &reg, first, vec![Target::Object(bear)]);
+    let mut prev = cast_onto_stack(&prev, &reg, second, vec![Target::Object(bear)]);
+    assert_eq!(prev.stack.len(), 2, "precondition: two spells on the stack");
+
+    prev.consecutive_passes = 1;
+    prev.priority_player = Some(P0);
+    let pass = Action::PassPriority;
+    let cur = after_pass(&prev, &reg);
+    assert_eq!(cur.stack.len(), 1, "precondition: the top one resolved");
+    clean_transition(&prev, Some(&pass), &cur, &reg);
+
+    // The top left in place: not a subsequence of what was under it, and
+    // still on the stack besides.
+    let mut s = cur.clone();
+    s.stack = prev.stack.clone();
+    flags_transition(&prev, Some(&pass), &s, &reg, "(CR 608.2n)");
+}
+
+/// CR 117.4 on an empty stack: the pass walks the turn forward, and where
+/// the walk stops is where the state says it is.
+#[test]
+fn the_pass_that_ends_a_step_must_start_one() {
+    let (mut prev, reg) = base();
+    named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    prev.consecutive_passes = 1;
+    prev.priority_player = Some(P0);
+    let pass = Action::PassPriority;
+    let cur = after_pass(&prev, &reg);
+    assert_ne!(cur.step, prev.step, "precondition: the pass ended the step");
+    clean_transition(&prev, Some(&pass), &cur, &reg);
+
+    let mut s = cur.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::StepStarted { .. }));
+    flags_transition(&prev, Some(&pass), &s, &reg,
+        "everyone passed on an empty stack but no step started (CR 117.4)");
+
+    let mut s = cur.clone();
+    s.step = Step::Cleanup;
+    flags_transition(&prev, Some(&pass), &s, &reg, "the step walk ended at");
+}
+
+/// The pass contract is a statement about a pass in a game that is still
+/// running, at a point where nobody is being asked anything. Both of its
+/// stand-downs are load-bearing: a pass that ended the game changes the
+/// position by definition, and a pass with a prompt outstanding is not the
+/// second pass of a round.
+#[test]
+fn the_pass_contract_stands_down_once_the_game_is_over_or_a_prompt_is_up() {
+    let (mut prev, reg) = base();
+    named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    prev.priority_player = Some(P0);
+    prev.consecutive_passes = 0;
+    let pass = Action::PassPriority;
+
+    // The baseline: a pass that changed the position is a violation.
+    let mut s = after_pass(&prev, &reg);
+    s.get_player_mut(P1).life = 3;
+    flags_transition(&prev, Some(&pass), &s, &reg, "changed the game (CR 117.4)");
+
+    // The same change with the game over is the game ending, not a pass
+    // doing something.
+    let mut s = after_pass(&prev, &reg);
+    s.get_player_mut(P1).life = 3;
+    s.get_player_mut(P1).lost = true;
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    no_transition_flag(&prev, Some(&pass), &s, &reg, "changed the game (CR 117.4)");
+
+    // A pass while a prompt is outstanding is neither of the two passes the
+    // contract describes — not the first of a round, and not the second.
+    for passes in [0, 1] {
+        let mut p = prev.clone();
+        p.consecutive_passes = passes;
+        p.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+        let s = mtg_engine::engine::submit_action(&p, &pass, &reg);
+        no_transition_flag(&p, Some(&pass), &s, &reg, "after everyone passed");
+        no_transition_flag(&p, Some(&pass), &s, &reg, "a lone pass by");
+    }
+}
+
+/// CR 608.2/117.3b: the pass that resolves an ACTIVATED ability leaves the
+/// state agreeing with what that ability was activated with. The spell half
+/// of the same clause had a test; the ability half — the announced X and
+/// the sacrifice paid — had none.
+#[test]
+fn the_pass_that_resolves_an_ability_matches_what_it_was_activated_with() {
+    let (mut prev, reg) = base();
+    let priest = named_permanent(&mut prev, &reg, "Avacynian Priest", P0);
+    prev.get_object_mut(priest).unwrap().summoning_sick = false;
+    let victim = named_permanent(&mut prev, &reg, "Grizzly Bears", P1);
+    add_mana(&mut prev, P0, &[(ManaType::White, 1)]);
+    prev.priority_player = Some(P0);
+    let mut prev = activate_onto_stack(&prev, &reg, priest, Some(Target::Object(victim)));
+    assert!(matches!(prev.stack.last(), Some(StackEntry::Ability { .. })),
+        "precondition: the ability is on the stack");
+
+    prev.consecutive_passes = 1;
+    prev.priority_player = Some(P0);
+    let pass = Action::PassPriority;
+    let cur = after_pass(&prev, &reg);
+    assert!(cur.stack.is_empty(), "precondition: the pass resolved the ability");
+    clean_transition(&prev, Some(&pass), &cur, &reg);
+
+    // Each half of the pairing on its own.
+    let mut s = cur.clone();
+    s.last_activated_x_value = Some(3);
+    flags_transition(&prev, Some(&pass), &s, &reg, "ability resolved with X=");
+    let mut s = cur.clone();
+    s.last_activated_sacrifice = Some(victim);
+    flags_transition(&prev, Some(&pass), &s, &reg, "ability resolved with X=");
+
+    // CR 117.3b: after a resolution the active player gets priority.
+    let mut s = cur.clone();
+    s.priority_player = Some(P1);
+    flags_transition(&prev, Some(&pass), &s, &reg, "(CR 117.3b)");
+}
+
+/// CR 603.2: an ability triggers when its event happens. Every trigger that
+/// appeared over a transition therefore has that event in the buffer — and
+/// it has to be the event about *this* trigger's object, not merely an
+/// event of the right kind.
+#[test]
+fn every_trigger_that_appeared_names_the_event_that_made_it() {
+    use mtg_engine::triggers::{DeadCreature, PendingTrigger, TriggerEvent, TriggerSource};
+
+    let (mut prev, reg) = base();
+    let watcher = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut prev, &reg, "Grizzly Bears", P1);
+    let card_id = prev.get_object(watcher).unwrap().card_id;
+    let other_card = prev.get_object(other).unwrap().card_id;
+    let spell = spell_in_hand(&mut prev, &reg, "Moment of Heroism", P0);
+
+    let died = |id: ObjectId, cid: mtg_engine::ids::CardId, who: PlayerId| GameEvent::CreatureDied {
+        object: id, card_id: cid, controller: who, damaged_by: vec![],
+        last_known_toughness: 2, is_token: false, subtypes: vec![] };
+    let dead_creature = DeadCreature {
+        id: other, controller: P1, damaged_by: vec![], toughness: 2,
+        is_token: false, subtypes: vec![] };
+
+    // Each row: the trigger, the event that witnesses it, and an event of
+    // the same kind that names something else and must NOT witness it.
+    let cases: Vec<(&str, TriggerEvent, GameEvent, GameEvent)> = vec![
+        ("its own death", TriggerEvent::SelfDies,
+            died(watcher, card_id, P0), died(other, other_card, P1)),
+        ("another creature's death", TriggerEvent::CreatureDied { dead: dead_creature },
+            died(other, other_card, P1), died(watcher, card_id, P0)),
+        ("its own arrival", TriggerEvent::SelfEntered,
+            GameEvent::EnteredBattlefield { object: watcher, controller: P0 },
+            GameEvent::EnteredBattlefield { object: other, controller: P1 }),
+        ("another creature's arrival",
+            TriggerEvent::CreatureEntered { entered: other, entered_controller: P1 },
+            GameEvent::EnteredBattlefield { object: other, controller: P1 },
+            GameEvent::EnteredBattlefield { object: watcher, controller: P0 }),
+        ("an attack", TriggerEvent::Attacks { attacker: watcher, defending_player: P1 },
+            GameEvent::AttackersDeclared { attackers: vec![(watcher, P1)] },
+            GameEvent::AttackersDeclared { attackers: vec![(other, P0)] }),
+        ("a spell being cast", TriggerEvent::SpellCast { caster: P0, spell_id: spell },
+            GameEvent::SpellCast { player: P0, object: spell },
+            GameEvent::SpellCast { player: P0, object: other }),
+        ("leaving the battlefield", TriggerEvent::LeftBattlefield,
+            GameEvent::LeftBattlefield { object: watcher, to: Zone::Graveyard, last_controller: P0 },
+            GameEvent::LeftBattlefield { object: other, to: Zone::Graveyard, last_controller: P1 }),
+    ];
+
+    for (what, event, witness, decoy) in cases {
+        let trigger = PendingTrigger::new(
+            TriggerSource::new(watcher, card_id, P0, "a triggered ability"), event);
+
+        let mut s = next(&prev);
+        s.pending_triggers.push(trigger.clone());
+        flags_transition(&prev, None, &s, &reg,
+            "appeared with no event to trigger it (CR 603.2)");
+
+        let mut s = next(&prev);
+        s.pending_triggers.push(trigger.clone());
+        s.events.push(witness);
+        no_transition_flag(&prev, None, &s, &reg,
+            "appeared with no event to trigger it (CR 603.2)");
+
+        let mut s = next(&prev);
+        s.pending_triggers.push(trigger);
+        s.events.push(decoy);
+        let v = check_transition(&prev, None, &s, &reg);
+        assert!(v.iter().any(|m| m.contains("appeared with no event to trigger it")),
+            "a trigger on {what} is not witnessed by the same event about \
+             something else, got: {v:?}");
+    }
+}
+
+/// A turn-based trigger needs both halves: the step started, and the state
+/// is in that step. Neither alone is the event (CR 603.2).
+#[test]
+fn a_step_trigger_needs_the_step_it_names() {
+    use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+
+    let (mut prev, reg) = base();
+    let watcher = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let card_id = prev.get_object(watcher).unwrap().card_id;
+
+    for (event, step) in [(TriggerEvent::Upkeep, Step::Upkeep),
+                          (TriggerEvent::EndStep, Step::EndStep),
+                          (TriggerEvent::EndCombat, Step::EndCombat)] {
+        let trigger = PendingTrigger::new(
+            TriggerSource::new(watcher, card_id, P0, "at the beginning of"), event);
+
+        // Both halves: witnessed.
+        let mut s = next(&prev);
+        s.step = step;
+        s.pending_triggers.push(trigger.clone());
+        s.events.push(GameEvent::StepStarted { step });
+        no_transition_flag(&prev, None, &s, &reg, "no event to trigger it");
+
+        // The step started but the state moved on: not this step's trigger.
+        let mut s = next(&prev);
+        s.pending_triggers.push(trigger.clone());
+        s.events.push(GameEvent::StepStarted { step });
+        flags_transition(&prev, None, &s, &reg, "no event to trigger it");
+
+        // The state is in the step but nothing started it.
+        let mut s = next(&prev);
+        s.step = step;
+        s.pending_triggers.push(trigger);
+        flags_transition(&prev, None, &s, &reg, "no event to trigger it");
+    }
+}
+
+/// The ledger counts: a trigger already queued before the transition is not
+/// a new one, and a *second* copy of it is.
+#[test]
+fn the_trigger_ledger_counts_copies_rather_than_kinds() {
+    use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+
+    let (mut prev, reg) = base();
+    let watcher = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let card_id = prev.get_object(watcher).unwrap().card_id;
+    let trigger = PendingTrigger::new(
+        TriggerSource::new(watcher, card_id, P0, "a triggered ability"),
+        TriggerEvent::SelfDies);
+
+    prev.pending_triggers.push(trigger.clone());
+
+    // Carried over unchanged: its event was witnessed on the transition
+    // that made it, not on this one.
+    let s = next(&prev);
+    no_transition_flag(&prev, None, &s, &reg, "no event to trigger it");
+
+    // A second copy is a second trigger, and needs its own event.
+    let mut s = next(&prev);
+    s.pending_triggers.push(trigger.clone());
+    flags_transition(&prev, None, &s, &reg, "no event to trigger it");
+
+    // The queue it sits in doesn't matter — moving it from the pending
+    // bucket onto the stack is not a new trigger.
+    let mut s = next(&prev);
+    s.pending_triggers.clear();
+    s.pending_trigger_pushes_ap.push(trigger);
+    no_transition_flag(&prev, None, &s, &reg, "no event to trigger it");
+}
+
+/// The ledger is not applied while a prompt is up or after the game is
+/// over: mid-prompt the event buffer belongs to an older transition, and a
+/// finished game has stopped accounting.
+#[test]
+fn the_trigger_ledger_stands_down_mid_prompt_and_after_the_game() {
+    use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+
+    let (mut prev, reg) = base();
+    let watcher = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let card_id = prev.get_object(watcher).unwrap().card_id;
+    let trigger = PendingTrigger::new(
+        TriggerSource::new(watcher, card_id, P0, "a triggered ability"),
+        TriggerEvent::SelfDies);
+
+    // The baseline: unwitnessed, and flagged.
+    let mut s = next(&prev);
+    s.pending_triggers.push(trigger.clone());
+    flags_transition(&prev, None, &s, &reg, "no event to trigger it");
+
+    // A prompt was up before the transition.
+    let mut p = prev.clone();
+    p.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+    let mut s = next(&p);
+    s.pending_triggers.push(trigger.clone());
+    no_transition_flag(&p, None, &s, &reg, "no event to trigger it");
+
+    // The game is over.
+    let mut s = next(&prev);
+    s.pending_triggers.push(trigger);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    no_transition_flag(&prev, None, &s, &reg, "no event to trigger it");
+}
