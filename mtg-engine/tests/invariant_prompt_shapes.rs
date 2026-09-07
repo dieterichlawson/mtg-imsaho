@@ -286,3 +286,275 @@ fn a_resolution_prompt_offers_real_things_once_each() {
         description: "d".into(), pile_1: vec![bear], pile_2: vec![other], source_id: other }));
     flags(&s, &reg, "carries a choice for #");
 }
+
+/// CR 608.2d: a target prompt offers things the effect can act on — on the
+/// battlefield, of the kind the effect names, and the chooser's own where
+/// the effect says so.
+#[test]
+fn a_target_prompt_offers_what_its_effect_can_act_on() {
+    let (mut state, reg) = base();
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let buried = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let prompt = |effect: PendingEffect, options: Vec<Target>| {
+        AwaitingAction::ResolutionChoice {
+            player: P0, source: mine,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "d".into(), options, optional: false, effect } }
+    };
+
+    // Somewhere other than the battlefield.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::DestroyCreature { source_name: "x".into() },
+        vec![Target::Object(buried)]));
+    flags(&s, &reg, "destroy-creature prompt offers");
+    flags(&s, &reg, "(CR 608.2d)");
+
+    // On the battlefield but not a creature.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::DestroyCreature { source_name: "x".into() },
+        vec![Target::Object(land)]));
+    flags(&s, &reg, "which is no creature");
+
+    // CR 701.17a: a sacrifice is of your own.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::SacrificeCreature { source_name: "x".into() },
+        vec![Target::Object(theirs)]));
+    flags(&s, &reg, "which p0 does not control (CR 701.17a)");
+
+    // A player where the effect acts on objects.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::DestroyCreature { source_name: "x".into() },
+        vec![Target::Player(P1)]));
+    flags(&s, &reg, "destroy-creature prompt offers Player");
+
+    // CR 120.1a: damage lands on creatures and planeswalkers.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::DealDamage { amount: 2, source_id: mine },
+        vec![Target::Object(land)]));
+    flags(&s, &reg, "which is no battlefield creature or planeswalker");
+}
+
+/// CR 704.5j: the legend-rule prompt is exactly the duplicate group, is
+/// mandatory, and is answered by the player who controls them.
+#[test]
+fn the_legend_rule_prompt_is_the_duplicate_group() {
+    let (mut state, reg) = base();
+    let a = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+    let b = named_permanent(&mut state, &reg, "Geist of Saint Traft", P0);
+    let legend = |options: Vec<Target>, optional: bool, who: PlayerId| {
+        AwaitingAction::ResolutionChoice {
+            player: P0, source: a,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "d".into(), options, optional,
+                effect: PendingEffect::LegendRuleKeep {
+                    player: who, legend_name: "Geist of Saint Traft".into() } } }
+    };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(legend(vec![Target::Object(a), Target::Object(b)], false, P0));
+    quiet_about(&s, &reg, "(CR 704.5j)");
+
+    // Half the group.
+    let mut s = state.clone();
+    s.awaiting_action = Some(legend(vec![Target::Object(a)], false, P0));
+    flags(&s, &reg, "(CR 704.5j)");
+
+    // Optional, or answered by the wrong player.
+    let mut s = state.clone();
+    s.awaiting_action = Some(legend(vec![Target::Object(a), Target::Object(b)], true, P0));
+    flags(&s, &reg, "legend-rule prompt for p0 answered by p0, optional=true");
+    let mut s = state.clone();
+    s.awaiting_action = Some(legend(vec![Target::Object(a), Target::Object(b)], false, P1));
+    flags(&s, &reg, "legend-rule prompt for p1 answered by p0");
+}
+
+/// CR 603.3d/603.3b: a trigger-target prompt is for the trigger the answer
+/// will pop, is mandatory, and waits for the active player's queue.
+#[test]
+fn a_trigger_target_prompt_is_for_the_front_of_the_queue() {
+    let (mut state, reg) = base();
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let card_id = state.get_object(ghoul).unwrap().card_id;
+    let queued = |src: ObjectId, controller: PlayerId, s: &GameState| {
+        mtg_engine::triggers::PendingTrigger::new(
+            mtg_engine::triggers::TriggerSource::new(src, s.get_object(src).unwrap().card_id,
+                controller, "t"),
+            mtg_engine::triggers::TriggerEvent::StateTriggered)
+    };
+    let prompt = |source: ObjectId, options: Vec<Target>, optional: bool, player: PlayerId| {
+        AwaitingAction::ResolutionChoice {
+            player, source,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "d".into(), options, optional,
+                effect: PendingEffect::AttachTargetToPendingTrigger } }
+    };
+
+    // No queued trigger at all.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    flags(&s, &reg, "trigger-target prompt with no queued trigger");
+
+    // A queue whose front is a different trigger.
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(other, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    flags(&s, &reg, "but the queue's front is #");
+
+    // A prompt with nothing to choose between, or an optional one.
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul, vec![Target::Object(other)], false, P0));
+    flags(&s, &reg, "trigger-target prompt with 1 options, optional=false");
+
+    // CR 603.3b: the active player's triggers go first.
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P1));
+    flags(&s, &reg, "while the active player's triggers wait (CR 603.3b)");
+    let _ = card_id;
+}
+
+/// CR 700.3a/700.3c: a pile division and a pile choice are about
+/// battlefield permanents of the player who will sacrifice them.
+#[test]
+fn the_pile_prompts_are_about_battlefield_permanents() {
+    let (mut state, reg) = base();
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let buried = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+
+    let divide = |permanents: Vec<ObjectId>, target: PlayerId| AwaitingAction::ResolutionChoice {
+        player: P0, source: mine,
+        choice: ResolutionChoiceKind::DividePermanentsIntoPiles {
+            description: "d".into(), permanents, target_player: target, source_id: mine } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(vec![theirs], P1));
+    quiet_about(&s, &reg, "pile prompt");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(vec![theirs], ghost));
+    flags(&s, &reg, "pile prompt for p2 who is not a player");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(vec![buried], P1));
+    flags(&s, &reg, "does not control on the battlefield (CR 700.3c)");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(vec![theirs, theirs], P1));
+    flags(&s, &reg, "pile prompt lists #");
+
+    // The choice between the two piles.
+    let pile = |p1: Vec<ObjectId>, p2: Vec<ObjectId>| AwaitingAction::ResolutionChoice {
+        player: P1, source: mine,
+        choice: ResolutionChoiceKind::ChoosePile {
+            description: "d".into(), pile_1: p1, pile_2: p2, source_id: mine } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(pile(vec![theirs], vec![]));
+    quiet_about(&s, &reg, "pile choice");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(pile(vec![], vec![]));
+    flags(&s, &reg, "pile choice between two empty piles");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(pile(vec![buried], vec![]));
+    flags(&s, &reg, "is not on the battlefield (CR 700.3c)");
+}
+
+/// CR 509.2: the damage assignment order is announced by the attacking
+/// player, over the creatures blocking one of their attackers, and only
+/// where there is something to choose between.
+#[test]
+fn the_damage_assignment_order_prompt_orders_one_attackers_blockers() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let first = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let second = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.step = Step::DeclareBlockers;
+    submit_declare_blockers(&mut state, P1, &[(first, attacker), (second, attacker)], &reg);
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.priority_player = Some(P0);
+
+    let order = |source: ObjectId, attacker: ObjectId, remaining: Vec<ObjectId>,
+                 options: Vec<String>, who: PlayerId| AwaitingAction::ResolutionChoice {
+        player: who, source,
+        choice: ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+            description: "d".into(), attacker, remaining, options } };
+
+    let both = || vec![first, second];
+    let labels = || vec!["a".into(), "b".into()];
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(order(attacker, attacker, both(), labels(), P0));
+    quiet_about(&s, &reg, "damage-assignment-order prompt");
+
+    // One blocker is not an order to choose.
+    let mut s = state.clone();
+    s.awaiting_action = Some(order(attacker, attacker, vec![first], vec!["a".into()], P0));
+    flags(&s, &reg, "with 1 options for 1 blockers");
+
+    // The defending player does not announce it.
+    let mut s = state.clone();
+    s.awaiting_action = Some(order(attacker, attacker, both(), labels(), P1));
+    flags(&s, &reg, "not the attacking player p0");
+
+    // The prompt's source is the attacker being ordered.
+    let mut s = state.clone();
+    s.awaiting_action = Some(order(first, attacker, both(), labels(), P0));
+    flags(&s, &reg, "while ordering #");
+
+    // Something that is not blocking that attacker.
+    let mut s = state.clone();
+    let bystander = named_permanent(&mut s, &reg, "Grizzly Bears", P1);
+    s.awaiting_action = Some(order(attacker, attacker, vec![first, bystander], labels(), P0));
+    flags(&s, &reg, "which is not blocking #");
+}
+
+/// CR 601.2b/608.2: a pay-or-not prompt is about a spell on the stack,
+/// raised by the spell that is resolving, for a cost with no unannounced X.
+#[test]
+fn a_pay_or_not_prompt_names_the_spell_it_is_about() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    let mut state = cast_onto_stack(&state, &reg, pump, vec![Target::Object(bear)]);
+    state.resolving_spell = Some(pump);
+
+    let pay = |spell: ObjectId, source: ObjectId, cost: mtg_engine::types::ManaCost|
+        AwaitingAction::ResolutionChoice {
+            player: P0, source,
+            choice: ResolutionChoiceKind::PayOrNot {
+                description: "d".into(), cost, spell_id: spell, source_spell_id: source } };
+
+    let free = mtg_engine::types::ManaCost::free();
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(pay(bear, pump, free.clone()));
+    flags(&s, &reg, "which is not on the stack");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(pay(pump, bear, free));
+    flags(&s, &reg, "which is not the resolving spell");
+
+    let mut s = state.clone();
+    let with_x = mtg_engine::types::ManaCost::new(vec![mtg_engine::types::ManaSymbol::X]);
+    s.awaiting_action = Some(pay(pump, pump, with_x));
+    flags(&s, &reg, "pay-or-not prompt with an unannounced X");
+}
