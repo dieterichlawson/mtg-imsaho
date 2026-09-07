@@ -21,6 +21,17 @@ use serde::{Serialize, Deserialize};
 struct SaveData {
     state: GameState,
     player_names: Vec<String>,
+    /// The `--p1`/`--p2` seat specs this game is being played with.
+    ///
+    /// The save used to carry the decks and the engine RNG but not who was
+    /// playing, so `--resume` took the seats from the flag DEFAULTS — and
+    /// the default for seat 2 is `random`. A two-human game resumed the way
+    /// anyone resumes came back with a bot in seat 2 that started taking
+    /// irreversible actions before the first frame was drawn (issue #248).
+    /// `#[serde(default)]` so a save written before this still loads; an
+    /// empty list means "the flags decide", which is the old behaviour.
+    #[serde(default)]
+    seats: Vec<String>,
 }
 
 enum PlayerKind {
@@ -49,9 +60,11 @@ Options:
                          file is overwritten from the first decision, follows a
                          symlink, and is left in place at game over holding the
                          final position
-  --resume <path>        Resume from a save file (saved decks win over flags;
-                         --seed does not change the saved shuffle but still
-                         seeds the random/AI seats — keep it to replay a resume)
+  --resume <path>        Resume from a save file. The saved decks and seats
+                         win over the flags; an explicit --p1/--p2 overrides
+                         the saved seat and says so. --seed does not change
+                         the saved shuffle but still seeds the random/AI
+                         seats — keep it to replay a resume
   --check-invariants     Check structural invariants at every decision point
   --quiet, -q            Suppress the pre-game banner
   --help, -h             Print this help and exit
@@ -235,13 +248,12 @@ fn main() {
     //   claude:claude-haiku-4-5-20251001  — Claude with specific model
     //   gemini                       — Gemini with default model (2.0-flash)
     //   gemini:gemini-2.5-flash      — Gemini with specific model
-    let p1_spec = args.iter().position(|a| a == "--p1")
-        .and_then(|i| args.get(i + 1))
-        .map_or("cli", std::string::String::as_str);
-
-    let p2_spec = args.iter().position(|a| a == "--p2")
-        .and_then(|i| args.get(i + 1))
-        .map_or("random", std::string::String::as_str);
+    let p1_flag = args.iter().position(|a| a == "--p1")
+        .and_then(|i| args.get(i + 1)).cloned();
+    let p2_flag = args.iter().position(|a| a == "--p2")
+        .and_then(|i| args.get(i + 1)).cloned();
+    let mut p1_spec = p1_flag.clone().unwrap_or_else(|| "cli".to_string());
+    let mut p2_spec = p2_flag.clone().unwrap_or_else(|| "random".to_string());
 
     let log_file = args.iter().position(|a| a == "--log")
         .and_then(|i| args.get(i + 1))
@@ -371,9 +383,29 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
             }
             std::process::exit(1);
         }
+        // Who is playing comes from the save unless a flag says otherwise —
+        // the seats used to come from the flag DEFAULTS, so a two-human game
+        // resumed with a bare `--resume` handed seat 2 to a random bot that
+        // acted immediately (issue #248). An explicit --p1/--p2 still wins,
+        // the way --seed does; a save written before the seats were recorded
+        // falls back to the flags, and says so.
+        if save.seats.len() == 2 {
+            if p1_flag.is_none() { p1_spec.clone_from(&save.seats[0]); }
+            if p2_flag.is_none() { p2_spec.clone_from(&save.seats[1]); }
+            for (flag, saved, used) in [("--p1", &save.seats[0], &p1_spec),
+                                        ("--p2", &save.seats[1], &p2_spec)] {
+                if saved != used {
+                    eprintln!("note: {flag} overrides the save's seat ({saved} -> {used})");
+                }
+            }
+        } else {
+            eprintln!("note: this save predates seat recording, so the seats come from the \
+flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup you saved");
+        }
         if !quiet {
-            println!("MTG Engine — resuming from {} (turn {}, {} vs {})",
-                path, save.state.turn_number, save.player_names[0], save.player_names[1]);
+            println!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
+                path, save.state.turn_number, save.player_names[0], save.player_names[1],
+                p1_spec, p2_spec);
             println!();
         }
         (save.player_names, save.state)
@@ -405,8 +437,8 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
     };
 
 
-    let mut p1 = make_player(p1_spec, "P1", seed.map(|s| s.wrapping_add(1)));
-    let mut p2 = make_player(p2_spec, "P2", seed.map(|s| s.wrapping_add(2)));
+    let mut p1 = make_player(&p1_spec, "P1", seed.map(|s| s.wrapping_add(1)));
+    let mut p2 = make_player(&p2_spec, "P2", seed.map(|s| s.wrapping_add(2)));
 
     // Log game metadata.
     {
@@ -481,11 +513,21 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
     // writes it 50k times. Only pay for it when someone can actually use it.
     let write_saves = has_human || save_file.is_some();
 
-    let mut action_count: u64 = 0;
-    let max_actions: u64 = 50_000;
+    // The game's length, not this process's: `submit_seq` is "how many
+    // actions have been submitted to reach this state", it is in the save,
+    // and the runner used to ignore it and start its own counter at 0. So a
+    // resumed game reported a length that was only its tail — one real game
+    // resumed eight times recorded `Total actions: 49` for 344 submits —
+    // while `Final turn` in the same three-line summary WAS read from the
+    // save, so the two halves contradicted each other (issue #293).
+    let resumed_from = state.submit_seq;
+    let mut action_count: u64 = resumed_from;
+    // The runaway guard is about this process, so it budgets from here.
+    let max_actions: u64 = resumed_from + 50_000;
 
     let save_file_ref = save_file.clone();
     let player_names_ref = player_names.clone();
+    let seats_ref = vec![p1_spec.clone(), p2_spec.clone()];
     // Always save to a hot-reload temp file so 'rr' can work without --save.
     // The path is per-process: a shared fixed path let concurrent runners
     // clobber each other's snapshots, silently swapping a hot-reloaded
@@ -640,6 +682,7 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
             let save = SaveData {
                 state: game_state.clone(),
                 player_names: player_names_ref.clone(),
+                seats: seats_ref.clone(),
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -739,7 +782,11 @@ use --save if you need a resumable file.");
     // decision, so the last one on disk was the state one action before the
     // end; write the final state over it, which is the state worth keeping.
     if let Some(ref path) = save_file {
-        let save = SaveData { state: state.clone(), player_names: player_names.clone() };
+        let save = SaveData {
+            state: state.clone(),
+            player_names: player_names.clone(),
+            seats: vec![p1_spec.clone(), p2_spec.clone()],
+        };
         match serde_json::to_string(&save) {
             Ok(json) => {
                 if let Err(e) = write_save_atomically(path, &json, false) {
@@ -798,7 +845,15 @@ use --save if you need a resumable file.");
             "Game ended without a result.".to_string()
         }
     };
-    let summary = format!("{}\nTotal actions: {}\nFinal turn: {}", result_msg, action_count, state.turn_number);
+    // The whole game's count. A resume says so, so the number can be read
+    // against the session that printed it (issue #293).
+    let resumed_note = if resumed_from > 0 {
+        format!(" ({resumed_from} before this resume)")
+    } else {
+        String::new()
+    };
+    let summary = format!("{}\nTotal actions: {}{}\nFinal turn: {}",
+        result_msg, state.submit_seq.max(action_count), resumed_note, state.turn_number);
     println!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
