@@ -272,6 +272,8 @@ enum TargetInput {
     /// pane. It used to be answered with "Invalid input 'm'" on the same
     /// frame that offered it (issue #261).
     NextPage,
+    /// `p`, the way back (issue #255).
+    PrevPage,
     Invalid,
 }
 
@@ -863,6 +865,20 @@ impl CliPlayer {
         if offset + shown >= len { 0 } else { offset + shown }
     }
 
+    /// What `p` does: the previous page, wrapping to the last one at the top.
+    ///
+    /// Paging used to be forward-only, so overshooting a 253-name list meant
+    /// pressing `m` eleven more times to come back around (issue #255).
+    fn prev_menu_offset(offset: usize, shown: usize, len: usize) -> usize {
+        let page = shown.max(1);
+        if offset == 0 {
+            // The last page: the final whole step below `len`.
+            len.saturating_sub(1) / page * page
+        } else {
+            offset.saturating_sub(page)
+        }
+    }
+
     /// `render`, starting the action menu at `menu_offset` (issue #96 — a
     /// menu longer than the pane is paged with 'm', not guessed at).
     /// Returns how many menu entries were shown from that offset.
@@ -1282,7 +1298,8 @@ impl CliPlayer {
             // that has stopped asking (issue #260).
             if paged && (row as usize) < h {
                 Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
-                let marker = format!("  … showing {}-{} of 0-{} — m = next page (any number works)",
+                let marker = format!(
+                    "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
                     offset, offset + shown - 1, labels.len() - 1);
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Dim), Print(clip_cols(&marker, mid_w)),
@@ -2159,6 +2176,9 @@ impl CliPlayer {
         if t == "m" {
             return TargetInput::NextPage;
         }
+        if t == "p" {
+            return TargetInput::PrevPage;
+        }
         if t.eq_ignore_ascii_case("c") || t.eq_ignore_ascii_case("cancel") {
             return TargetInput::Cancel;
         }
@@ -2225,6 +2245,9 @@ impl CliPlayer {
                 TargetInput::Cancel => return UpToPick::Cancel,
                 TargetInput::NextPage => {
                     menu_offset = Self::next_menu_offset(menu_offset, menu_shown, labels.len());
+                }
+                TargetInput::PrevPage => {
+                    menu_offset = Self::prev_menu_offset(menu_offset, menu_shown, labels.len());
                 }
                 // Info panes + card search: a player wants their graveyard
                 // exactly when choosing a target (issue #122).
@@ -2429,15 +2452,15 @@ impl CliPlayer {
         // invisible modal mode that swallowed keystrokes (issue #107).
         match (has_pass, is_chooser, has_right) {
             (true, _, true) =>
-                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
+                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
             (true, _, false) =>
-                "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
+                "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
             (false, true, true) =>
-                "  [enter=cancel] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
+                "  [enter=cancel] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
             (false, true, false) =>
-                "  [enter=cancel] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
-            (false, false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
-            (false, false, false) => "  [d=deck] [l=log] [g=gy] [e=exile] [s=stack]",
+                "  [enter=cancel] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
+            (false, false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
+            (false, false, false) => "  [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
         }
     }
 
@@ -3796,7 +3819,7 @@ impl CliPlayer {
             }
             if paged {
                 let marker = format!(
-                    "  … showing {}-{} of 0-{} — m = next page (any number works)",
+                    "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
                     offset, offset + shown.saturating_sub(1), eligible.len() - 1);
                 let _ = execute!(out, cursor::MoveTo(col, r),
                     SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
@@ -3820,7 +3843,7 @@ impl CliPlayer {
             // at every other prompt (issue #120).
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m=next page]"),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]"),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -3895,6 +3918,12 @@ impl CliPlayer {
                 // stay absolute, so any number works from any page.
                 "m" => {
                     list_offset.set(Self::next_menu_offset(
+                        list_offset.get(), list_shown.get(), eligible.len()));
+                    r = draw();
+                    continue;
+                }
+                "p" => {
+                    list_offset.set(Self::prev_menu_offset(
                         list_offset.get(), list_shown.get(), eligible.len()));
                     r = draw();
                     continue;
@@ -4088,7 +4117,7 @@ impl CliPlayer {
             // (CR 404.2, 406.3) — advertise the info panes here (#120).
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=next page]"),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=page]"),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -4644,7 +4673,40 @@ impl CliPlayer {
             action_index: usize,
         }
         let mut cards: Vec<CardInfo> = Vec::new();
+        // Naming a card (Nevermore) offers every non-land name in the
+        // registry — 253 of them — as `ChosenIndex`, which this browser used
+        // to ignore, so the one prompt in the game with hundreds of
+        // homogeneous options was the one prompt that fell through to a flat
+        // forward-only paged list. Finding Geistflame in it meant paging past
+        // it and then eleven more presses to wrap around (issue #255).
+        let by_name = mtg_engine::cards::CardRegistry::with_all_cards();
         for (i, action) in actions.iter().enumerate() {
+            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(_, name) } = action {
+                let (type_line, oracle_text, cost, pt) = by_name.get_id_by_name(name)
+                    .and_then(|cid| by_name.card_data(cid))
+                    .map(|d| {
+                        let types: Vec<&str> = d.card_types.iter().map(|t| match t {
+                            CardType::Creature => "Creature",
+                            CardType::Instant => "Instant",
+                            CardType::Sorcery => "Sorcery",
+                            CardType::Enchantment => "Enchantment",
+                            CardType::Artifact => "Artifact",
+                            CardType::Land => "Land",
+                            CardType::Planeswalker => "Planeswalker",
+                        }).collect();
+                        let pt_str = match (d.power, d.toughness) {
+                            (Some(pw), Some(t)) => format!("{pw}/{t}"),
+                            _ => String::new(),
+                        };
+                        (types.join(" "), d.oracle_text.clone(),
+                         d.cost.as_ref().map(|mc| format!("{mc}")).unwrap_or_default(), pt_str)
+                    })
+                    .unwrap_or_default();
+                cards.push(CardInfo {
+                    name: name.clone(), type_line, oracle_text, cost, pt, action_index: i,
+                });
+                continue;
+            }
             if let Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) } = action {
                 let name = Self::perm_name(view, *id);
                 // Look up card info from library cards or hand.
@@ -5120,7 +5182,16 @@ impl Player for CliPlayer {
                 }
             ));
             let card_count = legal_actions.len() - usize::from(decline.is_some());
-            if all_chosen_cards && card_count > 3 {
+            // A long list of card NAMES is the same kind of question and
+            // wants the same browser (issue #255). Kept to genuinely long
+            // ones: a modal choice or a card-type choice is also `ChosenIndex`
+            // and reads better as three numbered rows.
+            let naming_cards = card_count > 8 && legal_actions.iter().all(|a| matches!(a,
+                Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(_, _)
+                }
+            ));
+            if (all_chosen_cards && card_count > 3) || naming_cards {
                 let title = legal.context.as_deref().unwrap_or("Choose a card");
                 return Self::library_search_ui(view, legal_actions, title, decline);
             }
@@ -5273,6 +5344,13 @@ impl Player for CliPlayer {
                 // fits, so 'm' never falls through to be misread as input.
                 "m" => {
                     menu_offset = Self::next_menu_offset(
+                        menu_offset, menu_shown, display_labels.len());
+                    continue;
+                }
+                // Backwards, because paging was forward-only: overshooting a
+                // long list meant going all the way around (issue #255).
+                "p" => {
+                    menu_offset = Self::prev_menu_offset(
                         menu_offset, menu_shown, display_labels.len());
                     continue;
                 }
@@ -6026,6 +6104,26 @@ mod tests {
         let mut c = creature(id, name, controller);
         c.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(0)));
         c
+    }
+
+    /// Issue #255: paging was forward-only, so overshooting a 253-name list
+    /// meant pressing `m` eleven more times to wrap back around to it.
+    #[test]
+    fn a_menu_pages_backwards_too() {
+        // Ten items, four to a page.
+        assert_eq!(CliPlayer::prev_menu_offset(4, 4, 10), 0);
+        assert_eq!(CliPlayer::prev_menu_offset(8, 4, 10), 4);
+        // From the top, back to the last page — which is the final whole
+        // step below the end, not the end itself.
+        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 10), 8);
+        // A menu that fits has one page, and `p` stays on it.
+        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 4), 0);
+        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 0), 0);
+        // Round trip: forwards then backwards is where you started.
+        let mut off = 0;
+        for _ in 0..3 { off = CliPlayer::next_menu_offset(off, 4, 10); }
+        for _ in 0..3 { off = CliPlayer::prev_menu_offset(off, 4, 10); }
+        assert_eq!(off, 0);
     }
 
     /// Issue #260: the truncation marker is the LAST row a short pane
