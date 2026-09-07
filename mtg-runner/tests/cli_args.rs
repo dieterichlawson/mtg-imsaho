@@ -481,3 +481,108 @@ fn a_resume_with_nothing_to_save_to_says_so() {
 
     let _ = std::fs::remove_file(&save);
 }
+
+/// Rewrite a save's `seats` list, leaving everything else alone.
+fn with_seats(save: &std::path::Path, seats: &[&str]) -> std::path::PathBuf {
+    let mut data: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(save).unwrap()).unwrap();
+    data["seats"] = serde_json::Value::Array(
+        seats.iter().map(|s| serde_json::Value::String((*s).to_string())).collect());
+    let out = save.with_extension("seats.save");
+    std::fs::write(&out, serde_json::to_string(&data).unwrap()).unwrap();
+    out
+}
+
+/// A save is a fact about a game, not a licence to spend money. Issue #248
+/// rightly made `--resume` take the seats from the save, but the field is an
+/// unvalidated string out of a user-supplied file handed straight to
+/// `make_player` — so a save could choose the backend *and the model that is
+/// billed* on a command line naming neither, and `--quiet` deleted the only
+/// line that said so (issue #314). A metered seat the file asks for and the
+/// command line does not is refused; passing the flag confirms it.
+#[test]
+fn a_save_cannot_hand_a_metered_api_seat_to_a_command_line_that_asked_for_none() {
+    let base = a_save_file("meteredseat");
+    let save = with_seats(&base, &["gemini:gemini-2.5-pro", "cli"]);
+    let path = save.to_string_lossy().into_owned();
+
+    let refused = runner_at_root()
+        .args(["--resume", &path, "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "stderr: {stderr}");
+    assert!(stderr.contains("metered API seat") && stderr.contains(&*path),
+        "the refusal names the file that asked, not a flag the user never typed:\n{stderr}");
+    assert!(stderr.contains("--p1 gemini:gemini-2.5-pro") && stderr.contains("--p1 random"),
+        "and says how to confirm it or how to decline:\n{stderr}");
+
+    // Declining it by naming a local seat is enough to run.
+    let declined = runner_at_root()
+        .args(["--resume", &path, "--p1", "random", "--p2", "random", "--quiet"])
+        .output()
+        .expect("failed to run");
+    assert!(String::from_utf8_lossy(&declined.stderr).contains("--p1 overrides the save's seat"),
+        "stderr: {}", String::from_utf8_lossy(&declined.stderr));
+
+    let _ = std::fs::remove_file(&base);
+    let _ = std::fs::remove_file(&save);
+}
+
+/// A refusal that blames `--p2` for a value that was never on the command
+/// line sends the reader looking for a flag they did not pass (issue #314).
+#[test]
+fn a_bad_seat_out_of_a_save_says_it_came_from_the_save() {
+    let base = a_save_file("bogusseat");
+    let save = with_seats(&base, &["random", "totally-bogus"]);
+    let path = save.to_string_lossy().into_owned();
+
+    let output = runner_at_root()
+        .args(["--resume", &path, "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "stderr: {stderr}");
+    assert!(stderr.contains("unknown player type 'totally-bogus'"),
+        "the message names the bad value:\n{stderr}");
+    assert!(stderr.contains("save file") && stderr.contains(&*path),
+        "and where it came from:\n{stderr}");
+
+    let _ = std::fs::remove_file(&base);
+    let _ = std::fs::remove_file(&save);
+}
+
+/// `seats` is two entries or none. Anything else is a malformed file, and
+/// calling it a save that "predates seat recording" is a false statement
+/// about a save written five minutes ago (issue #314).
+#[test]
+fn a_seats_list_that_is_neither_two_nor_none_is_malformed_not_old() {
+    let base = a_save_file("threeseats");
+    let save = with_seats(&base, &["random", "random", "random"]);
+    let path = save.to_string_lossy().into_owned();
+
+    let output = runner_at_root()
+        .args(["--resume", &path, "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "stderr: {stderr}");
+    assert!(stderr.contains("records 3 seats, not 2"),
+        "the refusal says what is wrong with the file:\n{stderr}");
+    assert!(!stderr.contains("predates seat recording"),
+        "and does not describe a malformed save as an old one:\n{stderr}");
+
+    // None is still the old, supported shape.
+    let empty = with_seats(&base, &[]);
+    let out = runner_at_root()
+        .args(["--resume", &empty.to_string_lossy(), "--p1", "random", "--p2", "random", "--quiet"])
+        .output()
+        .expect("failed to run");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("predates seat recording"),
+        "an empty list is the pre-#248 save and still loads: {}",
+        String::from_utf8_lossy(&out.stderr));
+
+    let _ = std::fs::remove_file(&base);
+    let _ = std::fs::remove_file(&save);
+    let _ = std::fs::remove_file(&empty);
+}

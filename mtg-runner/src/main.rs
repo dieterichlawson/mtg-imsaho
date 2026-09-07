@@ -62,9 +62,11 @@ Options:
                          final position
   --resume <path>        Resume from a save file. The saved decks and seats
                          win over the flags; an explicit --p1/--p2 overrides
-                         the saved seat and says so. --seed does not change
-                         the saved shuffle but still seeds the random/AI
-                         seats — keep it to replay a resume
+                         the saved seat and says so, and a metered API seat
+                         the file asks for needs that flag to confirm it.
+                         --seed does not change the saved shuffle but still
+                         seeds the random/AI seats — keep it to replay a
+                         resume. Pass --save to keep writing the file
   --check-invariants     Check structural invariants at every decision point
   --quiet, -q            Suppress the pre-game banner
   --help, -h             Print this help and exit
@@ -409,17 +411,47 @@ there is nothing to resume",
         // the way --seed does; a save written before the seats were recorded
         // falls back to the flags, and says so.
         if save.seats.len() == 2 {
+            // A seat the file names and the command line did not is a
+            // request the user never made. That is harmless for a local
+            // seat and is exactly what #248 wanted; it is not harmless for
+            // a metered API seat, where the file would be choosing the
+            // backend *and the model that is billed* on a command line that
+            // names neither (issue #314). A save is the one artifact of this
+            // program that people copy around and attach to bug reports.
+            for (flag, seat, saved) in [("--p1", "p0", &save.seats[0]),
+                                        ("--p2", "p1", &save.seats[1])] {
+                let from_flag = if flag == "--p1" { p1_flag.is_some() } else { p2_flag.is_some() };
+                if from_flag || !seat_is_metered(saved) {
+                    continue;
+                }
+                die(&format!(
+                    "save file '{path}' asks for a metered API seat at {seat} ('{saved}') and \
+the command line did not: pass {flag} {saved} to confirm it, or {flag} random"));
+            }
             if p1_flag.is_none() { p1_spec.clone_from(&save.seats[0]); }
             if p2_flag.is_none() { p2_spec.clone_from(&save.seats[1]); }
-            for (flag, saved, used) in [("--p1", &save.seats[0], &p1_spec),
-                                        ("--p2", &save.seats[1], &p2_spec)] {
+            for (flag, seat, saved, used) in [("--p1", "p0", &save.seats[0], &p1_spec),
+                                              ("--p2", "p1", &save.seats[1], &p2_spec)] {
                 if saved != used {
                     eprintln!("note: {flag} overrides the save's seat ({saved} -> {used})");
+                } else if from_flag_absent(flag, &p1_flag, &p2_flag) && !seat_is_local(used) {
+                    // Not gated on `!quiet`: the banner is, and it was the
+                    // only line that said an LLM seat had been chosen by the
+                    // file (issue #314).
+                    eprintln!("note: {seat} runs '{used}', which the save file chose and no \
+flag asked for — pass {flag} to say otherwise");
                 }
             }
-        } else {
+        } else if save.seats.is_empty() {
             eprintln!("note: this save predates seat recording, so the seats come from the \
 flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup you saved");
+        } else {
+            // Neither two seats nor none: the file is malformed, and saying
+            // it "predates seat recording" is a false statement about a save
+            // written five minutes ago (issue #314).
+            die(&format!(
+                "save file '{path}' is not a valid game save: it records {} seats, not 2",
+                save.seats.len()));
         }
         // Every other save/flag disagreement on this path is announced, and
         // this is the one that loses work: the save path is not part of the
@@ -465,8 +497,19 @@ stops here — pass --save {path} to keep writing it");
     };
 
 
-    let mut p1 = make_player(&p1_spec, "P1", seed.map(|s| s.wrapping_add(1)));
-    let mut p2 = make_player(&p2_spec, "P2", seed.map(|s| s.wrapping_add(2)));
+    // Where each spec came from, so a refusal names the thing that actually
+    // asked for it rather than a flag the user never typed (issue #314).
+    let origin = |flag: &str, from_flag: bool| -> String {
+        match (&resume_file, from_flag) {
+            (Some(save), false) => format!("save file '{save}' seat {}",
+                if flag == "--p1" { "p0" } else { "p1" }),
+            _ => flag.to_string(),
+        }
+    };
+    let p1_origin = origin("--p1", p1_flag.is_some());
+    let p2_origin = origin("--p2", p2_flag.is_some());
+    let mut p1 = make_player(&p1_spec, "P1", &p1_origin, "--p1", seed.map(|s| s.wrapping_add(1)));
+    let mut p2 = make_player(&p2_spec, "P2", &p2_origin, "--p2", seed.map(|s| s.wrapping_add(2)));
 
     // Engine log entries the save already carries — the ones a resumed
     // game's --log must not repeat (issue #313). Zero for a fresh game,
@@ -949,7 +992,32 @@ fn env_key_set(var: &str) -> bool {
     env::var(var).is_ok_and(|v| !v.trim().is_empty())
 }
 
-fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
+/// Whether a seat spec names a backend that bills per call. `claude-code`
+/// runs the same model through the Claude Code CLI on plan quota, so it is
+/// not one; `cli` and `random` are local.
+fn seat_is_metered(spec: &str) -> bool {
+    let kind = spec.split_once(':').map_or(spec, |(k, _)| k);
+    matches!(kind, "ai" | "llm" | "claude" | "gemini")
+}
+
+/// Whether a seat spec names a backend that is nothing but this process —
+/// no model, no quota, no network.
+fn seat_is_local(spec: &str) -> bool {
+    let kind = spec.split_once(':').map_or(spec, |(k, _)| k);
+    matches!(kind, "cli" | "random")
+}
+
+/// Whether the seat behind `flag` was left to the save file to choose.
+fn from_flag_absent(flag: &str, p1_flag: &Option<String>, p2_flag: &Option<String>) -> bool {
+    if flag == "--p1" { p1_flag.is_none() } else { p2_flag.is_none() }
+}
+
+/// `origin` says where `spec` came from, for the refusals: a flag the user
+/// typed, or a seat out of a save file. Blaming `--p2` for a value that was
+/// never on the command line sent people looking for a flag they had not
+/// passed (issue #314). `flag` is still what the advice names, because that
+/// is what they would type next.
+fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u64>) -> PlayerKind {
     let (kind, model) = match spec.split_once(':') {
         Some((k, m)) => (k, Some(m)),
         None => (spec, None),
@@ -962,9 +1030,8 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
         // (issue #103). Refuse it up front, like other arguments that
         // cannot work (#55/#69/#70).
         "cli" if !mtg_player::cli::terminal_available() => die(&format!(
-            "--{} cli needs an interactive terminal (stdin is not a tty and \
-             /dev/tty is unavailable); use --{} random or run under a tty",
-            name.to_lowercase(), name.to_lowercase())),
+            "{origin} cli needs an interactive terminal (stdin is not a tty and \
+             /dev/tty is unavailable); use {flag} random or run under a tty")),
         "cli" => PlayerKind::Cli(CliPlayer::new(name)),
         // Both API seats build a backend that unwraps the key out of the
         // environment, so a missing key surfaced as a panic and a backtrace
@@ -972,10 +1039,9 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
         // (issues #55/#69/#70/#103). Pre-flight the variable instead. An
         // empty value is as unusable as an unset one, so treat it the same.
         "ai" | "llm" | "claude" if !env_key_set("ANTHROPIC_API_KEY") => die(&format!(
-            "--{} {kind} needs an Anthropic API key: ANTHROPIC_API_KEY is not set; \
-             use --{} claude-code to run the same seat through the Claude Code CLI, \
-             or --{} random",
-            name.to_lowercase(), name.to_lowercase(), name.to_lowercase())),
+            "{origin} {kind} needs an Anthropic API key: ANTHROPIC_API_KEY is not set; \
+             use {flag} claude-code to run the same seat through the Claude Code CLI, \
+             or {flag} random")),
         "ai" | "llm" | "claude" => {
             let mut player = LlmPlayer::new(name);
             if let Some(m) = model {
@@ -984,9 +1050,8 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
             PlayerKind::Llm(player)
         }
         "gemini" if !env_key_set("GEMINI_API_KEY") => die(&format!(
-            "--{} gemini needs a Gemini API key: GEMINI_API_KEY is not set; \
-             use --{} random",
-            name.to_lowercase(), name.to_lowercase())),
+            "{origin} gemini needs a Gemini API key: GEMINI_API_KEY is not set; \
+             use {flag} random")),
         "gemini" => {
             let mut player = LlmPlayer::new_gemini(name);
             if let Some(m) = model {
@@ -997,8 +1062,8 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
         // The same LLM seat driven through the Claude Code CLI (`claude -p`)
         // instead of the metered Messages API — plan quota, no API key.
         "claude-code" | "cc" if !mtg_player::llm::claude_code_available() => die(&format!(
-            "--{} {kind} needs the Claude Code CLI: `{}` is not runnable (set {} to its path)",
-            name.to_lowercase(), mtg_player::llm::claude_code_binary(),
+            "{origin} {kind} needs the Claude Code CLI: `{}` is not runnable (set {} to its path)",
+            mtg_player::llm::claude_code_binary(),
             mtg_player::llm::CLAUDE_CODE_BINARY_ENV)),
         "claude-code" | "cc" => {
             let mut player = LlmPlayer::new_claude_code(name);
@@ -1016,9 +1081,9 @@ fn make_player(spec: &str, name: &str, seed: Option<u64>) -> PlayerKind {
         // different game than the one requested, printed a winner, and
         // exited 0 — indistinguishable from a legitimate run.
         other => die(&format!(
-            "unknown player type '{other}' (expected cli, random, claude[:model], \
-             gemini[:model], or claude-code[:model]; ai and llm are accepted for \
-             claude, cc for claude-code)")),
+            "{origin} names unknown player type '{other}' (expected cli, random, \
+             claude[:model], gemini[:model], or claude-code[:model]; ai and llm are \
+             accepted for claude, cc for claude-code)")),
     }
 }
 
