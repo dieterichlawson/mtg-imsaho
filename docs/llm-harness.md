@@ -115,9 +115,12 @@ header rows are the ones starting with a timestamp digit.
   hidden information) never reach the file.
 - `SYSTEM` — the full system prompt sent to an LLM seat, once per seat.
 - `PROMPT` / `THOUGHT` / `RESPONSE` / `CHOSE` — one decision exchange:
-  the board state and options sent, the model's extended thinking if the
-  backend returned any, the raw backend JSON (`DEBUG`), and the option that
-  was taken.
+  the board state and options sent, the model's reasoning, the raw backend
+  JSON (`DEBUG`), and the option that was taken. Every backend records a
+  `THOUGHT`: the Messages API reads it from the extended-thinking block,
+  while Gemini and the `claude -p` seat — whose result object carries no
+  thinking block — ask for it in the JSON as a `thoughts` field and take it
+  out of the payload once captured.
 - `MALFORMED`, `VALIDATION`, `BLOCKER_VALIDATION` — the model answered with
   something unusable and the harness fell back (usually to option 0 / pass).
   Grep these first when a seat plays nonsense.

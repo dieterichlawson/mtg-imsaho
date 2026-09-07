@@ -71,7 +71,7 @@ for a in "$@"; do
   if [ "$prev" = "--session-id" ] || [ "$prev" = "--resume" ]; then SID="$a"; fi
   prev="$a"
 done
-printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s","result":"{\"action\":3}","structured_output":{"action":3,"word":"ok","ready":true},"usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":5,"cache_creation_input_tokens":1}}\n' "$SID"
+printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s","result":"{\"action\":3}","structured_output":{"action":3,"word":"ok","ready":true,"thoughts":"I am blocking to stay alive."},"usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":5,"cache_creation_input_tokens":1}}\n' "$SID"
 "#;
 
 fn arg_after<'a>(call: &'a str, flag: &str) -> Option<&'a str> {
@@ -144,12 +144,23 @@ fn structured_calls_pass_the_schema_and_return_the_object() {
 
     let call = &fake.calls()[0];
     let passed: serde_json::Value = serde_json::from_str(arg_after(call, "--json-schema").unwrap()).unwrap();
-    // Sanitized exactly like the API path: no thoughts field, no numeric
-    // bounds, additionalProperties pinned.
-    assert!(passed["properties"].get("thoughts").is_none());
+    // Sanitized like the API path — no numeric bounds, additionalProperties
+    // pinned — but `thoughts` is KEPT. The CLI's result object carries no
+    // thinking block for the harness to read, so a schema stripped of the
+    // field left this seat's reasoning recorded nowhere at all: 101
+    // decisions produced zero THOUGHT lines (issue #213).
+    assert!(passed["properties"].get("thoughts").is_some(),
+        "the one channel this seat has is not stripped: {passed}");
     assert!(passed["properties"]["n"].get("minimum").is_none());
     assert_eq!(passed["additionalProperties"], false);
-    assert_eq!(passed["required"], serde_json::json!(["word"]));
+    assert_eq!(passed["required"], serde_json::json!(["word", "thoughts"]));
+
+    // And it is captured as thinking, then taken out of the payload so every
+    // caller sees the same shape it gets from the API backends.
+    assert!(got.get("thoughts").is_none(), "removed once captured: {got}");
+    assert_eq!(p.backend_take_thinking_for_test().as_deref(),
+        Some("I am blocking to stay alive."));
+    assert!(p.backend_take_thinking_for_test().is_none(), "taken once");
 }
 
 #[test]

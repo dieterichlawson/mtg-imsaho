@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use super::{LlmBackend, ANTHROPIC_RESPONSE_FORMAT, GAME_RULES};
+use super::{LlmBackend, GAME_RULES, THOUGHTS_IN_JSON_FORMAT};
 
 /// Environment variable naming the Claude Code binary; defaults to `claude`
 /// on `PATH`.
@@ -228,6 +228,12 @@ pub(super) struct ClaudeCodeBackend {
     /// `CLAUDE.md`, settings, or hooks from the caller's cwd leak into the
     /// game prompt.
     workdir: PathBuf,
+    /// The reasoning from the last decision, taken out of the JSON payload.
+    ///
+    /// The CLI's result object carries no thinking block, so this is the
+    /// only channel this seat has — and the schema used to be stripped of
+    /// the field, which left it with none at all (issue #213).
+    last_thinking: Option<String>,
 }
 
 impl ClaudeCodeBackend {
@@ -252,10 +258,11 @@ impl ClaudeCodeBackend {
             binary: binary.to_string(),
             model: model.map(str::to_string),
             label,
-            system_prompt: format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}"),
+            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
             session_id: None,
             turns: 0,
             workdir,
+            last_thinking: None,
         }
     }
 
@@ -475,15 +482,32 @@ impl LlmBackend for ClaudeCodeBackend {
     }
 
     fn send_with_schema(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
-        let sanitized = super::AnthropicBackend::sanitize_schema(schema);
-        match self.call(message, Some(&sanitized)) {
+        // `thoughts` is KEPT for this backend. The CLI's result object gives
+        // the harness no thinking block to read, so a schema stripped of the
+        // field left the seat's reasoning recorded nowhere at all — 101
+        // decisions, zero THOUGHT lines (issue #213). This is the seat the
+        // project actually runs.
+        let sanitized = super::AnthropicBackend::sanitize_schema(schema, true);
+        let mut structured = match self.call(message, Some(&sanitized)) {
             Some(json) => Self::structured(&json).unwrap_or_else(|| serde_json::json!({})),
             None => serde_json::json!({}),
+        };
+        // Taken out of the payload once captured, so every caller sees the
+        // same shape it does from the API backends.
+        if let Some(obj) = structured.as_object_mut() {
+            self.last_thinking = obj.remove("thoughts")
+                .and_then(|t| t.as_str().map(std::string::ToString::to_string))
+                .filter(|t| !t.trim().is_empty());
         }
+        structured
+    }
+
+    fn take_thinking(&mut self) -> Option<String> {
+        self.last_thinking.take()
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.session_id = None;
         self.turns = 0;
     }

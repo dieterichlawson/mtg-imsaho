@@ -616,8 +616,11 @@ trait LlmBackend {
     fn take_thinking(&mut self) -> Option<String> { None }
 }
 
-/// Gemini-flavoured response intro: thoughts ride along inside the JSON.
-const GEMINI_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
+/// The response intro for a backend whose reasoning the harness can only see
+/// if it comes back INSIDE the JSON: Gemini, and the `claude -p` CLI seat,
+/// whose result object carries no thinking block the harness can read
+/// (issue #213).
+const THOUGHTS_IN_JSON_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
 Limited (draft) match — each player has a 40-card deck built from a draft pool.
 The goal is to reduce your opponent's life total from 20 to 0 by attacking with
 creatures and casting damaging spells, while protecting your own life total.
@@ -870,8 +873,15 @@ impl AnthropicBackend {
     /// Transform a JSON schema to be Anthropic-compatible:
     /// - Add "additionalProperties": false to all objects
     /// - Strip unsupported numeric constraints (minimum, maximum, multipleOf)
-    /// - Strip "thoughts" field — reasoning happens in thinking blocks
-    fn sanitize_schema(value: &serde_json::Value) -> serde_json::Value {
+    /// - Strip "thoughts" unless the caller keeps it
+    ///
+    /// `keep_thoughts` is false for the Messages API, where the reasoning
+    /// comes back in a thinking block the harness reads. It is TRUE for the
+    /// `claude -p` seat, whose result object carries no thinking block — so
+    /// stripping the field there erased the reasoning entirely: the schema
+    /// asked for it, this stripped it, and nothing read a thinking channel,
+    /// which is why 101 decisions produced zero THOUGHT lines (issue #213).
+    pub(super) fn sanitize_schema(value: &serde_json::Value, keep_thoughts: bool) -> serde_json::Value {
         match value {
             serde_json::Value::Object(map) => {
                 let mut new_map = serde_json::Map::new();
@@ -880,24 +890,26 @@ impl AnthropicBackend {
                     if key == "minimum" || key == "maximum" || key == "multipleOf" {
                         continue;
                     }
-                    new_map.insert(key.clone(), Self::sanitize_schema(val));
+                    new_map.insert(key.clone(), Self::sanitize_schema(val, keep_thoughts));
                 }
                 // Add additionalProperties: false to object types.
                 if new_map.get("type").and_then(|t| t.as_str()) == Some("object") {
                     new_map.entry("additionalProperties".to_string())
                         .or_insert(serde_json::Value::Bool(false));
-                    // Strip "thoughts" — thinking blocks provide reasoning.
-                    if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                        props.remove("thoughts");
-                    }
-                    if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
-                        req.retain(|v| v.as_str() != Some("thoughts"));
+                    if !keep_thoughts {
+                        if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                            props.remove("thoughts");
+                        }
+                        if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
+                            req.retain(|v| v.as_str() != Some("thoughts"));
+                        }
                     }
                 }
                 serde_json::Value::Object(new_map)
             }
             serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(arr.iter().map(Self::sanitize_schema).collect())
+                serde_json::Value::Array(arr.iter()
+                    .map(|v| Self::sanitize_schema(v, keep_thoughts)).collect())
             }
             other => other.clone(),
         }
@@ -905,7 +917,7 @@ impl AnthropicBackend {
 
     fn call_with_messages_structured(&mut self, messages: &[serde_json::Value], schema: &serde_json::Value) -> serde_json::Value {
         let (system, msgs) = self.prepare_request(messages);
-        let sanitized = Self::sanitize_schema(schema);
+        let sanitized = Self::sanitize_schema(schema, false);
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 8192,
@@ -996,7 +1008,7 @@ impl GeminiBackend {
             api_key,
             model: model.to_string(),
             thinking_level: None,
-            system_prompt: format!("{GEMINI_RESPONSE_FORMAT}{GAME_RULES}"),
+            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
             interaction_id: None,
             last_thinking: None,
         }
@@ -1158,7 +1170,7 @@ impl LlmBackend for GeminiBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{GEMINI_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.interaction_id = None;
     }
 
@@ -1444,6 +1456,11 @@ impl LlmPlayer {
     /// Drive the backend's structured call directly, for backend tests.
     pub fn backend_send_with_schema_for_test(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
         self.backend.send_with_schema(message, schema)
+    }
+
+    /// Take the backend's reasoning for the last decision, for backend tests.
+    pub fn backend_take_thinking_for_test(&mut self) -> Option<String> {
+        self.backend.take_thinking()
     }
 
     /// Feed a recap through the backend's resume path, for backend tests.
