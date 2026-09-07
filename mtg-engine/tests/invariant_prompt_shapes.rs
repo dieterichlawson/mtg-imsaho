@@ -558,3 +558,184 @@ fn a_pay_or_not_prompt_names_the_spell_it_is_about() {
     s.awaiting_action = Some(pay(pump, pump, with_x));
     flags(&s, &reg, "pay-or-not prompt with an unannounced X");
 }
+
+/// CR 603.3b: a trigger-order prompt orders the asking player's own
+/// triggers, from the queue their seat owns, by increasing position, and
+/// only where there is something to order.
+#[test]
+fn a_trigger_order_prompt_orders_its_own_queue() {
+    let (mut state, reg) = base();
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let queued = |src: ObjectId, controller: PlayerId, s: &GameState| {
+        mtg_engine::triggers::PendingTrigger::new(
+            mtg_engine::triggers::TriggerSource::new(src, s.get_object(src).unwrap().card_id,
+                controller, "t"),
+            mtg_engine::triggers::TriggerEvent::StateTriggered)
+    };
+    let prompt = |source: ObjectId, indices: Vec<usize>, options: Vec<String>,
+                  ap_queue: bool, player: PlayerId| AwaitingAction::ResolutionChoice {
+        player, source,
+        choice: ResolutionChoiceKind::ChooseTriggerOrder {
+            description: "d".into(), options, ap_queue, indices } };
+    let labels = || vec!["a".into(), "b".into()];
+
+    let mut ap = state.clone();
+    ap.pending_trigger_pushes_ap.push(queued(ghoul, P0, &ap));
+    ap.pending_trigger_pushes_ap.push(queued(other, P0, &ap));
+
+    let mut s = ap.clone();
+    s.awaiting_action = Some(prompt(ghoul, vec![0, 1], labels(), true, P0));
+    quiet_about(&s, &reg, "trigger-order prompt");
+
+    // One trigger is not an order to choose.
+    let mut s = ap.clone();
+    s.awaiting_action = Some(prompt(ghoul, vec![0], vec!["a".into()], true, P0));
+    flags(&s, &reg, "with 1 options for 1 indices");
+
+    // The positions are increasing.
+    let mut s = ap.clone();
+    s.awaiting_action = Some(prompt(ghoul, vec![1, 0], labels(), true, P0));
+    flags(&s, &reg, "are not increasing");
+
+    // A position past the end of the queue.
+    let mut s = ap.clone();
+    s.awaiting_action = Some(prompt(ghoul, vec![0, 5], labels(), true, P0));
+    flags(&s, &reg, "is past the queue of 2");
+
+    // The prompt's source is the first trigger it orders.
+    let mut s = ap.clone();
+    s.awaiting_action = Some(prompt(other, vec![0, 1], labels(), true, P0));
+    flags(&s, &reg, "but its first trigger is from #");
+
+    // Somebody else's trigger.
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.pending_trigger_pushes_ap.push(queued(theirs, P1, &s));
+    s.awaiting_action = Some(prompt(ghoul, vec![0, 1], labels(), true, P0));
+    flags(&s, &reg, "orders p1's trigger");
+
+    // CR 603.3b: the AP queue belongs to the active player, and the NAP's
+    // triggers wait for it.
+    let mut s = ap.clone();
+    s.awaiting_action = Some(prompt(ghoul, vec![0, 1], labels(), false, P0));
+    flags(&s, &reg, "ap_queue=false for p0 while p0 is active (CR 603.3b)");
+
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.pending_trigger_pushes_nap.push(queued(theirs, P1, &s));
+    s.pending_trigger_pushes_nap.push(queued(theirs, P1, &s));
+    s.awaiting_action = Some(prompt(theirs, vec![0, 1], labels(), false, P1));
+    flags(&s, &reg, "while active-player triggers wait (CR 603.3b)");
+}
+
+/// CR 701.23a: every prompt that reads a library reads the searcher's own,
+/// and only cards that are still in it.
+#[test]
+fn a_library_prompt_offers_cards_that_are_in_that_library() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let mine = stock_library(&mut state, &reg, P0, 2);
+    let theirs = stock_library(&mut state, &reg, P1, 1);
+    for id in mine.iter().chain(&theirs) {
+        state.get_object_mut(*id).unwrap().name = "Forest".into();
+    }
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+
+    let search = |options: Vec<ObjectId>, searcher: PlayerId| AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::ChooseFromLibrary {
+            description: "d".into(), options, searcher, source_id: bear,
+            destination: Zone::Hand, tapped: false } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(search(mine.clone(), P0));
+    quiet_about(&s, &reg, "library prompt");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(search(vec![theirs[0]], P0));
+    flags(&s, &reg, "which is not in p0's library (CR 701.23a)");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(search(vec![mine[0], mine[0]], P0));
+    flags(&s, &reg, "library prompt lists #");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(search(mine.clone(), ghost));
+    flags(&s, &reg, "library prompt for p2 who is not a player");
+
+    // CR 701.16a: looking moves nothing — the cards looked at are still in
+    // the library until the answer, and are never tokens.
+    let looked = |cards: Vec<ObjectId>| AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::ChooseFromLookedAt {
+            description: "d".into(), looked_at: cards } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(looked(mine.clone()));
+    quiet_about(&s, &reg, "looked-at prompt");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(looked(vec![ObjectId(4242)]));
+    flags(&s, &reg, "looked-at prompt offers missing #4242");
+
+    let mut s = state.clone();
+    let token = s.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    s.awaiting_action = Some(looked(vec![token]));
+    flags(&s, &reg, "looked-at prompt offers token #");
+}
+
+/// A hand prompt asks the player whose hand it is, for cards that are in
+/// it, while there is still something to take.
+#[test]
+fn a_hand_prompt_reads_the_hand_of_the_player_it_asks() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let mine = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    let theirs = spell_in_hand(&mut state, &reg, "Moment of Heroism", P1);
+
+    let hand = |who: PlayerId, cards: Vec<ObjectId>, remaining: usize|
+        AwaitingAction::ResolutionChoice {
+            player: P0, source: bear,
+            choice: ResolutionChoiceKind::ChooseCardFromHand {
+                description: "d".into(), player: who, cards,
+                discard_immediately: true, remaining } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(hand(P0, vec![mine], 1));
+    quiet_about(&s, &reg, "hand prompt");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(hand(P1, vec![theirs], 1));
+    flags(&s, &reg, "hand prompt for p1 answered by p0");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(hand(P0, vec![theirs], 1));
+    flags(&s, &reg, "which is not in p0's hand");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(hand(P0, vec![mine], 0));
+    flags(&s, &reg, "hand prompt with nothing left to choose");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(hand(P0, vec![mine, mine], 1));
+    flags(&s, &reg, "hand prompt lists #");
+
+    // A name or type prompt with nothing to name.
+    let mut s = state.clone();
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::ChooseCardType {
+            description: "d".into(), options: vec![], controller: P0 } });
+    flags(&s, &reg, "a name/type prompt offers nothing");
+
+    // And a card-type prompt is answered by the player it names.
+    let mut s = state.clone();
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::ChooseCardType {
+            description: "d".into(), options: vec!["Creature".into()], controller: P1 } });
+    flags(&s, &reg, "card-type prompt for p1 answered by p0");
+}
