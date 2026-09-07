@@ -64,6 +64,11 @@ pub(crate) struct CastPayment<'a> {
     pub paid: Option<&'a crate::types::ManaCost>,
     /// The announced value of X (CR 601.2b), when the spell had one.
     pub x: Option<u32>,
+    /// Cast from the owner's graveyard under the card's own permission
+    /// (CR 601.3a) — Skaab Ruinator. Recorded because it is otherwise
+    /// indistinguishable from a hand cast of the same card, and the two are
+    /// materially different: they exile different cards (issue #300).
+    pub from_graveyard: bool,
 }
 
 impl CastPayment<'_> {
@@ -88,6 +93,9 @@ impl CastPayment<'_> {
             if printed != paid {
                 parts.push(format!("paid {paid}, reduced from {printed}"));
             }
+        }
+        if self.from_graveyard {
+            parts.push("from graveyard".to_string());
         }
         if let Some(x) = self.x {
             parts.push(format!("X={x}"));

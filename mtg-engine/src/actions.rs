@@ -207,6 +207,13 @@ pub struct CastableSpell {
     /// reaches the player instead of being collapsed away (issue #128).
     /// Player implementations must carry this into the CastSpell they build.
     pub alternative_cost: Option<crate::types::ManaCost>,
+    /// Cast from the owner's graveyard under the card's own permission
+    /// ("You may cast this card from your graveyard", CR 601.3a) — Skaab
+    /// Ruinator. That is permission to cast from another zone, NOT an
+    /// alternative cost: the mana cost is the printed one. A flashback cast
+    /// is also from the graveyard but says so through `is_flashback`, which
+    /// has its own verb.
+    pub from_graveyard: bool,
 }
 
 /// An activated ability that can be activated, with its valid target options.

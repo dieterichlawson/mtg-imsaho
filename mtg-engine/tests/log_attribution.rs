@@ -299,6 +299,74 @@ fn a_reduced_cast_reports_what_was_actually_paid() {
         "Heartless Summoning took {{2}} off; got {cast_line:?}");
 }
 
+/// A cast from the graveyard under the card's own permission (CR 601.3a) is
+/// not an alternative cost — Skaab Ruinator pays its printed {1}{U}{U}. The
+/// menu row said "(alternative cost {1}{U}{U})", which is the card's own cost
+/// announced as a replacement for itself, and the log recorded it exactly as
+/// a hand cast (issue #300).
+#[test]
+fn a_graveyard_cast_names_its_zone_and_claims_no_alternative_cost() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+    for _ in 0..3 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+    add_mana(&mut state, P0, &[(ManaType::Blue, 2), (ManaType::Colorless, 1)]);
+
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == ruinator)
+        .expect("the graveyard copy is castable");
+
+    assert!(cs.from_graveyard, "the row has to say which zone it casts from");
+    assert!(!cs.is_flashback, "this is permission to cast, not flashback");
+    assert!(cs.alternative_cost.is_none(),
+        "the printed mana cost is not an alternative cost; got {:?}", cs.alternative_cost);
+    assert!(cs.additional_cost_label.is_some(),
+        "the exile cost is what makes the two ways to cast non-interchangeable");
+
+    // And the same in the log.
+    let cast = legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == ruinator))
+        .expect("a cast action for the graveyard copy")
+        .clone();
+    let after = mtg_engine::engine::submit_action(&state, &cast, &reg);
+    let after = resolve_exile_choice_max_power(&after, &reg);
+    let cast_line = log_lines(&after).into_iter()
+        .find(|l| l.contains("cast Skaab Ruinator"))
+        .expect("cast line");
+
+    assert!(cast_line.contains("from graveyard"), "got {cast_line:?}");
+    assert!(!cast_line.contains("alternative cost"), "got {cast_line:?}");
+}
+
+/// The same card in hand casts without the zone marker, so the two rows are
+/// distinguishable — which is the whole point.
+#[test]
+fn a_hand_cast_of_the_same_card_says_nothing_about_a_zone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let in_hand = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
+    for _ in 0..3 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+    add_mana(&mut state, P0, &[(ManaType::Blue, 2), (ManaType::Colorless, 1)]);
+
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == in_hand)
+        .expect("the hand copy is castable");
+    assert!(!cs.from_graveyard);
+    assert!(cs.alternative_cost.is_none());
+}
+
 /// Flashback keeps its own name, and is not doubled up with the generic
 /// alternative-cost marker.
 #[test]

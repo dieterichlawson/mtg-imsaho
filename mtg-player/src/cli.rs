@@ -4163,17 +4163,35 @@ impl Player for CliPlayer {
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
-                            let alt_note = match &cs.alternative_cost {
+                            // "Cast Skaab Ruinator from graveyard": with one
+                            // copy in hand and one in the graveyard both rows
+                            // carried the same name and the same tap plan, and
+                            // the only thing telling them apart was an
+                            // "(alternative cost {1}{U}{U})" note that was not
+                            // true — a graveyard cast pays the printed cost
+                            // (CR 601.3a). Picking the wrong row exiles three
+                            // different cards and is not undoable (issue #300).
+                            let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
+                            let mut notes: Vec<String> = Vec::new();
+                            match &cs.alternative_cost {
                                 Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
-                                    " (without paying its mana cost)".to_string(),
+                                    notes.push("without paying its mana cost".to_string()),
                                 Some(alt) if !cs.is_flashback =>
-                                    format!(" (alternative cost {alt})"),
-                                _ => String::new(),
-                            };
-                            let label = if tap_str.is_empty() {
-                                format!("{} {}{}", verb, cs.name, alt_note)
+                                    notes.push(format!("alternative cost {alt}")),
+                                _ => {}
+                            }
+                            // The additional cost is the whole reason two ways
+                            // to cast the same card are not interchangeable.
+                            if let Some(extra) = &cs.additional_cost_label {
+                                notes.push(extra.clone());
+                            }
+                            if !tap_str.is_empty() {
+                                notes.push(format!("tap {tap_str}"));
+                            }
+                            let label = if notes.is_empty() {
+                                format!("{verb} {}{zone_note}", cs.name)
                             } else {
-                                format!("{} {}{} (tap {})", verb, cs.name, alt_note, tap_str)
+                                format!("{verb} {}{zone_note} ({})", cs.name, notes.join(", "))
                             };
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }

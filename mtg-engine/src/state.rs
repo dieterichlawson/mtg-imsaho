@@ -3569,6 +3569,12 @@ pub struct PendingSpellCast {
     pub non_x_mana_cost: crate::types::ManaCost,
     /// True if this is a flashback cast.
     pub is_flashback: bool,
+    /// True if this is a cast from the graveyard under the card's own
+    /// permission (CR 601.3a) rather than from hand. Recorded here because
+    /// by the time the cast finalizes the spell is on the stack and the zone
+    /// it came from can no longer be read off it.
+    #[serde(default)]
+    pub cast_from_graveyard: bool,
 }
 
 /// What the engine is waiting for the player to do.

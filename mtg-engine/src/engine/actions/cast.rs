@@ -159,6 +159,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                     alternative_cost: alternative_cost.cloned(),
                     non_x_mana_cost: non_x_cost,
                     is_flashback,
+                    cast_from_graveyard: is_cast_from_graveyard,
                 });
                 state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                     player,
@@ -203,6 +204,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                 alternative_cost: alternative_cost.cloned(),
                 non_x_mana_cost,
                 is_flashback,
+                cast_from_graveyard: is_cast_from_graveyard,
             });
             state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                 player,
@@ -311,6 +313,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
             printed: printed.as_ref(),
             paid: Some(&cost),
             x: if has_x { Some(0) } else { None },
+            from_graveyard: is_cast_from_graveyard,
         };
         finalize_spell_cast(&mut *state, player, object_id, &payment, targets, registry);
     Applied::Continue

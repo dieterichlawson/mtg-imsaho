@@ -474,6 +474,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             printed: printed.as_ref(),
                             paid: None,
                             x: Some(x),
+                            from_graveyard: pending.cast_from_graveyard,
                         };
                         finalize_spell_cast(
                             &mut *state, player, pending.object_id,

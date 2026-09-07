@@ -254,6 +254,7 @@ pub(crate) fn from_hand(
                     sacrifice_options: eligible_sacrifices.clone(),
                     additional_cost_label: additional_cost_label.clone(),
                     alternative_cost: first_alt,
+                    from_graveyard: false,
                 });
                 if let Some((alt_tap, alt_cost)) = alt_variant {
                     castable_spells.push(crate::actions::CastableSpell {
@@ -266,11 +267,31 @@ pub(crate) fn from_hand(
                         sacrifice_options: eligible_sacrifices.clone(),
                         additional_cost_label,
                         alternative_cost: Some(alt_cost),
+                        from_graveyard: false,
                     });
                 }
             }
         }
     }
+}
+
+/// Which of the three ways a card in a graveyard can be cast this is.
+///
+/// They are not interchangeable, and only one of them keeps the printed mana
+/// cost. Collapsing them was what made a Skaab Ruinator graveyard cast read
+/// as "(alternative cost {1}{U}{U})" — its own printed cost, announced as a
+/// replacement for itself (issue #300).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GyCast {
+    /// Flashback, printed or granted (CR 702.34a) — an alternative cost with
+    /// a name of its own.
+    Flashback,
+    /// "You may cast this card from your graveyard": permission to cast from
+    /// another zone (CR 601.3a), at the printed mana cost.
+    Permitted,
+    /// A genuine alternative cost that applies to that permitted cast
+    /// (Rooftop Storm's {0} for a Zombie Skaab Ruinator, CR 601.2b).
+    Alternative,
 }
 
 /// Spells the player can cast from the graveyard via flashback.
@@ -285,7 +306,7 @@ pub(crate) fn flashback(
     let casting_banned = &ctx.casting_banned;
     let player_state = state.get_player(player);
     // Cast spells via flashback from graveyard.
-    let mut seen_untargeted_flashbacks: Vec<(CardId, ManaCost)> = Vec::new();
+    let mut seen_untargeted_flashbacks: Vec<(CardId, ManaCost, GyCast)> = Vec::new();
     for obj in state.objects_in_zone(Zone::Graveyard, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
@@ -305,18 +326,26 @@ pub(crate) fn flashback(
             // cost was found unaffordable and the payable {5}{R} was never
             // offered at all.
             let cast_from_gy = behavior.can_cast_from_graveyard();
-            let mut fb_costs: Vec<ManaCost> = state.until_end_of_turn.iter()
+            // Each way to cast from the graveyard, and WHICH way it is. A
+            // graveyard cast under the card's own permission (Skaab Ruinator)
+            // is not an alternative cost — it is permission to cast from
+            // another zone at the printed cost (CR 601.3a). Routing it
+            // through the flashback plumbing labelled it "(alternative cost
+            // {1}{U}{U})" for a {1}{U}{U} card, which reads as a discount
+            // that is not there, and left the hand copy and the graveyard
+            // copy with indistinguishable menu rows (issue #300).
+            let mut fb_costs: Vec<(ManaCost, GyCast)> = state.until_end_of_turn.iter()
                 .filter_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
-                    if *target == obj.id { Some(cost.clone()) } else { None }
+                    if *target == obj.id { Some((cost.clone(), GyCast::Flashback)) } else { None }
                 } else { None })
                 .collect();
             if let Some(c) = &data.flashback_cost {
-                fb_costs.push(c.clone());
+                fb_costs.push((c.clone(), GyCast::Flashback));
             }
             if cast_from_gy {
                 // Cast from graveyard uses the normal mana cost.
                 if let Some(c) = &data.cost {
-                    fb_costs.push(c.clone());
+                    fb_costs.push((c.clone(), GyCast::Permitted));
                 }
                 // CR 601.2b: an alternative cost replaces the mana cost of
                 // casting the spell, whichever zone it is being cast from.
@@ -333,10 +362,13 @@ pub(crate) fn flashback(
                 // "flashback" of every Zombie card in the graveyard while
                 // Rooftop Storm was out, and choosing one panicked in
                 // cast_spell.
-                fb_costs.extend(alternative_costs(state, registry, obj.card_id, player));
+                fb_costs.extend(alternative_costs(state, registry, obj.card_id, player)
+                    .into_iter().map(|c| (c, GyCast::Alternative)));
             }
-            // Two identical costs are one option, not two.
-            let mut unique: Vec<ManaCost> = Vec::new();
+            // Two identical costs are one option, not two — unless they are
+            // two different ways to cast (a printed cost that a Rooftop Storm
+            // happens to match is still a distinct offer).
+            let mut unique: Vec<(ManaCost, GyCast)> = Vec::new();
             for c in fb_costs {
                 if !unique.contains(&c) {
                     unique.push(c);
@@ -360,8 +392,8 @@ pub(crate) fn flashback(
 
             if !can_cast_timing { continue; }
 
-            // One castable option per distinct flashback cost.
-            for fb_cost in &unique {
+            // One castable option per distinct way to cast.
+            for (fb_cost, kind) in &unique {
             // Compute autotap for the non-X portion of the flashback cost.
             // X-cost flashback spells (Devil's Play's {X}{R}{R}{R} flashback)
             // are funded via a ChooseXFunding prompt after the spell is
@@ -371,10 +403,15 @@ pub(crate) fn flashback(
             // is, including one paid via flashback. This path used to autotap
             // for the printed flashback cost directly, so a Zombie-spell
             // discount reached spells cast from hand and nothing else.
-            let fb_total = cost_to_cast(
-                state, registry, obj.card_id, player,
-                &CastMethod::Alternative(fb_cost.clone()),
-            ).mana;
+            // A permitted graveyard cast is a NORMAL cast that happens to
+            // start in the graveyard, so its cost is determined the normal
+            // way — the card's own cost-modifying behaviour included.
+            let method = match kind {
+                GyCast::Permitted => CastMethod::Normal,
+                GyCast::Flashback | GyCast::Alternative =>
+                    CastMethod::Alternative(fb_cost.clone()),
+            };
+            let fb_total = cost_to_cast(state, registry, obj.card_id, player, &method).mana;
             let fb_has_x = fb_total.has_x();
             let fb_non_x_cost;
             let fb_cost_for_autotap: &ManaCost = if fb_has_x {
@@ -402,7 +439,7 @@ pub(crate) fn flashback(
             // second flashback option would be swallowed as a duplicate of its
             // first.
             if matches!(target_req, crate::cards::TargetRequirement::None) {
-                let key = (obj.card_id, fb_cost.clone());
+                let key = (obj.card_id, fb_cost.clone(), *kind);
                 if seen_untargeted_flashbacks.contains(&key) { continue; }
                 seen_untargeted_flashbacks.push(key);
             }
@@ -413,10 +450,17 @@ pub(crate) fn flashback(
             // Each action carries the cost it was offered for, so the cast
             // handler charges the one the player picked rather than
             // re-deriving a winner.
+            // `None` for the permitted graveyard cast: `cast_spell` reads
+            // this to decide the cast method, and the method is the normal
+            // one. Anything else names the cost that replaces the mana cost.
+            let carried_cost = match kind {
+                GyCast::Permitted => None,
+                GyCast::Flashback | GyCast::Alternative => Some(fb_total.clone()),
+            };
             for action in &mut cast_actions {
                 if let Action::CastSpell { tap_plan, alternative_cost, .. } = action {
                     tap_plan.clone_from(&fb_tap_plan);
-                    *alternative_cost = Some(fb_total.clone());
+                    alternative_cost.clone_from(&carried_cost);
                 }
             }
             if !cast_actions.is_empty() {
@@ -425,7 +469,7 @@ pub(crate) fn flashback(
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
                     name: data.name.clone(),
-                    is_flashback: !cast_from_gy,
+                    is_flashback: *kind == GyCast::Flashback,
                     target_spec: spec,
                     tap_plan: fb_tap_plan,
                     exile_x_from_gy_max: additional.exile_x_max,
@@ -433,7 +477,8 @@ pub(crate) fn flashback(
                     additional_cost_label: additional.label.clone(),
                     // The cost this entry casts with — the actions above all
                     // carry it, and the player's CastSpell must too (#128).
-                    alternative_cost: Some(fb_total.clone()),
+                    alternative_cost: carried_cost,
+                    from_graveyard: *kind != GyCast::Flashback,
                 });
             }
             }

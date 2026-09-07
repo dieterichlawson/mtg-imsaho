@@ -2985,6 +2985,10 @@ impl Player for LlmPlayer {
                                 .map(|n| format!(" X=0..{n} (0..{n} damage)"))
                                 .unwrap_or_default();
                             let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
+                            // A graveyard cast pays the printed cost (CR
+                            // 601.3a); saying which zone is what tells it
+                            // apart from the copy in hand (issue #300).
+                            let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
                             let mut extras = Vec::new();
                             match &cs.alternative_cost {
                                 Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
@@ -2996,9 +3000,9 @@ impl Player for LlmPlayer {
                             if !cost_note.is_empty() { extras.push(cost_note.to_string()); }
                             if !tap_str.is_empty() { extras.push(format!("tap {tap_str}")); }
                             let label = if extras.is_empty() {
-                                format!("{} {}{}", verb, cs.name, x_suffix)
+                                format!("{} {}{zone_note}{}", verb, cs.name, x_suffix)
                             } else {
-                                format!("{} {}{} ({})", verb, cs.name, x_suffix, extras.join(", "))
+                                format!("{} {}{zone_note}{} ({})", verb, cs.name, x_suffix, extras.join(", "))
                             };
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }
@@ -3846,6 +3850,7 @@ mod tests {
                 object_id: spell,
                 name: "Geistflame".to_string(),
                 is_flashback: false,
+                from_graveyard: false,
                 target_spec: CastTargetSpec::SingleTarget(vec![
                     mtg_engine::actions::Target::Player(mtg_engine::ids::PlayerId(0)),
                     mtg_engine::actions::Target::Player(mtg_engine::ids::PlayerId(1)),
@@ -4318,6 +4323,7 @@ this Aura deals 1 damage to that player.";
             object_id: ObjectId(200),
             name: "Stitched Drake".into(),
             is_flashback: false,
+            from_graveyard: false,
             target_spec: CastTargetSpec::NoTargets,
             tap_plan: vec![],
             exile_x_from_gy_max: None,
@@ -4378,6 +4384,7 @@ this Aura deals 1 damage to that player.";
             object_id: ObjectId(202),
             name: "Harvest Pyre".into(),
             is_flashback: false,
+            from_graveyard: false,
             target_spec: CastTargetSpec::SingleTarget(vec![]),
             tap_plan: vec![],
             exile_x_from_gy_max: Some(3),
