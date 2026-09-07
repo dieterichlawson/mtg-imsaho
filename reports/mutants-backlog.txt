@@ -145,9 +145,6 @@ mtg-engine/src/state.rs: replace + with * in GameState::create_token_with_subtyp
 mtg-engine/src/state.rs: replace == with != in GameState::move_object
 mtg-engine/src/state.rs: replace match guard o.zone == Zone::Battlefield with true in GameState::has_keyword
 mtg-engine/src/state.rs: replace match guard obj.tapped with true in GameState::untap
-mtg-engine/src/triggers.rs: replace == with != in trigger_description
-mtg-engine/src/triggers.rs: replace PendingTrigger::chosen_targets -> &[Target] with Vec::leak(Vec::new())
-mtg-engine/src/triggers.rs: replace PendingTrigger::kind -> Option<crate::cards::TriggerKind> with None
 mtg-engine/src/triggers/collect/damage.rs: replace && with || in combat_damage
 mtg-engine/src/triggers/collect/mod.rs: replace == with != in was_on_the_battlefield
 mtg-engine/src/triggers/collect/timing.rs: delete match arm crate::cards::TriggerKind::EndCombat in step_started
