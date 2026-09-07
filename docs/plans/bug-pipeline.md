@@ -50,7 +50,17 @@ Runs daily after the finders. Takes open `phase:*` issues (oldest first,
 grouping obvious duplicates), and for each: reproduce → root-cause →
 fix the mechanism, wherever it lives (never a per-card special case) → regression
 test (mutation-checked where feasible) → full workspace suite green →
-**merge to master** → close the issue citing the commit. Issues it cannot
+**merge to master** → close the issue citing the commit.
+
+`phase:mutants` issues are triaged, not cleared. A surviving mutant is a
+lead, and `docs/mutation-testing-guide.md` is the decision procedure: a
+survivor whose edit no engine user could see goes on
+`reports/mutants-accepted.txt` with a written reason, a cluster inside one
+computation gets one property test over its output rather than one
+assertion per line, and a survivor that exists because the code is a
+second copy of something gets the code deleted. Closing such an issue with
+reasons and deletions is a complete fix; a test that would break on a
+legitimate refactor is not. Issues it cannot
 reproduce or safely fix get a comment with the diagnosis and stay open
 for a human. Duplicate issues are closed as duplicates of the one that
 carries the fix.

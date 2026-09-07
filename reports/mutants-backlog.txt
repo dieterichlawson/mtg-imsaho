@@ -11,16 +11,20 @@
 # A line whose mutant no longer exists (the code it described was
 # rewritten) is deleted too: awaiting.rs's bitmask subset enumeration
 # became `targeting::combinations`, taking four entries with it.
+#
+# Being on this list is not a promise that a test will be written. It means
+# nobody has triaged it yet. docs/mutation-testing-guide.md is the decision
+# procedure: some of these will turn out to be heuristics, unreachable code,
+# or bookkeeping inside a computation whose result is already property-tested,
+# and those move to reports/mutants-accepted.txt with a reason rather than
+# acquiring a test that would freeze the implementation.
 mtg-engine/src/engine.rs: delete ! in legal_actions
 mtg-engine/src/engine.rs: delete ! in perform_turn_based_actions
 mtg-engine/src/engine.rs: delete match arm Step::DeclareBlockers in perform_turn_based_actions
 mtg-engine/src/engine.rs: delete match arm Step::EndCombat in perform_turn_based_actions
 mtg-engine/src/engine.rs: replace && with || in run_game_loop_inner
-mtg-engine/src/engine.rs: replace += with *= in run_game_loop_inner
 mtg-engine/src/engine.rs: replace == with != in legal_actions
 mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
-mtg-engine/src/engine.rs: replace > with == in run_game_loop_inner
-mtg-engine/src/engine.rs: replace > with >= in run_game_loop_inner
 mtg-engine/src/engine.rs: replace || with && in run_game_loop_inner
 mtg-engine/src/engine/actions/abilities.rs: delete ! in activate_ability
 mtg-engine/src/engine/actions/abilities.rs: delete - in activate_loyalty_ability
@@ -44,18 +48,14 @@ mtg-engine/src/engine/actions/choices.rs: replace > with >= in resolve_choice
 mtg-engine/src/engine/actions/choices.rs: replace || with && in resolve_choice
 mtg-engine/src/engine/actions/mulligan.rs: replace += with *= in mulligan_keep
 mtg-engine/src/engine/actions/simple.rs: delete match arm Some(AwaitingAction::DiscardToHandSize{player, ..}) in discard_cards
-mtg-engine/src/engine/cards_flow.rs: delete ! in has_castable_with_potential_mana
-mtg-engine/src/engine/cards_flow.rs: replace && with || in has_castable_with_potential_mana
 mtg-engine/src/engine/cards_flow.rs: replace < with <= in discard_cards
 mtg-engine/src/engine/cards_flow.rs: replace < with <= in mill_cards
 mtg-engine/src/engine/cards_flow.rs: replace < with == in discard_cards
 mtg-engine/src/engine/cards_flow.rs: replace < with > in discard_cards
 mtg-engine/src/engine/cards_flow.rs: replace <= with > in legal_discard_actions
 mtg-engine/src/engine/cards_flow.rs: replace == with != in draw_cards
-mtg-engine/src/engine/cards_flow.rs: replace == with != in has_castable_with_potential_mana
 mtg-engine/src/engine/cards_flow.rs: replace > with == in draw_cards
 mtg-engine/src/engine/cards_flow.rs: replace > with == in mill_cards
-mtg-engine/src/engine/cards_flow.rs: replace || with && in has_castable_with_potential_mana
 mtg-engine/src/engine/costs.rs: replace && with || in additional_cost_is_payable
 mtg-engine/src/engine/costs.rs: replace && with || in pay_additional_cost
 mtg-engine/src/engine/costs.rs: replace && with || in pay_exile_creatures
@@ -96,14 +96,6 @@ mtg-engine/src/funding.rs: replace > with == in apply
 mtg-engine/src/funding.rs: replace > with == in validate
 mtg-engine/src/funding.rs: replace > with >= in apply
 mtg-engine/src/funding.rs: replace || with && in apply
-mtg-engine/src/mana.rs: replace += with *= in compute_autotap
-mtg-engine/src/mana.rs: replace += with -= in compute_autotap
-mtg-engine/src/mana.rs: replace - with + in compute_autotap
-mtg-engine/src/mana.rs: replace - with / in compute_autotap
-mtg-engine/src/mana.rs: replace -= with += in compute_autotap
-mtg-engine/src/mana.rs: replace -= with /= in compute_autotap
-mtg-engine/src/mana.rs: replace > with == in compute_autotap
-mtg-engine/src/mana.rs: replace > with >= in compute_autotap
 mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass
 mtg-engine/src/state.rs: delete ! in GameState::become_copy_of
 mtg-engine/src/state.rs: delete ! in GameState::effects_controlled_by

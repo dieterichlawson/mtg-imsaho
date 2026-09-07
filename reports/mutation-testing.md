@@ -271,3 +271,55 @@ self-tests. Both guards exist to stop an ordinary test standing in for the
 engine; an invariant self-test writes exactly those fields on purpose,
 because the state the engine would never leave behind is the thing it is
 asking the checker about.
+
+# What to fix, and what not to — 2026-09-07
+
+The first two months of this campaign ran on an unstated rule: a survivor
+is a defect, so kill it. That rule is wrong, and following it started to
+cost more than it returned.
+
+`docs/mutation-testing-guide.md` is the replacement. The short version:
+a survivor is a lead, the question is whether an engine user could see
+anything go wrong if the edit shipped, and the second question is whether
+the test that kills it would survive a legitimate refactor. A survivor
+that fails the first goes on the accepted list with a reason; a cluster
+that fails the second wants one property over the computation's output,
+not one assertion per line.
+
+The audit that produced it, over what this campaign has pinned so far:
+
+- **The invariant self-tests (162 tests, six files) hold up.** They are
+  the highest-value case in the guide's "fix" list — the checker is the
+  only oracle over ~110k games a night, so a blinded clause silently
+  removes a whole class of bug from the fuzzer's reach and the run stays
+  green. They are also written at the right level: corrupt one property
+  of a healthy state, assert the message. That survives a rewrite of the
+  clause; it pins what the clause is for.
+- **The tap planner's arithmetic should not have been on the list at
+  all.** Twenty-three survivors inside `compute_autotap`'s internal
+  simulation, in a function whose choice among correct plans is a
+  heuristic that has been retuned twice. Replaced with two property
+  cases over the contract (an offered plan pays; a declined one had no
+  plan), which catch the same class and leave the heuristic free. This is
+  the worked example in the guide.
+- **The dozen older autotap tests that pin an exact source choice are
+  borderline and stay.** Each cites a reported bug — #114 stranding a
+  castable spell, #252 offering a plan the payment could not run — so the
+  preference they pin is a symptom someone actually hit. New ones should
+  assert the symptom (the spell is still castable) rather than the
+  ordering.
+- **Three of the "fixes" were deletions, and they were the best ones.**
+  `generate_ability_targets` was a second copy of the requirement match
+  that knew nine of seventeen words; `valid_targets_for_mode` was
+  `valid_targets_for_req` with a wrapper peeled off; `replacement::apply`
+  had a branch no caller could reach. Deleting removed the survivors, the
+  drift, and the reader's confusion at once. The guide now names this as
+  a disposition of its own.
+- **Six backlog lines named functions that no longer exist** (the
+  `try_auto_pay` arithmetic moved into `try_auto_pay_with_order` when the
+  reserving order was split out). Stale lines cost a re-derivation every
+  time someone reads the list; they are deleted on sight.
+
+What did not change: the ceremony. A mutation-motivated test still is not
+done until it has been watched failing under its exact mutant, because an
+early round of this campaign produced four kills that were not kills.

@@ -70,3 +70,39 @@ mtg-engine/src/cards/mod.rs: replace CardBehavior::self_static_pt_mod -> Option<
 # A zero-cost loyalty ability makes both halves false either way: -0 is 0,
 # and 0 is never greater than a u32 loyalty count.
 mtg-engine/src/engine/legal/abilities.rs: replace < with <= in loyalty
+
+# The auto-pass gate: whether a seat with nothing meaningful to do is asked
+# at all. A wrong answer shows one extra prompt or skips one, and the game
+# is unaffected either way — `advance_or_resolve` runs regardless. Its own
+# comment says it is deliberately conservative. Preference, not a rule
+# (docs/mutation-testing-guide.md).
+mtg-engine/src/engine/cards_flow.rs: delete ! in has_castable_with_potential_mana
+mtg-engine/src/engine/cards_flow.rs: replace && with || in has_castable_with_potential_mana
+mtg-engine/src/engine/cards_flow.rs: replace == with != in has_castable_with_potential_mana
+mtg-engine/src/engine/cards_flow.rs: replace || with && in has_castable_with_potential_mana
+
+# The auto-pass livelock guard (`auto_pass_count > MAX_AUTO_PASSES`). A safety
+# net, not a rule: disabling it or moving it by one turns a hung game into a
+# hung game, which is what the nightly fuzzer's runner reports. Scoped to the
+# counter — the `>=` in `consecutive_passes >= num_players` is CR 117.4 and is
+# NOT accepted.
+mtg-engine/src/engine.rs: replace += with *= in run_game_loop_inner
+mtg-engine/src/engine.rs: replace > with == in run_game_loop_inner
+mtg-engine/src/engine.rs: replace > with >= in run_game_loop_inner
+
+# `compute_autotap`'s internal simulation. The planner chooses among plans
+# that are all correct — colour preservation, utility lands, filter ordering
+# — and has been retuned twice (#114, #252). Its contract is property-tested
+# instead: an offered plan pays the cost, and a `None` means no plan would
+# have (mana.rs `every_tap_plan_the_planner_offers_pays_the_cost_it_was_asked_for`
+# and `the_planner_declines_only_when_no_tap_plan_would_have_worked`). Pinning
+# the arithmetic would freeze the heuristic; the property catches the same
+# class and more. The worked example in docs/mutation-testing-guide.md.
+mtg-engine/src/mana.rs: replace += with *= in compute_autotap
+mtg-engine/src/mana.rs: replace += with -= in compute_autotap
+mtg-engine/src/mana.rs: replace - with + in compute_autotap
+mtg-engine/src/mana.rs: replace - with / in compute_autotap
+mtg-engine/src/mana.rs: replace -= with += in compute_autotap
+mtg-engine/src/mana.rs: replace -= with /= in compute_autotap
+mtg-engine/src/mana.rs: replace > with == in compute_autotap
+mtg-engine/src/mana.rs: replace > with >= in compute_autotap
