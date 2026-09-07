@@ -309,6 +309,15 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_choices: Vec<ObjectId>,
 
+    /// The controller a deferred entry was requested under, held until the
+    /// entry actually happens (Grimoire of the Dead and Moldgraf Monstrosity
+    /// return creatures under *their* controller, Fiend Hunter under the
+    /// exiled creature's owner). Writing it while the card is still in a
+    /// graveyard would contradict CR 108.4, which gives a card off the
+    /// battlefield its owner as its controller.
+    #[serde(default)]
+    pub pending_entry_controllers: std::collections::BTreeMap<ObjectId, PlayerId>,
+
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
     /// one ends the permanent goes to whichever of the rest is latest — a
@@ -570,6 +579,7 @@ impl GameState {
             observe_every_submit: false,
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
+            pending_entry_controllers: std::collections::BTreeMap::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -980,20 +990,40 @@ impl GameState {
     /// controller as it stands at that moment. Cards that moved first and
     /// assigned afterwards fixed the object but left the event — and every
     /// `AnyCreatureEnters` watcher reading it — with the previous controller.
+    /// Returns whether the object actually moved — see [`move_object`].
     pub fn move_object_under_control(
         &mut self,
         id: ObjectId,
         to: Zone,
         controller: PlayerId,
         registry: &crate::cards::CardRegistry,
-    ) {
-        if let Some(obj) = self.get_object_mut(id) {
-            obj.controller = controller;
-        }
-        self.move_object(id, to, registry);
+    ) -> bool {
+        self.move_object_inner(id, to, Some(controller), registry)
     }
 
-    pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) {
+    /// Returns whether the object actually moved. It is `false` for exactly
+    /// one reason: an entry deferred because the permanent has a copy choice
+    /// outstanding (CR 614.12b). A caller that writes anything about the
+    /// permanent *after* the move has to ask, because otherwise it writes
+    /// battlefield state onto a card that is still in a graveyard.
+    ///
+    /// Grimoire of the Dead did exactly that. It returned eleven creatures
+    /// under its controller and stamped each one black Zombie; the one that
+    /// was an Evil Twin never moved, and was left in its owner's graveyard
+    /// carrying the other player as its controller and a Zombie subtype it
+    /// had no business having — a CR 108.4 and CR 400.7 violation the
+    /// fuzzer reported from fifteen seeds (issues #335-#349).
+    pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) -> bool {
+        self.move_object_inner(id, to, None, registry)
+    }
+
+    fn move_object_inner(
+        &mut self,
+        id: ObjectId,
+        to: Zone,
+        under: Option<PlayerId>,
+        registry: &crate::cards::CardRegistry,
+    ) -> bool {
         // CR 614.12b: a permanent that chooses what to enter as makes that
         // choice as part of entering — before it is on the battlefield, not
         // from a trigger afterwards. If the choice has not been made, this
@@ -1011,7 +1041,18 @@ impl GameState {
             if !self.pending_entry_choices.contains(&id) {
                 self.pending_entry_choices.push(id);
             }
-            return;
+            // The control change is part of the entry, so it waits with it.
+            // Written now, it would sit on a card in a graveyard, where CR
+            // 108.4 says the owner is the controller.
+            if let Some(c) = under {
+                self.pending_entry_controllers.insert(id, c);
+            }
+            return false;
+        }
+        if let Some(c) = under {
+            if let Some(obj) = self.get_object_mut(id) {
+                obj.controller = c;
+            }
         }
 
         // Collect log info before mutating.
@@ -1341,6 +1382,7 @@ impl GameState {
                 });
             }
         }
+        true
     }
 
 

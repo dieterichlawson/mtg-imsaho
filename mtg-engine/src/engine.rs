@@ -1187,6 +1187,10 @@ fn run_game_loop_inner<F>(
             }
             if !any_work { break; }
         }
+        // The enters-as-a-copy list was built before those state-based
+        // actions ran; anything they killed is no longer a creature on the
+        // battlefield to copy (CR 608.2d).
+        crate::replacement::refresh_pending_entry_choice(state, registry);
         if state.is_game_over() {
             break;
         }

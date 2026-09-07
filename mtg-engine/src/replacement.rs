@@ -186,6 +186,44 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
     }
 }
 
+/// Drop from a pending enters-as-a-copy prompt any creature that has since
+/// left the battlefield, and decline the choice outright if none is left.
+///
+/// The choice is offered before state-based actions run (CR 614.12b: the
+/// entry is waiting on it, so SBAs have nothing to say about the permanent
+/// yet), and the answer is given at the decision point after them. A
+/// creature that was on the battlefield when the list was built can be dead
+/// by the time the player reads it — a Grimoire of the Dead returning
+/// thirteen creatures at once kills some of them to the legend rule in the
+/// same breath — and a copy of a creature that is no longer there is not a
+/// choice the game can offer (CR 608.2d).
+pub fn refresh_pending_entry_choice(state: &mut GameState, registry: &CardRegistry) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget {
+        options, effect: crate::state::PendingEffect::EnterAsCopy { object }, .. }, .. })
+        = &state.awaiting_action else { return };
+    let object = *object;
+    let live: Vec<crate::actions::Target> = options.iter().filter(|t| match t {
+        crate::actions::Target::Object(id) => state.get_object(*id)
+            .is_some_and(|o| o.zone == Zone::Battlefield) && state.is_creature(*id, registry),
+        _ => false,
+    }).cloned().collect();
+    if live.len() == options.len() {
+        return;
+    }
+    if live.is_empty() {
+        // Nothing left to copy, so the permanent enters as its printed self,
+        // exactly as it would have had the board been empty when asked.
+        state.awaiting_action = None;
+        record_entry_choice(state, object, crate::state::EnterAsCopyChoice::Declined, registry);
+        return;
+    }
+    if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget {
+        options, .. }, .. }) = &mut state.awaiting_action {
+        *options = live;
+    }
+}
+
 /// Record the answer to an enters-as-a-copy choice and finish that object's
 /// entry.
 ///
@@ -202,7 +240,15 @@ pub fn record_entry_choice(
         obj.entering_copy_choice = choice;
     }
     state.pending_entry_choices.retain(|&id| id != object);
-    state.move_object(object, Zone::Battlefield, registry);
+    // The entry the deferral belonged to may have asked for a controller
+    // other than the owner (Grimoire of the Dead, Moldgraf Monstrosity,
+    // Fiend Hunter). It was held rather than written, so it is applied now,
+    // as part of the entry it came with (issues #335-#349).
+    match state.pending_entry_controllers.remove(&object) {
+        Some(controller) =>
+            state.move_object_under_control(object, Zone::Battlefield, controller, registry),
+        None => state.move_object(object, Zone::Battlefield, registry),
+    };
 }
 
 /// Which half of the entering-replacement order a pass keeps.

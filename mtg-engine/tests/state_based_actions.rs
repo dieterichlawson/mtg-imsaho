@@ -597,6 +597,87 @@ fn an_unanswered_copy_choice_keeps_the_permanent_off_the_battlefield() {
         "state-based actions have nothing to say about it");
 }
 
+/// A deferred entry takes the whole entry with it — the control change
+/// included. Grimoire of the Dead returns every graveyard creature "under
+/// your control", and it did that by writing the controller and then asking
+/// `move_object` to move the card. For an Evil Twin the move is deferred, so
+/// the write landed on a card still in its owner's graveyard: p0 as the
+/// controller of a card p1 owns, which CR 108.4 forbids. The fuzzer reported
+/// it from fifteen seeds (issues #335-#349).
+#[test]
+fn a_deferred_entry_does_not_hand_the_card_to_the_new_controller_early() {
+    let r = reg();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let card = r.get_id_by_name("Evil Twin").unwrap();
+    let twin = state.create_object(card, P1, Zone::Graveyard, Some(0), Some(0));
+    state.get_object_mut(twin).unwrap().name = "Evil Twin".into();
+    let bears = named_permanent(&mut state, &r, "Grizzly Bears", P0);
+
+    let moved = state.move_object_under_control(twin, Zone::Battlefield, P0, &r);
+
+    assert!(!moved, "the entry is deferred, so nothing about it has happened yet");
+    let obj = state.get_object(twin).unwrap();
+    assert_eq!(obj.zone, Zone::Graveyard);
+    assert_eq!(obj.controller, P1,
+        "a card in a graveyard is controlled by its owner (CR 108.4)");
+
+    // The control change is not lost, only held: it arrives with the entry.
+    mtg_engine::replacement::record_entry_choice(
+        &mut state, twin, mtg_engine::state::EnterAsCopyChoice::Copy(bears), &r);
+    let obj = state.get_object(twin).unwrap();
+    assert_eq!(obj.zone, Zone::Battlefield);
+    assert_eq!(obj.controller, P0, "and the entry is under the controller it asked for");
+}
+
+/// The list of creatures to copy is built before state-based actions run,
+/// and answered after them. Anything they killed in between is no longer a
+/// creature on the battlefield to copy (CR 608.2d) — a Grimoire of the Dead
+/// returning thirteen creatures at once kills some of them to the legend
+/// rule in the same breath.
+#[test]
+fn the_copy_choice_stops_offering_a_creature_that_has_since_died() {
+    let r = reg();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let doomed = named_permanent(&mut state, &r, "Grizzly Bears", P1);
+    let survivor = named_permanent(&mut state, &r, "Walking Corpse", P1);
+    let twin = begin_entering_twin(&mut state, &r);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &r);
+    assert!(state.awaiting_action.is_some(), "the copy choice is up, offering both");
+
+    // One of the two dies before the answer is given.
+    state.get_object_mut(doomed).unwrap().damage_marked = 9;
+    while check_state_based_actions(&mut state, &r) {}
+    mtg_engine::replacement::refresh_pending_entry_choice(&mut state, &r);
+
+    let offered = pending_choice_options(&state);
+    assert!(offered.contains(&Target::Object(survivor)), "got {offered:?}");
+    assert!(!offered.contains(&Target::Object(doomed)),
+        "a creature in the graveyard is not one to copy: {offered:?}");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
+        "and the entry is still waiting on the answer");
+}
+
+/// When every offered creature dies, the choice cannot be made at all, so
+/// the permanent enters as its printed self — the same answer it gets when
+/// the board was empty to begin with.
+#[test]
+fn a_copy_choice_whose_every_option_died_enters_the_printed_card() {
+    let r = reg();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let doomed = named_permanent(&mut state, &r, "Grizzly Bears", P1);
+    let twin = begin_entering_twin(&mut state, &r);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &r);
+    assert!(state.awaiting_action.is_some(), "test precondition: the choice is up");
+
+    state.get_object_mut(doomed).unwrap().damage_marked = 9;
+    while check_state_based_actions(&mut state, &r) {}
+    mtg_engine::replacement::refresh_pending_entry_choice(&mut state, &r);
+
+    assert!(state.awaiting_action.is_none(), "nothing left to ask about");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield,
+        "the entry goes ahead as the printed 0/0");
+}
+
 /// Answered with a creature, it enters as that creature — and is then an
 /// ordinary permanent, subject to state-based actions like any other.
 #[test]
