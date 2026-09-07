@@ -67,3 +67,6 @@ mtg-engine/src/cards/swords_to_plowshares.rs: replace > with >= in <impl CardBeh
 # Identity mutant: both call sites only add the pair to P/T, so Some((0,0))
 # and the default None are indistinguishable.
 mtg-engine/src/cards/mod.rs: replace CardBehavior::self_static_pt_mod -> Option<(i32, i32)> with Some((0, 0))
+# A zero-cost loyalty ability makes both halves false either way: -0 is 0,
+# and 0 is never greater than a u32 loyalty count.
+mtg-engine/src/engine/legal/abilities.rs: replace < with <= in loyalty

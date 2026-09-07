@@ -67,13 +67,6 @@ mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingE
 mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::ReturnToBattlefield{spell_id}) in apply_pending_effect
 mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(target_id), PendingEffect::GrantFlashback{source_name}) in apply_pending_effect
 mtg-engine/src/engine/effects.rs: replace || with && in apply_pending_effect
-mtg-engine/src/engine/legal/abilities.rs: delete - in loyalty
-mtg-engine/src/engine/legal/abilities.rs: replace && with || in loyalty
-mtg-engine/src/engine/legal/abilities.rs: replace < with <= in loyalty
-mtg-engine/src/engine/legal/abilities.rs: replace < with == in loyalty
-mtg-engine/src/engine/legal/abilities.rs: replace < with > in loyalty
-mtg-engine/src/engine/legal/abilities.rs: replace > with == in loyalty
-mtg-engine/src/engine/legal/abilities.rs: replace > with >= in loyalty
 mtg-engine/src/engine/legal/casting.rs: delete ! in flashback
 mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
 mtg-engine/src/engine/legal/casting.rs: replace && with || in from_hand

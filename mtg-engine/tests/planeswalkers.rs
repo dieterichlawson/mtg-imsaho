@@ -182,3 +182,44 @@ fn loyalty_ability_adjusts_counters() {
     assert_eq!(new_state.get_counter_count(liliana, CounterType::Loyalty), 4);
 
 }
+
+/// CR 118.3/606.5: a minus ability is offered exactly when its cost can be
+/// paid — including when it costs every counter the planeswalker has.
+///
+/// The offer gate is one condition ("is it a minus, and is it bigger than
+/// what we have?"), and nothing pinned its boundary: at three loyalty
+/// Liliana's -2 is payable and her -6 is not, and at two her -2 costs
+/// exactly what is there.
+#[test]
+fn a_minus_ability_is_offered_down_to_its_last_counter() {
+    let reg = registry();
+
+    let offered_at = |loyalty: u32| {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let lili = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+        set_loyalty(&mut state, lili, loyalty);
+        ready_creature(&mut state, P1, 2, 2);
+        state.priority_player = Some(P0);
+        let indices: Vec<usize> = mtg_engine::engine::legal_actions(&state, &reg).actions.iter()
+            .filter_map(|a| match a {
+                Action::ActivateLoyaltyAbility { object_id, ability_index, .. } if *object_id == lili =>
+                    Some(*ability_index),
+                _ => None,
+            })
+            .collect();
+        indices
+    };
+
+    // Liliana's abilities are +1 (0), -2 (1) and -6 (2).
+    let at_three = offered_at(3);
+    assert!(at_three.contains(&0), "the plus ability is always payable: {at_three:?}");
+    assert!(at_three.contains(&1), "-2 out of three counters is payable: {at_three:?}");
+    assert!(!at_three.contains(&2), "-6 out of three is not: {at_three:?}");
+
+    // Exactly enough is enough (CR 118.3 forbids only going below zero).
+    let at_two = offered_at(2);
+    assert!(at_two.contains(&1), "-2 out of two counters is payable: {at_two:?}");
+    let at_one = offered_at(1);
+    assert!(!at_one.contains(&1), "-2 out of one is not: {at_one:?}");
+    assert!(at_one.contains(&0), "and the plus ability still is: {at_one:?}");
+}

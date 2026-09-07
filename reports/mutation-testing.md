@@ -224,3 +224,13 @@ quiet case — an ability whose target stays legal announces nothing.
   (`effective_power`/`effective_toughness`) do nothing but `power += p` on
   a `Some`, so `Some((0, 0))` and `None` are indistinguishable by any
   observation the engine can make. Accepted.
+
+**The loyalty offer gate.** `legal::abilities::loyalty` decides whether a
+minus ability is payable with one condition, and its boundary was
+unpinned: at three counters Liliana's -2 is payable and her -6 is not, and
+at two her -2 costs exactly what is there (CR 118.3 forbids only going
+below zero). Killed by
+`a_minus_ability_is_offered_down_to_its_last_counter`, which pins all
+three points. `replace < with <=` on the same line is equivalent — it only
+changes the zero-cost case, where `-0` is `0` and `0` is never greater
+than a `u32` loyalty count, so neither reading takes the branch. Accepted.
