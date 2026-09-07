@@ -96,22 +96,13 @@ mtg-engine/src/funding.rs: replace > with == in apply
 mtg-engine/src/funding.rs: replace > with == in validate
 mtg-engine/src/funding.rs: replace > with >= in apply
 mtg-engine/src/funding.rs: replace || with && in apply
-mtg-engine/src/mana.rs: replace && with || in can_produce_colorless
-mtg-engine/src/mana.rs: replace += with *= in build_hand_demand
 mtg-engine/src/mana.rs: replace += with *= in compute_autotap
-mtg-engine/src/mana.rs: replace += with *= in hand_demand_score
 mtg-engine/src/mana.rs: replace += with -= in compute_autotap
 mtg-engine/src/mana.rs: replace - with + in compute_autotap
-mtg-engine/src/mana.rs: replace - with + in try_auto_pay
 mtg-engine/src/mana.rs: replace - with / in compute_autotap
-mtg-engine/src/mana.rs: replace - with / in try_auto_pay
 mtg-engine/src/mana.rs: replace -= with += in compute_autotap
 mtg-engine/src/mana.rs: replace -= with /= in compute_autotap
-mtg-engine/src/mana.rs: replace < with <= in try_auto_pay
-mtg-engine/src/mana.rs: replace < with == in try_auto_pay
-mtg-engine/src/mana.rs: replace < with > in try_auto_pay
 mtg-engine/src/mana.rs: replace > with == in compute_autotap
-mtg-engine/src/mana.rs: replace > with == in try_auto_pay
 mtg-engine/src/mana.rs: replace > with >= in compute_autotap
 mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass
 mtg-engine/src/state.rs: delete ! in GameState::become_copy_of

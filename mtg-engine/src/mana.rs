@@ -636,6 +636,191 @@ mod tests {
         assert!(!can_pay(&pool_with_red, &cost_gg));
     }
 
+    // ---- what a payment actually spends ----
+    //
+    // The tests above read `pool.total()`, which says a payment took the right
+    // NUMBER of mana and nothing about which. These read the pool one type at
+    // a time, because every interesting way to get this wrong — paying a
+    // colored pip out of the wrong colour, a colorless pip out of a coloured
+    // source (CR 107.4c: {C} is its own symbol, not "one generic"), a generic
+    // cost out of the mana the rest of the cost still needs — leaves the total
+    // exactly right.
+
+    /// The pool as a sorted list of what is left in it, so a case can say what
+    /// a payment spent rather than only how much.
+    fn residue(pool: &ManaPool) -> Vec<(ManaType, u32)> {
+        GENERIC_ORDER.iter()
+            .map(|&mt| (mt, pool.get(mt)))
+            .filter(|&(_, n)| n > 0)
+            .collect()
+    }
+
+    fn pool_of(entries: &[(ManaType, u32)]) -> ManaPool {
+        let mut p = ManaPool::new();
+        for &(mt, n) in entries {
+            p.add(mt, n);
+        }
+        p
+    }
+
+    #[test]
+    fn a_colored_pip_spends_exactly_one_of_exactly_that_color() {
+        let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Green, 1)]);
+        assert!(auto_pay(&mut pool, &ManaCost::new(vec![ManaSymbol::Colored(Color::White)])).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::White, 1), (ManaType::Green, 1)]);
+    }
+
+    #[test]
+    fn a_colored_pip_is_not_payable_out_of_another_color() {
+        let pool = pool_of(&[(ManaType::Green, 5)]);
+        assert!(!can_pay(&pool, &ManaCost::new(vec![ManaSymbol::Colored(Color::White)])));
+    }
+
+    /// CR 107.4c: {C} is a symbol in its own right — "one colorless mana", not
+    /// "one generic". Coloured mana cannot pay it however much of it there is.
+    #[test]
+    fn a_colorless_pip_spends_colorless_and_only_colorless() {
+        let mut pool = pool_of(&[(ManaType::Colorless, 3), (ManaType::Green, 3)]);
+        assert!(auto_pay(&mut pool, &ManaCost::new(vec![ManaSymbol::Colorless(2)])).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::Colorless, 1), (ManaType::Green, 3)]);
+
+        // One {C} out of three leaves two, not three: the amount is taken off
+        // the pool, not divided into it.
+        let mut pool = pool_of(&[(ManaType::Colorless, 3)]);
+        assert!(auto_pay(&mut pool, &ManaCost::new(vec![ManaSymbol::Colorless(1)])).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::Colorless, 2)]);
+
+        let coloured_only = pool_of(&[(ManaType::Green, 5)]);
+        assert!(!can_pay(&coloured_only, &ManaCost::new(vec![ManaSymbol::Colorless(1)])));
+    }
+
+    #[test]
+    fn a_colorless_requirement_one_short_is_not_payable() {
+        let pool = pool_of(&[(ManaType::Colorless, 1), (ManaType::Green, 5)]);
+        assert!(!can_pay(&pool, &ManaCost::new(vec![ManaSymbol::Colorless(2)])));
+        assert!(can_pay(&pool, &ManaCost::new(vec![ManaSymbol::Colorless(1)])));
+    }
+
+    /// Generic is paid colorless first and then in a fixed colour order, so a
+    /// tap plan the engine offers is the one the payment executes.
+    #[test]
+    fn generic_is_paid_colorless_first_and_then_in_a_fixed_order() {
+        let mut pool = pool_of(&[
+            (ManaType::Colorless, 1), (ManaType::White, 1),
+            (ManaType::Blue, 1), (ManaType::Green, 1),
+        ]);
+        assert!(auto_pay(&mut pool, &ManaCost::new(vec![ManaSymbol::Generic(3)])).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::Green, 1)],
+            "colorless, then white, then blue — green is last in GENERIC_ORDER");
+    }
+
+    #[test]
+    fn generic_may_take_the_whole_pool_but_not_more_than_it() {
+        let mut pool = pool_of(&[(ManaType::White, 1), (ManaType::Green, 1)]);
+        assert!(!can_pay(&pool, &ManaCost::new(vec![ManaSymbol::Generic(3)])));
+        assert!(auto_pay(&mut pool, &ManaCost::new(vec![ManaSymbol::Generic(2)])).is_ok());
+        assert_eq!(residue(&pool), vec![]);
+    }
+
+    /// Issue #252: the mana another cost still needs is spent last, so a plan
+    /// that taps Plains and Forest and then filters through Shimmering Grotto
+    /// pays the filter's {1} out of the Green rather than the White the spell
+    /// is for.
+    #[test]
+    fn a_reserved_color_is_the_last_thing_a_generic_cost_spends() {
+        let mut pool = pool_of(&[(ManaType::White, 1), (ManaType::Green, 1)]);
+        let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let reserve_white = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
+        assert!(auto_pay_reserving(&mut pool, &one, &reserve_white).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::White, 1)]);
+
+        // And with nothing reserved the fixed order applies, so the same pool
+        // and the same cost spend the White instead.
+        let mut pool = pool_of(&[(ManaType::White, 1), (ManaType::Green, 1)]);
+        assert!(auto_pay(&mut pool, &one).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::Green, 1)]);
+    }
+
+    /// A generic symbol in the reserved cost reserves nothing — it can be paid
+    /// with anything, so no colour is precious on its account.
+    #[test]
+    fn a_reserved_generic_cost_makes_no_color_precious() {
+        let mut pool = pool_of(&[(ManaType::White, 1), (ManaType::Green, 1)]);
+        let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        assert!(auto_pay_reserving(&mut pool, &one, &ManaCost::new(vec![ManaSymbol::Generic(1)])).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::Green, 1)],
+            "the fixed order, unchanged: white is spent before green");
+    }
+
+    // ---- how a source is scored ----
+
+    #[test]
+    fn a_source_produces_colorless_only_if_an_ability_says_colorless() {
+        let colorless = make_source(1, ManaSourceKind::BasicMana,
+            vec![mono_ability(ManaType::Colorless)]);
+        let green = make_source(2, ManaSourceKind::BasicMana,
+            vec![mono_ability(ManaType::Green)]);
+        assert!(can_produce_colorless(&colorless));
+        assert!(!can_produce_colorless(&green), "a Forest is not a colorless source");
+        assert!(can_produce_color(&green, Color::Green));
+        assert!(!can_produce_color(&colorless, Color::Green));
+    }
+
+    #[test]
+    fn flexibility_counts_the_colors_a_source_can_make_and_not_colorless() {
+        let dual = make_source(1, ManaSourceKind::BasicMana,
+            dual_abilities(ManaType::Red, ManaType::Green));
+        assert_eq!(source_flexibility(&dual), 2);
+        assert_eq!(source_flexibility(&make_source(2, ManaSourceKind::BasicMana,
+            vec![mono_ability(ManaType::Red)])), 1);
+        assert_eq!(source_flexibility(&make_source(3, ManaSourceKind::BasicMana,
+            vec![mono_ability(ManaType::Colorless)])), 0,
+            "colorless is not a color (CR 105.1)");
+    }
+
+    /// Demand is the count of coloured pips across the rest of the hand, added
+    /// up — one pip per symbol, every cost counted.
+    #[test]
+    fn hand_demand_adds_up_every_pip_in_every_cost() {
+        let demand = build_hand_demand(&[
+            ManaCost::new(vec![ManaSymbol::Colored(Color::White), ManaSymbol::Colored(Color::White)]),
+            ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::White)]),
+            ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]),
+        ]);
+        assert_eq!(demand.get(&Color::White).copied(), Some(3));
+        assert_eq!(demand.get(&Color::Green).copied(), Some(1));
+        assert_eq!(demand.get(&Color::Red).copied(), None, "generic demands no colour");
+    }
+
+    /// A source's score is the demand for every colour it makes, added up, so
+    /// a dual land carries the demand of both halves and is tapped later than
+    /// either mono land.
+    #[test]
+    fn a_sources_score_is_the_demand_for_every_color_it_makes() {
+        let demand = build_hand_demand(&[
+            ManaCost::new(vec![ManaSymbol::Colored(Color::Red), ManaSymbol::Colored(Color::Red)]),
+            ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]),
+        ]);
+        let mountain = make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]);
+        let forest = make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]);
+        let dual = make_source(3, ManaSourceKind::BasicMana,
+            dual_abilities(ManaType::Red, ManaType::Green));
+        let wastes = make_source(4, ManaSourceKind::BasicMana,
+            vec![mono_ability(ManaType::Colorless)]);
+
+        assert_eq!(hand_demand_score(&mountain, &demand), 2);
+        assert_eq!(hand_demand_score(&forest, &demand), 1);
+        assert_eq!(hand_demand_score(&dual, &demand), 3);
+        assert_eq!(hand_demand_score(&wastes, &demand), 0);
+
+        // Which is what the sort key carries: same tier, the dual is tapped
+        // after either mono land, and the colorless source before both.
+        let key = |s: &ManaSource| source_sort_key(s, &demand);
+        assert!(key(&wastes) < key(&forest));
+        assert!(key(&forest) < key(&mountain));
+        assert!(key(&mountain) < key(&dual));
+    }
+
     // ---- autotap tests ----
 
     fn make_source(id: u64, kind: ManaSourceKind, abilities: Vec<ManaAbilityDef>) -> ManaSource {
