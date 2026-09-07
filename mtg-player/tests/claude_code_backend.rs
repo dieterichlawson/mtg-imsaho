@@ -293,8 +293,12 @@ fn a_new_backend_sweeps_scratch_directories_of_dead_runs() {
     let dead_pid = done.id();
     done.wait().unwrap();
     let dead = tmp.join(format!("mtg-claude-code-{dead_pid}-4242424"));
-    std::fs::create_dir_all(dead.join("nested")).unwrap();
-    std::fs::write(dead.join("nested/file"), "x").unwrap();
+    // Not unwrapped: every other test in this file constructs a backend, each
+    // construction sweeps every dead run's directory, and they run in
+    // parallel — so this fixture can be swept out from under its own setup.
+    // That is the sweep doing its job, and both assertions below still say so.
+    let _ = std::fs::create_dir_all(dead.join("nested"));
+    let _ = std::fs::write(dead.join("nested/file"), "x");
     // Our own run's directory must survive the sweep.
     let live = tmp.join(format!("mtg-claude-code-{}-4242425", std::process::id()));
     std::fs::create_dir_all(&live).unwrap();
