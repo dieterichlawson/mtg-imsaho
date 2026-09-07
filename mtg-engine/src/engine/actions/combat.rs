@@ -47,8 +47,15 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         if attackers.is_empty() && planeswalker_attacks.is_empty() {
             state.log(LogLevel::Debug, "No attackers declared".into());
         } else {
+            // CR 508.1a: each attacker is declared against a player or a
+            // planeswalker of its own, so each entry names its own defender.
+            // Rendering the player-attackers bare and only the walker ones
+            // with an arrow made "A, B -> Liliana" — which reads as both
+            // attacking the walker, and with two same-named attackers there
+            // was no other cue in the line at all (issue #292).
             let mut names: Vec<String> = attackers.iter()
-                .map(|(id, _)| card_name(state, registry, *id))
+                .map(|(id, defender)| format!(
+                    "{} -> p{}", card_name(state, registry, *id), defender.0))
                 .collect();
             names.extend(planeswalker_attacks.iter().map(|(id, walker)| format!(
                 "{} -> {}", card_name(state, registry, *id), card_name(state, registry, *walker))));

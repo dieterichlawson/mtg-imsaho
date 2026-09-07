@@ -1210,9 +1210,21 @@ impl CliPlayer {
                 // '[S]' read as "cannot attack" on a creature whose attack
                 // was perfectly legal (issue #139).
                 let sick = Self::is_summoning_sick(c);
-                let flags = format!("{}{}{}",
+                // CR 506.3a/509.1a: attacking and blocking are public state,
+                // and `[T]` — the same mark a creature gets for tapping for
+                // mana — was the only thing the pane said about either
+                // (issue #245).
+                let combat = if c.attacking.is_some() {
+                    " [ATK]"
+                } else if !c.blocking.is_empty() {
+                    " [BLK]"
+                } else {
+                    ""
+                };
+                let flags = format!("{}{}{}{}",
                     if c.tapped { " [T]" } else { "" },
                     if sick { " [S]" } else { "" },
+                    combat,
                     dmg);
                 // The permanent's live keywords and protections. A flying
                 // token rendered exactly like a ground creature, and a
@@ -1906,6 +1918,61 @@ impl CliPlayer {
             .join(", ")
     }
 
+    /// A combat-list entry for `id`, disambiguated against `others`.
+    ///
+    /// The three combat lists rendered `<name> <P/T> (your|opp)` and nothing
+    /// else: two same-named attackers were byte-identical even when one of
+    /// them had damage marked and would die to the block (issue #268), an
+    /// attacker aimed at a planeswalker looked exactly like one aimed at the
+    /// player (issue #219), and the keywords the block turns on were not
+    /// there either (issue #243). All of it is public information at the
+    /// moment the defender has to use it.
+    fn combat_entry(view: &GameView, id: ObjectId, others: &[ObjectId]) -> String {
+        let perm = view.battlefield.iter().find(|p| p.object_id == id);
+        let mut label = Self::perm_name(view, id);
+        if let Some(p) = perm {
+            let mut abilities: Vec<String> = p.keywords.iter()
+                .map(|k| format!("{k:?}").to_lowercase())
+                .collect();
+            abilities.extend(p.protections.iter().cloned());
+            if !abilities.is_empty() {
+                label.push_str(&format!(" ({})", abilities.join(", ")));
+            }
+            if p.damage_marked > 0 {
+                label.push_str(&format!(" ({}d)", p.damage_marked));
+            }
+            // CR 508.1a: each attacker attacks a player or a planeswalker of
+            // its own, and which one decides how it should be blocked.
+            if let Some(mtg_engine::view::AttackTarget::Planeswalker(walker)) = &p.attacking {
+                let name = view.battlefield.iter()
+                    .find(|w| w.object_id == *walker)
+                    .map_or_else(|| "a planeswalker".to_string(), |w| {
+                        let loyalty = w.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                            .copied().unwrap_or(0);
+                        format!("{} [{loyalty} loyalty]", w.name)
+                    });
+                label.push_str(&format!(" -> {name}"));
+            }
+        }
+        // Two entries that still read the same are told apart by object id,
+        // the way the target pickers already do it (#136).
+        let collides = others.iter().any(|&other| {
+            other != id && Self::combat_entry_base(view, other) == Self::combat_entry_base(view, id)
+        });
+        if collides {
+            label.push_str(&format!(" (#{})", id.0));
+        }
+        label
+    }
+
+    /// The part of a combat entry that decides whether two rows collide.
+    fn combat_entry_base(view: &GameView, id: ObjectId) -> String {
+        let perm = view.battlefield.iter().find(|p| p.object_id == id);
+        let damage = perm.map_or(0, |p| p.damage_marked);
+        let attacking = perm.and_then(|p| p.attacking.clone());
+        format!("{}|{damage}|{attacking:?}", Self::perm_name(view, id))
+    }
+
     fn perm_name(view: &GameView, id: ObjectId) -> String {
         view.battlefield.iter()
             .find(|p| p.object_id == id)
@@ -2533,6 +2600,32 @@ impl CliPlayer {
                     }
                     let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
 
+                    // Combat role (CR 506.3a, 509.1a). The page used to say
+                    // only "Tapped: true", which is what a creature tapped
+                    // for mana says too (issue #245).
+                    let named = |id: mtg_engine::ids::ObjectId| -> String {
+                        view.battlefield.iter().find(|p| p.object_id == id)
+                            .map_or_else(|| format!("#{}", id.0), |p| format!("{} (#{})", p.name, id.0))
+                    };
+                    match &perm.attacking {
+                        Some(mtg_engine::view::AttackTarget::Player(p)) => {
+                            let who = if *p == view.you { "you" } else { "your opponent" };
+                            let _ = execute!(out, Print(format!("  Attacking: {who}\n")));
+                        }
+                        Some(mtg_engine::view::AttackTarget::Planeswalker(w)) => {
+                            let _ = execute!(out, Print(format!("  Attacking: {}\n", named(*w))));
+                        }
+                        None => {}
+                    }
+                    if !perm.blocking.is_empty() {
+                        let names: Vec<String> = perm.blocking.iter().map(|&a| named(a)).collect();
+                        let _ = execute!(out, Print(format!("  Blocking: {}\n", names.join(", "))));
+                    }
+                    if !perm.blocked_by.is_empty() {
+                        let names: Vec<String> = perm.blocked_by.iter().map(|&b| named(b)).collect();
+                        let _ = execute!(out, Print(format!("  Blocked by: {}\n", names.join(", "))));
+                    }
+
                     // Attachments, by what they are: an Aura enchants
                     // (CR 303.4), an Equipment equips (CR 301.5c) — the one
                     // label for both called a Pike an enchantment (#83).
@@ -2940,7 +3033,7 @@ impl CliPlayer {
                 let _ = execute!(out, cursor::MoveTo(col, r),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}", Self::perm_name(view, id))),
+                    Print(format!(": {}", Self::combat_entry(view, id, eligible))),
                     SetForegroundColor(color), Print(tag), ResetColor);
                 r += 1;
             }
@@ -3138,7 +3231,7 @@ impl CliPlayer {
                     .map(|min| format!(" [needs {min}+ blockers]"))
                     .unwrap_or_default();
                 let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
+                    Print(format!("  {}: {}{}", i, Self::combat_entry(view, id, attacker_ids), note)));
                 r += 1;
             }
             let _ = execute!(out, cursor::MoveTo(col, r),
@@ -3162,7 +3255,7 @@ impl CliPlayer {
                     format!(" (can block: {})", legal.join(" "))
                 };
                 let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("  {}: {}{}", i, Self::perm_name(view, id), note)));
+                    Print(format!("  {}: {}{}", i, Self::combat_entry(view, id, eligible_blockers), note)));
                 r += 1;
             }
             // Blocking is exactly where the public zones are decision inputs
@@ -4589,6 +4682,9 @@ mod tests {
             keywords: vec![],
             subtypes: vec![],
             protections: vec![],
+            attacking: None,
+            blocking: vec![],
+            blocked_by: vec![],
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -4602,6 +4698,137 @@ mod tests {
         assert_eq!(yours, "Island (your)");
         assert_eq!(theirs, "Island (opp)");
         assert_ne!(yours, theirs, "identical lands must be distinguishable");
+    }
+
+    /// A creature for the combat-list tests.
+    fn creature(id: u64, name: &str, controller: u8) -> mtg_engine::view::PermanentView {
+        mtg_engine::view::PermanentView {
+            object_id: ObjectId(id),
+            card_id: mtg_engine::ids::CardId(0),
+            name: name.into(),
+            card_types: vec![CardType::Creature],
+            controller: PlayerId(controller),
+            owner: PlayerId(controller),
+            tapped: false,
+            power: Some(2),
+            toughness: Some(2),
+            effective_power: Some(2),
+            effective_toughness: Some(2),
+            damage_marked: 0,
+            summoning_sick: false,
+            attached_to: None,
+            attached_to_player: None,
+            keywords: vec![],
+            subtypes: vec![],
+            protections: vec![],
+            attacking: None,
+            blocking: vec![],
+            blocked_by: vec![],
+            oracle_text: String::new(),
+            counters: HashMap::new(),
+            loyalty_abilities: vec![],
+            mana_abilities: vec![],
+            named_card: None,
+        }
+    }
+
+    /// Issue #268: two same-named attackers that differ only in marked
+    /// damage are the case where the block decision turns on the difference,
+    /// and the list rendered them identically.
+    #[test]
+    fn a_combat_entry_shows_marked_damage_and_disambiguates() {
+        let mut hurt = creature(63, "Crossway Vampire", 1);
+        hurt.damage_marked = 1;
+        let fresh = creature(64, "Crossway Vampire", 1);
+        let mut v = view(Step::DeclareBlockers, 18, false);
+        v.battlefield = vec![hurt, fresh];
+        let ids = vec![ObjectId(63), ObjectId(64)];
+
+        let a = CliPlayer::combat_entry(&v, ObjectId(63), &ids);
+        let b = CliPlayer::combat_entry(&v, ObjectId(64), &ids);
+        assert!(a.contains("(1d)"), "the damaged one says so: {a}");
+        assert_ne!(a, b, "the defender must be able to tell them apart");
+    }
+
+    /// Issue #268/#136: two identical creatures with nothing to tell them
+    /// apart get the object id, the way the target pickers already do.
+    #[test]
+    fn identical_combat_entries_fall_back_to_the_object_id() {
+        let mut v = view(Step::DeclareBlockers, 18, false);
+        v.battlefield = vec![creature(70, "Walking Corpse", 1), creature(71, "Walking Corpse", 1)];
+        let ids = vec![ObjectId(70), ObjectId(71)];
+
+        assert!(CliPlayer::combat_entry(&v, ObjectId(70), &ids).contains("(#70)"));
+        assert!(CliPlayer::combat_entry(&v, ObjectId(71), &ids).contains("(#71)"));
+    }
+
+    /// Issue #219: an attacker aimed at a planeswalker rendered exactly like
+    /// one aimed at the player, and the defender was asked to block blind.
+    #[test]
+    fn a_combat_entry_names_the_planeswalker_being_attacked() {
+        let mut walker = creature(51, "Liliana of the Veil", 0);
+        walker.card_types = vec![CardType::Planeswalker];
+        walker.counters.insert(mtg_engine::types::CounterType::Loyalty, 4);
+        let mut at_walker = creature(18, "Terror of Kruin Pass", 1);
+        at_walker.attacking = Some(mtg_engine::view::AttackTarget::Planeswalker(ObjectId(51)));
+        let mut at_player = creature(19, "Terror of Kruin Pass", 1);
+        at_player.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(0)));
+        let mut v = view(Step::DeclareBlockers, 25, false);
+        v.battlefield = vec![walker, at_walker, at_player];
+        let ids = vec![ObjectId(18), ObjectId(19)];
+
+        let on_walker = CliPlayer::combat_entry(&v, ObjectId(18), &ids);
+        let on_player = CliPlayer::combat_entry(&v, ObjectId(19), &ids);
+        assert!(on_walker.contains("Liliana of the Veil [4 loyalty]"), "got {on_walker}");
+        assert!(!on_player.contains("Liliana"), "got {on_player}");
+    }
+
+    /// Issue #243: the keywords the block turns on are on the line the block
+    /// is chosen from.
+    #[test]
+    fn a_combat_entry_carries_the_live_keywords() {
+        let mut flier = creature(101, "Spirit Token", 1);
+        flier.keywords = vec![mtg_engine::types::Keyword::Flying];
+        let mut v = view(Step::DeclareBlockers, 7, false);
+        v.battlefield = vec![flier];
+
+        let entry = CliPlayer::combat_entry(&v, ObjectId(101), &[ObjectId(101)]);
+        assert!(entry.contains("flying"), "got {entry}");
+    }
+
+    /// Issue #221: `[S]` is a creature restriction (CR 302.6). It means
+    /// nothing on a planeswalker or an enchantment, and nothing on a hasty
+    /// creature (#139).
+    #[test]
+    fn summoning_sickness_is_only_asked_about_creatures() {
+        let mut walker = creature(30, "Liliana of the Veil", 0);
+        walker.card_types = vec![CardType::Planeswalker];
+        walker.summoning_sick = true;
+        assert!(!CliPlayer::is_summoning_sick(&walker));
+
+        let mut hasty = creature(31, "Hasty Thing", 0);
+        hasty.summoning_sick = true;
+        hasty.keywords = vec![mtg_engine::types::Keyword::Haste];
+        assert!(!CliPlayer::is_summoning_sick(&hasty));
+
+        let mut sick = creature(32, "Fresh Thing", 0);
+        sick.summoning_sick = true;
+        assert!(CliPlayer::is_summoning_sick(&sick));
+    }
+
+    /// Issue #270: the tap / sickness / damage flags are what the row is read
+    /// for, so a long attachment list is what gets elided, not them.
+    #[test]
+    fn a_long_attachment_list_never_pushes_the_flags_off_the_row() {
+        let row = CliPlayer::elide_middle(
+            "Galvanic Juggernaut 8/7",
+            " [Silver-Inlaid Dagger,Silver-Inlaid Dagger,Butcher's Cleaver,Mask of Avacyn]",
+            " [T] (3d)",
+            60,
+        );
+        assert!(row.ends_with(" [T] (3d)"), "got {row}");
+        assert!(row.contains('…'), "the attachment list is what shortens: {row}");
+        assert!(row.chars().count() <= 60);
     }
 
     // Issue #39 guard: a land play breaks auto-pass on any turn, even the

@@ -423,7 +423,7 @@ Available actions:
 Turn 5 - Declare Attackers (your turn)
 
 Recent events:
-you declared attackers: Grizzly Bears (#27)
+you declared attackers: Grizzly Bears (#27) -> opp
 
 You: 20hp, 4cards, 28lib, 1gy, 0exile
 Opp: 18hp, 5cards, 29lib, 0gy, 0exile
@@ -454,7 +454,7 @@ step with the morbid bonus already active.
 Turn 15 - Declare Blockers (your turn)
 
 Recent events:
-you declared attackers: Tormented Pariah (#5), Elder of Laurels (#4), Villagers of Estwald (#9)
+you declared attackers: Tormented Pariah (#5) -> opp, Elder of Laurels (#4) -> opp, Villagers of Estwald (#9) -> opp
 opp declared blockers: Ghoulraiser (#60) blocks Elder of Laurels (#4), Rakish Heir (#58) blocks Villagers of Estwald (#9)
 
 You: 14hp, 1cards, 28lib, 4gy, 0exile
@@ -538,7 +538,7 @@ Pick indices in 0-1 to attack with, or empty list for no attacks. Forced attacke
 Turn 6 - Declare Blockers (opp's turn)
 
 Recent events:
-opp declared attackers: Kalonian Tusker (#30), Kalonian Tusker (#31)
+opp declared attackers: Kalonian Tusker (#30) -> you, Kalonian Tusker (#31) -> you
 
 You: 17hp, 5cards, 27lib, 0gy, 0exile
 Opp: 14hp, 4cards, 28lib, 0gy, 0exile
@@ -4072,6 +4072,9 @@ mod tests {
             keywords: vec![],
             subtypes: vec![],
             protections: vec![],
+            attacking: None,
+            blocking: vec![],
+            blocked_by: vec![],
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -4146,6 +4149,9 @@ this Aura deals 1 damage to that player.";
             keywords: vec![],
             subtypes: vec![],
             protections: vec![],
+            attacking: None,
+            blocking: vec![],
+            blocked_by: vec![],
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],

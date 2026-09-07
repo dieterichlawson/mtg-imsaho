@@ -58,6 +58,13 @@ pub struct CardView {
     pub flashback_cost: Option<ManaCost>,
 }
 
+/// What an attacking creature is attacking (CR 508.1a).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttackTarget {
+    Player(PlayerId),
+    Planeswalker(ObjectId),
+}
+
 #[derive(Debug, Clone)]
 pub struct PermanentView {
     pub object_id: ObjectId,
@@ -84,6 +91,15 @@ pub struct PermanentView {
     /// Grimoire of the Dead's "Zombie". Every "as long as ... is a Human"
     /// card in the set turns on this, and no pane could read it (issue #297).
     pub subtypes: Vec<String>,
+    /// What this creature is attacking, if it is (CR 506.3a). "Attacking" is
+    /// public state that decides how the defender blocks, and the only thing
+    /// the panes showed for it was `[T]` — the same mark a creature gets for
+    /// being tapped for mana (issue #245).
+    pub attacking: Option<AttackTarget>,
+    /// The attackers this creature is blocking (CR 509.1a).
+    pub blocking: Vec<ObjectId>,
+    /// The creatures blocking this attacker.
+    pub blocked_by: Vec<ObjectId>,
     /// Protections in force, described (CR 702.16). Not a keyword, so it
     /// cannot ride in `keywords`, and a timed one (Spare from Evil) is
     /// invisible without it (issue #243).
@@ -207,6 +223,21 @@ impl GameView {
                     attached_to_player: obj.attached_to_player,
                     keywords,
                     subtypes: state.subtypes_of(obj.id, registry),
+                    attacking: state.combat.as_ref().and_then(|c| {
+                        c.attackers.get(&obj.id).map(|defender| {
+                            c.planeswalker_defenders.get(&obj.id)
+                                .map_or(AttackTarget::Player(*defender), |w| AttackTarget::Planeswalker(*w))
+                        })
+                    }),
+                    blocking: state.combat.as_ref().map_or_else(Vec::new, |c| {
+                        c.blocker_assignments.iter()
+                            .filter(|(_, blockers)| blockers.contains(&obj.id))
+                            .map(|(attacker, _)| *attacker)
+                            .collect()
+                    }),
+                    blocked_by: state.combat.as_ref()
+                        .and_then(|c| c.blocker_assignments.get(&obj.id).cloned())
+                        .unwrap_or_default(),
                     protections: state.protections_of(obj.id, registry),
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
