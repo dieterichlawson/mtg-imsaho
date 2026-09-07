@@ -37,6 +37,8 @@ impl CardBehavior for Splinterfright {
         }
     }
 
+    fn prints_star_pt(&self) -> bool { true }
+
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<(i32, i32)> {
         // CR 109.5: "you" on an object is its controller — and for a static
         // ability, the *current* controller of the object it is on. A CDA is a

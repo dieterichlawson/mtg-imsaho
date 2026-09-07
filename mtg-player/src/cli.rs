@@ -285,6 +285,15 @@ enum InfoLine {
     Mana(String),
 }
 
+/// A card the reference panel shows: the data of the face it is showing —
+/// the back face for a transformed permanent (issue #238) — and whether the
+/// card prints `*`/`*`, so the panel never renders the engine's `Some(0)`
+/// creature sentinel as a printed P/T (issue #267).
+struct CardRef {
+    data: mtg_engine::cards::CardData,
+    star_pt: bool,
+}
+
 pub struct CliPlayer {
     name: String,
     /// When set, auto-pass priority until the specified condition.
@@ -1339,45 +1348,73 @@ impl CliPlayer {
     // ── Card reference panel ──────────────────────────────────────
 
     /// Build a prioritized, deduplicated list of card data for the reference panel.
-    fn build_card_refs(view: &GameView, registry: &mtg_engine::cards::CardRegistry, filter: &str) -> Vec<mtg_engine::cards::CardData> {
+    fn build_card_refs(view: &GameView, registry: &mtg_engine::cards::CardRegistry, filter: &str) -> Vec<CardRef> {
         let mut seen: Vec<String> = Vec::new();
-        let mut card_ids: Vec<mtg_engine::ids::CardId> = Vec::new();
+        // Card id plus whether the entry is a permanent showing its back
+        // face. The panel used to keep ids alone and resolve them with
+        // `card_data`, which is always the FRONT face: a transformed
+        // Cloistered Youth on the battlefield was described as a Cloistered
+        // Youth, `/unholy` found nothing, and the panel listed the same card
+        // twice — once for the hand copy and once for the transformed
+        // permanent, deduped by the back-face name but rendered from the
+        // front (issue #238).
+        let mut entries: Vec<(mtg_engine::ids::CardId, bool)> = Vec::new();
 
-        let mut add = |name: &str, card_id: mtg_engine::ids::CardId| {
-            if !seen.contains(&name.to_string()) {
+        fn add(
+            seen: &mut Vec<String>,
+            entries: &mut Vec<(mtg_engine::ids::CardId, bool)>,
+            name: &str,
+            card_id: mtg_engine::ids::CardId,
+        ) {
+            if !seen.iter().any(|n| n == name) {
                 seen.push(name.to_string());
-                card_ids.push(card_id);
+                entries.push((card_id, false));
             }
-        };
+        }
 
         // Priority 1: cards in your hand
         for c in &view.your_hand {
-            add(&c.name, c.card_id);
+            add(&mut seen, &mut entries, &c.name, c.card_id);
         }
         // Priority 2: cards on the stack
         for s in &view.stack {
-            add(&s.name, s.card_id);
+            add(&mut seen, &mut entries, &s.name, s.card_id);
         }
-        // Priority 3: opponent's battlefield (skip basic lands)
+        // Priority 3 and 4: the battlefield, opponent's first (skip basic
+        // lands). A permanent showing its back face is described by that
+        // face, which is also the name it is listed under.
+        fn add_permanent(
+            p: &mtg_engine::view::PermanentView,
+            registry: &mtg_engine::cards::CardRegistry,
+            seen: &mut Vec<String>,
+            entries: &mut Vec<(mtg_engine::ids::CardId, bool)>,
+        ) {
+            let printed = registry.card_data(p.card_id);
+            if printed.as_ref()
+                .is_some_and(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
+            {
+                return;
+            }
+            if seen.contains(&p.name) { return; }
+            seen.push(p.name.clone());
+            // The view already resolved the active face's name, so a name
+            // that differs from the printed one is a permanent showing its
+            // back face.
+            let showing_back = printed.is_some_and(|d| d.name != p.name);
+            entries.push((p.card_id, showing_back));
+        }
         for p in view.battlefield.iter().filter(|p| p.controller != view.you) {
-            let is_basic = registry.card_data(p.card_id)
-                .is_some_and(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic));
-            if is_basic { continue; }
-            add(&p.name, p.card_id);
+            add_permanent(p, registry, &mut seen, &mut entries);
         }
-        // Priority 4: your battlefield (skip basic lands)
         for p in view.battlefield.iter().filter(|p| p.controller == view.you) {
-            let is_basic = registry.card_data(p.card_id)
-                .is_some_and(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic));
-            if is_basic { continue; }
-            add(&p.name, p.card_id);
+            add_permanent(p, registry, &mut seen, &mut entries);
         }
         // Priority 5: graveyard flashback cards (yours)
         for (pid, cards) in &view.graveyards {
             if *pid == view.you {
                 for c in cards {
                     if c.flashback_cost.is_some() {
-                        add(&c.name, c.card_id);
+                        add(&mut seen, &mut entries, &c.name, c.card_id);
                     }
                 }
             }
@@ -1391,25 +1428,36 @@ impl CliPlayer {
         // card happened to have the highest object id (issue #222).
         for (_, cards) in &view.graveyards {
             for c in cards.iter().rev() {
-                add(&c.name, c.card_id);
+                add(&mut seen, &mut entries, &c.name, c.card_id);
             }
         }
         // Priority 7: exile (cards that were exiled)
         for c in &view.exile {
-            add(&c.name, c.card_id);
+            add(&mut seen, &mut entries, &c.name, c.card_id);
         }
 
-        // Look up CardData, filter out basic lands, apply text filter
+        // Look up the face's CardData, filter out basic lands, apply text
+        // filter. `/unholy` has to find the Unholy Fiend the battlefield is
+        // showing, and must not find it under the front face's name.
         let filter_lower = filter.to_lowercase();
-        card_ids.iter()
-            .filter_map(|id| registry.card_data(*id))
-            .filter(|d| !d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
-            .filter(|d| filter.is_empty() || d.name.to_lowercase().contains(&filter_lower))
+        entries.iter()
+            .filter_map(|(id, showing_back)| {
+                let data = if *showing_back {
+                    registry.get(*id).and_then(mtg_engine::cards::CardBehavior::back_face_data)
+                } else {
+                    registry.card_data(*id)
+                }?;
+                let star_pt = registry.get(*id)
+                    .is_some_and(mtg_engine::cards::CardBehavior::prints_star_pt);
+                Some(CardRef { data, star_pt })
+            })
+            .filter(|c| !c.data.supertypes.contains(&mtg_engine::types::Supertype::Basic))
+            .filter(|c| filter.is_empty() || c.data.name.to_lowercase().contains(&filter_lower))
             .collect()
     }
 
     /// Render the card reference panel in the right column.
-    fn render_right_panel(out: &mut io::Stdout, cards: &[mtg_engine::cards::CardData],
+    fn render_right_panel(out: &mut io::Stdout, cards: &[CardRef],
                            right_col: u16, right_w: usize, h: usize, filter: &str) {
         if right_w < 10 { return; }
 
@@ -1451,8 +1499,8 @@ impl CliPlayer {
             if row >= max_row { break; }
 
             // Name + cost
-            let cost_str = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-            let name_line = format!("{}{}", card.name, cost_str);
+            let cost_str = card.data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+            let name_line = format!("{}{}", card.data.name, cost_str);
             let truncated: String = name_line.chars().take(content_w).collect();
             let _ = execute!(out, cursor::MoveTo(right_col, row), SetAttribute(Attribute::Bold));
             Self::print_with_mana(out, &truncated, None);
@@ -1461,7 +1509,7 @@ impl CliPlayer {
             if row >= max_row { break; }
 
             // Type line + P/T
-            let types: Vec<&str> = card.card_types.iter().map(|t| match t {
+            let types: Vec<&str> = card.data.card_types.iter().map(|t| match t {
                 CardType::Creature => "Creature",
                 CardType::Instant => "Instant",
                 CardType::Sorcery => "Sorcery",
@@ -1470,11 +1518,15 @@ impl CliPlayer {
                 CardType::Land => "Land",
                 CardType::Planeswalker => "Planeswalker",
             }).collect();
-            let subtypes = if card.subtypes.is_empty() { String::new() }
-                else { format!(" — {}", card.subtypes.join(" ")) };
-            let pt = match (card.power, card.toughness) {
-                (Some(p), Some(t)) => format!(" {p}/{t}"),
-                _ => String::new(),
+            let subtypes = if card.data.subtypes.is_empty() { String::new() }
+                else { format!(" — {}", card.data.subtypes.join(" ")) };
+            let pt = if card.star_pt {
+                " */*".to_string()
+            } else {
+                match (card.data.power, card.data.toughness) {
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                    _ => String::new(),
+                }
             };
             let type_line = format!("{}{}{}", types.join(" "), subtypes, pt);
             let truncated: String = type_line.chars().take(content_w).collect();
@@ -1484,8 +1536,8 @@ impl CliPlayer {
             if row >= max_row { break; }
 
             // Keywords
-            if !card.keywords.is_empty() {
-                let kw_str: Vec<&str> = card.keywords.iter().map(|k| match k {
+            if !card.data.keywords.is_empty() {
+                let kw_str: Vec<&str> = card.data.keywords.iter().map(|k| match k {
                     mtg_engine::types::Keyword::Flying => "Flying",
                     mtg_engine::types::Keyword::FirstStrike => "First strike",
                     mtg_engine::types::Keyword::DoubleStrike => "Double strike",
@@ -1512,9 +1564,9 @@ impl CliPlayer {
 
             // Oracle text (word-wrapped), minus the lines the panel already
             // prints for itself above and below.
-            if !card.oracle_text.is_empty() {
+            if !card.data.oracle_text.is_empty() {
                 let kept = Self::card_panel_oracle_lines(
-                    &card.oracle_text, card.flashback_cost.is_some());
+                    &card.data.oracle_text, card.data.flashback_cost.is_some());
                 let text = kept.join("\n");
                 if !text.trim().is_empty() {
                     let wrapped = Self::wrap_text(text.trim(), content_w);
@@ -1528,7 +1580,7 @@ impl CliPlayer {
             }
 
             // Flashback cost
-            if let Some(fb) = &card.flashback_cost {
+            if let Some(fb) = &card.data.flashback_cost {
                 if row < max_row {
                     let fb_line = format!("Flashback {fb}");
                     let truncated: String = fb_line.chars().take(content_w).collect();
@@ -2464,7 +2516,10 @@ impl CliPlayer {
     }
 
     fn show_battlefield_inspector(view: &GameView) {
-        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        // No registry lookup: everything this page shows about a permanent
+        // comes from the view, which resolves the face that is up. Reading
+        // the registry by `card_id` is what gave a transformed permanent its
+        // front face's text and P/T (issue #240).
         let mut out = stdout();
 
         loop {
@@ -2571,8 +2626,18 @@ impl CliPlayer {
                         let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
                     }
 
-                    if let (Some(p), Some(t)) = (perm.power, perm.toughness) {
-                        let _ = execute!(out, Print(format!("  Base P/T: {p}/{t}\n")));
+                    // What the card says, from the face that is up. This
+                    // used to print the object's own fields, which are the
+                    // FRONT face's for a transformed DFC (issue #240), the
+                    // `Some(0)` sentinel for a `*/*` creature (#267), and —
+                    // before Tree of Redemption's exchange became a layer-7b
+                    // effect — whatever an effect had written over them
+                    // (#302). "Printed", because that is the question this
+                    // line answers; everything else is on the next one.
+                    if perm.star_pt {
+                        let _ = execute!(out, Print("  Printed P/T: */*\n".to_string()));
+                    } else if let (Some(p), Some(t)) = (perm.printed_power, perm.printed_toughness) {
+                        let _ = execute!(out, Print(format!("  Printed P/T: {p}/{t}\n")));
                     }
                     if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
                         let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
@@ -2654,14 +2719,17 @@ impl CliPlayer {
                         let _ = execute!(out, Print(format!("  Enchanting: {who}\n")));
                     }
 
-                    // Show oracle text
-                    if let Some(data) = registry.card_data(perm.card_id) {
-                        if !data.oracle_text.is_empty() {
-                            let _ = execute!(out, Print("\n"),
-                                SetForegroundColor(Color::Yellow),
-                                Print(format!("  {}\n", data.oracle_text)),
-                                ResetColor);
-                        }
+                    // Show the oracle text of the face that is up. Looking
+                    // it up by `card_id` gave the FRONT card's text, so a
+                    // transformed Cloistered Youth was headed "Unholy Fiend"
+                    // and then described as a Cloistered Youth — while the
+                    // engine fired the back face's ability (issue #240). The
+                    // view already resolves the active face.
+                    if !perm.oracle_text.is_empty() {
+                        let _ = execute!(out, Print("\n"),
+                            SetForegroundColor(Color::Yellow),
+                            Print(format!("  {}\n", perm.oracle_text)),
+                            ResetColor);
                     }
 
                     let _ = execute!(out, Print("\n  Press enter to return to list..."));
@@ -2820,9 +2888,20 @@ impl CliPlayer {
             *hand_counts.entry(card.name.clone()).or_default() += 1;
         }
         for perm in &view.battlefield {
-            if perm.controller == view.you {
-                *board_counts.entry(perm.name.clone()).or_default() += 1;
+            if perm.controller != view.you {
+                continue;
             }
+            // CR 111.1: a token is not a card and does not belong in a deck
+            // count. And a permanent showing its back face is still the card
+            // it was printed as — counting it under the back face's name put
+            // it in the header's total and then dropped it from the list,
+            // because no card in the registry has that name (issue #241).
+            if perm.is_token {
+                continue;
+            }
+            let printed = registry.card_data(perm.card_id)
+                .map_or_else(|| perm.name.clone(), |d| d.name);
+            *board_counts.entry(printed).or_default() += 1;
         }
         for (pid, cards) in &view.graveyards {
             if *pid == view.you {
@@ -4681,6 +4760,10 @@ mod tests {
             attached_to_player: None,
             keywords: vec![],
             subtypes: vec![],
+            printed_power: None,
+            printed_toughness: None,
+            star_pt: false,
+            is_token: false,
             protections: vec![],
             attacking: None,
             blocking: vec![],
@@ -4720,6 +4803,10 @@ mod tests {
             attached_to_player: None,
             keywords: vec![],
             subtypes: vec![],
+            printed_power: None,
+            printed_toughness: None,
+            star_pt: false,
+            is_token: false,
             protections: vec![],
             attacking: None,
             blocking: vec![],

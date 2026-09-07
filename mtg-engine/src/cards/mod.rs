@@ -609,6 +609,16 @@ pub trait CardBehavior: Send + Sync {
         None
     }
 
+    /// Whether this card's printed power and toughness are `*`/`*`
+    /// (CR 208.2) — the P/T box a characteristic-defining ability fills in.
+    ///
+    /// `card_data` has to put *something* in `power`/`toughness` for the
+    /// engine to see a creature at all, and these cards put `Some(0)`. That
+    /// sentinel is not a printed value and must never be shown as one: the
+    /// CARDS reference pane read it back as `Creature — Wurm 0/0` while the
+    /// same screen's battlefield row correctly said 1/1 (issue #267).
+    fn prints_star_pt(&self) -> bool { false }
+
     /// This card's own "gets +N/+N for each ..." static ability: a P/T
     /// *modification* (layer 7c) added on top of printed P/T, counters and
     /// the rest. Unlike [`dynamic_pt`](CardBehavior::dynamic_pt) it

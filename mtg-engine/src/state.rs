@@ -317,6 +317,15 @@ pub struct GameState {
     #[serde(default)]
     pub next_effect_timestamp: u64,
 
+    /// Layer 7b: effects that SET a permanent's power and/or toughness to a
+    /// specific value (CR 613.4b) — Tree of Redemption's exchange. They apply
+    /// on top of the printed (or characteristic-defining) values and never
+    /// change them, which is what keeps the copy rules (CR 706.2) and zone
+    /// changes (CR 400.7) honest without each reader having to remember a
+    /// card that rewrites its own printed characteristics.
+    #[serde(default)]
+    pub set_pt_effects: Vec<SetPtEffect>,
+
     /// CR 603.3d: triggers collected but not yet pushed onto the stack
     /// because they need target selection (or are queued behind one that does).
     /// AP triggers must all be pushed before NAP triggers; within each bucket,
@@ -562,6 +571,7 @@ impl GameState {
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
             next_effect_timestamp: 0,
+            set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
@@ -813,12 +823,13 @@ impl GameState {
         // face to read (the ruling's "if the copied creature is a token, the
         // token copies the original characteristics of that token").
         //
-        // Reading `obj.power` / `obj.toughness` instead copied a Tree of
-        // Redemption whose toughness had been exchanged with its controller's
-        // life total as the number it currently showed, rather than its printed
-        // 0/13 — the one case in this set where an effect writes those fields.
-        // `face_data` also answers with the *back* face of a transformed
-        // permanent, where `card_data(card_id)` always answered with the front.
+        // Reading `obj.power` / `obj.toughness` instead would copy a token's
+        // stand-in fields for a real card, and `face_data` also answers with
+        // the *back* face of a transformed permanent, where
+        // `card_data(card_id)` always answered with the front. Nothing writes
+        // a printed P/T any more — Tree of Redemption's exchange is a
+        // layer-7b effect (CR 613.4b), so it is not copied either, which is
+        // the same rule stated once instead of guarded twice.
         let face = self.face_data(source_id, registry);
         let (name, power, toughness, colors, keywords, card_types, subtypes) = match face {
             Some(d) => {
@@ -1127,10 +1138,8 @@ impl GameState {
                 // face. Clearing `is_transformed` does most of it — every
                 // characteristics accessor resolves through `face_data`, which
                 // reads that flag. What has no registry lookup behind it is
-                // `name` and the base P/T, so those are written back from the
-                // printed card: the Tree of Redemption's toughness exchange
-                // otherwise followed it into the graveyard and came back with
-                // it, and a copy kept the copied creature's name.
+                // `name` and the printed P/T, so those are written back from
+                // the printed card, which is where a copy left them.
                 obj.is_transformed = false;
                 if let Some((name, power, toughness)) = printed_reset {
                     obj.name = name;
@@ -1225,6 +1234,10 @@ impl GameState {
             // left. The source side stays: `expire_control_effects` needs the
             // entry to hand the permanent back when the source leaves.
             self.control_effects.retain(|c| c.object != id);
+            // A layer-7b set-P/T effect is on the permanent, so it ends with
+            // it (CR 400.7). The exchanged toughness used to be written into
+            // the printed field and followed the card to the graveyard.
+            self.set_pt_effects.retain(|e| e.object != id);
         }
 
         // Emit zone-change events outside the mutable borrow. Every move is
@@ -1802,6 +1815,12 @@ impl GameState {
             return Some(power);
         }
 
+        // Layer 7b: an effect that SETS power (CR 613.4b) applies over the
+        // base and under everything that modifies it.
+        if let (Some(set), _) = self.set_pt_for(id) {
+            power = set;
+        }
+
         // Continuous effects (auras, anthems, debuffs — including dynamic aura P/T).
         let (p_mod, _) = self.continuous_pt_mods(id, registry);
         power += p_mod;
@@ -1871,6 +1890,14 @@ impl GameState {
             return Some(toughness);
         }
 
+        // Layer 7b: an effect that SETS toughness applies over the base and
+        // under everything that modifies it (CR 613.4b), which is why a Tree
+        // of Redemption exchanged at 5 life with two +1/+1 counters is a 2/7
+        // and not a 2/5.
+        if let (_, Some(set)) = self.set_pt_for(id) {
+            toughness = set;
+        }
+
         let (_, t_mod) = self.continuous_pt_mods(id, registry);
         toughness += t_mod;
 
@@ -1900,6 +1927,36 @@ impl GameState {
         }
 
         Some(toughness)
+    }
+
+    /// Set a permanent's power and/or toughness to a specific value in layer
+    /// 7b (CR 613.4b).
+    ///
+    /// Writing `obj.power` / `obj.toughness` instead would change the object's
+    /// *printed* characteristics, which a copy effect reads (CR 706.2) and a
+    /// zone change resets (CR 400.7) — Tree of Redemption's exchange did that,
+    /// and both of those readers had to be patched by hand to compensate
+    /// (issue #302).
+    pub fn set_base_pt(&mut self, object: ObjectId, power: Option<i32>, toughness: Option<i32>) {
+        let timestamp = self.next_control_timestamp();
+        self.set_pt_effects.push(SetPtEffect { object, power, toughness, timestamp });
+    }
+
+    /// The layer-7b value in force for `object`, if any (CR 613.7a: latest
+    /// timestamp wins).
+    #[must_use]
+    fn set_pt_for(&self, object: ObjectId) -> (Option<i32>, Option<i32>) {
+        let mut power = None;
+        let mut toughness = None;
+        let mut applicable: Vec<&SetPtEffect> = self.set_pt_effects.iter()
+            .filter(|e| e.object == object)
+            .collect();
+        applicable.sort_by_key(|e| e.timestamp);
+        for effect in applicable {
+            if effect.power.is_some() { power = effect.power; }
+            if effect.toughness.is_some() { toughness = effect.toughness; }
+        }
+        (power, toughness)
     }
 
     /// Check if a creature is prevented from attacking (e.g., by Pacifism).
@@ -3328,6 +3385,19 @@ pub struct ControlEffect {
     /// permanent are applied in this order, so the highest timestamp is the
     /// one whose controller the permanent actually has.
     #[serde(default)]
+    pub timestamp: u64,
+}
+
+/// A layer-7b effect setting a permanent's power and/or toughness to a
+/// specific value (CR 613.4b).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetPtEffect {
+    pub object: ObjectId,
+    /// `None` leaves that half alone: Tree of Redemption sets only toughness.
+    pub power: Option<i32>,
+    pub toughness: Option<i32>,
+    /// CR 613.7a: several 7b effects on one permanent apply in this order,
+    /// so the highest timestamp is the one that decides.
     pub timestamp: u64,
 }
 

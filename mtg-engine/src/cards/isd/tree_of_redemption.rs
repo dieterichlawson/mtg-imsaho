@@ -63,9 +63,13 @@ impl CardBehavior for TreeOfRedemption {
         let old_life = current_life;
         state.change_life(controller, current_toughness - current_life);
 
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.toughness = Some(current_life);
-        }
+        // CR 613.4b: "exchange your life total with this creature's toughness"
+        // SETS toughness in layer 7b. It does not touch the printed value,
+        // which is what a copy effect reads (CR 706.2) and what a zone change
+        // restores (CR 400.7) — writing `obj.toughness` made the card's own
+        // printed 0/13 read 0/20 in the save file and in the inspector, and
+        // left two other code paths patched by hand to compensate (#302).
+        state.set_base_pt(object_id, None, Some(current_life));
 
         state.log(crate::state::LogLevel::Event,
             format!("Tree of Redemption: exchanged life ({old_life}) with toughness ({current_toughness})"));

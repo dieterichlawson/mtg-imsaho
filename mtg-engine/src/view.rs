@@ -91,6 +91,19 @@ pub struct PermanentView {
     /// Grimoire of the Dead's "Zombie". Every "as long as ... is a Human"
     /// card in the set turns on this, and no pane could read it (issue #297).
     pub subtypes: Vec<String>,
+    /// The active face's PRINTED power and toughness (CR 208.1) — what the
+    /// card says, before any effect. `power`/`toughness` are the object's own
+    /// fields, which for a transformed DFC are still the front face's and for
+    /// a `*/*` creature are a sentinel (issues #240, #267).
+    pub printed_power: Option<i32>,
+    pub printed_toughness: Option<i32>,
+    /// True when the printed P/T is `*`/`*` and a characteristic-defining
+    /// ability fills it in (CR 208.2, 604.3).
+    pub star_pt: bool,
+    /// CR 111.1: a token is not a card. Anything counting cards has to know
+    /// — the deck browser counted tokens into its header and then could not
+    /// list them, so the total disagreed with the rows (issue #241).
+    pub is_token: bool,
     /// What this creature is attacking, if it is (CR 506.3a). "Attacking" is
     /// public state that decides how the defender blocks, and the only thing
     /// the panes showed for it was `[T]` — the same mark a creature gets for
@@ -223,6 +236,11 @@ impl GameView {
                     attached_to_player: obj.attached_to_player,
                     keywords,
                     subtypes: state.subtypes_of(obj.id, registry),
+                    printed_power: face_data.as_ref().and_then(|d| d.power),
+                    printed_toughness: face_data.as_ref().and_then(|d| d.toughness),
+                    star_pt: registry.get(obj.card_id)
+                        .is_some_and(super::cards::CardBehavior::prints_star_pt),
+                    is_token: obj.is_token,
                     attacking: state.combat.as_ref().and_then(|c| {
                         c.attackers.get(&obj.id).map(|defender| {
                             c.planeswalker_defenders.get(&obj.id)

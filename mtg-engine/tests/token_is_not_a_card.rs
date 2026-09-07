@@ -172,8 +172,8 @@ fn tree_on_the_battlefield_exchanges_normally() {
         .resolve_activated_ability(&mut state, tree, 0, &[], &reg);
 
     assert_eq!(state.get_player(P0).life, 13, "life becomes the Tree's toughness");
-    assert_eq!(state.get_object(tree).unwrap().toughness, Some(4),
-        "and the Tree's toughness becomes the old life total");
+    assert_eq!(state.effective_toughness(tree, &reg), Some(4),
+        "and the Tree's toughness is set to the old life total (layer 7b)");
 }
 
 // ---------------------------------------------------------------------------

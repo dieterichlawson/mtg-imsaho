@@ -1286,9 +1286,12 @@ fn tree_of_redemption_swaps_life_and_toughness() {
     // Life should now be 13 (Tree's toughness).
     assert_eq!(state.get_player(P0).life, 13, "Life should become Tree's toughness (13)");
 
-    // Tree's base toughness should now be 20 (old life).
-    assert_eq!(state.get_object(tree).unwrap().toughness, Some(20),
+    // Its toughness is set to the old life total in layer 7b (CR 613.4b) —
+    // over the printed value, not instead of it.
+    assert_eq!(state.effective_toughness(tree, &reg), Some(20),
         "Tree's toughness should become old life total (20)");
+    assert_eq!(state.get_object(tree).unwrap().toughness, Some(13),
+        "and the printed 0/13 is untouched (CR 706.2, 400.7)");
 }
 
 /// Ruling (2018-03-16): "Any toughness-modifying effects, counters, Auras, or
@@ -1322,8 +1325,9 @@ fn tree_of_redemption_exchanges_the_toughness_it_actually_has() {
 
     assert_eq!(state.get_player(P0).life, 15,
         "you gain up to the toughness it actually had, counters included");
-    assert_eq!(state.get_object(tree).unwrap().toughness, Some(7),
-        "its BASE toughness becomes your former life total");
+    assert_eq!(state.effective_toughness(tree, &reg), Some(9),
+        "its toughness is SET to your former life total in layer 7b, with the \
+         counters applying on top (CR 613.4b)");
     assert_eq!(state.effective_toughness(tree, &reg), Some(9),
         "and the counters apply on top of that, so it is a 2/9");
     assert_eq!(state.effective_power(tree, &reg), Some(2),
