@@ -3488,3 +3488,33 @@ fn an_evil_twin_that_enters_as_an_essence_is_not_exempt_from_state_based_actions
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
         "lethal damage destroys it like any other creature (CR 704.5g)");
 }
+
+/// CR 616.1: "enters with a +1/+1 counter for each Zombie you control and
+/// each Zombie card in your graveyard" is worked out before the zone
+/// change — so a Horde reanimated OUT of the graveyard counts the
+/// graveyard it is leaving.
+///
+/// The replacement pass gathers its candidates from the battlefield, so the
+/// entering object is not among them; the pass adds it back explicitly.
+/// Without that, a Horde entering from anywhere but the battlefield's own
+/// replacement sources entered with no counters at all.
+#[test]
+fn a_horde_entering_from_the_graveyard_counts_the_graveyard_it_leaves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two Zombie cards in the graveyard beside the Horde itself.
+    for _ in 0..2 {
+        named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    }
+    let horde = named_card_in_graveyard(&mut state, &reg, "Unbreathing Horde", P0);
+    state.events.clear();
+
+    state.move_object(horde, Zone::Battlefield, &reg);
+
+    let counters = state.get_object(horde).unwrap().counters
+        .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    assert!(counters >= 2,
+        "the Horde entered with a counter for each Zombie card in the graveyard \
+         it came out of, got {counters}");
+}

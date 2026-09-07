@@ -96,21 +96,6 @@ pub fn apply(
         .collect();
     candidates.sort_by_key(|(id, _)| id.0);
 
-    // A permanent's replacement effect about its OWN arrival applies wherever
-    // it currently is — "enters with a +1/+1 counter for each Zombie card in
-    // your graveyard" is part of how this object enters, not something the
-    // battlefield does to it. And these are evaluated before the zone change
-    // (CR 616.1), so at this moment the object is still in the graveyard, the
-    // hand, or the library. Without this, Unbreathing Horde reanimated from
-    // the graveyard entered with no counters at all.
-    if let ReplaceableEvent::EntersBattlefield(e) = &event {
-        if !candidates.iter().any(|(id, _)| *id == e.object) {
-            if let Some(card_id) = state.get_object(e.object).map(|o| o.card_id) {
-                candidates.insert(0, (e.object, card_id));
-            }
-        }
-    }
-
     let mut current = event;
     for (object, card_id) in candidates {
         let Some(behavior) = registry.get(card_id) else { continue };

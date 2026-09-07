@@ -133,9 +133,7 @@ mtg-engine/src/mana.rs: replace < with > in try_auto_pay
 mtg-engine/src/mana.rs: replace > with == in compute_autotap
 mtg-engine/src/mana.rs: replace > with == in try_auto_pay
 mtg-engine/src/mana.rs: replace > with >= in compute_autotap
-mtg-engine/src/replacement.rs: delete ! in apply
 mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass
-mtg-engine/src/replacement.rs: replace == with != in apply
 mtg-engine/src/state.rs: delete ! in GameState::become_copy_of
 mtg-engine/src/state.rs: delete ! in GameState::effects_controlled_by
 mtg-engine/src/state.rs: delete ! in GameState::global_effects
