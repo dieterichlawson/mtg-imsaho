@@ -41,7 +41,13 @@ extern "C" fn restore_terminal_and_exit(sig: libc::c_int) {
         if let Some(t) = SANE_TERMIOS.get() {
             libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, t);
         }
-        let seq = b"\x1b[?2004l\x1b[?25h\r\n";
+        // Bracketed paste off, cursor back on, clear the screen, home the
+        // cursor — one write of literal escape bytes, because a signal
+        // handler may only call async-signal-safe functions and `write` is
+        // the one that qualifies. Without the clear, a signal death left the
+        // TUI frame on screen for the shell to paint into (#235), the same
+        // defect the Ctrl-C key path had.
+        let seq = b"\x1b[?2004l\x1b[?25h\x1b[2J\x1b[H";
         libc::write(libc::STDOUT_FILENO, seq.as_ptr().cast(), seq.len());
         unlink_scratch_file();
         libc::_exit(128 + sig);
@@ -79,8 +85,13 @@ pub fn unlink_scratch_file() {
 /// Ctrl-C at a prompt: put the terminal back, take the scratch file with
 /// us, and exit as an interrupted program does.
 fn quit_at_prompt() -> ! {
-    let _ = execute!(stdout(), event::DisableBracketedPaste);
-    tui_raw_off();
+    // Clear the frame on the way out, the same as the game-over path does
+    // (#47). Restoring the terminal MODES without clearing left the whole
+    // TUI on screen, and the shell prompt and every command after it painted
+    // inside the abandoned game board (#235). This runs in normal context —
+    // it is a key handler, not a signal handler — so it can do the full
+    // reset rather than the async-signal-safe subset.
+    reset_terminal_for_exit();
     unlink_scratch_file();
     std::process::exit(0);
 }
@@ -2276,6 +2287,20 @@ impl CliPlayer {
     // ── Input ──────────────────────────────────────────────────────
 
     fn read_line(prompt: &str) -> String {
+        Self::read_line_redrawing(prompt, &|| {})
+    }
+
+    /// [`read_line`](Self::read_line), plus what to do when the terminal is
+    /// resized: `redraw` repaints the frame this prompt sits in, and the
+    /// prompt and everything typed so far are painted again on top of it.
+    ///
+    /// The TUI only ever drew when it was about to ask something, and
+    /// nothing handled a resize, so after one the screen kept the frame
+    /// drawn for the old width — hard-wrapped into nonsense by the terminal
+    /// — until the next keystroke. At small sizes the prompt and its options
+    /// were not visible at all, and the instinctive key to press is Enter,
+    /// which at a priority prompt passes priority (issue #250).
+    fn read_line_redrawing(prompt: &str, redraw: &dyn Fn()) -> String {
         // ONE reader for the terminal, always. This used to be a cooked-mode
         // io::stdin() read while every menu prompt reads crossterm events in
         // raw mode; two buffered readers over one fd desynchronize, and a
@@ -2305,11 +2330,22 @@ impl CliPlayer {
         // menu reader's, #53). Input beyond the cap still lands in `buf`,
         // it just isn't painted.
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let (start_col, start_row) = cursor::position().unwrap_or((0, 0));
-        let echo_cap = (term_w as usize).saturating_sub(start_col as usize + 1);
+        let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
+        let mut echo_cap = (term_w as usize).saturating_sub(start_col as usize + 1);
         let mut buf = String::new();
         loop {
             let Some(ev) = read_event_guarded() else { continue };
+            if let Event::Resize(w, _) = ev {
+                // Repaint the frame at the new size, then this prompt and
+                // whatever has been typed into it.
+                redraw();
+                let _ = execute!(out, Print(prompt));
+                let _ = out.flush();
+                (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
+                echo_cap = (w as usize).saturating_sub(start_col as usize + 1);
+                repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                continue;
+            }
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
                 buf.push_str(first);
@@ -2419,7 +2455,10 @@ impl CliPlayer {
 
     /// Read a line of input, but detect '/' immediately (without Enter)
     /// to trigger card search. Returns None if '/' was pressed first.
-    fn read_line_with_search(_col: u16) -> Option<String> {
+    /// The action-menu reader. `redraw` repaints the menu when the terminal
+    /// is resized (issue #250 — see
+    /// [`read_line_redrawing`](Self::read_line_redrawing)).
+    fn read_line_with_search_redrawing(_col: u16, redraw: &dyn Fn()) -> Option<String> {
         // Prompt "> " is already printed by render.
         let mut out = stdout();
         tui_raw_on();
@@ -2437,7 +2476,7 @@ impl CliPlayer {
         let echo_cap = mid_w.saturating_sub("  > ".len());
         // The line is repainted from `buf` (see `repaint_input_line`), so
         // there is no parallel echo model to drift from it (#281).
-        let (start_col, start_row) = cursor::position().unwrap_or((0, 0));
+        let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
 
         // Bracketed paste, enabled only for this raw-mode read: without it a
         // multi-line paste arrives as N keystroke sequences whose embedded
@@ -2460,6 +2499,12 @@ impl CliPlayer {
                     None => continue,
                 },
             };
+            if let Event::Resize(..) = ev {
+                redraw();
+                (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
+                repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                continue;
+            }
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
                 buf.push_str(first);
@@ -3192,7 +3237,8 @@ impl CliPlayer {
             // otherwise stay on screen and visually merge with the next
             // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let input = Self::read_line("  Attack (numbers/all/none, enter=none)> ");
+            let input = Self::read_line_redrawing(
+                "  Attack (numbers/all/none, enter=none)> ", &|| { draw(); });
 
             // Info panes (issue #120): show, then repaint this prompt.
             match input.as_str() {
@@ -3375,7 +3421,8 @@ impl CliPlayer {
         loop {
             // Same stale-row clearing as the attack prompt (issue #35).
             let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let input = Self::read_line("  Block (blocker:attacker / enter=none)> ");
+            let input = Self::read_line_redrawing(
+                "  Block (blocker:attacker / enter=none)> ", &|| { draw(); });
 
             // Info panes (issue #120): show, then repaint this prompt.
             match input.as_str() {
@@ -4264,7 +4311,14 @@ impl Player for CliPlayer {
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let side = term_w as usize / 5;
             let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-            let input = Self::read_line_with_search(col);
+            // The menu is repainted on resize, so the frame is never left
+            // at the old width for the player to type blindly into (#250).
+            let filter = self.card_filter.clone();
+            let context = legal.context.clone();
+            let input = Self::read_line_with_search_redrawing(col, &|| {
+                Self::render_paged(view, Some(&display_labels), context.as_deref(),
+                    &view.display_log, &filter, pass_label, menu_offset);
+            });
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {
