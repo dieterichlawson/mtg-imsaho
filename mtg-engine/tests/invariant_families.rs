@@ -1996,6 +1996,24 @@ fn combat_bookkeeping_clauses_each_have_a_violating_state() {
     s.combat.as_mut().unwrap().dealt_first_strike.insert(attacker);
     flags_settled(&s, &reg, "first-strike damage recorded in DeclareBlockers");
 
+    // CR 510.4 again: a second damage step is pending only inside the damage
+    // step of a combat that is happening — each half on its own.
+    let pending = "second combat damage step pending";
+    let mut ok = state.clone();
+    ok.step = Step::CombatDamage;
+    ok.combat_damage_step_pending = true;
+    assert!(!check_settled(&as_collected(&ok), &reg).iter().any(|m| m.contains(pending)),
+        "the first of two damage steps is where a second one is pending: {:?}",
+        check_settled(&as_collected(&ok), &reg));
+
+    let mut s = ok.clone();
+    s.step = Step::DeclareBlockers;
+    flags_settled(&s, &reg, pending);
+
+    let mut s = ok.clone();
+    s.combat = None;
+    flags_settled(&s, &reg, pending);
+
     // A permanent cannot attack itself.
     let mut s = state.clone();
     s.combat.as_mut().unwrap().planeswalker_defenders.insert(attacker, attacker);
