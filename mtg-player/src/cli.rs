@@ -286,6 +286,51 @@ enum ExileEntry {
     Reject(String),
 }
 
+/// Why auto-pass stops at a prompt.
+///
+/// It used to be a bare `bool`, and the refusal message was reconstructed
+/// afterwards by looking for the first actionable-looking thing on the menu —
+/// so a prompt blocked by the postcombat-main stop was reported as having "a
+/// castable spell it would skip" (issue #294). The reason travels with the
+/// decision now, so what the player is told is what actually happened.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BreakReason {
+    /// A land drop is once per turn and free, so it is never passed (#39).
+    LandPlay,
+    /// The Main Phase 1 auto-pass was passing towards.
+    TargetMainPhase,
+    /// A sorcery-speed action on your own turn.
+    MeaningfulAction,
+    /// Something on the stack you have a real answer to.
+    StackResponse,
+    /// The opponent is attacking.
+    Attackers,
+    /// Your own postcombat main, for removal on damaged creatures.
+    YourPostcombatMain,
+}
+
+impl BreakReason {
+    /// The clause, in the second half of "Auto-pass not engaged: this prompt
+    /// has ...".
+    fn describe(self) -> &'static str {
+        match self {
+            BreakReason::LandPlay =>
+                "a land play it would skip. Pass with 0 first to decline it",
+            BreakReason::TargetMainPhase =>
+                "the Main Phase 1 auto-pass passes towards — there is nothing left to skip",
+            BreakReason::MeaningfulAction =>
+                "an action of yours it would skip. Pass with 0 first to decline it",
+            BreakReason::StackResponse =>
+                "something on the stack to respond to. Pass with 0 to decline",
+            BreakReason::Attackers =>
+                "an attack to respond to. Pass with 0 to decline",
+            BreakReason::YourPostcombatMain =>
+                "your postcombat main phase, a stop auto-pass always honours. \
+                 Pass with 0 to move on",
+        }
+    }
+}
+
 /// One round of an "up to N targets" prompt (see `prompt_target_up_to`).
 ///
 /// It serves both "up to N" slots — a bare `UpToTargets` spell and the wide
@@ -455,6 +500,11 @@ pub struct CliPlayer {
     pass_mode: Option<PassMode>,
     /// Filter string for the card reference panel.
     card_filter: String,
+    /// A message for the NEXT prompt shown. Pressing 'f' answers the current
+    /// one immediately, so its confirmation has nowhere to go but forward —
+    /// and without it engaging auto-pass produced no feedback at all
+    /// (issue #296).
+    pending_notice: Option<String>,
 }
 
 impl CliPlayer {
@@ -464,6 +514,7 @@ impl CliPlayer {
             name: name.to_string(),
             pass_mode: None,
             card_filter: String::new(),
+            pending_notice: None,
         }
     }
 
@@ -513,24 +564,38 @@ impl CliPlayer {
     }
 
     /// Decide what pressing 'f' does at the current prompt: the pass mode to
-    /// engage, or None when the current prompt already meets the break
-    /// condition — passing would silently discard actions (a land play, a
-    /// castable spell) that auto-pass promises never to skip (issue #48).
+    /// engage, or the reason the current prompt already breaks — engaging
+    /// there would pass over a decision auto-pass promises to stop for
+    /// (issue #48). One predicate for both questions, so the refusal names
+    /// the clause that actually blocked engagement rather than the first
+    /// actionable-looking row on the menu (issue #294).
     fn try_engage_auto_pass(
         view: &GameView,
         legal: &mtg_engine::engine::LegalActions,
-    ) -> Option<PassMode> {
+    ) -> Result<PassMode, BreakReason> {
         let mode = Self::new_pass_mode(view);
-        if Self::should_break_pass(view, legal, &mode) { None } else { Some(mode) }
+        match Self::should_break_pass(view, legal, &mode) {
+            Some(reason) => Err(reason),
+            None => Ok(mode),
+        }
     }
 
-    /// Check whether the current pass mode should break and return control
-    /// to the player. Returns true if the player should be prompted.
+    /// Why the current pass mode should stop and hand control back, or
+    /// `None` to keep passing.
+    ///
+    /// The set of stops is the one `.claude/commands/play-cli.md` documents.
+    /// Two of them used to be wider than their own rationale: the
+    /// declare-attackers stop tested whether the opponent merely CONTROLLED
+    /// a creature rather than whether one was attacking, and the
+    /// postcombat-main stop ("so the player can use removal on damaged
+    /// creatures" — a your-turn rationale) had no player test at all, so
+    /// auto-pass engaged on the opponent's turn died at THEIR main phase 2,
+    /// a phase and a turn short of where it was going (issue #295).
     fn should_break_pass(
         view: &GameView,
         legal: &mtg_engine::engine::LegalActions,
         mode: &PassMode,
-    ) -> bool {
+    ) -> Option<BreakReason> {
         match mode {
             PassMode::UntilNextTurn { activated_turn, before_our_main } => {
                 // "Our next Main Phase 1" is this turn's when 'f' was pressed
@@ -539,34 +604,31 @@ impl CliPlayer {
                 // later turn, silently skipping a same-turn castable spell).
                 let reached_target_turn = view.turn_number > *activated_turn
                     || (*before_our_main && view.turn_number == *activated_turn);
+                let our_turn = view.active_player == view.you;
 
                 // A land drop is never auto-passed, whatever the turn: once
                 // per turn and free, a land play is always worth stopping
                 // for (issue #39).
                 if legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })) {
-                    return true;
+                    return Some(BreakReason::LandPlay);
                 }
 
                 // Break at our precombat main once we reach the target turn.
-                if view.active_player == view.you
-                    && reached_target_turn
-                    && view.step == Step::PrecombatMain
-                {
-                    return true;
+                if our_turn && reached_target_turn && view.step == Step::PrecombatMain {
+                    return Some(BreakReason::TargetMainPhase);
                 }
 
-                // Break on our turn if we have meaningful actions (cast spells,
-                // play lands, activate non-mana abilities) — even outside main phase.
-                if view.active_player == view.you
-                    && reached_target_turn
-                {
+                // Break on our turn if we have meaningful actions (cast
+                // spells, activate non-mana abilities) — even outside a main
+                // phase.
+                if our_turn && reached_target_turn {
                     let has_meaningful = legal.actions.iter().any(|a| matches!(a,
                         Action::PlayLand { .. }
                         | Action::CastSpell { .. }
                         | Action::ActivateAbility { .. }
                     ));
                     if has_meaningful {
-                        return true;
+                        return Some(BreakReason::MeaningfulAction);
                     }
                 }
 
@@ -577,31 +639,32 @@ impl CliPlayer {
                         Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
                     ));
                     if has_response {
-                        return true;
+                        return Some(BreakReason::StackResponse);
                     }
                 }
 
-                // Break at opponent's DeclareAttackers only if they have creatures
-                // that could be attacking.
-                if view.active_player != view.you
-                    && view.step == Step::DeclareAttackers
-                {
-                    let opp_has_creatures = view.battlefield.iter().any(|p| {
-                        p.controller != view.you
-                            && p.card_types.contains(&CardType::Creature)
+                // Break at the opponent's DeclareAttackers only if they are
+                // actually attacking. Testing "controls a creature" stopped
+                // auto-pass at a combat where the opponent had declared no
+                // attackers at all, on a menu offering pass, a mana ability
+                // and concede (issue #295).
+                if !our_turn && view.step == Step::DeclareAttackers {
+                    let under_attack = view.battlefield.iter().any(|p| {
+                        p.controller != view.you && p.attacking.is_some()
                     });
-                    if opp_has_creatures {
-                        return true;
+                    if under_attack {
+                        return Some(BreakReason::Attackers);
                     }
                 }
 
-                // Break after combat ends (post-combat main on either turn)
-                // so the player can use removal/burn on damaged creatures.
-                if view.step == Step::PostcombatMain {
-                    return true;
+                // Break after combat ends so the player can use removal or
+                // burn on damaged creatures — which is a reason about their
+                // OWN postcombat main, not the opponent's.
+                if our_turn && view.step == Step::PostcombatMain {
+                    return Some(BreakReason::YourPostcombatMain);
                 }
 
-                false
+                None
             }
         }
     }
@@ -4877,8 +4940,7 @@ impl Player for CliPlayer {
         // Pass mode: auto-pass until a break condition is met.
         if let Some(ref mode) = self.pass_mode.clone() {
             if has_pass {
-                let should_break = Self::should_break_pass(view, legal, mode);
-                if should_break {
+                if Self::should_break_pass(view, legal, mode).is_some() {
                     self.pass_mode = None;
                 } else {
                     return Action::PassPriority;
@@ -4898,7 +4960,7 @@ impl Player for CliPlayer {
         let kind = if has_pass { "priority" } else { legal.context.as_deref().unwrap_or("") };
         self.drain_stale_input(kind);
 
-        let mut notice: Option<String> = None;
+        let mut notice: Option<String> = self.pending_notice.take();
         let mut menu_offset = 0usize;
         loop {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
@@ -4943,38 +5005,54 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "f" => {
+                    // The switch, both ways. Auto-pass could be turned on and
+                    // never off: nothing cleared `pass_mode` but a break, no
+                    // key toggled it, and at the one kind of screen that ever
+                    // SHOWS `[AUTO-PASS]` — a mandatory menu, with no Pass —
+                    // this arm was wrapped in `if has_pass` and swallowed the
+                    // key without a word (issue #296).
+                    if self.pass_mode.is_some() {
+                        self.pass_mode = None;
+                        notice = Some("Auto-pass off.".to_string());
+                        continue;
+                    }
+                    if !has_pass {
+                        notice = Some(
+                            "Auto-pass passes priority, and this prompt is a mandatory choice \
+                             — answer it with an option number.".to_string());
+                        continue;
+                    }
                     // Pass until my next Main Phase 1 (F6-like). The break
                     // check runs against the CURRENT prompt first: if it
-                    // would already break here (a land play or castable
-                    // spell on offer), engaging would silently discard those
-                    // actions (issue #48) — refuse instead.
-                    if has_pass {
-                        if let Some(mode) = Self::try_engage_auto_pass(view, legal) {
+                    // would already break here, engaging would pass over the
+                    // decision it exists to stop for (issue #48).
+                    match Self::try_engage_auto_pass(view, legal) {
+                        Ok(mode) => {
+                            // Pressing 'f' at your own main phase is a
+                            // deliberate skip of the rest of the turn — but it
+                            // used to be a silent one, and the same menu one
+                            // step later refused with a message that named the
+                            // spell it had just declined (issue #294). Say
+                            // what it declined, on the next screen shown.
+                            let declined = legal.actions.iter().filter(|a| matches!(a,
+                                Action::PlayLand { .. }
+                                | Action::CastSpell { .. }
+                                | Action::ActivateAbility { .. })).count();
                             self.pass_mode = Some(mode);
+                            self.pending_notice = Some(if declined == 0 {
+                                "Auto-pass on — passing to your next Main Phase 1. \
+                                 Press f again to turn it off.".to_string()
+                            } else {
+                                format!("Auto-pass on — it declined {declined} action(s) at that \
+                                         prompt, and passes to your next Main Phase 1. \
+                                         Press f again to turn it off.")
+                            });
                             return Action::PassPriority;
                         }
-                        // Name the thing actually blocking engagement — the
-                        // old fixed "(land play / castable spell)" text was
-                        // asserted at prompts that visibly had neither, e.g.
-                        // an empty-hand postcombat main (issue #131).
-                        let reason = if legal.actions.iter()
-                            .any(|a| matches!(a, Action::PlayLand { .. })) {
-                            "a land play it would skip. Pass with 0 first to decline it"
-                        } else if legal.actions.iter()
-                            .any(|a| matches!(a, Action::CastSpell { .. })) {
-                            "a castable spell it would skip. Pass with 0 first to decline it"
-                        } else if legal.actions.iter()
-                            .any(|a| matches!(a, Action::ActivateAbility { .. })) {
-                            "an activatable ability it would skip. Pass with 0 first to decline it"
-                        } else if view.step == Step::PostcombatMain {
-                            "your postcombat main phase, a stop auto-pass always honours. \
-                             Pass with 0 to move on"
-                        } else if !view.stack.is_empty() {
-                            "something on the stack to respond to. Pass with 0 to decline"
-                        } else {
-                            "a decision auto-pass would make for you. Pass with 0 first"
-                        };
-                        notice = Some(format!("Auto-pass not engaged: this prompt has {reason}."));
+                        Err(reason) => {
+                            notice = Some(format!(
+                                "Auto-pass not engaged: this prompt has {}.", reason.describe()));
+                        }
                     }
                     continue;
                 }
@@ -5739,6 +5817,75 @@ mod tests {
         legal(actions)
     }
 
+    /// `creature`, declared as an attacker.
+    fn attacker(id: u64, name: &str, controller: u8) -> mtg_engine::view::PermanentView {
+        let mut c = creature(id, name, controller);
+        c.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(0)));
+        c
+    }
+
+    /// Issue #295: the declare-attackers stop tested whether the opponent
+    /// merely CONTROLLED a creature, so auto-pass stopped at a combat where
+    /// they had declared no attackers at all, on a menu offering pass, a
+    /// mana ability and concede.
+    #[test]
+    fn an_opponents_combat_with_no_attack_is_not_a_stop() {
+        let mode = CliPlayer::new_pass_mode(&view(Step::Upkeep, 4, false));
+        let mut v = view(Step::DeclareAttackers, 4, false);
+        v.battlefield = vec![creature(9, "Bear", 1)];
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode), None,
+            "they control a creature but declared no attackers");
+
+        v.battlefield = vec![attacker(9, "Bear", 1)];
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode),
+            Some(BreakReason::Attackers), "an actual attack is a stop");
+    }
+
+    /// Issue #295: the postcombat-main stop's own rationale is a your-turn
+    /// one ("removal on damaged creatures"), but it had no player test — so
+    /// auto-pass engaged on the opponent's turn died at THEIR main phase 2,
+    /// a phase and a turn short of where it was going, and then described it
+    /// as "your postcombat main phase".
+    #[test]
+    fn the_postcombat_main_stop_is_your_own() {
+        let mode = CliPlayer::new_pass_mode(&view(Step::Upkeep, 4, false));
+        let theirs = view(Step::PostcombatMain, 4, false);
+        assert_eq!(CliPlayer::should_break_pass(&theirs, &pass_concede_plus(vec![]), &mode), None,
+            "the opponent's postcombat main is not a stop");
+
+        let mode = CliPlayer::new_pass_mode(&view(Step::Upkeep, 6, true));
+        let ours = view(Step::PostcombatMain, 6, true);
+        assert_eq!(CliPlayer::should_break_pass(&ours, &pass_concede_plus(vec![]), &mode),
+            Some(BreakReason::YourPostcombatMain));
+    }
+
+    /// Issue #294: the refusal used to be reconstructed by hunting the menu
+    /// for the first actionable-looking row, so a prompt blocked by the
+    /// postcombat-main stop was reported as having "a castable spell it would
+    /// skip". Engaging and refusing now come from one predicate, so the
+    /// reason is the one that actually blocked it.
+    #[test]
+    fn a_refusal_names_the_clause_that_blocked_it() {
+        // Postcombat main with a castable spell: the stop is the phase, not
+        // the spell. The message used to hunt the menu for the first
+        // actionable-looking row and blame that instead (#294), and with an
+        // empty hand it blamed a spell that was not there at all (#131).
+        let v = view(Step::PostcombatMain, 6, true);
+        for l in [pass_concede_plus(vec![cast(4)]), pass_concede_plus(vec![])] {
+            let reason = CliPlayer::try_engage_auto_pass(&v, &l).err().expect("refused");
+            assert_eq!(reason, BreakReason::YourPostcombatMain);
+            assert!(!reason.describe().contains("spell"), "{}", reason.describe());
+        }
+
+        // A land play is its own stop, whatever else is on the menu (#39).
+        let l = pass_concede_plus(vec![Action::PlayLand { object_id: ObjectId(3) }, cast(4)]);
+        assert_eq!(CliPlayer::try_engage_auto_pass(&v, &l).err(), Some(BreakReason::LandPlay));
+
+        // And an ordinary window with nothing to skip engages.
+        let quiet = view(Step::EndStep, 6, false);
+        assert!(CliPlayer::try_engage_auto_pass(&quiet, &pass_concede_plus(vec![])).is_ok());
+    }
+
     // Issue #45: 'f' pressed on our own turn before our main phase must
     // still break at THIS turn's Main Phase 1 when a spell is castable
     // there — "next Main Phase 1" is this turn's, not next turn's.
@@ -5749,7 +5896,8 @@ mod tests {
         // Reaching our own Main Phase 1 of the same turn with a castable
         // spell (and no land to play) must prompt.
         let v = view(Step::PrecombatMain, 9, true);
-        assert!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode));
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode),
+            Some(BreakReason::TargetMainPhase));
     }
 
     // Issue #45 companion: even with nothing castable, our own Main
@@ -5758,7 +5906,8 @@ mod tests {
     fn same_turn_main_phase_breaks_pass_when_pressed_before_main() {
         let mode = CliPlayer::new_pass_mode(&view(Step::Upkeep, 9, true));
         let v = view(Step::PrecombatMain, 9, true);
-        assert!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode));
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode),
+            Some(BreakReason::TargetMainPhase));
     }
 
     // 'f' pressed AT our Main Phase 1 is a deliberate skip of the rest of
@@ -5767,10 +5916,11 @@ mod tests {
     fn press_at_main_phase_still_skips_rest_of_turn() {
         let mode = CliPlayer::new_pass_mode(&view(Step::PrecombatMain, 6, true));
         let v = view(Step::EndStep, 6, true);
-        assert!(!CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode));
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode), None);
         // ...but next turn's upkeep with a castable spell breaks, as before.
         let v = view(Step::Upkeep, 7, true);
-        assert!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode));
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![cast(1)]), &mode),
+            Some(BreakReason::MeaningfulAction));
     }
 
     // Issue #48: pressing 'f' on a prompt that already offers a land play
@@ -5783,7 +5933,7 @@ mod tests {
             Action::PlayLand { object_id: ObjectId(3) },
             cast(4),
         ]);
-        assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_none());
+        assert_eq!(CliPlayer::try_engage_auto_pass(&v, &l).err(), Some(BreakReason::LandPlay));
     }
 
     // Issue #48 companion: with no land play on offer, 'f' at our own Main
@@ -5792,7 +5942,7 @@ mod tests {
     fn press_at_own_main_without_land_engages() {
         let v = view(Step::PrecombatMain, 6, true);
         let l = pass_concede_plus(vec![cast(4)]);
-        assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_some());
+        assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_ok());
     }
 
     // Issue #109: echo and filter displays clip by display COLUMNS, so a
@@ -6024,6 +6174,6 @@ mod tests {
         let mode = CliPlayer::new_pass_mode(&view(Step::PrecombatMain, 6, true));
         let v = view(Step::PostcombatMain, 6, true);
         let l = pass_concede_plus(vec![Action::PlayLand { object_id: ObjectId(3) }]);
-        assert!(CliPlayer::should_break_pass(&v, &l, &mode));
+        assert_eq!(CliPlayer::should_break_pass(&v, &l, &mode), Some(BreakReason::LandPlay));
     }
 }

@@ -127,7 +127,7 @@ Your blockers:
 - **`0:0 1:0`** = both blockers block attacker 0 (double block)
 
 ### Shortcuts
-- **`f` C-m** = engage auto-pass mode (passes until your next Main Phase 1). Shows `[AUTO-PASS]` in the header. Breaks automatically for: stack responses, opponent attacks with creatures, your own combat with creatures, blocker decisions.
+- **`f` C-m** = toggle auto-pass mode: passes priority for you until your next Main Phase 1. Press `f` again at any prompt to turn it off. Shows `[AUTO-PASS]` in the header. See "Auto-Pass Behavior" below for exactly where it stops.
 - **`g` C-m** = view graveyards
 - **`e` C-m** = view exile zone
 - **`d` C-m** = browse deck
@@ -136,14 +136,23 @@ Your blockers:
 - **`/`** = card search (type immediately, no C-m needed first)
 
 ### Auto-Pass Behavior
-The engine auto-passes most boring phases. You are only prompted when:
-- You can play a land (Main Phase, your turn)
-- You can cast a sorcery-speed spell with available mana (Main Phase, your turn)
-- You have eligible attackers (Declare Attackers)
-- Opponent attacks and you have eligible blockers (Declare Blockers)
-- The stack has items AND you have a meaningful response (instant + mana)
-- You're in a key combat step with instants available (DeclareAttackers/Blockers)
-- You need to discard to hand size (Cleanup)
+Two different things pass for you, and they stop at different places.
+
+**The engine** skips priority windows where you have nothing to do at all, whatever mode you are in.
+
+**`f` (auto-pass mode)** then passes the windows that are left, until your next Main Phase 1. It stops early only for these, and nothing else:
+
+- a **land play** on offer — once per turn and free, never passed;
+- your **next Main Phase 1**, which is where it was going;
+- an action of yours — a **cast or an activated ability** — on **your own turn**, once that turn is reached;
+- something **on the stack** that you have a real answer to (a mana ability alone does not count);
+- the opponent **actually attacking** (an opponent who declares no attackers is not a stop);
+- your **own** postcombat main phase, so removal can be aimed at damaged creatures.
+
+Two consequences worth knowing:
+
+- Pressing `f` **at your own main phase** is a deliberate skip of the rest of your turn: it declines the casts and activations on that menu, and says how many it declined on the next screen. Decline them yourself with `0` first if you would rather it did not.
+- Pressing `f` where one of the stops above already applies is **refused**, and the message names which stop it was.
 
 An empty turn (play land, nothing else) takes **1–2 keypresses**. A full combat turn takes **3–5 keypresses**.
 
