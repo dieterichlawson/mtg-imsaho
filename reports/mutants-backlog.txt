@@ -78,7 +78,6 @@ mtg-engine/src/engine/mana_sources.rs: replace && with || in activate_mana_sourc
 mtg-engine/src/engine/mana_sources.rs: replace && with || in gather_mana_sources
 mtg-engine/src/engine/mana_sources.rs: replace > with == in activate_mana_source
 mtg-engine/src/engine/targeting.rs: delete ! in detect_modal_choice_mode
-mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::GraveyardCardOwnedByOpponent in valid_targets_for_req
 mtg-engine/src/engine/targeting.rs: replace != with == in valid_targets_for_req
 mtg-engine/src/engine/targeting.rs: replace && with || in valid_targets_for_req
 mtg-engine/src/engine/targeting.rs: replace + with * in combinations
