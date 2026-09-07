@@ -821,6 +821,185 @@ mod tests {
         assert!(key(&mountain) < key(&dual));
     }
 
+    // ---- the tap planner's one contract ----
+    //
+    // `compute_autotap` picks WHICH sources to tap, and that choice is a
+    // heuristic — colour preservation, utility lands last, filters after the
+    // sources that fund them. It has been retuned twice (issues #114, #252)
+    // and will be again, so the cases below pin the contract rather than the
+    // preference: a plan the planner offers is one the payment can actually
+    // execute, and a `None` means no plan existed.
+    //
+    // That second half is the one issue #252 broke: the engine offered a plan,
+    // the payment could not run it, and the cast was silently refused. Pinning
+    // each arithmetic step of the internal simulation would have caught it and
+    // frozen the heuristic; this catches it and leaves the heuristic free.
+
+    /// Run a tap plan and say whether what it produces pays `cost`.
+    ///
+    /// The plan's order is part of it: a filter's own cost is paid out of the
+    /// pool the earlier entries filled, which is what `free_abilities_first`
+    /// is for.
+    fn plan_pays(
+        plan: &[(ObjectId, usize)],
+        pool: &ManaPool,
+        sources: &[ManaSource],
+        cost: &ManaCost,
+    ) -> bool {
+        let mut pool = pool.clone();
+        for &(object_id, ability_index) in plan {
+            let ability = sources.iter()
+                .find(|s| s.object_id == object_id)
+                .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))
+                .expect("a plan names an ability its source has");
+            if auto_pay_reserving(&mut pool, &ability.cost, cost).is_err() {
+                return false;
+            }
+            for &(mana_type, amount) in &ability.produced {
+                pool.add(mana_type, amount);
+            }
+        }
+        can_pay(&pool, cost)
+    }
+
+    /// Every way to tap some subset of `sources`, one ability each.
+    fn every_plan(sources: &[ManaSource]) -> Vec<Vec<(ObjectId, usize)>> {
+        let mut plans = vec![vec![]];
+        for source in sources {
+            let mut next = Vec::new();
+            for plan in &plans {
+                next.push(plan.clone());
+                for ability in &source.abilities {
+                    let mut p = plan.clone();
+                    p.push((source.object_id, ability.ability_index));
+                    next.push(p);
+                }
+            }
+            plans = next;
+        }
+        plans
+    }
+
+    fn filter_ability(index: usize, produces: ManaType) -> ManaAbilityDef {
+        ManaAbilityDef {
+            ability_index: index,
+            description: format!("{{1}}, {{T}}: Add {produces:?}"),
+            produced: vec![(produces, 1)],
+            requires_tap: true,
+            cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
+            has_side_effects: false,
+        }
+    }
+
+    /// The boards worth asking about: enough colours to make the choice real,
+    /// a filter whose cost has to come from another source in the same plan,
+    /// and a source that makes two mana at once.
+    fn planner_cases() -> Vec<(&'static str, ManaPool, Vec<ManaSource>)> {
+        let sol_ring = ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {C}{C}".into(),
+            produced: vec![(ManaType::Colorless, 2)],
+            requires_tap: true,
+            cost: ManaCost::free(),
+            has_side_effects: false,
+        };
+        vec![
+            ("two Forests", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+                make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+            ]),
+            ("Plains, Forest, Mountain", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+                make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+                make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+            ]),
+            ("a dual and a Forest", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::BasicMana, dual_abilities(ManaType::Red, ManaType::Green)),
+                make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+            ]),
+            ("Plains, Forest and a filter", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+                make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+                make_source(3, ManaSourceKind::HasUtilityAbility, vec![filter_ability(0, ManaType::Blue)]),
+            ]),
+            ("a two-mana rock and a Swamp", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::BasicMana, vec![sol_ring]),
+                make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Black)]),
+            ]),
+            ("a Forest, with a floating W", {
+                let mut p = ManaPool::new();
+                p.add(ManaType::White, 1);
+                p
+            }, vec![
+                make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+            ]),
+        ]
+    }
+
+    fn planner_costs() -> Vec<ManaCost> {
+        use ManaSymbol::{Colored, Colorless, Generic};
+        vec![
+            ManaCost::new(vec![Colored(Color::Green)]),
+            ManaCost::new(vec![Colored(Color::Green), Colored(Color::Green)]),
+            ManaCost::new(vec![Generic(1), Colored(Color::Green)]),
+            ManaCost::new(vec![Generic(2)]),
+            ManaCost::new(vec![Generic(3)]),
+            ManaCost::new(vec![Colorless(1)]),
+            ManaCost::new(vec![Colorless(2)]),
+            ManaCost::new(vec![Colored(Color::White), Colored(Color::Green)]),
+            ManaCost::new(vec![Generic(1), Colored(Color::Blue)]),
+            ManaCost::new(vec![Colored(Color::Blue), Colored(Color::Blue)]),
+            ManaCost::new(vec![Generic(4), Colored(Color::Black)]),
+        ]
+    }
+
+    /// A plan the planner offers is a plan the payment can run.
+    #[test]
+    fn every_tap_plan_the_planner_offers_pays_the_cost_it_was_asked_for() {
+        for (label, pool, sources) in planner_cases() {
+            for cost in planner_costs() {
+                let Some(plan) = compute_autotap(&cost, &pool, &sources, &[]) else { continue };
+                assert!(plan_pays(&plan, &pool, &sources, &cost),
+                    "{label}: the plan {plan:?} offered for {cost} does not pay it");
+                let mut seen = std::collections::HashSet::new();
+                assert!(plan.iter().all(|&(id, _)| seen.insert(id)),
+                    "{label}: {plan:?} taps one source twice for {cost}");
+            }
+        }
+    }
+
+    /// And a `None` means no plan existed — checked against every plan there
+    /// is, so a planner that gives up early is caught rather than trusted.
+    #[test]
+    fn the_planner_declines_only_when_no_tap_plan_would_have_worked() {
+        for (label, pool, sources) in planner_cases() {
+            for cost in planner_costs() {
+                if compute_autotap(&cost, &pool, &sources, &[]).is_some() { continue }
+                let worked: Vec<_> = every_plan(&sources).into_iter()
+                    .filter(|p| plan_pays(p, &pool, &sources, &cost))
+                    .collect();
+                assert!(worked.is_empty(),
+                    "{label}: no plan offered for {cost}, but {:?} pays it", worked.first());
+            }
+        }
+    }
+
+    /// Floating mana counts toward the cost, so a Forest and a floating {W}
+    /// cast a {W}{G} spell by tapping once.
+    #[test]
+    fn the_planner_spends_the_pool_before_it_taps_anything() {
+        let mut pool = ManaPool::new();
+        pool.add(ManaType::White, 1);
+        let sources = vec![
+            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+        ];
+        let cost = ManaCost::new(vec![
+            ManaSymbol::Colored(Color::White), ManaSymbol::Colored(Color::Green)]);
+        let plan = compute_autotap(&cost, &pool, &sources, &[]).expect("castable");
+        assert_eq!(plan, vec![(ObjectId(1), 0)], "the Plains stays untapped");
+    }
+
     // ---- autotap tests ----
 
     fn make_source(id: u64, kind: ManaSourceKind, abilities: Vec<ManaAbilityDef>) -> ManaSource {
