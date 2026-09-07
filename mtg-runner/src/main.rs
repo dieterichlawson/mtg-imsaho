@@ -383,6 +383,25 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
             }
             std::process::exit(1);
         }
+        // CR 104: a game that has a result is over, and there is nothing to
+        // continue. Resuming one used to be accepted: the banner announced a
+        // resume, `resume_game_loop` returned at once because the game was
+        // decided, and the runner printed the game-over summary a second time
+        // and exited 0 — reporting success for a no-op, and appending a whole
+        // second copy of the game to --log (issue #316). Refused here, before
+        // the banner and before anything is written.
+        if let Some(result) = save.state.result {
+            let outcome = match result {
+                mtg_engine::state::GameResult::Winner(id) => format!(
+                    "p{} ({}) won", id.0, save.player_names.get(id.0 as usize)
+                        .map_or("?", String::as_str)),
+                mtg_engine::state::GameResult::Draw => "it was a draw".to_string(),
+            };
+            die(&format!(
+                "save file '{path}' is a finished game ({outcome}; {} actions, turn {}); \
+there is nothing to resume",
+                save.state.submit_seq, save.state.turn_number));
+        }
         // Who is playing comes from the save unless a flag says otherwise —
         // the seats used to come from the flag DEFAULTS, so a two-human game
         // resumed with a bare `--resume` handed seat 2 to a random bot that

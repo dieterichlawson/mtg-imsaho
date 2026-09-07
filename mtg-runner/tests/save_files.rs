@@ -107,28 +107,34 @@ fn the_save_outlives_the_game_and_holds_the_final_position() {
         "the file the operator named is still there after the game"
     );
 
-    // And it is the *final* position: saves are written before each
-    // decision, so the last one written during play was a state one action
-    // from the end. Resuming a finished game replays no actions.
+    // And it is the *final* position, which is now read back out of the
+    // refusal: a decided game has nothing to continue, so `--resume` on it
+    // exits nonzero and says who won, how long the game was and what turn
+    // it ended on (issue #316). It used to announce a resume, do nothing,
+    // print the game-over summary a second time and exit 0.
     let resumed = runner()
         .current_dir(repo_root())
         .env("TMPDIR", &scratch.dir)
         .args(["--resume", &save, "--p1", "random", "--p2", "random", "--quiet"])
         .output()
         .expect("failed to run the runner");
-    let text = String::from_utf8_lossy(&resumed.stdout);
-    assert!(text.contains("Game over!"), "resumed a finished game: {text}");
-    // The count is the GAME's, not the session's (issue #293) — so "nothing
-    // was left to play" is that every action of it predates the resume, not
-    // that the summary prints a zero.
-    let line = text.lines().find(|l| l.starts_with("Total actions: "))
-        .unwrap_or_else(|| panic!("the summary reports a count: {text}"));
-    let (n, before) = line.trim_start_matches("Total actions: ")
-        .split_once(" (")
-        .unwrap_or_else(|| panic!("a resumed game names what predates the resume: {line}"));
-    assert_eq!(format!("{n} before this resume)"), before,
-        "nothing was left to play: {line}");
-    assert_ne!(n, "0", "and the game's own length is reported, not the session's: {line}");
+    let err = String::from_utf8_lossy(&resumed.stderr);
+    assert!(!resumed.status.success(),
+        "resuming a decided game is a refusal, not a success: {err}");
+    assert!(err.contains("is a finished game") && err.contains("nothing to resume"),
+        "the refusal says why: {err}");
+    assert!(err.contains("won") || err.contains("draw"),
+        "and reads the outcome back out of the save: {err}");
+    let (before, _) = err.split_once(" actions, turn ")
+        .unwrap_or_else(|| panic!("the refusal reports the game's length: {err}"));
+    let count: String = before.chars().rev()
+        .take_while(char::is_ascii_digit)
+        .collect::<Vec<_>>().into_iter().rev().collect();
+    assert!(!count.is_empty() && count != "0",
+        "the save holds the whole game, not an empty one: {err}");
+    assert!(String::from_utf8_lossy(&resumed.stdout).is_empty()
+        || !String::from_utf8_lossy(&resumed.stdout).contains("resuming from"),
+        "and nothing claims a resume happened: {}", String::from_utf8_lossy(&resumed.stdout));
 }
 
 /// A path that already holds something gets a word about it, since the save
