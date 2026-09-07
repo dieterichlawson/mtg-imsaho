@@ -466,7 +466,7 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     state.get_object_mut(milled).unwrap().name = "Grizzly Bears".into();
     state.get_player_mut(P1).library_order.insert(0, milled);
 
-    let zombie_tokens_before = count_tokens_named_by(&state, "Zombie Token", P0);
+    let zombie_tokens_before = count_tokens_named_by(&state, "Zombie", P0);
 
     // Mill 1 card from P1's library.
     engine::mill_cards(&mut state, P1, 1, "test", &registry);
@@ -475,7 +475,7 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
     let milled_zone = state.get_object(milled).map(|o| o.zone);
-    let zombie_tokens_after = count_tokens_named_by(&state, "Zombie Token", P0);
+    let zombie_tokens_after = count_tokens_named_by(&state, "Zombie", P0);
 
     assert_eq!(
         milled_zone,
@@ -931,7 +931,7 @@ fn bug_undead_alchemist_trigger_only_from_own_mill() {
     let zombie = ready_creature(&mut state, P0, 2, 2);
     if let Some(obj) = state.get_object_mut(zombie) {
         obj.subtypes = vec!["Zombie".into()];
-        obj.name = "Zombie Token".into();
+        obj.name = "Zombie".into();
     }
 
     // Give P1 some library cards

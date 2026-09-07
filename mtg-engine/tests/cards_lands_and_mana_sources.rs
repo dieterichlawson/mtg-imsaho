@@ -189,9 +189,10 @@ fn moorland_haunt_creates_spirit_token() {
 
     state = resolve_activated(engine::submit_action(&state, activate.unwrap(), &reg), &reg);
 
-    // Check a Spirit Token was created (Moorland Haunt creates a "Spirit Token" token).
-    assert_eq!(count_tokens_named(&state, "Spirit Token"), 1, "Should create one Spirit token");
-    let spirit = find_token_named(&state, "Spirit Token").unwrap();
+    // Check a Spirit token was created (Moorland Haunt creates a token named
+    // "Spirit" — CR 111.4 derives the name from the subtype).
+    assert_eq!(count_tokens_named(&state, "Spirit"), 1, "Should create one Spirit token");
+    let spirit = find_token_named(&state, "Spirit").unwrap();
     let obj = state.get_object(spirit).unwrap();
     assert_eq!(obj.power, Some(1));
     assert_eq!(obj.toughness, Some(1));

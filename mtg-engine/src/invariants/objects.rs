@@ -215,15 +215,17 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("{tag} is a token with subtypes {:?} but no creature type", obj.subtypes));
         }
 
-        // CR 111.4: an unnamed token is named after its subtypes.
+        // CR 111.4: an unnamed token's name is its subtype(s) — the rule's own
+        // example, a "Goblin Scout creature token", is named "Goblin Scout".
+        // No literal "Token" in it: that word is the renderer's, and a name
+        // carrying it matches nothing a card can be named.
         if obj.is_token && obj.card_id == CardId(0) {
-            match obj.name.strip_suffix(" Token") {
-                Some(words) => {
-                    if !words.split_whitespace().all(|w| obj.subtypes.iter().any(|s| s == w)) {
-                        v.push(format!("{tag}: token name is not its subtypes {:?} plus \"Token\" (CR 111.4)", obj.subtypes));
-                    }
-                }
-                None => v.push(format!("{tag}: token name does not end in \"Token\" (CR 111.4)")),
+            let words: Vec<&str> = obj.name.split_whitespace().collect();
+            if words.len() != obj.subtypes.len()
+                || !words.iter().all(|w| obj.subtypes.iter().any(|s| s == w))
+            {
+                v.push(format!("{tag}: token name {:?} is not its subtypes {:?} (CR 111.4)",
+                    obj.name, obj.subtypes));
             }
         }
 

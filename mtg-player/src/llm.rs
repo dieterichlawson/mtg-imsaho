@@ -1937,6 +1937,9 @@ impl LlmPlayer {
             let kw = Self::format_keywords(&c.keywords);
             let kw_str = if kw.is_empty() { String::new() } else { format!(" {kw}") };
             let mut flag_parts: Vec<String> = Vec::new();
+            // A token's name is its subtypes alone (CR 111.4), so the board
+            // says "token" here rather than in the name (issues #331, #334).
+            if c.is_token { flag_parts.push("token".into()); }
             if c.tapped { flag_parts.push("T".into()); }
             if c.summoning_sick { flag_parts.push("S".into()); }
             if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
@@ -1960,6 +1963,7 @@ impl LlmPlayer {
         for o in &other {
             if o.attached_to.is_some() { continue; } // skip auras, shown with creature
             let mut flag_parts: Vec<String> = Vec::new();
+            if o.is_token { flag_parts.push("token".into()); }
             if o.tapped { flag_parts.push("T".into()); }
             // The chosen name is the permanent's whole identity (Nevermore's
             // ban) — without it a spell just vanishes from the menu (#130).
@@ -4316,7 +4320,7 @@ this Aura deals 1 damage to that player.";
     #[test]
     fn bug_h10_board_display_distinguishes_keyword_and_creature_separators() {
         let mut view = empty_view();
-        let mut p0 = perm(60, "Angel Token", 4, 4, PlayerId(0));
+        let mut p0 = perm(60, "Angel", 4, 4, PlayerId(0));
         p0.keywords = vec![mtg_engine::types::Keyword::Flying];
         view.battlefield.push(p0);
         view.battlefield.push(perm(61, "Grizzly Bears", 2, 2, PlayerId(0)));

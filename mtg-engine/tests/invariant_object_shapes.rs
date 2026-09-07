@@ -85,7 +85,7 @@ fn an_objects_types_and_face_are_checked_in_every_zone() {
         let o = s.get_object_mut(blank).unwrap();
         o.is_token = true;
         o.card_types = vec![];
-        o.name = "Wolf Token".into();
+        o.name = "Wolf".into();
         o.subtypes = vec!["Wolf".into()];
     }
     flags(&s, &reg, "has no card type");
@@ -137,7 +137,7 @@ fn x_and_the_flashback_mark_belong_where_they_are_written() {
         let o = s.get_object_mut(bear).unwrap();
         o.is_token = true;
         o.card_id = CardId(0);
-        o.name = "Bear Token".into();
+        o.name = "Bear".into();
         o.subtypes = vec!["Bear".into()];
         o.cast_with_flashback = true;
         o.zone = Zone::Stack;
@@ -277,13 +277,16 @@ fn a_tokens_name_and_types_describe_what_it_is() {
         vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
 
-    // CR 111.4: the name is the subtypes plus "Token".
+    // CR 111.4: the name is the subtype(s), and nothing else. A different
+    // word is wrong, and so is the right word with " Token" welded on —
+    // that is a name no card can share, so "creatures with the same name"
+    // could never match the token (issues #331, #334).
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Bear Token".into();
-    flags(&s, &reg, "token name is not its subtypes");
+    s.get_object_mut(wolf).unwrap().name = "Bear".into();
+    flags(&s, &reg, "is not its subtypes");
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Wolf".into();
-    flags(&s, &reg, "token name does not end in");
+    s.get_object_mut(wolf).unwrap().name = "Wolf Token".into();
+    flags(&s, &reg, "is not its subtypes");
 
     // A token with subtypes and no creature type.
     let mut s = state.clone();

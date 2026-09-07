@@ -125,7 +125,7 @@ fn ghoulraiser_returns_only_a_zombie_card() {
     let not_a_zombie = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
     // CR 109.1: a token in a graveyard is not a card, however Zombie it is.
     let token = *state.create_token_with_subtypes(
-        "Zombie Token", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+        "Zombie", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
         vec![], vec!["Zombie".into()], &reg)
         .first().expect("token created");
     state.move_object(token, Zone::Graveyard, &reg);

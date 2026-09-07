@@ -306,7 +306,7 @@ fn skirsdag_high_priest_is_offered_only_with_morbid_and_two_helpers() {
         if offered {
             let state = activate_offered(&state, &reg, priest, None);
             let demons: Vec<_> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.name == "Demon Token")
+                .filter(|o| o.zone == Zone::Battlefield && o.name == "Demon")
                 .collect();
             assert_eq!(demons.len(), 1, "one Demon token");
             assert_eq!((demons[0].power, demons[0].toughness), (Some(5), Some(5)), "a 5/5");
@@ -343,7 +343,7 @@ fn skirsdag_high_priests_helpers_may_be_summoning_sick() {
     let after = activate_offered(&state, &reg, priest, None);
     assert!(after.get_object(sick_a).unwrap().tapped);
     assert!(after.get_object(sick_b).unwrap().tapped);
-    assert_eq!(count_tokens_named_by(&after, "Demon Token", P0), 1);
+    assert_eq!(count_tokens_named_by(&after, "Demon", P0), 1);
 }
 
 /// CR 602.2a: the ability's controller is the player who activated it. An
@@ -368,9 +368,9 @@ fn skirsdag_high_priests_demon_goes_to_whoever_activated_it() {
     state.get_object_mut(priest).unwrap().controller = P1;
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert_eq!(count_tokens_named_by(&state, "Demon Token", P0), 1,
+    assert_eq!(count_tokens_named_by(&state, "Demon", P0), 1,
         "the Demon belongs to the player who activated the ability (CR 602.2a)");
-    assert_eq!(count_tokens_named_by(&state, "Demon Token", P1), 0,
+    assert_eq!(count_tokens_named_by(&state, "Demon", P1), 0,
         "and not to whoever controls the Priest when it resolves");
 }
 

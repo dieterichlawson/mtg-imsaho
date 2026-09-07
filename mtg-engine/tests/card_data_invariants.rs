@@ -545,10 +545,10 @@ fn tokens_are_named_after_their_subtypes() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let cases: &[(&str, &[&str])] = &[
-        ("Spirit Token", &["Spirit"]),
-        ("Zombie Token", &["Zombie"]),
-        ("Wolf Token", &["Wolf"]),
-        ("Human Soldier Token", &["Human", "Soldier"]),
+        ("Spirit", &["Spirit"]),
+        ("Zombie", &["Zombie"]),
+        ("Wolf", &["Wolf"]),
+        ("Human Soldier", &["Human", "Soldier"]),
     ];
 
     for (expected, subtypes) in cases {

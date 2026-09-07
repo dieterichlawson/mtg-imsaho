@@ -779,7 +779,7 @@ fn stitchers_apprentice_token_is_a_two_two_blue_homunculus() {
     assert!(state.colors_of(token, &reg).contains(&Color::Blue), "blue");
     assert!(state.has_subtype(token, "Homunculus", &reg), "a Homunculus");
     assert!(state.is_creature(token, &reg), "a creature token");
-    assert_eq!(state.get_object(token).unwrap().name, "Homunculus Token",
+    assert_eq!(state.get_object(token).unwrap().name, "Homunculus",
         "CR 111.4: an unnamed token is its subtypes plus \"Token\"");
 }
 

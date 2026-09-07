@@ -1539,7 +1539,13 @@ impl CliPlayer {
                 } else {
                     ""
                 };
-                let flags = format!("{}{}{}{}",
+                // CR 111.4 leaves the word "Token" out of a token's name, so
+                // the pane says it here instead — otherwise a Spirit token and
+                // a card named Spirit render identically, and the CARDS pane
+                // (which excludes tokens) is the only thing that tells them
+                // apart (issues #331, #334).
+                let flags = format!("{}{}{}{}{}",
+                    if c.is_token { " [tok]" } else { "" },
                     if c.tapped { " [T]" } else { "" },
                     if sick { " [S]" } else { "" },
                     combat,
@@ -6478,7 +6484,7 @@ mod tests {
     /// is chosen from.
     #[test]
     fn a_combat_entry_carries_the_live_keywords() {
-        let mut flier = creature(101, "Spirit Token", 1);
+        let mut flier = creature(101, "Spirit", 1);
         flier.keywords = vec![mtg_engine::types::Keyword::Flying];
         let mut v = view(Step::DeclareBlockers, 7, false);
         v.battlefield = vec![flier];

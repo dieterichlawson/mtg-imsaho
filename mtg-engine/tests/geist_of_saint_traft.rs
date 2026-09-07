@@ -29,7 +29,7 @@ fn geist_creates_angel_on_attack() {
     // the flying had no assertion at all: a black Angel, or one without
     // flying, passed the whole workspace.
     let angel = state.objects.values()
-        .find(|o| o.name == "Angel Token" && o.zone == Zone::Battlefield)
+        .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)
         .map(|o| o.id)
         .expect("Angel token should be on the battlefield");
     assert_eq!(state.effective_power(angel, &reg), Some(4));
@@ -67,7 +67,7 @@ fn the_angel_is_attacking_but_was_never_declared_an_attacker() {
     submit_declare_attackers(&mut state, &[(geist, P1)], &reg);
     mtg_engine::triggers::process_triggers(&mut state, &reg);
 
-    let angel = find_token_named(&state, "Angel Token").expect("Angel should exist");
+    let angel = find_token_named(&state, "Angel").expect("Angel should exist");
 
     assert!(state.attacked_this_turn(geist),
         "Geist was declared as an attacker (CR 508.1)");
@@ -88,7 +88,7 @@ fn angel_exiled_at_end_of_combat() {
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
-    let angel_id = find_token_named(&state, "Angel Token").expect("Angel should exist");
+    let angel_id = find_token_named(&state, "Angel").expect("Angel should exist");
 
     // End combat fires the delayed trigger; auto-resolve exiles the Angel.
     state.step = Step::EndCombat;
@@ -111,7 +111,7 @@ fn angel_exiled_even_if_geist_dies() {
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, AttackInfo::new(geist, P1), &[], &reg);
 
-    let angel_id = find_token_named(&state, "Angel Token").expect("Angel should exist");
+    let angel_id = find_token_named(&state, "Angel").expect("Angel should exist");
 
     // Kill the Geist before end of combat.
     state.move_object(geist, Zone::Graveyard, &reg);
@@ -138,7 +138,7 @@ fn setup_geist_attacking(state: &mut mtg_engine::state::GameState, reg: &CardReg
     behavior.on_attacks(state, geist, AttackInfo::new(geist, P1), &[], reg);
 
     let angel_id = state.objects.values()
-        .find(|o| o.name == "Angel Token" && o.zone == Zone::Battlefield)
+        .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)
         .map(|o| o.id)
         .expect("Angel token should exist on battlefield after on_attacks");
 

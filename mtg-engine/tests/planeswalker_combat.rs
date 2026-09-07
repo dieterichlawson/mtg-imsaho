@@ -294,7 +294,7 @@ fn geists_angel_can_be_sent_at_a_planeswalker() {
     let state = answer_attack_target(&state, Target::Object(liliana), &reg);
     let mut state = state;
 
-    let angel = find_token_named(&state, "Angel Token").expect("the Angel exists");
+    let angel = find_token_named(&state, "Angel").expect("the Angel exists");
     assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&angel).copied()), Some(P1),
         "the Angel still defends against the walker's controller (CR 508.1a)");
     assert_eq!(
@@ -342,7 +342,7 @@ fn each_kessig_wolf_chooses_its_own_defender() {
     assert!(state.awaiting_action.is_none(), "two tokens, two answers, done");
     let combat = state.combat.as_ref().unwrap();
     let wolves: Vec<_> = state.objects.values()
-        .filter(|o| o.is_token && o.name == "Wolf Token")
+        .filter(|o| o.is_token && o.name == "Wolf")
         .map(|o| o.id)
         .collect();
     assert_eq!(wolves.len(), 2);

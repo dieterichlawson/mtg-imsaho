@@ -187,11 +187,13 @@ fn token_shape_rules_are_checked() {
         vec![], vec!["Wolf".into()], &reg)[0];
     clean(&state, &reg);
 
+    // CR 111.4: the name is the subtype(s) — the wrong word is wrong, and so
+    // is the right word with " Token" welded on (issues #331, #334).
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Wolf".into();
-    flags_core(&s, &reg, "does not end in \"Token\" (CR 111.4)");
+    s.get_object_mut(wolf).unwrap().name = "Wolf Token".into();
+    flags_core(&s, &reg, "is not its subtypes");
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Spirit Token".into();
+    s.get_object_mut(wolf).unwrap().name = "Spirit".into();
     flags_core(&s, &reg, "is not its subtypes");
     let mut s = state.clone();
     s.get_object_mut(wolf).unwrap().zone_change_count = 1;

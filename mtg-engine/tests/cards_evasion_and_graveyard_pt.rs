@@ -280,10 +280,11 @@ fn spider_spawning_creates_tokens() {
     let ss = castable_spell(&mut state, &reg, "Spider Spawning", P0);
     state = cast_and_resolve(&state, &reg, ss, vec![]);
 
-    assert_eq!(count_tokens_named(&state, "Spider Token"), 4, "one Spider per creature card");
-    // "Spider Token", not "Spider" — the assertion below ran over nothing.
+    assert_eq!(count_tokens_named(&state, "Spider"), 4, "one Spider per creature card");
+    // CR 111.4 names a token after its subtypes: "Spider", not "Spider
+    // Token" — a filter on the wrong string ran over nothing.
     let spiders: Vec<_> = state.objects.values()
-        .filter(|o| o.is_token && o.name == "Spider Token")
+        .filter(|o| o.is_token && o.name == "Spider")
         .collect();
     assert_eq!(spiders.len(), 4, "the loop below has to run over something");
     for spider in spiders {

@@ -664,10 +664,18 @@ impl GameState {
     /// under the same controller, extra copies of the token are created.
     ///
     /// `name` is the name the *effect gives* the token, and is almost always
-    /// empty: CR 111.4 says a token's name is its subtypes plus the word
-    /// "Token" unless the effect names it, so a "1/1 white Spirit creature
-    /// token" is named `Spirit Token`. No card in this set names a token, so
-    /// the derived name is what every one of them gets.
+    /// empty: CR 111.4 says a token's name is its subtype(s) when the effect
+    /// creating it does not name it — a "1/1 white Spirit creature token" is
+    /// named `Spirit`, and the rule's own worked example, a "Goblin Scout
+    /// creature token", is named `Goblin Scout`. No card in this set names a
+    /// token, so the derived name is what every one of them gets.
+    ///
+    /// The derived name used to carry a literal `" Token"` suffix, which is
+    /// not a characteristic any printed token has: it is the *name* that
+    /// "creatures with the same name" (Sever the Bloodline) and "cards named"
+    /// (Nevermore) compare, so a token could never match a card sharing its
+    /// name. The word belongs to the renderer, and both the CLI and the LLM
+    /// board now flag a token there.
     ///
     /// This used to be passed in by each card, and they disagreed — five cards
     /// make a 1/1 white flying Spirit and four of them called it `Spirit` while
@@ -687,11 +695,11 @@ impl GameState {
         subtypes: Vec<String>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
-        // CR 111.4: the token's name is its subtypes plus "Token", unless the
-        // effect gave it one.
+        // CR 111.4: the token's name is its subtype(s), unless the effect
+        // gave it one.
         let derived;
         let name = if name.is_empty() && !subtypes.is_empty() {
-            derived = format!("{} Token", subtypes.join(" "));
+            derived = subtypes.join(" ");
             derived.as_str()
         } else {
             name

@@ -86,13 +86,13 @@ fn a_caller_that_mutates_the_returned_tokens_reaches_the_doubled_ones() {
     state.get_object_mut(army).unwrap().name = "Army of the Damned".into();
     reg.get(card_id).unwrap().on_resolve(&mut state, army, &[], &reg);
 
-    let zombies = count_tokens_named_by(&state, "Zombie Token", P0);
+    let zombies = count_tokens_named_by(&state, "Zombie", P0);
     assert!(zombies >= 26,
         "test precondition: 13 tokens doubled is 26, got {zombies}");
-    // "Zombie Token", not "Zombie" — this loop ran over nothing, which is
-    // exactly the claim the test exists to make.
+    // The name is "Zombie" (CR 111.4). A loop filtering on any other string
+    // runs over nothing, which is exactly the claim the test exists to make.
     let tokens: Vec<_> = state.objects.values()
-        .filter(|o| o.is_token && o.name == "Zombie Token" && o.controller == P0)
+        .filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0)
         .collect();
     assert_eq!(tokens.len(), zombies, "the loop below has to run over something");
     for z in tokens {
@@ -100,4 +100,39 @@ fn a_caller_that_mutates_the_returned_tokens_reaches_the_doubled_ones() {
             "token {:?} is untapped: 'create thirteen tapped Zombies' has to \
              mean all of them, doubled ones included", z.id);
     }
+}
+
+/// CR 111.4: "If the spell or ability doesn't specify the name of the token,
+/// its name is the same as its subtype(s)." The rule's worked example, a
+/// "Goblin Scout creature token", is named `Goblin Scout` — there is no
+/// literal "Token" in a token's name.
+///
+/// This is a characteristic, not a label. "Creatures with the same name"
+/// (Sever the Bloodline) and "cards named" (Nevermore) compare it, and the
+/// engine used to derive `"<subtypes> Token"`, a string no printed card can
+/// ever be named — so a token could not match a card that shares its name,
+/// silently and with no error (issues #331, #334). The word "Token" belongs
+/// to the renderer, which is where the CLI and the LLM board now say it.
+#[test]
+fn an_unnamed_tokens_name_is_its_subtypes_alone() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let spirit = state.create_token_with_subtypes("", P0, 1, 1, vec![Color::White],
+        vec![CardType::Creature], vec![Keyword::Flying], vec!["Spirit".into()], &reg)[0];
+    assert_eq!(state.get_object(spirit).unwrap().name, "Spirit");
+    assert_eq!(state.name_of(spirit, &reg), "Spirit",
+        "the name every same-name comparison reads is the subtype (CR 111.4)");
+
+    let scout = state.create_token_with_subtypes("", P0, 1, 1, vec![Color::Red],
+        vec![CardType::Creature], vec![], vec!["Goblin".into(), "Scout".into()], &reg)[0];
+    assert_eq!(state.name_of(scout, &reg), "Goblin Scout",
+        "two subtypes make a two-word name, the rule's own example");
+
+    // The other half of CR 111.4: an effect that *does* name its token keeps
+    // that name, subtypes or not.
+    let named = state.create_token_with_subtypes("Ashaya, the Awoken World", P0, 4, 4,
+        vec![Color::Green], vec![CardType::Creature], vec![], vec!["Elemental".into()], &reg)[0];
+    assert_eq!(state.name_of(named, &reg), "Ashaya, the Awoken World",
+        "a name the effect gave is not overwritten by the subtypes");
 }
