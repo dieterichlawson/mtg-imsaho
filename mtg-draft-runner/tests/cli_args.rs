@@ -342,3 +342,91 @@ fn a_non_numeric_seed_is_refused() {
     assert_clean_refusal(&out, "--seed abc");
     assert!(stderr(&out).contains("--seed takes a number"), "stderr: {}", stderr(&out));
 }
+
+/// A stub that answers every pick with the first card and counts its calls,
+/// so a replay can be shown to spend nothing.
+#[cfg(unix)]
+fn counting_stub(name: &str, calls: &std::path::Path) -> std::path::PathBuf {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::temp_dir()
+        .join(format!("mtg-draft-count-{name}-{}.sh", std::process::id()));
+    let mut f = std::fs::File::create(&path).expect("create stub");
+    write!(f, "#!/bin/sh\n\
+case \"$1\" in --version) echo '0.0.0 (stub)'; exit 0;; esac\n\
+cat > /dev/null\n\
+echo x >> {}\n\
+echo '{{\"is_error\":false,\"result\":\"{{\\\\\"pick\\\\\": 0}}\"}}'\n",
+        calls.display()).expect("write stub");
+    drop(f);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    path
+}
+
+/// Issue #218: an eight-seat draft is 360 picks against a metered account,
+/// and one failed model call ended the whole run with nothing written but a
+/// log. A snapshot after every pick round makes a failure cost a round.
+///
+/// The replay must also cost NOTHING — the stub counts its calls, so a
+/// resume that re-asked a recorded pick would show up here — and must land
+/// on the same draft, which is what the seed buys (issue #212).
+#[test]
+#[cfg(unix)]
+fn a_draft_resumes_from_its_snapshot_without_re_asking() {
+    let dir = std::env::temp_dir().join(format!("mtg-draft-resume-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let calls = dir.join("calls.txt");
+    let stub = counting_stub("resume", &calls);
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().expect("package dir has a workspace parent");
+
+    let run = |save: &str, resume: Option<&str>, log: &str| {
+        let mut args: Vec<String> = ["--model", "cc", "--players", "2", "--best-of", "1",
+                                     "--quiet", "--seed", "77"]
+            .iter().map(|s| (*s).to_string()).collect();
+        args.extend(["--save".to_string(), dir.join(save).to_string_lossy().into_owned()]);
+        if let Some(r) = resume {
+            args.extend(["--resume".to_string(), dir.join(r).to_string_lossy().into_owned()]);
+        }
+        args.extend(["--log".to_string(), dir.join(log).to_string_lossy().into_owned()]);
+        runner().current_dir(workspace_root).args(&args)
+            .env("CLAUDE_CODE_BIN", &stub)
+            .output().expect("failed to run the draft runner")
+    };
+
+    let _ = std::fs::write(&calls, "");
+    let out = run("full.save", None, "full.log");
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let calls_for_whole_draft = std::fs::read_to_string(&calls).unwrap_or_default().lines().count();
+    let full: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("full.save")).expect("the snapshot was written"))
+        .expect("a valid snapshot");
+    let picks = full["picks"].as_array().expect("picks").clone();
+    assert!(picks.len() > 40, "a whole draft's worth of picks: {}", picks.len());
+
+    // Cut it in half and resume.
+    let mut half = full.clone();
+    half["picks"] = serde_json::Value::Array(picks[..40].to_vec());
+    std::fs::write(dir.join("half.save"), half.to_string()).expect("write the half save");
+
+    let _ = std::fs::write(&calls, "");
+    let out = run("resumed.save", Some("half.save"), "resumed.log");
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let resumed: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("resumed.save")).expect("the snapshot was written"))
+        .expect("a valid snapshot");
+
+    assert_eq!(resumed["picks"], full["picks"],
+        "the resumed draft is the same draft, pick for pick");
+
+    // The replayed picks cost nothing: the same draft, made with 40 fewer
+    // model calls than making it from scratch. (The counter also sees deck
+    // building and the tournament games, which both runs pay for alike.)
+    let calls_after_resume = std::fs::read_to_string(&calls).unwrap_or_default().lines().count();
+    assert_eq!(calls_for_whole_draft - calls_after_resume, 40,
+        "40 replayed picks are 40 calls not made: {calls_for_whole_draft} from scratch, \
+         {calls_after_resume} resumed");
+
+    let _ = std::fs::remove_file(&stub);
+    let _ = std::fs::remove_dir_all(&dir);
+}

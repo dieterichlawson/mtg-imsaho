@@ -51,6 +51,11 @@ Options:
                          re-run by passing the seed from its log header
   --guide <path>         Draft guide file prepended to every seat's prompt
   --guide-<N> <path>     Draft guide file for seat N alone (0-based)
+  --save <path>          Snapshot the draft here after every pick round, so a
+                         failed model call costs one round and not the run
+  --resume <path>        Replay a snapshot and carry on from it. Its seed, set
+                         and seat count win over the flags — the packs are
+                         re-dealt from the seed, so the position is exact
   --log <path>           Write the run log here  (default draft.log)
   --quiet, -q            Suppress progress output
   --help, -h             Print this help and exit
@@ -121,6 +126,35 @@ struct Args {
     seed: u64,
     log: String,
     quiet: bool,
+    /// Where to snapshot the draft after every pick round.
+    ///
+    /// An eight-seat draft is 360 picks against a metered account, and a
+    /// single failed model call ended the whole run with nothing written but
+    /// a log — an hour of quota for a six-second hiccup (issues #212, #218).
+    save: Option<String>,
+    /// A snapshot to replay before drafting resumes. The packs come from the
+    /// save's seed, so replaying the recorded picks reproduces the position
+    /// exactly, without spending anything.
+    resume: Option<String>,
+}
+
+/// One pick, as the snapshot records it.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct PickRecord {
+    round: usize,
+    pick: usize,
+    seat: usize,
+    card: String,
+}
+
+/// A draft in progress: enough to deal the same packs again and replay every
+/// pick that has been made.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DraftSave {
+    seed: u64,
+    set: String,
+    players: usize,
+    picks: Vec<PickRecord>,
 }
 
 /// Refuse an argument vector `parse_args` wouldn't fully consume, and hand
@@ -130,7 +164,7 @@ struct Args {
 /// silently dropped and its default silently used — a typo'd `--model` drafted
 /// with a model nobody asked for, on a seat that bills per token.
 fn validate_args(args: &[String]) -> Vec<(String, usize)> {
-    const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log", "--seed"];
+    const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log", "--seed", "--save", "--resume"];
     const BOOL_FLAGS: &[&str] = &["--quiet", "-q"];
     let mut indexed = Vec::new();
     let mut i = 1;
@@ -250,6 +284,8 @@ fn parse_args() -> Args {
         seed,
         log,
         quiet,
+        save: get("--save"),
+        resume: get("--resume"),
     }
 }
 
@@ -359,8 +395,39 @@ fn validate_model_specs(models: &[String]) {
 
 fn main() {
     install_panic_hook();
-    let args = parse_args();
+    let mut args = parse_args();
     validate_model_specs(&args.models);
+
+    // A snapshot decides the seed, the set and the seat count: they are what
+    // the recorded picks were made against, so a flag that disagreed would
+    // replay them into a different draft (issue #218).
+    let resumed: Option<DraftSave> = args.resume.as_ref().map(|path| {
+        let text = fs::read_to_string(path)
+            .unwrap_or_else(|e| die(&format!("failed to read draft save '{path}': {e}")));
+        let save: DraftSave = serde_json::from_str(&text)
+            .unwrap_or_else(|e| die(&format!("draft save '{path}' is not a valid snapshot: {e}")));
+        for (flag, saved, used) in [
+            ("--seed", save.seed.to_string(), args.seed.to_string()),
+            ("--set", save.set.clone(), args.set.clone()),
+            ("--players", save.players.to_string(), args.players.to_string()),
+        ] {
+            if saved != used {
+                eprintln!("note: {flag} comes from the save ({used} -> {saved})");
+            }
+        }
+        save
+    });
+    if let Some(save) = &resumed {
+        args.seed = save.seed;
+        args.set.clone_from(&save.set);
+        if save.players != args.players {
+            args.players = save.players;
+            args.models.resize(save.players, args.models[0].clone());
+            args.guides.resize(save.players, None);
+            args.guide_paths.resize(save.players, None);
+        }
+    }
+
     // One seeded root RNG, so the packs a run deals can be dealt again.
     let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(args.seed);
 
@@ -451,6 +518,33 @@ fn main() {
     // its pools, decks and standings as if it had (issue #195).
     let mut substituted_picks = vec![0usize; args.players];
 
+    // Every pick the run has made, in order: the snapshot, and on a resume
+    // the picks replayed out of one.
+    let mut recorded: Vec<PickRecord> = Vec::new();
+    let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
+    if !replaying.is_empty() && !args.quiet {
+        eprintln!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
+    }
+    let write_snapshot = |picks: &[PickRecord]| {
+        let Some(path) = &args.save else { return };
+        let save = DraftSave {
+            seed: args.seed,
+            set: args.set.clone(),
+            players: args.players,
+            picks: picks.to_vec(),
+        };
+        // Write-then-rename: a snapshot half-written when the run dies is
+        // worse than none, because it looks resumable.
+        let tmp = format!("{path}.tmp");
+        match serde_json::to_string(&save).map_err(|e| e.to_string())
+            .and_then(|text| fs::write(&tmp, text).map_err(|e| e.to_string()))
+            .and_then(|()| fs::rename(&tmp, path).map_err(|e| e.to_string()))
+        {
+            Ok(()) => {}
+            Err(e) => eprintln!("\nWARN: could not write the draft snapshot to {path}: {e}"),
+        }
+    };
+
     // Run the draft — all players pick in parallel each round
     for round in 0..3 {
         if round > 0 {
@@ -460,6 +554,25 @@ fn main() {
         let initial_cards = draft.cards_remaining(0);
 
         for pick_num in 0..initial_cards {
+            // A pick the snapshot already holds is replayed, not re-asked:
+            // it costs nothing and reproduces the position exactly.
+            let from_save: Vec<&PickRecord> = replaying.iter()
+                .filter(|p| p.round == round + 1 && p.pick == pick_num + 1)
+                .collect();
+            if from_save.len() == args.players {
+                for seat in 0..args.players {
+                    let Some(rec) = from_save.iter().find(|p| p.seat == seat) else { continue };
+                    crate::llm_client::DraftLlmClient::record_pick(&rec.card);
+                    draft.make_pick(seat, &rec.card).unwrap_or_else(|e| {
+                        die(&format!("draft save replays an impossible pick \
+(seat {seat}, pack {}, pick {}, {}): {e}", round + 1, pick_num + 1, rec.card));
+                    });
+                    recorded.push((*rec).clone());
+                }
+                draft.rotate_packs();
+                continue;
+            }
+
             if !args.quiet {
                 eprint!("\rPack {} Pick {}/{}", round + 1, pick_num + 1, initial_cards);
             }
@@ -546,9 +659,18 @@ substituting {} (the first card). Response: {}",
                 });
 
                 log_draft_pick!(log, seat, round + 1, pick_num + 1, &available, &chosen, &prompt, &response);
+                recorded.push(PickRecord {
+                    round: round + 1,
+                    pick: pick_num + 1,
+                    seat,
+                    card: chosen,
+                });
             }
 
             draft.rotate_packs();
+            // After the round, not during it: a snapshot is only resumable
+            // at a pick boundary, where every seat has picked.
+            write_snapshot(&recorded);
         }
     }
 
