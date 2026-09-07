@@ -166,6 +166,8 @@ pub fn try_destroy_no_regen(state: &mut GameState, id: ObjectId, registry: &Card
 
 /// Sacrifice a permanent. Bypasses indestructible and regeneration.
 /// Returns true if the permanent existed and was sacrificed.
+///
+/// Prefer [`sacrifice_by`], which also writes the log line.
 pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> bool {
     let exists = state.get_object(id)
         .is_some_and(|o| o.zone == Zone::Battlefield);
@@ -174,6 +176,44 @@ pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -
     }
     destroy(state, id, Some(registry));
     true
+}
+
+/// `sacrifice`, with the one line the log was missing: **who** sacrificed
+/// **what**, and **why**.
+///
+/// CR 701.17a is "a player sacrifices a permanent they control", and the
+/// sacrificing player was exactly the fact the log dropped. The only trace of
+/// an ability's sacrifice cost used to be `move_object`'s generic
+/// `<name> died`, indistinguishable from a combat death or a Doom Blade; with
+/// two eligible creatures the log could not say which one paid, even though
+/// the action menu had (issue #263).
+///
+/// `reason` is the trailing clause — `"to pay for Skirsdag Cultist's ability"`,
+/// `"as an additional cost of Infernal Plunge"` — so the line reads
+/// `p0 sacrificed Spirit Token (#121) to pay for Skirsdag Cultist's ability`.
+/// It is written BEFORE the permanent leaves, both so the name is still there
+/// to read and so the log stops saying "it died, and then it was sacrificed"
+/// (the spell path printed the two lines in that order).
+pub fn sacrifice_by(
+    state: &mut GameState,
+    id: ObjectId,
+    reason: &str,
+    registry: &CardRegistry,
+) -> bool {
+    let Some(who) = state.get_object(id)
+        .filter(|o| o.zone == Zone::Battlefield)
+        .map(|o| o.controller)
+    else {
+        return false;
+    };
+    let name = state.obj_name(id);
+    let line = if reason.is_empty() {
+        format!("p{} sacrificed {name}", who.0)
+    } else {
+        format!("p{} sacrificed {name} {reason}", who.0)
+    };
+    state.log(LogLevel::Event, line);
+    sacrifice(state, id, registry)
 }
 
 /// Apply regeneration: tap, remove damage, consume one shield, remove from combat.

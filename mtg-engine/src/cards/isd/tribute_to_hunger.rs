@@ -68,18 +68,14 @@ impl CardBehavior for TributeToHunger {
         let toughness = state.effective_toughness(*id, registry)
             .or_else(|| state.get_object(*id).and_then(|o| o.toughness))
             .unwrap_or(0);
-        let name = state.obj_name(*id);
         let beneficiary = crate::cards::helpers::controller_of(state, source_id);
 
-        crate::destruction::sacrifice(state, *id, registry);
+        crate::destruction::sacrifice_by(state, *id, "to Tribute to Hunger", registry);
 
         if toughness > 0 {
             state.gain_life(beneficiary, toughness);
             state.log(crate::state::LogLevel::Event,
-                format!("Tribute to Hunger: sacrificed {name}, p{} gained {toughness} life", beneficiary.0));
-        } else {
-            state.log(crate::state::LogLevel::Event,
-                format!("Tribute to Hunger: sacrificed {name}"));
+                format!("Tribute to Hunger: p{} gained {toughness} life", beneficiary.0));
         }
     }
 }

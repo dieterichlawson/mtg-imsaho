@@ -240,12 +240,21 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             match &ab.sacrifice_cost {
                 SacrificeCost::None => {}
                 SacrificeCost::SacrificeThis => {
-                    crate::destruction::sacrifice(&mut *state, object_id, registry);
+                    crate::destruction::sacrifice_by(
+                        &mut *state, object_id, "to pay for its own ability", registry);
                 }
                 SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => {
                     let sac_id = sacrifice
                         .expect("legal_actions must populate sacrifice for sacrifice-cost abilities");
-                    crate::destruction::sacrifice(&mut *state, sac_id, registry);
+                    // "Sacrifice a creature" with two eligible creatures: the
+                    // menu said which one would pay, and the log did not.
+                    let source_name = state.obj_name(object_id);
+                    let reason = if sac_id == object_id {
+                        "to pay for its own ability".to_string()
+                    } else {
+                        format!("to pay for {source_name}'s ability")
+                    };
+                    crate::destruction::sacrifice_by(&mut *state, sac_id, &reason, registry);
                 }
             }
 

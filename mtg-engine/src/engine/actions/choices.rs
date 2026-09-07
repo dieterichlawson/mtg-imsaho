@@ -315,13 +315,9 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
                     state.log(LogLevel::Event,
                         format!("{}: chose to sacrifice {pile_label}", state.obj_name(choice_source)));
+                    let reason = format!("to {}", state.obj_name(choice_source));
                     for &perm_id in chosen_pile {
-                        let name = state.obj_name(perm_id);
-                        if state.get_object(perm_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                            crate::destruction::sacrifice(&mut *state, perm_id, registry);
-                            state.log(LogLevel::Event,
-                                format!("{}: sacrificed {name}", state.obj_name(choice_source)));
-                        }
+                        crate::destruction::sacrifice_by(&mut *state, perm_id, &reason, registry);
                     }
                 }
                 (ResolutionChoiceKind::ChooseCardName { options, source_id, .. },

@@ -271,10 +271,8 @@ impl CardBehavior for GarrukRelentless {
         let Target::Object(id) = target else { return };
         let controller = crate::cards::helpers::controller_of(state, source_id);
 
-        let sac_name = state.obj_name(*id);
-        crate::destruction::sacrifice(state, *id, registry);
-        state.log(crate::state::LogLevel::Event,
-            format!("Garruk, the Veil-Cursed: sacrificed {sac_name}"));
+        crate::destruction::sacrifice_by(
+            state, *id, "to Garruk, the Veil-Cursed", registry);
 
         let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .copied()

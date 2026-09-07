@@ -130,9 +130,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{source_name}: put {name} on top of library"));
         }
         (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {
-            let name = state.obj_name(*id);
-            crate::destruction::sacrifice(state, *id, registry);
-            state.log(LogLevel::Event, format!("{source_name}: sacrificed {name}"));
+            crate::destruction::sacrifice_by(state, *id, &format!("to {source_name}"), registry);
         }
         (Target::Object(target_id), PendingEffect::EnterAsCopy { object }) => {
             // CR 614.12b: the answer to "you may have this enter as a copy

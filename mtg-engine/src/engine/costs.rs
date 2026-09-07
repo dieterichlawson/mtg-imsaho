@@ -391,10 +391,9 @@ pub(crate) fn pay_additional_cost(
     // A named sacrifice is paid whether or not the card declares the cost —
     // the caller chose it and legal_actions only offers it where it is owed.
     if let Some(id) = sacrifice {
-        let name = super::card_name(state, registry, id);
-        crate::destruction::sacrifice(state, id, registry);
-        state.log(crate::state::LogLevel::Event,
-            format!("Sacrificed {name} as additional cost"));
+        let spell_name = super::card_name(state, registry, spell);
+        crate::destruction::sacrifice_by(
+            state, id, &format!("as an additional cost of {spell_name}"), registry);
     }
     let Some(cost) = registry.card_data(card_id).and_then(|d| d.additional_cost) else { return };
     match cost {
@@ -408,10 +407,9 @@ pub(crate) fn pay_additional_cost(
                 .find(|o| state.is_creature(o.id, registry))
                 .map(|o| o.id);
             if let Some(id) = creature {
-                let name = super::card_name(state, registry, id);
-                crate::destruction::sacrifice(state, id, registry);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Sacrificed {name} as additional cost"));
+                let spell_name = super::card_name(state, registry, spell);
+                crate::destruction::sacrifice_by(
+                    state, id, &format!("as an additional cost of {spell_name}"), registry);
             }
         }
         AdditionalCost::ExileCreaturesFromGraveyard(n) => {
