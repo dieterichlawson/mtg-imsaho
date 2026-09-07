@@ -252,7 +252,30 @@ enum PassMode {
     },
 }
 
+/// Which trailing rows a target chooser offers below the targets.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ChooserRows {
+    /// One target to pick, or abandon the cast.
+    CancelOnly,
+    /// One of an "up to N" batch: pick, stop here and cast, or abandon.
+    DoneThenCancel,
+}
+
+/// What a line typed at a target chooser means.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TargetInput {
+    Pick(usize),
+    Done,
+    Cancel,
+    Panel(char),
+    Invalid,
+}
+
 /// One round of an "up to N targets" prompt (see `prompt_target_up_to`).
+///
+/// It serves both "up to N" slots — a bare `UpToTargets` spell and the wide
+/// second slot of a `TwoTargets` spell, which used to have a chooser of its
+/// own with no Cancel row (issue #288).
 enum UpToPick {
     Pick(mtg_engine::actions::Target),
     Done,
@@ -1113,18 +1136,7 @@ impl CliPlayer {
                     SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
                 row += 1;
             }
-            let has_pass = labels.first().is_some_and(|l| l.full() == "Pass priority");
-            // The `/` search lives in the right panel, which only exists at
-            // >= 100 columns — advertising it below that put users into an
-            // invisible modal mode that swallowed keystrokes (issue #107).
-            let hints = match (has_pass, has_right) {
-                (true, true) =>
-                    "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
-                (true, false) =>
-                    "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile]",
-                (false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
-                (false, false) => "  [d=deck] [l=log] [g=gy] [e=exile]",
-            };
+            let hints = Self::menu_hints(labels, has_right);
             // Clipped to the panel like every other row — at full length this
             // ate the right border and the card panel behind it (#53).
             let hints: String = hints.chars().take(mid_w).collect();
@@ -1817,7 +1829,10 @@ impl CliPlayer {
     }
 
     /// Interactive target selection for a castable spell.
-    /// Returns None if the user cancels (presses Escape/back).
+    ///
+    /// `None` abandons the cast with nothing spent. Cancelling is an empty
+    /// line, `c`/`cancel`, or the Cancel row, at any chooser — Escape is not
+    /// bound anywhere in this CLI, and the doc used to promise it (#288).
     fn choose_targets(view: &GameView, spell: &mtg_engine::actions::CastableSpell) -> Option<Action> {
         use mtg_engine::actions::CastTargetSpec;
 
@@ -1851,16 +1866,24 @@ impl CliPlayer {
                         if remaining.is_empty() { break; }
                         let label = format!("{}: select target {} of up to {}",
                             spell.name, i + 1, second_max);
-                        match Self::prompt_target_optional(view, &remaining, &label) {
-                            Some(target) => {
+                        match Self::prompt_target_up_to(view, &remaining, &label) {
+                            UpToPick::Pick(target) => {
                                 remaining.retain(|t| *t != target);
                                 chosen.push(target);
                             }
-                            None => break,
+                            UpToPick::Done => break,
+                            // This slot had no Cancel row at all: every way
+                            // out of it cast the spell (issue #288).
+                            UpToPick::Cancel => return None,
                         }
                     }
                     if chosen.len() <= *second_min {
-                        // Mandatory second target not chosen — treat as cancel.
+                        // A defensive floor. Cancelling now arrives as
+                        // `UpToPick::Cancel`, and `second_min` is 0 whenever
+                        // `second_max > 1` (targeting.rs derives it as
+                        // `usize::from(second_max == 1)`), so this cannot
+                        // fire today — it stays correct if a wide second slot
+                        // ever gains a minimum (issue #288).
                         return None;
                     }
                     chosen
@@ -1943,113 +1966,126 @@ impl CliPlayer {
         }).collect()
     }
 
-    /// Prompt the user to pick one target from a list. Returns None on cancel.
-    fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
-        let mut labels = Self::target_menu_labels(view, options);
-        labels.push(MenuLabel::plain("Cancel"));
+    /// One reading of a target chooser's input, for all of them.
+    ///
+    /// The three choosers each had their own rule and a bare Enter meant
+    /// three different things: `prompt_target` cancelled, and the two "up to
+    /// N" prompts CAST — two lands tapped, the card to the graveyard, or
+    /// with flashback exiled forever, from the key a player presses to back
+    /// out (issue #288). Enter is the reversible key everywhere in this CLI
+    /// (#123), so it is `Cancel` here too, and stopping early keeps its own
+    /// row.
+    fn parse_target_input(input: &str, n_options: usize, rows: ChooserRows) -> TargetInput {
+        let t = input.trim();
+        if t.is_empty() {
+            return TargetInput::Cancel;
+        }
+        // Panel keys before the numeric parse, as before.
+        if let Some(c) = t.chars().next() {
+            if t.chars().count() == 1 && "lgedi/".contains(c) {
+                return TargetInput::Panel(c);
+            }
+        }
+        if t.eq_ignore_ascii_case("c") || t.eq_ignore_ascii_case("cancel") {
+            return TargetInput::Cancel;
+        }
+        if rows == ChooserRows::DoneThenCancel && t.eq_ignore_ascii_case("done") {
+            return TargetInput::Done;
+        }
+        if let Ok(idx) = t.parse::<usize>() {
+            if idx < n_options {
+                return TargetInput::Pick(idx);
+            }
+            return match (rows, idx - n_options) {
+                (ChooserRows::CancelOnly, 0) => TargetInput::Cancel,
+                (ChooserRows::DoneThenCancel, 0) => TargetInput::Done,
+                (ChooserRows::DoneThenCancel, 1) => TargetInput::Cancel,
+                _ => TargetInput::Invalid,
+            };
+        }
+        TargetInput::Invalid
+    }
 
+    /// The rows a target chooser shows: the targets, then its trailing rows.
+    ///
+    /// Every chooser ends in a Cancel row. Making that unconditional here is
+    /// what stops the next one being written without an exit — the "up to N"
+    /// second slot of a two-target spell had none at all (issue #288).
+    fn chooser_labels(view: &GameView, options: &[mtg_engine::actions::Target], rows: ChooserRows)
+        -> Vec<MenuLabel>
+    {
+        let mut labels = Self::target_menu_labels(view, options);
+        match rows {
+            ChooserRows::CancelOnly => labels.push(MenuLabel::plain("Cancel the cast")),
+            ChooserRows::DoneThenCancel => {
+                labels.push(MenuLabel::plain("Done (cast with targets chosen so far)"));
+                labels.push(MenuLabel::plain("Cancel the cast"));
+            }
+        }
+        labels
+    }
+
+    /// Run one target chooser to an answer.
+    fn run_target_chooser(
+        view: &GameView,
+        options: &[mtg_engine::actions::Target],
+        label: &str,
+        rows: ChooserRows,
+    ) -> UpToPick {
+        let labels = Self::chooser_labels(view, options, rows);
         let mut notice: Option<String> = None;
         loop {
             let title = notice.take().map_or_else(|| label.to_string(),
                 |n| format!("{n} — {label}"));
             Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
             let input = Self::read_line("");
-            if input.is_empty() { return None; }
-            // Info panes + card search — advertised by the hint line but
-            // dead here until issue #122: a player wants their graveyard
-            // exactly when choosing a target.
-            match input.as_str() {
-                "l" => { Self::show_log(&view.display_log); continue; }
-                "g" => { Self::show_graveyards(view); continue; }
-                "e" => { Self::show_exile(view); continue; }
-                "d" => { Self::show_deck_browser(view); continue; }
-                "i" => { Self::show_battlefield_inspector(view); continue; }
-                "/" => { Self::run_card_search(view, &labels); continue; }
-                _ => {}
-            }
-            if let Ok(idx) = input.parse::<usize>() {
-                if idx < options.len() {
-                    return Some(options[idx].clone());
+            match Self::parse_target_input(&input, options.len(), rows) {
+                TargetInput::Pick(idx) => return UpToPick::Pick(options[idx].clone()),
+                TargetInput::Done => return UpToPick::Done,
+                TargetInput::Cancel => return UpToPick::Cancel,
+                // Info panes + card search: a player wants their graveyard
+                // exactly when choosing a target (issue #122).
+                TargetInput::Panel(c) => {
+                    match c {
+                        'l' => Self::show_log(&view.display_log),
+                        'g' => Self::show_graveyards(view),
+                        'e' => Self::show_exile(view),
+                        'd' => Self::show_deck_browser(view),
+                        'i' => Self::show_battlefield_inspector(view),
+                        _ => Self::run_card_search(view, &labels),
+                    }
                 }
-                if idx == options.len() { return None; }
+                // A silent re-render is indistinguishable from a hung game —
+                // same rule as the main menu (#76, issue #122).
+                TargetInput::Invalid => {
+                    notice = Some(format!(
+                        "Invalid input '{}' — enter a number 0-{}, or c to cancel the cast",
+                        quote_input(&input), labels.len() - 1));
+                }
             }
-            // A silent re-render is indistinguishable from a hung game —
-            // same rule as the main menu (#76, issue #122).
-            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                quote_input(&input), labels.len() - 1));
         }
     }
 
-    /// Prompt for an optional target (for "up to N" spells). Empty = done.
-    /// Pick one target of an "up to N" batch, or stop. `Done` casts with the
-    /// targets chosen so far (legal even at zero — CR 601.2c); `Cancel`
-    /// abandons the cast, which `Done` used to double as.
+    /// Prompt the user to pick one target from a list. `None` abandons the
+    /// cast with nothing spent.
+    fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str)
+        -> Option<mtg_engine::actions::Target>
+    {
+        match Self::run_target_chooser(view, options, label, ChooserRows::CancelOnly) {
+            UpToPick::Pick(t) => Some(t),
+            // `Done` is not offered by this chooser.
+            UpToPick::Done | UpToPick::Cancel => None,
+        }
+    }
+
+    /// Pick one target of an "up to N" batch, or stop, or back out.
+    ///
+    /// `Done` casts with the targets chosen so far, which is legal at zero
+    /// (CR 601.2c, issue #49); `Cancel` abandons the cast. An empty line is
+    /// `Cancel` — it used to be `Done`, so the key a player reaches for to
+    /// back out cast the spell (issue #288).
     fn prompt_target_up_to(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> UpToPick {
-        let mut labels = Self::target_menu_labels(view, options);
-        labels.push(MenuLabel::plain("Done (cast with targets chosen so far)"));
-        labels.push(MenuLabel::plain("Cancel the cast"));
-
-        let mut notice: Option<String> = None;
-        loop {
-            let title = notice.take().map_or_else(|| label.to_string(),
-                |n| format!("{n} — {label}"));
-            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
-            let input = Self::read_line("");
-            if input.is_empty() { return UpToPick::Done; }
-            // Info panes + card search — advertised by the hint line but
-            // dead here until issue #122: a player wants their graveyard
-            // exactly when choosing a target.
-            match input.as_str() {
-                "l" => { Self::show_log(&view.display_log); continue; }
-                "g" => { Self::show_graveyards(view); continue; }
-                "e" => { Self::show_exile(view); continue; }
-                "d" => { Self::show_deck_browser(view); continue; }
-                "i" => { Self::show_battlefield_inspector(view); continue; }
-                "/" => { Self::run_card_search(view, &labels); continue; }
-                _ => {}
-            }
-            if let Ok(idx) = input.parse::<usize>() {
-                if idx < options.len() {
-                    return UpToPick::Pick(options[idx].clone());
-                }
-                if idx == options.len() { return UpToPick::Done; }
-                if idx == options.len() + 1 { return UpToPick::Cancel; }
-            }
-            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                quote_input(&input), labels.len() - 1));
-        }
-    }
-
-    fn prompt_target_optional(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
-        let mut labels = Self::target_menu_labels(view, options);
-        labels.push(MenuLabel::plain("Done"));
-
-        let mut notice: Option<String> = None;
-        loop {
-            let title = notice.take().map_or_else(|| label.to_string(),
-                |n| format!("{n} — {label}"));
-            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
-            let input = Self::read_line("");
-            if input.is_empty() { return None; }
-            // Info panes + card search (issue #122), as in prompt_target.
-            match input.as_str() {
-                "l" => { Self::show_log(&view.display_log); continue; }
-                "g" => { Self::show_graveyards(view); continue; }
-                "e" => { Self::show_exile(view); continue; }
-                "d" => { Self::show_deck_browser(view); continue; }
-                "i" => { Self::show_battlefield_inspector(view); continue; }
-                "/" => { Self::run_card_search(view, &labels); continue; }
-                _ => {}
-            }
-            if let Ok(idx) = input.parse::<usize>() {
-                if idx < options.len() {
-                    return Some(options[idx].clone());
-                }
-                if idx == options.len() { return None; }
-            }
-            notice = Some(format!("Invalid input '{}' — enter a number 0-{}",
-                quote_input(&input), labels.len() - 1));
-        }
+        Self::run_target_chooser(view, options, label, ChooserRows::DoneThenCancel)
     }
 
     // ── Action formatting ──────────────────────────────────────────
@@ -2191,6 +2227,34 @@ impl CliPlayer {
         let head = clip_cols(s, head_cap);
         let tail = clip_cols_from_end(s, tail_cap);
         format!("{head}…{tail}")
+    }
+
+    /// The key hints under a menu.
+    ///
+    /// A target chooser printed no `enter=` hint of any kind, so the one key
+    /// that abandons a cast was advertised nowhere on the screen a player
+    /// was staring at (issue #288). The chooser is recognised by its last
+    /// row, the way the priority menu is recognised by its first — matched
+    /// exactly, so the resolution menu's own "Cancel cast" row is not
+    /// mistaken for one.
+    fn menu_hints(labels: &[MenuLabel], has_right: bool) -> &'static str {
+        let has_pass = labels.first().is_some_and(|l| l.full() == "Pass priority");
+        let is_chooser = labels.last().is_some_and(|l| l.full() == "Cancel the cast");
+        // The `/` search lives in the right panel, which only exists at
+        // >= 100 columns — advertising it below that put users into an
+        // invisible modal mode that swallowed keystrokes (issue #107).
+        match (has_pass, is_chooser, has_right) {
+            (true, _, true) =>
+                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+            (true, _, false) =>
+                "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile]",
+            (false, true, true) =>
+                "  [enter=cancel] [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+            (false, true, false) =>
+                "  [enter=cancel] [d=deck] [l=log] [g=gy] [e=exile]",
+            (false, false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]",
+            (false, false, false) => "  [d=deck] [l=log] [g=gy] [e=exile]",
+        }
     }
 
     /// Render one menu row into `cap` display columns, spending the budget in
@@ -5057,6 +5121,71 @@ mod tests {
             choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         };
         assert!(CliPlayer::action_object_ids(&yes).is_empty());
+    }
+
+    /// Issue #288: a bare Enter meant three different things at the three
+    /// target choosers — `prompt_target` cancelled, and both "up to N"
+    /// prompts CAST. Enter is the reversible key everywhere else in this
+    /// CLI (#123), so it cancels at every chooser; stopping early keeps its
+    /// own row and its own word.
+    #[test]
+    fn enter_abandons_the_cast_at_every_target_chooser() {
+        for rows in [ChooserRows::CancelOnly, ChooserRows::DoneThenCancel] {
+            assert_eq!(CliPlayer::parse_target_input("", 3, rows), TargetInput::Cancel,
+                "{rows:?}");
+            assert_eq!(CliPlayer::parse_target_input("   ", 3, rows), TargetInput::Cancel,
+                "{rows:?}");
+            assert_eq!(CliPlayer::parse_target_input("c", 3, rows), TargetInput::Cancel);
+            assert_eq!(CliPlayer::parse_target_input("CANCEL", 3, rows), TargetInput::Cancel);
+        }
+        // Stopping early is still reachable — by its row and by its word.
+        assert_eq!(CliPlayer::parse_target_input("3", 3, ChooserRows::DoneThenCancel),
+            TargetInput::Done);
+        assert_eq!(CliPlayer::parse_target_input("done", 3, ChooserRows::DoneThenCancel),
+            TargetInput::Done);
+        assert_eq!(CliPlayer::parse_target_input("4", 3, ChooserRows::DoneThenCancel),
+            TargetInput::Cancel);
+        // ...and is not offered where there is nothing to stop collecting.
+        assert_eq!(CliPlayer::parse_target_input("3", 3, ChooserRows::CancelOnly),
+            TargetInput::Cancel);
+        assert_eq!(CliPlayer::parse_target_input("done", 3, ChooserRows::CancelOnly),
+            TargetInput::Invalid);
+    }
+
+    /// The targets themselves, the info panes, and everything else.
+    #[test]
+    fn a_target_chooser_reads_indices_panes_and_nothing_else() {
+        let rows = ChooserRows::DoneThenCancel;
+        assert_eq!(CliPlayer::parse_target_input("0", 3, rows), TargetInput::Pick(0));
+        assert_eq!(CliPlayer::parse_target_input("2", 3, rows), TargetInput::Pick(2));
+        for k in ['l', 'g', 'e', 'd', 'i', '/'] {
+            assert_eq!(CliPlayer::parse_target_input(&k.to_string(), 3, rows),
+                TargetInput::Panel(k));
+        }
+        for bad in ["x", "-1", "99", "0 1", "back", "escape"] {
+            assert_eq!(CliPlayer::parse_target_input(bad, 3, rows), TargetInput::Invalid,
+                "{bad}");
+        }
+    }
+
+    /// Issue #288: the key that abandons a cast has to be advertised on the
+    /// screen the player is staring at.
+    #[test]
+    fn a_target_chooser_advertises_its_exit() {
+        let chooser = vec![
+            MenuLabel::plain("Ambush Viper 2/1 (opp)"),
+            MenuLabel::plain("Cancel the cast"),
+        ];
+        assert!(CliPlayer::menu_hints(&chooser, true).contains("[enter=cancel]"));
+        assert!(CliPlayer::menu_hints(&chooser, false).contains("[enter=cancel]"));
+
+        // The priority menu keeps its own hint, and a menu that merely has a
+        // "Cancel cast" ROW (the resolution menu) is not a chooser.
+        let priority = vec![MenuLabel::plain("Pass priority"), MenuLabel::plain("Concede")];
+        assert!(CliPlayer::menu_hints(&priority, true).contains("[enter=pass]"));
+        assert!(!CliPlayer::menu_hints(&priority, true).contains("[enter=cancel]"));
+        let resolution = vec![MenuLabel::plain("Pay {1}"), MenuLabel::plain("Cancel cast")];
+        assert!(!CliPlayer::menu_hints(&resolution, true).contains("[enter="));
     }
 
     /// Issue #287: `N` and `N>pwM` draw on two index spaces (CR 508.1a —
