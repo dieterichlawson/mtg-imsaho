@@ -2628,3 +2628,152 @@ fn the_mulligan_and_discard_actions_each_do_what_they_say() {
     s.move_object(hand[0], Zone::Hand, &reg);
     flags_transition(&p, Some(&discard), &s, &reg, "hand went");
 }
+
+/// CR 601.2c/602.2b: the number of targets a stack entry stores is a
+/// number its requirement allows — for every shape of requirement, not
+/// just the one-target one.
+#[test]
+fn the_target_arity_of_every_requirement_shape_is_checked() {
+    use mtg_engine::cards::TargetRequirement as R;
+
+    let (mut state, reg) = base();
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let card_id = state.get_object(source).unwrap().card_id;
+    let creatures: Vec<ObjectId> = (0..3)
+        .map(|_| named_permanent(&mut state, &reg, "Grizzly Bears", P1))
+        .collect();
+
+    let with = |req: R, n: usize| {
+        let mut s = state.clone();
+        s.stack.push(StackEntry::Ability {
+            source_id: source, ability_index: 0, behavior_card_id: card_id,
+            targets: creatures[..n].iter().map(|id| Target::Object(*id)).collect(),
+            activator: P0, x_value: None, target_requirement: Some(req),
+            sacrificed: None, sacrificed_toughness: None, loyalty: false,
+        });
+        s
+    };
+    #[track_caller]
+    fn allows(s: &GameState, reg: &CardRegistry, yes: bool, what: &str) {
+        let flagged = check_core(&as_collected(s), reg).iter()
+            .any(|m| m.contains("targets for requirement"));
+        assert_eq!(flagged, !yes, "{what}");
+    }
+
+    // "None" takes none; a plain kind takes exactly one.
+    allows(&with(R::None, 0), &reg, true, "no requirement, no targets");
+    allows(&with(R::None, 1), &reg, false, "no requirement, one target");
+    allows(&with(R::Creature, 1), &reg, true, "one creature, one target");
+    allows(&with(R::Creature, 0), &reg, false, "one creature, no target");
+    allows(&with(R::Creature, 2), &reg, false, "one creature, two targets");
+
+    // "Up to k" takes anything through k, and k itself.
+    let up_to_2 = || R::UpToTargets(2, Box::new(R::Creature));
+    for n in 0..=2 {
+        allows(&with(up_to_2(), n), &reg, true, "up to two");
+    }
+    allows(&with(up_to_2(), 3), &reg, false, "up to two stops at two");
+
+    // Two requirements together take the sum of what each takes: a
+    // mandatory slot plus an "up to one" is one or two, never none.
+    let two = || R::TwoTargets(Box::new(R::Creature), Box::new(R::UpToTargets(1, Box::new(R::Creature))));
+    allows(&with(two(), 0), &reg, false, "a mandatory slot needs its target");
+    allows(&with(two(), 1), &reg, true, "the optional slot may be empty");
+    allows(&with(two(), 2), &reg, true, "or filled");
+    allows(&with(two(), 3), &reg, false, "but not twice over");
+
+    // A modal requirement takes whatever any one of its modes takes.
+    let modal = || R::ModalChoice(vec![R::None, R::Creature]);
+    allows(&with(modal(), 0), &reg, true, "the untargeted mode");
+    allows(&with(modal(), 1), &reg, true, "the targeted mode");
+    allows(&with(modal(), 2), &reg, false, "neither mode takes two");
+}
+
+/// CR 603.3d/603.8: a trigger on a queue or the stack names a real
+/// controller, carries a target only if its ability targets, and a
+/// state-triggered ability is in flight exactly once.
+#[test]
+fn a_queued_triggers_shape_is_checked() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let card_id = state.get_object(ghoul).unwrap().card_id;
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+    let trigger = |controller: PlayerId, targets: Vec<Target>| {
+        let mut src = mtg_engine::triggers::TriggerSource::new(ghoul, card_id, controller, "t");
+        src.chosen_targets = targets;
+        mtg_engine::triggers::PendingTrigger::new(src, mtg_engine::triggers::TriggerEvent::StateTriggered)
+    };
+
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(trigger(ghost, vec![]));
+    flags_core(&s, &reg, "is controlled by p2 who is not a player");
+
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(trigger(P0, vec![Target::Object(bear), Target::Object(ghoul)]));
+    flags_core(&s, &reg, "has 2 targets");
+
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(trigger(P0, vec![Target::Illegal]));
+    flags_core(&s, &reg, "stores an Illegal target");
+
+    let mut s = state.clone();
+    let src = mtg_engine::triggers::TriggerSource::new(ghoul, mtg_engine::ids::CardId(424_242), P0, "t");
+    s.pending_trigger_pushes_ap.push(mtg_engine::triggers::PendingTrigger::new(
+        src, mtg_engine::triggers::TriggerEvent::StateTriggered));
+    flags_core(&s, &reg, "has no behavior in the registry (card 424242)");
+
+    // CR 603.8: one state-triggered ability in flight per source, and the
+    // source's own flag agrees.
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(trigger(P0, vec![]));
+    s.pending_trigger_pushes_ap.push(trigger(P0, vec![]));
+    s.get_object_mut(ghoul).unwrap().state_trigger_on_stack = true;
+    flags_core(&s, &reg, "has 2 state-triggered abilities in flight (CR 603.8)");
+
+    // A pending enters-trigger whose source is not on the battlefield.
+    let mut s = state.clone();
+    s.get_object_mut(ghoul).unwrap().zone = Zone::Graveyard;
+    s.pending_triggers.push(mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(ghoul, card_id, P0, "t"),
+        mtg_engine::triggers::TriggerEvent::SelfEntered));
+    flags_core(&s, &reg, "whose source is not on the battlefield");
+}
+
+/// CR 303.4a: an Aura spell has exactly one target, of the kind its enchant
+/// ability names.
+#[test]
+fn an_aura_spell_targets_exactly_what_it_enchants() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let aura = castable_spell(&mut state, &reg, "Pacifism", P0);
+    let state = cast_onto_stack(&state, &reg, aura, vec![Target::Object(bear)]);
+    clean_core(&state, &reg);
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().targets.clear();
+    flags_core(&s, &reg, "is an Aura spell with no target (CR 303.4a)");
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().targets = vec![Target::Player(P1)];
+    flags_core(&s, &reg, "enchants permanents but targets a player");
+
+    let mut s = state.clone();
+    s.get_object_mut(aura).unwrap().targets = vec![Target::Object(bear), Target::Player(P1)];
+    flags_core(&s, &reg, "is an Aura spell with 2 targets (CR 303.4a)");
+}
+
+/// CR 601.2b: a spell with X in its cost announced an X.
+#[test]
+fn an_x_spell_on_the_stack_announced_its_x() {
+    let (mut state, reg) = base();
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2)]);
+    let state = resolve_funding_max(&cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]), &reg);
+    assert!(state.stack.iter().any(|e| e.as_spell() == Some(play)), "precondition: on the stack");
+    clean_core(&state, &reg);
+
+    let mut s = state.clone();
+    s.get_object_mut(play).unwrap().x_value = None;
+    flags_core(&s, &reg, "has an X cost but no X announced (CR 601.2b)");
+}
