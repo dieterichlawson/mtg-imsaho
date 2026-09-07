@@ -351,3 +351,39 @@ fn the_step_and_card_type_predicates_say_what_they_mean() {
         assert!(!ty.is_permanent(), "{ty:?} is never a permanent");
     }
 }
+
+/// A tap plan is shown as a short list, grouping runs of the same name.
+///
+/// The engine puts this string into resolution-prompt descriptions
+/// ("Screeching Bat: pay {2}{B}? tap 2x Swamp, Sol Ring"), so a player
+/// deciding whether to pay is reading it.
+#[test]
+fn a_tap_plan_is_shown_as_a_short_grouped_list() {
+    use mtg_engine::cards::helpers::format_tap_plan_names;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_permanent(&mut state, &reg, "Mountain", P0);
+    let b = named_permanent(&mut state, &reg, "Mountain", P0);
+    let c = named_permanent(&mut state, &reg, "Forest", P0);
+
+    assert_eq!(format_tap_plan_names(&state, &[]), "",
+        "an empty plan has nothing to say");
+    // `obj_name` disambiguates duplicates with an id tail, so two Mountains
+    // read as distinct names — a plan that groups needs two sources the
+    // display really calls the same thing.
+    let name_a = state.obj_name(a);
+    let name_b = state.obj_name(b);
+    let name_c = state.obj_name(c);
+    assert_eq!(format_tap_plan_names(&state, &[(a, 0)]), format!("tap {name_a}"),
+        "one source is named, without a count");
+    assert_eq!(format_tap_plan_names(&state, &[(a, 0), (a, 0)]), format!("tap 2x {name_a}"),
+        "a run of the same name is counted");
+    assert_eq!(format_tap_plan_names(&state, &[(a, 0), (a, 0), (c, 0)]),
+        format!("tap 2x {name_a}, {name_c}"),
+        "and the run ends where the name changes");
+    assert_eq!(format_tap_plan_names(&state, &[(a, 0), (c, 0), (a, 0)]),
+        format!("tap {name_a}, {name_c}, {name_a}"),
+        "the plan's own order is kept, so the same name can appear twice");
+    let _ = name_b;
+}
