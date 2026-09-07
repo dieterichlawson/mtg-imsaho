@@ -395,6 +395,53 @@ fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: 
     let _ = out.flush();
 }
 
+/// What one key does to the line being typed at a prompt. Shared by both
+/// line readers, so the two cannot disagree about it.
+///
+/// Three kinds of key reach here (Enter, Ctrl-C and the readers' own
+/// shortcuts are taken before it):
+///
+/// - a plain character is typed;
+/// - Backspace and Ctrl-U edit (#79);
+/// - everything else — Tab, the arrows, Home/End, Delete, the function
+///   keys, and any Ctrl/Alt chord — is a SEPARATOR: it is never typed as a
+///   character (#51: Ctrl-L must not become the `l` shortcut, and crossterm
+///   reports Ctrl-\ as the digit `4` with CONTROL set), but it is not
+///   dropped either. Dropping it silently concatenated the digits typed on
+///   either side of it: `0 <Tab> 1` became the buffer `01`, which the reader
+///   accepted as option 1 — at a mulligan-bottoming prompt, an irreversible
+///   choice the player never typed (issue #322). As a separator the same
+///   keystrokes read `0 1`, which every numeric prompt refuses out loud, and
+///   which a multi-select prompt reads as the two indices they are.
+///
+/// Returns whether the buffer changed, so the caller knows to repaint.
+fn edit_line(buf: &mut String, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    match code {
+        KeyCode::Backspace => buf.pop().is_some(),
+        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+            let had = !buf.is_empty();
+            buf.clear();
+            had
+        }
+        KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            buf.push(c);
+            true
+        }
+        _ => {
+            // One separator is enough, and one at the start would only be
+            // trimmed: the buffer is read with its ends trimmed, so a Tab
+            // pressed before or after a number changes nothing.
+            if buf.is_empty() || buf.ends_with(' ') {
+                false
+            } else {
+                buf.push(' ');
+                true
+            }
+        }
+    }
+}
+
+
 fn col_width(c: char) -> usize {
     unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)
 }
@@ -2971,27 +3018,21 @@ impl CliPlayer {
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                     quit_at_prompt();
                 }
-                // Ctrl-U kills the line (issue #79), here as in the menu reader.
-                KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    buf.clear();
-                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                // Typing, editing (Ctrl-U kills the line, #79), and the
+                // unbound keys that separate rather than vanish (#51, #322)
+                // — one definition, shared with the menu reader.
+                _ => {
+                    if edit_line(&mut buf, code, modifiers) {
+                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                    }
                 }
-                KeyCode::Backspace => {
-                    buf.pop();
-                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                }
-                KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                    buf.push(c);
-                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                }
-                // Unbound chords are ignored, never typed (#51).
-                _ => {}
             }
         }
         let _ = execute!(out, event::DisableBracketedPaste, Print("\r\n"));
         tui_raw_off();
         buf.trim().to_string()
     }
+
 
     /// A y/n confirmation that answers on a single keypress: `y` confirms,
     /// `n` or Esc declines, anything else visibly re-prompts. Runs in raw
@@ -3148,37 +3189,28 @@ impl CliPlayer {
                         repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                     KeyCode::Enter => {
-                        break Some(buf.clone());
+                        // Trimmed, like the other reader's line: a separator
+                        // key pressed after the number (#322) must not turn
+                        // "0" into a refused "0 ".
+                        break Some(buf.trim().to_string());
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         quit_at_prompt();
                     }
-                    KeyCode::Backspace => {
-                        buf.pop();
-                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                    // Typing; Ctrl-U to kill the line — the standard readline
+                    // binding and the documented recovery from a garbled
+                    // prompt (issue #79); and every unbound key as a
+                    // separator, never typed (#51) and never silently
+                    // dropped between two digits (#322). See `edit_line`.
+                    _ => {
+                        if edit_line(&mut buf, code, modifiers) {
+                            repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                        }
                     }
-                    // Ctrl-U: kill the line, the standard readline binding
-                    // and the documented recovery from a garbled prompt.
-                    // Without it the stray characters stayed in the buffer
-                    // and corrupted the next input — exactly the situation
-                    // the recovery step exists for (issue #79).
-                    KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        buf.clear();
-                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                    }
-                    // Unbound chords are ignored, never typed: Ctrl-L must
-                    // not become the 'l' shortcut, and crossterm reports the
-                    // 0x1C-0x1F control codes (Ctrl-\ among them - SIGQUIT's
-                    // key) as the DIGITS 4-7 with CONTROL set, which used to
-                    // silently pick menu entries (#51).
-                    KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                        buf.push(c);
-                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                    }
-                    _ => {}
                 }
             }
         };
+
 
         let _ = execute!(stdout(), event::DisableBracketedPaste);
         tui_raw_off();
@@ -5969,8 +6001,87 @@ mod tests {
         }
     }
 
+    /// Issue #322: a key the line reader does not bind — Tab, an arrow,
+    /// Home, a function key — used to be dropped, and dropping it
+    /// concatenated the digits typed either side of it: `0 <Tab> 1` was the
+    /// buffer `01`, accepted as option 1, at a prompt where `0 1` is refused.
+    /// Such a key now separates what is typed around it, so the same
+    /// keystrokes read `0 1` and get the same refusal.
+    #[test]
+    fn an_unbound_key_between_two_digits_keeps_them_apart() {
+        let none = KeyModifiers::NONE;
+        for (name, code) in [
+            ("Tab", KeyCode::Tab), ("BackTab", KeyCode::BackTab),
+            ("Left", KeyCode::Left), ("Right", KeyCode::Right),
+            ("Home", KeyCode::Home), ("End", KeyCode::End),
+            ("Delete", KeyCode::Delete), ("Insert", KeyCode::Insert),
+            ("F1", KeyCode::F(1)), ("Esc", KeyCode::Esc),
+            ("Up", KeyCode::Up), ("PageDown", KeyCode::PageDown),
+        ] {
+            let mut buf = String::new();
+            edit_line(&mut buf, KeyCode::Char('0'), none);
+            let changed = edit_line(&mut buf, code, none);
+            edit_line(&mut buf, KeyCode::Char('1'), none);
+            assert_eq!(buf, "0 1", "{name} between two digits");
+            assert!(changed, "{name} is painted, not swallowed");
+        }
+    }
+
+    /// Issue #51 still holds: an unbound chord is never typed as its
+    /// character. Ctrl-L is not the `l` shortcut, and crossterm's report of
+    /// Ctrl-\ as the digit `4` with CONTROL set does not pick option 4. Those
+    /// chords separate like any other unbound key.
+    #[test]
+    fn an_unbound_chord_is_a_separator_and_never_its_character() {
+        let mut buf = String::from("1");
+        edit_line(&mut buf, KeyCode::Char('l'), KeyModifiers::CONTROL);
+        assert_eq!(buf, "1 ");
+        edit_line(&mut buf, KeyCode::Char('4'), KeyModifiers::CONTROL);
+        assert_eq!(buf, "1 ", "a second separator in a row adds nothing");
+        edit_line(&mut buf, KeyCode::Char('x'), KeyModifiers::ALT);
+        assert_eq!(buf, "1 ");
+        assert!(!buf.contains('l') && !buf.contains('4') && !buf.contains('x'));
+    }
+
+    /// A separator pressed before anything is typed, or after the number,
+    /// changes nothing the reader will see: the line is read trimmed, so
+    /// `<Tab> 0 <Tab> <Enter>` is still the answer `0`. A separator is only
+    /// ever inserted BETWEEN characters.
+    #[test]
+    fn a_separator_at_either_end_is_not_kept() {
+        let none = KeyModifiers::NONE;
+        let mut buf = String::new();
+        assert!(!edit_line(&mut buf, KeyCode::Tab, none), "nothing to separate yet");
+        assert_eq!(buf, "");
+        edit_line(&mut buf, KeyCode::Char('0'), none);
+        edit_line(&mut buf, KeyCode::Tab, none);
+        assert_eq!(buf.trim(), "0");
+    }
+
+    /// The editing keys keep their meaning through the shared helper:
+    /// Backspace takes one character (a separator included), Ctrl-U kills
+    /// the line (#79), and the return value says whether there is anything
+    /// new to paint.
+    #[test]
+    fn editing_keys_still_edit() {
+        let none = KeyModifiers::NONE;
+        let mut buf = String::new();
+        assert!(!edit_line(&mut buf, KeyCode::Backspace, none), "nothing to erase");
+        assert!(edit_line(&mut buf, KeyCode::Char('1'), none));
+        assert!(edit_line(&mut buf, KeyCode::Char('2'), none));
+        assert!(edit_line(&mut buf, KeyCode::Tab, none));
+        assert_eq!(buf, "12 ");
+        assert!(edit_line(&mut buf, KeyCode::Backspace, none));
+        assert_eq!(buf, "12", "Backspace erases the separator like any character");
+        assert!(edit_line(&mut buf, KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(buf, "");
+        assert!(!edit_line(&mut buf, KeyCode::Char('u'), KeyModifiers::CONTROL),
+            "an already-empty line has nothing to repaint");
+    }
+
     /// The prompt row is drawn inside the middle panel, so it has the
     /// panel's width and not the terminal's. Three hints read 50, 60 and 61
+
     /// columns against a panel 58 columns across at 100 — the first width
     /// at which the CARDS pane exists, and where the panel is narrowest — so
     /// two of them erased the frame's own right border before the player
