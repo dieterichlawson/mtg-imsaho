@@ -2892,3 +2892,91 @@ fn an_activation_in_progress_is_described_consistently_by_its_stash() {
     }
     flags_core(&s, &reg, "with nothing to fund");
 }
+
+/// CR 608.2m/602.2a: the resolution bookkeeping names things that are there
+/// and does not overlap with a cast.
+#[test]
+fn the_resolution_bookkeeping_names_what_is_actually_resolving() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    let cast = cast_onto_stack(&state, &reg, pump, vec![Target::Object(bear)]);
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+    let prompt = AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::YesNo { description: "?".into(), source_card: bear } };
+
+    // A spell that is resolving but does not exist.
+    let mut s = state.clone();
+    s.resolving_spell = Some(ObjectId(4242));
+    s.awaiting_action = Some(prompt.clone());
+    flags_core(&s, &reg, "resolving_spell #4242 does not exist");
+
+    // One that is resolving and still on the stack.
+    let mut s = cast.clone();
+    s.resolving_spell = Some(pump);
+    s.awaiting_action = Some(prompt.clone());
+    flags_core(&s, &reg, "is still on the stack");
+
+    // A spell resolving while another is being cast.
+    let mut s = cast.clone();
+    s.resolving_spell = Some(pump);
+    s.awaiting_action = Some(prompt);
+    s.stack.clear();
+    s.get_object_mut(pump).unwrap().zone = Zone::Stack;
+    let dp = castable_spell(&mut s, &reg, "Devil's Play", P0);
+    add_mana(&mut s, P0, &[(ManaType::Red, 2)]);
+    let cast_dp = cast_onto_stack(&s, &reg, dp, vec![Target::Player(P1)]);
+    let mut s = cast_dp;
+    s.resolving_spell = Some(pump);
+    flags_core(&s, &reg, "a spell is resolving while another is being cast");
+
+    // CR 602.2a: the activator of a resolving ability is a player.
+    let mut s = state.clone();
+    s.resolving_ability_activator = Some(ghost);
+    flags_core(&s, &reg, "resolving_ability_activator p2 is not a player");
+}
+
+/// CR 601.2h: an exile-from-graveyard cost prompt asks for a count it can
+/// be given, out of the caster's own graveyard.
+#[test]
+fn an_exile_cost_prompt_offers_the_casters_own_graveyard() {
+    let (mut state, reg) = base();
+    let pyre = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+    let mine = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P1);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let state = cast_onto_stack(&state, &reg, pyre, vec![Target::Object(bear)]);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseExileFromGraveyard { .. }, .. }) =
+        &state.awaiting_action else {
+            panic!("precondition: an exile-cost prompt is up, got {:?}", state.awaiting_action)
+        };
+    clean_core(&state, &reg);
+
+    // A count nobody can satisfy.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseExileFromGraveyard { min, max, .. }, .. }) =
+        &mut s.awaiting_action {
+        *min = *max + 1;
+    }
+    flags_core(&s, &reg, "exile prompt asks for");
+
+    // The other player's graveyard, and the same card twice.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseExileFromGraveyard { options, .. }, .. }) =
+        &mut s.awaiting_action {
+        options.push(theirs);
+    }
+    flags_core(&s, &reg, "which is not in p0's graveyard");
+
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseExileFromGraveyard { options, .. }, .. }) =
+        &mut s.awaiting_action {
+        options.push(mine);
+    }
+    flags_core(&s, &reg, "exile prompt offers #");
+}
