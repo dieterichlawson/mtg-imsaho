@@ -25,6 +25,48 @@ fn trigger_count(state: &mtg_engine::state::GameState) -> usize {
     state.stack.iter().filter(|e| matches!(e, StackEntry::Trigger(_))).count()
 }
 
+
+/// Two triggers that already read differently get no disambiguating tail —
+/// it is for options that would otherwise be identical.
+///
+/// The tail is added where `options.iter().filter(|x| *x == o).count() > 1`,
+/// and widening that to `>= 1` survived the suite (mutants shard 2): every
+/// option is "repeated" by itself, so every ordering prompt in the game would
+/// have grown a `[source P/T, #id]` tail on rows that were already distinct.
+#[test]
+fn distinct_trigger_options_are_not_given_a_source_tail() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two DIFFERENT death-watchers for P0, so the two options read
+    // differently on their own.
+    let ghoul = named_permanent(&mut state, &registry, "Abattoir Ghoul", P0);
+    let _cannibals = named_permanent(&mut state, &registry, "Village Cannibals", P0);
+
+    // A Human the Ghoul damaged, dying: both watchers trigger on it.
+    let victim = ready_creature(&mut state, P1, 1, 5);
+    state.get_object_mut(victim).unwrap().subtypes = vec!["Human".into()];
+    state.get_object_mut(victim).unwrap().damage_marked = 5;
+    state.get_object_mut(victim).unwrap().damaged_by = vec![ghoul];
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    assert!(mtg_engine::triggers::collect_triggers(&mut state, &registry),
+        "test setup: the death triggers both watchers");
+
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder { options, .. },
+            ..
+        }) => options.clone(),
+        other => panic!("expected a CR 603.3b ordering prompt, got {other:?}"),
+    };
+    assert_eq!(options.len(), 2, "two watchers, two options");
+    assert_ne!(options[0], options[1], "they already read differently");
+    for o in &options {
+        assert!(!o.contains("[source "),
+            "nothing to disambiguate, so no tail: {o:?}");
+    }
+}
+
 /// Charmbreaker Devils: "Whenever YOU cast an INSTANT OR SORCERY spell" —
 /// an opponent's spell, or a creature spell, must not create a trigger.
 #[test]
@@ -655,6 +697,15 @@ fn simultaneous_triggers_are_ordered_by_their_controller() {
     // from two same-named permanents rendered byte-identical (issue #116).
     assert_ne!(options[0], options[1],
         "the two same-named sources' triggers must be tellable apart");
+    // And by WHAT: the tail carries the source's P/T and object id, the same
+    // shape the target pickers use. Two mutations of this labelling survived
+    // the suite (mutants shard 2): dropping the P/T arm left a bare
+    // `[source #25]`, and widening the repeated-option test to `>= 1` put the
+    // tail on every option including unique ones.
+    for (i, ghoul) in [ghoul1, ghoul2].into_iter().enumerate() {
+        assert!(options[i].contains(&format!("[source 3/2, #{}]", ghoul.0)),
+            "option {i} names its source by P/T and id: {:?}", options[i]);
+    }
 
     // The runner-facing surface: while the prompt is up, `legal_actions`
     // enumerates one ChosenIndex answer per offered trigger, which is what
