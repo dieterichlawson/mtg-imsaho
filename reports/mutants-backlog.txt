@@ -63,12 +63,6 @@ mtg-engine/src/engine/costs.rs: replace - with / in reduce
 mtg-engine/src/engine/costs.rs: replace -= with += in reduce
 mtg-engine/src/engine/costs.rs: replace -= with /= in reduce
 mtg-engine/src/engine/effects.rs: replace || with && in apply_pending_effect
-mtg-engine/src/engine/legal/casting.rs: delete ! in flashback
-mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
-mtg-engine/src/engine/legal/casting.rs: replace && with || in from_hand
-mtg-engine/src/engine/legal/casting.rs: replace < with <= in from_hand
-mtg-engine/src/engine/legal/casting.rs: replace < with == in from_hand
-mtg-engine/src/engine/legal/casting.rs: replace < with > in from_hand
 mtg-engine/src/engine/mana_sources.rs: delete ! in gather_mana_sources
 mtg-engine/src/engine/mana_sources.rs: replace && with || in activate_mana_source
 mtg-engine/src/engine/mana_sources.rs: replace && with || in gather_mana_sources

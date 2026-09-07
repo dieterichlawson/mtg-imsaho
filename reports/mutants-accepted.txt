@@ -161,3 +161,17 @@ mtg-engine/src/funding.rs: replace > with >= in apply
 # `build_options` filters such a group out. Defensive against an invariant
 # break, so it is kept rather than deleted; `apply` would divide by zero.
 mtg-engine/src/funding.rs: replace > with == in validate
+
+# `other_hand_costs`, which excludes the spell being cast from the demand map
+# the autotap planner reads. Getting it wrong changes WHICH lands are tapped
+# and nothing else — `compute_autotap`'s contract (a plan it offers pays the
+# cost) is property-tested and holds either way. Issue #114's exclusion bug
+# was real, and its symptom is pinned in mana.rs where the planner lives; the
+# preference itself is a knob, not a rule.
+mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
+
+# A control effect over an object that is not on the battlefield: `move_object`
+# drops the effect as the permanent leaves, so the state the flipped
+# comparison would flag cannot arise. Adds a false alarm for an impossible
+# board rather than blinding a clause.
+mtg-engine/src/invariants/effects.rs: replace == with != in check_core

@@ -93,6 +93,39 @@ fn flashback_offered_from_graveyard() {
     let has_flashback_cast = can_cast(&state, &reg, card);
     assert!(has_flashback_cast,
         "legal_actions should offer CastSpell for a flashback card in the graveyard");
+
+    // The offer says WHICH kind of graveyard cast this is, and both clients
+    // read it: the verb they show is "Flashback" or "Cast", and only a
+    // cast-from-graveyard adds "from graveyard". A flashback is not a
+    // cast-from-graveyard — CR 702.33a exiles the card afterwards, and
+    // Skaab Ruinator's permission does not.
+    let entry = mtg_engine::engine::legal_actions(&state, &reg).castable_spells
+        .into_iter().find(|c| c.object_id == card).expect("the flashback entry");
+    assert!(entry.is_flashback, "it is offered as a flashback");
+    assert!(!entry.from_graveyard, "which is not the same thing as a cast from the graveyard");
+}
+
+/// The other kind of graveyard cast: Skaab Ruinator's own permission ("you
+/// may cast this card from your graveyard"), which is not flashback and is
+/// labelled differently in the offer both clients read.
+#[test]
+fn a_cast_from_graveyard_is_not_labelled_as_flashback() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+    // "As an additional cost, exile three creature cards from your graveyard."
+    for _ in 0..3 {
+        named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    }
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let entry = mtg_engine::engine::legal_actions(&state, &reg).castable_spells
+        .into_iter().find(|c| c.object_id == ruinator)
+        .expect("Skaab Ruinator is castable from its owner's graveyard");
+    assert!(entry.from_graveyard, "it is offered as a cast from the graveyard");
+    assert!(!entry.is_flashback, "and it is not flashback: nothing exiles it afterwards");
 }
 
 /// A card with flashback in hand is an ordinary card: cast for {R}, resolved

@@ -144,6 +144,20 @@ fn sorcery_timing_restricts_sorceries_and_leaves_instants_alone() {
         ("Divination", When::OpponentsTurn, false),
         ("Divination", When::DuringCombat, false),
         ("Divination", When::StackNotEmpty, false),
+        // CR 117.1a lists five card types that share the sorcery's timing,
+        // and the engine spells that out as a disjunction over all five.
+        // Sorcery and creature were the only ones any test cast from hand,
+        // so a version that recognised those two and nothing else — leaving
+        // every artifact, enchantment and planeswalker in the pool
+        // uncastable — passed the whole suite.
+        ("Grizzly Bears", When::OwnMainPhase, true),
+        ("Grizzly Bears", When::OpponentsTurn, false),
+        ("Intangible Virtue", When::OwnMainPhase, true),
+        ("Intangible Virtue", When::OpponentsTurn, false),
+        ("Blazing Torch", When::OwnMainPhase, true),
+        ("Blazing Torch", When::OpponentsTurn, false),
+        ("Liliana of the Veil", When::OwnMainPhase, true),
+        ("Liliana of the Veil", When::OpponentsTurn, false),
     ];
 
     for (name, when, castable) in cases {
