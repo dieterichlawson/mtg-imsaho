@@ -363,7 +363,7 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
         // panic (issue #52).
         let data = fs::read_to_string(path)
             .unwrap_or_else(|e| die(&format!("failed to read save file '{path}': {e}")));
-        let save: SaveData = serde_json::from_str(&data)
+        let mut save: SaveData = serde_json::from_str(&data)
             .unwrap_or_else(|e| die(&format!("save file '{path}' is not a valid game save: {e}")));
         if save.player_names.len() != save.state.players.len()
             || save.state.players.len() != 2
@@ -371,6 +371,20 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
             die(&format!(
                 "save file '{path}' is not a valid game save: {} players but {} player names",
                 save.state.players.len(), save.player_names.len()));
+        }
+        // Every string in the file is text somebody else wrote, and three
+        // things print `player_names` where a terminal will execute what is
+        // in it — the banner, the game-over summary, and the `--log` record
+        // that anyone later `cat`s. A save is the artifact this project
+        // passes between agents and attaches to bug reports, so a deck name
+        // could set the window title, clear the screen mid-sentence and
+        // recolour everything after it (issue #315). Sanitised here, at the
+        // boundary the untrusted text enters through, rather than at each
+        // sink — a sink nobody has found yet is sanitised too. Issue #282
+        // established the rule for the TUI; this is the same rule, one
+        // definition of it, on the other door.
+        for name in &mut save.player_names {
+            *name = mtg_player::cli::sanitize_for_display(name);
         }
         // A schema-valid save can still describe an impossible game (an
         // out-of-range active_player panics deep in the engine; a phantom
@@ -1174,7 +1188,7 @@ fn load_deck(spec: &str, registry: &CardRegistry) -> Decklist {
 
 /// Short display name for a deck spec.
 fn deck_display_name(spec: &str) -> String {
-    if builtin_deck(spec).is_some() {
+    let name = if builtin_deck(spec).is_some() {
         spec.to_string()
     } else {
         // Use filename without extension.
@@ -1183,7 +1197,11 @@ fn deck_display_name(spec: &str) -> String {
             .and_then(|s| s.to_str())
             .unwrap_or(spec)
             .to_string()
-    }
+    };
+    // The same sinks a save's names reach — banner, summary, `--log` — and a
+    // filename can carry the same bytes (issue #315). A smaller door, shut
+    // the same way.
+    mtg_player::cli::sanitize_for_display(&name)
 }
 
 /// Look up a built-in deck by name.

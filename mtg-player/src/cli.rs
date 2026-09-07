@@ -355,7 +355,12 @@ enum UpToPick {
 /// then replayed it on every re-render (issue #282). A paste of ordinary
 /// terminal output — a log line with colour codes — contains them by
 /// accident.
-fn sanitize_for_display(s: &str) -> String {
+///
+/// Public because the terminal is not the only place untrusted text is
+/// printed: a save file's deck names reach the runner's banner, its
+/// game-over summary and the `--log` (issue #315), and the same rule has to
+/// hold there. One definition, so a second sink cannot be fixed differently.
+pub fn sanitize_for_display(s: &str) -> String {
     s.chars().map(|c| if c.is_control() { '\u{00b7}' } else { c }).collect()
 }
 

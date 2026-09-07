@@ -586,3 +586,50 @@ fn a_seats_list_that_is_neither_two_nor_none_is_malformed_not_old() {
     let _ = std::fs::remove_file(&save);
     let _ = std::fs::remove_file(&empty);
 }
+
+/// A save file is the artifact this project passes between agents and
+/// attaches to bug reports, and every string in one is text somebody else
+/// wrote. `player_names` reached three sinks a terminal executes — the
+/// resume banner, the game-over summary, and the `--log` record anyone later
+/// `cat`s — so a deck name could set the window title, clear the screen
+/// mid-sentence and recolour everything after it (issue #315).
+///
+/// Issue #282 established that this program does not let untrusted bytes
+/// drive the terminal. This is the same rule on the other door, applied
+/// where the text enters rather than where it leaves, so a sink nobody has
+/// found yet is covered too.
+#[test]
+fn a_saves_deck_names_cannot_drive_the_terminal() {
+    let base = a_save_file("escapes");
+    let mut data: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&base).unwrap()).unwrap();
+    data["player_names"] = serde_json::json!([
+        "\u{1b}[31mRED\u{1b}[0m\u{1b}]0;PWNED\u{07}",
+        "norm\u{1b}[2J\u{1b}[Hal",
+    ]);
+    let save = base.with_extension("esc.save");
+    std::fs::write(&save, serde_json::to_string(&data).unwrap()).unwrap();
+    let log = base.with_extension("esc.log");
+    let _ = std::fs::remove_file(&log);
+
+    let out = runner_at_root()
+        .args(["--resume", &save.to_string_lossy(), "--save", &save.to_string_lossy(),
+               "--p1", "random", "--p2", "random", "--log", &log.to_string_lossy()])
+        .output()
+        .expect("failed to run");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = std::fs::read_to_string(&log).unwrap_or_default();
+    let _ = std::fs::remove_file(&base);
+    let _ = std::fs::remove_file(&save);
+    let _ = std::fs::remove_file(&log);
+
+    assert!(stdout.contains("RED") && stdout.contains("PWNED"),
+        "test precondition: the names do reach the banner.\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr));
+    assert!(!stdout.contains('\u{1b}') && !stdout.contains('\u{07}'),
+        "no escape or bell byte reaches the terminal: {stdout:?}");
+
+    assert!(text.contains("PWNED"), "test precondition: the names reach the log");
+    assert!(!text.contains('\u{1b}') && !text.contains('\u{07}'),
+        "and none reaches the file either, which is a thing people cat");
+}
