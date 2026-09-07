@@ -2049,3 +2049,218 @@ fn every_player_id_in_the_bookkeeping_is_range_checked() {
             "{needle:?} naming a real seat is not a range violation");
     }
 }
+
+/// CR 108.3/111.7/707.2: a card is the same card from one decision point to
+/// the next. Only a token may appear or vanish, only a copy or a transform
+/// may change what a permanent is, and a new object gets a fresh id.
+#[test]
+fn an_objects_identity_survives_every_transition() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let cur = next(&prev);
+    clean_transition(&prev, None, &cur, &reg);
+
+    let mut s = cur.clone();
+    s.get_object_mut(bear).unwrap().is_token = true;
+    flags_transition(&prev, None, &s, &reg, "changed token-ness");
+
+    // CR 707.2: the printed card underneath a copy is fixed.
+    let other = reg.get_id_by_name("Forest").unwrap();
+    let mut s = cur.clone();
+    s.get_object_mut(bear).unwrap().copy_grantor = Some(other);
+    flags_transition(&prev, None, &s, &reg, "(CR 707.2)");
+
+    // A rename with no copy and no transform behind it.
+    let mut s = cur.clone();
+    s.get_object_mut(bear).unwrap().name = "Something Else".into();
+    flags_transition(&prev, None, &s, &reg, "without a copy or transform");
+
+    // The card itself changing, with neither a copy nor a zone change.
+    let mut s = cur.clone();
+    s.get_object_mut(bear).unwrap().card_id = other;
+    flags_transition(&prev, None, &s, &reg, "without a copy or a zone change");
+
+    // A card that was not there before is a card that appeared from nowhere.
+    let mut s = cur.clone();
+    let appeared = s.create_object(other, P0, Zone::Battlefield, None, None);
+    s.get_object_mut(appeared).unwrap().name = "Forest".into();
+    flags_transition(&prev, None, &s, &reg, "appeared mid-game (CR 108.3)");
+
+    // A token is allowed to appear, but not on an id the allocator already
+    // handed out.
+    let mut p = prev.clone();
+    p.next_object_id += 5;
+    let mut s = next(&p);
+    let recycled = mtg_engine::ids::ObjectId(p.next_object_id - 1);
+    let mut ghost = s.get_object(bear).unwrap().clone();
+    ghost.id = recycled;
+    ghost.is_token = true;
+    s.objects.insert(recycled, ghost);
+    flags_transition(&p, None, &s, &reg, "reuses an id below the allocator's");
+}
+
+/// The records that only ever move one way: the allocators, the counts, the
+/// mulligan and loss flags, the result, and the log.
+#[test]
+fn the_one_way_records_never_go_back() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    prev.log(mtg_engine::state::LogLevel::Info, "something happened".to_string());
+    let cur = next(&prev);
+    clean_transition(&prev, None, &cur, &reg);
+
+    let mut s = cur.clone();
+    s.next_object_id -= 1;
+    flags_transition(&prev, None, &s, &reg, "next_object_id went back");
+
+    let mut p = prev.clone();
+    p.submit_seq = 5;
+    let mut s = next(&p);
+    s.submit_seq = 4;
+    flags_transition(&p, None, &s, &reg, "submit_seq went back 5 -> 4");
+
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().zone_change_count = 2;
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().zone_change_count = 1;
+    flags_transition(&p, None, &s, &reg, "zone_change_count went back 2 -> 1");
+
+    // CR 506.4: a creature that attacked this turn remembers it.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().attacked_on_turn = Some(3);
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().attacked_on_turn = None;
+    flags_transition(&p, None, &s, &reg, "forgot attacking on turn 3");
+
+    let mut p = prev.clone();
+    p.get_player_mut(P0).mulligan_count = 1;
+    p.get_player_mut(P0).mulligan_kept = true;
+    let mut s = next(&p);
+    s.get_player_mut(P0).mulligan_count = 0;
+    flags_transition(&p, None, &s, &reg, "p0 mulligan count went back");
+    let mut s = next(&p);
+    s.get_player_mut(P0).mulligan_kept = false;
+    flags_transition(&p, None, &s, &reg, "p0 un-kept their hand");
+
+    // CR 104.3: leaving the game is permanent, and so is the reason.
+    let mut p = prev.clone();
+    p.get_player_mut(P1).lost = true;
+    p.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    p.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    let mut s = next(&p);
+    s.get_player_mut(P1).lost = false;
+    s.get_player_mut(P1).loss_reason = None;
+    flags_transition(&p, None, &s, &reg, "p1 un-lost the game (CR 104.3)");
+    let mut s = next(&p);
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    flags_transition(&p, None, &s, &reg, "p1 un-lost the game (CR 104.3)");
+
+    // CR 104.4: a game that has a result keeps it.
+    let mut s = next(&p);
+    s.result = Some(mtg_engine::state::GameResult::Draw);
+    flags_transition(&p, None, &s, &reg, "the result changed");
+
+    // The log is append-only.
+    let mut s = cur.clone();
+    s.game_log.pop();
+    flags_transition(&prev, None, &s, &reg, "the game log shrank");
+    let mut s = cur.clone();
+    let last = s.game_log.len() - 1;
+    s.game_log[last].message = "a different line".into();
+    flags_transition(&prev, None, &s, &reg, "the game log was rewritten");
+}
+
+/// CR 305.2/602.5/morbid: the per-turn bookkeeping moves the way the turn
+/// allows, and exactly as the events say.
+#[test]
+fn the_per_turn_bookkeeping_matches_the_events_that_moved_it() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let cur = next(&prev);
+    clean_transition(&prev, None, &cur, &reg);
+
+    // A land drop is spent by a LandPlayed and by nothing else.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).land_plays_remaining = 0;
+    flags_transition(&prev, None, &s, &reg, "land drops 1 -> 0 with 0 LandPlayed (CR 305.2)");
+
+    // The spells-cast count moves with SpellCast events, and only with them.
+    let mut s = next(&prev);
+    s.num_spells_cast_this_turn.insert(P0, 1);
+    flags_transition(&prev, None, &s, &reg, "spells cast this turn 0 -> 1 with 0 SpellCast");
+    let mut p = prev.clone();
+    p.num_spells_cast_this_turn.insert(P0, 2);
+    let mut s = next(&p);
+    s.num_spells_cast_this_turn.insert(P0, 1);
+    flags_transition(&p, None, &s, &reg, "spells-cast-this-turn count went back");
+
+    // Morbid is set by a death and survives the turn.
+    let mut s = next(&prev);
+    s.creature_died_this_turn = true;
+    flags_transition(&prev, None, &s, &reg, "the morbid flag was set with no creature dying");
+    let mut p = prev.clone();
+    p.creature_died_this_turn = true;
+    let mut s = next(&p);
+    s.creature_died_this_turn = false;
+    flags_transition(&p, None, &s, &reg, "the morbid flag was reset mid-turn");
+
+    // CR 602.5: an activation this turn is remembered for the rest of it,
+    // and forgotten by the next one.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().abilities_activated_this_turn.insert(0);
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().abilities_activated_this_turn.clear();
+    flags_transition(&p, None, &s, &reg, "forgot an activation this turn");
+
+    let mut s = next(&prev);
+    s.turn_number = 4;
+    s.active_player = P1;
+    s.step = Step::Untap;
+    s.get_object_mut(bear).unwrap().abilities_activated_this_turn.insert(0);
+    flags_transition(&prev, None, &s, &reg, "remembers activations from a previous turn");
+}
+
+/// CR 500.1/103.7a: steps advance in order, turns alternate, and every step
+/// change was announced by a `StepStarted` naming where it went.
+#[test]
+fn the_step_walk_is_announced_step_by_step() {
+    let (mut prev, reg) = base();
+    named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+
+    // A step change with nothing announcing it.
+    let mut s = next(&prev);
+    s.step = Step::BeginCombat;
+    flags_transition(&prev, None, &s, &reg, "with no StepStarted");
+
+    // An announcement that does not lead where the state ended up.
+    let mut s = next(&prev);
+    s.step = Step::BeginCombat;
+    s.events = vec![GameEvent::StepStarted { step: Step::DeclareAttackers }];
+    flags_transition(&prev, None, &s, &reg, "the last StepStarted names");
+
+    // CR 500.1: the steps come in order.
+    let mut s = next(&prev);
+    s.step = Step::EndStep;
+    s.events = vec![GameEvent::StepStarted { step: Step::EndStep }];
+    flags_transition(&prev, None, &s, &reg, "(CR 500.1)");
+
+    // A turn counter that moved without a TurnStarted to move it.
+    let mut s = next(&prev);
+    s.turn_number = 4;
+    s.active_player = P1;
+    flags_transition(&prev, None, &s, &reg, "TurnStarted event(s) for a turn counter that moved by 1");
+
+    // CR 103.7a: the turn passes to the other player, and only at cleanup.
+    let mut s = next(&prev);
+    s.turn_number = 4;
+    s.active_player = P1;
+    s.step = Step::Untap;
+    s.events = vec![GameEvent::TurnStarted { player: P1, turn: 4 },
+                    GameEvent::StepStarted { step: Step::Untap }];
+    flags_transition(&prev, None, &s, &reg, "after turn 3 (PrecombatMain, p0 active)");
+
+    // And the active player alternates with the turn count.
+    let mut s = next(&prev);
+    s.active_player = P1;
+    flags_transition(&prev, None, &s, &reg, "active player p0 -> p1 over 0 turn(s)");
+}
