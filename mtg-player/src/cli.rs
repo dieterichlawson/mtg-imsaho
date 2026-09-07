@@ -268,6 +268,10 @@ enum TargetInput {
     Done,
     Cancel,
     Panel(char),
+    /// The `m` the frame advertises whenever the menu is longer than the
+    /// pane. It used to be answered with "Invalid input 'm'" on the same
+    /// frame that offered it (issue #261).
+    NextPage,
     Invalid,
 }
 
@@ -745,8 +749,40 @@ impl CliPlayer {
 
     // ── Rendering ──────────────────────────────────────────────────
 
-    fn render(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
-        let _ = Self::render_paged(view, actions, message, log, card_filter, pass_mode_label, 0);
+    /// Draw a frame with no action menu.
+    ///
+    /// Deliberately menu-less: a caller that hands a menu to a renderer it
+    /// cannot page from draws a live "m = next page" marker over a control
+    /// it does not implement, which is how three target choosers came to
+    /// advertise a key that answered "Invalid input 'm'" (issue #261). A
+    /// menu goes through `render_paged`, which hands back how many rows it
+    /// drew.
+    fn render(view: &GameView, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
+        let _ = Self::render_paged(view, None, message, log, card_filter, pass_mode_label, 0);
+    }
+
+    /// Which slice of a menu fits: `(offset, shown, paged)`.
+    ///
+    /// Pulled out of the pager so the arithmetic is testable without a
+    /// terminal, and so the one prompt that could page and the ones that
+    /// could not stop disagreeing about it (#96, #261).
+    fn menu_page(len: usize, avail: usize, offset: usize) -> (usize, usize, bool) {
+        let offset = offset.min(len.saturating_sub(1));
+        let remaining = len - offset;
+        let paged = offset > 0 || remaining > avail;
+        let shown = if paged {
+            avail.saturating_sub(1).max(1).min(remaining)
+        } else {
+            remaining
+        };
+        (offset, shown, paged)
+    }
+
+    /// What `m` does: the next page, wrapping to the top at the end. One
+    /// definition, so every menu that draws the marker means the same thing
+    /// by it.
+    fn next_menu_offset(offset: usize, shown: usize, len: usize) -> usize {
+        if offset + shown >= len { 0 } else { offset + shown }
     }
 
     /// `render`, starting the action menu at `menu_offset` (issue #96 — a
@@ -1106,14 +1142,7 @@ impl CliPlayer {
             // renders a page starting at `menu_offset`, advanced with 'm';
             // indices are absolute, so any number works from any page.
             let avail = h.saturating_sub(row as usize + 2);
-            let offset = menu_offset.min(labels.len().saturating_sub(1));
-            let remaining = labels.len() - offset;
-            let paged = offset > 0 || remaining > avail;
-            let shown = if paged {
-                avail.saturating_sub(1).max(1).min(remaining)
-            } else {
-                remaining
-            };
+            let (offset, shown, paged) = Self::menu_page(labels.len(), avail, menu_offset);
             menu_shown = shown;
             // Clip to the panel like every other row — but from the middle,
             // and never silently: the tail is what tells otherwise-identical
@@ -1768,7 +1797,7 @@ impl CliPlayer {
 
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
-    fn run_card_search(view: &GameView, actions: &[MenuLabel]) {
+    fn run_card_search(view: &GameView, actions: &[MenuLabel], menu_offset: usize) {
         // The search box is part of the right panel, which is only drawn at
         // >= 100 columns. Entering search mode on a narrower terminal showed
         // nothing at all and silently swallowed every keystroke until an
@@ -1792,7 +1821,7 @@ impl CliPlayer {
 
         loop {
             // Re-render with current filter
-            Self::render(view, Some(actions), None, &view.display_log, &card_filter, None);
+            let _ = Self::render_paged(view, Some(actions), None, &view.display_log, &card_filter, None, menu_offset);
 
             // Move actual cursor to the search box in the right gutter
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1997,6 +2026,9 @@ impl CliPlayer {
                 return TargetInput::Panel(c);
             }
         }
+        if t == "m" {
+            return TargetInput::NextPage;
+        }
         if t.eq_ignore_ascii_case("c") || t.eq_ignore_ascii_case("cancel") {
             return TargetInput::Cancel;
         }
@@ -2045,15 +2077,25 @@ impl CliPlayer {
     ) -> UpToPick {
         let labels = Self::chooser_labels(view, options, rows);
         let mut notice: Option<String> = None;
+        // A chooser longer than the pane pages like the priority menu does.
+        // It drew the "m = next page" marker and had no offset to advance,
+        // so every option past the first page — the Cancel row included —
+        // was reachable only by typing a number that was not on the screen
+        // (issue #261).
+        let mut menu_offset = 0usize;
         loop {
             let title = notice.take().map_or_else(|| label.to_string(),
                 |n| format!("{n} — {label}"));
-            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
+            let menu_shown = Self::render_paged(
+                view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
             let input = Self::read_line("");
             match Self::parse_target_input(&input, options.len(), rows) {
                 TargetInput::Pick(idx) => return UpToPick::Pick(options[idx].clone()),
                 TargetInput::Done => return UpToPick::Done,
                 TargetInput::Cancel => return UpToPick::Cancel,
+                TargetInput::NextPage => {
+                    menu_offset = Self::next_menu_offset(menu_offset, menu_shown, labels.len());
+                }
                 // Info panes + card search: a player wants their graveyard
                 // exactly when choosing a target (issue #122).
                 TargetInput::Panel(c) => {
@@ -2063,7 +2105,7 @@ impl CliPlayer {
                         'e' => Self::show_exile(view),
                         'd' => Self::show_deck_browser(view),
                         'i' => Self::show_battlefield_inspector(view),
-                        _ => Self::run_card_search(view, &labels),
+                        _ => Self::run_card_search(view, &labels, menu_offset),
                     }
                 }
                 // A silent re-render is indistinguishable from a hung game —
@@ -3452,7 +3494,7 @@ impl CliPlayer {
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
 
         let draw = || -> u16 {
-            Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
+            Self::render(view, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let _ = execute!(out, cursor::MoveTo(col, r),
@@ -3653,7 +3695,7 @@ impl CliPlayer {
         let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
 
         let draw = || -> u16 {
-            Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
+            Self::render(view, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let _ = execute!(out, cursor::MoveTo(col, r),
@@ -3825,7 +3867,7 @@ impl CliPlayer {
         // panel mid-word — "Max X = 1" read as "Max X = 13 (p0) ──" — and
         // left the stale main-phase menu on screen, so players pressed Enter
         // "to retry" and silently funded X = 0 (#56).
-        Self::render(view, None, Some(description), &view.display_log, "", None);
+        Self::render(view, Some(description), &view.display_log, "", None);
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
@@ -3957,7 +3999,7 @@ impl CliPlayer {
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
-        Self::render(view, None, Some(description), &view.display_log, "", None);
+        Self::render(view, Some(description), &view.display_log, "", None);
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
@@ -4111,7 +4153,7 @@ impl CliPlayer {
             // Rendered inside the TUI frame — bare println! straddled the
             // panel borders and let the previous frame bleed through
             // mid-sentence (#56).
-            Self::render(view, None, Some(description), &view.display_log, "", None);
+            Self::render(view, Some(description), &view.display_log, "", None);
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
             let count_line = if min == max {
@@ -4782,7 +4824,7 @@ impl Player for CliPlayer {
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {
-                Self::run_card_search(view, &display_labels);
+                Self::run_card_search(view, &display_labels, menu_offset);
                 continue;
             }
             let input = input.unwrap();
@@ -4849,11 +4891,8 @@ impl Player for CliPlayer {
                 // to the top after the last page. A no-op on a menu that
                 // fits, so 'm' never falls through to be misread as input.
                 "m" => {
-                    menu_offset = if menu_offset + menu_shown >= display_labels.len() {
-                        0
-                    } else {
-                        menu_offset + menu_shown
-                    };
+                    menu_offset = Self::next_menu_offset(
+                        menu_offset, menu_shown, display_labels.len());
                     continue;
                 }
                 "" => {
@@ -4918,7 +4957,7 @@ impl CliPlayer {
     /// caret while the AI thinks. Drop the returned handle to stop.
     #[must_use]
     pub fn start_thinking(view: &GameView) -> SpinnerHandle {
-        Self::render(view, None, None, &view.display_log, "", None);
+        Self::render(view, None, &view.display_log, "", None);
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
@@ -5193,6 +5232,43 @@ mod tests {
             choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         };
         assert!(CliPlayer::action_object_ids(&yes).is_empty());
+    }
+
+    /// Issue #261: `m` is drawn on any menu taller than the pane, and the
+    /// target choosers answered it with "Invalid input 'm'" on the same
+    /// frame that offered it — so every option past the first page, the
+    /// Cancel row included, was reachable only by typing a number the player
+    /// could not see.
+    #[test]
+    fn m_is_a_control_wherever_the_frame_advertises_it() {
+        for rows in [ChooserRows::CancelOnly, ChooserRows::DoneThenCancel] {
+            assert_eq!(CliPlayer::parse_target_input("m", 8, rows), TargetInput::NextPage,
+                "{rows:?}");
+        }
+    }
+
+    /// The page arithmetic the marker describes, without a terminal.
+    #[test]
+    fn a_menu_pages_and_wraps() {
+        // Everything fits: one page, no marker.
+        assert_eq!(CliPlayer::menu_page(5, 10, 0), (0, 5, false));
+        // Too tall: a row is spent on the marker itself.
+        assert_eq!(CliPlayer::menu_page(30, 10, 0), (0, 9, true));
+        // An offset is always a paged view, even when the rest fits.
+        assert_eq!(CliPlayer::menu_page(30, 10, 27), (27, 3, true));
+        // An offset past the end clamps rather than underflowing.
+        assert_eq!(CliPlayer::menu_page(3, 10, 99), (2, 1, true));
+        assert_eq!(CliPlayer::menu_page(0, 10, 0), (0, 0, false));
+
+        // `m` walks the pages and comes back to the top.
+        let mut off = 0;
+        off = CliPlayer::next_menu_offset(off, 9, 30);
+        assert_eq!(off, 9);
+        off = CliPlayer::next_menu_offset(off, 9, 30);
+        assert_eq!(off, 18);
+        off = CliPlayer::next_menu_offset(off, 9, 30);
+        assert_eq!(off, 27);
+        assert_eq!(CliPlayer::next_menu_offset(off, 3, 30), 0, "wraps at the end");
     }
 
     /// Issue #262: bare Enter used to be a committed answer at the
