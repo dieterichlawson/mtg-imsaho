@@ -134,3 +134,13 @@ mtg-engine/src/triggers/collect/damage.rs: replace && with || in combat_damage
 # comparison by `undead_alchemist_mills_instead_of_damage`. Becomes productive
 # again the day a card watches creatures entering from a graveyard.
 mtg-engine/src/triggers/collect/zones.rs: replace == with != in entered_battlefield
+
+# `run_entering_pass`'s second pass restates `copy_of: current.copy_of` over
+# `..next`. Equivalent in this pool: `next` is what the card's own
+# `replace_event` returned when handed `current`, and every one of them builds
+# its answer with `..e.clone()`, so `next.copy_of == current.copy_of` already.
+# The restatement is what enforces CR 616.1's ordering (copy effects, then
+# everything else) against a card that does not. Its sibling — the FIRST
+# pass's `copy_of: next.copy_of` — is not accepted and is killed by three
+# Essence of the Wild tests.
+mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass

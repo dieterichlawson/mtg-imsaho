@@ -62,10 +62,6 @@ mtg-engine/src/engine/costs.rs: replace && with || in pay_exile_creatures
 mtg-engine/src/engine/costs.rs: replace - with / in reduce
 mtg-engine/src/engine/costs.rs: replace -= with += in reduce
 mtg-engine/src/engine/costs.rs: replace -= with /= in reduce
-mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::AddCounters{count}) in apply_pending_effect
-mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::PutOnTopOfLibrary{source_name}) in apply_pending_effect
-mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(id), PendingEffect::ReturnToBattlefield{spell_id}) in apply_pending_effect
-mtg-engine/src/engine/effects.rs: delete match arm (Target::Object(target_id), PendingEffect::GrantFlashback{source_name}) in apply_pending_effect
 mtg-engine/src/engine/effects.rs: replace || with && in apply_pending_effect
 mtg-engine/src/engine/legal/casting.rs: delete ! in flashback
 mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
@@ -96,7 +92,6 @@ mtg-engine/src/funding.rs: replace > with == in apply
 mtg-engine/src/funding.rs: replace > with == in validate
 mtg-engine/src/funding.rs: replace > with >= in apply
 mtg-engine/src/funding.rs: replace || with && in apply
-mtg-engine/src/replacement.rs: delete field copy_of from struct EnteringPermanent expression in run_entering_pass
 mtg-engine/src/state.rs: delete ! in GameState::become_copy_of
 mtg-engine/src/state.rs: delete ! in GameState::effects_controlled_by
 mtg-engine/src/state.rs: delete ! in GameState::global_effects
@@ -108,6 +103,3 @@ mtg-engine/src/state.rs: replace + with * in GameState::create_token_with_subtyp
 mtg-engine/src/state.rs: replace == with != in GameState::move_object
 # invariants.rs remainders after the checker battery (12 raw mutants, three
 # normalized lines; see mutation-testing.md for which are near-equivalent):
-mtg-engine/src/invariants.rs: replace == with != in check_core
-mtg-engine/src/invariants.rs: replace && with || in check_settled
-mtg-engine/src/invariants.rs: replace || with && in check_settled

@@ -3865,10 +3865,6 @@ pub enum PendingEffect {
     DealDamage { amount: u32, source_id: ObjectId },
     /// Destroy the chosen permanent.
     Destroy { source_name: String },
-    /// Move chosen creature from graveyard to battlefield.
-    ReturnToBattlefield { spell_id: ObjectId },
-    /// Put +1/+1 counters on chosen creature.
-    AddCounters { count: u32 },
     /// Apply -N/-M until end of turn to the chosen creature.
     DebuffUntilEOT { power: i32, toughness: i32, source_name: String },
     /// Target creature can't block this turn.
@@ -3881,8 +3877,6 @@ pub enum PendingEffect {
 
     /// Return the chosen object to its owner's hand.
     ReturnToHand { source_name: String },
-    /// Put the chosen object on top of its owner's library.
-    PutOnTopOfLibrary { source_name: String },
 
 
 
@@ -3898,8 +3892,6 @@ pub enum PendingEffect {
 
 
 
-    /// Grant flashback to a chosen card until end of turn (Snapcaster Mage).
-    GrantFlashback { source_name: String },
 
 
 

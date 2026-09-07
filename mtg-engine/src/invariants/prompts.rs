@@ -230,7 +230,6 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
             let zone_rule = match effect {
                 PendingEffect::Destroy { .. } => Some(("destroy", false, false)),
                 PendingEffect::DestroyCreature { .. } => Some(("destroy-creature", true, false)),
-                PendingEffect::AddCounters { .. } => Some(("counter", true, false)),
                 PendingEffect::DebuffUntilEOT { .. } => Some(("debuff", true, false)),
                 PendingEffect::CantBlockThisTurn { .. } => Some(("can't-block", true, false)),
                 PendingEffect::EnterAsCopy { .. } => Some(("enter-as-copy", true, false)),

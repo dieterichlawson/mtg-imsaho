@@ -159,18 +159,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             crate::destruction::try_destroy(state, *id, registry);
             state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
         }
-        (Target::Object(id), PendingEffect::ReturnToBattlefield { spell_id }) => {
-            let name = state.obj_name(*id);
-            state.move_object(*id, Zone::Battlefield, registry);
-            state.log(LogLevel::Event, format!("{name} returned to the battlefield"));
-            state.move_spell_after_resolve(*spell_id, registry);
-        }
-        (Target::Object(id), PendingEffect::AddCounters { count }) => {
-            let name = state.obj_name(*id);
-            state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, *count);
-            state.log(LogLevel::Event,
-                format!("Added {} +1/+1 counter{} to {}", count, if *count > 1 { "s" } else { "" }, name));
-        }
         (Target::Object(id), PendingEffect::DebuffUntilEOT { power, toughness, source_name }) => {
             let name = state.obj_name(*id);
             state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
@@ -189,11 +177,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Hand, registry);
             state.log(LogLevel::Event, format!("{source_name}: returned {name} to hand"));
-        }
-        (Target::Object(id), PendingEffect::PutOnTopOfLibrary { source_name }) => {
-            let name = state.obj_name(*id);
-            state.put_into_library(*id, crate::state::LibraryPosition::Top, registry);
-            state.log(LogLevel::Event, format!("{source_name}: put {name} on top of library"));
         }
         (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {
             crate::destruction::sacrifice_by(state, *id, &format!("to {source_name}"), registry);
@@ -218,18 +201,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 crate::state::EnterAsCopyChoice::Declined
             };
             crate::replacement::record_entry_choice(state, *object, choice, registry);
-        }
-        (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
-            // Grant flashback to the chosen card until end of turn.
-            // CR 702.33a: the flashback cost equals the card's mana cost, so
-            // a card with none gains no usable flashback. Substituting a free
-            // cost made it castable for {0}.
-            let fb_info = state.face_data(*target_id, registry).and_then(|d| d.cost.clone());
-            if let Some(cost) = fb_info {
-                state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: *target_id, cost });
-                state.log(LogLevel::Event,
-                    format!("{} grants flashback to {}", source_name, state.obj_name(*target_id)));
-            }
         }
         (Target::Object(keep_id), PendingEffect::LegendRuleKeep { player, legend_name }) => {
             // Keep the chosen permanent, move all other legendaries with the same name to graveyard.
