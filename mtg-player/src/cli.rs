@@ -1879,11 +1879,17 @@ impl CliPlayer {
         let chosen_targets = match &spell.target_spec {
             CastTargetSpec::NoTargets => vec![],
             CastTargetSpec::SingleTarget(options) => {
-                if options.len() == 1 {
-                    vec![options[0].clone()]
+                // CR 601.2c: with exactly one legal target the choice is
+                // forced, so the row NAMES it (see `cast_row_label`) rather
+                // than offering a one-option menu. The silent version cast
+                // Brimstone Volley at its own caster off one keypress, with
+                // nothing on screen saying so (issue #254).
+                let forced = Self::forced_cast_targets(&spell.target_spec);
+                if forced.is_empty() {
+                    vec![Self::prompt_target(view, options,
+                        &format!("{}: select a target", spell.name))?]
                 } else {
-                    let target = Self::prompt_target(view,options, &format!("{}: select a target", spell.name))?;
-                    vec![target]
+                    forced
                 }
             }
             CastTargetSpec::TwoTargets { first, second, second_min, second_max } => {
@@ -1954,10 +1960,12 @@ impl CliPlayer {
         };
 
         // Prompt for sacrifice if the spell has a sacrifice additional cost.
-        let chosen_sacrifice = match spell.sacrifice_options.len() {
-            0 => None,
-            1 => Some(spell.sacrifice_options[0]),
-            _ => {
+        // CR 601.2h, same rule as the target above: one eligible creature is
+        // no choice, and the row names it instead of prompting (#254).
+        let chosen_sacrifice = match Self::forced_sacrifice(&spell.sacrifice_options) {
+            Some(id) => Some(id),
+            None if spell.sacrifice_options.is_empty() => None,
+            None => {
                 let target = Self::prompt_target(view,
                     &spell.sacrifice_options.iter().map(|&id| mtg_engine::actions::Target::Object(id)).collect::<Vec<_>>(),
                     &format!("{}: choose a creature to sacrifice", spell.name))?;
@@ -2405,27 +2413,105 @@ impl CliPlayer {
         format!(" targeting {}", names.join(", "))
     }
 
+    /// The targets a cast row will hit WITHOUT asking, or empty when a
+    /// chooser will run.
+    ///
+    /// With exactly one legal target the choice is forced (CR 601.2c), so
+    /// the CLI takes it rather than offering a one-option menu — but the row
+    /// then has to SAY which one, or a single keypress commits a target the
+    /// player was never shown. Brimstone Volley whose only legal target was
+    /// its own caster read exactly like one aimed at the opponent (issue
+    /// #254). `TwoTargets` and `UpToTargets` always prompt.
+    fn forced_cast_targets(spec: &mtg_engine::actions::CastTargetSpec) -> Vec<Target> {
+        match spec {
+            mtg_engine::actions::CastTargetSpec::SingleTarget(o) if o.len() == 1 =>
+                vec![o[0].clone()],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The creature a cast will sacrifice WITHOUT asking (CR 601.2h) — one
+    /// eligible creature is no choice at all, and the row names it.
+    fn forced_sacrifice(options: &[ObjectId]) -> Option<ObjectId> {
+        match options {
+            [only] => Some(*only),
+            _ => None,
+        }
+    }
+
+    /// ", sacrificing X" for a cast or ability row, or "" when nothing is
+    /// sacrificed.
+    fn sacrifice_suffix(view: &GameView, sacrifice: Option<ObjectId>) -> String {
+        sacrifice.map_or_else(String::new,
+            |id| format!(", sacrificing {}", Self::perm_name(view, id)))
+    }
+
+    /// The menu row for one way to cast one spell.
+    ///
+    /// It carries what the cast will do without asking again: the forced
+    /// target, the forced sacrifice, and — when the cost still has a choice
+    /// in it — that there is one to make.
+    fn cast_row_label(view: &GameView, cs: &mtg_engine::actions::CastableSpell) -> MenuLabel {
+        let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
+        let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
+        let mut notes: Vec<String> = Vec::new();
+        match &cs.alternative_cost {
+            Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
+                notes.push("without paying its mana cost".to_string()),
+            Some(alt) if !cs.is_flashback =>
+                notes.push(format!("alternative cost {alt}")),
+            _ => {}
+        }
+        // The additional cost is the whole reason two ways to cast the same
+        // card are not interchangeable — but once the cost is forced, the
+        // tail names the creature instead, which says strictly more.
+        let forced_sac = Self::forced_sacrifice(&cs.sacrifice_options);
+        if forced_sac.is_none() {
+            if let Some(extra) = &cs.additional_cost_label {
+                notes.push(extra.clone());
+            }
+        }
+        let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
+        if !tap_str.is_empty() {
+            notes.push(format!("tap {tap_str}"));
+        }
+        let forced_targets = Self::forced_cast_targets(&cs.target_spec);
+        let mut ids = vec![cs.object_id.0];
+        ids.extend(forced_targets.iter().filter_map(|t| match t {
+            Target::Object(id) => Some(id.0),
+            _ => None,
+        }));
+        if let Some(sac) = forced_sac { ids.push(sac.0); }
+        MenuLabel {
+            head: format!("{verb} {}{zone_note}", cs.name),
+            elastic: if notes.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", notes.join(", "))
+            },
+            tail: format!("{}{}",
+                Self::targets_suffix(view, &forced_targets),
+                Self::sacrifice_suffix(view, forced_sac)),
+            ids,
+        }
+    }
+
     fn format_action(view: &GameView, action: &Action) -> String {
         match action {
             Action::PassPriority => "Pass priority".into(),
             Action::PlayLand { object_id } =>
                 format!("Play land {}", Self::perm_name(view, *object_id)),
-            Action::CastSpell { object_id, targets, tap_plan, .. } => {
+            Action::CastSpell { object_id, targets, tap_plan, sacrifice, .. } => {
+                // The same shape as the ability rows and the collapsed cast
+                // rows: what it casts, what it costs, what it hits, what it
+                // kills. It used to spell the targets its own way and never
+                // mention the sacrifice at all (#254).
                 let name = Self::perm_name(view, *object_id);
                 let tap_str = Self::format_tap_plan(view, tap_plan);
                 let tap_suffix = if tap_str.is_empty() { String::new() } else { format!(" (tap {tap_str})") };
-                if targets.is_empty() {
-                    format!("Cast {name}{tap_suffix}")
-                } else {
-                    let target_names: Vec<String> = targets.iter().map(|t| match t {
-                        Target::Object(id) => Self::perm_name(view, *id),
-                        Target::Player(pid) => {
-                            if *pid == view.you { "you".into() } else { "opponent".into() }
-                        }
-                        Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-                    }).collect();
-                    format!("Cast {} -> {}{}", name, target_names.join(", "), tap_suffix)
-                }
+                format!("Cast {name}{tap_suffix}{}{}",
+                    Self::targets_suffix(view, targets),
+                    Self::sacrifice_suffix(view, *sacrifice))
             }
             Action::ActivateManaAbility { object_id, ability_index } => {
                 // Name the mana this entry makes: a dual land's two abilities
@@ -4556,43 +4642,7 @@ impl CliPlayer {
                         {
                             seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
-                            let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
-                            let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
-                            // "Cast Skaab Ruinator from graveyard": with one
-                            // copy in hand and one in the graveyard both rows
-                            // carried the same name and the same tap plan, and
-                            // the only thing telling them apart was an
-                            // "(alternative cost {1}{U}{U})" note that was not
-                            // true — a graveyard cast pays the printed cost
-                            // (CR 601.3a). Picking the wrong row exiles three
-                            // different cards and is not undoable (issue #300).
-                            let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
-                            let mut notes: Vec<String> = Vec::new();
-                            match &cs.alternative_cost {
-                                Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
-                                    notes.push("without paying its mana cost".to_string()),
-                                Some(alt) if !cs.is_flashback =>
-                                    notes.push(format!("alternative cost {alt}")),
-                                _ => {}
-                            }
-                            // The additional cost is the whole reason two ways
-                            // to cast the same card are not interchangeable.
-                            if let Some(extra) = &cs.additional_cost_label {
-                                notes.push(extra.clone());
-                            }
-                            if !tap_str.is_empty() {
-                                notes.push(format!("tap {tap_str}"));
-                            }
-                            let label = MenuLabel {
-                                head: format!("{verb} {}{zone_note}", cs.name),
-                                elastic: if notes.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!(" ({})", notes.join(", "))
-                                },
-                                tail: String::new(),
-                                ids: vec![cs.object_id.0],
-                            };
+                            let label = Self::cast_row_label(view, cs);
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             let full = label.full();
                             if seen_cast_labels.contains(&full) { continue; }
@@ -4630,7 +4680,7 @@ impl CliPlayer {
                     // the description, so only name a different one.
                     let sac_suffix = match sacrifice {
                         Some(sac) if sac != object_id =>
-                            format!(", sacrificing {}", Self::perm_name(view, *sac)),
+                            Self::sacrifice_suffix(view, Some(*sac)),
                         // A choose-a-creature cost picking the source itself:
                         // this entry rendered with no creature named at all,
                         // while its siblings said whom they sacrifice (#141).
@@ -5232,6 +5282,73 @@ mod tests {
             choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         };
         assert!(CliPlayer::action_object_ids(&yes).is_empty());
+    }
+
+    /// Issue #254: a forced target and a forced sacrifice are taken without
+    /// asking (CR 601.2c/601.2h), so the row has to say what they are —
+    /// otherwise one keypress commits a choice the player was never shown.
+    #[test]
+    fn a_forced_choice_is_the_one_the_row_names() {
+        use mtg_engine::actions::{CastTargetSpec, Target};
+        use mtg_engine::ids::{ObjectId, PlayerId};
+
+        // One legal target: forced, so it is named rather than prompted.
+        let one = CastTargetSpec::SingleTarget(vec![Target::Player(PlayerId(0))]);
+        assert_eq!(CliPlayer::forced_cast_targets(&one), vec![Target::Player(PlayerId(0))]);
+
+        // Two: a chooser runs, and the row promises nothing.
+        let two = CastTargetSpec::SingleTarget(vec![
+            Target::Player(PlayerId(0)), Target::Player(PlayerId(1))]);
+        assert!(CliPlayer::forced_cast_targets(&two).is_empty());
+
+        // The wide specs always prompt, however few options they hold.
+        let up_to = CastTargetSpec::UpToTargets { max: 2, options: vec![Target::Player(PlayerId(1))] };
+        assert!(CliPlayer::forced_cast_targets(&up_to).is_empty());
+
+        // Same rule on the cost half.
+        assert_eq!(CliPlayer::forced_sacrifice(&[ObjectId(7)]), Some(ObjectId(7)));
+        assert_eq!(CliPlayer::forced_sacrifice(&[ObjectId(7), ObjectId(8)]), None);
+        assert_eq!(CliPlayer::forced_sacrifice(&[]), None);
+    }
+
+    /// And the row actually carries it: "Cast Brimstone Volley targeting
+    /// you" is the line that was missing.
+    #[test]
+    fn a_cast_row_names_the_target_it_will_take_without_asking() {
+        use mtg_engine::actions::{CastableSpell, CastTargetSpec, Target};
+        use mtg_engine::ids::PlayerId;
+
+        let v = view(Step::PrecombatMain, 5, true);
+        let mut cs = CastableSpell {
+            object_id: ObjectId(30),
+            name: "Brimstone Volley".to_string(),
+            is_flashback: false,
+            from_graveyard: false,
+            target_spec: CastTargetSpec::SingleTarget(vec![Target::Player(PlayerId(0))]),
+            tap_plan: vec![],
+            exile_x_from_gy_max: None,
+            sacrifice_options: vec![],
+            additional_cost_label: None,
+            alternative_cost: None,
+        };
+        let row = CliPlayer::cast_row_label(&v, &cs).full();
+        assert!(row.contains("targeting you"), "got {row:?}");
+
+        // Two targets: a chooser runs, so the row promises nothing.
+        cs.target_spec = CastTargetSpec::SingleTarget(vec![
+            Target::Player(PlayerId(0)), Target::Player(PlayerId(1))]);
+        let row = CliPlayer::cast_row_label(&v, &cs).full();
+        assert!(!row.contains("targeting"), "got {row:?}");
+
+        // A forced sacrifice is named; an unforced one says a choice is coming.
+        cs.sacrifice_options = vec![ObjectId(41)];
+        cs.additional_cost_label = Some("sacrifice a creature".into());
+        let row = CliPlayer::cast_row_label(&v, &cs).full();
+        assert!(row.contains("sacrificing"), "got {row:?}");
+        cs.sacrifice_options = vec![ObjectId(41), ObjectId(42)];
+        let row = CliPlayer::cast_row_label(&v, &cs).full();
+        assert!(!row.contains("sacrificing"), "got {row:?}");
+        assert!(row.contains("sacrifice a creature"), "got {row:?}");
     }
 
     /// Issue #261: `m` is drawn on any menu taller than the pane, and the
