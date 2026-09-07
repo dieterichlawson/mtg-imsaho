@@ -2410,6 +2410,15 @@ impl CliPlayer {
                 .flat_map(|(_, cards)| cards.iter())
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
+            // Exile is a public zone and belongs on this list beside the
+            // graveyards — it was the one zone missing, and Runic Repetition
+            // is the only card in the pool whose targets live there, so the
+            // hole showed up as an unplayable card: every place the CLI named
+            // its target printed `obj#NN`, and no pane anywhere shows object
+            // ids (issue #332, the same hole #38 closed for the library).
+            .or_else(|| view.exile.iter()
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
             .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
     }
@@ -6391,6 +6400,38 @@ mod tests {
         assert_eq!(yours, "Island (your)");
         assert_eq!(theirs, "Island (opp)");
         assert_ne!(yours, theirs, "identical lands must be distinguishable");
+    }
+
+    /// Exile is a public zone, and the one the name resolver did not look
+    /// in. Runic Repetition is the only card in the pool whose targets live
+    /// there, so the omission made it unplayable by sight: the menu row read
+    /// "targeting obj#17", the chooser listed "0: obj#24 / 1: obj#25", and no
+    /// pane anywhere shows object ids (issue #332).
+    #[test]
+    fn a_card_in_exile_is_named_the_way_one_in_a_graveyard_is() {
+        let card = |id: u64, name: &str| mtg_engine::view::CardView {
+            object_id: ObjectId(id),
+            card_id: mtg_engine::ids::CardId(0),
+            name: name.into(),
+            cost: None,
+            card_types: vec![CardType::Instant],
+            power: None,
+            toughness: None,
+            oracle_text: String::new(),
+            owner: PlayerId(0),
+            flashback_cost: None,
+        };
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.exile = vec![card(24, "Dream Twist"), card(25, "Think Twice")];
+        v.graveyards = vec![(PlayerId(0), vec![card(30, "Armored Skaab")])];
+
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(24)), "Dream Twist");
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(25)), "Think Twice");
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(30)), "Armored Skaab",
+            "the zone next door, which already worked");
+        // An id in no visible zone still falls back, so the resolver has not
+        // started inventing names.
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(99)), format!("{}", ObjectId(99)));
     }
 
     /// A creature for the combat-list tests.
