@@ -1338,3 +1338,28 @@ fn non_combat_life_loss_is_logged_with_the_resulting_total() {
         "the loss and the running total are in the log; got: {:?}",
         state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
+
+/// The other direction, which nothing pinned: a life GAIN says "gained".
+///
+/// The sign test that picks the verb is one comparison, and a mutation that
+/// made it always false — every change logged as a loss — survived the whole
+/// suite (mutants shard 0, `replace > with == in GameState::change_life`).
+#[test]
+fn a_life_gain_is_logged_as_a_gain_with_the_resulting_total() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    state.gain_life(P0, 4);
+
+    assert_eq!(state.get_player(P0).life, 24);
+    assert!(state.game_log.iter().any(|e| e.message == "p0 gained 4 life (24)"),
+        "a gain reads as a gain; got: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(!state.game_log.iter().any(|e| e.message.contains("p0 lost")),
+        "and never as a loss; got: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    // Zero is not a transition and writes nothing at all (CR 118.4).
+    let before = state.game_log.len();
+    state.change_life(P0, 0);
+    assert_eq!(state.game_log.len(), before, "a zero change is not an event");
+}

@@ -13,6 +13,12 @@ mtg-engine/src/triggers/collect/combat.rs: replace match guard o.zone == Zone::B
 mtg-engine/src/combat.rs: replace > with >= in declare_blockers_with_registry
 mtg-engine/src/combat.rs: replace || with && in deal_damage_step
 mtg-engine/src/destruction.rs: replace || with && in death_event
+# `change_life` returns early on delta == 0, so by the verb test the delta is
+# non-zero and `> 0` and `>= 0` name the same set. Equivalent, not untested:
+# the `== 0` mutation of the same comparison IS killed, by
+# `a_life_gain_is_logged_as_a_gain_with_the_resulting_total`.
+mtg-engine/src/state.rs: replace > with >= in GameState::change_life
+
 # RNG internals: the engine's contract is determinism (pinned by the replay
 # spot check in scripts/fuzz.sh), not any particular mixing function or
 # which side of a coin is "heads".

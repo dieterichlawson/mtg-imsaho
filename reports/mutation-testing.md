@@ -156,3 +156,20 @@ only on states already violating a different invariant or on printed
 characteristics the pool doesn't contain (0-toughness cards, a printed
 power without a toughness), which is why they sit in the backlog for a
 closer look rather than the accepted list.
+
+## Weekly sweep, run 33964071700
+
+The weekly workflow shards the whole engine core across ten jobs and files
+one issue per shard. Triage of the small shards:
+
+**Shard 0 — `GameState::change_life`, two survivors on one comparison.**
+The verb test `if delta > 0 { "gained" } else { "lost" }` runs after an
+early return on `delta == 0`.
+
+- `replace > with ==` makes the test always false, so every life change in
+  the log reads as a loss. Killed by
+  `a_life_gain_is_logged_as_a_gain_with_the_resulting_total`, which pins
+  the gain line, the resulting total, and that no loss line is written.
+  The suite had a test for the loss half (#129) and none for the gain.
+- `replace > with >=` is equivalent: the delta cannot be zero here, so the
+  two comparisons name the same set. Accepted.
