@@ -1423,7 +1423,10 @@ impl GameState {
             obj.keywords = keywords;
             obj.is_legendary = legendary;
             obj.is_transformed = transformed;
-            obj.instance_continuous_effects = Some(vec![]);
+            // The copy has no instance effects of its own: whatever the
+            // pre-copy object was given is gone, and the copied card's static
+            // abilities come from its face (CR 706.2).
+            obj.instance_continuous_effects = None;
             obj.instance_oracle_text = oracle_text;
         }
         let pt = match (power, toughness) {
@@ -3141,15 +3144,26 @@ impl GameState {
         cols
     }
 
-    /// Continuous effects the object provides: instance-level overrides if
-    /// present (e.g. equipment granting effects), otherwise the active face's.
+    /// Continuous effects the object provides: the active face's, plus any
+    /// this particular object was given.
+    ///
+    /// The instance list is *additional*, never a replacement. It used to be
+    /// read as an override — a `Some(_)` answered for the whole object and the
+    /// face was never consulted — and the only two writers both mean "these
+    /// are effects this object has of its own": Nevermore's chosen name, and
+    /// `become_copy_of` clearing what the pre-copy object had. Under the
+    /// override reading the second of those blinded the face, so a permanent
+    /// that entered as a copy had no static abilities at all: a copy of
+    /// Grimgrin untapped in its untap step, a copy of Mayor of Avabruck gave
+    /// no anthem (CR 706.2, 613.2).
     #[must_use]
     pub fn continuous_effects_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
         let Some(obj) = self.get_object(id) else { return Vec::new() };
+        let mut effects = self.face_data(id, registry).map(|d| d.continuous_effects).unwrap_or_default();
         if let Some(ref inst) = obj.instance_continuous_effects {
-            return inst.clone();
+            effects.extend(inst.iter().cloned());
         }
-        self.face_data(id, registry).map(|d| d.continuous_effects).unwrap_or_default()
+        effects
     }
 
     /// Triggered abilities of the object's active face.
@@ -3264,8 +3278,9 @@ pub struct GameObject {
     #[serde(default)]
     pub instance_oracle_text: Option<String>,
 
-    /// Per-instance continuous effects that override the card's static effects.
-    /// Set by `on_enter_battlefield` for conditional cards (e.g., Bonds of Faith).
+    /// Continuous effects this particular object was given, on top of the ones
+    /// printed on its active face (Nevermore's chosen name). Read through
+    /// `continuous_effects_of`, which appends them to the face's.
     #[serde(default)]
     pub instance_continuous_effects: Option<Vec<crate::types::ContinuousEffect>>,
 

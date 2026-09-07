@@ -144,3 +144,49 @@ fn the_recorded_choice_does_not_survive_a_zone_change() {
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Graveyard,
         "so coming back asks again rather than silently re-using the old answer");
 }
+
+/// CR 706.2 / 613.2: a copy has the copied card's abilities, and a static
+/// ability functions wherever its text says it does. Grimgrin's is
+/// "doesn't untap during your untap step", so a copy of Grimgrin sits out
+/// its controller's untap step exactly as the printed card does.
+///
+/// The copy's static abilities used to be dropped on the floor: the object's
+/// instance effect list was written as an empty vector and read as an
+/// override, so a copy answered "no continuous effects" whatever the copied
+/// card declares. A copied Grimgrin untapped and could attack every turn.
+#[test]
+fn a_copy_does_not_untap_when_the_copied_card_says_it_does_not() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P1);
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P1);
+
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(grimgrin));
+    assert!(state.get_object(twin).unwrap().tapped, "test precondition: it enters tapped");
+
+    advance_to_next_turn(&mut state, &reg);
+
+    assert_eq!(state.active_player, P0, "test precondition: it is the copy controller's turn");
+    assert!(state.get_object(twin).unwrap().tapped,
+        "a copy of Grimgrin doesn't untap during its controller's untap step (CR 706.2, 613.2)");
+}
+
+/// The same mechanism from the other side: a static ability of the copied
+/// card that reaches *other* permanents. A copy of Mayor of Avabruck gives
+/// the other Humans its controller controls +1/+1, because the copy has the
+/// Mayor's abilities (CR 706.2).
+#[test]
+fn a_copy_grants_the_copied_cards_anthem_to_other_permanents() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P1);
+    let human = named_permanent(&mut state, &reg, "Elite Inquisitor", P0);
+    assert_eq!(state.effective_power(human, &reg), Some(2),
+        "test precondition: the opponent's Mayor does not pump p0's Humans");
+
+    enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(mayor));
+
+    assert_eq!(state.effective_power(human, &reg), Some(3),
+        "the copy has the Mayor's anthem and p0's other Human gets +1/+1 (CR 706.2)");
+}
