@@ -163,62 +163,41 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
         // - None: backward-compat chained lookup (native → copy-grantor
         //   override → attached auras). Used by tests and code paths that
         //   don't need to disambiguate (only one contributes the ability).
+        // The ability as one card contributes it: look it up by index among
+        // the abilities that card grants THIS object.
+        let contributed = |cid: crate::ids::CardId, state: &GameState| {
+            registry.get(cid)
+                .and_then(|b| b.activated_abilities(state, object_id, registry)
+                    .into_iter().find(|a| a.ability_index == ability_index))
+        };
+        // The first attached aura or Equipment that contributes it. Written
+        // out twice before — once as the fallback after a copy grantor missed
+        // and once as the plain case — and the copies could disagree.
+        let from_attached = |state: &GameState| {
+            state.objects_in_id_order().into_iter()
+                .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(object_id))
+                .find_map(|a| contributed(a.card_id, state).map(|ab| (a.card_id, Some(ab))))
+                .unwrap_or((card_id, None))
+        };
         let (behavior_card_id, ability) = if let Some(cid) = source_card_id {
-            let ab = registry.get(cid)
-                .and_then(|b| b.activated_abilities(&state, object_id, registry)
-                    .into_iter().find(|a| a.ability_index == ability_index));
-            (cid, ab)
+            // The caller disambiguated the source — legal_actions marks
+            // aura-granted abilities this way. Look up in `cid` only.
+            (cid, contributed(cid, &state))
+        } else if let Some(native) = contributed(card_id, &state) {
+            // Backward-compat chained lookup, for tests and paths where only
+            // one card can contribute the ability: native first.
+            (card_id, Some(native))
         } else {
-            let native = registry.get(card_id)
-                .and_then(|b| b.activated_abilities(&state, object_id, registry)
-                    .into_iter().find(|a| a.ability_index == ability_index));
-            if native.is_some() {
-                (card_id, native)
-            } else if copy_grantor.is_some() {
-                // CR 706.2: an ability the copy effect added — dispatch to
-                // the card whose copy effect granted it, and only when that
-                // card grants abilities to copies at all (issue #93: for a
-                // plain enters-as-copy the grantor is just the printed card
-                // remembered for the zone-change revert).
-                let g_id = copy_grantor.filter(|&g| g != card_id);
-                let ab = g_id.and_then(|cid| registry.get(cid))
-                    .filter(|b| b.grants_abilities_to_copies())
-                    .and_then(|b| b.activated_abilities(&state, object_id, registry)
-                        .into_iter().find(|a| a.ability_index == ability_index));
-                if let Some(ab) = ab {
-                    (g_id.unwrap_or(card_id), Some(ab))
-                } else {
-                    // Fall through to attached lookup below.
-                    let mut found = (card_id, None);
-                    for attached in state.objects_in_id_order().into_iter()
-                        .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(object_id))
-                    {
-                        if let Some(ab) = registry.get(attached.card_id)
-                            .and_then(|b| b.activated_abilities(&state, object_id, registry)
-                                .into_iter().find(|a| a.ability_index == ability_index))
-                        {
-                            found = (attached.card_id, Some(ab));
-                            break;
-                        }
-                    }
-                    found
-                }
-            } else {
-                // Walk attached auras/equipment.
-                let mut found = (card_id, None);
-                for attached in state.objects_in_id_order().into_iter()
-                    .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(object_id))
-                {
-                    if let Some(ab) = registry.get(attached.card_id)
-                        .and_then(|b| b.activated_abilities(&state, object_id, registry)
-                            .into_iter().find(|a| a.ability_index == ability_index))
-                    {
-                        found = (attached.card_id, Some(ab));
-                        break;
-                    }
-                }
-                found
-            }
+            // CR 706.2: an ability the copy effect added — dispatch to the
+            // card whose copy effect granted it, and only when that card
+            // grants abilities to copies at all (issue #93: for a plain
+            // enters-as-copy the grantor is just the printed card remembered
+            // for the zone-change revert).
+            let granted = copy_grantor
+                .filter(|&g| g != card_id)
+                .filter(|&g| registry.get(g).is_some_and(|b| b.grants_abilities_to_copies()))
+                .and_then(|g| contributed(g, &state).map(|ab| (g, Some(ab))));
+            granted.unwrap_or_else(|| from_attached(&state))
         };
 
         if let Some(ab) = ability {
