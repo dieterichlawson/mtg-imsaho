@@ -264,6 +264,9 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - `Ndmg` = N damage marked on it
 - `+1/+1:N`, `-1/-1:N`, `loyalty:N` etc. = counter counts
 
+A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
+
+
 **Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each tagged with its controller and its targets:
 ```
 Stack:
@@ -1391,22 +1394,17 @@ impl LlmPlayer {
                 // becomes (issue #205).
                 for (face_name, data) in card_faces(name, registry) {
                     let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                    let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                        CardType::Creature => "Creature",
-                        CardType::Instant => "Instant",
-                        CardType::Sorcery => "Sorcery",
-                        CardType::Enchantment => "Enchantment",
-                        CardType::Artifact => "Artifact",
-                        CardType::Land => "Land",
-                        CardType::Planeswalker => "Planeswalker",
-                    }).collect();
-                    let subtypes = if data.subtypes.is_empty() { String::new() }
-                        else { format!(" — {}", data.subtypes.join(" ")) };
+                    // The type line as printed, supertypes first (CR 205.4a):
+                    // "Legendary" is what arms the legend rule, and the seat
+                    // never saw the word (issue #333).
+                    let type_line = mtg_engine::types::type_line(
+                        &data.supertypes, &data.card_types, &data.subtypes);
                     let pt = match (data.power, data.toughness) {
                         (Some(p), Some(t)) => format!(" {p}/{t}"),
                         _ => String::new(),
                     };
-                    writeln!(s, "  {}{} {}{}{}", face_name, cost, types.join(" "), subtypes, pt).unwrap();
+                    writeln!(s, "  {}{} {}{}", face_name, cost, type_line, pt).unwrap();
+
                     if !data.oracle_text.is_empty() {
                         writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
                     }
@@ -1934,8 +1932,15 @@ impl LlmPlayer {
         for c in &creatures {
             let power = c.effective_power.or(c.power).unwrap_or(0);
             let toughness = c.effective_toughness.or(c.toughness).unwrap_or(0);
+            // "legendary" leads the ability words: it is the supertype that
+            // arms the legend rule (CR 704.5j), and the board text never
+            // carried it (issue #333).
+            let mut words: Vec<String> = Vec::new();
+            if Self::is_legendary(c) { words.push("legendary".into()); }
             let kw = Self::format_keywords(&c.keywords);
-            let kw_str = if kw.is_empty() { String::new() } else { format!(" {kw}") };
+            if !kw.is_empty() { words.push(kw); }
+            let kw_str = if words.is_empty() { String::new() } else { format!(" {}", words.join(", ")) };
+
             let mut flag_parts: Vec<String> = Vec::new();
             // A token's name is its subtypes alone (CR 111.4), so the board
             // says "token" here rather than in the name (issues #331, #334).
@@ -1963,7 +1968,9 @@ impl LlmPlayer {
         for o in &other {
             if o.attached_to.is_some() { continue; } // skip auras, shown with creature
             let mut flag_parts: Vec<String> = Vec::new();
+            if Self::is_legendary(o) { flag_parts.push("legendary".into()); }
             if o.is_token { flag_parts.push("token".into()); }
+
             if o.tapped { flag_parts.push("T".into()); }
             // The chosen name is the permanent's whole identity (Nevermore's
             // ban) — without it a spell just vanishes from the menu (#130).
@@ -3367,9 +3374,14 @@ from your hand to put on the bottom of your library.\n\
         }).collect::<Vec<_>>().join(", ")
     }
 
+    fn is_legendary(p: &mtg_engine::view::PermanentView) -> bool {
+        p.supertypes.contains(&mtg_engine::types::Supertype::Legendary)
+    }
+
     /// Format a permanent for combat/selection display: "Name (#id) P/T keywords".
     /// Always includes the object ID for unambiguous reference.
     fn format_combat_creature(view: &GameView, id: ObjectId) -> String {
+
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
             let power = p.effective_power.or(p.power).unwrap_or(0);
             let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
@@ -4088,6 +4100,7 @@ mod tests {
             object_id: ObjectId(id),
             card_id: CardId(0),
             name: name.into(),
+            supertypes: vec![],
             card_types: vec![CardType::Creature],
             controller,
             owner: controller,
@@ -4164,11 +4177,41 @@ this Aura deals 1 damage to that player.";
             "two same-named curses on opposite players must not render identically");
     }
 
+    /// Issue #333: the board text never said a permanent was legendary, so a
+    /// seat could not see the legend rule (CR 704.5j) coming. A legendary
+    /// creature carries "legendary" with its keywords; any other legendary
+    /// permanent carries it in its flags.
+    #[test]
+    fn a_legend_is_marked_on_the_board() {
+        let you = PlayerId(0);
+        let mut mikaeus = perm(24, "Mikaeus, the Lunarch", 1, 1, you);
+        mikaeus.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        mikaeus.keywords = vec![mtg_engine::types::Keyword::Flying];
+        let bears = perm(25, "Grizzly Bears", 2, 2, you);
+        let mut grimoire = perm(26, "Grimoire of the Dead", 0, 0, you);
+        grimoire.card_types = vec![CardType::Artifact];
+        grimoire.power = None;
+        grimoire.toughness = None;
+        grimoire.effective_power = None;
+        grimoire.effective_toughness = None;
+        grimoire.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        let perms = vec![&mikaeus, &bears, &grimoire];
+
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        let line = |id: u64| output.lines().find(|l| l.contains(&format!("(#{id})")))
+            .unwrap_or_else(|| panic!("#{id} on a line: {output}")).to_string();
+        assert!(line(24).contains("1/1 legendary, flying"), "{}", line(24));
+        assert!(!line(25).contains("legendary"), "{}", line(25));
+        assert!(line(26).contains("[legendary]"), "{}", line(26));
+    }
+
     fn aura(id: u64, name: &str, attached_to: u64, controller: PlayerId) -> PermanentView {
+
         PermanentView {
             object_id: ObjectId(id),
             card_id: CardId(0),
             name: name.into(),
+            supertypes: vec![],
             card_types: vec![CardType::Enchantment],
             controller,
             owner: controller,

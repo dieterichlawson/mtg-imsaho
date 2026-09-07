@@ -1564,70 +1564,11 @@ impl CliPlayer {
 
         // Helper: render creatures, enchantments, artifacts
         let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
-            let creature_labels = creatures.iter().map(|c| {
-                let pt = match (c.effective_power, c.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    },
-                };
-                let auras = aura_map.get(&c.object_id)
-                    .map(|names| format!(" [{}]", names.join(",")))
-                    .unwrap_or_default();
-                let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
-                // A hasty creature isn't slowed by summoning sickness —
-                // '[S]' read as "cannot attack" on a creature whose attack
-                // was perfectly legal (issue #139).
-                let sick = Self::is_summoning_sick(c);
-                // CR 506.3a/509.1a: attacking and blocking are public state,
-                // and `[T]` — the same mark a creature gets for tapping for
-                // mana — was the only thing the pane said about either
-                // (issue #245).
-                let combat = if c.attacking.is_some() {
-                    " [ATK]"
-                } else if !c.blocking.is_empty() {
-                    " [BLK]"
-                } else {
-                    ""
-                };
-                // CR 111.4 leaves the word "Token" out of a token's name, so
-                // the pane says it here instead — otherwise a Spirit token and
-                // a card named Spirit render identically, and the CARDS pane
-                // (which excludes tokens) is the only thing that tells them
-                // apart (issues #331, #334).
-                let flags = format!("{}{}{}{}{}",
-                    if c.is_token { " [tok]" } else { "" },
-                    if c.tapped { " [T]" } else { "" },
-                    if sick { " [S]" } else { "" },
-                    combat,
-                    dmg);
-                // The permanent's live keywords and protections. A flying
-                // token rendered exactly like a ground creature, and a
-                // creature that had lost defender still read "Defender" from
-                // its printed card — the block decision is made off this line
-                // (issue #243).
-                let mut abilities: Vec<String> = c.keywords.iter()
-                    .map(|k| format!("{k:?}").to_lowercase())
-                    .collect();
-                abilities.extend(c.protections.iter().cloned());
-                let kw = if abilities.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", abilities.join(", "))
-                };
-                // head is what must survive, elastic is what may be elided:
-                // the flags used to be last and were the first thing a long
-                // attachment list pushed off the end, so a tapped, damaged,
-                // summoning-sick voltron creature read as a clean untapped
-                // one (issue #270).
-                (format!("{}{}{}", c.name, pt, CliPlayer::counters_suffix(&c.counters)),
-                 format!("{auras}{kw}"),
-                 flags)
-            }).collect::<Vec<(String, String, String)>>()
-                .into_iter()
+            let creature_labels = creatures.iter()
+                .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
                 .map(|(head, elastic, flags)| Self::elide_middle(&head, &elastic, &flags, max_w))
                 .collect();
+
             for (n, label) in collapse(creature_labels) {
                 let truncated: String = counted_line(n, &label).chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
@@ -1650,10 +1591,11 @@ impl CliPlayer {
                     let named = e.named_card.as_ref()
                         .map(|n| format!(" [names: {n}]"))
                         .unwrap_or_default();
-                    format!("{}{}{}{}", e.name, host, named,
+                    format!("{}{}{}{}{}", e.name, Self::legend_mark(e), host, named,
                         CliPlayer::counters_suffix(&e.counters))
                 })
                 .collect();
+
             for (n, label) in collapse(enchantment_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(Color::Magenta), Print(counted_line(n, &label)), ResetColor);
@@ -1663,10 +1605,11 @@ impl CliPlayer {
             // attached auras — not in the standalone artifact list.
             let artifact_labels = artifacts.iter()
                 .filter(|a| a.attached_to.is_none())
-                .map(|a| format!("{}{}{}", a.name,
+                .map(|a| format!("{}{}{}{}", a.name, Self::legend_mark(a),
                     CliPlayer::counters_suffix(&a.counters),
                     if a.tapped { " [T]" } else { "" }))
                 .collect();
+
             for (n, label) in collapse(artifact_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row), Print(counted_line(n, &label)));
                 *row += 1;
@@ -1675,7 +1618,8 @@ impl CliPlayer {
                 let loyalty = pw.counters.get(&mtg_engine::types::CounterType::Loyalty)
                     .copied().unwrap_or(0);
                 let dmg = if pw.damage_marked > 0 { format!(" ({}d)", pw.damage_marked) } else { String::new() };
-                let text = format!("  {} [{loyalty} loyalty]{dmg}", pw.name);
+                let text = format!("  {}{} [{loyalty} loyalty]{dmg}", pw.name, Self::legend_mark(pw));
+
                 let truncated: String = text.chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
@@ -1696,7 +1640,90 @@ impl CliPlayer {
 
     // (Old render_battlefield removed — replaced by render_battlefield_at)
 
+    /// One creature's battlefield row, in the three regions `elide_middle`
+    /// treats differently: `(head, elastic, flags)`. Pure, so the row is
+    /// testable without a terminal.
+    ///
+    /// `auras` are the names of everything attached to it.
+    fn creature_row_parts(c: &PermanentView, auras: Option<&Vec<String>>) -> (String, String, String) {
+        let pt = match (c.effective_power, c.effective_toughness) {
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
+            _ => match (c.power, c.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            },
+        };
+        let auras = auras
+            .map(|names| format!(" [{}]", names.join(",")))
+            .unwrap_or_default();
+        let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
+        // A hasty creature isn't slowed by summoning sickness —
+        // '[S]' read as "cannot attack" on a creature whose attack
+        // was perfectly legal (issue #139).
+        let sick = Self::is_summoning_sick(c);
+        // CR 506.3a/509.1a: attacking and blocking are public state,
+        // and `[T]` — the same mark a creature gets for tapping for
+        // mana — was the only thing the pane said about either
+        // (issue #245).
+        let combat = if c.attacking.is_some() {
+            " [ATK]"
+        } else if !c.blocking.is_empty() {
+            " [BLK]"
+        } else {
+            ""
+        };
+        // CR 111.4 leaves the word "Token" out of a token's name, so
+        // the pane says it here instead — otherwise a Spirit token and
+        // a card named Spirit render identically, and the CARDS pane
+        // (which excludes tokens) is the only thing that tells them
+        // apart (issues #331, #334).
+        let flags = format!("{}{}{}{}{}",
+            if c.is_token { " [tok]" } else { "" },
+            if c.tapped { " [T]" } else { "" },
+            if sick { " [S]" } else { "" },
+            combat,
+            dmg);
+        // The permanent's live keywords and protections. A flying
+        // token rendered exactly like a ground creature, and a
+        // creature that had lost defender still read "Defender" from
+        // its printed card — the block decision is made off this line
+        // (issue #243). "legendary" leads the list: it is the supertype
+        // that arms the legend rule (CR 704.5j), and nothing on the board
+        // said it until the prompt that took one of two legends away
+        // (issue #333).
+        let mut abilities: Vec<String> = Vec::new();
+        if Self::is_legendary(c) {
+            abilities.push("legendary".into());
+        }
+        abilities.extend(c.keywords.iter().map(|k| format!("{k:?}").to_lowercase()));
+        abilities.extend(c.protections.iter().cloned());
+        let kw = if abilities.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", abilities.join(", "))
+        };
+        // head is what must survive, elastic is what may be elided:
+        // the flags used to be last and were the first thing a long
+        // attachment list pushed off the end, so a tapped, damaged,
+        // summoning-sick voltron creature read as a clean untapped
+        // one (issue #270).
+        (format!("{}{}{}", c.name, pt, CliPlayer::counters_suffix(&c.counters)),
+         format!("{auras}{kw}"),
+         flags)
+    }
+
+    fn is_legendary(p: &PermanentView) -> bool {
+        p.supertypes.contains(&mtg_engine::types::Supertype::Legendary)
+    }
+
+    /// " (legendary)" on a non-creature permanent's row, or nothing. A
+    /// creature's row carries the word among its abilities instead.
+    fn legend_mark(p: &PermanentView) -> &'static str {
+        if Self::is_legendary(p) { " (legendary)" } else { "" }
+    }
+
     fn mid_print(out: &mut io::Stdout, col: u16, row: &mut u16, max_w: usize,
+
                   text: &str, color: Option<Color>, bold: bool) {
         let _ = execute!(out, cursor::MoveTo(col, *row));
         if bold { let _ = execute!(out, SetAttribute(Attribute::Bold)); }
@@ -1875,18 +1902,7 @@ impl CliPlayer {
             row += 1;
             if row >= max_row { break; }
 
-            // Type line + P/T
-            let types: Vec<&str> = card.data.card_types.iter().map(|t| match t {
-                CardType::Creature => "Creature",
-                CardType::Instant => "Instant",
-                CardType::Sorcery => "Sorcery",
-                CardType::Enchantment => "Enchantment",
-                CardType::Artifact => "Artifact",
-                CardType::Land => "Land",
-                CardType::Planeswalker => "Planeswalker",
-            }).collect();
-            let subtypes = if card.data.subtypes.is_empty() { String::new() }
-                else { format!(" — {}", card.data.subtypes.join(" ")) };
+            // Type line + P/T, supertypes first (CR 205.4a, issue #333).
             let pt = if card.star_pt {
                 " */*".to_string()
             } else {
@@ -1895,7 +1911,9 @@ impl CliPlayer {
                     _ => String::new(),
                 }
             };
-            let type_line = format!("{}{}{}", types.join(" "), subtypes, pt);
+            let type_line = format!("{}{}", mtg_engine::types::type_line(
+                &card.data.supertypes, &card.data.card_types, &card.data.subtypes), pt);
+
             let truncated: String = type_line.chars().take(content_w).collect();
             let _ = execute!(out, cursor::MoveTo(right_col, row),
                 SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
@@ -3294,26 +3312,17 @@ impl CliPlayer {
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
                     Self::print_colored(&mut out, Color::Cyan, &format!(" {}", perm.name));
 
-                    let types: Vec<&str> = perm.card_types.iter().map(|t| match t {
-                        CardType::Land => "Land",
-                        CardType::Creature => "Creature",
-                        CardType::Instant => "Instant",
-                        CardType::Sorcery => "Sorcery",
-                        CardType::Enchantment => "Enchantment",
-                        CardType::Artifact => "Artifact",
-                        CardType::Planeswalker => "Planeswalker",
-                    }).collect();
-                    // CR 205.3: the type line is types AND subtypes, and
-                    // the subtypes are the live ones — the printed ones plus
-                    // anything an effect granted. Every "as long as ... is a
-                    // Human" card in the set turns on a fact this page used
-                    // to refuse to state (issue #297).
-                    let type_line = if perm.subtypes.is_empty() {
-                        types.join(" ")
-                    } else {
-                        format!("{} — {}", types.join(" "), perm.subtypes.join(" "))
-                    };
+                    // CR 205.1: the type line is supertypes, types AND
+                    // subtypes, and the subtypes are the live ones — the
+                    // printed ones plus anything an effect granted. Every "as
+                    // long as ... is a Human" card in the set turns on a fact
+                    // this page used to refuse to state (issue #297), and
+                    // "Legendary" — the word that arms the legend rule — was
+                    // printed nowhere in the game (issue #333).
+                    let type_line = mtg_engine::types::type_line(
+                        &perm.supertypes, &perm.card_types, &perm.subtypes);
                     let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
+
 
                     // The permanent's live keywords and protections, which
                     // the view has always computed and no pane ever printed:
@@ -3781,19 +3790,12 @@ impl CliPlayer {
                     Self::print_colored(&mut out, Color::Cyan, &format!(" {}", data.name));
                     let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
                     let _ = execute!(out, Print(format!("  Mana cost: {cost}\n")));
-                    let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                        CardType::Land => "Land",
-                        CardType::Creature => "Creature",
-                        CardType::Instant => "Instant",
-                        CardType::Sorcery => "Sorcery",
-                        CardType::Enchantment => "Enchantment",
-                        CardType::Artifact => "Artifact",
-                        CardType::Planeswalker => "Planeswalker",
-                    }).collect();
-                    let _ = execute!(out, Print(format!("  Type: {}\n", types.join(" "))));
-                    if !data.subtypes.is_empty() {
-                        let _ = execute!(out, Print(format!("  Subtypes: {}\n", data.subtypes.join(", "))));
-                    }
+                    // The whole type line as the card prints it (CR 205.1):
+                    // supertypes first (issue #333), then types, then the
+                    // subtypes — which used to be a separate row.
+                    let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
+                        &data.supertypes, &data.card_types, &data.subtypes))));
+
                     if let (Some(p), Some(t)) = (data.power, data.toughness) {
                         let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
                     }
@@ -6001,7 +6003,32 @@ mod tests {
         }
     }
 
+    /// Issue #333: nothing on the battlefield said a permanent was a
+    /// legend, so the legend rule (CR 704.5j) fired with no warning. A
+    /// legendary creature's row carries "legendary" ahead of its keywords;
+    /// a non-creature legend gets the word after its name.
+    #[test]
+    fn a_legends_battlefield_row_says_so() {
+        let mut mikaeus = creature(24, "Mikaeus, the Lunarch", 0);
+        mikaeus.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        mikaeus.keywords = vec![mtg_engine::types::Keyword::Flying];
+        let (head, elastic, _flags) = CliPlayer::creature_row_parts(&mikaeus, None);
+        assert_eq!(head, "Mikaeus, the Lunarch 2/2");
+        assert_eq!(elastic, " (legendary, flying)");
+
+        let plain = creature(25, "Grizzly Bears", 0);
+        let (_, elastic, _) = CliPlayer::creature_row_parts(&plain, None);
+        assert_eq!(elastic, "", "a non-legend says nothing about it");
+
+        let mut grimoire = creature(26, "Grimoire of the Dead", 0);
+        grimoire.card_types = vec![CardType::Artifact];
+        grimoire.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        assert_eq!(CliPlayer::legend_mark(&grimoire), " (legendary)");
+        assert_eq!(CliPlayer::legend_mark(&plain), "");
+    }
+
     /// Issue #322: a key the line reader does not bind — Tab, an arrow,
+
     /// Home, a function key — used to be dropped, and dropping it
     /// concatenated the digits typed either side of it: `0 <Tab> 1` was the
     /// buffer `01`, accepted as option 1, at a prompt where `0 1` is refused.
@@ -6654,6 +6681,7 @@ mod tests {
             object_id: ObjectId(id),
             card_id: mtg_engine::ids::CardId(0),
             name: "Island".into(),
+            supertypes: vec![],
             card_types: vec![CardType::Land],
             controller: PlayerId(controller),
             owner: PlayerId(controller),
@@ -6703,6 +6731,7 @@ mod tests {
             card_id: mtg_engine::ids::CardId(0),
             name: name.into(),
             cost: None,
+            supertypes: vec![],
             card_types: vec![CardType::Instant],
             power: None,
             toughness: None,
@@ -6729,6 +6758,7 @@ mod tests {
             object_id: ObjectId(id),
             card_id: mtg_engine::ids::CardId(0),
             name: name.into(),
+            supertypes: vec![],
             card_types: vec![CardType::Creature],
             controller: PlayerId(controller),
             owner: PlayerId(controller),

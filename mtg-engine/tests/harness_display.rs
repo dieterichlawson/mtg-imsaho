@@ -499,3 +499,40 @@ fn the_stack_view_shows_what_a_trigger_is_pointed_at() {
             "and says what it is pointed at, from either seat");
     }
 }
+
+/// CR 205.4: `Legendary` is a supertype, printed ahead of the card types,
+/// and CR 704.5j makes it the trigger for a state-based action. The view
+/// carried no supertype at all, so no pane could say a permanent was a
+/// legend until the legend-rule prompt took one away (issue #333).
+///
+/// It is the LIVE supertype: a copy of a legend is legendary (CR 707.2),
+/// whatever the copying card printed.
+#[test]
+fn the_view_carries_supertypes_in_every_zone_and_for_a_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(mikaeus));
+    let in_hand = spell_in_hand(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    let in_gy = named_card_in_graveyard(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    assert!(state.is_legendary(twin, &reg), "test precondition: the copy is a legend");
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let perm = |id| view.battlefield.iter().find(|p| p.object_id == id).expect("on the battlefield");
+    assert_eq!(perm(mikaeus).supertypes, vec![Supertype::Legendary]);
+    assert_eq!(perm(forest).supertypes, vec![Supertype::Basic]);
+    assert!(perm(twin).supertypes.contains(&Supertype::Legendary),
+        "a copy of a legend is legendary (CR 707.2): {:?}", perm(twin).supertypes);
+    assert_eq!(
+        mtg_engine::types::type_line(&perm(mikaeus).supertypes, &perm(mikaeus).card_types, &perm(mikaeus).subtypes),
+        "Legendary Creature — Human Cleric",
+        "the type line reads as the card prints it (CR 205.4a)");
+
+    let hand_card = view.your_hand.iter().find(|c| c.object_id == in_hand).expect("in hand");
+    assert_eq!(hand_card.supertypes, vec![Supertype::Legendary]);
+    let gy_card = view.graveyards.iter().find(|(p, _)| *p == P0)
+        .and_then(|(_, cards)| cards.iter().find(|c| c.object_id == in_gy))
+        .expect("in the graveyard");
+    assert_eq!(gy_card.supertypes, vec![Supertype::Legendary]);
+}

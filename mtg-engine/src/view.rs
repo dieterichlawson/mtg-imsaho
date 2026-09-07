@@ -1,7 +1,8 @@
 use crate::ids::{ObjectId, PlayerId, CardId};
 use crate::state::GameState;
 use crate::cards::CardRegistry;
-use crate::types::{ManaPool, Step, ManaCost, CardType, Keyword, CounterType, Zone};
+use crate::types::{ManaPool, Step, ManaCost, CardType, Keyword, CounterType, Supertype, Zone};
+
 
 /// A player's view of the game — hidden info filtered out.
 #[derive(Debug, Clone)]
@@ -50,7 +51,11 @@ pub struct CardView {
     pub card_id: CardId,
     pub name: String,
     pub cost: Option<ManaCost>,
+    /// The printed supertypes (CR 205.4): `Legendary`, `Basic`. A card's
+    /// type line starts with these, and no view carried them (issue #333).
+    pub supertypes: Vec<Supertype>,
     pub card_types: Vec<CardType>,
+
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub oracle_text: String,
@@ -70,7 +75,14 @@ pub struct PermanentView {
     pub object_id: ObjectId,
     pub card_id: CardId,
     pub name: String,
+    /// The permanent's live supertypes (CR 205.4): the active face's, plus
+    /// `Legendary` for a copy of a legend (CR 707.2 copies the supertypes).
+    /// `Legendary` is what arms the legend rule (CR 704.5j), and the view
+    /// never carried it, so no pane could warn a player before the prompt
+    /// that takes one of two same-named legends away (issue #333).
+    pub supertypes: Vec<Supertype>,
     pub card_types: Vec<CardType>,
+
     pub controller: PlayerId,
     pub owner: PlayerId,
     pub tapped: bool,
@@ -222,13 +234,21 @@ impl GameView {
                 } else {
                     registry.card_data(obj.card_id)
                 };
+                let mut supertypes: Vec<Supertype> = face_data.as_ref()
+                    .map(|d| d.supertypes.clone())
+                    .unwrap_or_default();
+                if state.is_legendary(obj.id, registry) && !supertypes.contains(&Supertype::Legendary) {
+                    supertypes.push(Supertype::Legendary);
+                }
                 PermanentView {
                     object_id: obj.id,
                     card_id: obj.card_id,
                     name: face_data.as_ref()
                         .map_or_else(|| obj.name.clone(), |d| d.name.clone()),
+                    supertypes,
                     card_types: face_data.as_ref()
                         .map_or_else(|| obj.card_types.clone(), |d| d.card_types.clone()),
+
                     controller: obj.controller,
                     owner: obj.owner,
                     tapped: obj.tapped,
@@ -446,7 +466,9 @@ fn card_view(state: &GameState, obj: &crate::state::GameObject, registry: &CardR
         card_id: obj.card_id,
         name: data.as_ref().map_or_else(|| "Unknown".into(), |d| d.name.clone()),
         cost: data.as_ref().and_then(|d| d.cost.clone()),
+        supertypes: data.as_ref().map(|d| d.supertypes.clone()).unwrap_or_default(),
         card_types: data.as_ref().map(|d| d.card_types.clone()).unwrap_or_default(),
+
         power,
         toughness,
         oracle_text: data.as_ref().map(|d| d.oracle_text.clone()).unwrap_or_default(),

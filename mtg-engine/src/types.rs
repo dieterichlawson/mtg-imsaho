@@ -226,20 +226,82 @@ pub enum CardType {
 }
 
 impl CardType {
+    /// How the type reads on a type line: "Creature", "Planeswalker". One
+    /// label, in the engine — the CLI and the LLM harness each carried five
+    /// copies of this match.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            CardType::Land => "Land",
+            CardType::Creature => "Creature",
+            CardType::Instant => "Instant",
+            CardType::Sorcery => "Sorcery",
+            CardType::Enchantment => "Enchantment",
+            CardType::Artifact => "Artifact",
+            CardType::Planeswalker => "Planeswalker",
+        }
+    }
+
     #[must_use]
     pub fn is_permanent(&self) -> bool {
+
         matches!(self, CardType::Land | CardType::Creature | CardType::Enchantment
             | CardType::Artifact | CardType::Planeswalker)
     }
 }
 
-/// Supertypes.
+/// Supertypes (CR 205.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Supertype {
     Basic,
     Legendary,
     Snow,
 }
+
+impl Supertype {
+    /// How the supertype reads on a type line.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Supertype::Basic => "Basic",
+            Supertype::Legendary => "Legendary",
+            Supertype::Snow => "Snow",
+        }
+    }
+}
+
+impl std::fmt::Display for CardType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+impl std::fmt::Display for Supertype {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// The type line as a card prints it (CR 205.1): supertypes, then card
+/// types, then an em dash and the subtypes — `Legendary Creature — Human
+/// Cleric`, `Basic Land — Forest`, `Instant`.
+///
+/// CR 205.4a puts the supertypes first, and nothing in the game ever
+/// printed them: every pane built its type line from card types and
+/// subtypes alone, so the first a player learned that a permanent was
+/// legendary was the legend-rule prompt that took one away (issue #333).
+#[must_use]
+pub fn type_line(supertypes: &[Supertype], card_types: &[CardType], subtypes: &[String]) -> String {
+    let mut words: Vec<&str> = supertypes.iter().map(|s| s.label()).collect();
+    words.extend(card_types.iter().map(|t| t.label()));
+    let head = words.join(" ");
+    if subtypes.is_empty() {
+        head
+    } else {
+        format!("{head} — {}", subtypes.join(" "))
+    }
+}
+
 
 /// Zones where objects can exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -680,8 +742,25 @@ mod tests {
         assert!(pool.is_empty());
     }
 
+    /// CR 205.1/205.4a: supertypes, then types, then an em dash and the
+    /// subtypes. "Legendary" was printed nowhere in the game (issue #333).
+    #[test]
+    fn a_type_line_leads_with_the_supertypes() {
+        assert_eq!(
+            type_line(&[Supertype::Legendary], &[CardType::Creature], &["Human".into(), "Cleric".into()]),
+            "Legendary Creature — Human Cleric");
+        assert_eq!(type_line(&[Supertype::Basic], &[CardType::Land], &["Forest".into()]),
+            "Basic Land — Forest");
+        assert_eq!(type_line(&[], &[CardType::Instant], &[]), "Instant");
+        assert_eq!(type_line(&[], &[CardType::Artifact, CardType::Creature], &["Golem".into()]),
+            "Artifact Creature — Golem");
+        assert_eq!(type_line(&[Supertype::Legendary], &[CardType::Planeswalker], &["Liliana".into()]),
+            "Legendary Planeswalker — Liliana");
+    }
+
     #[test]
     fn step_progression() {
+
         let mut step = Step::Untap;
         let expected = vec![
             Step::Upkeep, Step::Draw, Step::PrecombatMain, Step::BeginCombat,
