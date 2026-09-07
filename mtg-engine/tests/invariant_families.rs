@@ -1819,3 +1819,233 @@ fn the_trigger_ledger_stands_down_mid_prompt_and_after_the_game() {
     s.result = Some(mtg_engine::state::GameResult::Winner(P0));
     no_transition_flag(&prev, None, &s, &reg, "no event to trigger it");
 }
+
+// ── turn structure, the result, and combat bookkeeping ───────────────────
+
+/// The clauses of the turn-structure family that had no violating state of
+/// their own. CR 103.7a (the first turn skips its draw step), CR 104.4a (a
+/// draw is a draw for everybody), CR 104.3a (a player who has left the game
+/// is never asked anything) and CR 603.7 (the delayed exiles live inside
+/// combat).
+#[test]
+fn turn_and_result_clauses_each_have_a_violating_state() {
+    let (mut state, reg) = base();
+    named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    clean(&state, &reg);
+
+    // Turn one is a real turn: the counter starts at 1, not 0.
+    let mut first = state.clone();
+    first.turn_number = 1;
+    first.is_first_turn = true;
+    clean(&first, &reg);
+    let mut s = first.clone();
+    s.turn_number = 0;
+    s.is_first_turn = false;
+    flags_core(&s, &reg, "turn_number is 0");
+
+    // CR 103.7a: the player who goes first skips their draw step.
+    let mut s = first.clone();
+    s.step = Step::Draw;
+    flags_core(&s, &reg, "a draw step on the first turn (CR 103.7a)");
+    let mut s = state.clone();
+    s.step = Step::Draw;
+    assert!(!check_core(&as_collected(&s), &reg).iter()
+        .any(|m| m.contains("draw step on the first turn")),
+        "a draw step on turn 3 is an ordinary draw step");
+
+    // CR 104.4a: a draw is a draw for every player.
+    let mut s = state.clone();
+    s.result = Some(mtg_engine::state::GameResult::Draw);
+    flags_settled(&s, &reg, "a draw with a player who has not lost (CR 104.4a)");
+
+    // A winner has to be a player at all.
+    let mut s = state.clone();
+    s.result = Some(mtg_engine::state::GameResult::Winner(
+        mtg_engine::ids::PlayerId(u8::try_from(s.players.len()).unwrap())));
+    flags_settled(&s, &reg, "is not a player");
+
+    // "Lost because the opponent won" names the opponent who won.
+    let mut s = state.clone();
+    s.get_player_mut(P1).lost = true;
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::OpponentWon);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P1));
+    flags_settled(&s, &reg, "lost because the opponent won, but the result is");
+    s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    assert!(!check_settled(&as_collected(&s), &reg).iter()
+        .any(|m| m.contains("lost because the opponent won")),
+        "p1 lost to p0's win, which is what the result says");
+
+    // CR 104.3a: a player who has left the game is not prompted either.
+    let mut s = state.clone();
+    s.get_player_mut(P1).lost = true;
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    s.priority_player = None;
+    s.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P1 });
+    flags_settled(&s, &reg, "p1 is prompted after losing");
+
+    // CR 603.7: the delayed end-of-combat exiles exist only inside combat,
+    // name a card the registry knows, and never name their own source.
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let source = state.objects_in_id_order()[0].id;
+    let source_card = state.get_object(source).unwrap().card_id;
+    let exile = |target: ObjectId, card: mtg_engine::ids::CardId| mtg_engine::state::EndOfCombatExileEntry {
+        target_id: target,
+        source_id: source,
+        source_card_id: card,
+        controller: P0,
+        description: "exile it at end of combat".into(),
+    };
+
+    let mut s = state.clone();
+    s.end_of_combat_exiles.push(exile(bear, source_card));
+    flags_core(&s, &reg, "end-of-combat exiles scheduled outside combat");
+
+    let mut s = state.clone();
+    s.end_of_combat_exiles.push(exile(source, source_card));
+    flags_core(&s, &reg, "schedules its own end-of-combat exile");
+
+    let mut s = state.clone();
+    s.end_of_combat_exiles.push(exile(bear, mtg_engine::ids::CardId(424_242)));
+    flags_core(&s, &reg, "from unregistered card 424242");
+
+    // "Inside combat" is both halves: a combat state AND a combat step.
+    let in_combat = |step: Step, combat: bool| {
+        let mut s = state.clone();
+        s.step = step;
+        if combat {
+            let mut c = mtg_engine::state::CombatState::new();
+            c.any_attackers_declared = true;
+            c.attackers.insert(bear, P0);
+            s.combat = Some(c);
+        }
+        s.end_of_combat_exiles.push(exile(bear, source_card));
+        s
+    };
+    let needle = "end-of-combat exiles scheduled outside combat";
+    assert!(!check_core(&as_collected(&in_combat(Step::DeclareBlockers, true)), &reg)
+        .iter().any(|m| m.contains(needle)),
+        "a delayed exile inside combat is where it belongs");
+    flags_core(&in_combat(Step::PrecombatMain, true), &reg, needle);
+    flags_core(&in_combat(Step::DeclareBlockers, false), &reg, needle);
+}
+
+/// Combat bookkeeping the suite never corrupted: an attacker that is gone,
+/// blockers without a blocked attacker, a permanent attacking itself, and
+/// first-strike damage recorded outside the damage step.
+#[test]
+fn combat_bookkeeping_clauses_each_have_a_violating_state() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareBlockers;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(attacker, P1);
+    c.blocker_assignments.insert(attacker, vec![blocker]);
+    c.blocked_attackers.insert(attacker);
+    state.combat = Some(c);
+    clean(&state, &reg);
+
+    // CR 509.1h: an attacker with blockers is blocked.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().blocked_attackers.clear();
+    flags_settled(&s, &reg, "has blockers but is not marked blocked (CR 509.1h)");
+
+    // A combatant that no longer exists.
+    let mut s = state.clone();
+    s.objects.remove(&blocker);
+    flags_settled(&s, &reg, "does not exist but is still in combat");
+
+    // Attackers with nothing declared.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().any_attackers_declared = false;
+    flags_settled(&s, &reg, "attackers in combat but none declared");
+
+    // CR 510.4: first-strike damage is recorded in the damage step only.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().dealt_first_strike.insert(attacker);
+    flags_settled(&s, &reg, "first-strike damage recorded in DeclareBlockers");
+
+    // A permanent cannot attack itself.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().planeswalker_defenders.insert(attacker, attacker);
+    flags_settled(&s, &reg, "attacks itself");
+
+    // The declare-attackers step is past its declaration once the prompt is
+    // answered, so a missing combat state there is a lost declaration.
+    let mut s = state.clone();
+    s.step = Step::DeclareAttackers;
+    s.combat = None;
+    flags_settled(&s, &reg, "declare attackers step past its declaration with no combat state");
+    s.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+    assert!(!check_settled(&as_collected(&s), &reg).iter()
+        .any(|m| m.contains("declare attackers step past its declaration")),
+        "the step before the declaration has no combat state yet");
+}
+
+/// Every player id stored in game-level bookkeeping names a player. The
+/// checker runs on states that are already corrupt, so each of these is a
+/// range check standing between it and a panic.
+#[test]
+fn every_player_id_in_the_bookkeeping_is_range_checked() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let source = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+
+    let combat_for = |d: PlayerId| {
+        let mut c = mtg_engine::state::CombatState::new();
+        c.any_attackers_declared = true;
+        c.attackers.insert(bear, d);
+        c
+    };
+
+    // Each corruption, and the same structure naming a real seat.
+    let cases: Vec<(&str, Box<dyn Fn(&mut GameState, PlayerId)>)> = vec![
+        ("attacker #1 attacks p", Box::new(move |s: &mut GameState, p: PlayerId| {
+            s.step = Step::DeclareBlockers;
+            s.combat = Some(combat_for(p));
+        })),
+        ("control effect over #", Box::new(move |s: &mut GameState, p: PlayerId| {
+            s.control_effects.push(mtg_engine::state::ControlEffect {
+                object: bear, controller: p, original_controller: P0,
+                source, source_controller: P0, timestamp: 1 });
+        })),
+        ("queued bottoming for p", Box::new(|s: &mut GameState, p: PlayerId| {
+            s.pending_mulligan_bottoms.push((p, 1));
+        })),
+        ("spell count for p", Box::new(|s: &mut GameState, p: PlayerId| {
+            s.num_spells_cast_this_turn.insert(p, 1);
+        })),
+        ("control change of #", Box::new(move |s: &mut GameState, p: PlayerId| {
+            s.until_end_of_turn.push(TemporaryEffect::ChangeControl {
+                target: bear, controller: p, timestamp: 1 });
+        })),
+        ("blockers prompt for p", Box::new(|s: &mut GameState, p: PlayerId| {
+            s.step = Step::DeclareBlockers;
+            s.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: p });
+        })),
+        ("end-of-combat exile of #", Box::new(move |s: &mut GameState, p: PlayerId| {
+            s.step = Step::DeclareAttackers;
+            s.combat = Some(combat_for(P1));
+            s.end_of_combat_exiles.push(mtg_engine::state::EndOfCombatExileEntry {
+                target_id: bear, source_id: source,
+                source_card_id: s.get_object(source).unwrap().card_id,
+                controller: p, description: "exile it at end of combat".into() });
+        })),
+    ];
+
+    for (needle, corrupt) in cases {
+        let mut s = state.clone();
+        corrupt(&mut s, ghost);
+        let v = check_core(&s, &reg);
+        assert!(v.iter().any(|m| m.contains(needle) && m.contains("who is not a player")),
+            "{needle:?} for a seat that does not exist, got: {v:?}");
+
+        let mut s = state.clone();
+        corrupt(&mut s, P1);
+        assert!(!check_core(&s, &reg).iter().any(|m| m.contains("who is not a player")),
+            "{needle:?} naming a real seat is not a range violation");
+    }
+}
