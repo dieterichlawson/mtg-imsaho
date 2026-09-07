@@ -61,7 +61,7 @@ pub(crate) fn detect_modal_choice_mode(
     // For non-empty targets, find the first mode whose valid targets contain all chosen targets.
     if !targets.is_empty() {
         for (i, mode_req) in modes.iter().enumerate() {
-            let valid = valid_targets_for_mode(state, caster, spell_id, mode_req, behavior, registry);
+            let valid = valid_targets_for_req(state, caster, spell_id, mode_req, behavior, registry);
             if targets.iter().all(|t| valid.contains(t)) {
                 return i;
             }
@@ -70,20 +70,39 @@ pub(crate) fn detect_modal_choice_mode(
     // For empty targets (or no mode matched), default to mode 0.
     0
 }
-/// Get valid targets for a single mode requirement, unwrapping `UpToTargets`.
-pub(crate) fn valid_targets_for_mode(
-    state: &GameState,
-    caster: PlayerId,
-    spell_id: ObjectId,
-    mode_req: &crate::cards::TargetRequirement,
-    behavior: &dyn crate::cards::CardBehavior,
-    registry: &CardRegistry,
-) -> Vec<crate::actions::Target> {
-    use crate::cards::TargetRequirement;
-    match mode_req {
-        TargetRequirement::UpToTargets(_, inner) => valid_targets_for_req(state, caster, spell_id, inner, behavior, registry),
-        other => valid_targets_for_req(state, caster, spell_id, other, behavior, registry),
+/// The requirement that decides the *candidates*, with any "up to N" peeled
+/// off.
+///
+/// CR 601.2c picks the number of targets and then the targets themselves out
+/// of one pool, so "up to two target creatures" draws from the same pool as
+/// "target creature" — the count is a separate question, answered by
+/// [`most_targets`] and [`fewest_targets`]. Only `second_slot_options` needs
+/// this, to see the requirement *kind* through the wrapper;
+/// `valid_targets_for_req` recurses through `UpToTargets` on its own.
+fn candidate_req(req: &crate::cards::TargetRequirement) -> &crate::cards::TargetRequirement {
+    match req {
+        crate::cards::TargetRequirement::UpToTargets(_, inner) => candidate_req(inner),
+        other => other,
     }
+}
+
+/// How many targets a requirement takes at most: N for "up to N", one
+/// otherwise.
+fn most_targets(req: &crate::cards::TargetRequirement) -> usize {
+    match req {
+        crate::cards::TargetRequirement::UpToTargets(max, _) => *max,
+        _ => 1,
+    }
+}
+
+/// How many it takes at least: none for "up to N" — CR 601.2c lets you choose
+/// zero — and one otherwise.
+///
+/// Read off the requirement's shape rather than from `most_targets(req) == 1`,
+/// which both call sites used to do and which says "exactly one" for an
+/// `UpToTargets(1, _)`.
+fn fewest_targets(req: &crate::cards::TargetRequirement) -> usize {
+    usize::from(!matches!(req, crate::cards::TargetRequirement::UpToTargets(..)))
 }
 /// Generate `CastSpell` actions with all valid target combinations.
 /// Every k-sized combination of `targets`, order-insensitive.
@@ -154,15 +173,12 @@ pub(crate) fn generate_cast_actions_with_targets(
             // is one first target plus 0..=N of the second — not exactly one
             // each. Memory's Journey is `TwoTargets(PlayerOnly, UpToTargets(3,
             // ...))` and produced no action at all under the exactly-one rule.
-            let (max2, inner2) = match req2.as_ref() {
-                TargetRequirement::UpToTargets(max, inner) => (*max, inner.as_ref()),
-                other => (1, other),
-            };
+            let lower = fewest_targets(req2);
+            let max2 = most_targets(req2);
 
             for t1 in &targets1 {
-                let options = second_slot_options(state, caster, spell_id, inner2, t1, behavior, registry);
+                let options = second_slot_options(state, caster, spell_id, req2, t1, behavior, registry);
 
-                let lower = if max2 == 1 { 1 } else { 0 };
                 for k in lower..=max2.min(options.len()) {
                     for mut combo in target_combinations(&options, k) {
                         let mut pair = vec![t1.clone()];
@@ -189,9 +205,9 @@ pub(crate) fn generate_cast_actions_with_targets(
             }
             actions
         }
-        TargetRequirement::UpToTargets(max, ref inner_req) => {
+        TargetRequirement::UpToTargets(max, _) => {
             // Generate all combinations of 1..=max targets for LLM/random expanded list.
-            let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
+            let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             let mut actions = Vec::new();
             // Start from 0 to allow "up to N" to mean "0 or more" (e.g., Memory's Journey
             // can be cast targeting just a player with 0 cards).
@@ -233,7 +249,7 @@ fn second_slot_options(
 ) -> Vec<crate::actions::Target> {
     use crate::cards::TargetRequirement;
     let mut options = valid_targets_for_req(state, caster, spell_id, inner2, behavior, registry);
-    if matches!(inner2, TargetRequirement::GraveyardCardOwnedByTargetPlayer) {
+    if matches!(candidate_req(inner2), TargetRequirement::GraveyardCardOwnedByTargetPlayer) {
         if let crate::actions::Target::Player(pid) = first {
             options.retain(|t| match t {
                 crate::actions::Target::Object(id) =>
@@ -348,11 +364,7 @@ pub(crate) fn targets_are_legal(
             // named by the first target (issue #46). The per-target
             // `is_target_legal` is asked one target at a time and accepts any
             // graveyard card, so a submitted declaration is re-checked here.
-            let inner2 = match second.as_ref() {
-                R::UpToTargets(_, inner) => inner.as_ref(),
-                other => other,
-            };
-            if matches!(inner2, R::GraveyardCardOwnedByTargetPlayer) {
+            if matches!(candidate_req(second), R::GraveyardCardOwnedByTargetPlayer) {
                 if let Some(crate::actions::Target::Player(pid)) = targets.first() {
                     if !targets[split..].iter().all(|t| match t {
                         crate::actions::Target::Object(id) =>
@@ -565,13 +577,17 @@ pub(crate) fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
+        // "Up to N target X" offers the same candidates as "target X" — CR
+        // 601.2c chooses the number of targets first and then the targets
+        // themselves out of one pool. This is the only place that knows it.
+        // Each of the four callers that needed the number used to peel the
+        // wrapper off itself and pass `inner` down, which left this arm
+        // unreachable, the knowledge in four places, and one of them wrong:
+        // `second_slot_options` matched the requirement *kind* through a
+        // wrapper it had already removed on one path and not the other. They
+        // now ask `most_targets` / `fewest_targets` for the count and hand the
+        // requirement down whole.
         TargetRequirement::UpToTargets(_, inner) => {
-            // "Up to N target X" offers the same candidates as "target X"; the
-            // count is applied where the combinations are built. Falling
-            // through to the catch-all returned an empty list, which made
-            // Memory's Journey — whose second slot is `UpToTargets` nested in
-            // `TwoTargets` — produce an empty Cartesian product and therefore
-            // no cast action at all. The card was uncastable.
             valid_targets_for_req(state, caster, spell_id, inner, behavior, registry)
         }
         TargetRequirement::GraveyardCardOwnedByTargetPlayer => {
@@ -608,16 +624,13 @@ pub(crate) fn build_cast_target_spec(
             // (issue #46: the flat pair of independent lists offered every
             // graveyard card in the game for Memory's Journey's card slot,
             // whichever player was chosen).
-            let (second_max, inner2) = match req2.as_ref() {
-                TargetRequirement::UpToTargets(max, inner) => (*max, inner.as_ref()),
-                other => (1, other),
-            };
-            let second_min = usize::from(second_max == 1);
+            let second_max = most_targets(req2);
+            let second_min = fewest_targets(req2);
 
             let mut first = Vec::new();
             let mut second = Vec::new();
             for t1 in valid_targets_for_req(state, caster, spell_id, req1, behavior, registry) {
-                let options = second_slot_options(state, caster, spell_id, inner2, &t1, behavior, registry);
+                let options = second_slot_options(state, caster, spell_id, req2, &t1, behavior, registry);
                 // A first target with no legal second choice is not castable
                 // when the second slot is mandatory — don't offer it.
                 if options.len() < second_min {
@@ -628,8 +641,8 @@ pub(crate) fn build_cast_target_spec(
             }
             CastTargetSpec::TwoTargets { first, second, second_min, second_max }
         }
-        TargetRequirement::UpToTargets(max, inner_req) => {
-            let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
+        TargetRequirement::UpToTargets(max, _) => {
+            let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             CastTargetSpec::UpToTargets { max: *max, options }
         }
         TargetRequirement::ModalChoice(ref modes) => {
