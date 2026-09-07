@@ -7,8 +7,10 @@
 # consolidated tracking issue and the daily bug fixer work this list down.
 # When a test kills one, delete its line. When one is judged equivalent
 # after all, move it to reports/mutants-accepted.txt with a reason.
-mtg-engine/src/cards/helpers.rs: replace != with == in counter_spell_inner
-mtg-engine/src/cards/helpers.rs: replace == with != in finish_library_search
+#
+# A line whose mutant no longer exists (the code it described was
+# rewritten) is deleted too: awaiting.rs's bitmask subset enumeration
+# became `targeting::combinations`, taking four entries with it.
 mtg-engine/src/engine.rs: delete ! in legal_actions
 mtg-engine/src/engine.rs: delete ! in perform_turn_based_actions
 mtg-engine/src/engine.rs: delete match arm Step::DeclareBlockers in perform_turn_based_actions
@@ -72,10 +74,6 @@ mtg-engine/src/engine/legal/abilities.rs: replace < with == in loyalty
 mtg-engine/src/engine/legal/abilities.rs: replace < with > in loyalty
 mtg-engine/src/engine/legal/abilities.rs: replace > with == in loyalty
 mtg-engine/src/engine/legal/abilities.rs: replace > with >= in loyalty
-mtg-engine/src/engine/legal/awaiting.rs: replace != with == in legal_actions_while_awaiting
-mtg-engine/src/engine/legal/awaiting.rs: replace & with ^ in legal_actions_while_awaiting
-mtg-engine/src/engine/legal/awaiting.rs: replace & with | in legal_actions_while_awaiting
-mtg-engine/src/engine/legal/awaiting.rs: replace << with >> in legal_actions_while_awaiting
 mtg-engine/src/engine/legal/casting.rs: delete ! in flashback
 mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
 mtg-engine/src/engine/legal/casting.rs: replace && with || in from_hand

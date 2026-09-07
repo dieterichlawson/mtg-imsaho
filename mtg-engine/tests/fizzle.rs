@@ -845,3 +845,47 @@ fn a_triggered_abilitys_target_is_rechecked_when_it_resolves() {
     assert_eq!(state.get_player(P1).life, 20,
         "and the damage does not go somewhere else for want of its target");
 }
+
+/// CR 701.5a: countering removes *that* spell from the stack and nothing
+/// else, and only while it is still there.
+///
+/// `counter_spell_inner` is the one place both halves live: the guard that
+/// makes countering something already gone a no-op, and the `retain` that
+/// takes the named spell off the stack. Neither was pinned — a `retain`
+/// that kept the countered spell and dropped everything else would have
+/// gone unnoticed with one spell on the stack.
+#[test]
+fn countering_removes_that_spell_and_leaves_the_rest_of_the_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let first = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    let second = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    add_mana(&mut state, P0, &[(ManaType::White, 4)]);
+    state.priority_player = Some(P0);
+    let state = cast_onto_stack(&state, &reg, first, vec![Target::Object(bear)]);
+    let mut state = cast_onto_stack(&state, &reg, second, vec![Target::Object(bear)]);
+    assert_eq!(state.stack.len(), 2, "setup: two spells on the stack");
+
+    assert!(mtg_engine::cards::helpers::counter_spell(&mut state, second, &reg),
+        "a spell on the stack is countered");
+    assert!(!state.stack.iter().any(|e| e.as_spell() == Some(second)),
+        "the countered spell is off the stack");
+    assert!(state.stack.iter().any(|e| e.as_spell() == Some(first)),
+        "and the one under it is still there: {:?}", state.stack);
+    assert_eq!(state.get_object(second).unwrap().zone, Zone::Graveyard,
+        "a countered spell goes to its owner's graveyard (CR 701.5a)");
+
+    // Countering it again is a no-op: it is not on the stack any more.
+    assert!(!mtg_engine::cards::helpers::counter_spell(&mut state, second, &reg),
+        "nothing is countered twice");
+    assert!(state.stack.iter().any(|e| e.as_spell() == Some(first)),
+        "and the attempt left the rest of the stack alone");
+
+    // The exiling variant is the same removal with a different destination.
+    let mut s = state.clone();
+    assert!(mtg_engine::cards::helpers::counter_spell_exiling(&mut s, first, &reg));
+    assert!(s.stack.is_empty(), "the last spell came off the stack");
+    assert_eq!(s.get_object(first).unwrap().zone, Zone::Exile,
+        "and this one was exiled instead of buried");
+}

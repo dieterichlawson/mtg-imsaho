@@ -238,3 +238,51 @@ fn move_object_emits_creature_card_milled_for_any_library_to_graveyard_move() {
         "a bare move_object from library to graveyard is still a mill — four \
          cards did exactly this by hand and lost the event");
 }
+
+/// CR 614.1c/302.6: a library search that puts the card onto the
+/// battlefield lands it there ready to use, and tapped when the card says
+/// so — and a search that puts it into hand touches neither.
+///
+/// `finish_library_search` decides on the destination alone, and nothing
+/// pinned the split: a search to hand that ran the battlefield half would
+/// have untapped-and-unsickened a card sitting in a hand.
+#[test]
+fn a_library_search_only_touches_the_card_it_puts_onto_the_battlefield() {
+    let reg = registry();
+
+    let searched = |destination: Zone, tapped: bool| {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+        let found = stock_library(&mut state, &reg, P0, 1)[0];
+        state.get_object_mut(found).unwrap().name = "Forest".into();
+        state.get_object_mut(found).unwrap().summoning_sick = true;
+        mtg_engine::cards::helpers::finish_library_search(
+            &mut state, P0, found, destination, tapped, &reg);
+        let _ = source;
+        (state, found)
+    };
+
+    // Onto the battlefield: ready to use, and untapped unless asked.
+    let (state, found) = searched(Zone::Battlefield, false);
+    let o = state.get_object(found).unwrap();
+    assert_eq!(o.zone, Zone::Battlefield);
+    assert!(!o.summoning_sick, "a land fetched onto the battlefield is usable");
+    assert!(!o.tapped, "and arrives untapped when the card does not say otherwise");
+
+    // "...tapped" arrives tapped (CR 614.1c).
+    let (state, found) = searched(Zone::Battlefield, true);
+    assert!(state.get_object(found).unwrap().tapped,
+        "a search that says 'tapped' puts it onto the battlefield tapped");
+
+    // Into hand: the battlefield half never runs.
+    let (state, found) = searched(Zone::Hand, true);
+    let o = state.get_object(found).unwrap();
+    assert_eq!(o.zone, Zone::Hand);
+    assert!(!o.tapped, "a card in hand is not tapped");
+    assert!(o.summoning_sick, "and nothing about the battlefield was done to it");
+
+    // Either way the library is shuffled (CR 701.20).
+    assert!(state.events.iter().any(|e|
+        matches!(e, GameEvent::LibraryShuffled { player } if *player == P0)),
+        "a search shuffles the library it read");
+}
