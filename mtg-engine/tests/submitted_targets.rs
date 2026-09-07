@@ -666,3 +666,40 @@ fn the_two_targets_spec_narrows_the_second_slot_to_the_chosen_player() {
     assert!(second[p0_idx].contains(&Target::Object(my_card)));
     assert!(second[p0_idx].contains(&Target::Object(my_card2)));
 }
+
+/// A MANDATORY second slot with exactly one legal option is still a legal
+/// pairing — the first target is offered, not dropped.
+///
+/// The guard that drops an unpairable first target is `options.len() <
+/// second_min`, and both an off-by-one and an equality mutation of it
+/// survived the suite (mutants shard 4): each would have skipped the
+/// one-option case, so Prey Upon with one creature a side offered nothing at
+/// all. The suite only ever built the "up to N" shape, whose `second_min` is
+/// 0, where every mutation of this comparison is invisible.
+#[test]
+fn a_mandatory_second_slot_with_one_option_is_still_offered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mine = ready_creature(&mut state, P0, 3, 3);
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+
+    // Prey Upon: "Target creature you control fights target creature you
+    // don't control." Both slots are mandatory.
+    let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == prey)
+        .expect("Prey Upon should be castable");
+
+    let mtg_engine::actions::CastTargetSpec::TwoTargets { first, second, second_min, second_max } =
+        &cs.target_spec
+    else {
+        panic!("Prey Upon has a creature-then-creature target spec, got {:?}", cs.target_spec);
+    };
+
+    assert_eq!((*second_min, *second_max), (1, 1), "both slots are mandatory");
+    assert_eq!(first, &vec![Target::Object(mine)],
+        "the one creature you control is offered as the first target");
+    assert_eq!(second[0], vec![Target::Object(theirs)],
+        "with the one creature you don't control as its only pairing");
+}

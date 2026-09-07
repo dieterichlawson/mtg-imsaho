@@ -173,3 +173,28 @@ early return on `delta == 0`.
   The suite had a test for the loss half (#129) and none for the gain.
 - `replace > with >=` is equivalent: the delta cannot be zero here, so the
   two comparisons name the same set. Accepted.
+
+**Shard 1 — the partial-fizzle line for an ABILITY.** `!newly_illegal
+.is_empty()` guards the "target X is illegal, resolving with the rest"
+line, and deleting the negation survived: every clean resolution would
+have announced an empty list of illegal targets, and a real partial fizzle
+would have said nothing. The suite pinned the SPELL half (#135) and never
+the ability half, in either direction. Killed by
+`an_ability_that_keeps_its_target_announces_no_fizzle`, which pins the
+quiet case — an ability whose target stays legal announces nothing.
+
+**Shard 4 — the cast-path target offer, four survivors in two places.**
+
+- `options.len() < second_min` drops a first target with no legal pairing.
+  Both `<=` and `==` mutations survived: each skips the case where a
+  MANDATORY second slot has exactly one option, so Prey Upon with one
+  creature a side would have offered nothing at all. Every existing test of
+  this shape used "up to N", whose `second_min` is 0, where the comparison
+  cannot be told apart. Killed by
+  `a_mandatory_second_slot_with_one_option_is_still_offered`.
+- The `*p == caster` sort key that puts the chooser first (issue #138)
+  survived being replaced by either constant: with all entries keyed alike
+  the stable sort falls back to seat order, which agrees with caster-first
+  exactly when p0 is casting — and every test of the list cast from p0. The
+  ability path had a both-seats test; the cast path had none. Killed by
+  `a_spells_player_target_list_puts_the_caster_first`.

@@ -257,3 +257,34 @@ fn player_target_lists_put_the_chooser_first() {
             "the chooser (p{}) is option 0", seat.0);
     }
 }
+
+/// The same rule on the CAST path, which is a different code path and had
+/// nothing pinning it.
+///
+/// The sort key that puts the caster first is `*p == caster`, and mutating
+/// that guard to a constant — either constant — survived the suite (mutants
+/// shard 4): with every entry keyed alike the stable sort falls back to seat
+/// order, which happens to agree with caster-first only when p0 is casting,
+/// and every test of this list cast from p0.
+#[test]
+fn a_spells_player_target_list_puts_the_caster_first() {
+    for seat in [P0, P1] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, seat);
+        // Dream Twist: "Target player puts the top three cards of their
+        // library into their graveyard."
+        let twist = castable_spell(&mut state, &reg, "Dream Twist", seat);
+
+        let legal = mtg_engine::engine::legal_actions(&state, &reg);
+        let cs = legal.castable_spells.iter()
+            .find(|cs| cs.object_id == twist)
+            .expect("Dream Twist should be castable");
+        let mtg_engine::actions::CastTargetSpec::SingleTarget(options) = &cs.target_spec else {
+            panic!("Dream Twist targets one player, got {:?}", cs.target_spec);
+        };
+
+        assert_eq!(options.len(), 2, "both players are legal targets");
+        assert_eq!(options.first(), Some(&Target::Player(seat)),
+            "the caster (p{}) is option 0", seat.0);
+    }
+}

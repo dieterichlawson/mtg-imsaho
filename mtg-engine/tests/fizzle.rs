@@ -511,7 +511,38 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
         state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
-/// CR 608.2b, the half of `CreatureWithFilter` the re-check used to skip: a
+/// An ABILITY resolving with every target still legal says nothing about
+/// illegal ones — the partial-fizzle line is for a partial fizzle.
+///
+/// The line is guarded by `!newly_illegal.is_empty()`, and a mutation that
+/// dropped the negation survived the suite (mutants shard 1): every clean
+/// resolution would have announced "target  is illegal" with an empty list,
+/// and a real partial fizzle would have said nothing (issue #135's line,
+/// inverted). Nothing pinned the quiet half.
+#[test]
+fn an_ability_that_keeps_its_target_announces_no_fizzle() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Avacynian Priest: "{1}, {T}: Tap target non-Human creature."
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    let zombie = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(zombie).unwrap().subtypes = vec!["Zombie".into()];
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let after = activate(&state, &reg, priest, 0, vec![Target::Object(zombie)]);
+
+    assert!(after.get_object(zombie).unwrap().tapped,
+        "test precondition: the ability resolved and did its work");
+    assert!(!after.game_log.iter().any(|e| e.message.contains("is illegal")),
+        "nothing became illegal, so nothing is announced; log: {:?}",
+        after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(!after.game_log.iter().any(|e| e.message.contains("fizzled")),
+        "and it did not fizzle; log: {:?}",
+        after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
+/// CR 608.2b, the half of `CreatureWithFilter` the re-check used to skip: a/// CR 608.2b, the half of `CreatureWithFilter` the re-check used to skip: a
 /// "target creature" that has stopped being a creature is no longer a legal
 /// target, whatever the filter says about it.
 ///
