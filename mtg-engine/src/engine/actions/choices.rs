@@ -220,9 +220,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         return Applied::ReturnNow;
                     }
                     let trigger = queue.remove(queue_index);
+                    // Named with the source id, as the prompt named it — the
+                    // one record of which of several same-named triggers the
+                    // player chose to put on next (issue #326).
+                    let chosen = trigger.log_name(registry, state);
                     state.log(LogLevel::Event, format!(
-                        "p{}: put {} on the stack", trigger.source.controller.0,
-                        trigger.display_name(registry)));
+                        "p{}: put {chosen} on the stack", trigger.source.controller.0));
+
                     crate::triggers::push_one_pending_trigger(&mut *state, trigger, registry);
                     // The rest of the queue — including a re-prompt for the
                     // remaining group, or a target choice the pushed trigger

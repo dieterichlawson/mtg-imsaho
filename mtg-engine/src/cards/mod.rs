@@ -980,7 +980,12 @@ pub trait CardBehavior: Send + Sync {
                 } else {
                     loyalty
                 };
-                state.add_counters(object_id, crate::types::CounterType::Loyalty, total);
+                // CR 306.5b: it enters with them, which is one event and one
+                // line — not an entry and then a placement.
+                state.add_counters_quiet(object_id, crate::types::CounterType::Loyalty, total);
+                let name = state.obj_name(object_id);
+                state.log(crate::state::LogLevel::Event, format!("{name} enters with {total} loyalty"));
+
             }
         }
     }

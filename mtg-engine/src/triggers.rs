@@ -237,14 +237,37 @@ impl PendingTrigger {
     /// the source object is now on the trigger regardless of event.
     #[must_use]
     pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
+        self.named(registry, state, false)
+    }
+
+    /// The name a log line uses: the display name with the source's object
+    /// id on the source — `Unruly Mob (#34)'s triggered ability (...)`.
+    ///
+    /// The prompt that orders simultaneous triggers tells same-named
+    /// sources apart by id (#116), and the lines recording what was chosen
+    /// did not, so twelve different decisions logged as twelve identical
+    /// lines and the order could not be read back (issue #326). Every other
+    /// id-bearing line in the log puts the id right after the object's
+    /// name, so this does too.
+    #[must_use]
+    pub fn log_name(&self, registry: &crate::cards::CardRegistry, state: &crate::state::GameState) -> String {
+        self.named(registry, Some(state), true)
+    }
+
+    /// The name of the source, from the face that is up, if `state` can say
+    /// which; then whose ability and what it does.
+    fn named(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>, with_id: bool) -> String {
         let is_transformed = state
             .and_then(|s| s.get_object(self.source.id))
             .is_some_and(|o| o.is_transformed);
-        let name = registry
+        let mut name = registry
             .get(self.source.card_id)
             .and_then(|b| if is_transformed { b.back_face_data().map(|d| d.name) } else { None })
             .or_else(|| registry.card_data(self.source.card_id).map(|d| d.name))
             .unwrap_or_else(|| "Unknown".into());
+        if with_id {
+            name = format!("{name} (#{})", self.source.id.0);
+        }
         let phrase = self.event.phrase();
         if self.source.description.is_empty() {
             format!("{name}'s {phrase}")
@@ -253,6 +276,7 @@ impl PendingTrigger {
         }
     }
 }
+
 /// Look up the description for a trigger from the card's `TriggeredAbilityDef`.
 /// For transformed DFCs, also check the back face's triggered abilities.
 fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
@@ -454,8 +478,9 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
 /// after each `StackEntry::Trigger` push.
 pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards::CardRegistry) {
     let Some(crate::state::StackEntry::Trigger(t)) = state.stack.last() else { return };
-    let name = t.display_name_with_state(registry, Some(state));
+    let name = t.log_name(registry, state);
     let controller = t.controller();
+
     let targets = t.chosen_targets().to_vec();
     let msg = if targets.is_empty() {
         format!("p{}'s {} goes on the stack", controller.0, name)
@@ -505,8 +530,10 @@ pub(crate) fn push_one_pending_trigger(
         0 => {
             // CR 603.3c: a triggered ability with no legal targets is
             // removed from the stack (i.e., never goes on it).
+            let name = trigger.log_name(registry, state);
             state.log(crate::state::LogLevel::Event,
-                format!("Trigger removed: no legal targets ({})", trigger.display_name(registry)));
+                format!("Trigger removed: no legal targets ({name})"));
+
         }
         1 => {
             // Auto-pick the single legal target.
@@ -608,10 +635,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });
         if !any_legal {
-            let name = trigger.display_name(registry);
+            let name = trigger.log_name(registry, state);
             state.log(crate::state::LogLevel::Event, format!("{name} fizzled (all targets illegal)"));
             return true;
         }
+
     }
 
     // CR 113.7a: a triggered ability on the stack exists independently of its

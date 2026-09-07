@@ -349,15 +349,18 @@ pub(crate) fn activate_loyalty_ability(state: &mut GameState, object_id: ObjectI
             if let Some(ab) = abilities.iter().find(|a| a.ability_index == ability_index) {
                 // Pay loyalty cost: add or remove loyalty counters.
                 let change = ab.loyalty_change;
+                // Both directions through the counter helpers, so the loyalty
+                // change is in the log with the resulting total (issue #326).
+                // This is the ability's cost (CR 606.3), not damage: damage
+                // removes loyalty only through `deal_damage` (CR 120.3c).
                 if change > 0 {
                     state.add_counters(object_id, CounterType::Loyalty, u32::try_from(change).unwrap_or(0));
                 } else if change < 0 {
-                    let remove = u32::try_from(-change).unwrap_or(0);
-                    if let Some(obj) = state.get_object_mut(object_id) {
-                        let current = obj.counters.entry(CounterType::Loyalty).or_insert(0);
-                        *current = current.saturating_sub(remove);
-                    }
+                    let cost = u32::try_from(-change).unwrap_or(0);
+                    state.remove_counters(object_id, CounterType::Loyalty, cost);
                 }
+
+
                 // Mark that a loyalty ability was activated this turn on this permanent.
                 if let Some(obj) = state.get_object_mut(object_id) {
                     obj.abilities_activated_this_turn.insert(999); // sentinel for "used loyalty this turn"

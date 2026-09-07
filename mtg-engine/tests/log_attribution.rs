@@ -12,7 +12,12 @@
 //! * "enters with N counters" said nothing at all, so a permanent entering
 //!   with 0 counters was `resolved` then `died` with no cause (issue #299);
 //! * a random discard said nothing, so a card moved hand→graveyard and the
-//!   log said only "drew 2 cards" (issue #301).
+//!   log said only "drew 2 cards" (issue #301);
+//! * a trigger-ordering decision among same-named triggers logged N
+//!   byte-identical lines, a death line had no object id, and a counter
+//!   placed by a resolving trigger was not logged at all — so the order the
+//!   player chose under CR 603.3b could not be read back (issue #326).
+
 
 mod common;
 
@@ -57,7 +62,8 @@ fn an_abilitys_own_sacrifice_cost_names_the_player_and_the_ability() {
     // sacrifice is announced before the permanent leaves, so the log stops
     // reading "it died, and then it was sacrificed".
     let sac = index_of(&lines, "p0 sacrificed Selfless Cathar").expect("sacrifice line");
-    let died = index_of(&lines, "Selfless Cathar died").expect("death line");
+    let died = index_of(&lines, &format!("Selfless Cathar (#{}) died", cathar.0)).expect("death line");
+
     assert!(sac < died, "the sacrifice is announced before the death; log was {lines:#?}");
 }
 
@@ -77,8 +83,9 @@ fn a_sacrifice_a_creature_cost_names_the_creature_that_paid() {
 
     assert_line(&lines, "p0 sacrificed Ashmouth Hound");
     assert_line(&lines, "to pay for Skirsdag Cultist");
-    assert!(!lines.iter().any(|l| l.contains("Skirsdag Cultist died")),
+    assert!(!lines.iter().any(|l| l.contains("Skirsdag Cultist") && l.ends_with(" died")),
         "the Cultist did not pay; log was {lines:#?}");
+
 }
 
 /// The spell path already had a line, but printed it after the death line.
@@ -103,7 +110,8 @@ fn an_additional_cost_sacrifice_is_announced_before_the_death() {
     assert_line(&lines, "p0 sacrificed Ashmouth Hound");
     assert_line(&lines, "as an additional cost of Infernal Plunge");
     let sac = index_of(&lines, "p0 sacrificed Ashmouth Hound").expect("sacrifice line");
-    let died = index_of(&lines, "Ashmouth Hound died").expect("death line");
+    let died = index_of(&lines, &format!("Ashmouth Hound (#{}) died", hound.0)).expect("death line");
+
     assert!(sac < died, "the sacrifice is announced before the death; log was {lines:#?}");
 }
 
@@ -515,4 +523,165 @@ fn a_two_card_discard_asks_twice() {
     assert_eq!(after_second.get_object(hand[2]).unwrap().zone, Zone::Hand,
         "and the third card stays: the ask was for two");
     assert!(after_second.awaiting_action.is_none(), "nothing further is asked");
+}
+
+// ---------------------------------------------------------------------------
+// #326 — an ordering decision, a death and a counter are all readable back
+// ---------------------------------------------------------------------------
+
+/// A sweeper's four "Unruly Mob died" were indistinguishable from each other,
+/// and from the twelve triggers they produced. The line names the object the
+/// way the lines around it do: name, then id.
+#[test]
+fn a_death_line_carries_the_object_id() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_permanent(&mut state, &reg, "Unruly Mob", P0);
+    let b = named_permanent(&mut state, &reg, "Unruly Mob", P0);
+    state.get_object_mut(a).unwrap().damage_marked = 5;
+    state.get_object_mut(b).unwrap().damage_marked = 5;
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+
+    let lines = log_lines(&state);
+    assert_line(&lines, &format!("Unruly Mob (#{}) died", a.0));
+    assert_line(&lines, &format!("Unruly Mob (#{}) died", b.0));
+    assert!(!lines.iter().any(|l| l == "Unruly Mob died"),
+        "no death line without an id; log was {lines:#?}");
+}
+
+/// Two Unruly Mobs watch a third creature die: two distinguishable triggers,
+/// so their controller orders them (CR 603.3b). The line recording the
+/// choice, and the line recording the push, both name the source by id — the
+/// same id the prompt's option carried — so which one went on next is on the
+/// record. Then each resolution says what it did to the board.
+#[test]
+fn a_trigger_ordering_decision_and_its_resolution_name_the_source_by_id() {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mob_a = named_permanent(&mut state, &reg, "Unruly Mob", P0);
+    let mob_b = named_permanent(&mut state, &reg, "Unruly Mob", P0);
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    kill_by_damage(&mut state, &reg, victim);
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTriggerOrder { options, .. }, ..
+    }) = state.awaiting_action.clone() else {
+        panic!("two distinguishable triggers are ordered by their controller: {:?}", state.awaiting_action);
+    };
+    assert_eq!(options.len(), 2, "{options:?}");
+    // Choose mob_b's trigger to go on the stack first, whichever option it is.
+    let (index, label) = options.iter().enumerate()
+        .find(|(_, o)| o.ends_with(&format!("#{}]", mob_b.0)))
+        .map(|(i, o)| (i, o.clone()))
+        .expect("the prompt names mob_b by id");
+    let mut state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenIndex(index, label),
+    }, &reg);
+
+    let lines = log_lines(&state);
+    let chosen = format!("p0: put Unruly Mob (#{})'s triggered ability (put a +1/+1 counter on Unruly Mob) on the stack", mob_b.0);
+    assert_line(&lines, &chosen);
+    assert!(!lines.iter().any(|l| l.starts_with("p0: put Unruly Mob's")),
+        "the choice line names the source by id, never bare; log was {lines:#?}");
+    let pushed_b = index_of(&lines, &format!("p0's Unruly Mob (#{})'s triggered ability", mob_b.0))
+        .expect("mob_b's push line");
+    let pushed_a = index_of(&lines, &format!("p0's Unruly Mob (#{})'s triggered ability", mob_a.0))
+        .expect("mob_a's push line: the one trigger left needs no prompt");
+    assert!(pushed_b < pushed_a, "mob_b's trigger went on first, as chosen; log was {lines:#?}");
+
+    // Resolve both (CR 608.1: the one put on last resolves first) and read
+    // the board changes back off the log.
+    assert_eq!(state.stack.len(), 2);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let lines = log_lines(&state);
+    let got_a = index_of(&lines, &format!("Unruly Mob (#{}) gets a +1/+1 counter (now 1)", mob_a.0))
+        .expect("mob_a's counter is logged");
+    let got_b = index_of(&lines, &format!("Unruly Mob (#{}) gets a +1/+1 counter (now 1)", mob_b.0))
+        .expect("mob_b's counter is logged");
+    assert!(got_a < got_b, "LIFO: mob_a's trigger, put on last, resolved first; log was {lines:#?}");
+    assert_eq!(counters_of(&state, mob_a, CounterType::PlusOnePlusOne), 1);
+    assert_eq!(counters_of(&state, mob_b, CounterType::PlusOnePlusOne), 1);
+}
+
+/// The counter line carries the running total, so a second counter reads
+/// "now 2" and a plural reads as one.
+#[test]
+fn counter_lines_carry_the_count_and_the_total() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.add_counters(bear, CounterType::PlusOnePlusOne, 1);
+    state.add_counters(bear, CounterType::PlusOnePlusOne, 2);
+    state.remove_counters(bear, CounterType::PlusOnePlusOne, 1);
+    // "Remove three" from a permanent holding two removes two, and says two.
+    state.remove_counters(bear, CounterType::PlusOnePlusOne, 3);
+
+    let lines = log_lines(&state);
+    let expected = [
+        format!("Grizzly Bears (#{}) gets a +1/+1 counter (now 1)", bear.0),
+        format!("Grizzly Bears (#{}) gets 2 +1/+1 counters (now 3)", bear.0),
+        format!("Grizzly Bears (#{}) loses a +1/+1 counter (now 2)", bear.0),
+        format!("Grizzly Bears (#{}) loses 2 +1/+1 counters (now 0)", bear.0),
+    ];
+    let counter_lines: Vec<&String> = lines.iter()
+        .filter(|l| l.contains("+1/+1 counter"))
+        .collect();
+    assert_eq!(counter_lines, expected.iter().collect::<Vec<_>>());
+}
+
+/// A counter aimed at a permanent that has left the battlefield lands
+/// nowhere (CR 121.1), and a line saying it landed would be a lie.
+#[test]
+fn a_counter_that_lands_nowhere_is_not_logged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.move_object(bear, Zone::Graveyard, &reg);
+    let before = log_lines(&state).len();
+    state.add_counters(bear, CounterType::PlusOnePlusOne, 1);
+    state.remove_counters(bear, CounterType::PlusOnePlusOne, 1);
+    assert_eq!(log_lines(&state).len(), before, "log was {:#?}", log_lines(&state));
+}
+
+/// Entering with counters is one event (CR 614.1c) with one line (#299) —
+/// not an entry followed by a placement.
+#[test]
+fn entering_with_counters_is_one_line_not_two() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let horde = spell_in_hand(&mut state, &reg, "Unbreathing Horde", P0);
+    state.move_object(horde, Zone::Battlefield, &reg);
+
+    let lines = log_lines(&state);
+    assert_line(&lines, "enters with 2 +1/+1 counters");
+    assert!(!lines.iter().any(|l| l.contains("gets 2 +1/+1 counters")),
+        "the placement is the entry; log was {lines:#?}");
+}
+
+/// A loyalty ability's cost is a loyalty change, and the log says which way
+/// and to what (CR 606.3). The old -N path wrote the counters directly and
+/// said nothing.
+#[test]
+fn a_loyalty_ability_logs_the_loyalty_change_with_the_total() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 3);
+
+    let plus = mtg_engine::engine::submit_action(&state, &Action::ActivateLoyaltyAbility {
+        object_id: liliana, ability_index: 0, targets: vec![],
+    }, &reg);
+    assert_line(&log_lines(&plus), &format!("Liliana of the Veil (#{}) gets a loyalty counter (now 4)", liliana.0));
+
+    let minus = mtg_engine::engine::submit_action(&state, &Action::ActivateLoyaltyAbility {
+        object_id: liliana, ability_index: 1, targets: vec![Target::Player(P1)],
+    }, &reg);
+    assert_line(&log_lines(&minus), &format!("Liliana of the Veil (#{}) loses 2 loyalty counters (now 1)", liliana.0));
 }

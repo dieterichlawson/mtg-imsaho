@@ -1063,11 +1063,15 @@ impl GameState {
                     Zone::Exile => "was exiled",
                     _ => "left the battlefield",
                 };
-                Some(format!("{} {}", obj.name, dest))
+                // With the id, like the lines around it: a sweeper's four
+                // "Unruly Mob died" were indistinguishable from each other and
+                // from the triggers they produced (issue #326).
+                Some(format!("{} {}", self.obj_name(id), dest))
             } else {
                 None
             }
         });
+
 
         if let Some(msg) = log_msg {
             self.log(LogLevel::Event, msg);
@@ -1440,9 +1444,10 @@ impl GameState {
         // nothing.
         for (counter_type, count) in &entering.counters {
             if *count > 0 {
-                self.add_counters(id, *counter_type, *count);
+                self.add_counters_quiet(id, *counter_type, *count);
             }
         }
+
         if !entering.counters.is_empty() {
             let name = self.obj_name(id);
             let what = entering.counters.iter()
@@ -2687,8 +2692,33 @@ impl GameState {
             .any(|c| self.player_has_protection_from(player, c, registry))
     }
 
-    /// Add counters to a permanent.
+    /// Add counters to a permanent, and say so.
+    ///
+    /// The line is written here, once, for the same reason `deal_damage`
+    /// and `change_life` write theirs: every caller used to be responsible
+    /// for its own, and most had none. Twelve Unruly Mob triggers resolving
+    /// in a row took two survivors from 1/1 to 4/4 with no log entry at all,
+    /// so the order the player had chosen for them (CR 603.3b) could not be
+    /// read back out of `--log` (issue #326). A card's own line, where it
+    /// has one, says *why*; this one says what changed and what it is now.
+    ///
+    /// A permanent *entering* with counters (CR 614.1c) says so in its own
+    /// words instead — see `add_counters_quiet`.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        if !self.add_counters_quiet(id, counter_type, count) {
+            return;
+        }
+        let now = self.get_counter_count(id, counter_type);
+        let name = self.obj_name(id);
+        self.log(LogLevel::Event, format!(
+            "{name} gets {} (now {now})", Self::counters_phrase(counter_type, count)));
+    }
+
+    /// `add_counters` without the log line. For the one caller that already
+    /// has a better line — a permanent entering with its counters, which is
+    /// one event ("enters with 2 +1/+1 counters", issue #299) and not an
+    /// entry followed by a placement. Returns whether the counters landed.
+    pub fn add_counters_quiet(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) -> bool {
         // CR 121.1: counters go on permanents. A permanent that has left the
         // battlefield is a different object, so a counter aimed at it lands
         // nowhere — an ability that resolves after its source was destroyed
@@ -2699,13 +2729,25 @@ impl GameState {
         // counters regardless of zone, the Ooze it made came in 1/1 instead of
         // the 0/0 the ruling requires. The counter then rode along if the
         // Grime was ever reanimated.
-        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
+        if count == 0 || self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+            return false;
         }
         if let Some(obj) = self.objects.get_mut(&id) {
             *obj.counters.entry(counter_type).or_insert(0) += count;
         }
+        true
     }
+
+    /// "a +1/+1 counter", "2 loyalty counters" — how a number of counters
+    /// reads in a log line.
+    fn counters_phrase(counter_type: crate::types::CounterType, count: u32) -> String {
+        if count == 1 {
+            format!("a {counter_type} counter")
+        } else {
+            format!("{count} {counter_type} counters")
+        }
+    }
+
 
     /// Create a regeneration shield on a permanent (CR 701.15).
     ///
@@ -2738,6 +2780,7 @@ impl GameState {
     /// sacrificed in the same cost, and the removal has to happen before the
     /// zone change clears them all (CR 601.2h).
     pub fn remove_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        let before = self.get_counter_count(id, counter_type);
         if let Some(obj) = self.objects.get_mut(&id) {
             if let Some(current) = obj.counters.get_mut(&counter_type) {
                 *current = current.saturating_sub(count);
@@ -2746,7 +2789,17 @@ impl GameState {
                 }
             }
         }
+        // Logged like `add_counters`, for what actually came off: "remove
+        // three" from a permanent holding two removes two.
+        let removed = before.saturating_sub(self.get_counter_count(id, counter_type));
+        if removed > 0 {
+            let name = self.obj_name(id);
+            self.log(LogLevel::Event, format!(
+                "{name} loses {} (now {})",
+                Self::counters_phrase(counter_type, removed), before - removed));
+        }
     }
+
 
     /// Get the number of counters of a type on a permanent.
     #[must_use]

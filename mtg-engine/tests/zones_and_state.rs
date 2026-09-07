@@ -242,13 +242,19 @@ fn leaving_the_battlefield_is_logged_by_destination() {
 
     let bear = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
     state.move_object(bear, Zone::Exile, &registry);
-    assert!(state.game_log.iter().any(|e| e.message.contains("Grizzly Bears was exiled")),
+    assert!(state.game_log.iter().any(|e| e.message == format!("Grizzly Bears (#{}) was exiled", bear.0)),
         "battlefield -> exile logs 'was exiled'");
 
     let traveler = named_permanent(&mut state, &registry, "Doomed Traveler", P0);
     state.move_object(traveler, Zone::Graveyard, &registry);
-    assert!(state.game_log.iter().any(|e| e.message.contains("Doomed Traveler died")),
-        "battlefield -> graveyard logs 'died'");
+    // With the object id, like every other line that names an object: four
+    // creatures of one name dying to a sweeper were four identical lines
+    // (issue #326).
+    let died = format!("Doomed Traveler (#{}) died", traveler.0);
+    assert!(state.game_log.iter().any(|e| e.message == died),
+        "battlefield -> graveyard logs '{died}'; log was {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
 
     let in_hand = spell_in_hand(&mut state, &registry, "Elder Cathar", P0);
     let log_len = state.game_log.len();
