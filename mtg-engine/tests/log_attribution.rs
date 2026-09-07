@@ -393,3 +393,51 @@ fn a_flashback_cast_still_says_flashback() {
     assert!(!cast_line.contains("alternative cost"),
         "flashback is named once, not twice; got {cast_line:?}");
 }
+
+/// A mill that runs the library out says so.
+///
+/// Issue #86: the failed draw at the end of a mill race was silent, and the
+/// loss it leads to (CR 704.5b) appeared from nowhere. The same is true one
+/// step earlier — "mill three" against a one-card library is a mill of one
+/// and the end of that library, and both halves are the news. A player
+/// reading the log afterwards cannot reconstruct either from "milled 1 card".
+#[test]
+fn a_mill_says_when_the_library_ran_out_under_it() {
+    let reg = registry();
+    let cast_dream_twist = |state: &GameState| {
+        let mut s = state.clone();
+        let twist = castable_spell(&mut s, &reg, "Dream Twist", P0);
+        let s = cast_and_resolve(&s, &reg, twist, vec![Target::Player(P1)]);
+        log_lines(&s)
+    };
+
+    // One card against "mill three".
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let only = state.create_object(
+        reg.get_id_by_name("Walking Corpse").unwrap(), P1, Zone::Library, None, None);
+    state.get_object_mut(only).unwrap().name = "Walking Corpse".into();
+    state.get_player_mut(P1).library_order.push(only);
+
+    let lines = cast_dream_twist(&state);
+    assert!(index_of(&lines, "Dream Twist: p1 milled 1 card (of 3 — library ran out)").is_some(),
+        "the line says how many went AND that the library ran out under it: {lines:?}");
+
+    // And a mill into an already-empty library is not silence either.
+    let empty = game_at_step(Step::PrecombatMain, P0);
+    let lines = cast_dream_twist(&empty);
+    assert!(index_of(&lines, "Dream Twist: p1 has an empty library, nothing to mill").is_some(),
+        "an empty library is the news, not a reason to say nothing: {lines:?}");
+
+    // A mill that took every card it asked for carries no such aside.
+    let mut full = game_at_step(Step::PrecombatMain, P0);
+    for _ in 0..3 {
+        let id = full.create_object(
+            reg.get_id_by_name("Walking Corpse").unwrap(), P1, Zone::Library, None, None);
+        full.get_object_mut(id).unwrap().name = "Walking Corpse".into();
+        full.get_player_mut(P1).library_order.push(id);
+    }
+    let lines = cast_dream_twist(&full);
+    assert!(index_of(&lines, "Dream Twist: p1 milled 3 cards").is_some(), "{lines:?}");
+    assert!(index_of(&lines, "library ran out").is_none(),
+        "nothing ran out: {lines:?}");
+}

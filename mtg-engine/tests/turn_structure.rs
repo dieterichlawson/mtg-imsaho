@@ -13,6 +13,7 @@ use common::*;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::state::GameState;
+use mtg_engine::actions::Action;
 use mtg_engine::types::*;
 use mtg_engine::combat;
 use mtg_engine::sba::check_state_based_actions;
@@ -706,4 +707,56 @@ fn abandoning_the_game_loop_decides_nothing_and_records_nothing() {
     assert!(!state.game_log.iter().any(|e| e.message.contains("conceded")),
         "and nothing was written about it: {:#?}",
         state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
+/// CR 509.1: declaring blockers is a turn-based action of the declare
+/// blockers step, and it happens only when there is something to block.
+/// CR 511.1/511.3: end of combat is a step of its own, and combat is over
+/// when it ends — attackers, blockers and the whole combat state go.
+///
+/// Both are arms of the step machine that no test drove: every combat test
+/// in the suite declares its blockers through a helper that answers the
+/// prompt, which passes whether the engine raised the prompt or the helper
+/// invented it. Deleting either arm leaves a game that attacks and never
+/// asks, or attacks forever.
+#[test]
+fn the_combat_steps_ask_for_blockers_and_then_end_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Ambush Viper", P1);
+    advance_to_step(&mut state, &reg, Step::BeginCombat);
+
+    // Attack with the Bears; the engine asks the defending player to block.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::DeclareAttackers);
+    let state = mtg_engine::engine::submit_action(&state, &Action::DeclareAttackers {
+        attackers: vec![(attacker, P1)], planeswalker_attacks: vec![],
+    }, &reg);
+    let mut state = state;
+    while state.awaiting_action.is_none() && state.step != Step::DeclareBlockers {
+        mtg_engine::engine::advance_step(&mut state, &reg);
+    }
+
+    assert_eq!(state.step, Step::DeclareBlockers);
+    assert!(matches!(state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::DeclareBlockers { defending_player })
+            if defending_player == P1),
+        "the defending player is asked to declare blockers: {:?}", state.awaiting_action);
+    assert_eq!(state.priority_player, Some(P1));
+
+    // Block, take the damage, and run to the end of combat.
+    let mut state = mtg_engine::engine::submit_action(&state, &Action::DeclareBlockers {
+        assignments: vec![(blocker, attacker)],
+    }, &reg);
+    for _ in 0..40 {
+        if state.step == Step::EndCombat && state.awaiting_action.is_none() { break }
+        mtg_engine::engine::advance_step(&mut state, &reg);
+    }
+    assert_eq!(state.step, Step::EndCombat, "the game reached the end of combat");
+
+    // Leaving the step is what ends combat (CR 511.3).
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert!(state.combat.as_ref().is_none_or(|c| c.attackers.is_empty()),
+        "no attacker is still attacking after end of combat: {:?}", state.combat);
 }

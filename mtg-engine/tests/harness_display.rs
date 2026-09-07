@@ -495,4 +495,10 @@ fn an_offered_ability_carries_its_own_description() {
     assert!(!entry.description.is_empty(), "the offer is labelled");
     assert_eq!(entry.description, printed,
         "and the label is this ability's own sentence, not another's");
+    // And it carries what the ability can be pointed at. The collapsed view
+    // is how both clients pick a target, so an entry with an empty list is
+    // an ability they cannot activate even though the flat action list
+    // offers it.
+    assert!(!entry.target_options.is_empty(),
+        "the Priest taps a creature, so the entry offers one: {entry:?}");
 }
