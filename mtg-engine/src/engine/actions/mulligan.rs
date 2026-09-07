@@ -50,8 +50,14 @@ pub(crate) fn mulligan_mull(state: &mut GameState, registry: &CardRegistry) -> A
         let _ = draw_cards(&mut *state, player, 7, registry);
         state.get_player_mut(player).mulligan_count += 1;
         let mull_count = state.get_player(player).mulligan_count;
-        state.log(LogLevel::Event,
-            format!("p{} mulligans to {}", player.0, 7 - i32::try_from(mull_count).unwrap_or(i32::MAX)));
+        // The hand this mulligan leads to, which is floored at zero exactly
+        // where `bottom_count` above is capped: at seven mulligans the whole
+        // opening hand goes back, and the eighth cannot take an eighth card.
+        // Subtracting an unbounded count went negative and reported a hand
+        // size no game can hold — "p0 mulligans to -3" for a player about to
+        // keep nothing (CR 103.4, issue #321).
+        let keeps = crate::state::OPENING_HAND_SIZE.saturating_sub(mull_count as usize);
+        state.log(LogLevel::Event, format!("p{} mulligans to {keeps}", player.0));
         // Mark that this round had a mulligan, then advance past this
         // player. The next player in turn order (who hasn't already kept)
         // will be asked. The mulled player will be re-asked next round.

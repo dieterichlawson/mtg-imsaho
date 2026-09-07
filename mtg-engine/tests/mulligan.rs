@@ -229,6 +229,30 @@ fn bottoming_never_exceeds_the_hand() {
     assert_eq!(library_len(&state, P0), 40);
 }
 
+/// The log line for a mulligan says the hand it leads to, and no hand is
+/// smaller than empty. It was `7 - mull_count` on an unbounded count, so
+/// from the eighth mulligan on it reported "p0 mulligans to -1", "-2", "-3"
+/// for a player about to keep nothing — contradicting the prompt header on
+/// the same screen, which said "mulligans taken: 10" (issue #321).
+///
+/// The floor is the same one `bottom_count` is capped at: the game was
+/// always right, only the sentence was wrong.
+#[test]
+fn the_mulligan_log_line_never_promises_a_hand_smaller_than_empty() {
+    let (mut state, reg) = fresh_game();
+    mulligan_n_times(&mut state, &reg, 10);
+
+    let said: Vec<&str> = state.game_log.iter()
+        .filter(|e| e.message.starts_with("p0 mulligans to "))
+        .map(|e| e.message.trim_start_matches("p0 mulligans to "))
+        .collect();
+    assert_eq!(said.len(), 10, "one line per mulligan: {said:?}");
+    assert!(said.iter().all(|n| !n.starts_with('-')),
+        "no mulligan leaves a negative hand: {said:?}");
+    assert_eq!(said[6], "0", "the seventh mulligan is the empty hand: {said:?}");
+    assert_eq!(said[9], "0", "and the tenth is still the empty hand: {said:?}");
+}
+
 // ── Per-player independence ────────────────────────────────────────
 
 #[test]
