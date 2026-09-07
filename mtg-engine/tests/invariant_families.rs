@@ -2777,3 +2777,118 @@ fn an_x_spell_on_the_stack_announced_its_x() {
     s.get_object_mut(play).unwrap().x_value = None;
     flags_core(&s, &reg, "has an X cost but no X announced (CR 601.2b)");
 }
+
+/// CR 601.2/601.2h: a cast still being paid for is described consistently
+/// by its stash — the caster, the card, the zone, the costs it plans to pay
+/// with, and the prompt that is asking about it.
+#[test]
+fn a_cast_in_progress_is_described_consistently_by_its_stash() {
+    let (mut state, reg) = base();
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2)]);
+    let state = cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]);
+    assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
+        "precondition: a funding prompt is up");
+    clean_core(&state, &reg);
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+
+    // CR 601.2: the caster holds priority throughout.
+    let mut s = state.clone();
+    s.priority_player = Some(P1);
+    flags_core(&s, &reg, "but priority is Some(PlayerId(1)) (CR 601.2)");
+
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().player = ghost;
+    flags_core(&s, &reg, "by p2 who is not a player");
+
+    // The stash and the object agree about what card this is and whose.
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().card_id = mtg_engine::ids::CardId(424_242);
+    flags_core(&s, &reg, "but the object is card");
+
+    // CR 702.34a: a flashback cast comes from the graveyard.
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().is_flashback = true;
+    flags_core(&s, &reg, "with flashback from Hand");
+
+    // The cast-time marks are written when the cast completes, not before.
+    let mut s = state.clone();
+    s.get_object_mut(play).unwrap().x_value = Some(2);
+    flags_core(&s, &reg, "already carries cast-time marks");
+
+    // The prompt that is up is the prompt this cast raised.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice { source, .. }) = &mut s.awaiting_action {
+        *source = ObjectId(4242);
+    }
+    flags_core(&s, &reg, "but the pending prompt is for #4242");
+
+    // The additional costs it plans to pay with are payable.
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().sacrifice = Some(play);
+    flags_core(&s, &reg, "which is not a creature the caster controls (CR 701.21a)");
+
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().exile_ids = vec![play, play];
+    flags_core(&s, &reg, "exiles #");
+    flags_core(&s, &reg, "which is not in the caster's graveyard");
+}
+
+/// CR 602.2/602.2b: the same, for an activation whose X is still being
+/// funded — and for the funding prompt's own arithmetic.
+#[test]
+fn an_activation_in_progress_is_described_consistently_by_its_stash() {
+    let (mut state, reg) = base();
+    let wolf_run = named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    // {X}{R}{G}, {T}: with a floating {R}{G} plus two untapped Mountains
+    // there is an X worth funding.
+    named_permanent(&mut state, &reg, "Mountain", P0);
+    named_permanent(&mut state, &reg, "Mountain", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1), (ManaType::Green, 1)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let activate = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == wolf_run))
+        .expect("Kessig Wolf Run's X ability is offered").clone();
+    let state = mtg_engine::engine::submit_action(&state, &activate, &reg);
+    assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }, .. })),
+        "precondition: an ability funding prompt is up, got {:?}", state.awaiting_action);
+    assert!(state.pending_ability_effect.is_some(), "precondition: the activation is stashed");
+    clean_core(&state, &reg);
+
+    // CR 602.2: the activator holds priority throughout.
+    let mut s = state.clone();
+    s.priority_player = Some(P1);
+    flags_core(&s, &reg, "but priority is Some(PlayerId(1)) (CR 602.2)");
+
+    // The stash and the prompt name the same source.
+    let mut s = state.clone();
+    s.pending_ability_effect.as_mut().unwrap().source_id = bear;
+    flags_core(&s, &reg, "but the stash is for #");
+
+    // The behaviour the ability came from is a card the registry knows.
+    let mut s = state.clone();
+    s.pending_ability_effect.as_mut().unwrap().behavior_card_id = mtg_engine::ids::CardId(424_242);
+    flags_core(&s, &reg, "has no behavior in the registry (card 424242)");
+
+    // The funding prompt's ceiling is what it actually offers.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) = &mut s.awaiting_action {
+        options.max_x += 1;
+    }
+    flags_core(&s, &reg, "tappable but a ceiling of");
+
+    // A prompt with nothing to fund is a prompt that should not exist.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) = &mut s.awaiting_action {
+        options.max_x = 0;
+        options.groups.clear();
+        options.pool.clear();
+    }
+    flags_core(&s, &reg, "with nothing to fund");
+}
