@@ -509,3 +509,95 @@ fn an_unregistered_card_id_is_excused_only_by_a_copied_token() {
     }
     flags(&s, &reg, "is not in the registry");
 }
+
+/// CR 400.7: a non-token card off the battlefield is its printed self. Four
+/// runtime fields say otherwise, and the clause is one disjunction over all
+/// four — so each is set on its own, or three of them ride along on the
+/// fourth and none of them is really checked.
+///
+/// The gate in front of them matters too, and in both directions: a TOKEN's
+/// object-level characteristics ARE what it is (it has no printed card to
+/// fall back on), and a permanent still on the battlefield is allowed
+/// everything it picked up there.
+#[test]
+fn only_a_card_off_the_battlefield_has_to_be_its_printed_self() {
+    let (mut state, reg) = base();
+    let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+
+    let cases: [(&str, fn(&mut mtg_engine::state::GameObject)); 4] = [
+        ("subtypes", |o| o.subtypes = vec!["Zombie".into()]),
+        ("colors", |o| o.colors = vec![Color::Black]),
+        ("card types", |o| o.card_types = vec![CardType::Creature]),
+        ("keywords", |o| o.keywords = vec![Keyword::Flying]),
+    ];
+    for (what, corrupt) in cases {
+        let mut s = state.clone();
+        corrupt(s.get_object_mut(card).unwrap());
+        let v = check_core(&s, &reg);
+        assert!(v.iter().any(|m| m.contains("keeps runtime characteristics")),
+            "{what} alone is a runtime characteristic a card in hand may not keep, got: {v:?}");
+    }
+
+    // A token in a graveyard is its object-level fields — there is no printed
+    // card underneath to disagree with (CR 111.4).
+    let mut s = state.clone();
+    let token = s.create_token_with_subtypes(
+        "Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature],
+        vec![Keyword::Flying], vec!["Spirit".into()], &reg)[0];
+    s.move_object(token, Zone::Graveyard, &reg);
+    let v = check_core(&s, &reg);
+    assert!(!v.iter().any(|m| m.contains("keeps runtime characteristics")),
+        "a token has nothing else to be: {v:?}");
+
+    // And a permanent on the battlefield keeps what it picked up there.
+    let mut s = state.clone();
+    let bear = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(bear).unwrap().keywords = vec![Keyword::Flying];
+    let v = check_core(&s, &reg);
+    assert!(!v.iter().any(|m| m.contains("keeps runtime characteristics")),
+        "a granted keyword on the battlefield is not a violation: {v:?}");
+}
+
+/// CR 707.2: `copy_grantor` remembers the card a copy is a copy of, and for a
+/// non-token that card is a real one. A TOKEN copy is the exception — its
+/// grantor is the printed card of whatever it was made from, and a token made
+/// by an effect rather than a card has none to name.
+///
+/// CR 702.34a: a card cast with flashback is an instant or a sorcery, and the
+/// clause says so with a conjunction — with only one of the two card types
+/// ever tried, either half could be dropped.
+#[test]
+fn the_copy_and_flashback_marks_name_the_kinds_of_card_that_can_carry_them() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().copy_grantor = Some(CardId(424_242));
+    flags(&s, &reg, "is not in the registry");
+
+    // A token's grantor is not looked up: it has no printed card of its own.
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.is_token = true;
+        o.copy_grantor = Some(CardId(424_242));
+    }
+    let v = check_core(&s, &reg);
+    assert!(!v.iter().any(|m| m.contains("copy_grantor")),
+        "a token copy names no printed card: {v:?}");
+
+    // Flashback: an instant is fine, a creature is not.
+    let mut s = state.clone();
+    let bolt = spell_in_hand(&mut s, &reg, "Geistflame", P0);
+    s.move_object(bolt, Zone::Exile, &reg);
+    s.get_object_mut(bolt).unwrap().cast_with_flashback = true;
+    let v = check_core(&s, &reg);
+    assert!(!v.iter().any(|m| m.contains("neither instant nor sorcery")),
+        "Geistflame has flashback and is an instant: {v:?}");
+
+    let mut s = state.clone();
+    let creature = spell_in_hand(&mut s, &reg, "Grizzly Bears", P0);
+    s.move_object(creature, Zone::Exile, &reg);
+    s.get_object_mut(creature).unwrap().cast_with_flashback = true;
+    flags(&s, &reg, "neither instant nor sorcery");
+}
