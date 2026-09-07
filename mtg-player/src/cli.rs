@@ -324,10 +324,73 @@ fn clip_cols(s: &str, max: usize) -> String {
     out
 }
 
+/// The narrowest column budget in which appending an object id to a menu row
+/// still leaves something worth reading. Below it the row would be an
+/// ellipsis and a number.
+const MENU_ID_MIN_ROOM: usize = 12;
+
+/// What a menu row stands for: an action to submit, or a spell to walk
+/// through the casting flow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DisplayEntry {
+    /// Index into `LegalActions::actions`.
+    Direct(usize),
+    /// Index into `LegalActions::castable_spells`.
+    Cast(usize),
+}
+
+/// One row of a menu, in the three regions a clip has to treat differently.
+///
+/// A row's identity is the objects it names — an ability's source, its
+/// targets, the creature its cost sacrifices. `head` and `tail` carry those;
+/// `elastic` is prose (the ability's own description, a tap plan) that may be
+/// eaten to make room. Clipping one opaque string cannot tell them apart, so
+/// eight Demonmail Hauberk equips differing only in which Champion they
+/// targeted rendered as two lines (issue #258).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+struct MenuLabel {
+    head: String,
+    elastic: String,
+    tail: String,
+    /// The objects that give this row its identity, in a fixed order:
+    /// source, then each target, then the sacrifice. Two rows with the same
+    /// ids are interchangeable; two rows with different ids are not, however
+    /// alike they read (issue #257).
+    ids: Vec<u64>,
+}
+
+impl MenuLabel {
+    /// A row with nothing to protect and nothing to tell apart.
+    fn plain(s: impl Into<String>) -> Self {
+        MenuLabel { head: s.into(), ..MenuLabel::default() }
+    }
+
+    fn full(&self) -> String {
+        format!("{}{}{}", self.head, self.elastic, self.tail)
+    }
+}
+
 /// Display width of `s` in terminal columns.
 fn str_cols(s: &str) -> usize {
     s.chars().map(col_width).sum()
 }
+
+/// The LAST `max` display columns of `s` — `clip_cols`' mirror, for a clip
+/// that has to keep the end of a string rather than its start.
+fn clip_cols_from_end(s: &str, max: usize) -> String {
+    let mut cols = 0;
+    let mut kept: Vec<char> = Vec::new();
+    for c in s.chars().rev() {
+        let w = col_width(c);
+        if cols + w > max {
+            break;
+        }
+        cols += w;
+        kept.push(c);
+    }
+    kept.into_iter().rev().collect()
+}
+
 
 /// One line of a full-screen info view (`l`/`g`/`e`), carrying just enough
 /// styling for the shared pager to render it (issues #101/#102).
@@ -648,14 +711,14 @@ impl CliPlayer {
 
     // ── Rendering ──────────────────────────────────────────────────
 
-    fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
+    fn render(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
         let _ = Self::render_paged(view, actions, message, log, card_filter, pass_mode_label, 0);
     }
 
     /// `render`, starting the action menu at `menu_offset` (issue #96 — a
     /// menu longer than the pane is paged with 'm', not guessed at).
     /// Returns how many menu entries were shown from that offset.
-    fn render_paged(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> usize {
+    fn render_paged(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> usize {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -1018,19 +1081,28 @@ impl CliPlayer {
                 remaining
             };
             menu_shown = shown;
-            for (i, label) in labels.iter().enumerate().skip(offset).take(shown) {
+            // Clip to the panel like every other row — but from the middle,
+            // and never silently: the tail is what tells otherwise-identical
+            // entries apart (" targeting X", ", sacrificing Y"), and
+            // end-clipping it re-created the #36 blind-target menu for any
+            // ability whose description ran long — three self-hits in real
+            // games (issue #80).
+            //
+            // One budget for the whole page, not one per row: the prefix used
+            // to be measured from each row's own index, so entry 6 and entry
+            // 10 were clipped one column apart and differed only in where the
+            // ellipsis fell. The page is also clipped together, so a
+            // collision the CLIP creates is caught here rather than never
+            // (issue #258).
+            let idx_w = (offset + shown).saturating_sub(1).to_string().chars().count();
+            let plen = 4 + idx_w;
+            let lines = Self::clip_menu_page(
+                &labels[offset..offset + shown], mid_w.saturating_sub(plen));
+            for (i, line) in lines.iter().enumerate().map(|(n, l)| (offset + n, l)) {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset), Print(": "));
-                // Clip to the panel like every other row — but from the
-                // middle, and never silently: the tail is what tells
-                // otherwise-identical entries apart (" targeting X",
-                // ", sacrificing Y"), and end-clipping it re-created the
-                // #36 blind-target menu for any ability whose description
-                // ran long — three self-hits in real games (issue #80).
-                let plen = 4 + i.to_string().chars().count();
-                let label = Self::clip_middle(label, mid_w.saturating_sub(plen));
-                Self::print_action_label(&mut out, &label);
+                Self::print_action_label(&mut out, line);
                 row += 1;
             }
             if paged {
@@ -1041,7 +1113,7 @@ impl CliPlayer {
                     SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
                 row += 1;
             }
-            let has_pass = labels.first().is_some_and(|l| l == "Pass priority");
+            let has_pass = labels.first().is_some_and(|l| l.full() == "Pass priority");
             // The `/` search lives in the right panel, which only exists at
             // >= 100 columns — advertising it below that put users into an
             // invisible modal mode that swallowed keystrokes (issue #107).
@@ -1673,7 +1745,7 @@ impl CliPlayer {
 
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
-    fn run_card_search(view: &GameView, actions: &[String]) {
+    fn run_card_search(view: &GameView, actions: &[MenuLabel]) {
         // The search box is part of the right panel, which is only drawn at
         // >= 100 columns. Entering search mode on a narrower terminal showed
         // nothing at all and silently swallowed every keystroke until an
@@ -1847,34 +1919,34 @@ impl CliPlayer {
         })
     }
 
-    /// Append the object id to labels that render identically for DIFFERENT
-    /// objects: two identical tokens in a picker decided whether an Aura on
-    /// the stack would fizzle, with nothing on screen telling them apart
-    /// (issue #136).
-    fn disambiguate_target_labels(labels: &mut [String], options: &[mtg_engine::actions::Target]) {
-        let dup: Vec<bool> = labels.iter()
-            .map(|l| labels.iter().filter(|x| *x == l).count() > 1)
-            .collect();
-        for (k, t) in options.iter().enumerate() {
-            if k < labels.len() && dup[k] {
-                if let mtg_engine::actions::Target::Object(id) = t {
-                    labels[k] = format!("{} (#{})", labels[k], id.0);
-                }
-            }
-        }
+    /// The picker rows for a list of targets: the name is the row, the object
+    /// is its identity.
+    ///
+    /// Two rows that read alike but name different objects have to be
+    /// tellable apart — two identical tokens in a picker decided whether an
+    /// Aura on the stack would fizzle, with nothing on screen saying so
+    /// (issue #136). That id used to be appended here, before the renderer
+    /// clipped the row, so it was the first thing a clip removed; carrying
+    /// the object instead lets the id be added at the width the row is
+    /// actually drawn (issue #258).
+    fn target_menu_labels(view: &GameView, options: &[mtg_engine::actions::Target]) -> Vec<MenuLabel> {
+        options.iter().map(|t| match t {
+            mtg_engine::actions::Target::Object(id) => MenuLabel {
+                head: Self::perm_name(view, *id),
+                ids: vec![id.0],
+                ..MenuLabel::default()
+            },
+            mtg_engine::actions::Target::Player(pid) => MenuLabel::plain(
+                if *pid == view.you { "You" } else { "Opponent" }),
+            mtg_engine::actions::Target::Illegal =>
+                unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
+        }).collect()
     }
 
     /// Prompt the user to pick one target from a list. Returns None on cancel.
     fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
-        let mut labels: Vec<String> = options.iter().map(|t| match t {
-            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
-            mtg_engine::actions::Target::Player(pid) => {
-                if *pid == view.you { "You".into() } else { "Opponent".into() }
-            }
-            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-        }).collect();
-        Self::disambiguate_target_labels(&mut labels, options);
-        labels.push("Cancel".into());
+        let mut labels = Self::target_menu_labels(view, options);
+        labels.push(MenuLabel::plain("Cancel"));
 
         let mut notice: Option<String> = None;
         loop {
@@ -1913,16 +1985,9 @@ impl CliPlayer {
     /// targets chosen so far (legal even at zero — CR 601.2c); `Cancel`
     /// abandons the cast, which `Done` used to double as.
     fn prompt_target_up_to(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> UpToPick {
-        let mut labels: Vec<String> = options.iter().map(|t| match t {
-            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
-            mtg_engine::actions::Target::Player(pid) => {
-                if *pid == view.you { "You".into() } else { "Opponent".into() }
-            }
-            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-        }).collect();
-        Self::disambiguate_target_labels(&mut labels, options);
-        labels.push("Done (cast with targets chosen so far)".into());
-        labels.push("Cancel the cast".into());
+        let mut labels = Self::target_menu_labels(view, options);
+        labels.push(MenuLabel::plain("Done (cast with targets chosen so far)"));
+        labels.push(MenuLabel::plain("Cancel the cast"));
 
         let mut notice: Option<String> = None;
         loop {
@@ -1956,15 +2021,8 @@ impl CliPlayer {
     }
 
     fn prompt_target_optional(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
-        let mut labels: Vec<String> = options.iter().map(|t| match t {
-            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
-            mtg_engine::actions::Target::Player(pid) => {
-                if *pid == view.you { "You".into() } else { "Opponent".into() }
-            }
-            mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-        }).collect();
-        Self::disambiguate_target_labels(&mut labels, options);
-        labels.push("Done".into());
+        let mut labels = Self::target_menu_labels(view, options);
+        labels.push(MenuLabel::plain("Done"));
 
         let mut notice: Option<String> = None;
         loop {
@@ -2113,20 +2171,103 @@ impl CliPlayer {
     /// Y"), and both must survive — end-clipping the tail rendered N
     /// byte-identical menu entries whose choice silently decided who got
     /// hit (issue #80, defeating the #36 fix).
+    ///
+    /// The last-resort clip. Prefer [`CliPlayer::fit_menu_label`], which
+    /// knows which regions of a row are identity and which are prose.
     fn clip_middle(s: &str, cap: usize) -> String {
-        let len = s.chars().count();
-        if len <= cap {
+        if str_cols(s) <= cap {
             return s.to_string();
         }
         if cap <= 1 {
             return "…".chars().take(cap).collect();
         }
         // Rough 3:2 split favors the head; the ellipsis takes one slot.
-        let tail_len = (cap - 1) * 2 / 5;
-        let head_len = cap - 1 - tail_len;
-        let head: String = s.chars().take(head_len).collect();
-        let tail: String = s.chars().skip(len - tail_len).collect();
+        // Measured in display COLUMNS, not chars: a CJK card name is one char
+        // and two cells, so a char-counted clip still overflowed the panel and
+        // painted over the CARDS pane beside it (the #109 defect, #53's
+        // symptom).
+        let tail_cap = (cap - 1) * 2 / 5;
+        let head_cap = cap - 1 - tail_cap;
+        let head = clip_cols(s, head_cap);
+        let tail = clip_cols_from_end(s, tail_cap);
         format!("{head}…{tail}")
+    }
+
+    /// Render one menu row into `cap` display columns, spending the budget in
+    /// the order that keeps the row distinguishable: the tail first, then the
+    /// head, and only then the prose in between.
+    ///
+    /// `clip_middle` splits a whole label 3:2 and cannot know which part
+    /// carries the choice. For a Demonmail Hauberk equip — a source, a
+    /// target and a sacrifice in one row — the fixed split landed the
+    /// ellipsis inside the target, the one thing the eight entries differed
+    /// by, so they rendered as two lines (issue #258).
+    fn fit_menu_label(label: &MenuLabel, cap: usize) -> String {
+        let full = label.full();
+        if str_cols(&full) <= cap {
+            return full;
+        }
+        let (h, t) = (str_cols(&label.head), str_cols(&label.tail));
+        // The prose between the names is what gets eaten first.
+        if let Some(room) = cap.checked_sub(h + t) {
+            if room >= 1 {
+                return format!("{}{}…{}", label.head, clip_cols(&label.elastic, room - 1), label.tail);
+            }
+        }
+        // Not even the two names fit: keep the tail whole and cut the head,
+        // because the tail is where the choice is.
+        if let Some(room) = cap.checked_sub(t + 1) {
+            if room >= 1 {
+                return format!("{}…{}", clip_cols(&label.head, room), label.tail);
+            }
+        }
+        // Nothing but the tail can survive.
+        Self::clip_middle(&label.tail, cap)
+    }
+
+    /// Render one page of menu rows, and tell apart any two that come out
+    /// looking the same.
+    ///
+    /// Duplication used to be computed once over the FULL labels, before the
+    /// renderer clipped them — so a collision *created by* the clip was never
+    /// seen, and two entries that target different creatures could print the
+    /// same line. Rows whose identity objects are the same are genuinely
+    /// interchangeable and are left alike (that is #54's collapse); rows that
+    /// name different objects get those objects' ids, the #136/#100
+    /// convention.
+    fn clip_menu_page(labels: &[MenuLabel], cap: usize) -> Vec<String> {
+        let mut out: Vec<String> = labels.iter()
+            .map(|l| Self::fit_menu_label(l, cap))
+            .collect();
+        let mut handled = vec![false; out.len()];
+        for k in 0..out.len() {
+            if handled[k] { continue; }
+            let group: Vec<usize> = (k..out.len()).filter(|&j| out[j] == out[k]).collect();
+            for &j in &group { handled[j] = true; }
+            if group.len() < 2 { continue; }
+            // The id positions on which this group is not unanimous are
+            // exactly what distinguishes its members.
+            let width = group.iter().map(|&j| labels[j].ids.len()).max().unwrap_or(0);
+            let differing: Vec<usize> = (0..width)
+                .filter(|&p| group.iter().any(|&j| labels[j].ids.get(p) != labels[group[0]].ids.get(p)))
+                .collect();
+            if differing.is_empty() { continue; }
+            for &j in &group {
+                let named: Vec<String> = differing.iter()
+                    .filter_map(|&p| labels[j].ids.get(p))
+                    .map(|id| format!("#{id}"))
+                    .collect();
+                if named.is_empty() { continue; }
+                let suffix = format!(" ({})", named.join(" "));
+                // On a pane too narrow to hold both, the id wins nothing:
+                // a row clipped to the ellipsis plus an id says less than
+                // the row did. MENU_ID_MIN_ROOM is what "readable" means.
+                let Some(room) = cap.checked_sub(str_cols(&suffix)) else { continue };
+                if room < MENU_ID_MIN_ROOM { continue; }
+                out[j] = format!("{}{}", Self::fit_menu_label(&labels[j], room), suffix);
+            }
+        }
+        out
     }
 
     /// " targeting X" for an action's chosen targets, or "" when untargeted.
@@ -4043,6 +4184,260 @@ impl CliPlayer {
             }
         }
     }
+
+    /// Every object an action names, in a fixed order — what makes one
+    /// offered action a different offer from another.
+    ///
+    /// The disambiguating `(#id)` used to be added by a block that matched
+    /// ONE action variant, `ResolveChoice::ChosenTarget(Some(Object))`, so
+    /// every other kind of row that can collide fell out of it silently: two
+    /// Wooden Stakes offering the same ability, two identical duals offering
+    /// the same mana, two Islands to play (issue #257).
+    fn action_object_ids(action: &Action) -> Vec<u64> {
+        use mtg_engine::actions::ResolvedChoice;
+        fn of_targets(targets: &[Target], ids: &mut Vec<u64>) {
+            ids.extend(targets.iter().filter_map(|t| match t {
+                Target::Object(id) => Some(id.0),
+                _ => None,
+            }));
+        }
+        let mut ids = Vec::new();
+        match action {
+            Action::PlayLand { object_id } => ids.push(object_id.0),
+            // Two untapped Islands making {U} are the same offer: which one
+            // taps changes nothing a player can act on, and numbering every
+            // land in a six-land board would be noise, not information.
+            Action::ActivateManaAbility { .. } => {}
+            Action::CastSpell { object_id, targets, sacrifice, .. } => {
+                ids.push(object_id.0);
+                of_targets(targets, &mut ids);
+                if let Some(sac) = sacrifice { ids.push(sac.0); }
+            }
+            Action::ActivateAbility { object_id, targets, sacrifice, .. } => {
+                ids.push(object_id.0);
+                of_targets(targets, &mut ids);
+                if let Some(sac) = sacrifice { ids.push(sac.0); }
+            }
+            Action::ActivateLoyaltyAbility { object_id, targets, .. } => {
+                ids.push(object_id.0);
+                of_targets(targets, &mut ids);
+            }
+            Action::DiscardCards { cards } | Action::BottomCards { cards } =>
+                ids.extend(cards.iter().map(|c| c.0)),
+            Action::DeclareBlockers { assignments } =>
+                ids.extend(assignments.iter().flat_map(|(b, a)| [b.0, a.0])),
+            Action::DeclareAttackers { attackers, planeswalker_attacks } => {
+                ids.extend(attackers.iter().map(|(a, _)| a.0));
+                ids.extend(planeswalker_attacks.iter().flat_map(|(a, pw)| [a.0, pw.0]));
+            }
+            Action::ResolveChoice { choice } => match choice {
+                ResolvedChoice::ChosenTarget(Some(t)) => of_targets(std::slice::from_ref(t), &mut ids),
+                ResolvedChoice::ChosenCard(id) => ids.push(id.0),
+                ResolvedChoice::ChosenSubset(objs) | ResolvedChoice::ChosenExileSet(objs) =>
+                    ids.extend(objs.iter().map(|o| o.0)),
+                // Nothing this row names is an object: an index, a yes/no, a
+                // funding plan. Two such rows that read alike ARE the same
+                // offer, and adding a number to them would say nothing.
+                _ => {}
+            },
+            Action::PassPriority | Action::Concede
+            | Action::MulliganKeep | Action::MulliganMull => {}
+        }
+        ids
+    }
+
+    /// The menu row for an action with no arm of its own, carrying the
+    /// objects it names so two rows that read alike can still be told apart.
+    fn menu_label_for(view: &GameView, action: &Action) -> MenuLabel {
+        MenuLabel {
+            head: Self::format_action(view, action),
+            ids: Self::action_object_ids(action),
+            ..MenuLabel::default()
+        }
+    }
+
+    /// Build the priority menu: the rows, and what each row stands for.
+    ///
+    /// Pure — no terminal, no input — so "every row names a different action"
+    /// is a testable contract. It was inline in `choose_action` above a
+    /// blocking read, which is how a menu that renders two different equips
+    /// as one line kept shipping (issues #257, #258).
+    fn build_action_menu(view: &GameView, legal: &mtg_engine::engine::LegalActions)
+        -> (Vec<DisplayEntry>, Vec<MenuLabel>)
+    {
+        let legal_actions = &legal.actions;
+        // Build a collapsed display list: non-CastSpell actions + one entry per castable spell.
+        // Each entry maps to either a direct action or an interactive casting flow.
+        let mut display: Vec<DisplayEntry> = Vec::new();
+        let mut display_labels: Vec<MenuLabel> = Vec::new();
+        // Keyed by (object, casting with an alternative cost): a spell that
+        // can be cast both normally and via Rooftop Storm's "without paying
+        // its mana cost" is TWO menu rows — collapsing on the object alone
+        // dropped the CR 601.2b choice (issue #128).
+        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
+
+        // Ordering: non-tap actions, cast spells, tap actions, concede last.
+        let mut deferred_taps: Vec<(usize, MenuLabel)> = Vec::new();
+        let mut deferred_concede: Option<(usize, MenuLabel)> = None;
+        let mut seen_cast_labels: Vec<String> = Vec::new();
+        for (i, action) in legal_actions.iter().enumerate() {
+            match action {
+                Action::CastSpell { object_id, alternative_cost, .. } => {
+                    // Skip expanded CastSpell entries — use castable_spells instead.
+                    let key = (*object_id, alternative_cost.is_some());
+                    if !seen_spell_objects.contains(&key) {
+                        // Find the CastableSpell entry for this way to cast.
+                        if let Some(cs_idx) = legal.castable_spells.iter()
+                            .position(|cs| cs.object_id == *object_id
+                                && cs.alternative_cost.is_some() == alternative_cost.is_some())
+                        {
+                            seen_spell_objects.push(key);
+                            let cs = &legal.castable_spells[cs_idx];
+                            let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
+                            let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
+                            // "Cast Skaab Ruinator from graveyard": with one
+                            // copy in hand and one in the graveyard both rows
+                            // carried the same name and the same tap plan, and
+                            // the only thing telling them apart was an
+                            // "(alternative cost {1}{U}{U})" note that was not
+                            // true — a graveyard cast pays the printed cost
+                            // (CR 601.3a). Picking the wrong row exiles three
+                            // different cards and is not undoable (issue #300).
+                            let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
+                            let mut notes: Vec<String> = Vec::new();
+                            match &cs.alternative_cost {
+                                Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
+                                    notes.push("without paying its mana cost".to_string()),
+                                Some(alt) if !cs.is_flashback =>
+                                    notes.push(format!("alternative cost {alt}")),
+                                _ => {}
+                            }
+                            // The additional cost is the whole reason two ways
+                            // to cast the same card are not interchangeable.
+                            if let Some(extra) = &cs.additional_cost_label {
+                                notes.push(extra.clone());
+                            }
+                            if !tap_str.is_empty() {
+                                notes.push(format!("tap {tap_str}"));
+                            }
+                            let label = MenuLabel {
+                                head: format!("{verb} {}{zone_note}", cs.name),
+                                elastic: if notes.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" ({})", notes.join(", "))
+                                },
+                                tail: String::new(),
+                                ids: vec![cs.object_id.0],
+                            };
+                            // Deduplicate identical cast labels (e.g. two copies of same spell).
+                            let full = label.full();
+                            if seen_cast_labels.contains(&full) { continue; }
+                            seen_cast_labels.push(full);
+                            display.push(DisplayEntry::Cast(cs_idx));
+                            display_labels.push(label);
+                        }
+                    }
+                }
+                Action::ActivateManaAbility { .. } => {
+                    // Defer tap actions to appear after cast spells.
+                    deferred_taps.push((i, Self::menu_label_for(view, action)));
+                }
+                Action::Concede => {
+                    // Defer concede to always be last.
+                    deferred_concede = Some((i, MenuLabel::plain(Self::format_action(view, action))));
+                }
+                // The ability's own text goes in the label: without it two
+                // different abilities on one permanent rendered identically
+                // and the player could not tell a 2-mana ability from a
+                // 5-mana one (#61). The engine already collapses the metadata
+                // into activatable_abilities, description included.
+                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, sacrifice, .. } => {
+                    let desc = legal.activatable_abilities.iter()
+                        .find(|ab| ab.object_id == *object_id
+                            && ab.ability_index == *ability_index
+                            && ab.source_card_id == *source_card_id)
+                        .map(|ab| ab.description.clone())
+                        .filter(|d| !d.is_empty());
+                    // A sacrifice cost with a choice in it (CR 601.2h) is
+                    // part of what this entry does: Grimgrin's two
+                    // "Sacrifice another creature" entries differed only in
+                    // which creature died, with nothing on screen saying so
+                    // (issue #80). Sacrificing THIS permanent is already in
+                    // the description, so only name a different one.
+                    let sac_suffix = match sacrifice {
+                        Some(sac) if sac != object_id =>
+                            format!(", sacrificing {}", Self::perm_name(view, *sac)),
+                        // A choose-a-creature cost picking the source itself:
+                        // this entry rendered with no creature named at all,
+                        // while its siblings said whom they sacrifice (#141).
+                        // (A SacrificeThis cost carries no choice and no
+                        // sacrifice id, so it never reaches this arm.)
+                        Some(_) => ", sacrificing itself".to_string(),
+                        None => String::new(),
+                    };
+                    // The row's identity is (source, targets, sacrifice) —
+                    // two Wooden Stakes, or one Stake offered against two
+                    // identical tokens, collide on the SOURCE as readily as
+                    // on the target, and only the target half was ever
+                    // disambiguated (issue #257).
+                    let mut ids = vec![object_id.0];
+                    ids.extend(targets.iter().filter_map(|t| match t {
+                        Target::Object(id) => Some(id.0),
+                        _ => None,
+                    }));
+                    if let Some(sac) = sacrifice { ids.push(sac.0); }
+                    let label = match desc {
+                        Some(d) => MenuLabel {
+                            head: format!("{}: ", Self::perm_name(view, *object_id)),
+                            elastic: d,
+                            tail: format!("{}{}", Self::targets_suffix(view, targets), sac_suffix),
+                            ids,
+                        },
+                        None => MenuLabel {
+                            head: Self::format_action(view, action),
+                            elastic: String::new(),
+                            tail: sac_suffix,
+                            ids,
+                        },
+                    };
+                    display.push(DisplayEntry::Direct(i));
+                    display_labels.push(label);
+                }
+                // Choose-cards-from-hand menus: two Forests are
+                // interchangeable, so options whose labels render identically
+                // are one choice, not several. Ten of a 35-entry bottoming
+                // menu were unreadable duplicates (#54). Only these variants:
+                // elsewhere an identical label can hide a genuinely different
+                // action (two abilities on one permanent — #61).
+                Action::BottomCards { .. } | Action::DiscardCards { .. } => {
+                    let label = Self::format_action(view, action);
+                    if display_labels.iter().any(|l: &MenuLabel| l.full() == label) { continue; }
+                    display.push(DisplayEntry::Direct(i));
+                    display_labels.push(MenuLabel::plain(label));
+                }
+                _ => {
+                    display.push(DisplayEntry::Direct(i));
+                    display_labels.push(Self::menu_label_for(view, action));
+                }
+            }
+        }
+
+        // Append deferred tap actions after cast spells.
+        for (action_idx, label) in deferred_taps {
+            display.push(DisplayEntry::Direct(action_idx));
+            display_labels.push(label);
+        }
+
+        // Concede is always last.
+        if let Some((action_idx, label)) = deferred_concede {
+            display.push(DisplayEntry::Direct(action_idx));
+            display_labels.push(label);
+        }
+
+        (display, display_labels)
+    }
+
 }
 
 impl Player for CliPlayer {
@@ -4051,11 +4446,6 @@ impl Player for CliPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
-        enum DisplayEntry {
-            Direct(usize),        // index into legal_actions
-            Cast(usize),          // index into legal.castable_spells
-        }
-
         let legal_actions = &legal.actions;
 
         // X-cost funding: prompt the user for an X value and auto-distribute
@@ -4134,168 +4524,7 @@ impl Player for CliPlayer {
             }
         }
 
-        // Build a collapsed display list: non-CastSpell actions + one entry per castable spell.
-        // Each entry maps to either a direct action or an interactive casting flow.
-        let mut display: Vec<DisplayEntry> = Vec::new();
-        let mut display_labels: Vec<String> = Vec::new();
-        // Keyed by (object, casting with an alternative cost): a spell that
-        // can be cast both normally and via Rooftop Storm's "without paying
-        // its mana cost" is TWO menu rows — collapsing on the object alone
-        // dropped the CR 601.2b choice (issue #128).
-        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
-
-        // Ordering: non-tap actions, cast spells, tap actions, concede last.
-        let mut deferred_taps: Vec<(usize, String)> = Vec::new();
-        let mut deferred_concede: Option<(usize, String)> = None;
-        let mut seen_cast_labels: Vec<String> = Vec::new();
-        for (i, action) in legal_actions.iter().enumerate() {
-            match action {
-                Action::CastSpell { object_id, alternative_cost, .. } => {
-                    // Skip expanded CastSpell entries — use castable_spells instead.
-                    let key = (*object_id, alternative_cost.is_some());
-                    if !seen_spell_objects.contains(&key) {
-                        // Find the CastableSpell entry for this way to cast.
-                        if let Some(cs_idx) = legal.castable_spells.iter()
-                            .position(|cs| cs.object_id == *object_id
-                                && cs.alternative_cost.is_some() == alternative_cost.is_some())
-                        {
-                            seen_spell_objects.push(key);
-                            let cs = &legal.castable_spells[cs_idx];
-                            let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
-                            let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
-                            // "Cast Skaab Ruinator from graveyard": with one
-                            // copy in hand and one in the graveyard both rows
-                            // carried the same name and the same tap plan, and
-                            // the only thing telling them apart was an
-                            // "(alternative cost {1}{U}{U})" note that was not
-                            // true — a graveyard cast pays the printed cost
-                            // (CR 601.3a). Picking the wrong row exiles three
-                            // different cards and is not undoable (issue #300).
-                            let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
-                            let mut notes: Vec<String> = Vec::new();
-                            match &cs.alternative_cost {
-                                Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
-                                    notes.push("without paying its mana cost".to_string()),
-                                Some(alt) if !cs.is_flashback =>
-                                    notes.push(format!("alternative cost {alt}")),
-                                _ => {}
-                            }
-                            // The additional cost is the whole reason two ways
-                            // to cast the same card are not interchangeable.
-                            if let Some(extra) = &cs.additional_cost_label {
-                                notes.push(extra.clone());
-                            }
-                            if !tap_str.is_empty() {
-                                notes.push(format!("tap {tap_str}"));
-                            }
-                            let label = if notes.is_empty() {
-                                format!("{verb} {}{zone_note}", cs.name)
-                            } else {
-                                format!("{verb} {}{zone_note} ({})", cs.name, notes.join(", "))
-                            };
-                            // Deduplicate identical cast labels (e.g. two copies of same spell).
-                            if seen_cast_labels.contains(&label) { continue; }
-                            seen_cast_labels.push(label.clone());
-                            display.push(DisplayEntry::Cast(cs_idx));
-                            display_labels.push(label);
-                        }
-                    }
-                }
-                Action::ActivateManaAbility { .. } => {
-                    // Defer tap actions to appear after cast spells.
-                    deferred_taps.push((i, Self::format_action(view, action)));
-                }
-                Action::Concede => {
-                    // Defer concede to always be last.
-                    deferred_concede = Some((i, Self::format_action(view, action)));
-                }
-                // The ability's own text goes in the label: without it two
-                // different abilities on one permanent rendered identically
-                // and the player could not tell a 2-mana ability from a
-                // 5-mana one (#61). The engine already collapses the metadata
-                // into activatable_abilities, description included.
-                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, sacrifice, .. } => {
-                    let desc = legal.activatable_abilities.iter()
-                        .find(|ab| ab.object_id == *object_id
-                            && ab.ability_index == *ability_index
-                            && ab.source_card_id == *source_card_id)
-                        .map(|ab| ab.description.clone())
-                        .filter(|d| !d.is_empty());
-                    // A sacrifice cost with a choice in it (CR 601.2h) is
-                    // part of what this entry does: Grimgrin's two
-                    // "Sacrifice another creature" entries differed only in
-                    // which creature died, with nothing on screen saying so
-                    // (issue #80). Sacrificing THIS permanent is already in
-                    // the description, so only name a different one.
-                    let sac_suffix = match sacrifice {
-                        Some(sac) if sac != object_id =>
-                            format!(", sacrificing {}", Self::perm_name(view, *sac)),
-                        // A choose-a-creature cost picking the source itself:
-                        // this entry rendered with no creature named at all,
-                        // while its siblings said whom they sacrifice (#141).
-                        // (A SacrificeThis cost carries no choice and no
-                        // sacrifice id, so it never reaches this arm.)
-                        Some(_) => ", sacrificing itself".to_string(),
-                        None => String::new(),
-                    };
-                    let label = match desc {
-                        Some(d) => format!("{}: {}{}{}", Self::perm_name(view, *object_id),
-                            d, Self::targets_suffix(view, targets), sac_suffix),
-                        None => format!("{}{}", Self::format_action(view, action), sac_suffix),
-                    };
-                    display.push(DisplayEntry::Direct(i));
-                    display_labels.push(label);
-                }
-                // Choose-cards-from-hand menus: two Forests are
-                // interchangeable, so options whose labels render identically
-                // are one choice, not several. Ten of a 35-entry bottoming
-                // menu were unreadable duplicates (#54). Only these variants:
-                // elsewhere an identical label can hide a genuinely different
-                // action (two abilities on one permanent — #61).
-                Action::BottomCards { .. } | Action::DiscardCards { .. } => {
-                    let label = Self::format_action(view, action);
-                    if display_labels.contains(&label) { continue; }
-                    display.push(DisplayEntry::Direct(i));
-                    display_labels.push(label);
-                }
-                _ => {
-                    display.push(DisplayEntry::Direct(i));
-                    display_labels.push(Self::format_action(view, action));
-                }
-            }
-        }
-
-        // Append deferred tap actions after cast spells.
-        for (action_idx, label) in deferred_taps {
-            display.push(DisplayEntry::Direct(action_idx));
-            display_labels.push(label);
-        }
-
-        // Concede is always last.
-        if let Some((action_idx, label)) = deferred_concede {
-            display.push(DisplayEntry::Direct(action_idx));
-            display_labels.push(label);
-        }
-
-        // Two choice options that render identically but are different game
-        // objects must be tellable apart — two identical tokens in the
-        // sacrifice picker decided whether an Aura on the stack would fizzle
-        // (issue #136). Repeated labels for object choices get the id.
-        {
-            let dup: Vec<bool> = display_labels.iter()
-                .map(|l| display_labels.iter().filter(|x| *x == l).count() > 1)
-                .collect();
-            for (k, entry) in display.iter().enumerate() {
-                if !dup[k] { continue; }
-                let DisplayEntry::Direct(i) = entry else { continue };
-                if let Action::ResolveChoice {
-                    choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
-                        Some(mtg_engine::actions::Target::Object(id))),
-                } = &legal_actions[*i] {
-                    display_labels[k] = format!("{} (#{})", display_labels[k], id.0);
-                }
-            }
-        }
+        let (display, display_labels) = Self::build_action_menu(view, legal);
 
         // Issue #71: a decision of a different identity (seat or prompt
         // kind) must not consume keystrokes typed against an earlier
@@ -4610,6 +4839,139 @@ mod tests {
         assert_eq!(CliPlayer::clip_middle("Pass priority", 113), "Pass priority");
         assert_eq!(CliPlayer::clip_middle("abcdef", 1), "…");
         assert_eq!(CliPlayer::clip_middle("abcdef", 0), "");
+    }
+
+    /// One equip label per Champion, differing only in whom it targets and
+    /// whom it sacrifices.
+    fn hauberk_row(target: u64, sacrifice: u64) -> MenuLabel {
+        MenuLabel {
+            head: "Demonmail Hauberk (your): ".to_string(),
+            elastic: "Equip—Sacrifice a creature".to_string(),
+            tail: format!(
+                " targeting Champion of the Parish {t}/{t} (your), sacrificing Champion of the Parish {s}/{s} (your)",
+                t = target, s = sacrifice),
+            ids: vec![7, target, sacrifice],
+        }
+    }
+
+    /// Issue #258: eight Demonmail Hauberk equips that differ only in which
+    /// Champion they target rendered as two byte-identical lines — the clip
+    /// split the whole label 3:2 and landed the ellipsis inside the target,
+    /// the one thing they differed by.
+    #[test]
+    fn middle_clipping_keeps_distinct_equip_entries_distinguishable() {
+        let rows: Vec<MenuLabel> = (1..=4).flat_map(|t| (1..=2).map(move |s| hauberk_row(t, s)))
+            .collect();
+        assert_eq!(rows.len(), 8);
+
+        let lines = CliPlayer::clip_menu_page(&rows, 113);
+        for line in &lines {
+            assert!(str_cols(line) <= 113, "row overflows the panel: {line:?}");
+        }
+        let mut sorted = lines.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), lines.len(),
+            "eight different equips, eight different rows; got {lines:#?}");
+    }
+
+    /// Issue #258 / #80: the head names the permanent, the tail carries the
+    /// choice, and the ability's own description is the only part that may be
+    /// eaten to make room.
+    #[test]
+    fn a_menu_row_keeps_its_object_names_when_the_description_is_what_overflows() {
+        let row = hauberk_row(3, 1);
+        let fitted = CliPlayer::fit_menu_label(&row, 113);
+
+        assert!(str_cols(&fitted) <= 113);
+        assert!(fitted.starts_with("Demonmail Hauberk"),
+            "the permanent is still named: {fitted:?}");
+        assert!(fitted.ends_with("sacrificing Champion of the Parish 1/1 (your)"),
+            "the tail survives whole: {fitted:?}");
+        assert!(fitted.contains("targeting Champion of the Parish 3/3 (your)"),
+            "the target survives whole: {fitted:?}");
+        // The description goes first, then the head — never the choice.
+        assert!(!fitted.contains("Equip"), "the prose is what was eaten: {fitted:?}");
+        let ellipsis = fitted.find('…').expect("truncation is visible");
+        let targeting = fitted.find(" targeting").expect("the tail is there");
+        assert!(ellipsis < targeting, "the cut falls before the choice: {fitted:?}");
+    }
+
+    /// Issue #257: rows that name different objects must be tellable apart
+    /// even at a width where no name survives — and rows that name the SAME
+    /// objects must stay alike, or #54's collapse of interchangeable
+    /// duplicates is undone.
+    #[test]
+    fn colliding_menu_rows_are_told_apart_by_object_id() {
+        let narrow = CliPlayer::clip_menu_page(&[hauberk_row(3, 1), hauberk_row(4, 1)], 40);
+        assert_ne!(narrow[0], narrow[1], "different targets, different rows: {narrow:#?}");
+        assert!(narrow[0].contains("#3") && narrow[1].contains("#4"),
+            "told apart by object id: {narrow:#?}");
+        for line in &narrow {
+            assert!(str_cols(line) <= 40, "row overflows the panel: {line:?}");
+        }
+
+        let same = CliPlayer::clip_menu_page(&[hauberk_row(3, 1), hauberk_row(3, 1)], 40);
+        assert_eq!(same[0], same[1],
+            "the same offer twice is one row twice, not two numbered ones");
+    }
+
+    /// A pane too narrow for both the label and an id gets the label: an
+    /// ellipsis and a number says less than the row already did.
+    #[test]
+    fn a_pane_too_narrow_for_an_id_keeps_the_label() {
+        let lines = CliPlayer::clip_menu_page(&[hauberk_row(3, 1), hauberk_row(4, 1)], 10);
+        for line in &lines {
+            assert!(str_cols(line) <= 10, "row overflows the panel: {line:?}");
+            assert!(!line.contains('#'), "no room for an id: {line:?}");
+        }
+    }
+
+    /// Issue #109 in the menu clip: counting chars let a wide-character label
+    /// overflow the panel and paint over the CARDS pane beside it (#53).
+    #[test]
+    fn the_menu_clip_measures_display_columns_not_chars() {
+        let wide = "四人日本語のカード名がとても長い場合のテスト";
+        assert!(wide.chars().count() < str_cols(wide), "test precondition: wide chars");
+        assert!(str_cols(&CliPlayer::clip_middle(wide, 20)) <= 20);
+        assert_eq!(clip_cols_from_end("稲妻稲妻稲", 5), "妻稲",
+            "the last whole characters that fit");
+
+        let row = MenuLabel { head: wide.to_string(), ..MenuLabel::default() };
+        assert!(str_cols(&CliPlayer::fit_menu_label(&row, 20)) <= 20);
+    }
+
+    /// Issue #257: an untargeted ability on one of six identically-named
+    /// creatures is a different action per creature, and the row's identity
+    /// starts with its source.
+    #[test]
+    fn an_action_is_identified_by_every_object_it_names() {
+        use mtg_engine::actions::{Action, Target};
+        use mtg_engine::ids::ObjectId;
+        let equip = Action::ActivateAbility {
+            object_id: ObjectId(7),
+            ability_index: 0,
+            targets: vec![Target::Object(ObjectId(73))],
+            tap_plan: vec![],
+            sacrifice: Some(ObjectId(74)),
+            x_value: None,
+            source_card_id: None,
+        };
+        assert_eq!(CliPlayer::action_object_ids(&equip), vec![7, 73, 74],
+            "source, then targets, then sacrifice");
+
+        let land = Action::PlayLand { object_id: ObjectId(3) };
+        assert_eq!(CliPlayer::action_object_ids(&land), vec![3]);
+
+        // Two untapped Islands are the same offer; numbering them is noise.
+        let tap = Action::ActivateManaAbility { object_id: ObjectId(3), ability_index: 0 };
+        assert!(CliPlayer::action_object_ids(&tap).is_empty());
+
+        // A yes/no or an index names no object at all.
+        let yes = Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
+        };
+        assert!(CliPlayer::action_object_ids(&yes).is_empty());
     }
 
     /// The CARDS panel prints its own keyword line and its own flashback
