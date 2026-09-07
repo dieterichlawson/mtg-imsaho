@@ -97,3 +97,37 @@ fn the_two_graveyards_are_separate_piles() {
     assert_eq!(names_in_graveyard(&state, P0), vec!["Devil's Play"]);
     assert_eq!(names_in_graveyard(&state, P1), vec!["Geistflame"]);
 }
+
+/// The pile records the graveyard and only the graveyard. A card that moved
+/// somewhere else was never in it, and a card that left the battlefield for
+/// exile does not join it on the way past.
+///
+/// The two clauses that keep this true are one condition each, and every
+/// other test here moves cards INTO a graveyard, where a clause that appended
+/// on any move at all reads exactly the same. What it would break is
+/// `objects_in_zone`, which orders a graveyard by this pile and puts anything
+/// missing from it last: a battlefield permanent listed in the pile pushes
+/// the real graveyard cards out of arrival order.
+#[test]
+fn the_pile_records_arrivals_in_the_graveyard_and_nothing_else() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    state.move_object(bear, Zone::Battlefield, &reg);
+    assert!(state.get_player(P0).graveyard_order.is_empty(),
+        "a card that went to the battlefield was never in the graveyard: {:?}",
+        state.get_player(P0).graveyard_order);
+
+    let bolt = spell_in_hand(&mut state, &reg, "Geistflame", P0);
+    state.move_object(bolt, Zone::Exile, &reg);
+    assert!(state.get_player(P0).graveyard_order.is_empty(),
+        "nor was one that went straight to exile");
+
+    // And the pile is still an arrival order for the cards that do arrive.
+    state.move_object(bear, Zone::Graveyard, &reg);
+    let act = spell_in_hand(&mut state, &reg, "Blasphemous Act", P0);
+    state.move_object(act, Zone::Graveyard, &reg);
+    assert_eq!(names_in_graveyard(&state, P0), vec!["Grizzly Bears", "Blasphemous Act"]);
+    assert_eq!(state.get_player(P0).graveyard_order, vec![bear, act]);
+}

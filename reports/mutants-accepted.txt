@@ -180,3 +180,24 @@ mtg-engine/src/invariants/effects.rs: replace == with != in check_core
 # and this `continue` keeps check_settled from piling a second message on the
 # same corruption. Flipping it duplicates a report; it blinds nothing.
 mtg-engine/src/invariants/effects.rs: replace || with && in check_settled
+
+# `Vec::with_capacity` for the tokens a doubling effect makes — a capacity
+# hint, not a count. Deleted rather than accepted; recorded here so the line
+# is not re-filed if an older mutant list surfaces.
+#
+# `from == Some(Graveyard) && to != Graveyard`, the clause that takes a card
+# OUT of the graveyard pile. Equivalent given the clause beside it: the pile
+# only ever lists cards in a graveyard, so widening this one to "or the
+# destination is not a graveyard" only re-runs a `retain` that removes
+# nothing. The clause that maintains that invariant — the one that appends —
+# is not accepted and is killed by
+# `the_pile_records_arrivals_in_the_graveyard_and_nothing_else`.
+mtg-engine/src/state.rs: replace && with || in GameState::move_object
+
+# `resolving_spell` cleared when the tracked spell leaves the stack. Its one
+# consumer re-checks the zone before acting, so a stale tracker changes
+# nothing there — and the invariant checker asserts the tracker directly
+# ("resolving_spell #N is in Graveyard"), so a stale one is reported by the
+# nightly fuzzer rather than passing silently. Covered, just not by a unit
+# test.
+mtg-engine/src/state.rs: replace != with == in GameState::move_object

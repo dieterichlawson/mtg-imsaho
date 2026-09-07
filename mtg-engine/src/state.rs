@@ -713,8 +713,7 @@ impl GameState {
             _ => return Vec::new(),
         };
 
-        let total = 1 + extra_copies as usize;
-        let mut all_ids = Vec::with_capacity(total);
+        let mut all_ids = Vec::new();
 
         // Create extra doubled copies first (cloning inputs).
         for _ in 0..extra_copies {
@@ -1027,7 +1026,15 @@ impl GameState {
         // here rather than after the zone change. Unbreathing Horde entering
         // from the graveyard counts itself precisely because it is still in
         // the graveyard at this moment.
-        let entering = if to == Zone::Battlefield && from.is_some_and(|z| z != Zone::Battlefield) {
+        // Asked once and carried, because the same question decides both
+        // halves of entering: whether the event is planned here (before the
+        // move, per CR 616.1) and whether the plan is applied below. Written
+        // out twice, the two could disagree — and a looser copy here plans an
+        // entry for a card going to a graveyard, running every replacement
+        // effect in the game against an event that is not happening.
+        let is_entering = to == Zone::Battlefield
+            && from.is_some_and(|z| z != Zone::Battlefield);
+        let entering = if is_entering {
             Some(self.plan_entering(id, from, registry))
         } else {
             None
@@ -1267,7 +1274,7 @@ impl GameState {
                     milled_player: owner_before_move,
                 });
             }
-            if to == Zone::Battlefield && from_zone != Zone::Battlefield {
+            if is_entering {
                 // Worked out before the move; applied now, before
                 // EnteredBattlefield is emitted, so nothing observes a window
                 // in which the permanent is untapped or missing its counters.
