@@ -2341,19 +2341,48 @@ impl CliPlayer {
     /// player (issue #219), and the keywords the block turns on were not
     /// there either (issue #243). All of it is public information at the
     /// moment the defender has to use it.
+    /// The entry as it would read with no width limit. The screen goes
+    /// through [`combat_row`](Self::combat_row), which clamps it; this is
+    /// what the tests about *what an entry says* read, so they can state
+    /// that without stating a width too.
+    #[cfg(test)]
     fn combat_entry(view: &GameView, id: ObjectId, others: &[ObjectId]) -> String {
+        let (head, elastic, tail) = Self::combat_entry_parts(view, id, others);
+        format!("{head}{elastic}{tail}")
+    }
+
+    /// The same entry, split the way [`elide_middle`](Self::elide_middle)
+    /// wants it: what must survive, what may be cut, and what must survive at
+    /// the end.
+    ///
+    /// The combat lists were emitted at their natural length while the
+    /// battlefield rows beside them were already clamped (#244). An Elite
+    /// Inquisitor's abilities are 100 columns of suffix on their own, so its
+    /// row ran through the pane's right border and overwrote the CARDS pane
+    /// on exactly the line the defender was reading (issue #328).
+    ///
+    /// What may be cut is the ability list — long, and the only part with a
+    /// natural middle. What may not is the name and P/T (which say what the
+    /// creature is), the attack target (CR 508.1a: it decides how the
+    /// creature should be blocked) and the `(#id)` disambiguator, which is
+    /// the whole reason two identical rows can be told apart (#136).
+    fn combat_entry_parts(view: &GameView, id: ObjectId, others: &[ObjectId])
+        -> (String, String, String)
+    {
         let perm = view.battlefield.iter().find(|p| p.object_id == id);
-        let mut label = Self::perm_name(view, id);
+        let head = Self::perm_name(view, id);
+        let mut elastic = String::new();
+        let mut tail = String::new();
         if let Some(p) = perm {
             let mut abilities: Vec<String> = p.keywords.iter()
                 .map(|k| format!("{k:?}").to_lowercase())
                 .collect();
             abilities.extend(p.protections.iter().cloned());
             if !abilities.is_empty() {
-                label.push_str(&format!(" ({})", abilities.join(", ")));
+                elastic.push_str(&format!(" ({})", abilities.join(", ")));
             }
             if p.damage_marked > 0 {
-                label.push_str(&format!(" ({}d)", p.damage_marked));
+                tail.push_str(&format!(" ({}d)", p.damage_marked));
             }
             // CR 508.1a: each attacker attacks a player or a planeswalker of
             // its own, and which one decides how it should be blocked.
@@ -2365,7 +2394,7 @@ impl CliPlayer {
                             .copied().unwrap_or(0);
                         format!("{} [{loyalty} loyalty]", w.name)
                     });
-                label.push_str(&format!(" -> {name}"));
+                tail.push_str(&format!(" -> {name}"));
             }
         }
         // Two entries that still read the same are told apart by object id,
@@ -2374,9 +2403,32 @@ impl CliPlayer {
             other != id && Self::combat_entry_base(view, other) == Self::combat_entry_base(view, id)
         });
         if collides {
-            label.push_str(&format!(" (#{})", id.0));
+            tail.push_str(&format!(" (#{})", id.0));
         }
-        label
+        (head, elastic, tail)
+    }
+
+    /// A combat-list row, clamped to the pane it is drawn in (issue #328).
+    ///
+    /// `prefix` is the row's own `"  N: "`, `suffix` whatever the caller
+    /// prints after the entry in its own colour — `[MUST ATTACK]`, `[needs
+    /// N+ blockers]`, `(can block: …)`. Both are budgeted for here so the
+    /// caller can still paint them separately. `panel_w` is the pane's
+    /// content width, passed in rather than measured so the widths that
+    /// matter can be stated in a test without a terminal.
+    fn combat_row(view: &GameView, id: ObjectId, others: &[ObjectId],
+                  prefix: &str, suffix: &str, panel_w: usize) -> String {
+        let (head, elastic, tail) = Self::combat_entry_parts(view, id, others);
+        let budget = panel_w.saturating_sub(str_cols(prefix) + str_cols(suffix));
+        // `elide_middle` gives up the ability list first and the identity
+        // last, which is the trade #270 settled. It can still hand back more
+        // than the budget when the identity alone is wider than the pane —
+        // a Terror of Kruin Pass aimed at a Liliana is 70 columns of name,
+        // attack target and id against a 58-column panel — so `clip_middle`
+        // is the last resort, cutting from the middle so that the creature
+        // at the front and the `-> planeswalker (#id)` at the back both
+        // survive. The frame is never broken, whatever is on the row.
+        Self::clip_middle(&Self::elide_middle(&head, &elastic, &tail, budget), budget)
     }
 
     /// The part of a combat entry that decides whether two rows collide.
@@ -3880,6 +3932,7 @@ impl CliPlayer {
             let (offset, shown, paged) =
                 Self::menu_page(eligible.len(), avail, list_offset.get());
             list_shown.set(shown);
+            let panel_w = Self::middle_panel_width_at(Self::term_width());
             for (i, &id) in eligible.iter().enumerate().skip(offset).take(shown) {
                 let forced = must_attack.contains(&id);
                 let tag = if forced { " [MUST ATTACK]" } else { "" };
@@ -3887,7 +3940,8 @@ impl CliPlayer {
                 let _ = execute!(out, cursor::MoveTo(col, r),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}", Self::combat_entry(view, id, eligible))),
+                    Print(format!(": {}",
+                        Self::combat_row(view, id, eligible, &format!("  {i}: "), tag, panel_w))),
                     SetForegroundColor(color), Print(tag), ResetColor);
                 r += 1;
             }
@@ -4134,6 +4188,7 @@ impl CliPlayer {
             let (atk_off, atk_n, atk_paged) =
                 Self::menu_page(attacker_ids.len(), atk_avail, atk_offset.get());
             atk_shown.set(atk_n);
+            let panel_w = Self::middle_panel_width_at(Self::term_width());
             for (i, &id) in attacker_ids.iter().enumerate().skip(atk_off).take(atk_n) {
                 // CR 509.1b: say the minimum-blockers requirement (menace,
                 // Terror of Kruin Pass) up front — an unmarked menace attacker
@@ -4141,8 +4196,10 @@ impl CliPlayer {
                 let note = min_blockers.get(&id)
                     .map(|min| format!(" [needs {min}+ blockers]"))
                     .unwrap_or_default();
+                let prefix = format!("  {i}: ");
                 let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("  {}: {}{}", i, Self::combat_entry(view, id, attacker_ids), note)));
+                    Print(format!("{prefix}{}{note}",
+                        Self::combat_row(view, id, attacker_ids, &prefix, &note, panel_w))));
                 r += 1;
             }
             if atk_paged {
@@ -4176,8 +4233,10 @@ impl CliPlayer {
                 } else {
                     format!(" (can block: {})", legal.join(" "))
                 };
+                let prefix = format!("  {i}: ");
                 let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("  {}: {}{}", i, Self::combat_entry(view, id, eligible_blockers), note)));
+                    Print(format!("{prefix}{}{note}",
+                        Self::combat_row(view, id, eligible_blockers, &prefix, &note, panel_w))));
                 r += 1;
             }
             if blk_paged {
@@ -6633,6 +6692,78 @@ mod tests {
         let on_player = CliPlayer::combat_entry(&v, ObjectId(19), &ids);
         assert!(on_walker.contains("Liliana of the Veil [4 loyalty]"), "got {on_walker}");
         assert!(!on_player.contains("Liliana"), "got {on_player}");
+    }
+
+    /// Issue #328: the combat lists were emitted at their natural length
+    /// while the battlefield rows beside them were already clamped (#244).
+    /// An Elite Inquisitor's ability list is ~100 columns on its own, so its
+    /// row ran through the pane's right border and overwrote the CARDS pane
+    /// on exactly the line the defender reads to choose a block.
+    ///
+    /// What gives way is the ability list; the name, the attack target
+    /// (CR 508.1a) and the `(#id)` disambiguator (#136) stay.
+    #[test]
+    fn a_combat_row_is_clamped_to_the_pane_it_is_drawn_in() {
+        let mut inq = creature(90, "Elite Inquisitor", 0);
+        inq.keywords = vec![mtg_engine::types::Keyword::FirstStrike,
+                            mtg_engine::types::Keyword::Vigilance];
+        inq.protections = vec!["protection from Vampires".into(),
+                               "protection from Werewolves".into(),
+                               "protection from Zombies".into()];
+        let mut v = view(Step::DeclareBlockers, 7, true);
+        v.battlefield = vec![inq];
+        let ids = vec![ObjectId(90)];
+        // 100 columns: the narrowest width at which the CARDS pane exists,
+        // and the one the issue's capture was taken at.
+        let panel = CliPlayer::middle_panel_width_at(100);
+
+        let unclamped = CliPlayer::combat_entry(&v, ObjectId(90), &ids);
+        assert!(unclamped.chars().count() > panel,
+            "test precondition: the entry is wider than the pane ({} > {panel})",
+            unclamped.chars().count());
+
+        let prefix = "  0: ";
+        let suffix = " (can block: 0)";
+        let row = CliPlayer::combat_row(&v, ObjectId(90), &ids, prefix, suffix, panel);
+        assert!(prefix.chars().count() + row.chars().count() + suffix.chars().count() <= panel,
+            "the whole row fits the {panel}-column pane: {prefix}{row}{suffix}");
+        assert!(row.starts_with("Elite Inquisitor"),
+            "the creature is still named: {row}");
+        assert!(row.contains('…'), "and the ability list is what gave way: {row}");
+    }
+
+    /// The same clamp keeps the tail, which is the half a block decision
+    /// cannot do without: which planeswalker an attacker is aimed at
+    /// (CR 508.1a) and the id that tells two identical rows apart (#136).
+    #[test]
+    fn a_clamped_combat_row_keeps_the_attack_target_and_the_id() {
+        let mut walker = creature(51, "Liliana of the Veil", 0);
+        walker.card_types = vec![CardType::Planeswalker];
+        walker.counters.insert(mtg_engine::types::CounterType::Loyalty, 4);
+        let long = |id: u64| {
+            let mut c = creature(id, "Terror of Kruin Pass", 1);
+            c.keywords = vec![mtg_engine::types::Keyword::FirstStrike,
+                              mtg_engine::types::Keyword::Vigilance,
+                              mtg_engine::types::Keyword::Trample];
+            c.protections = vec!["protection from Vampires".into(),
+                                 "protection from Werewolves".into()];
+            c.attacking = Some(mtg_engine::view::AttackTarget::Planeswalker(ObjectId(51)));
+            c
+        };
+        let mut v = view(Step::DeclareBlockers, 25, false);
+        v.battlefield = vec![walker, long(18), long(19)];
+        let ids = vec![ObjectId(18), ObjectId(19)];
+
+        let row = CliPlayer::combat_row(&v, ObjectId(18), &ids, "  0: ", "",
+            CliPlayer::middle_panel_width_at(100));
+        assert!(row.starts_with("Terror of Kruin Pass"),
+            "the creature is still named: {row}");
+        assert!(row.ends_with("(#18)"),
+            "and the id that tells the two apart is still on the end: {row}");
+        assert!(row.contains("loyalty]"),
+            "so is enough of the attack target to see it is a planeswalker: {row}");
+        assert!(!row.contains("vigilance"),
+            "the ability list is what gave way, all of it here: {row}");
     }
 
     /// Issue #243: the keywords the block turns on are on the line the block
