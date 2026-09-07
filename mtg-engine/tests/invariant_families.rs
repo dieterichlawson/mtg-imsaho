@@ -1870,6 +1870,29 @@ fn turn_and_result_clauses_each_have_a_violating_state() {
         mtg_engine::ids::PlayerId(u8::try_from(s.players.len()).unwrap())));
     flags_settled(&s, &reg, "is not a player");
 
+    // CR 104.2a: the winner is the one who did not lose, and everyone else
+    // did. A clean win says nothing; each half of that on its own does.
+    let mut won = state.clone();
+    won.get_player_mut(P1).lost = true;
+    won.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    won.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    let needle = "the loss flags say otherwise";
+    assert!(!check_settled(&as_collected(&won), &reg).iter().any(|m| m.contains(needle)),
+        "p0 won and p1 lost, which is what the flags say: {:?}",
+        check_settled(&as_collected(&won), &reg));
+
+    // The winner lost too.
+    let mut s = won.clone();
+    s.get_player_mut(P0).lost = true;
+    s.get_player_mut(P0).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    flags_settled(&s, &reg, needle);
+
+    // Or somebody else did not lose.
+    let mut s = won.clone();
+    s.get_player_mut(P1).lost = false;
+    s.get_player_mut(P1).loss_reason = None;
+    flags_settled(&s, &reg, needle);
+
     // "Lost because the opponent won" names the opponent who won.
     let mut s = state.clone();
     s.get_player_mut(P1).lost = true;
