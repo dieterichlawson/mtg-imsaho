@@ -476,3 +476,43 @@ fn a_mill_says_when_the_library_ran_out_under_it() {
     assert!(index_of(&lines, "library ran out").is_none(),
         "nothing ran out: {lines:?}");
 }
+
+/// "Target player discards two cards" is two choices, not one. The engine
+/// asks for the first, and asks again for the second once the answer to the
+/// first has been applied — CR 701.8a, one card at a time, each chosen by the
+/// discarding player.
+///
+/// The chain runs only when there is more to ask for and nothing else is
+/// mid-flight, and every other test of a multi-card discard uses a hand small
+/// enough that no choice arises at all.
+#[test]
+fn a_two_card_discard_asks_twice() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let hand: Vec<_> = ["Geistflame", "Dream Twist", "Grizzly Bears"].iter()
+        .map(|n| spell_in_hand(&mut state, &reg, n, P1))
+        .collect();
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+
+    mtg_engine::engine::discard_cards(&mut state, P1, 2, weevil, "Brain Weevil", &reg);
+    assert!(state.awaiting_action.is_some(),
+        "three cards and an ask for two is a choice, so the player is asked");
+
+    let after_first = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenCard(hand[0]),
+    }, &reg);
+    assert_eq!(after_first.get_object(hand[0]).unwrap().zone, Zone::Graveyard,
+        "the first card they named went");
+    assert!(after_first.awaiting_action.is_some(),
+        "and they are asked again for the second: {:?}", after_first.awaiting_action);
+
+    let after_second = mtg_engine::engine::submit_action(&after_first, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenCard(hand[1]),
+    }, &reg);
+    assert_eq!(after_second.get_object(hand[1]).unwrap().zone, Zone::Graveyard);
+    assert_eq!(after_second.get_object(hand[2]).unwrap().zone, Zone::Hand,
+        "and the third card stays: the ask was for two");
+    assert!(after_second.awaiting_action.is_none(), "nothing further is asked");
+}

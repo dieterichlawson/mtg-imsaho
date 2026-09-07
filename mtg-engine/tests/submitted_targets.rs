@@ -817,3 +817,38 @@ fn a_mandatory_second_slot_with_one_option_is_still_offered() {
     assert_eq!(second[0], vec![Target::Object(theirs)],
         "with the one creature you don't control as its only pairing");
 }
+
+/// A structured exile prompt is answered with a whole set, and the engine
+/// checks the set before it pays anything: the count has to be in the range
+/// the prompt asked for, and every id has to be one it offered.
+///
+/// Skaab Ruinator's is exactly three. Neither client picks a whole offered
+/// action, so a wrong-shaped answer reaches the engine and has to be refused
+/// rather than paid.
+#[test]
+fn an_exile_set_answer_is_checked_against_the_prompt_that_asked_for_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ruinator = named_card_in_graveyard(&mut state, &reg, "Skaab Ruinator", P0);
+    let fodder: Vec<ObjectId> = (0..4)
+        .map(|_| named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0))
+        .collect();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    let asked = mtg_engine::engine::submit_action(
+        &state, &cast_action(ruinator, vec![]), &reg);
+    assert!(asked.awaiting_action.is_some(), "test premise: the cost is asked for");
+
+    let answer = |ids: Vec<ObjectId>| {
+        let after = mtg_engine::engine::submit_action(&asked, &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenExileSet(ids),
+        }, &reg);
+        after.get_object(ruinator).is_some_and(|o| o.zone == Zone::Stack)
+    };
+
+    assert!(answer(fodder[..3].to_vec()), "exactly three of the offered cards pays it");
+    assert!(!answer(fodder[..2].to_vec()), "two is below the range the prompt asked for");
+    assert!(!answer(fodder.clone()), "and four is above it");
+    assert!(!answer(vec![fodder[0], fodder[1], ruinator]),
+        "the Ruinator is on the stack, so it was never one of the options");
+}

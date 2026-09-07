@@ -1116,3 +1116,42 @@ fn snapcaster_cannot_reach_an_instant_in_an_opponents_graveyard() {
         "the only instant in the game is in the opponent's graveyard, which is \
          not \"your graveyard\" — so the trigger had no legal target at all");
 }
+
+/// Snapcaster Mage's grant is for the card it targeted, and no other. The
+/// grant is looked up by target id when the cast is priced (CR 601.3a), and
+/// with two instants in the same graveyard a lookup that matched either one
+/// makes both castable for a cost only one of them was given.
+#[test]
+fn a_granted_flashback_belongs_to_the_card_it_was_granted_to() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // Neither has printed flashback, so a flashback cast can only come from
+    // the grant.
+    let granted = named_card_in_graveyard(&mut state, &reg, "Brimstone Volley", P0);
+    let other = named_card_in_graveyard(&mut state, &reg, "Rebuke", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 4);
+    ready_creature(&mut state, P1, 2, 2);
+    state.priority_player = Some(P0);
+
+    assert!(!can_cast(&state, &reg, granted), "test premise: neither is castable yet");
+    assert!(!can_cast(&state, &reg, other));
+
+    let cost = reg.card_data(state.get_object(granted).unwrap().card_id)
+        .and_then(|d| d.cost).expect("it has a mana cost");
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantFlashback { target: granted, cost });
+
+    assert!(can_cast(&state, &reg, granted), "the card the grant names is castable");
+    assert!(!can_cast(&state, &reg, other),
+        "and the other card in the same graveyard was granted nothing");
+
+    // And the submit path looks the grant up again to price the cast, so it
+    // has to find the same one: neither client picks a whole offered action.
+    let victim = state.objects_in_zone(Zone::Battlefield, P1)[0].id;
+    let after = mtg_engine::engine::submit_action(
+        &state, &cast_action(granted, vec![Target::Object(victim)]), &reg);
+    assert_eq!(after.get_object(granted).map(|o| o.zone), Some(Zone::Stack),
+        "the granted card goes on the stack");
+}

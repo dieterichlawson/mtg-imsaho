@@ -201,3 +201,93 @@ mtg-engine/src/state.rs: replace && with || in GameState::move_object
 # nightly fuzzer rather than passing silently. Covered, just not by a unit
 # test.
 mtg-engine/src/state.rs: replace != with == in GameState::move_object
+
+# ── The 2026-09-07 backlog sweep: what was left after the tests ──────────
+#
+# 226 mutants over the twelve engine files that still carried backlog lines.
+# Most were killed; these are the ones that stayed, each with the reason.
+
+# The auto-pick that pays "exile three creature cards" when the client named
+# none. Unreachable: an unnamed cost raises a ChooseExileFromGraveyard prompt,
+# so by the time payment runs the set has been named. The payability check
+# that decides whether the prompt is raised at all IS covered
+# (`an_unnamed_exile_cost_is_only_payable_with_enough_of_the_right_cards`).
+mtg-engine/src/engine/costs.rs: replace && with || in pay_exile_creatures
+
+# `reduce`'s leftover reduction, which only escapes as `x_discount` for a
+# spell whose cost has BOTH {X} and a generic symbol (CR 601.2f). No card in
+# the pool has one, so the subtraction that produces it is unobservable; the
+# reduction that does reach a printed cost is pinned by the Manor Gargoyle
+# rows in `a_cost_modifier_reaches_the_spells_its_text_names`.
+mtg-engine/src/engine/costs.rs: replace -= with += in reduce
+mtg-engine/src/engine/costs.rs: replace -= with /= in reduce
+
+# The exile-set answer's count check. Redundant with `additional_cost_is_payable`,
+# which requires `exile_ids.len() == n` before anything is paid — the wrong
+# count is refused either way, and the second refusal is the one a test sees.
+mtg-engine/src/engine/actions/choices.rs: replace || with && in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace > with < in resolve_choice
+
+# The pile label in the log line ("Pile 1" / "Pile 2"). Which pile was chosen
+# is a rules decision and is caught; what it is called in the log is not.
+mtg-engine/src/engine/actions/choices.rs: replace == with != in resolve_choice
+
+# `mulligan_keep`'s advance past the player who just kept. Redundant:
+# `advance_mulligan_phase` skips players already marked kept, so it steps over
+# the same player on its own. Kept because that function's contract says the
+# caller advances, and the skip is a safety net rather than the mechanism.
+# `mulligan_mull`'s copy of the same line is NOT redundant and is caught.
+mtg-engine/src/engine/actions/mulligan.rs: replace += with *= in mulligan_keep
+
+# The debug line noting that a duplicate target was dropped. The drop itself
+# is a rules action (CR 601.2c) and is pinned by
+# `a_duplicate_in_a_two_target_spells_second_slot_is_dropped`; the Debug-level
+# note about it is not.
+mtg-engine/src/engine/actions/cast.rs: replace != with == in cast_spell
+
+# The autotap source classifier's "has a utility ability" test, which decides
+# which of several correct tap plans is preferred. A preference, like the rest
+# of the planner (docs/mutation-testing-guide.md), whose contract is
+# property-tested in mana.rs.
+mtg-engine/src/engine/mana_sources.rs: delete ! in gather_mana_sources
+# And the pool rendering inside the "tapped for mana" log line.
+mtg-engine/src/engine/mana_sources.rs: replace > with == in activate_mana_source_reserving
+
+# The attached-permanent walk, reached only for an object with no native
+# ability of the index being activated and no copy grantor — which
+# `legal_actions` never offers, so it is the submit path guarding against a
+# hand-built activation that names an index nothing on that object has.
+mtg-engine/src/engine/actions/abilities.rs: replace && with || in activate_ability
+
+# Loyalty payment, `change > 0` / `change < 0`. Widening either to include
+# zero moves a 0-loyalty ability (Garruk Relentless's) from "neither branch"
+# to a branch that adds or removes zero counters. Equivalent.
+mtg-engine/src/engine/actions/abilities.rs: replace > with >= in activate_loyalty_ability
+mtg-engine/src/engine/actions/abilities.rs: replace < with <= in activate_loyalty_ability
+
+# The chain that asks for the second of two discarded cards. Its three
+# conditions are each unreachable in the pool as it stands: no card raises a
+# multi-card hand choice that is not `discard_immediately`; `remaining > 1`
+# and `remaining >= 1` differ only on the last ask, where the chain asks for
+# zero more and returns at once; and the `awaiting_action.is_none()` guard is
+# for a discard whose own hook asked something mid-chain, which nothing does.
+# The chain itself is pinned by `a_two_card_discard_asks_twice`.
+mtg-engine/src/engine/actions/choices.rs: replace && with || in resolve_choice
+mtg-engine/src/engine/actions/choices.rs: replace > with >= in resolve_choice
+
+# `CastMethod::Alternative(c) if alternative_cost.is_some()` — the guard that
+# keeps a caller-supplied alternative cost from being reduced twice, while a
+# flashback cost still goes through `cost_to_cast`. The two paths differ only
+# for a card with flashback AND a cost reduction that reaches it; Heartless
+# Summoning is the pool's only reducer and it reads creature spells, of which
+# none has flashback.
+mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_some() with false in cast_spell
+mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_some() with true in cast_spell
+
+# Clearing `last_activated_x_value` when a non-X ability is activated, so a
+# stale X cannot leak into the next reader. Kessig Wolf Run is the only card
+# that reads it and it is itself an X ability, so the leak has no audience —
+# and the action contract in invariants/transition.rs asserts the field
+# directly, so a stale one is reported by the nightly fuzzer rather than
+# passing silently.
+mtg-engine/src/engine/actions/abilities.rs: delete ! in activate_ability

@@ -2176,6 +2176,48 @@ fn liliana_minus_six_pile_division_and_choice() {
     assert_eq!(state.get_object(c3).unwrap().zone, Zone::Battlefield, "c3 should survive");
 }
 
+/// There are exactly two piles, so 0 and 1 are the answers and nothing else
+/// is — an index past the end used to mean "pile 2" by falling off the
+/// comparison. Neither client picks a whole offered action, so a
+/// hand-assembled answer reaches the engine and has to be refused.
+#[test]
+fn liliana_minus_six_takes_only_the_two_piles_that_exist() {
+    use mtg_engine::actions::ResolvedChoice;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 9);
+    let c1 = ready_creature(&mut state, P1, 3, 3);
+    let c2 = ready_creature(&mut state, P1, 2, 2);
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+    // P0 puts c1 in pile 1, leaving c2 in pile 2.
+    let divided = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenSubset(vec![c1]),
+    }, &reg);
+
+    let choose = |index: usize| engine::submit_action(&divided, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenIndex(index, format!("Option {index}")),
+    }, &reg);
+
+    let refused = choose(2);
+    assert!(refused.awaiting_action.is_some(),
+        "there is no third pile, so the question is still open");
+    assert_eq!(refused.get_object(c1).unwrap().zone, Zone::Battlefield);
+    assert_eq!(refused.get_object(c2).unwrap().zone, Zone::Battlefield,
+        "and nothing was sacrificed for an answer the prompt never offered");
+
+    // Both real answers work, and they sacrifice different piles.
+    let took_first = choose(0);
+    assert_eq!(took_first.get_object(c1).unwrap().zone, Zone::Graveyard);
+    assert_eq!(took_first.get_object(c2).unwrap().zone, Zone::Battlefield);
+    let took_second = choose(1);
+    assert_eq!(took_second.get_object(c1).unwrap().zone, Zone::Battlefield);
+    assert_eq!(took_second.get_object(c2).unwrap().zone, Zone::Graveyard);
+}
+
 #[test]
 fn liliana_minus_six_empty_pile_allowed() {
     // Ruling: "A pile can be empty. If the player chooses an empty pile, no permanents will be sacrificed."

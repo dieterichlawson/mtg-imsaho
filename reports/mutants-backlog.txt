@@ -18,72 +18,20 @@
 # or bookkeeping inside a computation whose result is already property-tested,
 # and those move to reports/mutants-accepted.txt with a reason rather than
 # acquiring a test that would freeze the implementation.
-mtg-engine/src/engine.rs: delete ! in legal_actions
-mtg-engine/src/engine.rs: delete ! in perform_turn_based_actions
-mtg-engine/src/engine.rs: delete match arm Step::DeclareBlockers in perform_turn_based_actions
-mtg-engine/src/engine.rs: delete match arm Step::EndCombat in perform_turn_based_actions
+#
+# Rebuilt 2026-09-07 from a 226-mutant scoped sweep over the twelve engine
+# files this list named. 158 caught, 67 missed; the missed were triaged under
+# docs/mutation-testing-guide.md into tests, deletions, and accepted-with-a-
+# reason. What is left below is what that sweep still reports and nobody has
+# judged yet.
 mtg-engine/src/engine.rs: replace && with || in run_game_loop_inner
-mtg-engine/src/engine.rs: replace == with != in legal_actions
 mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
-mtg-engine/src/engine.rs: replace || with && in run_game_loop_inner
-mtg-engine/src/engine/actions/abilities.rs: delete ! in activate_ability
-mtg-engine/src/engine/actions/abilities.rs: delete - in activate_loyalty_ability
-mtg-engine/src/engine/actions/abilities.rs: replace != with == in activate_ability
-mtg-engine/src/engine/actions/abilities.rs: replace && with || in activate_ability
-mtg-engine/src/engine/actions/abilities.rs: replace < with <= in activate_loyalty_ability
-mtg-engine/src/engine/actions/abilities.rs: replace < with == in activate_loyalty_ability
-mtg-engine/src/engine/actions/abilities.rs: replace < with > in activate_loyalty_ability
-mtg-engine/src/engine/actions/abilities.rs: replace == with != in activate_ability
-mtg-engine/src/engine/actions/abilities.rs: replace > with >= in activate_loyalty_ability
-mtg-engine/src/engine/actions/cast.rs: replace != with == in cast_spell
-mtg-engine/src/engine/actions/cast.rs: replace == with != in cast_spell
-mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_some() with false in cast_spell
-mtg-engine/src/engine/actions/cast.rs: replace match guard alternative_cost.is_some() with true in cast_spell
-mtg-engine/src/engine/actions/choices.rs: delete match arm (_, ResolvedChoice::CancelCast) in resolve_choice
-mtg-engine/src/engine/actions/choices.rs: replace && with || in resolve_choice
-mtg-engine/src/engine/actions/choices.rs: replace == with != in resolve_choice
-mtg-engine/src/engine/actions/choices.rs: replace > with < in resolve_choice
-mtg-engine/src/engine/actions/choices.rs: replace > with == in resolve_choice
-mtg-engine/src/engine/actions/choices.rs: replace > with >= in resolve_choice
-mtg-engine/src/engine/actions/choices.rs: replace || with && in resolve_choice
-mtg-engine/src/engine/actions/mulligan.rs: replace += with *= in mulligan_keep
-mtg-engine/src/engine/actions/simple.rs: delete match arm Some(AwaitingAction::DiscardToHandSize{player, ..}) in discard_cards
-mtg-engine/src/engine/cards_flow.rs: replace < with <= in discard_cards
-mtg-engine/src/engine/cards_flow.rs: replace < with <= in mill_cards
-mtg-engine/src/engine/cards_flow.rs: replace < with == in discard_cards
-mtg-engine/src/engine/cards_flow.rs: replace < with > in discard_cards
-mtg-engine/src/engine/cards_flow.rs: replace <= with > in legal_discard_actions
-mtg-engine/src/engine/cards_flow.rs: replace == with != in draw_cards
-mtg-engine/src/engine/cards_flow.rs: replace > with == in draw_cards
-mtg-engine/src/engine/cards_flow.rs: replace > with == in mill_cards
-mtg-engine/src/engine/costs.rs: replace && with || in additional_cost_is_payable
-mtg-engine/src/engine/costs.rs: replace && with || in pay_additional_cost
-mtg-engine/src/engine/costs.rs: replace && with || in pay_exile_creatures
-mtg-engine/src/engine/costs.rs: replace - with / in reduce
-mtg-engine/src/engine/costs.rs: replace -= with += in reduce
-mtg-engine/src/engine/costs.rs: replace -= with /= in reduce
-mtg-engine/src/engine/effects.rs: replace || with && in apply_pending_effect
-mtg-engine/src/engine/mana_sources.rs: delete ! in gather_mana_sources
-mtg-engine/src/engine/mana_sources.rs: replace && with || in activate_mana_source
-mtg-engine/src/engine/mana_sources.rs: replace && with || in gather_mana_sources
-mtg-engine/src/engine/mana_sources.rs: replace > with == in activate_mana_source
-mtg-engine/src/engine/targeting.rs: delete ! in detect_modal_choice_mode
-mtg-engine/src/engine/targeting.rs: replace != with == in valid_targets_for_req
-mtg-engine/src/engine/targeting.rs: replace && with || in valid_targets_for_req
-mtg-engine/src/engine/targeting.rs: replace + with * in combinations
-mtg-engine/src/engine/targeting.rs: replace < with <= in combinations
-mtg-engine/src/engine/targeting.rs: replace < with == in combinations
-mtg-engine/src/engine/targeting.rs: replace < with > in target_combinations
-mtg-engine/src/engine/targeting.rs: replace == with != in combinations
-mtg-engine/src/engine/targeting.rs: replace == with != in valid_targets_for_req
-mtg-engine/src/state.rs: delete ! in GameState::become_copy_of
-mtg-engine/src/state.rs: delete ! in GameState::effects_controlled_by
-mtg-engine/src/state.rs: delete ! in GameState::global_effects
-mtg-engine/src/state.rs: delete ! in GameState::move_object
-mtg-engine/src/state.rs: delete match arm Zone::Exile in GameState::move_object
-mtg-engine/src/state.rs: replace != with == in GameState::move_object
-mtg-engine/src/state.rs: replace && with || in GameState::move_object
-mtg-engine/src/state.rs: replace + with * in GameState::create_token_with_subtypes
-mtg-engine/src/state.rs: replace == with != in GameState::move_object
-# invariants.rs remainders after the checker battery (12 raw mutants, three
-# normalized lines; see mutation-testing.md for which are near-equivalent):
+#
+# What these two are: the "fresh first turn" detection at the top of
+# `run_game_loop_inner` — `is_first_turn && turn_number == 1 && step == Untap
+# && priority_player.is_none() && awaiting_action.is_none()` — which decides
+# whether to emit turn 1's `TurnStarted` and `StepStarted`. Loosening it makes
+# a RESUMED game emit them a second time, and with them a second upkeep. The
+# test wants a game resumed from a save at turn 1 untap driven through the
+# real loop, which nothing does yet.
+
