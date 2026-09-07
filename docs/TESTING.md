@@ -64,7 +64,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | turn structure and priority | `turn_structure.rs`, `priority.rs`, `apnap.rs` |
 | starting the game (CR 103) | `mulligan.rs`, `match_play_draw.rs` |
 | choices the engine must not make for a player | `auto_pick.rs`, `sacrifice_choice.rs` |
-| what the player is shown | `harness_display.rs` |
+| what the player is shown | `harness_display.rs`, `protection_wording.rs` |
 | what the game log has to explain | `log_attribution.rs` |
 | characteristics (the `state.rs` layer) | `characteristics_invariant.rs`, `characteristics_card_sweep.rs`, `card_data_invariants.rs`, `subtype.rs`, `keywords.rs`, `enchantments.rs` |
 | fuzzing reach (every card in a coverage deck) | `deck_coverage.rs` |

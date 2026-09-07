@@ -2144,7 +2144,7 @@ impl GameState {
                     ContinuousEffect::ProtectionFrom { filter, .. } =>
                         out.push(format!("protection from {}", filter.describe())),
                     ContinuousEffect::ProtectionFromSubtype { subtype, .. } =>
-                        out.push(format!("protection from {subtype}s")),
+                        out.push(format!("protection from {}", crate::types::plural_of(subtype))),
                     _ => {}
                 }
                 true

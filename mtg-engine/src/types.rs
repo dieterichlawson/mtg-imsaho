@@ -418,6 +418,39 @@ pub enum CreatureFilter {
     Blocking,
 }
 
+/// The plural of a creature type, for the one place the engine has to name a
+/// group of them to a player ("protection from Werewolves").
+///
+/// Appending a bare `s` is what this replaces: `Werewolf` came out as
+/// `Werewolfs` on every frame an Elite Inquisitor was on the battlefield,
+/// contradicting the oracle text the CARDS pane printed beside it (issue
+/// #324). English `-f`/`-fe` nouns are the family Magic's creature types keep
+/// hitting — Wolf, Werewolf, Elf, Dwarf — so the rule, not the one word, is
+/// what is fixed here.
+#[must_use]
+pub fn plural_of(subtype: &str) -> String {
+    let lower = subtype.to_lowercase();
+    if let Some(stem) = lower.strip_suffix("fe") {
+        return format!("{}ves", &subtype[..stem.len()]);
+    }
+    if lower.ends_with('f') {
+        return format!("{}ves", &subtype[..subtype.len() - 1]);
+    }
+    if lower.ends_with('s') || lower.ends_with('x') || lower.ends_with('z')
+        || lower.ends_with("ch") || lower.ends_with("sh")
+    {
+        return format!("{subtype}es");
+    }
+    // A consonant before the `y`: "Ally" is "Allies", but "Monkey" is
+    // "Monkeys".
+    if let Some(stem) = lower.strip_suffix('y') {
+        if !stem.ends_with(['a', 'e', 'i', 'o', 'u']) {
+            return format!("{}ies", &subtype[..stem.len()]);
+        }
+    }
+    format!("{subtype}s")
+}
+
 impl CreatureFilter {
     /// A short phrase naming what this filter matches, for a screen that has
     /// to say what a permanent has protection from. "non-Human creatures",
@@ -429,7 +462,7 @@ impl CreatureFilter {
             CreatureFilter::ControlledByOpponent => "creatures your opponents control".into(),
             CreatureFilter::ControlledByYouToken => "creature tokens you control".into(),
             CreatureFilter::ControlledByAttachedPlayer => "creatures the enchanted player controls".into(),
-            CreatureFilter::HasSubtype(s) => format!("{s}s"),
+            CreatureFilter::HasSubtype(s) => plural_of(s),
             CreatureFilter::HasCardType(t) => format!("{t:?}s").to_lowercase(),
             CreatureFilter::HasKeyword(k) => format!("creatures with {k:?}").to_lowercase(),
             CreatureFilter::Attacking => "attacking creatures".into(),
