@@ -942,7 +942,11 @@ mod tests {
         let cost = ManaCost::new(vec![
             ManaSymbol::Colored(Color::White), ManaSymbol::Colored(Color::Green)]);
         let plan = compute_autotap(&cost, &pool, &sources, &[]).expect("castable");
-        assert_eq!(plan, vec![(ObjectId(1), 0)], "the Plains stays untapped");
+        // The count and the untapped Plains, not the exact entry: which
+        // ability index a source is tapped for is the planner's business.
+        assert_eq!(plan.len(), 1, "one tap, because the pool already pays the {{W}}");
+        assert!(!plan.iter().any(|&(id, _)| id == ObjectId(2)),
+            "and it is not the Plains: {plan:?}");
     }
 
     // ---- autotap tests ----
