@@ -2799,6 +2799,41 @@ impl CliPlayer {
     /// — until the next keystroke. At small sizes the prompt and its options
     /// were not visible at all, and the instinctive key to press is Enter,
     /// which at a priority prompt passes priority (issue #250).
+    /// The column the middle panel's right border sits in, laid out exactly
+    /// as [`render`](Self::render) lays it out. Content stops before it.
+    ///
+    /// Every prompt this CLI reads sits inside that panel, so this — not the
+    /// terminal's right edge — is where a prompt and the echo of what is
+    /// typed into it have to stop. At 100 columns the two are 2-3 columns
+    /// apart, which was enough for the exile-cost hint to erase the frame
+    /// border, and every character typed after it to erase the CARDS pane
+    /// beside it (issue #320; #53 and #109 are the same overrun at the menu
+    /// reader, which has had this bound for a while).
+    fn middle_panel_edge() -> usize {
+        Self::middle_panel_edge_at(Self::term_width())
+    }
+
+    fn term_width() -> usize {
+        terminal::size().unwrap_or((100, 30)).0 as usize
+    }
+
+    /// How many columns of text the middle panel holds at terminal width
+    /// `w`, laid out exactly as [`render`](Self::render) lays it out.
+    /// Anything drawn into that panel — a row, a prompt, the echo of what is
+    /// typed into a prompt — has this much room and no more. Taking the
+    /// width as an argument is what lets the widths that matter be stated
+    /// without a terminal to measure.
+    fn middle_panel_width_at(w: usize) -> usize {
+        let has_right = w >= 100;
+        let gutter_w = w / 5;
+        let right_w = if has_right { gutter_w } else { 0 };
+        w.saturating_sub(gutter_w + right_w + if has_right { 2 } else { 1 })
+    }
+
+    fn middle_panel_edge_at(w: usize) -> usize {
+        w / 5 + 1 + Self::middle_panel_width_at(w)
+    }
+
     fn read_line_redrawing(prompt: &str, redraw: &dyn Fn()) -> String {
         // ONE reader for the terminal, always. This used to be a cooked-mode
         // io::stdin() read while every menu prompt reads crossterm events in
@@ -2811,7 +2846,16 @@ impl CliPlayer {
         // other prompt, removes the second reader outright. Leaves the
         // terminal cooked, as the old read did.
         let mut out = stdout();
-        let _ = execute!(out, Print(prompt));
+        // Clipped to the panel it is drawn in, like every other row of it —
+        // the caller has already put the cursor at the panel's content
+        // column, which is what `mid_print` and the picker's own `clip`
+        // assume too. This row was handed straight to `Print`, so a hint 3
+        // columns wider than the panel drew over the frame's own border, and
+        // then over the CARDS pane beside it (issue #320).
+        let edge = Self::middle_panel_edge();
+        let shown: String = prompt.chars().take(Self::middle_panel_width_at(Self::term_width()))
+            .collect();
+        let _ = execute!(out, Print(&shown));
         let _ = out.flush();
         tui_raw_on();
         // Same paste hardening as the menu reader (#50): a multi-line paste
@@ -2828,9 +2872,8 @@ impl CliPlayer {
         // pane and scroll the frame away (issue #109; same cap idea as the
         // menu reader's, #53). Input beyond the cap still lands in `buf`,
         // it just isn't painted.
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
-        let mut echo_cap = (term_w as usize).saturating_sub(start_col as usize + 1);
+        let mut echo_cap = edge.saturating_sub(start_col as usize + 1);
         let mut buf = String::new();
         loop {
             let Some(ev) = read_event_guarded() else { continue };
@@ -2838,10 +2881,15 @@ impl CliPlayer {
                 // Repaint the frame at the new size, then this prompt and
                 // whatever has been typed into it.
                 redraw();
-                let _ = execute!(out, Print(prompt));
+                // The panel is a different width now, so the prompt is
+                // re-clipped to the new one rather than to the old.
+                let reshown: String = prompt.chars()
+                    .take(Self::middle_panel_width_at(w as usize)).collect();
+                let _ = execute!(out, Print(&reshown));
                 let _ = out.flush();
                 (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
-                echo_cap = (w as usize).saturating_sub(start_col as usize + 1);
+                echo_cap = Self::middle_panel_edge_at(w as usize)
+                    .saturating_sub(start_col as usize + 1);
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
@@ -4504,14 +4552,22 @@ impl CliPlayer {
 
     /// The prompt line for the exile-cost picker. No variant mentions a
     /// blank line: blank is not an answer here any more (issue #262).
+    /// Short enough to leave room to type. These read 50, 60 and 61 columns
+    /// wide, against a middle panel 58 columns across at 100 — the first
+    /// width at which the CARDS pane exists, and where the panel is
+    /// narrowest — so two of the three overran the frame before the player
+    /// touched a key, and the panel bound now added to the reader would have
+    /// left nowhere to echo what they typed (issue #320). The wording they
+    /// gave up, "space-separated", moves one row up to the count line, which
+    /// is drawn clipped and has the room.
     fn exile_prompt_hint(min: usize, max: usize) -> String {
         if max == 0 {
             // The degenerate case: no index exists to type.
-            "  n = exile nothing (X = 0), c = cancel the cast: ".to_string()
+            "  n = nothing (X = 0), c = cancel: ".to_string()
         } else if min == max {
-            format!("  indices (space-separated, exactly {min}, c = cancel the cast): ")
+            format!("  indices, exactly {min} (c = cancel): ")
         } else {
-            "  indices (space-separated, n = none, c = cancel the cast): ".to_string()
+            "  indices, n = none (c = cancel): ".to_string()
         }
     }
 
@@ -4593,9 +4649,10 @@ impl CliPlayer {
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
             let count_line = if min == max {
-                format!("  Choose exactly {min} card{}.", if min == 1 { "" } else { "s" })
+                format!("  Choose exactly {min} card{}, by space-separated index.",
+                    if min == 1 { "" } else { "s" })
             } else {
-                format!("  Choose between {min} and {max} cards.")
+                format!("  Choose between {min} and {max} cards, by space-separated index.")
             };
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Yellow), Print(clip(&count_line)), ResetColor);
@@ -5837,6 +5894,54 @@ mod tests {
             assert!(!hint.contains("blank"), "min={min} max={max}: {hint}");
             assert!(hint.contains("cancel"), "min={min} max={max}: {hint}");
         }
+    }
+
+    /// The prompt row is drawn inside the middle panel, so it has the
+    /// panel's width and not the terminal's. Three hints read 50, 60 and 61
+    /// columns against a panel 58 columns across at 100 — the first width
+    /// at which the CARDS pane exists, and where the panel is narrowest — so
+    /// two of them erased the frame's own right border before the player
+    /// touched a key, and every character typed after that erased the CARDS
+    /// pane beside it (issue #320).
+    ///
+    /// Fitting is not enough: a hint that ends exactly at the border leaves
+    /// nowhere to echo what is typed, so each one has to leave room for a
+    /// selection as long as this prompt can ask for.
+    #[test]
+    fn every_exile_hint_fits_the_panel_with_room_to_type() {
+        // "0 1 2 3 4 5 6 " — the longest answer the pool can demand, since a
+        // graveyard cost picks from what a graveyard holds.
+        const ROOM_TO_TYPE: usize = 14;
+        // 100 is the first width at which the CARDS pane exists, which is
+        // also where the middle panel is narrowest — 58 columns.
+        let panel = CliPlayer::middle_panel_width_at(100);
+        assert_eq!(panel, 58, "the width the issue is about");
+        for (min, max) in [(0usize, 0usize), (1, 1), (3, 3), (0, 5), (2, 7)] {
+            let hint = CliPlayer::exile_prompt_hint(min, max);
+            assert!(hint.chars().count() + ROOM_TO_TYPE <= panel,
+                "min={min} max={max}: {:?} is {} columns of a {panel}-column panel",
+                hint, hint.chars().count());
+        }
+    }
+
+    /// The bound the prompt reader uses is the panel's, not the terminal's.
+    /// They differ by the right gutter plus the borders — 22 columns at 100
+    /// — and reading the wrong one is the whole of #320.
+    #[test]
+    fn the_prompt_bound_is_the_panel_not_the_terminal() {
+        // Wherever a CARDS pane exists, the panel's border is strictly
+        // inside the terminal, so a prompt that stopped at the terminal's
+        // edge had already crossed the border and eaten into that pane.
+        for w in [100usize, 120, 160, 200] {
+            assert!(CliPlayer::middle_panel_edge_at(w) < w,
+                "at {w} columns the panel border is inside the terminal");
+        }
+        // 100 exactly: 20-column gutters, a 58-column middle panel, its
+        // right border in column 79 — 21 columns short of the terminal's.
+        assert_eq!(CliPlayer::middle_panel_edge_at(100), 79);
+        // Below 100 there is no right pane, and the panel does run to the
+        // edge; the bound is then the same one and still correct.
+        assert_eq!(CliPlayer::middle_panel_edge_at(80), 80);
     }
 
     /// The escape and the deliberate empty selection are different keys, and
