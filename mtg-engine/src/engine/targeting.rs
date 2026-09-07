@@ -703,7 +703,29 @@ pub(crate) fn matches_target_filter(
         }
     }
 }
-/// Generate valid targets for a targeted activated ability.
+/// Every legal target for a targeted activated ability.
+///
+/// The same question `valid_targets_for_req` answers for a spell, asked from
+/// an ability's source instead of a spell on the stack — CR 602.2b makes
+/// choosing targets for an activated ability step 601.2c of casting a spell,
+/// so there is one answer, not two. This used to be a second `match` over
+/// `TargetRequirement` and the two drifted: the ability copy offered a token
+/// in a graveyard for "target card in a graveyard" (CR 109.1 — a token is not
+/// a card), knew nine of the sixteen requirements and silently returned no
+/// targets for the rest, which is indistinguishable from "the ability has no
+/// legal target" and would have removed the ability from the offer entirely.
+///
+/// `source_id` stands in for the spell: it is what `Another` and
+/// `SameNameAsSource` are measured against (CR 602.2a — the ability's
+/// controller is the activator, so "opponent" and "you control" are measured
+/// from them, not from whoever happens to hold the source).
+///
+/// Note what is deliberately *not* filtered out: CR 702.6a's equip is "attach
+/// this permanent to target creature you control", and nothing in it excludes
+/// the creature the Equipment is already attached to. Re-equipping to the same
+/// host is the point whenever the equip COST is what you want (Demonmail
+/// Hauberk sacrificing a different creature), and with one creature on the
+/// battlefield removing it removed the ability.
 pub(crate) fn generate_ability_targets(
     state: &GameState,
     source_id: ObjectId,
@@ -712,118 +734,8 @@ pub(crate) fn generate_ability_targets(
     registry: &CardRegistry,
     behavior: &dyn crate::cards::CardBehavior,
 ) -> Vec<crate::actions::Target> {
-    use crate::actions::Target;
-    use crate::cards::TargetRequirement;
-
     let Some(target_req) = &ab.target_requirement else { return vec![]; };
-
-    match target_req {
-        TargetRequirement::Creature => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
-        }
-        TargetRequirement::CreatureWithFilter(filter) => {
-            // CR 702.6a: equip is "Attach this permanent to target creature you
-            // control" — nothing excludes the creature it is already attached
-            // to. This used to filter that creature out as a UX shortcut, which
-            // made a legal play unavailable: re-equipping to the same host is
-            // the point whenever the equip COST is what you want (Demonmail
-            // Hauberk sacrificing a different creature), and with only one
-            // creature on the battlefield it removed the ability entirely.
-            state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
-                .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
-        }
-        TargetRequirement::PlayerOnly => {
-            let mut v: Vec<Target> = state.players.iter()
-                .filter(|p| can_target_player(state, p.id, controller, registry))
-                .map(|p| Target::Player(p.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect();
-            // Chooser first — same stable order as the spell arm (#138).
-            v.sort_by_key(|t| match t {
-                Target::Player(p) if *p == controller => 0,
-                _ => 1,
-            });
-            v
-        }
-        // CR 602.2a: the ability's controller is the activator, so "opponent"
-        // is measured from them, not from whoever holds the source.
-        TargetRequirement::OpponentOnly => {
-            state.players.iter()
-                .filter(|p| p.id != controller)
-                .filter(|p| can_target_player(state, p.id, controller, registry))
-                .map(|p| Target::Player(p.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
-        }
-        TargetRequirement::PlayerOrPlaneswalker => {
-            let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| can_target_player(state, p.id, controller, registry))
-                .map(|p| Target::Player(p.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect();
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
-                if is_pw && can_be_targeted_by(state, obj.id, controller, Some(source_id), registry) {
-                    let t = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, controller, &t, registry) {
-                        targets.push(t);
-                    }
-                }
-            }
-            targets
-        }
-        TargetRequirement::AnyTarget => {
-            let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| state.is_creature(o.id, registry)
-                    || state.has_card_type(o.id, CardType::Planeswalker, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect();
-            for p in &state.players {
-                if can_target_player(state, p.id, controller, registry) {
-                    let t = Target::Player(p.id);
-                    if behavior.is_valid_target(state, controller, &t, registry) {
-                        targets.push(t);
-                    }
-                }
-            }
-            targets
-        }
-        TargetRequirement::PermanentWithFilter(filter) => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
-                .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
-        }
-        TargetRequirement::GraveyardCard => {
-            state.objects_in_id_order().into_iter()
-                .filter(|o| o.zone == Zone::Graveyard)
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
-        }
-        TargetRequirement::ExileCard => {
-            state.objects_in_id_order().into_iter()
-                .filter(|o| o.zone == Zone::Exile && o.owner == controller)
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
-                .collect()
-        }
-        _ => vec![],
-    }
+    valid_targets_for_req(state, controller, source_id, target_req, behavior, registry)
 }
 pub(crate) fn combinations(items: &[ObjectId], k: usize) -> Vec<Vec<ObjectId>> {
     if k == 0 {

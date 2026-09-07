@@ -79,25 +79,19 @@ mtg-engine/src/engine/mana_sources.rs: replace && with || in gather_mana_sources
 mtg-engine/src/engine/mana_sources.rs: replace > with == in activate_mana_source
 mtg-engine/src/engine/targeting.rs: delete ! in detect_modal_choice_mode
 mtg-engine/src/engine/targeting.rs: delete match arm R::TwoTargets(first, second) in distinct_within_each_target_instance
-mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::ExileCard in generate_ability_targets
-mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::GraveyardCard in generate_ability_targets
 mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::GraveyardCardOwnedByOpponent in valid_targets_for_req
 mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::ModalChoice(ref modes) in build_cast_target_spec
 mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::None in build_cast_target_spec
-mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::OpponentOnly in generate_ability_targets
 mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::TwoTargets(req1, req2) in build_cast_target_spec
 mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::UpToTargets(_, inner) in valid_targets_for_req
 mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::UpToTargets(max, inner_req) in build_cast_target_spec
-mtg-engine/src/engine/targeting.rs: replace != with == in generate_ability_targets
 mtg-engine/src/engine/targeting.rs: replace != with == in valid_targets_for_req
-mtg-engine/src/engine/targeting.rs: replace && with || in generate_ability_targets
 mtg-engine/src/engine/targeting.rs: replace && with || in valid_targets_for_req
 mtg-engine/src/engine/targeting.rs: replace + with * in combinations
 mtg-engine/src/engine/targeting.rs: replace < with <= in combinations
 mtg-engine/src/engine/targeting.rs: replace < with == in combinations
 mtg-engine/src/engine/targeting.rs: replace < with > in target_combinations
 mtg-engine/src/engine/targeting.rs: replace == with != in combinations
-mtg-engine/src/engine/targeting.rs: replace == with != in generate_ability_targets
 mtg-engine/src/engine/targeting.rs: replace == with != in valid_targets_for_req
 mtg-engine/src/funding.rs: delete ! in build_options
 mtg-engine/src/funding.rs: replace && with || in build_options
