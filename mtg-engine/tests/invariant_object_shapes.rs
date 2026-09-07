@@ -403,10 +403,21 @@ fn an_attachment_on_the_battlefield_sits_where_the_rules_allow() {
     state.get_object_mut(aura).unwrap().attached_to = Some(bear);
     assert_eq!(check_settled(&state, &reg), Vec::<String>::new());
 
-    // CR 704.5m: an Aura that enchants creatures, on a land.
+    // CR 704.5m: an Aura that enchants creatures, on a land. That is an
+    // Aura problem, reported by the enchant-ability clause — the Equipment
+    // clause is about Equipment and has nothing to say here.
     let mut s = state.clone();
     s.get_object_mut(aura).unwrap().attached_to = Some(land);
     flags_settled(&s, &reg, "enchants creatures but is attached to non-creature #");
+    assert!(!check_settled(&s, &reg).iter().any(|m| m.contains("Equipment")),
+        "an Aura on a land is not an Equipment on a non-creature: {:?}",
+        check_settled(&s, &reg));
+
+    // The Equipment clause does have something to say about an Equipment.
+    let mut s = state.clone();
+    let blade = named_permanent(&mut s, &reg, "Butcher's Cleaver", P0);
+    s.get_object_mut(blade).unwrap().attached_to = Some(land);
+    flags_settled(&s, &reg, "attached to non-creature");
 
     // CR 702.16c: nothing is attached to what has protection from it.
     let mut s = state.clone();
