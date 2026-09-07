@@ -824,6 +824,21 @@ impl CliPlayer {
         let _ = Self::render_paged(view, None, message, log, card_filter, pass_mode_label, 0);
     }
 
+    /// Blank the middle panel's part of one row, keeping the frame.
+    ///
+    /// On a pane too short for the whole frame the prompt block is anchored
+    /// to the bottom and drawn OVER the board, so its rows can still hold
+    /// what the board wrote there — a 20-row pane showed "0: Keep opening
+    /// hand} 2/2" (issue #260).
+    fn clear_mid_row(out: &mut io::Stdout, mid_col: u16, right_sep_col: u16,
+                     has_right: bool, row: u16) {
+        let _ = execute!(out, cursor::MoveTo(mid_col, row), Clear(ClearType::UntilNewLine));
+        if has_right {
+            let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
+                SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
+        }
+    }
+
     /// Which slice of a menu fits: `(offset, shown, paged)`.
     ///
     /// Pulled out of the pager so the arithmetic is testable without a
@@ -1151,6 +1166,30 @@ impl CliPlayer {
                 &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
         }
 
+        // The prompt block — the separator that carries the notice, the menu,
+        // its truncation marker, the hint line and the input row — is the
+        // part of the frame the player is typing INTO, so it is the last
+        // thing a short pane sacrifices, not the first. It used to be drawn
+        // wherever the board happened to end, so below ~24 rows the options,
+        // the "… showing" marker and every error notice were pushed off the
+        // bottom and the input prompt was painted over the hint line: a
+        // prompt with no visible options, no error feedback and no statement
+        // that anything was hidden, which is the "indistinguishable from a
+        // hung game" symptom #76 exists to prevent (issue #260). Anchor it
+        // to the bottom and let the board scroll off above instead.
+        {
+            let title_rows = message.map_or(1, |msg| {
+                Self::word_wrap(msg, mid_w.saturating_sub(6)).len()
+            });
+            // hint row + input row, and for a menu one option and its marker.
+            let furniture = if actions.is_some() { 2 } else { 1 };
+            let menu_floor = if actions.is_some() { 2 } else { 0 };
+            let min_block = title_rows + menu_floor + furniture;
+            if h.saturating_sub(row as usize) < min_block {
+                row = u16::try_from(h.saturating_sub(min_block)).unwrap_or(0);
+            }
+        }
+
         // Actions separator with optional label (always drawn, wraps if needed)
         if let Some(msg) = message {
             let prefix = "─── ";
@@ -1208,6 +1247,7 @@ impl CliPlayer {
             // see, which mis-cast a spell in a real game (#96). The menu now
             // renders a page starting at `menu_offset`, advanced with 'm';
             // indices are absolute, so any number works from any page.
+            // Two rows below the menu are the hint line and the input row.
             let avail = h.saturating_sub(row as usize + 2);
             let (offset, shown, paged) = Self::menu_page(labels.len(), avail, menu_offset);
             menu_shown = shown;
@@ -1229,26 +1269,35 @@ impl CliPlayer {
             let lines = Self::clip_menu_page(
                 &labels[offset..offset + shown], mid_w.saturating_sub(plen));
             for (i, line) in lines.iter().enumerate().map(|(n, l)| (offset + n, l)) {
+                if row as usize >= h { break; }
+                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset), Print(": "));
                 Self::print_action_label(&mut out, line);
                 row += 1;
             }
-            if paged {
+            // The marker is the LAST row sacrificed, not the first: a menu
+            // that does not fit has to say so, or the pane reads as a game
+            // that has stopped asking (issue #260).
+            if paged && (row as usize) < h {
+                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
                 let marker = format!("  … showing {}-{} of 0-{} — m = next page (any number works)",
                     offset, offset + shown - 1, labels.len() - 1);
-                let marker: String = marker.chars().take(mid_w).collect();
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
+                    SetAttribute(Attribute::Dim), Print(clip_cols(&marker, mid_w)),
+                    SetAttribute(Attribute::Reset));
                 row += 1;
             }
             let hints = Self::menu_hints(labels, has_right);
             // Clipped to the panel like every other row — at full length this
             // ate the right border and the card panel behind it (#53).
-            let hints: String = hints.chars().take(mid_w).collect();
-            let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
+            if (row as usize) < h {
+                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                    SetAttribute(Attribute::Dim), Print(clip_cols(hints, mid_w)),
+                    SetAttribute(Attribute::Reset));
+            }
             row += 1;
         }
 
@@ -1259,7 +1308,13 @@ impl CliPlayer {
             Self::render_right_panel(&mut out, &card_refs, right_col, right_w, h, card_filter);
         }
 
-        // Print prompt and move cursor to input area in middle panel
+        // Print prompt and move cursor to input area in middle panel. The row
+        // is cleared first: on a pane too short for the whole frame the menu
+        // block is anchored to the bottom and drawn OVER the board, so the
+        // prompt row can still hold whatever the board wrote there — the
+        // reported 16-row pane showed "  > om Blade {1}{B}res {W}2"
+        // (issue #260).
+        Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
         let _ = execute!(out, cursor::MoveTo(mid_col, row), Print("  > "));
         let _ = out.flush();
         menu_shown
@@ -3702,15 +3757,33 @@ impl CliPlayer {
         let side = term_w as usize / 5;
         let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
 
+        // The list pages like the action menu does. It used to print straight
+        // down from the cursor with no pager and no marker, so on a 26-row
+        // pane a player declared attacks from a list showing two of eight
+        // creatures, with nothing saying the other six existed (issue #260).
+        let list_offset = std::cell::Cell::new(0usize);
+        let list_shown = std::cell::Cell::new(0usize);
         let draw = || -> u16 {
             Self::render(view, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let h = terminal::size().map_or(30, |(_, h)| h as usize);
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
                 Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            for (i, &id) in eligible.iter().enumerate() {
+            // Rows still owed below the list: the planeswalker block, the
+            // hint line, the prompt row and the refusal row under it.
+            let reserved = 3 + if defending_planeswalkers.is_empty() {
+                0
+            } else {
+                defending_planeswalkers.len() + 1
+            };
+            let avail = h.saturating_sub(r as usize + reserved);
+            let (offset, shown, paged) =
+                Self::menu_page(eligible.len(), avail, list_offset.get());
+            list_shown.set(shown);
+            for (i, &id) in eligible.iter().enumerate().skip(offset).take(shown) {
                 let forced = must_attack.contains(&id);
                 let tag = if forced { " [MUST ATTACK]" } else { "" };
                 let color = if forced { Color::Red } else { Color::Reset };
@@ -3719,6 +3792,14 @@ impl CliPlayer {
                     SetAttribute(Attribute::Reset),
                     Print(format!(": {}", Self::combat_entry(view, id, eligible))),
                     SetForegroundColor(color), Print(tag), ResetColor);
+                r += 1;
+            }
+            if paged {
+                let marker = format!(
+                    "  … showing {}-{} of 0-{} — m = next page (any number works)",
+                    offset, offset + shown.saturating_sub(1), eligible.len() - 1);
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
                 r += 1;
             }
             if !defending_planeswalkers.is_empty() {
@@ -3739,7 +3820,7 @@ impl CliPlayer {
             // at every other prompt (issue #120).
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack]"),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m=next page]"),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -3810,6 +3891,14 @@ impl CliPlayer {
                 "d" => { Self::show_deck_browser(view); r = draw(); continue; }
                 "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
                 "s" => { Self::show_stack(view); r = draw(); continue; }
+                // The list pages like the action menu (issue #260). Indices
+                // stay absolute, so any number works from any page.
+                "m" => {
+                    list_offset.set(Self::next_menu_offset(
+                        list_offset.get(), list_shown.get(), eligible.len()));
+                    r = draw();
+                    continue;
+                }
                 _ => {}
             }
 
@@ -3918,15 +4007,31 @@ impl CliPlayer {
         let w = term_w as usize;
         let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
 
+        // Both lists page like the action menu (issue #260): the prompt used
+        // to print straight down from the cursor, so a pane that could not
+        // hold them lost the tail with nothing saying so — and the block a
+        // player types is only as good as the list they can see.
+        let atk_offset = std::cell::Cell::new(0usize);
+        let atk_shown = std::cell::Cell::new(0usize);
+        let blk_offset = std::cell::Cell::new(0usize);
+        let blk_shown = std::cell::Cell::new(0usize);
         let draw = || -> u16 {
             Self::render(view, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let h = terminal::size().map_or(30, |(_, h)| h as usize);
+            // Rows below: the blockers header, the hint line, the prompt row
+            // and the refusal row under it. The two lists split what is left.
+            let body = h.saturating_sub(r as usize + 4);
+            let atk_avail = (body / 2).max(1);
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            for (i, &id) in attacker_ids.iter().enumerate() {
+            let (atk_off, atk_n, atk_paged) =
+                Self::menu_page(attacker_ids.len(), atk_avail, atk_offset.get());
+            atk_shown.set(atk_n);
+            for (i, &id) in attacker_ids.iter().enumerate().skip(atk_off).take(atk_n) {
                 // CR 509.1b: say the minimum-blockers requirement (menace,
                 // Terror of Kruin Pass) up front — an unmarked menace attacker
                 // took a single block the engine then discarded (issue #72).
@@ -3937,11 +4042,22 @@ impl CliPlayer {
                     Print(format!("  {}: {}{}", i, Self::combat_entry(view, id, attacker_ids), note)));
                 r += 1;
             }
+            if atk_paged {
+                let marker = format!("  … showing {}-{} of 0-{} — m = next page",
+                    atk_off, atk_off + atk_n.saturating_sub(1), attacker_ids.len() - 1);
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            for (i, &id) in eligible_blockers.iter().enumerate() {
+            let blk_avail = h.saturating_sub(r as usize + 3).max(1);
+            let (blk_off, blk_n, blk_paged) =
+                Self::menu_page(eligible_blockers.len(), blk_avail, blk_offset.get());
+            blk_shown.set(blk_n);
+            for (i, &id) in eligible_blockers.iter().enumerate().skip(blk_off).take(blk_n) {
                 // Which attackers this creature may legally block (CR 509.1b —
                 // evasion like flying is per-pairing, so say it up front).
                 let legal: Vec<String> = legal_blocks.get(&id)
@@ -3961,11 +4077,18 @@ impl CliPlayer {
                     Print(format!("  {}: {}{}", i, Self::combat_entry(view, id, eligible_blockers), note)));
                 r += 1;
             }
+            if blk_paged {
+                let marker = format!("  … showing {}-{} of 0-{} — b = next page",
+                    blk_off, blk_off + blk_n.saturating_sub(1), eligible_blockers.len() - 1);
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
             // Blocking is exactly where the public zones are decision inputs
             // (CR 404.2, 406.3) — advertise the info panes here (#120).
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack]"),
+                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=next page]"),
                 SetAttribute(Attribute::Reset));
             r += 1;
             let _ = execute!(out, cursor::MoveTo(col, r));
@@ -4012,6 +4135,20 @@ impl CliPlayer {
                 "d" => { Self::show_deck_browser(view); r = draw(); continue; }
                 "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
                 "s" => { Self::show_stack(view); r = draw(); continue; }
+                // Two lists, two pagers — indices stay absolute, so any
+                // number works from any page (issue #260).
+                "m" => {
+                    atk_offset.set(Self::next_menu_offset(
+                        atk_offset.get(), atk_shown.get(), attacker_ids.len()));
+                    r = draw();
+                    continue;
+                }
+                "b" => {
+                    blk_offset.set(Self::next_menu_offset(
+                        blk_offset.get(), blk_shown.get(), eligible_blockers.len()));
+                    r = draw();
+                    continue;
+                }
                 _ => {}
             }
 
@@ -5889,6 +6026,26 @@ mod tests {
         let mut c = creature(id, name, controller);
         c.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(0)));
         c
+    }
+
+    /// Issue #260: the truncation marker is the LAST row a short pane
+    /// sacrifices, not the first — a menu that does not fit has to say so,
+    /// or the pane reads as a game that has stopped asking (#76).
+    #[test]
+    fn a_menu_too_tall_for_the_pane_still_says_so() {
+        // Two rows for a 32-entry menu: one option and the marker.
+        let (offset, shown, paged) = CliPlayer::menu_page(32, 2, 0);
+        assert_eq!((offset, shown, paged), (0, 1, true),
+            "one option and a row left for the marker");
+
+        // One row is not enough for both, and the marker is what survives —
+        // the caller draws it after the options, guarded on the pane bottom.
+        let (_, shown, paged) = CliPlayer::menu_page(32, 1, 0);
+        assert!(paged, "still paged");
+        assert_eq!(shown, 1);
+
+        // A menu that fits keeps every row and draws no marker.
+        assert_eq!(CliPlayer::menu_page(2, 20, 0), (0, 2, false));
     }
 
     /// Issue #259: X is announced as the spell is cast (CR 601.2b) and the
