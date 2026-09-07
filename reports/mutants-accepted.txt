@@ -175,3 +175,8 @@ mtg-engine/src/engine/legal/casting.rs: replace != with == in from_hand
 # comparison would flag cannot arise. Adds a false alarm for an impossible
 # board rather than blinding a clause.
 mtg-engine/src/invariants/effects.rs: replace == with != in check_core
+# The don't-double-report guard beside it: a control effect whose controller
+# or original controller is out of range is already reported by check_core,
+# and this `continue` keeps check_settled from piling a second message on the
+# same corruption. Flipping it duplicates a report; it blinds nothing.
+mtg-engine/src/invariants/effects.rs: replace || with && in check_settled
