@@ -400,13 +400,67 @@ fn an_exile_cost_prompt_can_be_cancelled_with_nothing_spent() {
         cancelled.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
-/// An X-cost ABILITY's activation costs are already paid by funding time,
-/// so a cancel there is refused like any non-answer: the prompt stays. The
-/// same holds for the `CancelCast` spelling — narrowing that arm to the
-/// cast-time prompts is what keeps an ability's paid costs from being
-/// stranded (issue #262).
+/// Issue #290: an X-cost ability announces X BEFORE it pays (CR 601.2b
+/// precedes 601.2h, via 602.2b). While the prompt is up the permanent is
+/// untapped, the mana unspent and nothing sacrificed — so the prompt is
+/// cancellable, exactly like its spell sibling, and cancelling loses
+/// nothing.
 #[test]
-fn ability_x_funding_refuses_cancel() {
+fn an_x_ability_announces_x_before_it_pays_and_can_be_cancelled() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let run = named_permanent(&mut state, &registry, "Kessig Wolf Run", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Forest", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    let bear = ready_creature(&mut state, P0, 2, 2);
+    state.priority_player = Some(P0);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let act = legal.actions.iter().find(|a|
+        matches!(a, Action::ActivateAbility { object_id, ability_index: 1, .. } if *object_id == run))
+        .expect("the {X}{R}{G} ability is offered")
+        .clone();
+    let post = engine::submit_action(&state, &act, &registry);
+
+    assert!(matches!(post.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }, .. })),
+        "the X prompt is up");
+    // Nothing is paid while it is.
+    assert!(!post.get_object(run).unwrap().tapped,
+        "the source is not tapped before X is announced");
+    assert!(post.objects.values().filter(|o| o.zone == Zone::Battlefield).all(|o| !o.tapped),
+        "no mana source is tapped either");
+    assert!(!post.game_log.iter().any(|e| e.message.contains("activated ability")),
+        "and nothing is announced before X is known (CR 601.2b)");
+
+    // Backing out loses nothing, and the activation is still available.
+    let cancelled = engine::submit_action(&post, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTarget(None),
+    }, &registry);
+    assert!(cancelled.awaiting_action.is_none(), "prompt is gone");
+    assert!(cancelled.pending_ability_effect.is_none(), "the stash is cleared");
+    assert!(!cancelled.get_object(run).unwrap().tapped, "still untapped");
+    assert!(cancelled.stack.is_empty(), "nothing was activated");
+    assert!(engine::legal_actions(&cancelled, &registry).actions.iter().any(|a|
+        matches!(a, Action::ActivateAbility { object_id, ability_index: 1, .. } if *object_id == run)),
+        "and it can be activated again");
+
+    // Funding it instead announces the activation WITH its X, then pays.
+    let funded = resolve_funding_max(&post, &registry);
+    assert!(funded.get_object(run).unwrap().tapped, "the tap cost is paid now");
+    let line = funded.game_log.iter().map(|e| &e.message)
+        .find(|m| m.contains("activated ability"))
+        .expect("the activation is announced");
+    assert!(line.contains("(X="), "with its announced X: {line}");
+    let _ = bear;
+}
+
+/// An X-cost ability's prompt is a real decision, so a non-answer is still
+/// refused: `ChosenIndex` at a funding question does not fund it.
+#[test]
+fn ability_x_funding_refuses_a_wrong_shaped_answer() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let hp = named_permanent(&mut state, &registry, "Heretic's Punishment", P0);
@@ -428,15 +482,24 @@ fn ability_x_funding_refuses_cancel() {
             choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }, .. })) {
         return;
     }
-    for refusal in [ResolvedChoice::ChosenTarget(None), ResolvedChoice::CancelCast] {
+    // Both cancel spellings are now honoured — nothing is paid yet (#290).
+    for cancel in [ResolvedChoice::ChosenTarget(None), ResolvedChoice::CancelCast] {
         let after = engine::submit_action(&post, &Action::ResolveChoice {
-            choice: refusal.clone(),
+            choice: cancel.clone(),
         }, &registry);
-        assert!(matches!(after.awaiting_action,
-            Some(AwaitingAction::ResolutionChoice {
-                choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
-            "an ability's funding prompt refuses {refusal:?} and stays up");
+        assert!(after.awaiting_action.is_none(), "{cancel:?} backs out of the activation");
+        assert!(after.pending_ability_effect.is_none(), "and clears the stash");
+        assert!(!after.get_object(hp).unwrap().tapped, "with the source untapped");
     }
+    // An answer of the wrong shape is still not an answer: the question
+    // stands and nothing is charged.
+    let after = engine::submit_action(&post, &Action::ResolveChoice {
+        choice: ResolvedChoice::YesNoDecision(true),
+    }, &registry);
+    assert!(matches!(after.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseXFunding { .. }, .. })),
+        "a yes/no does not fund X");
 }
 
 // ── CR 601.2b then 601.2f: a reduction comes off the announced X ─────────

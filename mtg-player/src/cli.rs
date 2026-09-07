@@ -4811,12 +4811,14 @@ impl Player for CliPlayer {
         // X-cost funding: prompt the user for an X value and auto-distribute
         // across pool mana and tap sources (pool first, then by category).
         // A richer per-source UI could be added later.
-        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, description, is_ability, .. }) =
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, description, .. }) =
             legal.resolution_prompt.as_ref()
         {
-            // A spell's funding can be cancelled (nothing is spent yet);
-            // an ability's activation costs are already paid (#123).
-            return Self::prompt_x_funding(view, options, description, !is_ability);
+            // Nothing is spent at either funding prompt now: an X-cost
+            // ability announces X before it pays, the way a spell does
+            // (CR 601.2b before 601.2h via 602.2b, issue #290), so both are
+            // cancellable (#123).
+            return Self::prompt_x_funding(view, options, description, true);
         }
 
         // Exile-from-graveyard: prompt for a space-separated list of indices.

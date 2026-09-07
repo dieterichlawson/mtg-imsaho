@@ -370,6 +370,18 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         .unwrap_or_else(|| "spell".into());
                     state.log(LogLevel::Debug, format!("{name}: X cast cancelled"));
                 }
+                // An ability's costs are no longer paid before its X is
+                // announced (CR 601.2b via 602.2b), so backing out here is a
+                // pure un-stash too: the permanent is still untapped, the
+                // mana unspent and the sacrifice unmade (issue #290).
+                (ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. },
+                 ResolvedChoice::ChosenTarget(None) | ResolvedChoice::CancelCast) => {
+                    let pending = state.pending_ability_effect.take();
+                    let name = pending.as_ref()
+                        .map(|p| card_name(&*state, registry, p.source_id))
+                        .unwrap_or_else(|| "ability".into());
+                    state.log(LogLevel::Event, format!("{name}: activation cancelled"));
+                }
                 (ResolutionChoiceKind::ChooseXFunding { options, source_id, is_ability, .. },
                  ResolvedChoice::XFunding(response)) => {
                     let player = state.priority_player
@@ -381,14 +393,27 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         .expect("ChooseXFunding response must be valid (player implementations should pre-validate)");
 
                     if *is_ability {
-                        let x = crate::funding::apply(&mut *state, player, options, response, registry);
-                        state.log(LogLevel::Event, format!("Funded X = {x}"));
-                        state.last_activated_x_value = Some(x);
                         let pending = state.pending_ability_effect.take()
                             .expect("pending_ability_effect must be set for X-cost ability funding");
-                        // The activation itself was already logged at
-                        // announcement time (CR 601.2a), before this funding
-                        // choice — only the stack push was deferred.
+                        // CR 601.2b then 601.2h, via 602.2b: X is announced,
+                        // and only then is the total cost paid. The
+                        // permanent is untapped, unmana'd and unsacrificed
+                        // until this point, which is what let the prompt be
+                        // cancelled at all (issue #290).
+                        let funded = crate::funding::apply(&mut *state, player, options, response, registry);
+                        let x = funded + options.x_discount;
+                        state.last_activated_x_value = Some(x);
+                        super::abilities::announce_activation(
+                            &mut *state, pending.activator, pending.source_id,
+                            &pending.description, &pending.targets, Some(x), registry);
+                        if let Some(cost) = &pending.unpaid {
+                            super::abilities::pay_activation_costs(
+                                &mut *state, pending.activator, pending.source_id,
+                                pending.ability_index, cost, registry);
+                        }
+                        // CR 117.3b: every player gets priority again before
+                        // the ability resolves.
+                        state.consecutive_passes = 0;
                         super::abilities::put_ability_on_stack(
                             &mut *state,
                             pending.source_id,

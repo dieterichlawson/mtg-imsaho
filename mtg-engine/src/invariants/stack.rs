@@ -394,17 +394,48 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                 }
             }
             ResolutionChoiceKind::ChooseXFunding { is_ability: true, source_id, options, .. } => {
-                // The prompt was built from the live pool after the non-X
-                // part was paid, and nothing touches the pool until it is
-                // answered.
-                if player_ok(state, *player) && options.pool != state.get_player(*player).mana_pool.mana {
-                    v.push(format!("X-funding prompt for #{} offers pool {:?} but p{} floats {:?}",
-                        source_id.0, options.pool, player.0, state.get_player(*player).mana_pool.mana));
+                // CR 601.2b precedes 601.2h via 602.2b: X is announced first,
+                // so NOTHING has been paid while this prompt is up. The
+                // offered pool is therefore a projection of what will remain
+                // once the non-X cost is paid — it cannot offer mana the
+                // player does not actually float.
+                if player_ok(state, *player) {
+                    let live = &state.get_player(*player).mana_pool.mana;
+                    for (mt, n) in &options.pool {
+                        if live.get(mt).copied().unwrap_or(0) < *n {
+                            v.push(format!(
+                                "X-funding prompt for #{} offers {n} {mt:?} but p{} floats {:?}",
+                                source_id.0, player.0, live));
+                        }
+                    }
                 }
                 if let Some(a) = &state.pending_ability_effect {
                     if a.source_id != *source_id || a.activator != *player {
                         v.push(format!("X-funding prompt for #{} (p{}) but the stash is for #{} (p{})",
                             source_id.0, player.0, a.source_id.0, a.activator.0));
+                    }
+                    // The costs are still unpaid, so what they are owed on
+                    // must still be there to pay with (issue #290).
+                    if let Some(cost) = &a.unpaid {
+                        match state.get_object(a.source_id) {
+                            Some(o) if o.zone == Zone::Battlefield => {
+                                if cost.requires_tap && o.tapped {
+                                    v.push(format!(
+                                        "X-funding prompt for #{} but its {{T}} cost is already paid",
+                                        source_id.0));
+                                }
+                            }
+                            _ => v.push(format!(
+                                "X-funding prompt for #{} which has left the battlefield unpaid",
+                                source_id.0)),
+                        }
+                        if let Some(sac) = cost.sacrifice {
+                            if !state.get_object(sac).is_some_and(|o| o.zone == Zone::Battlefield) {
+                                v.push(format!(
+                                    "X-funding prompt for #{} but #{} was already sacrificed",
+                                    source_id.0, sac.0));
+                            }
+                        }
                     }
                 }
             }

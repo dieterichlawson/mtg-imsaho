@@ -3534,6 +3534,38 @@ pub struct PendingAbilityEffect {
     /// (the source may be gone by the time X is funded).
     #[serde(default)]
     pub target_requirement: Option<crate::cards::TargetRequirement>,
+    /// The costs this activation has NOT paid yet, because X had not been
+    /// announced (CR 601.2b precedes 601.2h, via 602.2b). `None` means the
+    /// costs were already paid — the old order, kept only so a save written
+    /// under it still loads.
+    #[serde(default)]
+    pub unpaid: Option<DeferredActivationCost>,
+}
+
+/// The whole cost of an activation, held while its X is announced.
+///
+/// The ability path used to tap the permanent, pay the mana, remove the
+/// counters and perform the SACRIFICE, and only then ask what X was — a
+/// prompt whose only purpose was to confirm a cost after that cost had been
+/// charged, and therefore one with nothing to cancel. CR 602.2b applies the
+/// CR 601.2 sequence to activating an ability, and in that sequence 601.2b
+/// (announce X) precedes 601.2h (pay the total cost). The cast path already
+/// worked this way; this is the same stash (issue #290).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeferredActivationCost {
+    /// Mana sources to tap before paying, as `legal_actions` planned them.
+    pub tap_plan: Vec<(ObjectId, usize)>,
+    /// The mana cost with X stripped out; the X half is the funding response.
+    pub non_x_mana_cost: crate::types::ManaCost,
+    /// The `{T}` in the cost, if any.
+    pub requires_tap: bool,
+    /// Counters to remove from the source.
+    pub counter_cost: Option<(crate::types::CounterType, u32)>,
+    /// The creature the player chose to sacrifice, when the cost lets them
+    /// choose one.
+    pub sacrifice: Option<ObjectId>,
+    pub sacrifice_cost: crate::cards::SacrificeCost,
+    pub once_per_turn: bool,
 }
 
 /// Context stashed between `CastSpell` action submission and the follow-up

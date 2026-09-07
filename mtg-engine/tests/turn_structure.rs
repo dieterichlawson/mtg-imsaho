@@ -663,7 +663,10 @@ fn the_activator_keeps_priority_after_funding_an_x_ability_on_the_opponents_turn
     });
 
     let log: Vec<&str> = state.game_log.iter().map(|l| l.message.as_str()).collect();
-    let funded = log.iter().position(|m| m.starts_with("Funded X"))
+    // The announcement carries the announced X: an ability now announces X
+    // BEFORE it pays (CR 601.2b via 602.2b), so the activation line and the
+    // funding are one event (issue #290).
+    let funded = log.iter().position(|m| m.contains("activated ability") && m.contains("(X="))
         .unwrap_or_else(|| panic!("the ability was never funded:\n{}", log.join("\n")));
     let first_pass = log[funded..].iter().find(|m| m.contains("passes priority"))
         .unwrap_or_else(|| panic!("nobody passed after funding:\n{}", log.join("\n")));

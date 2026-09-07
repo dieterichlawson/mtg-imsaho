@@ -50,14 +50,108 @@ pub(crate) fn put_ability_on_stack(
     crate::cards::push_ability(state, object_id, ability_index, behavior_card_id, targets, target_requirement, activator);
 }
 
+/// CR 601.2a-b via 602.2b: the activation and its announced X, said out loud
+/// before any cost is paid.
+///
+/// `x` is `Some` for an X-cost ability. It used to be absent from this line
+/// because the line was written before X was chosen, which made the ability
+/// public in a state CR 601.2b says cannot exist (issue #290).
+pub(crate) fn announce_activation(
+    state: &mut GameState,
+    player: crate::ids::PlayerId,
+    object_id: ObjectId,
+    description: &str,
+    targets: &[Target],
+    x: Option<u32>,
+    registry: &CardRegistry,
+) {
+    let name = card_name(&*state, registry, object_id);
+    // The ability's targets are logged the way a spell's are — they were
+    // announced with the activation (CR 602.2b) and the log recorded none of
+    // them (issue #135).
+    let target_suffix = if targets.is_empty() {
+        String::new()
+    } else {
+        let names: Vec<String> = targets.iter().map(|t| match t {
+            crate::actions::Target::Object(id) => state.obj_name(*id),
+            crate::actions::Target::Player(p) => format!("p{}", p.0),
+            crate::actions::Target::Illegal => "an illegal target".into(),
+        }).collect();
+        format!(" targeting {}", names.join(", "))
+    };
+    let x_suffix = x.map_or_else(String::new, |n| format!(" (X={n})"));
+    state.log(LogLevel::Event, format!(
+        "p{} activated ability on {name}: {description}{target_suffix}{x_suffix}", player.0));
+}
+
+/// Pay a deferred activation cost, in the order CR 601.2h fixes: mana (the
+/// tap plan first), then the `{T}`, then counters, then the sacrifice.
+///
+/// Split out because the funding handler now runs it — the payment happens
+/// after X is announced, not before it (issue #290).
+pub(crate) fn pay_activation_costs(
+    state: &mut GameState,
+    player: crate::ids::PlayerId,
+    object_id: ObjectId,
+    ability_index: usize,
+    cost: &crate::state::DeferredActivationCost,
+    registry: &CardRegistry,
+) {
+    for &(source_id, ma_idx) in &cost.tap_plan {
+        activate_mana_source(&mut *state, source_id, ma_idx, registry);
+    }
+    let _ = mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &cost.non_x_mana_cost);
+    if cost.requires_tap {
+        state.tap(object_id);
+    }
+    // Before the sacrifice below, which moves the permanent to the graveyard
+    // and clears every counter it has at once — "remove three" has to remove
+    // three, leaving any surplus to be lost to the zone change rather than
+    // swallowed by it.
+    if let Some((counter_type, amount)) = cost.counter_cost {
+        state.remove_counters(object_id, counter_type, amount);
+    }
+    // Which creature paid the cost is part of what the ability resolves with
+    // — Disciple of Griselbrand's "the sacrificed creature's toughness" is
+    // about this one and not about whatever died most recently.
+    state.last_activated_sacrifice = match &cost.sacrifice_cost {
+        SacrificeCost::None => None,
+        SacrificeCost::SacrificeThis => Some(object_id),
+        SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => cost.sacrifice,
+    };
+    // Captured NOW, while the creature is still on the battlefield: its
+    // toughness as it last existed there is what the ability reads at
+    // resolution (CR 608.2h; issue #141).
+    state.last_activated_sacrifice_toughness = state.last_activated_sacrifice
+        .and_then(|id| state.effective_toughness(id, registry));
+    match &cost.sacrifice_cost {
+        SacrificeCost::None => {}
+        SacrificeCost::SacrificeThis => {
+            crate::destruction::sacrifice_by(
+                &mut *state, object_id, "to pay for its own ability", registry);
+        }
+        SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => {
+            let Some(sac_id) = cost.sacrifice else { return };
+            // "Sacrifice a creature" with two eligible creatures: the menu
+            // said which one would pay, and the log did not.
+            let source_name = state.obj_name(object_id);
+            let reason = if sac_id == object_id {
+                "to pay for its own ability".to_string()
+            } else {
+                format!("to pay for {source_name}'s ability")
+            };
+            crate::destruction::sacrifice_by(&mut *state, sac_id, &reason, registry);
+        }
+    }
+    if cost.once_per_turn {
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.abilities_activated_this_turn.insert(ability_index);
+        }
+    }
+}
+
 pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], tap_plan: &[(ObjectId, usize)], sacrifice: Option<ObjectId>, source_card_id: Option<crate::ids::CardId>, registry: &CardRegistry) -> Applied {
         let player = state.priority_player.expect("ActivateAbility requires priority");
-
-        // Execute autotap plan: tap mana sources to fill the mana pool before
-        // we attempt to pay the ability's mana cost. This mirrors CastSpell.
-        for &(source_id, ma_idx) in tap_plan {
-            activate_mana_source(&mut *state, source_id, ma_idx, registry);
-        }
 
         let obj = state.get_object(object_id).expect("activated ability object must exist");
         let card_id = obj.card_id;
@@ -168,143 +262,95 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             // 602.2b).
             let has_x_cost = ab.cost.has_x();
             let pay = if has_x_cost { ab.cost.without_x() } else { ab.cost.clone() };
-            if !mana::can_pay(&state.get_player(player).mana_pool, &pay) {
+            // Rehearse the tap plan on a scratch copy before anything is
+            // tapped or paid: `auto_pay` drains the pool as it goes, so a
+            // failed payment cannot simply be unwound, and an unfunded
+            // activation is refused rather than half-charged (CR 601.2h via
+            // 602.2b). Same rule as the cast path.
+            let mut probe = state.clone();
+            for &(source_id, ma_idx) in tap_plan {
+                activate_mana_source(&mut probe, source_id, ma_idx, registry);
+            }
+            if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
                 state.log(crate::state::LogLevel::Debug, format!(
                     "activation refused, submitted funding cannot pay {pay:?} (CR 601.2h)"));
                 return Applied::ReturnNow;
             }
-            // CR 601.2a via 602.2b: the activation is announced before its
-            // costs are paid. Logged here — past the last refusal point, and
-            // before any cost mutates the state — so a sacrifice cost reads
-            // "activated, then died", not a creature dying on its own and
-            // then somehow activating from the graveyard. The name is
-            // captured now for the same reason: it is the name the player
-            // saw when they activated.
-            let name = card_name(&state, registry, object_id);
-            // The ability's targets are logged the way a spell's are — they
-            // were announced with the activation (CR 602.2b) and the log
-            // recorded none of them (issue #135).
-            let target_suffix = if targets.is_empty() {
-                String::new()
-            } else {
-                let names: Vec<String> = targets.iter().map(|t| match t {
-                    crate::actions::Target::Object(id) => state.obj_name(*id),
-                    crate::actions::Target::Player(p) => format!("p{}", p.0),
-                    crate::actions::Target::Illegal => "an illegal target".into(),
-                }).collect();
-                format!(" targeting {}", names.join(", "))
+
+            // CR 601.2b precedes 601.2h: X is announced BEFORE the total cost
+            // is paid. So an X-cost activation with a real choice to make
+            // stashes its whole cost and asks first — the permanent is not
+            // tapped, no mana is spent, no counter is removed and nothing is
+            // sacrificed until the player has answered, which is also what
+            // makes that prompt cancellable (issue #290).
+            let cost = crate::state::DeferredActivationCost {
+                tap_plan: tap_plan.to_vec(),
+                non_x_mana_cost: pay,
+                requires_tap: ab.requires_tap,
+                counter_cost: ab.counter_cost,
+                sacrifice,
+                sacrifice_cost: ab.sacrifice_cost.clone(),
+                once_per_turn: ab.once_per_turn,
             };
-            state.log(LogLevel::Event, format!(
-                "p{} activated ability on {}: {}{}", player.0, name, ab.description, target_suffix));
-
-            mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &pay)
-                .expect("can_pay just verified this");
-            if !has_x_cost {
-                state.last_activated_x_value = None;
-            }
-
-            // Pay tap cost.
-            if ab.requires_tap {
-                state.tap(object_id);
-            }
-
-            // Pay the counter cost. Before the sacrifice below, which moves
-            // the permanent to the graveyard and clears every counter it
-            // has at once — "remove three" has to remove three, leaving any
-            // surplus on the permanent to be lost to the zone change rather
-            // than swallowed by it.
-            if let Some((counter_type, amount)) = ab.counter_cost {
-                state.remove_counters(object_id, counter_type, amount);
-            }
-
-            // Pay sacrifice cost. The player chose which creature to sacrifice
-            // when picking the action — legal_actions enumerated one
-            // ActivateAbility per (target, sacrifice) combo, so the choice is
-            // already encoded in `sacrifice`. We just sacrifice it here.
-            // Which creature paid the cost is part of what the ability
-            // resolves with — Disciple of Griselbrand's "the sacrificed
-            // creature's toughness" is about this one and not about whatever
-            // died most recently. Carried to the stack entry alongside
-            // `x_value`, so the priority window between paying and resolving
-            // cannot change the answer.
-            state.last_activated_sacrifice = match &ab.sacrifice_cost {
-                SacrificeCost::None => None,
-                SacrificeCost::SacrificeThis => Some(object_id),
-                SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => sacrifice,
-            };
-            // Captured NOW, while the creature is still on the battlefield:
-            // its toughness as it last existed there is what the ability
-            // reads at resolution (CR 608.2h; issue #141).
-            state.last_activated_sacrifice_toughness = state.last_activated_sacrifice
-                .and_then(|id| state.effective_toughness(id, registry));
-            match &ab.sacrifice_cost {
-                SacrificeCost::None => {}
-                SacrificeCost::SacrificeThis => {
-                    crate::destruction::sacrifice_by(
-                        &mut *state, object_id, "to pay for its own ability", registry);
-                }
-                SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => {
-                    let sac_id = sacrifice
-                        .expect("legal_actions must populate sacrifice for sacrifice-cost abilities");
-                    // "Sacrifice a creature" with two eligible creatures: the
-                    // menu said which one would pay, and the log did not.
-                    let source_name = state.obj_name(object_id);
-                    let reason = if sac_id == object_id {
-                        "to pay for its own ability".to_string()
-                    } else {
-                        format!("to pay for {source_name}'s ability")
-                    };
-                    crate::destruction::sacrifice_by(&mut *state, sac_id, &reason, registry);
-                }
-            }
-
-            // Track once-per-turn.
-            if ab.once_per_turn {
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.abilities_activated_this_turn.insert(ability_index);
-                }
-            }
-
             if has_x_cost {
-                // Defer the stack push until funding completes — the
-                // ability's effect reads `last_activated_x_value`, which
-                // isn't set until then. See the ChooseXFunding handler for
-                // the continuation. (The activation was already logged at
-                // announcement time above.)
-                let options = crate::funding::build_options(&state, player, registry);
-                let name = card_name(&state, registry, object_id);
-                if options.max_x > 0 {
+                // What is left to announce X with is what remains once the
+                // WHOLE non-X cost is paid — including the `{T}`, which for
+                // Kessig Wolf Run is the source's own mana ability. Probing
+                // before tapping it counted that mana twice.
+                pay_activation_costs(&mut probe, player, object_id, ability_index, &cost, registry);
+                let options = crate::funding::build_options(&probe, player, registry);
+                if options.max_announceable_x() > 0 {
+                    let name = card_name(&state, registry, object_id);
                     state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                         player,
                         source: object_id,
                         choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
-                            description: format!("{name}: choose X funding (0-{})", options.max_x),
+                            description: format!("{name}: choose X funding (0-{})",
+                                options.max_announceable_x()),
                             options,
                             source_id: object_id,
                             is_ability: true,
                         },
                     });
-                    // Store context needed to fire the ability's effect
-                    // once funding completes.
                     state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
                         source_id: object_id,
-                        ability_index: ability_index,
+                        ability_index,
                         behavior_card_id,
                         targets: targets.to_vec(),
                         description: ab.description.clone(),
                         activator: player,
                         target_requirement: ab.target_requirement.clone(),
+                        unpaid: Some(cost),
                     });
-                } else {
-                    // No mana available; force X = 0.
-                    state.last_activated_x_value = Some(0);
-                    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
-                        ab.target_requirement.clone(), registry);
+                    // Nothing else happens until the player answers.
+                    return Applied::ReturnNow;
                 }
-            } else {
-                put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
-                    ab.target_requirement.clone(), registry);
+                // No mana to announce X with: X is forced to 0, there is no
+                // choice, and the activation proceeds below as any other.
             }
+
+            // CR 601.2a via 602.2b: the activation is announced before its
+            // costs are paid — so a sacrifice cost reads "activated, then
+            // died", not a creature dying on its own and then somehow
+            // activating from the graveyard.
+            announce_activation(&mut *state, player, object_id, &ab.description, targets,
+                if has_x_cost { Some(0) } else { None }, registry);
+            if !has_x_cost {
+                state.last_activated_x_value = None;
+            }
+            // The player chose which creature to sacrifice when picking the
+            // action — `legal_actions` enumerates one `ActivateAbility` per
+            // (target, sacrifice) combo, so the choice is already encoded.
+            pay_activation_costs(&mut *state, player, object_id, ability_index, &cost, registry);
+
+            if has_x_cost {
+                // Only reachable when no mana could fund X at all, so there
+                // was no announcement to make: X is 0 (the prompt path
+                // returned above).
+                state.last_activated_x_value = Some(0);
+            }
+            put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
+                ab.target_requirement.clone(), registry);
             // CR 117.3b: taking an action means every player gets priority
             // again before anything resolves. This used to be moot — the
             // ability was resolved on the spot — but now it waits on the

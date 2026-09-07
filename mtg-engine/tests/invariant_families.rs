@@ -774,7 +774,14 @@ fn cast_time_prompts_keep_priority_and_offer_a_real_ceiling() {
 
     let mut s = state.clone();
     s.get_player_mut(P0).mana_pool.mana.clear();
-    flags_core(&s, &reg, "offers pool");
+    flags_core(&s, &reg, "offers");
+
+    // Nothing is paid while the prompt is up (CR 601.2b before 601.2h via
+    // 602.2b, issue #290) — a source already tapped for its own {T} cost is
+    // an activation that charged before it asked.
+    let mut s = state.clone();
+    s.tap(run);
+    flags_core(&s, &reg, "{T} cost is already paid");
 }
 
 // ── the card-code contract ───────────────────────────────────────────────

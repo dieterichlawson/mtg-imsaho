@@ -220,7 +220,7 @@ pub struct ManaAbilityDef {
 }
 
 /// What sacrifice cost an activated ability requires.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SacrificeCost {
     /// No sacrifice required.
     None,
