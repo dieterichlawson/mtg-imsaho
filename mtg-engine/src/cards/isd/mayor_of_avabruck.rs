@@ -127,7 +127,5 @@ impl CardBehavior for MayorOfAvabruck {
             vec!["Wolf".into()],
             registry,
         );
-        state.log(crate::state::LogLevel::Event,
-            "Howlpack Alpha: created a 2/2 Wolf token".into());
     }
 }

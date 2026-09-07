@@ -768,6 +768,58 @@ fn only_the_tap_helpers_tap_a_permanent() {
         offenders.join("\n  "));
 }
 
+/// No card writes a token count into a log line.
+///
+/// A card knows the number printed on it; it does not know how many tokens
+/// entered, because a doubler (Parallel Lives, CR 614.1b) changes that after
+/// the card has spoken. Seventeen cards claimed the printed number — "Army of
+/// the Damned created 13 tapped Zombie tokens" while 26 entered — and #92
+/// corrected two of them by hand, which is why the other fifteen were still
+/// wrong (issue #329).
+///
+/// The count belongs to `create_tokens_with_subtypes`, which counts what it
+/// made. A card may still say what only it knows (that its tokens arrive
+/// tapped, or attacking); it may not say how many there are. Oracle text and
+/// ability descriptions are the card quoting itself and are left alone — this
+/// looks only at what a card writes into the game log.
+#[test]
+fn no_card_writes_a_token_count_into_a_log_line() {
+    const WORDS: [&str; 13] = ["one", "two", "three", "four", "five", "six",
+        "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen"];
+    let mut offenders = Vec::new();
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") {
+            continue;
+        }
+        let body = &text[..text.find("#[cfg(test)]").unwrap_or(text.len())];
+        let mut rest = body;
+        while let Some(at) = rest.find(".log(") {
+            let call = &rest[at..];
+            // A log call is one statement; none of them contains a `;`.
+            let call = &call[..call.find(';').map_or(call.len(), |e| e + 1)];
+            rest = &rest[at + 5..];
+            let quoted: String = call.split('"').skip(1).step_by(2)
+                .collect::<Vec<_>>().join(" ");
+            if !quoted.to_lowercase().contains("token") {
+                continue;
+            }
+            let counts = quoted.split_whitespace().any(|w| {
+                let w = w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+                w.parse::<u32>().is_ok() || WORDS.contains(&w.as_str())
+            });
+            if counts {
+                offenders.push(format!("{rel}: {}", call.split_whitespace()
+                    .collect::<Vec<_>>().join(" ")));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "the number of tokens that entered is counted by \
+         `create_tokens_with_subtypes`, which knows it; a card knows only the \
+         number printed on it, and a doubler makes those differ:\n  {}",
+        offenders.join("\n  "));
+}
+
 /// Nothing outside the loyalty-cost machinery takes loyalty counters off a
 /// planeswalker.
 ///

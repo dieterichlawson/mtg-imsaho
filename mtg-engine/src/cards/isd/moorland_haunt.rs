@@ -120,8 +120,6 @@ impl CardBehavior for MoorlandHaunt {
             vec![Color::White], vec![CardType::Creature],
             vec![Keyword::Flying], vec!["Spirit".into()], registry,
         );
-        state.log(crate::state::LogLevel::Event,
-            "Moorland Haunt created a 1/1 white Spirit token with flying".into());
     }
 }
 

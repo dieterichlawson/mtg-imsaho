@@ -46,17 +46,15 @@ impl CardBehavior for KessigCagebreakers {
         if creature_count == 0 {
             return;
         }
-        let mut all_tokens: Vec<crate::ids::ObjectId> = Vec::new();
-        for _ in 0..creature_count {
-            all_tokens.extend(state.create_token_with_subtypes(
-                "", controller, 2, 2,
-                vec![Color::Green],
-                vec![CardType::Creature],
-                vec![],
-                vec!["Wolf".into()],
-                registry,
-            ));
-        }
+        let all_tokens = state.create_tokens_with_subtypes(
+            u32::try_from(creature_count).unwrap_or(u32::MAX),
+            "", controller, 2, 2,
+            vec![Color::Green],
+            vec![CardType::Creature],
+            vec![],
+            vec!["Wolf".into()],
+            registry,
+        );
 
         // "a 2/2 green Wolf creature token that's tapped and attacking" —
         // CR 508.4b, and this card's 2011-09-22 ruling: "You declare which
@@ -67,12 +65,10 @@ impl CardBehavior for KessigCagebreakers {
         // at the only opponent silently when there is not.
         crate::cards::helpers::tokens_enter_combat_attacking(
             state, self_id, controller, &all_tokens, registry);
+        // The Wolves themselves are counted by the helper that made them
+        // (issue #329); what only this card knows is that they arrive in
+        // combat.
         state.log(crate::state::LogLevel::Event,
-            // The count the players see is what actually ENTERED — a token
-            // doubler (Parallel Lives, CR 614.1) makes it differ from the
-            // graveyard count, and the log said half the real number of
-            // attackers (issue #92).
-            format!("Kessig Cagebreakers created {} Wolf tokens tapped and attacking",
-                all_tokens.len()));
+            "Kessig Cagebreakers: its Wolves enter tapped and attacking".to_string());
     }
 }

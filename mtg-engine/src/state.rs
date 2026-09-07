@@ -696,6 +696,35 @@ impl GameState {
         subtypes: Vec<String>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
+        self.create_tokens_with_subtypes(1, name, owner, power, toughness,
+            colors, card_types, keywords, subtypes, registry)
+    }
+
+    /// The same, for an effect that creates several at once.
+    ///
+    /// "Create thirteen 2/2 black Zombie creature tokens" is ONE event
+    /// (CR 614.1b), so it meets a doubler once and is reported once. Calling
+    /// the single-token helper in a loop gives the same total — Parallel
+    /// Lives doubles each of the thirteen — but it is thirteen events and
+    /// thirteen log lines, and the reader of a log wants the sentence the
+    /// card wrote.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_tokens_with_subtypes(
+        &mut self,
+        count: u32,
+        name: &str,
+        owner: PlayerId,
+        power: i32,
+        toughness: i32,
+        colors: Vec<crate::types::Color>,
+        card_types: Vec<crate::types::CardType>,
+        keywords: Vec<crate::types::Keyword>,
+        subtypes: Vec<String>,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<ObjectId> {
+        if count == 0 {
+            return Vec::new();
+        }
         // CR 111.4: the token's name is its subtype(s), unless the effect
         // gave it one.
         let derived;
@@ -711,7 +740,7 @@ impl GameState {
         // the event through each in turn.
         let after = crate::replacement::apply(
             self,
-            crate::replacement::ReplaceableEvent::CreatesTokens { controller: owner, count: 1 },
+            crate::replacement::ReplaceableEvent::CreatesTokens { controller: owner, count },
             registry,
         );
         let extra_copies = match after {
@@ -731,9 +760,21 @@ impl GameState {
             all_ids.push(id);
         }
         // Create the final token, consuming the inputs.
+        let described = format!("{power}/{toughness} {name}");
         let id = self.create_token_internal(name, owner, power, toughness,
             colors, card_types, keywords, subtypes, registry);
         all_ids.push(id);
+
+        // The count a player reads is the count that entered, and it is
+        // counted here rather than claimed by each caller. Seventeen cards
+        // logged the number printed on them — "Army of the Damned created 13
+        // tapped Zombie tokens" while 26 entered under Parallel Lives (CR
+        // 614.1b) — and #92 fixed two of them by hand, which is why the other
+        // fifteen were still wrong (issue #329). A doubler cannot desynchronise
+        // a line derived from `all_ids`.
+        self.log(LogLevel::Event, format!(
+            "p{} created {} {described} token{}",
+            owner.0, all_ids.len(), if all_ids.len() == 1 { "" } else { "s" }));
 
         all_ids
     }

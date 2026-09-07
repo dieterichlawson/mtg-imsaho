@@ -69,7 +69,8 @@ impl CardBehavior for GutterGrime {
             }
         }
         state.log(crate::state::LogLevel::Event,
-            format!("Gutter Grime: added slime counter (now {slime_count}), created */* Ooze token (dynamic P/T)"));
+            format!("Gutter Grime: added slime counter (now {slime_count}); \
+its Ooze's power and toughness are that count"));
     }
 
     fn token_dynamic_pt(&self, state: &GameState, source_id: ObjectId, _token_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {

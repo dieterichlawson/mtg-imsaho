@@ -145,8 +145,6 @@ impl CardBehavior for GarrukRelentless {
                     vec!["Wolf".into()],
                     registry,
                 );
-                state.log(crate::state::LogLevel::Event,
-                    "Garruk: created a 2/2 Wolf token".into());
             }
 
             // ── Back face abilities (Garruk, the Veil-Cursed) ────────────
@@ -162,8 +160,6 @@ impl CardBehavior for GarrukRelentless {
                     vec!["Wolf".into()],
                     registry,
                 );
-                state.log(crate::state::LogLevel::Event,
-                    "Garruk, the Veil-Cursed: created a 1/1 black Wolf token with deathtouch".into());
             }
             11 => {
                 // -1: Sacrifice a creature. If you do, search your library for a creature card,

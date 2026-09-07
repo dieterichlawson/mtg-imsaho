@@ -132,11 +132,46 @@ fn doubled_token_creation_logs_the_real_count() {
 
     assert_eq!(count_tokens_named_by(&state, "Wolf", P0), 6,
         "3 creature cards, doubled by Parallel Lives");
+    // The count is written where the tokens are made, so it cannot be a
+    // number a card printed on itself (issue #329).
     assert!(state.game_log.iter().any(|e|
-        e.message.contains("created 6 Wolf tokens")),
+        e.message.contains("created 6 2/2 Wolf tokens")),
         "the log counts the six that entered, not the three the graveyard \
          suggested: {:?}",
         state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
+/// Issue #329: #92's fix reached the two cards it named by hand, and the
+/// other fifteen kept printing the number on the card. Army of the Damned is
+/// the loudest — "created 13 tapped Zombie tokens" while 26 entered, so the
+/// log understated a lethal board by thirteen attackers.
+///
+/// It is also the card that shows why the count belongs to the helper: the
+/// creation is one event (CR 614.1b), so it meets Parallel Lives once and is
+/// reported once, whatever the card believes about its own arithmetic.
+#[test]
+fn a_card_that_creates_many_tokens_at_once_reports_what_entered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PostcombatMain, P0);
+    named_permanent(&mut state, &reg, "Parallel Lives", P0);
+
+    let card_id = reg.get_id_by_name("Army of the Damned").unwrap();
+    let army = state.create_object(card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(army).unwrap().name = "Army of the Damned".into();
+    reg.get(card_id).unwrap().on_resolve(&mut state, army, &[], &reg);
+
+    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 26,
+        "thirteen, doubled by Parallel Lives");
+    let counted: Vec<&String> = state.game_log.iter()
+        .map(|e| &e.message)
+        .filter(|m| m.contains("created") && m.contains("Zombie"))
+        .collect();
+    assert_eq!(counted.len(), 1,
+        "one creation event, one line — not thirteen lines of two: {counted:?}");
+    assert!(counted[0].contains("created 26 2/2 Zombie tokens"),
+        "the line counts what entered: {counted:?}");
+    assert!(!counted[0].contains("13"),
+        "and never the number printed on the card: {counted:?}");
 }
 
 // ── Heartless Summoning ──────────────────────────────────────

@@ -49,10 +49,6 @@ impl CardBehavior for GeistHonoredMonk {
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        for _ in 0..2 {
-            state.create_token_with_subtypes("", controller, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], vec!["Spirit".into()], registry);
-        }
-        state.log(crate::state::LogLevel::Event,
-            "Geist-Honored Monk: created two 1/1 white Spirit tokens with flying".into());
+        state.create_tokens_with_subtypes(2, "", controller, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], vec!["Spirit".into()], registry);
     }
 }

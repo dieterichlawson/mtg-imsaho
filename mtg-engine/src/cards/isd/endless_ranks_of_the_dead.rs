@@ -49,21 +49,16 @@ impl CardBehavior for EndlessRanksOfTheDead {
             .filter(|o| state.has_subtype(o.id, "Zombie", registry))
             .count();
         let tokens_to_create = zombie_count / 2;
-        for _ in 0..tokens_to_create {
-            state.create_token_with_subtypes(
-                "",
-                controller,
-                2, 2,
-                vec![Color::Black],
-                vec![CardType::Creature],
-                vec![],
-                vec!["Zombie".into()],
-                registry,
-            );
-        }
-        if tokens_to_create > 0 {
-            state.log(crate::state::LogLevel::Event,
-                format!("Endless Ranks of the Dead: created {tokens_to_create} Zombie token(s)"));
-        }
+        state.create_tokens_with_subtypes(
+            u32::try_from(tokens_to_create).unwrap_or(u32::MAX),
+            "",
+            controller,
+            2, 2,
+            vec![Color::Black],
+            vec![CardType::Creature],
+            vec![],
+            vec!["Zombie".into()],
+            registry,
+        );
     }
 }

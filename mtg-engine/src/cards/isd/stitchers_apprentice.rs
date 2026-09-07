@@ -56,7 +56,6 @@ impl CardBehavior for StitchersApprentice {
             vec![], vec!["Homunculus".into()],
             registry,
         );
-        state.log(LogLevel::Event, "Stitcher's Apprentice created a 2/2 Homunculus token".to_string());
 
         // Then sacrifice a creature you control.
         // The controller chooses which creature to sacrifice.

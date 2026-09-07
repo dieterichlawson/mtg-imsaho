@@ -76,7 +76,9 @@ impl CardBehavior for GeistOfSaintTraft {
         crate::cards::helpers::tokens_enter_combat_attacking(
             state, self_id, controller, &token_ids, registry);
 
+        // The Angel itself is counted by the helper that made it (issue
+        // #329); what only this card knows is that it arrives in combat.
         state.log(crate::state::LogLevel::Event,
-            "Geist of Saint Traft: created a 4/4 Angel token tapped and attacking".into());
+            "Geist of Saint Traft: its Angel enters tapped and attacking".into());
     }
 }

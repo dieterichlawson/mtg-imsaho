@@ -33,9 +33,11 @@ impl CardBehavior for ArmyOfTheDamned {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        for _ in 0..13 {
-            let token_ids = state.create_token_with_subtypes(
-                "", controller, 2, 2,
+        {
+            // "Create thirteen ... tokens" is one event (CR 614.1b), so it
+            // meets a doubler once and is reported once.
+            let token_ids = state.create_tokens_with_subtypes(
+                13, "", controller, 2, 2,
                 vec![Color::Black],
                 vec![CardType::Creature],
                 vec![],
@@ -46,8 +48,10 @@ impl CardBehavior for ArmyOfTheDamned {
             for token_id in token_ids {
                 state.arrives_tapped(token_id);
             }
+            // How many entered is the helper's line to write (issue #329):
+            // this card printed "13" while 26 entered under Parallel Lives.
+            state.log(crate::state::LogLevel::Event,
+                "Army of the Damned: its Zombies enter tapped".to_string());
         }
-        state.log(crate::state::LogLevel::Event,
-            "Army of the Damned created 13 tapped Zombie tokens".to_string());
     }
 }

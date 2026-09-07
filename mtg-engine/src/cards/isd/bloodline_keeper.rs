@@ -137,9 +137,6 @@ impl CardBehavior for BloodlineKeeper {
                     vec!["Vampire".into()],
                     registry,
                 );
-                let face_name = state.get_object(object_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.log(crate::state::LogLevel::Event,
-                    format!("{face_name}: created a 2/2 Vampire token with flying"));
             }
             1 => {
                 // Through the shared helper rather than setting the flag and

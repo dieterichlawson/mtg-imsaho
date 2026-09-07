@@ -25,10 +25,6 @@ impl CardBehavior for MoanOfTheUnhallowed {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        for _ in 0..2 {
-            state.create_token_with_subtypes("", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], vec!["Zombie".into()], registry);
-        }
-        state.log(crate::state::LogLevel::Event,
-            "Moan of the Unhallowed: created two 2/2 black Zombie tokens".into());
+        state.create_tokens_with_subtypes(2, "", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], vec!["Zombie".into()], registry);
     }
 }
