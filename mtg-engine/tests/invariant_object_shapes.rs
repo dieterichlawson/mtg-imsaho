@@ -469,3 +469,43 @@ fn a_control_effect_outlives_neither_its_source_nor_its_object() {
     s.control_effects[0].source_controller = P1;
     flags_settled(&s, &reg, "'s source from p");
 }
+
+/// Every non-token object names a card in the registry — with one exemption,
+/// and the exemption is exactly as wide as the thing it exists for.
+///
+/// A permanent that copied a TOKEN carries the token's characteristics on the
+/// object and `CardId(0)` where a printed card would be, remembering the real
+/// card in `copy_grantor` for the zone-change revert. Both halves of that
+/// shape are the exemption: `CardId(0)` alone is a corrupt object, and a
+/// `copy_grantor` alone does not excuse a card id nobody has heard of.
+#[test]
+fn an_unregistered_card_id_is_excused_only_by_a_copied_token() {
+    let (mut state, reg) = base();
+    let twin = named_permanent(&mut state, &reg, "Evil Twin", P0);
+    let printed = state.get_object(twin).unwrap().card_id;
+
+    // The shape the exemption is for: copied a token, so no printed card.
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(twin).unwrap();
+        o.card_id = CardId(0);
+        o.copy_grantor = Some(printed);
+        o.name = "Wolf".into();
+    }
+    assert_eq!(check_core(&s, &reg), Vec::<String>::new(),
+        "a permanent that copied a token has no printed card to name");
+
+    // CardId(0) with nothing remembering a real card is just corrupt.
+    let mut s = state.clone();
+    s.get_object_mut(twin).unwrap().card_id = CardId(0);
+    flags(&s, &reg, "is not in the registry");
+
+    // And a grantor does not excuse an id that is not the copied-token one.
+    let mut s = state.clone();
+    {
+        let o = s.get_object_mut(twin).unwrap();
+        o.card_id = CardId(424_242);
+        o.copy_grantor = Some(printed);
+    }
+    flags(&s, &reg, "is not in the registry");
+}
