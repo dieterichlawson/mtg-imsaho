@@ -339,6 +339,29 @@ pub enum CounterType {
     // extend as needed
 }
 
+impl CounterType {
+    /// How this counter reads to a player: "+1/+1", "slime". One label, in
+    /// the engine, because the log and the CLI's battlefield line each had
+    /// their own and only one of them existed for a while.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            CounterType::PlusOnePlusOne => "+1/+1",
+            CounterType::MinusOneMinusOne => "-1/-1",
+            CounterType::Loyalty => "loyalty",
+            CounterType::Slime => "slime",
+            CounterType::Study => "study",
+            CounterType::Hatchling => "hatchling",
+        }
+    }
+}
+
+impl std::fmt::Display for CounterType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 /// Keyword abilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Keyword {

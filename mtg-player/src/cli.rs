@@ -1076,15 +1076,7 @@ impl CliPlayer {
 
     /// Display name for a counter kind, as it reads on a battlefield line.
     fn counter_display_name(ct: mtg_engine::types::CounterType) -> &'static str {
-        use mtg_engine::types::CounterType;
-        match ct {
-            CounterType::PlusOnePlusOne => "+1/+1",
-            CounterType::MinusOneMinusOne => "-1/-1",
-            CounterType::Loyalty => "loyalty",
-            CounterType::Slime => "slime",
-            CounterType::Study => "study",
-            CounterType::Hatchling => "hatchling",
-        }
+        ct.label()
     }
 
     /// " {2 hatchling, 3 +1/+1}" for a permanent's non-loyalty counters, or

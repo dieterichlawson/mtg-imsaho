@@ -58,7 +58,11 @@ fn zombie_token_in_graveyard_not_counted() {
     let horde = spell_in_hand(&mut state, &reg, "Unbreathing Horde", P0);
     let counters = plan_entering(&mut state, &reg, horde, Some(Zone::Hand)).counters;
 
-    assert!(counters.is_empty(),
+    // The replacement always applies — the Horde enters with however many
+    // counters it works out to, including none — so the claim is about the
+    // count, not about whether an entry is recorded.
+    let total: u32 = counters.iter().map(|(_, n)| *n).sum();
+    assert_eq!(total, 0,
         "a Zombie TOKEN in the graveyard is not a Zombie card (CR 109.1); got {counters:?}");
 }
 

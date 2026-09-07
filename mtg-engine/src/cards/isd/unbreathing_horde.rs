@@ -80,12 +80,10 @@ impl CardBehavior for UnbreathingHorde {
             .filter(|o| state.is_card(o.id) && Self::is_zombie(state, o.id, registry))
             .count()).unwrap_or(u32::MAX);
 
-        let total = bf_count + gy_count;
-        if total > 0 {
-            vec![(CounterType::PlusOnePlusOne, total)]
-        } else {
-            vec![]
-        }
+        // Recorded even at zero: the replacement applies whatever the count
+        // comes to, and a Horde that enters with no counters is a 0/0 that
+        // dies immediately — which the log has to be able to explain.
+        vec![(CounterType::PlusOnePlusOne, bf_count + gy_count)]
         })
     }
 }

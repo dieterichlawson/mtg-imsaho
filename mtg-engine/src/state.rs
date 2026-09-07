@@ -1328,8 +1328,27 @@ impl GameState {
         if let Some(source) = entering.copy_of {
             self.become_copy_of(id, source, registry);
         }
+        // CR 614.1c: the counters are there the instant the permanent enters,
+        // and the count is the whole card for Mikaeus ("enters with X +1/+1
+        // counters") and Unbreathing Horde. The log said nothing about them,
+        // so a permanent entering with 0 counters — a 0/0 that dies to CR
+        // 704.5f at the next SBA check — was recorded as "resolved" then
+        // "died" with no cause anywhere in between (issue #299). A card whose
+        // replacement does not apply at all (Somberwald Spider with no
+        // creature dead this turn) records no entry, and so still says
+        // nothing.
         for (counter_type, count) in &entering.counters {
-            self.add_counters(id, *counter_type, *count);
+            if *count > 0 {
+                self.add_counters(id, *counter_type, *count);
+            }
+        }
+        if !entering.counters.is_empty() {
+            let name = self.obj_name(id);
+            let what = entering.counters.iter()
+                .map(|(t, n)| format!("{n} {t} counter{}", if *n == 1 { "" } else { "s" }))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.log(LogLevel::Info, format!("{name} enters with {what}"));
         }
         if entering.tapped {
             self.arrives_tapped(id);

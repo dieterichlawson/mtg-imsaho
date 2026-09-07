@@ -47,8 +47,11 @@ impl CardBehavior for MikaeusTheLunarch {
         _registry: &CardRegistry,
     ) -> Option<crate::replacement::Replacement> {
         let x = state.get_object(self_id).and_then(|o| o.x_value).unwrap_or(0);
+        // Always a replacement, even for X=0: "enters with X +1/+1 counters"
+        // applies with X=0 too, and recording it is what lets the log say
+        // why a 0/0 Mikaeus died on arrival (CR 614.1c, issue #299).
         crate::cards::helpers::enters_with_counters(self_id, event, || {
-            if x > 0 { vec![(CounterType::PlusOnePlusOne, x)] } else { vec![] }
+            vec![(CounterType::PlusOnePlusOne, x)]
         })
     }
 

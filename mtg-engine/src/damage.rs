@@ -85,7 +85,7 @@ fn deal_damage_to_object(
     }
 
     // "Prevent damage, remove a +1/+1 counter" replacement (Unbreathing Horde).
-    if apply_prevent_damage_remove_counter(state, target, registry) {
+    if apply_prevent_damage_remove_counter(state, target, source, amount, registry) {
         return;
     }
 
@@ -267,7 +267,13 @@ fn combat_damage_multiplier(state: &GameState, creature_id: ObjectId, registry: 
 /// "Prevent damage, remove a +1/+1 counter" replacement (Unbreathing Horde,
 /// CR 614.1a). Returns true if the damage was prevented (always, when the
 /// effect is present — even with no counters left).
-fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, registry: &CardRegistry) -> bool {
+fn apply_prevent_damage_remove_counter(
+    state: &mut GameState,
+    target: ObjectId,
+    source: ObjectId,
+    amount: u32,
+    registry: &CardRegistry,
+) -> bool {
     let has_effect = state.has_effect(target, &|e| matches!(e, ContinuousEffect::PreventDamageRemoveCounter { .. }), registry);
     if !has_effect {
         return false;
@@ -275,6 +281,11 @@ fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, 
     let counter_count = state.get_object(target)
         .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
         .unwrap_or(0);
+    // The line names the amount and the source, like the other two prevention
+    // paths above it — three damage prevented off a Brimstone Volley and six
+    // off a blocked attacker printed the same line as each other (issue #299).
+    let name = state.obj_name(target);
+    let source_name = state.obj_name(source);
     if counter_count > 0 {
         if let Some(obj) = state.get_object_mut(target) {
             let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
@@ -283,9 +294,13 @@ fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, 
                 obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
             }
         }
-        let name = state.obj_name(target);
-        state.log(LogLevel::Event,
-            format!("{name}: damage prevented, removed a +1/+1 counter"));
+        state.log(LogLevel::Event, format!(
+            "{name}: {amount} damage from {source_name} prevented, removed a +1/+1 counter"));
+    } else {
+        // The effect still prevents the damage with no counters left, and
+        // that was the one case with no line at all.
+        state.log(LogLevel::Event, format!(
+            "{name}: {amount} damage from {source_name} prevented (no +1/+1 counter to remove)"));
     }
     true
 }
