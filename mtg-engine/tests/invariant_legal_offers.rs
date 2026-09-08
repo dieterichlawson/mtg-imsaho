@@ -244,6 +244,63 @@ fn a_cast_offer_names_a_castable_card() {
         object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
         exile_count: Some(1), exile_ids: vec![bear], alternative_cost: None, tap_plan: vec![] });
     flags(&state, P0, &l, &reg, "which is not in p0's graveyard");
+
+    // Each half of "a creature you control on the battlefield", alone: a
+    // creature the opponent controls, a permanent that is not a creature,
+    // and a creature card in a graveyard.
+    let sacrificing = |s: &GameState, victim: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::CastSpell {
+            object_id: pump, targets: vec![Target::Object(bear)], sacrifice: Some(victim),
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] });
+        let _ = s;
+        l
+    };
+    let mut s = state.clone();
+    let theirs = named_permanent(&mut s, &reg, "Grizzly Bears", P1);
+    flags(&s, P0, &sacrificing(&s, theirs), &reg, "(CR 701.17a)");
+    let mut s = state.clone();
+    let land = named_permanent(&mut s, &reg, "Forest", P0);
+    flags(&s, P0, &sacrificing(&s, land), &reg, "(CR 701.17a)");
+    let mut s = state.clone();
+    let buried_creature = named_card_in_graveyard(&mut s, &reg, "Grizzly Bears", P0);
+    flags(&s, P0, &sacrificing(&s, buried_creature), &reg, "(CR 701.17a)");
+    // And the one that is right is not flagged.
+    quiet_about(&state, P0, &sacrificing(&state, bear), &reg, "(CR 701.17a)");
+
+    // The same for the exile cost: the spell itself, a card in somebody
+    // else's graveyard, and a card that is not in a graveyard at all.
+    let exiling = |ids: Vec<ObjectId>| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::CastSpell {
+            object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+            exile_count: Some(1), exile_ids: ids, alternative_cost: None, tap_plan: vec![] });
+        l
+    };
+    let mut s = state.clone();
+    let mine_gy = named_card_in_graveyard(&mut s, &reg, "Forest", P0);
+    let theirs_gy = named_card_in_graveyard(&mut s, &reg, "Forest", P1);
+    quiet_about(&s, P0, &exiling(vec![mine_gy]), &reg, "which is not in p0's graveyard");
+    flags(&s, P0, &exiling(vec![theirs_gy]), &reg, "which is not in p0's graveyard");
+    flags(&s, P0, &exiling(vec![pump]), &reg, "which is not in p0's graveyard");
+
+    // CR 601.3a: each permission to cast from a graveyard, alone.
+    let from_gy = |s: &GameState, id: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, cast_action(id, vec![Target::Object(bear)]));
+        let _ = s;
+        l
+    };
+    // A printed flashback cost.
+    let mut s = state.clone();
+    let flashback = named_card_in_graveyard(&mut s, &reg, "Silent Departure", P0);
+    quiet_about(&s, P0, &from_gy(&s, flashback), &reg, "(CR 601.3a)");
+    // A granted one (Snapcaster Mage).
+    let mut s = state.clone();
+    let granted = named_card_in_graveyard(&mut s, &reg, "Moment of Heroism", P0);
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantFlashback {
+        target: granted, cost: ManaCost::new(vec![ManaSymbol::Colored(Color::White)]) });
+    quiet_about(&s, P0, &from_gy(&s, granted), &reg, "(CR 601.3a)");
 }
 
 /// CR 118.3/602.2b/606.3: the rest of what an activation offer promises —
@@ -309,6 +366,62 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     named_permanent(&mut s, &reg, "Stony Silence", P1);
     flags(&s, P0, &legal, &reg, "on an artifact under Stony Silence");
 
+    // CR 701.17a: an activation's sacrifice cost names a creature its
+    // controller has on the battlefield — and "another creature" means
+    // another one.
+    let (mut state, reg) = base();
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    state.get_object_mut(grimgrin).unwrap().summoning_sick = false;
+    state.get_object_mut(grimgrin).unwrap().tapped = true;
+    let fodder = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    let buried = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let sacrificing = |victim: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::ActivateAbility {
+            object_id: grimgrin, ability_index: 0, targets: vec![], tap_plan: vec![],
+            sacrifice: Some(victim), x_value: None, source_card_id: None });
+        l
+    };
+    quiet_about(&state, P0, &sacrificing(fodder), &reg, "(CR 701.17a)");
+    flags(&state, P0, &sacrificing(theirs), &reg, "(CR 701.17a)");
+    flags(&state, P0, &sacrificing(land), &reg, "(CR 701.17a)");
+    flags(&state, P0, &sacrificing(buried), &reg, "(CR 701.17a)");
+    // "Sacrifice another creature": not this one.
+    flags(&state, P0, &sacrificing(grimgrin), &reg, "(CR 701.17a)");
+    // And naming none at all when the cost asks for one.
+    let mut l = legal.clone();
+    l.actions.insert(1, Action::ActivateAbility {
+        object_id: grimgrin, ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: None, x_value: None, source_card_id: None });
+    flags(&state, P0, &l, &reg, "names no creature to sacrifice (CR 701.17a)");
+
+    // CR 602.2h: a tap plan taps the caster's own battlefield permanents,
+    // each for a mana ability it really has.
+    let (mut state, reg) = base();
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let theirs = named_permanent(&mut state, &reg, "Forest", P1);
+    let in_hand = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let tapping = |plan: Vec<(ObjectId, usize)>| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::CastSpell {
+            object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: plan });
+        l
+    };
+    quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(theirs, 0)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(in_hand, 0)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(forest, 7)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(bear, 0)]), &reg, "which is not an available untapped source");
+
     // CR 118.3: a minus ability the planeswalker cannot pay for.
     let (mut state, reg) = base();
     let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
@@ -322,6 +435,21 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     let mut s = state.clone();
     set_loyalty(&mut s, liliana, 1);
     flags(&s, P0, &legal, &reg, "(CR 118.3)");
+
+    // CR 118.3 lets a walker pay its loyalty down to exactly zero, so the
+    // ability that costs everything it has is still a legal offer.
+    let cost = legal.actions.iter().find_map(|a| match a {
+        Action::ActivateLoyaltyAbility { object_id, ability_index, .. } if *object_id == liliana =>
+            reg.get(s.get_object(liliana).unwrap().card_id)
+                .and_then(|b| b.loyalty_abilities(&s, liliana).into_iter()
+                    .find(|d| d.ability_index == *ability_index)
+                    .filter(|d| d.loyalty_change < 0)
+                    .map(|d| d.loyalty_change.unsigned_abs())),
+        _ => None,
+    }).expect("Liliana offers a minus ability");
+    let mut s = state.clone();
+    set_loyalty(&mut s, liliana, cost);
+    quiet_about(&s, P0, &legal, &reg, "(CR 118.3)");
 }
 
 /// CR 602.2/602.5/701.17a: an activation offer names an ability its source
