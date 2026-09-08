@@ -1222,6 +1222,14 @@ fn flags_transition(prev: &GameState, action: Option<&Action>, cur: &GameState, 
 }
 
 #[track_caller]
+fn quiet_transition_about(prev: &GameState, action: Option<&Action>, cur: &GameState,
+                          reg: &CardRegistry, needle: &str) {
+    let v = check_transition(prev, action, cur, reg);
+    assert!(!v.iter().any(|m| m.contains(needle)),
+        "expected no transition violation containing {needle:?}, got: {v:?}");
+}
+
+#[track_caller]
 fn clean_transition(prev: &GameState, action: Option<&Action>, cur: &GameState, reg: &CardRegistry) {
     assert_eq!(check_transition(prev, action, cur, reg), Vec::<String>::new());
 }
@@ -1245,6 +1253,745 @@ fn next(prev: &GameState) -> GameState {
     cur.submit_seq = prev.submit_seq + 1;
     cur.events.clear();
     cur
+}
+
+/// CR 500.1/501-514: the steps and turns a transition walks through are a
+/// legal succession, and the events say so. This is the checker's only look
+/// at the shape of a turn: a step skipped, repeated where the rules do not
+/// allow it, or handed to the wrong player is reported here or nowhere.
+#[test]
+fn the_step_and_turn_succession_of_a_transition_is_checked() {
+    let (prev, reg) = base();
+    // `base()` sits in a precombat main phase on turn 3.
+    let stepped = |from: Step, to: Step, events: Vec<GameEvent>| {
+        let mut p = prev.clone();
+        p.step = from;
+        let mut c = next(&p);
+        c.step = to;
+        c.events = events;
+        (p, c)
+    };
+    let started = |s: Step| GameEvent::StepStarted { step: s };
+
+    // The ordinary case: one step to the next, announced.
+    let (p, c) = stepped(Step::PrecombatMain, Step::BeginCombat, vec![started(Step::BeginCombat)]);
+    clean_transition(&p, None, &c, &reg);
+
+    // A step out of order (CR 500.1).
+    let (p, c) = stepped(Step::PrecombatMain, Step::EndStep, vec![started(Step::EndStep)]);
+    flags_transition(&p, None, &c, &reg, "StepStarted EndStep after PrecombatMain (CR 500.1)");
+
+    // Each succession the rules DO allow, which a narrowed clause would
+    // start reporting: the first turn skips its draw step (CR 103.7a); an
+    // attack nobody declared skips to end of combat (CR 508.8); first
+    // strike gives two combat damage steps (CR 510.5); a cleanup that
+    // opened a priority window is followed by another (CR 514.3a).
+    let mut p = prev.clone();
+    p.step = Step::Upkeep;
+    p.turn_number = 1;
+    p.is_first_turn = true;
+    let mut c = next(&p);
+    c.step = Step::PrecombatMain;
+    c.events = vec![started(Step::PrecombatMain)];
+    clean_transition(&p, None, &c, &reg);
+
+    for (from, to) in [
+        (Step::DeclareAttackers, Step::EndCombat),
+        (Step::CombatDamage, Step::CombatDamage),
+        (Step::Cleanup, Step::Cleanup),
+    ] {
+        let (p, c) = stepped(from, to, vec![started(to)]);
+        clean_transition(&p, None, &c, &reg);
+    }
+
+    // Cleanup to untap, but only across a turn that started.
+    let mut p = prev.clone();
+    p.step = Step::Cleanup;
+    let mut c = next(&p);
+    c.step = Step::Untap;
+    c.turn_number = prev.turn_number + 1;
+    c.active_player = prev.opponent(prev.active_player);
+    c.events = vec![
+        GameEvent::TurnStarted { player: c.active_player, turn: c.turn_number },
+        started(Step::Untap),
+    ];
+    clean_transition(&p, None, &c, &reg);
+    // The same step change with no turn starting is not that exception.
+    let (p2, mut c2) = stepped(Step::Cleanup, Step::Untap, vec![started(Step::Untap)]);
+    c2.turn_number = p2.turn_number;
+    flags_transition(&p2, None, &c2, &reg, "StepStarted Untap after Cleanup (CR 500.1)");
+
+    // A turn that starts belongs to the other player, one higher, out of a
+    // cleanup step.
+    let turn_started = |turn: u32, player: PlayerId| {
+        let mut p = prev.clone();
+        p.step = Step::Cleanup;
+        let mut c = next(&p);
+        c.step = Step::Untap;
+        c.turn_number = turn;
+        c.active_player = player;
+        c.events = vec![GameEvent::TurnStarted { player, turn }, started(Step::Untap)];
+        (p, c)
+    };
+    let other = prev.opponent(prev.active_player);
+    let (p, c) = turn_started(prev.turn_number + 1, other);
+    clean_transition(&p, None, &c, &reg);
+    let (p, c) = turn_started(prev.turn_number + 2, other);
+    flags_transition(&p, None, &c, &reg, "TurnStarted");
+    let (p, c) = turn_started(prev.turn_number + 1, prev.active_player);
+    flags_transition(&p, None, &c, &reg, "TurnStarted");
+    // And out of a cleanup step, not out of the middle of a turn.
+    let mut p = prev.clone();
+    let mut c = next(&p);
+    c.turn_number = prev.turn_number + 1;
+    c.active_player = other;
+    c.step = Step::Untap;
+    c.events = vec![GameEvent::TurnStarted { player: other, turn: c.turn_number }, started(Step::Untap)];
+    flags_transition(&p, None, &c, &reg, "TurnStarted");
+    let _ = &mut p;
+
+    // CR 500.2/turn order: the active player changes with each turn, and
+    // the count of TurnStarted events matches the counter's move.
+    let (p, mut c) = turn_started(prev.turn_number + 1, other);
+    c.active_player = prev.active_player;
+    flags_transition(&p, None, &c, &reg, "active player");
+    let (p, mut c) = turn_started(prev.turn_number + 1, other);
+    c.events.retain(|e| !matches!(e, GameEvent::TurnStarted { .. }));
+    flags_transition(&p, None, &c, &reg, "TurnStarted event(s) for a turn counter that moved by 1");
+
+    // Each exception is a pair, not a licence for either half: leaving the
+    // step it names for somewhere else, or arriving at the step it names
+    // from somewhere else, is still out of order.
+    for (from, to) in [
+        (Step::Upkeep, Step::EndStep),
+        (Step::DeclareAttackers, Step::EndStep),
+        (Step::CombatDamage, Step::Untap),
+        (Step::Cleanup, Step::DeclareBlockers),
+        (Step::Draw, Step::EndCombat),
+        (Step::BeginCombat, Step::CombatDamage),
+    ] {
+        let (p, c) = stepped(from, to, vec![started(to)]);
+        flags_transition(&p, None, &c, &reg, &format!("StepStarted {to:?} after {from:?} (CR 500.1)"));
+    }
+    // Turn one's exception is turn one's: the same jump later is not it.
+    let mut p = prev.clone();
+    p.step = Step::Upkeep;
+    p.turn_number = 5;
+    let mut c = next(&p);
+    c.step = Step::PrecombatMain;
+    c.events = vec![started(Step::PrecombatMain)];
+    flags_transition(&p, None, &c, &reg, "StepStarted PrecombatMain after Upkeep (CR 500.1)");
+
+    // Turn 1 announced outside the opening hands is a turn out of order,
+    // not a mulligan-phase exemption.
+    let mut p = prev.clone();
+    p.step = Step::Cleanup;
+    let mut c = next(&p);
+    c.step = Step::Untap;
+    c.events = vec![
+        GameEvent::TurnStarted { player: prev.opponent(prev.active_player), turn: 1 },
+        started(Step::Untap),
+    ];
+    flags_transition(&p, None, &c, &reg, "TurnStarted {turn 1");
+
+    // A step change with nothing announced, and an announcement that does
+    // not end where the state is.
+    let (p, c) = stepped(Step::PrecombatMain, Step::BeginCombat, vec![]);
+    flags_transition(&p, None, &c, &reg, "with no StepStarted");
+    let (p, c) = stepped(Step::PrecombatMain, Step::BeginCombat, vec![started(Step::DeclareAttackers)]);
+    flags_transition(&p, None, &c, &reg, "names DeclareAttackers but the step is BeginCombat");
+}
+
+/// CR 108.3/707.2/104.3: what a transition may not do to an object's
+/// identity or to a record that only moves one way.
+#[test]
+fn identity_and_monotone_edges_are_checked_one_at_a_time() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let geist = named_permanent(&mut prev, &reg, "Geist of Saint Traft", P0);
+    let geist_card = prev.get_object(geist).unwrap().card_id;
+    let bear_card = prev.get_object(bear).unwrap().card_id;
+
+    // CR 707.2: an object's card changes only by becoming a copy, or by
+    // ceasing to be one as it changes zones.
+    let mut s = next(&prev);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.card_id = geist_card;
+        o.copy_grantor = Some(bear_card);
+    }
+    clean_transition(&prev, None, &s, &reg);
+    // The same copy off the battlefield is not a copy any more.
+    let mut s2 = s.clone();
+    s2.get_object_mut(bear).unwrap().zone = Zone::Graveyard;
+    s2.get_object_mut(bear).unwrap().zone_change_count += 1;
+    s2.events.push(GameEvent::LeftBattlefield { object: bear, to: Zone::Graveyard, last_controller: P0 });
+    flags_transition(&prev, None, &s2, &reg, "without a copy or a zone change");
+    // A copy in the previous state loses the copied card by changing zones.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().copy_grantor = Some(bear_card);
+    let mut s = next(&p);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.card_id = geist_card;
+        o.zone_change_count += 1;
+        o.zone = Zone::Graveyard;
+    }
+    s.events.push(GameEvent::ObjectMoved { object: bear, from: Zone::Battlefield, to: Zone::Graveyard });
+    s.events.push(GameEvent::LeftBattlefield { object: bear, to: Zone::Graveyard, last_controller: P0 });
+    clean_transition(&p, None, &s, &reg);
+    // A copy that stops being one without changing zones has no licence to
+    // change its card. (Still a copy, still on the battlefield, is licence:
+    // it re-copied something else.)
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().card_id = geist_card;
+    quiet_transition_about(&p, None, &s, &reg, "without a copy or a zone change");
+    let mut s = next(&p);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.card_id = geist_card;
+        o.copy_grantor = None;
+    }
+    flags_transition(&p, None, &s, &reg, "without a copy or a zone change");
+    // And with no copy anywhere in the picture at all.
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().card_id = geist_card;
+    flags_transition(&prev, None, &s, &reg, "without a copy or a zone change");
+
+    // A decision point the engine reached without an action of its own —
+    // advancing a step — does not move `submit_seq`, and that is not a
+    // counter going backwards.
+    let mut s = prev.clone();
+    s.events.clear();
+    s.step = Step::BeginCombat;
+    s.events.push(GameEvent::StepStarted { step: Step::BeginCombat });
+    clean_transition(&prev, None, &s, &reg);
+    let mut counted = prev.clone();
+    counted.submit_seq = 5;
+    let mut s = next(&counted);
+    s.submit_seq = 4;
+    flags_transition(&counted, None, &s, &reg, "submit_seq went back");
+
+    // CR 508.1: an attack stamp is not forgotten — unless it is replaced by
+    // one for the turn now being played.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().attacked_on_turn = Some(1);
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().attacked_on_turn = Some(p.turn_number);
+    s.events.push(GameEvent::AttackersDeclared { attackers: vec![(bear, P1)] });
+    clean_transition(&p, None, &s, &reg);
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().attacked_on_turn = None;
+    flags_transition(&p, None, &s, &reg, "forgot attacking on turn 1");
+
+    // CR 104.3: a loss is final, and keeps the reason it was given.
+    let mut p = prev.clone();
+    p.get_player_mut(P1).lost = true;
+    p.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    p.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    let s = next(&p);
+    clean_transition(&p, None, &s, &reg);
+    let mut s = next(&p);
+    s.get_player_mut(P1).lost = false;
+    flags_transition(&p, None, &s, &reg, "un-lost the game (CR 104.3)");
+    let mut s = next(&p);
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    flags_transition(&p, None, &s, &reg, "un-lost the game (CR 104.3)");
+
+    // CR 104.4: a result that exists does not change. One appearing for the
+    // first time is the game ending, which is not a change.
+    let mut s = next(&prev);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    s.get_player_mut(P1).lost = true;
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    s.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::Conceded });
+    quiet_transition_about(&prev, None, &s, &reg, "(CR 104.4)");
+    let mut s = next(&p);
+    s.result = Some(mtg_engine::state::GameResult::Winner(P1));
+    flags_transition(&p, None, &s, &reg, "the result changed");
+}
+
+/// CR 305.2/606.3/morbid: the per-turn records move the way the turn
+/// allows, and by exactly what the events say.
+#[test]
+fn the_per_turn_records_are_checked_against_the_events() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let land = spell_in_hand(&mut prev, &reg, "Forest", P0);
+    let spell = spell_in_hand(&mut prev, &reg, "Moment of Heroism", P0);
+
+    // A land drop and a cast, each spending exactly what its event says.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).land_plays_remaining -= 1;
+    s.move_object(land, Zone::Battlefield, &reg);
+    s.events.push(GameEvent::LandPlayed { player: P0, object: land });
+    clean_transition(&prev, None, &s, &reg);
+    let mut s = next(&prev);
+    s.get_player_mut(P0).land_plays_remaining -= 1;
+    flags_transition(&prev, None, &s, &reg, "land drops 1 -> 0 with 0 LandPlayed (CR 305.2)");
+
+    let mut s = next(&prev);
+    *s.num_spells_cast_this_turn.entry(P0).or_insert(0) += 1;
+    s.get_object_mut(spell).unwrap().zone = Zone::Stack;
+    s.get_object_mut(spell).unwrap().zone_change_count += 1;
+    s.stack.push(StackEntry::Spell(spell));
+    s.events.push(GameEvent::ObjectMoved { object: spell, from: Zone::Hand, to: Zone::Stack });
+    s.events.push(GameEvent::SpellCast { player: P0, object: spell });
+    clean_transition(&prev, None, &s, &reg);
+    let mut s = next(&prev);
+    *s.num_spells_cast_this_turn.entry(P0).or_insert(0) += 1;
+    flags_transition(&prev, None, &s, &reg, "spells cast this turn 0 -> 1 with 0 SpellCast");
+
+    // Across a turn boundary the count of last turn's spells is this turn's
+    // record of what came before the turn started.
+    let mut p = prev.clone();
+    p.step = Step::Cleanup;
+    *p.num_spells_cast_this_turn.entry(P0).or_insert(0) = 2;
+    let boundary = |last: u32, cast_before: bool| {
+        let mut c = next(&p);
+        c.step = Step::Untap;
+        c.turn_number = p.turn_number + 1;
+        c.active_player = p.opponent(p.active_player);
+        c.num_spells_cast_this_turn = std::collections::BTreeMap::new();
+        c.num_spells_cast_last_turn.insert(P0, last);
+        for pl in [P0, P1] {
+            c.get_player_mut(pl).land_plays_remaining = 1;
+        }
+        c.events.clear();
+        if cast_before {
+            // A cast that happened before the turn turned over counts to
+            // the turn that was ending.
+            let o = c.get_object_mut(spell).unwrap();
+            o.zone = Zone::Stack;
+            o.zone_change_count += 1;
+            c.stack.push(StackEntry::Spell(spell));
+            c.events.push(GameEvent::ObjectMoved { object: spell, from: Zone::Hand, to: Zone::Stack });
+            c.events.push(GameEvent::SpellCast { player: P0, object: spell });
+        }
+        c.events.push(GameEvent::TurnStarted { player: c.active_player, turn: c.turn_number });
+        c.events.push(GameEvent::StepStarted { step: Step::Untap });
+        c
+    };
+    clean_transition(&p, None, &boundary(2, false), &reg);
+    flags_transition(&p, None, &boundary(3, false), &reg, "cast 2 spells last turn but the record says 3");
+    clean_transition(&p, None, &boundary(3, true), &reg);
+    flags_transition(&p, None, &boundary(2, true), &reg, "cast 3 spells last turn but the record says 2");
+
+    // Morbid is a per-turn flag: it is not reset mid-turn, and it is not
+    // set without a death.
+    let mut p = prev.clone();
+    p.creature_died_this_turn = true;
+    let mut s = next(&p);
+    s.creature_died_this_turn = false;
+    flags_transition(&p, None, &s, &reg, "the morbid flag was reset mid-turn");
+    let mut s = next(&prev);
+    s.creature_died_this_turn = true;
+    flags_transition(&prev, None, &s, &reg, "the morbid flag was set with no creature dying");
+
+    // CR 606.3: an activation this turn is not forgotten within the turn,
+    // and is gone by the next one.
+    let mut p = prev.clone();
+    p.get_object_mut(bear).unwrap().abilities_activated_this_turn.insert(0);
+    let mut s = next(&p);
+    s.get_object_mut(bear).unwrap().abilities_activated_this_turn.clear();
+    flags_transition(&p, None, &s, &reg, "forgot an activation this turn");
+}
+
+/// CR 120.3/701.15a/508.1/121.3: the marks a permanent carries move only
+/// the way the events say — damage grows by what was dealt and shrinks only
+/// through regeneration or cleanup, regeneration taps and leaves combat, an
+/// attack stamp comes from a declaration, and a draw comes off the top.
+#[test]
+fn the_status_ledgers_of_a_permanent_are_checked() {
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut prev, &reg, "Grizzly Bears", P1);
+
+    // CR 701.20a/701.21a: tapping and untapping are edges, each with its
+    // own event, about this permanent.
+    let turned = |tapped_before: bool, tapped_after: bool, event: Option<GameEvent>| {
+        let mut p = prev.clone();
+        p.get_object_mut(bear).unwrap().tapped = tapped_before;
+        let mut c = next(&p);
+        c.get_object_mut(bear).unwrap().tapped = tapped_after;
+        if let Some(e) = event {
+            c.events.push(e);
+        }
+        (p, c)
+    };
+    let (p, c) = turned(false, true, Some(GameEvent::Tapped { object: bear }));
+    quiet_transition_about(&p, None, &c, &reg, "with no Tapped event");
+    let (p, c) = turned(true, false, Some(GameEvent::Untapped { object: bear }));
+    quiet_transition_about(&p, None, &c, &reg, "with no Untapped event");
+    let (p, c) = turned(false, true, None);
+    flags_transition(&p, None, &c, &reg, "became tapped with no Tapped event");
+    let (p, c) = turned(true, false, None);
+    flags_transition(&p, None, &c, &reg, "became untapped with no Untapped event");
+    // The event has to be the right verb, and about the right permanent.
+    let (p, c) = turned(false, true, Some(GameEvent::Untapped { object: bear }));
+    flags_transition(&p, None, &c, &reg, "became tapped with no Tapped event");
+    let (p, c) = turned(true, false, Some(GameEvent::Tapped { object: bear }));
+    flags_transition(&p, None, &c, &reg, "became untapped with no Untapped event");
+    let (p, c) = turned(false, true, Some(GameEvent::Tapped { object: other }));
+    flags_transition(&p, None, &c, &reg, "became tapped with no Tapped event");
+    let (p, c) = turned(true, false, Some(GameEvent::Untapped { object: other }));
+    flags_transition(&p, None, &c, &reg, "became untapped with no Untapped event");
+
+    // Damage grows by exactly what was dealt.
+    let dealt = |n: u32, marked: u32| {
+        let mut c = next(&prev);
+        c.get_object_mut(bear).unwrap().damage_marked = marked;
+        c.get_object_mut(bear).unwrap().damaged_by.push(other);
+        if n > 0 {
+            c.events.push(GameEvent::NonCombatDamageDealt {
+                source: other, target: DamageTarget::Object(bear), amount: n });
+            c.get_player_mut(P0).life = prev.get_player(P0).life;
+        }
+        c
+    };
+    clean_transition(&prev, None, &dealt(2, 2), &reg);
+    flags_transition(&prev, None, &dealt(2, 3), &reg, "has 3 damage marked after 0 + 2 dealt (CR 120.3)");
+    flags_transition(&prev, None, &dealt(0, 1), &reg, "has 1 damage marked after 0 + 0 dealt (CR 120.3)");
+
+    // The damage dealt is the damage dealt to THIS permanent: a bystander
+    // in the same window has not lost anything.
+    let s = dealt(2, 2);
+    let bystander = s.get_object(other).unwrap().damage_marked;
+    assert_eq!(bystander, 0, "test setup: the other creature took nothing");
+    clean_transition(&prev, None, &s, &reg);
+
+    // CR 306.7: a planeswalker takes damage as loyalty, so the marked-damage
+    // ledger is not about it.
+    let mut walkers = prev.clone();
+    let walker = named_permanent(&mut walkers, &reg, "Liliana of the Veil", P0);
+    let mut s = next(&walkers);
+    s.events.push(GameEvent::NonCombatDamageDealt {
+        source: other, target: DamageTarget::Object(walker), amount: 1 });
+    set_loyalty(&mut s, walker, counters_of(&walkers, walker, CounterType::Loyalty) - 1);
+    quiet_transition_about(&walkers, None, &s, &reg, "marked damage");
+
+    // And shrinks only through regeneration or cleanup.
+    let mut hurt = prev.clone();
+    hurt.get_object_mut(bear).unwrap().damage_marked = 2;
+    let mut s = next(&hurt);
+    s.get_object_mut(bear).unwrap().damage_marked = 0;
+    flags_transition(&hurt, None, &s, &reg, "lost marked damage (2 + 0 -> 0) with no regeneration or cleanup");
+    let mut s = next(&hurt);
+    s.get_object_mut(bear).unwrap().damage_marked = 0;
+    s.events.push(GameEvent::StepStarted { step: Step::Cleanup });
+    s.step = Step::Cleanup;
+    quiet_transition_about(&hurt, None, &s, &reg, "lost marked damage");
+    // A shield that was there, or one that moves, is the other way out.
+    let mut shielded = hurt.clone();
+    shielded.get_object_mut(bear).unwrap().regeneration_shields = 1;
+    let mut s = next(&shielded);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.damage_marked = 0;
+        o.regeneration_shields = 0;
+        o.tapped = true;
+    }
+    s.events.push(GameEvent::Tapped { object: bear });
+    quiet_transition_about(&shielded, None, &s, &reg, "lost marked damage");
+
+    // A shield that was already there is licence enough: it is the shield
+    // being spent that clears the damage, whether or not the count moved in
+    // this window.
+    let mut s = next(&shielded);
+    s.get_object_mut(bear).unwrap().damage_marked = 0;
+    quiet_transition_about(&shielded, None, &s, &reg, "lost marked damage");
+
+    // CR 701.15a: regenerating taps the permanent and removes it from combat.
+    let mut s = next(&shielded);
+    s.get_object_mut(bear).unwrap().regeneration_shields = 0;
+    flags_transition(&shielded, None, &s, &reg, "regenerated without tapping (CR 701.15a)");
+    let mut s = next(&shielded);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.regeneration_shields = 0;
+        o.tapped = true;
+    }
+    s.events.push(GameEvent::Tapped { object: bear });
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(bear, P1);
+    combat.blocker_assignments.insert(bear, vec![]);
+    combat.any_attackers_declared = true;
+    s.combat = Some(combat);
+    flags_transition(&shielded, None, &s, &reg, "regenerated but is still in combat (CR 701.15a)");
+    // Somebody else's block does not keep this one in combat.
+    let mut s = next(&shielded);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.regeneration_shields = 0;
+        o.tapped = true;
+    }
+    s.events.push(GameEvent::Tapped { object: bear });
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(other, P0);
+    combat.blocker_assignments.insert(other, vec![]);
+    combat.any_attackers_declared = true;
+    s.combat = Some(combat);
+    quiet_transition_about(&shielded, None, &s, &reg, "still in combat");
+    // A permanent that was already tapped regenerates without a new tap.
+    let mut tapped_shield = shielded.clone();
+    tapped_shield.get_object_mut(bear).unwrap().tapped = true;
+    let mut s = next(&tapped_shield);
+    s.get_object_mut(bear).unwrap().regeneration_shields = 0;
+    quiet_transition_about(&tapped_shield, None, &s, &reg, "regenerated without tapping");
+
+    // CR 508.1: an attack stamp names this turn and comes with a declaration.
+    let stamped = |turn: Option<u32>, declared: bool| {
+        let mut c = next(&prev);
+        c.get_object_mut(bear).unwrap().attacked_on_turn = turn;
+        if declared {
+            c.events.push(GameEvent::AttackersDeclared { attackers: vec![(bear, P1)] });
+        }
+        c
+    };
+    clean_transition(&prev, None, &stamped(Some(prev.turn_number), true), &reg);
+    flags_transition(&prev, None, &stamped(Some(prev.turn_number), false), &reg,
+        "was stamped as attacking without a declaration (CR 508.1)");
+    flags_transition(&prev, None, &stamped(Some(prev.turn_number - 1), true), &reg,
+        "was stamped as attacking without a declaration (CR 508.1)");
+
+    // CR 121.3: a drawn card is one the player's library held, off the top.
+    let mut lib = prev.clone();
+    let cards = stock_library(&mut lib, &reg, P0, 3);
+    let draw = |take: usize| {
+        let mut c = next(&lib);
+        let id = cards[take];
+        c.get_player_mut(P0).library_order.retain(|&x| x != id);
+        {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Hand;
+            o.zone_change_count += 1;
+        }
+        c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Library, to: Zone::Hand });
+        c.events.push(GameEvent::CardDrawn { player: P0, object: id });
+        c
+    };
+    clean_transition(&lib, None, &draw(0), &reg);
+    flags_transition(&lib, None, &draw(2), &reg, "from below the top 1");
+
+    // A card that was never in that library at all.
+    let mut c = next(&lib);
+    {
+        let o = c.get_object_mut(other).unwrap();
+        o.zone = Zone::Hand;
+        o.zone_change_count += 1;
+    }
+    c.events.push(GameEvent::ObjectMoved { object: other, from: Zone::Library, to: Zone::Hand });
+    c.events.push(GameEvent::CardDrawn { player: P0, object: other });
+    flags_transition(&lib, None, &c, &reg, "which was not in p0's library (CR 121.1)");
+}
+
+/// CR 119/104.3/704.5a-b/121.4: life moves only through its events, and a
+/// loss names a reason the state can show.
+#[test]
+fn the_life_and_loss_ledger_is_checked() {
+    let (prev, reg) = base();
+
+    // The chain of LifeChanged events starts where the player was and ends
+    // where they are.
+    let lost_life = |first_old: i32, last_new: i32, life: i32| {
+        let mut c = next(&prev);
+        c.get_player_mut(P1).life = life;
+        c.events.push(GameEvent::LifeChanged { player: P1, old: first_old, new_life: last_new });
+        c
+    };
+    clean_transition(&prev, None, &lost_life(20, 18, 18), &reg);
+    flags_transition(&prev, None, &lost_life(19, 18, 18), &reg, "life chain starts at 19 but they had 20");
+    flags_transition(&prev, None, &lost_life(20, 18, 17), &reg, "life chain ends at 18 but they have 17");
+
+    // The chain is that player's own events: somebody else's life moving in
+    // the same window says nothing about theirs.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).life = 18;
+    s.events.push(GameEvent::LifeChanged { player: P0, old: 20, new_life: 18 });
+    clean_transition(&prev, None, &s, &reg);
+
+    // CR 704.5a: losing to zero life needs the life to have reached zero.
+    let dies = |life: i32, chain_to: i32| {
+        let mut c = next(&prev);
+        c.get_player_mut(P1).life = life;
+        c.get_player_mut(P1).lost = true;
+        c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+        c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+        c.events.push(GameEvent::LifeChanged { player: P1, old: 20, new_life: chain_to });
+        c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::LifeReachedZero });
+        c
+    };
+    clean_transition(&prev, None, &dies(0, 0), &reg);
+    clean_transition(&prev, None, &dies(-3, -3), &reg);
+    flags_transition(&prev, None, &dies(5, 5), &reg, "lost to 0 life without their life reaching 0 (CR 704.5a)");
+    // A player who was already at zero when the window opened, and a window
+    // whose chain dips to zero and comes back, are both the rule being met.
+    let mut at_zero = prev.clone();
+    at_zero.get_player_mut(P1).life = 0;
+    let mut c = next(&at_zero);
+    c.get_player_mut(P1).lost = true;
+    c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::LifeReachedZero });
+    quiet_transition_about(&at_zero, None, &c, &reg, "(CR 704.5a)");
+    // A player whose life ends above zero did not lose to it, however far
+    // it dipped in between: CR 704.5a is a state-based action, and the state
+    // it is checked against is the one at the end.
+    let mut c = next(&prev);
+    c.get_player_mut(P1).life = 3;
+    c.get_player_mut(P1).lost = true;
+    c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    c.events.push(GameEvent::LifeChanged { player: P1, old: 20, new_life: 0 });
+    c.events.push(GameEvent::LifeChanged { player: P1, old: 0, new_life: 3 });
+    c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::LifeReachedZero });
+    flags_transition(&prev, None, &c, &reg, "(CR 704.5a)");
+
+    // A loss with no PlayerLost event at all.
+    let mut c = next(&prev);
+    c.get_player_mut(P1).life = 0;
+    c.get_player_mut(P1).lost = true;
+    c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    c.events.push(GameEvent::LifeChanged { player: P1, old: 20, new_life: 0 });
+    flags_transition(&prev, None, &c, &reg, "with no PlayerLost event");
+
+    // CR 704.5b: an empty-library loss is recorded on the player.
+    let empty_draw = |recorded: bool| {
+        let mut c = next(&prev);
+        c.get_player_mut(P1).lost = true;
+        c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::DrewFromEmptyLibrary);
+        c.get_player_mut(P1).has_drawn_from_empty = recorded;
+        c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+        c.events.push(GameEvent::PlayerLost {
+            player: P1, reason: mtg_engine::events::LossReason::DrewFromEmptyLibrary });
+        c
+    };
+    clean_transition(&prev, None, &empty_draw(true), &reg);
+    flags_transition(&prev, None, &empty_draw(false), &reg,
+        "lost to an empty-library draw that is not recorded (CR 704.5b)");
+
+    // CR 104.3a: a concede is the conceding player's own action, taken with
+    // priority. Each half alone.
+    let conceded = |priority: Option<PlayerId>| {
+        let mut p = prev.clone();
+        p.priority_player = priority;
+        let mut c = next(&p);
+        c.get_player_mut(P1).lost = true;
+        c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+        c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+        c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::Conceded });
+        (p, c)
+    };
+    let concede = Action::Concede;
+    let (p, c) = conceded(Some(P1));
+    quiet_transition_about(&p, Some(&concede), &c, &reg, "conceded without holding priority");
+    let (p, c) = conceded(Some(P1));
+    flags_transition(&p, None, &c, &reg, "conceded without holding priority on a Concede action");
+    let (p, c) = conceded(Some(P0));
+    flags_transition(&p, Some(&concede), &c, &reg, "conceded without holding priority on a Concede action");
+
+    // CR 121.4: "drew from an empty library" is about an empty library.
+    let mut c = next(&prev);
+    c.get_player_mut(P1).has_drawn_from_empty = true;
+    quiet_transition_about(&prev, None, &c, &reg, "(CR 121.4)");
+    let mut with_library = prev.clone();
+    stock_library(&mut with_library, &reg, P1, 2);
+    let mut c = next(&with_library);
+    c.get_player_mut(P1).has_drawn_from_empty = true;
+    flags_transition(&with_library, None, &c, &reg,
+        "recorded as drawing from an empty library that holds 2 cards (CR 121.4)");
+    // Unless the library was refilled in the same window — the draw failed
+    // against the library as it was, and CR 701.20a put cards back after.
+    let mut refilled = next(&with_library);
+    refilled.get_player_mut(P1).has_drawn_from_empty = true;
+    let put_back: Vec<mtg_engine::ids::ObjectId> = with_library
+        .objects_in_zone(Zone::Graveyard, P1).iter().map(|o| o.id).collect();
+    let _ = put_back;
+    let card = spell_in_hand(&mut refilled, &reg, "Forest", P1);
+    {
+        let o = refilled.get_object_mut(card).unwrap();
+        o.zone = Zone::Library;
+        o.zone_change_count += 1;
+    }
+    refilled.get_player_mut(P1).library_order.push(card);
+    quiet_transition_about(&with_library, None, &refilled, &reg, "(CR 121.4)");
+}
+
+/// CR 106.4/500.4: mana appears only through `ManaAdded`, and leaves only
+/// by a payment or the end of a step.
+#[test]
+fn the_mana_ledger_is_checked() {
+    let (prev, reg) = base();
+
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 2);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 2 });
+    clean_transition(&prev, None, &s, &reg);
+
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 3);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 2 });
+    flags_transition(&prev, None, &s, &reg, "has 3 Green mana after 0 + 2 added (CR 106.4)");
+    // Added for somebody else, or of another colour, is not added here.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 2);
+    s.events.push(GameEvent::ManaAdded { player: P1, mana_type: ManaType::Green, amount: 2 });
+    flags_transition(&prev, None, &s, &reg, "(CR 106.4)");
+    let mut s = next(&prev);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 2);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Red, amount: 2 });
+    flags_transition(&prev, None, &s, &reg, "(CR 106.4)");
+
+    // CR 500.4: mana leaves at the end of a step, or to pay for something.
+    let mut floating = prev.clone();
+    floating.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 2);
+    let mut s = next(&floating);
+    s.get_player_mut(P0).mana_pool.mana.remove(&ManaType::Green);
+    flags_transition(&floating, None, &s, &reg, "with nothing paid and no step ending (CR 500.4)");
+    let mut s = next(&floating);
+    s.get_player_mut(P0).mana_pool.mana.remove(&ManaType::Green);
+    s.events.push(GameEvent::ManaPoolEmptied { player: P0 });
+    quiet_transition_about(&floating, None, &s, &reg, "(CR 500.4)");
+}
+
+/// CR 103.4: the opening hands are outside the turn structure — the untap
+/// step is announced without a turn starting, and turn 1 is announced
+/// without the counter moving.
+#[test]
+fn the_mulligan_phases_own_succession_is_checked() {
+    // The opening-hand phase as the game really reaches it: turn one, untap
+    // step, everything still in libraries and hands.
+    let reg = registry();
+    let mut prev = game_at_step(Step::Untap, P0);
+    prev.turn_number = 1;
+    prev.is_first_turn = true;
+    prev.priority_player = None;
+    for p in [P0, P1] {
+        for id in stock_library(&mut prev, &reg, p, 20) {
+            prev.get_object_mut(id).unwrap().name = "Forest".into();
+        }
+        for _ in 0..7 {
+            spell_in_hand(&mut prev, &reg, "Moment of Heroism", p);
+        }
+    }
+    prev.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+
+    let mut c = next(&prev);
+    c.awaiting_action = None;
+    c.events = vec![
+        GameEvent::TurnStarted { player: P0, turn: 1 },
+        GameEvent::StepStarted { step: Step::Untap },
+    ];
+    clean_transition(&prev, None, &c, &reg);
+
+    // A second turn starting, or the counter moving, is not the opening hand.
+    let mut s = c.clone();
+    s.events.push(GameEvent::TurnStarted { player: P1, turn: 2 });
+    flags_transition(&prev, None, &s, &reg, "while leaving the opening hands");
+    let mut s = c.clone();
+    s.turn_number = 2;
+    flags_transition(&prev, None, &s, &reg, "while leaving the opening hands");
 }
 
 /// CR 508.1: the attackers the engine declares are the ones the player
