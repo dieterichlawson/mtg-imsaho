@@ -76,9 +76,16 @@ pub enum Replacement {
 /// event, which is why each candidate is asked once and dropped afterwards.
 ///
 /// CR 616.1 says the affected player chooses the order when several apply.
-/// No board in this card pool can produce two applicable to the same event,
-/// so candidates are taken in a deterministic order (by object id) and there
-/// is no prompt. The loop is the place to add one.
+/// Damage, where different effects do meet — Inquisitor's Flail and Undead
+/// Alchemist on one Zombie's combat damage, Ghostly Possession and the
+/// Alchemist — does not come through here: `damage::process_pending_damage`
+/// lists every effect on a damage event, cards' own (by
+/// `replacement_offer`) alongside the engine's preventions and multipliers,
+/// and asks the affected player (issue #323). What is left here — token
+/// creation, a draw from an empty library — can only meet several copies of
+/// one card (two Parallel Lives, two Laboratory Maniacs), which are
+/// interchangeable, so candidates are taken in object-id order without a
+/// prompt.
 pub fn apply(
     state: &mut GameState,
     event: ReplaceableEvent,

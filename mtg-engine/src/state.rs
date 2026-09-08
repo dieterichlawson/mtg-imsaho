@@ -344,6 +344,15 @@ pub struct GameState {
     #[serde(default)]
     pub pending_trigger_pushes_nap: Vec<crate::triggers::PendingTrigger>,
 
+    /// Damage queued but not yet dealt (`damage::queue_damage`). Each entry
+    /// is settled — every replacement and prevention effect that applies to
+    /// it applied, the affected player choosing the order where it matters
+    /// (CR 616.1) — before any of it is dealt. Empty whenever a player holds
+    /// priority: the queue lives inside one action, or across the
+    /// `ChooseDamageEffect` prompt that action raised.
+    #[serde(default)]
+    pub pending_damage: Vec<crate::damage::PendingDamage>,
+
     /// Queue of (player, `bottom_count`) pairs waiting for the London-mulligan
     /// bottoming sub-phase. Populated as each player finishes their keep/mull
     /// decision. Drained by `advance_mulligan_phase`.
@@ -426,7 +435,14 @@ pub enum TemporaryEffect {
     /// other than <filter>." The filter names the creatures that still deal
     /// damage; everything else is prevented. Moonmist supplies Wolves and
     /// Werewolves — the engine does not know that, and shouldn't.
-    PreventCombatDamageExcept { filter: crate::types::CreatureFilter },
+    /// `source_name` is the card that made the effect, for the player
+    /// choosing it among other effects on one damage event (CR 616.1) and
+    /// for the log; empty in a save from before it existed.
+    PreventCombatDamageExcept {
+        filter: crate::types::CreatureFilter,
+        #[serde(default)]
+        source_name: String,
+    },
     /// P/T modifier that disappears if source leaves the battlefield.
     /// Used by static abilities like Instigator Gang's "attacking creatures get +1/+0".
     ModifyPTWhileSourceInPlay {
@@ -584,6 +600,7 @@ impl GameState {
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),
+            pending_damage: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
             mulligan_round_position: 0,
             mulligan_round_mulled: false,
@@ -3974,6 +3991,26 @@ pub enum ResolutionChoiceKind {
         remaining: Vec<ObjectId>,
         /// Display names of those blockers.
         options: Vec<String>,
+    },
+    /// CR 616.1: two or more replacement and/or prevention effects apply to
+    /// one damage event and the order changes what happens, so the affected
+    /// player — the damaged player, or the damaged permanent's controller —
+    /// chooses which applies first. Answered by `ChosenIndex` over
+    /// `options`. The chosen effect applies, and the effects that still
+    /// apply to the event as modified are asked about again if the order
+    /// among them still matters (issue #323).
+    ChooseDamageEffect {
+        description: String,
+        /// The effects that apply, parallel to `options`.
+        effects: Vec<crate::damage::DamageEffect>,
+        /// What each would do, for the player choosing.
+        options: Vec<String>,
+        /// The event as it stands — the first unsettled entry of
+        /// `pending_damage`, which the answer is checked against.
+        source: ObjectId,
+        target: crate::events::DamageTarget,
+        amount: u32,
+        kind: crate::damage::DamageKind,
     },
     /// Divide permanents into two piles (Liliana of the Veil -6).
     /// The choosing player selects a subset to form pile 1; the rest form pile 2.

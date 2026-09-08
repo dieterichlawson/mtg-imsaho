@@ -74,6 +74,7 @@ impl CardBehavior for Moonmist {
                 crate::types::CreatureFilter::HasSubtype("Wolf".into()),
                 crate::types::CreatureFilter::HasSubtype("Werewolf".into()),
             ]),
+            source_name: "Moonmist".into(),
         });
         state.log(crate::state::LogLevel::Event,
             "Moonmist: preventing combat damage from non-Wolf/non-Werewolf creatures this turn".into());

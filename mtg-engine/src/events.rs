@@ -60,7 +60,7 @@ pub enum GameEvent {
     LibraryShuffled { player: PlayerId },
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DamageTarget {
     Player(PlayerId),
     Object(ObjectId),

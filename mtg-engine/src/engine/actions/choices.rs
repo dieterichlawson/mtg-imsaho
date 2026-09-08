@@ -215,6 +215,28 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         return Applied::ReturnNow;
                     }
                 }
+                (ResolutionChoiceKind::ChooseDamageEffect { effects, options, source, target, amount, kind, .. },
+                 ResolvedChoice::ChosenIndex(index, _)) => {
+                    // CR 616.1: the chosen effect applies to the damage
+                    // first; the pipeline then re-reads what still applies
+                    // and asks again only if the order among the rest
+                    // matters (issue #323).
+                    let Some(effect) = effects.get(*index) else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} effects offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
+                    let event = crate::damage::PendingDamage {
+                        source: *source, target: *target, amount: *amount, kind: *kind,
+                        applied: Vec::new(), settled: false,
+                    };
+                    let chooser = crate::damage::affected_player(&*state, target);
+                    crate::damage::apply_chosen_effect(&mut *state, chooser, &event, effect, registry);
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
                 (ResolutionChoiceKind::ChooseTriggerOrder { options, ap_queue, indices, .. },
                  ResolvedChoice::ChosenOrder(order)) => {
                     // CR 603.3b, the whole order at once (issue #325): every

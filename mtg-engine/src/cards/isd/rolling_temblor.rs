@@ -27,12 +27,15 @@ impl CardBehavior for RollingTemblor {
             .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
+        // One batch: "each creature" is dealt its damage at once, so every
+        // event is settled (CR 616.1) before any of it lands.
         for id in creatures {
             if !state.has_keyword(id, Keyword::Flying, registry) {
-                crate::damage::deal_damage(state, object_id,
+                crate::damage::queue_damage(state, object_id,
                     crate::events::DamageTarget::Object(id), 2,
-                    crate::damage::DamageKind::NonCombat, registry);
+                    crate::damage::DamageKind::NonCombat);
             }
         }
+        crate::damage::process_pending_damage(state, registry);
     }
 }

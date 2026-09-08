@@ -523,6 +523,28 @@ pub trait CardBehavior: Send + Sync {
         None
     }
 
+    /// Whether this card's replacement effect would apply to `event` as it
+    /// stands, and what it would do — the words the affected player chooses
+    /// it by when two or more effects apply to one damage event (CR 616.1).
+    /// `None` when it does not apply.
+    ///
+    /// The question `replace_event` answers by acting; this one is
+    /// read-only, so the engine can list what applies before any of it
+    /// happens and put the list to the player. A card whose `replace_event`
+    /// acts on a `DealsDamage` event must answer here too, for exactly the
+    /// events it would act on (`replacement_effects.rs` checks the source
+    /// for the pair); the engine offers the effect by this answer and
+    /// applies it by the other.
+    fn replacement_offer(
+        &self,
+        _state: &GameState,
+        _self_id: ObjectId,
+        _event: &crate::replacement::ReplaceableEvent,
+        _registry: &CardRegistry,
+    ) -> Option<String> {
+        None
+    }
+
     /// CR 614.12: "**As** [this] enters, choose ..." is a replacement effect,
     /// not a triggered ability. The choice is made as the permanent enters,
     /// before anyone receives priority — there is no window in which the
