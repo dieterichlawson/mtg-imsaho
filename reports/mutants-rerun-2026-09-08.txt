@@ -16,6 +16,8 @@
 #   pass3-caught     a fourth cargo-mutants run over everything still alive,
 #                    against the tests written for the second round
 #   pass4-caught     killed after that run, by a test written for it by name
+#   pass5-caught     killed by a test written for it while working the
+#                    backlog down one mutant at a time (the third round)
 #   alive            survived every pass; triaged into
 #                    reports/mutants-accepted.txt or -backlog.txt
 #
@@ -1486,59 +1488,59 @@ pass2-caught	mtg-engine/src/invariants/legal.rs:408:20: delete ! in activate
 pass2-caught	mtg-engine/src/invariants/legal.rs:408:98: replace && with || in activate
 pass2-caught	mtg-engine/src/invariants/legal.rs:408:103: replace == with != in activate
 pass2-caught	mtg-engine/src/invariants/legal.rs:451:68: replace > with >= in loyalty
-alive	mtg-engine/src/invariants/events.rs:162:40: replace && with || in spells_and_lands
-alive	mtg-engine/src/invariants/events.rs:244:9: delete match arm GameEvent::LeftBattlefield{object, ..} in blockers
+pass5-caught	mtg-engine/src/invariants/events.rs:162:40: replace && with || in spells_and_lands
+pass5-caught	mtg-engine/src/invariants/events.rs:244:9: delete match arm GameEvent::LeftBattlefield{object, ..} in blockers
 pass3-caught	mtg-engine/src/invariants/events.rs:322:59: replace || with && in damage
 alive	mtg-engine/src/invariants/events.rs:362:50: replace && with || in damage
 alive	mtg-engine/src/invariants/events.rs:362:26: replace && with || in damage
 alive	mtg-engine/src/invariants/events.rs:374:57: replace + with * in damage
-alive	mtg-engine/src/invariants/events.rs:374:90: replace && with || in damage
-alive	mtg-engine/src/invariants/events.rs:405:54: replace || with && in damage
-alive	mtg-engine/src/invariants/events.rs:406:113: replace && with || in damage
-alive	mtg-engine/src/invariants/events.rs:416:37: replace && with || in damage
-alive	mtg-engine/src/invariants/events.rs:428:22: replace && with || in damage
-alive	mtg-engine/src/invariants/events.rs:452:67: replace == with != in names_object
+pass5-caught	mtg-engine/src/invariants/events.rs:374:90: replace && with || in damage
+pass5-caught	mtg-engine/src/invariants/events.rs:405:54: replace || with && in damage
+pass5-caught	mtg-engine/src/invariants/events.rs:406:113: replace && with || in damage
+pass5-caught	mtg-engine/src/invariants/events.rs:416:37: replace && with || in damage
+pass5-caught	mtg-engine/src/invariants/events.rs:428:22: replace && with || in damage
+pass5-caught	mtg-engine/src/invariants/events.rs:452:67: replace == with != in names_object
 alive	mtg-engine/src/invariants/events.rs:462:24: replace + with * in untap_step_scope
 alive	mtg-engine/src/invariants/events.rs:504:30: replace + with * in zone_changes
 alive	mtg-engine/src/invariants/events.rs:517:39: replace + with * in zone_changes
 alive	mtg-engine/src/invariants/events.rs:554:41: replace + with * in zone_changes
 alive	mtg-engine/src/invariants/events.rs:565:47: replace + with * in zone_changes
-alive	mtg-engine/src/invariants/events.rs:569:50: replace && with || in zone_changes
+pass5-caught	mtg-engine/src/invariants/events.rs:569:50: replace && with || in zone_changes
 pass3-caught	mtg-engine/src/invariants/events.rs:666:52: replace match guard *amount == 0 with true in steps
 pass3-caught	mtg-engine/src/invariants/events.rs:697:82: replace || with && in steps
-alive	mtg-engine/src/invariants/events.rs:712:17: delete match arm GameEvent::CardDrawn{player, ..} in steps
+pass5-caught	mtg-engine/src/invariants/events.rs:712:17: delete match arm GameEvent::CardDrawn{player, ..} in steps
 pass3-caught	mtg-engine/src/invariants/events.rs:724:9: replace || with && in steps
 pass3-caught	mtg-engine/src/invariants/events.rs:756:67: replace || with && in steps
 pass3-caught	mtg-engine/src/invariants/events.rs:769:13: replace > with >= in steps
-alive	mtg-engine/src/invariants/legal.rs:24:31: replace || with && in check_legal
-alive	mtg-engine/src/invariants/legal.rs:44:26: replace && with || in check_legal
+pass5-caught	mtg-engine/src/invariants/legal.rs:24:31: replace || with && in check_legal
+pass5-caught	mtg-engine/src/invariants/legal.rs:44:26: replace && with || in check_legal
 pass3-caught	mtg-engine/src/invariants/legal.rs:211:72: replace && with || in play_land
-alive	mtg-engine/src/invariants/legal.rs:292:70: replace || with && in cast
-alive	mtg-engine/src/invariants/legal.rs:324:122: replace == with != in cast
+pass5-caught	mtg-engine/src/invariants/legal.rs:292:70: replace || with && in cast
+pass5-caught	mtg-engine/src/invariants/legal.rs:324:122: replace == with != in cast
 pass3-caught	mtg-engine/src/invariants/legal.rs:336:12: delete ! in tap_plan_ok
-alive	mtg-engine/src/invariants/legal.rs:347:18: replace && with || in tap_plan_ok
-alive	mtg-engine/src/invariants/legal.rs:362:38: replace || with && in activate
-alive	mtg-engine/src/invariants/legal.rs:371:58: replace && with || in activate
-alive	mtg-engine/src/invariants/legal.rs:371:45: replace == with != in activate
+pass5-caught	mtg-engine/src/invariants/legal.rs:347:18: replace && with || in tap_plan_ok
+pass5-caught	mtg-engine/src/invariants/legal.rs:362:38: replace || with && in activate
+pass5-caught	mtg-engine/src/invariants/legal.rs:371:58: replace && with || in activate
+pass5-caught	mtg-engine/src/invariants/legal.rs:371:45: replace == with != in activate
 alive	mtg-engine/src/invariants/legal.rs:451:27: replace < with <= in loyalty
 pass3-caught	mtg-engine/src/invariants/legal.rs:560:20: delete ! in combat_prompt
 pass3-caught	mtg-engine/src/invariants/legal.rs:560:44: replace < with <= in combat_prompt
 pass3-caught	mtg-engine/src/invariants/legal.rs:565:114: replace < with <= in combat_prompt
 alive	mtg-engine/src/invariants/objects.rs:261:60: replace < with > in check_core
-alive	mtg-engine/src/invariants/prompts.rs:149:9: replace || with && in tba_common
-alive	mtg-engine/src/invariants/prompts.rs:153:43: replace || with && in tba_common
-alive	mtg-engine/src/invariants/prompts.rs:210:9: delete match arm K::YesNo{source_card, ..} in check_choice
-alive	mtg-engine/src/invariants/prompts.rs:211:9: delete match arm K::PayOrNot{source_spell_id, ..} in check_choice
-alive	mtg-engine/src/invariants/prompts.rs:233:17: delete match arm PendingEffect::DebuffUntilEOT{..} in check_choice
-alive	mtg-engine/src/invariants/prompts.rs:234:17: delete match arm PendingEffect::CantBlockThisTurn{..} in check_choice
-alive	mtg-engine/src/invariants/prompts.rs:283:42: replace match guard !player_ok(state, *p) with true in check_choice
-alive	mtg-engine/src/invariants/prompts.rs:328:51: replace < with <= in check_choice
-alive	mtg-engine/src/invariants/prompts.rs:331:54: replace && with || in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:149:9: replace || with && in tba_common
+pass5-caught	mtg-engine/src/invariants/prompts.rs:153:43: replace || with && in tba_common
+pass5-caught	mtg-engine/src/invariants/prompts.rs:210:9: delete match arm K::YesNo{source_card, ..} in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:211:9: delete match arm K::PayOrNot{source_spell_id, ..} in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:233:17: delete match arm PendingEffect::DebuffUntilEOT{..} in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:234:17: delete match arm PendingEffect::CantBlockThisTurn{..} in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:283:42: replace match guard !player_ok(state, *p) with true in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:328:51: replace < with <= in check_choice
+pass5-caught	mtg-engine/src/invariants/prompts.rs:331:54: replace && with || in check_choice
 pass4-caught	mtg-engine/src/invariants/stack.rs:106:95: replace match guard *target == obj.id with true in check_core
 alive	mtg-engine/src/invariants/stack.rs:106:95: replace match guard *target == obj.id with false in check_core
 pass4-caught	mtg-engine/src/invariants/stack.rs:106:103: replace == with != in check_core
-alive	mtg-engine/src/invariants/stack.rs:171:13: delete match arm TriggerEvent::StateTriggered in check_core
-alive	mtg-engine/src/invariants/stack.rs:184:49: replace && with || in check_core
+pass5-caught	mtg-engine/src/invariants/stack.rs:171:13: delete match arm TriggerEvent::StateTriggered in check_core
+pass5-caught	mtg-engine/src/invariants/stack.rs:184:49: replace && with || in check_core
 pass3-caught	mtg-engine/src/invariants/stack.rs:226:24: replace match guard o.zone != Zone::Stack with true in check_core
 pass3-caught	mtg-engine/src/invariants/stack.rs:371:28: replace > with >= in check_core
 alive	mtg-engine/src/invariants/stack.rs:424:32: delete ! in check_core
@@ -1554,7 +1556,7 @@ pass3-caught	mtg-engine/src/invariants/transition.rs:125:54: replace && with || 
 pass3-caught	mtg-engine/src/invariants/transition.rs:125:21: replace && with || in monotone
 pass3-caught	mtg-engine/src/invariants/transition.rs:139:24: delete ! in monotone
 pass3-caught	mtg-engine/src/invariants/transition.rs:143:30: replace && with || in monotone
-alive	mtg-engine/src/invariants/transition.rs:178:26: replace && with || in per_turn
+pass5-caught	mtg-engine/src/invariants/transition.rs:178:26: replace && with || in per_turn
 pass3-caught	mtg-engine/src/invariants/transition.rs:178:45: replace == with != in per_turn
 pass3-caught	mtg-engine/src/invariants/transition.rs:178:65: replace + with - in per_turn
 pass3-caught	mtg-engine/src/invariants/transition.rs:178:65: replace + with * in per_turn
@@ -1602,9 +1604,9 @@ pass3-caught	mtg-engine/src/invariants/transition.rs:261:30: replace > with == i
 pass3-caught	mtg-engine/src/invariants/transition.rs:262:37: replace && with || in walk
 pass3-caught	mtg-engine/src/invariants/transition.rs:262:43: replace == with != in walk
 pass3-caught	mtg-engine/src/invariants/transition.rs:262:61: delete ! in walk
-alive	mtg-engine/src/invariants/transition.rs:324:27: replace == with != in zone_ledger
-alive	mtg-engine/src/invariants/transition.rs:331:71: replace && with || in zone_ledger
-alive	mtg-engine/src/invariants/transition.rs:342:35: replace == with != in zone_ledger
+pass5-caught	mtg-engine/src/invariants/transition.rs:324:27: replace == with != in zone_ledger
+pass5-caught	mtg-engine/src/invariants/transition.rs:331:71: replace && with || in zone_ledger
+pass5-caught	mtg-engine/src/invariants/transition.rs:342:35: replace == with != in zone_ledger
 pass3-caught	mtg-engine/src/invariants/transition.rs:373:17: delete match arm GameEvent::Untapped{object} in status_ledgers
 pass3-caught	mtg-engine/src/invariants/transition.rs:372:58: replace && with || in status_ledgers
 pass3-caught	mtg-engine/src/invariants/transition.rs:373:61: replace && with || in status_ledgers
@@ -1619,12 +1621,12 @@ pass3-caught	mtg-engine/src/invariants/transition.rs:388:50: replace + with * in
 pass3-caught	mtg-engine/src/invariants/transition.rs:391:60: replace || with && in status_ledgers
 pass3-caught	mtg-engine/src/invariants/transition.rs:392:50: replace + with - in status_ledgers
 pass3-caught	mtg-engine/src/invariants/transition.rs:401:26: replace && with || in status_ledgers
-alive	mtg-engine/src/invariants/transition.rs:405:107: replace == with != in status_ledgers
+pass5-caught	mtg-engine/src/invariants/transition.rs:405:107: replace == with != in status_ledgers
 pass3-caught	mtg-engine/src/invariants/transition.rs:426:35: replace != with == in status_ledgers
-alive	mtg-engine/src/invariants/transition.rs:455:20: replace match guard cur.get_object(*object).is_some_and(|o| o.owner == p) with true in status_ledgers
-alive	mtg-engine/src/invariants/transition.rs:455:20: replace match guard cur.get_object(*object).is_some_and(|o| o.owner == p) with false in status_ledgers
-alive	mtg-engine/src/invariants/transition.rs:455:68: replace == with != in status_ledgers
-alive	mtg-engine/src/invariants/transition.rs:484:17: delete match arm (Some(a), Some(b)) in status_ledgers
+pass5-caught	mtg-engine/src/invariants/transition.rs:455:20: replace match guard cur.get_object(*object).is_some_and(|o| o.owner == p) with true in status_ledgers
+pass5-caught	mtg-engine/src/invariants/transition.rs:455:20: replace match guard cur.get_object(*object).is_some_and(|o| o.owner == p) with false in status_ledgers
+pass5-caught	mtg-engine/src/invariants/transition.rs:455:68: replace == with != in status_ledgers
+pass5-caught	mtg-engine/src/invariants/transition.rs:484:17: delete match arm (Some(a), Some(b)) in status_ledgers
 pass3-caught	mtg-engine/src/invariants/transition.rs:500:65: replace match guard *player == p with true in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:500:73: replace == with != in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:36: replace || with && in life_and_loss
@@ -1633,7 +1635,7 @@ pass3-caught	mtg-engine/src/invariants/transition.rs:527:32: replace > with < in
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:32: replace > with >= in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:52: replace && with || in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:48: replace > with == in life_and_loss
-alive	mtg-engine/src/invariants/transition.rs:527:48: replace > with < in life_and_loss
+pass5-caught	mtg-engine/src/invariants/transition.rs:527:48: replace > with < in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:48: replace > with >= in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:55: delete ! in life_and_loss
 pass3-caught	mtg-engine/src/invariants/transition.rs:527:85: replace <= with > in life_and_loss
@@ -1659,14 +1661,14 @@ pass3-caught	mtg-engine/src/invariants/transition.rs:699:42: replace > with < in
 pass3-caught	mtg-engine/src/invariants/transition.rs:699:38: replace + with - in action_contract
 pass3-caught	mtg-engine/src/invariants/transition.rs:699:38: replace + with * in action_contract
 pass3-caught	mtg-engine/src/invariants/transition.rs:699:51: replace + with - in action_contract
-alive	mtg-engine/src/invariants/transition.rs:710:43: replace || with && in action_contract
-alive	mtg-engine/src/invariants/transition.rs:719:80: replace && with || in action_contract
-alive	mtg-engine/src/invariants/transition.rs:719:43: replace && with || in action_contract
-alive	mtg-engine/src/invariants/transition.rs:719:29: replace == with != in action_contract
-alive	mtg-engine/src/invariants/transition.rs:719:62: replace == with != in action_contract
-alive	mtg-engine/src/invariants/transition.rs:719:101: replace == with != in action_contract
-alive	mtg-engine/src/invariants/transition.rs:733:50: replace + with - in action_contract
-alive	mtg-engine/src/invariants/transition.rs:744:21: replace || with && in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:710:43: replace || with && in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:719:80: replace && with || in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:719:43: replace && with || in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:719:29: replace == with != in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:719:62: replace == with != in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:719:101: replace == with != in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:733:50: replace + with - in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:744:21: replace || with && in action_contract
 pass3-caught	mtg-engine/src/invariants/transition.rs:751:85: replace || with && in action_contract
 alive	mtg-engine/src/invariants/transition.rs:828:64: replace match guard *player == who with true in action_contract
 pass3-caught	mtg-engine/src/invariants/transition.rs:835:81: replace || with && in action_contract
@@ -1687,17 +1689,17 @@ pass3-caught	mtg-engine/src/invariants/transition.rs:897:74: replace + with * in
 pass3-caught	mtg-engine/src/invariants/transition.rs:897:96: replace != with == in action_contract
 alive	mtg-engine/src/invariants/transition.rs:919:21: replace || with && in action_contract
 alive	mtg-engine/src/invariants/transition.rs:918:89: replace || with && in action_contract
-alive	mtg-engine/src/invariants/transition.rs:939:113: replace && with || in action_contract
-alive	mtg-engine/src/invariants/transition.rs:939:52: replace && with || in action_contract
-alive	mtg-engine/src/invariants/transition.rs:939:40: replace != with == in action_contract
-alive	mtg-engine/src/invariants/transition.rs:939:97: replace == with != in action_contract
-alive	mtg-engine/src/invariants/transition.rs:946:33: replace match guard c2.object_id != id with true in action_contract
-alive	mtg-engine/src/invariants/transition.rs:946:33: replace match guard c2.object_id != id with false in action_contract
-alive	mtg-engine/src/invariants/transition.rs:946:46: replace != with == in action_contract
-alive	mtg-engine/src/invariants/legal.rs:693:83: replace != with == in prompt_offers
-alive	mtg-engine/src/invariants/legal.rs:707:13: delete match arm Action::PlayLand{object_id} | Action::ActivateManaAbility{object_id, ..} in prompt_offers
-alive	mtg-engine/src/invariants/legal.rs:708:13: delete match arm Action::CastSpell{object_id, targets, sacrifice, exile_ids, tap_plan, ..} in prompt_offers
-alive	mtg-engine/src/invariants/legal.rs:715:13: delete match arm Action::ActivateAbility{object_id, targets, sacrifice, tap_plan, ..} in prompt_offers
-alive	mtg-engine/src/invariants/legal.rs:725:13: delete match arm Action::DiscardCards{cards} | Action::BottomCards{cards} in prompt_offers
+pass5-caught	mtg-engine/src/invariants/transition.rs:939:113: replace && with || in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:939:52: replace && with || in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:939:40: replace != with == in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:939:97: replace == with != in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:946:33: replace match guard c2.object_id != id with true in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:946:33: replace match guard c2.object_id != id with false in action_contract
+pass5-caught	mtg-engine/src/invariants/transition.rs:946:46: replace != with == in action_contract
+pass5-caught	mtg-engine/src/invariants/legal.rs:693:83: replace != with == in prompt_offers
+pass5-caught	mtg-engine/src/invariants/legal.rs:707:13: delete match arm Action::PlayLand{object_id} | Action::ActivateManaAbility{object_id, ..} in prompt_offers
+pass5-caught	mtg-engine/src/invariants/legal.rs:708:13: delete match arm Action::CastSpell{object_id, targets, sacrifice, exile_ids, tap_plan, ..} in prompt_offers
+pass5-caught	mtg-engine/src/invariants/legal.rs:715:13: delete match arm Action::ActivateAbility{object_id, targets, sacrifice, tap_plan, ..} in prompt_offers
+pass5-caught	mtg-engine/src/invariants/legal.rs:725:13: delete match arm Action::DiscardCards{cards} | Action::BottomCards{cards} in prompt_offers
 alive	mtg-engine/src/invariants/legal.rs:740:21: replace - with + in choose
-alive	mtg-engine/src/invariants/prompts.rs:566:75: replace && with || in library_option
+pass5-caught	mtg-engine/src/invariants/prompts.rs:566:75: replace && with || in library_option

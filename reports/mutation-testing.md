@@ -518,15 +518,17 @@ mutant, `outcome<TAB>mutant`. Two passes:
    Two passes, because tests were being written between them: **119 died to
    the first, 32 more to the second**, and **215 came out the other side**.
 
-Two more passes followed (§ *The second round*): a fourth cargo-mutants run
-over everything still alive, and a test written for one site by name.
+Three more passes followed (§ *The second round*, § *The third round*): a
+fourth cargo-mutants run over everything still alive, a test written for
+one site by name, and then the whole remaining backlog worked one mutant at
+a time.
 
 So of the 1301 mutants the filed lines name: **929 were already dead**
-before this pass began, **286 died to the tests written in it** (119 + 32 +
-132 + 3, one pass at a time), **13 are accepted** as equivalent or
-unreachable with the reasons below, **68 are recorded on the backlog** (49
-normalized lines), and 5 do not compile. A mutant is "alive" below only if
-it survived every pass.
+before this pass began, **346 died to the tests written in it** (119 + 32 +
+132 + 3 + 60, one pass at a time), **21 are accepted** as equivalent or
+unreachable with the reasons below and in
+`reports/mutants-accepted.txt`, **none are left on the backlog**, and 5 do
+not compile.
 
 ## What was killed, and why those
 
@@ -616,9 +618,11 @@ stays accepted with the corrected reason.
 
 ## Accepted, with reasons
 
-Thirteen mutants, ten normalized lines, each one read against the source
-rather than sorted by shape. They are in `reports/mutants-accepted.txt` with
-these reasons attached.
+Twenty-one mutants over sixteen normalized lines, each one read against the
+source rather than sorted by shape. All of them are in
+`reports/mutants-accepted.txt` with their reasons attached; the thirteen
+this pass settled first are set out below, and the eight the third round
+added are argued in that file.
 
 **`replace + with *` on a "later events" scan** — `events.rs` 374:57 (lifelink),
 504:30 (`PlayerLost` → `GameEnded`), 517:39 (`CreatureDied` → `TurnStarted` /
@@ -677,28 +681,43 @@ one and the same event vector. Two events of different kinds cannot occupy
 the same index, so `s == d` is impossible and the two comparisons agree on
 every input. Equivalent.
 
-## What is left, and why it is a backlog and not a shrug
+## The third round: the backlog, worked
 
-Sixty-eight mutants over 49 normalized lines, in
-`reports/mutants-backlog.txt`. Each was read individually: the answer to
-"what would a person see go wrong?" is a real answer in every case — a
-blinded clause, or a clause that would accept a state it exists to reject —
-and what is missing is the fixture, not the argument. Two patterns account
-for nearly all of them:
+The 68 that came out of the second round were left on the backlog with
+the argument that each named a real gap and only the fixture was missing.
+That argument was then tested by writing the fixtures. All 68 are
+resolved: **60 got a test that kills them, and 8 turned out to be
+unreachable** on any state this engine can produce, with the reasons
+written into `reports/mutants-accepted.txt`.
 
-- **A `&&`/`||` flip inside a multi-conjunct clause.** Distinguishing the
-  mutant needs a state that satisfies exactly one conjunct, which usually
-  means a fixture built to be wrong in one specific way and right in every
-  other. The second round wrote these for the transition and event families;
-  what is left is mostly `legal.rs::prompt_offers` and `stack.rs`, where the
-  one-conjunct-wrong state has to be assembled from a live prompt.
-- **A deleted match arm.** Distinguishing it needs an event or action of that
-  exact kind reaching the checker in a state where the arm's own test fails —
-  two conditions at once, and the second is the expensive one.
+The 60 kills came from about twenty new states across the five families,
+and the pattern the second round predicted held: nearly every one needed
+a state that satisfies part of a clause and not the rest.
 
-Neither is equivalent; both are unwritten. The backlog is also the weekly
-workflow's "do not re-file" list, so these stay out of the issue tracker
-until somebody works them.
+| where | what had no state behind it |
+| --- | --- |
+| `transition.rs::action_contract` | an activation's stash naming a different ability or activator; a refusal that tapped for mana and backed out; an activation cost tapped for inside the same window; a paused resolution that was resumed, that finished, or that came back as a new object; a pending cast replaced by a different one |
+| `transition.rs` ledgers | a token that ceased to exist after leaving the battlefield; a verb paired with a move that went somewhere else; a flashback cast out of the hand; a regenerated blocker still in combat; "the top of the library" measured in the cards that left THIS player's library; life that arrives at zero with no `LifeChanged`; a batched turn boundary with no events to read |
+| `events.rs::damage` | lifelink gaining the wrong amount; an unblocked attacker hitting the planeswalker it attacks; a blocked trampler hitting a creature that is not blocking it; a creature that left the battlefield with damage still marked; first-strike discipline in a window where something died |
+| `events.rs` windows | "a later event about this card" meaning this card; a token that is not exempt from summoning sickness; a cast that raised a prompt instead of handing priority back; a block on an attacker that left; a draw step drawing one card for the active player |
+| `legal.rs` | a finished game offering nothing; Stony Silence letting a land tap; an instant offered outside the main phase; a target on the only stack entry; an ability offered on the opponent's permanent; the copy path of a granted ability, including a Grizzly Bears shaped by Essence of the Wild; the ability half of the X-funding stash |
+| `prompts.rs` | each of the three trigger queues and each of the three things in flight, one at a time; a YesNo and a PayOrNot naming their source; a debuff and a can't-block prompt; a two-option trigger-target prompt; the active player working their own queue; a library card listed under the wrong owner |
+| `stack.rs` | a state trigger in the queue that is for state triggers; the opening-hand loop and a finished game, each exempt from the scan claim on its own |
+
+The 8 that could not be killed are not a shrug either, and they are not
+the shape the second round guessed. Every one of them turned out to be
+unreachable rather than untested — a clause guarding a state the engine
+cannot build (a discard event for another player inside a hand-size
+discard, a permanent off the battlefield with no `LeftBattlefield` event,
+a card entering the library without its zone-change count moving) or a
+card the pool does not have (nothing grants a player protection from a
+colour; no ability has both an X and a sacrifice in its cost). The
+reasons are in `reports/mutants-accepted.txt`, each one written against
+the source rather than the shape.
+
+So the second round's own claim — "these are honest gaps rather than arid
+mutants" — was right about 60 of 68 and wrong about 8, and the way to
+find out was to write the tests.
 
 ## The one that got lost
 
