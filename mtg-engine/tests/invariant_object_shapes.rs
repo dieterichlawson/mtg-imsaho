@@ -270,6 +270,37 @@ fn attachment_is_a_battlefield_fact_about_the_right_kind_of_thing() {
     flags_settled(&s, &reg, "is a creature attached to something (CR 303.4d/301.5c)");
 }
 
+/// CR 111.4, second sentence: "once a token is on the battlefield, changing
+/// its name doesn't change its subtype(s), and vice versa". A granted creature
+/// type is not a rename, so the checker must read the token's PRINTED subtypes.
+///
+/// Reading `obj.subtypes` — printed plus granted — made Olivia Voldaren
+/// pointing at any token an invariant violation, and the nightly fuzzer filed
+/// thirty seeds of it (issues #368-#397).
+#[test]
+fn a_granted_creature_type_does_not_rename_a_token() {
+    let (mut state, reg) = base();
+    let zombie = state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Black],
+        vec![CardType::Creature], vec![], vec!["Zombie".into()], &reg)[0];
+    assert_eq!(state.get_object(zombie).unwrap().name, "Zombie");
+
+    // What Olivia Voldaren's ability does: add a creature type at runtime.
+    state.get_object_mut(zombie).unwrap().subtypes.push("Vampire".into());
+
+    assert!(state.has_subtype(zombie, "Vampire", &reg));
+    assert!(state.has_subtype(zombie, "Zombie", &reg));
+    assert_eq!(state.get_object(zombie).unwrap().name, "Zombie");
+    let v = check_core(&state, &reg);
+    assert!(!v.iter().any(|m| m.contains("is not its subtypes")),
+        "a granted subtype is not a rename (CR 111.4), got: {v:?}");
+
+    // The clause still bites on the thing it is for: a name that is not the
+    // printed subtypes.
+    let mut s = state.clone();
+    s.get_object_mut(zombie).unwrap().name = "Vampire".into();
+    flags(&s, &reg, "is not its subtypes");
+}
+
 /// CR 111.4/205.3/707.8: a token is named after its subtypes, a subtype
 /// belongs to its card type, and the name cache agrees with the face.
 #[test]
