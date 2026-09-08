@@ -476,10 +476,45 @@ struct MenuPage {
     heights: Vec<usize>,
 }
 
+/// One combat-list row as it will be drawn: the entry's lines, and the
+/// caller's coloured note — kept whole, on the last line or on lines of its
+/// own (issues #328, #318).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct CombatRowLayout {
+    /// The entry, wrapped to the pane.
+    lines: Vec<String>,
+    /// The note as the caller passed it (leading space included).
+    note: String,
+    /// The note wrapped onto lines of its own, when it did not fit after
+    /// the entry's last line. Empty when it did, or when there is no note.
+    note_lines: Vec<String>,
+}
+
+impl CombatRowLayout {
+    /// Lines the row takes on screen.
+    fn height(&self) -> usize {
+        self.lines.len() + self.note_lines.len()
+    }
+
+    /// Everything the row says, line breaks taken back out.
+    #[cfg(test)]
+    fn text(&self) -> String {
+        let mut s = self.lines.join(" ");
+        if self.note_lines.is_empty() {
+            s.push_str(&self.note);
+        } else {
+            s.push(' ');
+            s.push_str(&self.note_lines.join(" "));
+        }
+        s
+    }
+}
+
 /// What a menu row stands for: an action to submit, or a spell to walk
 /// through the casting flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DisplayEntry {
+
 
     /// Index into `LegalActions::actions`.
     Direct(usize),
@@ -524,23 +559,6 @@ impl MenuLabel {
 fn str_cols(s: &str) -> usize {
     s.chars().map(col_width).sum()
 }
-
-/// The LAST `max` display columns of `s` — `clip_cols`' mirror, for a clip
-/// that has to keep the end of a string rather than its start.
-fn clip_cols_from_end(s: &str, max: usize) -> String {
-    let mut cols = 0;
-    let mut kept: Vec<char> = Vec::new();
-    for c in s.chars().rev() {
-        let w = col_width(c);
-        if cols + w > max {
-            break;
-        }
-        cols += w;
-        kept.push(c);
-    }
-    kept.into_iter().rev().collect()
-}
-
 
 /// One line of a full-screen info view (`l`/`g`/`e`), carrying just enough
 /// styling for the shared pager to render it (issues #101/#102).
@@ -911,9 +929,11 @@ impl CliPlayer {
     /// Pulled out of the pager so the arithmetic is testable without a
     /// terminal, and so the one prompt that could page and the ones that
     /// could not stop disagreeing about it (#96, #261).
+    #[cfg(test)]
     fn menu_page(len: usize, avail: usize, offset: usize) -> (usize, usize, bool) {
         Self::menu_page_lines(&vec![1; len], avail, offset)
     }
+
 
     /// `menu_page` for rows of uneven height: `heights[i]` is the number of
     /// lines row `i` takes once wrapped (issue #318). The page is as many
@@ -946,25 +966,16 @@ impl CliPlayer {
         if offset + shown >= len { 0 } else { offset + shown }
     }
 
-    /// What `p` does: the previous page, wrapping to the last one at the top.
+    /// What `p` does: the page that ends just above `offset` — as many
+    /// whole rows as fit in the marker-less budget, walking back — or, from
+    /// the top, the last page.
     ///
     /// Paging used to be forward-only, so overshooting a 253-name list meant
-    /// pressing `m` eleven more times to come back around (issue #255).
-    fn prev_menu_offset(offset: usize, shown: usize, len: usize) -> usize {
-        let page = shown.max(1);
-        if offset == 0 {
-            // The last page: the final whole step below `len`.
-            len.saturating_sub(1) / page * page
-        } else {
-            offset.saturating_sub(page)
-        }
-    }
-
-    /// `prev_menu_offset` for rows of uneven height: the page that ends
-    /// just above `offset` — as many whole rows as fit in the marker-less
-    /// budget, walking back — or, from the top, the last page. Exact where
-    /// a fixed page size can only guess (issue #318).
+    /// pressing `m` eleven more times to come back around (issue #255). It
+    /// then stepped back by a fixed page size, which rows of uneven height
+    /// made a guess; measured in lines it is exact (issue #318).
     fn prev_menu_offset_lines(heights: &[usize], avail: usize, offset: usize) -> usize {
+
         let len = heights.len();
         if len == 0 {
             return 0;
@@ -2476,8 +2487,10 @@ impl CliPlayer {
     /// through [`combat_row`](Self::combat_row), which clamps it; this is
     /// what the tests about *what an entry says* read, so they can state
     /// that without stating a width too.
-    #[cfg(test)]
+    /// A combat-list entry, whole: the creature, its live abilities, its
+    /// damage, what it is attacking, and the id when a twin needs it.
     fn combat_entry(view: &GameView, id: ObjectId, others: &[ObjectId]) -> String {
+
         let (head, elastic, tail) = Self::combat_entry_parts(view, id, others);
         format!("{head}{elastic}{tail}")
     }
@@ -2539,28 +2552,56 @@ impl CliPlayer {
         (head, elastic, tail)
     }
 
-    /// A combat-list row, clamped to the pane it is drawn in (issue #328).
+    /// A combat-list row laid out for the pane it is drawn in: the entry
+    /// wrapped under a hanging indent, and the caller's coloured note —
+    /// `[MUST ATTACK]`, `[needs N+ blockers]`, `(can block: …)` — on the
+    /// end of the last line when it fits there, on a line of its own when
+    /// it does not. Nothing is cut (issues #328, #318).
     ///
-    /// `prefix` is the row's own `"  N: "`, `suffix` whatever the caller
-    /// prints after the entry in its own colour — `[MUST ATTACK]`, `[needs
-    /// N+ blockers]`, `(can block: …)`. Both are budgeted for here so the
-    /// caller can still paint them separately. `panel_w` is the pane's
-    /// content width, passed in rather than measured so the widths that
-    /// matter can be stated in a test without a terminal.
-    fn combat_row(view: &GameView, id: ObjectId, others: &[ObjectId],
-                  prefix: &str, suffix: &str, panel_w: usize) -> String {
-        let (head, elastic, tail) = Self::combat_entry_parts(view, id, others);
-        let budget = panel_w.saturating_sub(str_cols(prefix) + str_cols(suffix));
-        // `elide_middle` gives up the ability list first and the identity
-        // last, which is the trade #270 settled. It can still hand back more
-        // than the budget when the identity alone is wider than the pane —
-        // a Terror of Kruin Pass aimed at a Liliana is 70 columns of name,
-        // attack target and id against a 58-column panel — so `clip_middle`
-        // is the last resort, cutting from the middle so that the creature
-        // at the front and the `-> planeswalker (#id)` at the back both
-        // survive. The frame is never broken, whatever is on the row.
-        Self::clip_middle(&Self::elide_middle(&head, &elastic, &tail, budget), budget)
+    /// `prefix_w` is the width of the row's own `"  N: "`; `panel_w` the
+    /// pane's content width, passed in rather than measured so the widths
+    /// that matter can be stated in a test without a terminal.
+    fn combat_row_layout(view: &GameView, id: ObjectId, others: &[ObjectId],
+                         prefix_w: usize, note: &str, panel_w: usize) -> CombatRowLayout {
+        let budget = panel_w.saturating_sub(prefix_w).max(1);
+        let lines = Self::wrap_row(&Self::combat_entry(view, id, others), budget);
+        let last = lines.last().map_or(0, |l| str_cols(l));
+        let note_lines = if note.is_empty() {
+            Vec::new()
+        } else if last + str_cols(note) <= budget {
+            Vec::new()
+        } else {
+            Self::wrap_row(note.trim_start(), budget)
+        };
+        CombatRowLayout { lines, note: note.to_string(), note_lines }
     }
+
+    /// Paint one laid-out combat row at `(col, r)`, the index in bold and
+    /// the note in `note_color`, advancing `r` past every line it used.
+    fn draw_combat_row(out: &mut io::Stdout, col: u16, r: &mut u16, index: usize,
+                       prefix_w: usize, layout: &CombatRowLayout, note_color: Color) {
+        let indent = " ".repeat(prefix_w);
+        for (k, line) in layout.lines.iter().enumerate() {
+            let _ = execute!(out, cursor::MoveTo(col, *r));
+            if k == 0 {
+                let _ = execute!(out, SetAttribute(Attribute::Bold), Print(format!("  {index}")),
+                    SetAttribute(Attribute::Reset), Print(": "));
+            } else {
+                let _ = execute!(out, Print(&indent));
+            }
+            let _ = execute!(out, Print(line));
+            if k == layout.lines.len() - 1 && layout.note_lines.is_empty() && !layout.note.is_empty() {
+                let _ = execute!(out, SetForegroundColor(note_color), Print(&layout.note), ResetColor);
+            }
+            *r += 1;
+        }
+        for line in &layout.note_lines {
+            let _ = execute!(out, cursor::MoveTo(col, *r), Print(&indent),
+                SetForegroundColor(note_color), Print(line), ResetColor);
+            *r += 1;
+        }
+    }
+
 
     /// The part of a combat entry that decides whether two rows collide.
     fn combat_entry_base(view: &GameView, id: ObjectId) -> String {
@@ -2613,34 +2654,6 @@ impl CliPlayer {
                 .map(|c| c.name.clone()))
             .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
-    }
-
-    /// Truncate `s` to `cap` characters by dropping the MIDDLE behind a
-    /// visible '…': the head names the permanent and ability, the tail
-    /// carries the disambiguating choice (" targeting X", ", sacrificing
-    /// Y"), and both must survive — end-clipping the tail rendered N
-    /// byte-identical menu entries whose choice silently decided who got
-    /// hit (issue #80, defeating the #36 fix).
-    ///
-    /// The last-resort clip. Prefer [`CliPlayer::fit_menu_label`], which
-    /// knows which regions of a row are identity and which are prose.
-    fn clip_middle(s: &str, cap: usize) -> String {
-        if str_cols(s) <= cap {
-            return s.to_string();
-        }
-        if cap <= 1 {
-            return "…".chars().take(cap).collect();
-        }
-        // Rough 3:2 split favors the head; the ellipsis takes one slot.
-        // Measured in display COLUMNS, not chars: a CJK card name is one char
-        // and two cells, so a char-counted clip still overflowed the panel and
-        // painted over the CARDS pane beside it (the #109 defect, #53's
-        // symptom).
-        let tail_cap = (cap - 1) * 2 / 5;
-        let head_cap = cap - 1 - tail_cap;
-        let head = clip_cols(s, head_cap);
-        let tail = clip_cols_from_end(s, tail_cap);
-        format!("{head}…{tail}")
     }
 
     /// The key hints under a menu.
@@ -4037,7 +4050,12 @@ impl CliPlayer {
         // creatures, with nothing saying the other six existed (issue #260).
         let list_offset = std::cell::Cell::new(0usize);
         let list_shown = std::cell::Cell::new(0usize);
+        // The rows' heights and the lines they had, so `p` can step back
+        // exactly over rows of uneven height (issue #318).
+        let list_heights: std::cell::RefCell<Vec<usize>> = std::cell::RefCell::new(Vec::new());
+        let list_avail = std::cell::Cell::new(0usize);
         let draw = || -> u16 {
+
             Self::render(view, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
@@ -4054,22 +4072,24 @@ impl CliPlayer {
                 defending_planeswalkers.len() + 1
             };
             let avail = h.saturating_sub(r as usize + reserved);
-            let (offset, shown, paged) =
-                Self::menu_page(eligible.len(), avail, list_offset.get());
-            list_shown.set(shown);
             let panel_w = Self::middle_panel_width_at(Self::term_width());
+            // Every row laid out first, so the page is measured in the lines
+            // the rows actually take (issue #318).
+            let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
+                let tag = if must_attack.contains(&id) { " [MUST ATTACK]" } else { "" };
+                Self::combat_row_layout(view, id, eligible, str_cols(&format!("  {i}: ")), tag, panel_w)
+            }).collect();
+            let heights: Vec<usize> = layouts.iter().map(CombatRowLayout::height).collect();
+            let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, list_offset.get());
+            list_shown.set(shown);
+            list_avail.set(avail);
+            *list_heights.borrow_mut() = heights;
             for (i, &id) in eligible.iter().enumerate().skip(offset).take(shown) {
-                let forced = must_attack.contains(&id);
-                let tag = if forced { " [MUST ATTACK]" } else { "" };
-                let color = if forced { Color::Red } else { Color::Reset };
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!(": {}",
-                        Self::combat_row(view, id, eligible, &format!("  {i}: "), tag, panel_w))),
-                    SetForegroundColor(color), Print(tag), ResetColor);
-                r += 1;
+                let color = if must_attack.contains(&id) { Color::Red } else { Color::Reset };
+                Self::draw_combat_row(&mut out, col, &mut r, i,
+                    str_cols(&format!("  {i}: ")), &layouts[i], color);
             }
+
             if paged {
                 let marker = format!(
                     "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
@@ -4176,11 +4196,12 @@ impl CliPlayer {
                     continue;
                 }
                 "p" => {
-                    list_offset.set(Self::prev_menu_offset(
-                        list_offset.get(), list_shown.get(), eligible.len()));
+                    list_offset.set(Self::prev_menu_offset_lines(
+                        &list_heights.borrow(), list_avail.get(), list_offset.get()));
                     r = draw();
                     continue;
                 }
+
                 _ => {}
             }
 
@@ -4310,23 +4331,27 @@ impl CliPlayer {
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            let (atk_off, atk_n, atk_paged) =
-                Self::menu_page(attacker_ids.len(), atk_avail, atk_offset.get());
-            atk_shown.set(atk_n);
             let panel_w = Self::middle_panel_width_at(Self::term_width());
-            for (i, &id) in attacker_ids.iter().enumerate().skip(atk_off).take(atk_n) {
+            // Rows are laid out whole and the page measured in their lines
+            // (issue #318).
+            let atk_layouts: Vec<CombatRowLayout> = attacker_ids.iter().enumerate().map(|(i, &id)| {
                 // CR 509.1b: say the minimum-blockers requirement (menace,
                 // Terror of Kruin Pass) up front — an unmarked menace attacker
                 // took a single block the engine then discarded (issue #72).
                 let note = min_blockers.get(&id)
                     .map(|min| format!(" [needs {min}+ blockers]"))
                     .unwrap_or_default();
-                let prefix = format!("  {i}: ");
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("{prefix}{}{note}",
-                        Self::combat_row(view, id, attacker_ids, &prefix, &note, panel_w))));
-                r += 1;
+                Self::combat_row_layout(view, id, attacker_ids, str_cols(&format!("  {i}: ")), &note, panel_w)
+            }).collect();
+            let atk_heights: Vec<usize> = atk_layouts.iter().map(CombatRowLayout::height).collect();
+            let (atk_off, atk_n, atk_paged) =
+                Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get());
+            atk_shown.set(atk_n);
+            for i in atk_off..atk_off + atk_n {
+                Self::draw_combat_row(&mut out, col, &mut r, i,
+                    str_cols(&format!("  {i}: ")), &atk_layouts[i], Color::Reset);
             }
+
             if atk_paged {
                 let marker = format!("  … showing {}-{} of 0-{} — m = next page",
                     atk_off, atk_off + atk_n.saturating_sub(1), attacker_ids.len() - 1);
@@ -4339,10 +4364,7 @@ impl CliPlayer {
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             let blk_avail = h.saturating_sub(r as usize + 3).max(1);
-            let (blk_off, blk_n, blk_paged) =
-                Self::menu_page(eligible_blockers.len(), blk_avail, blk_offset.get());
-            blk_shown.set(blk_n);
-            for (i, &id) in eligible_blockers.iter().enumerate().skip(blk_off).take(blk_n) {
+            let blk_layouts: Vec<CombatRowLayout> = eligible_blockers.iter().enumerate().map(|(i, &id)| {
                 // Which attackers this creature may legally block (CR 509.1b —
                 // evasion like flying is per-pairing, so say it up front).
                 let legal: Vec<String> = legal_blocks.get(&id)
@@ -4358,12 +4380,17 @@ impl CliPlayer {
                 } else {
                     format!(" (can block: {})", legal.join(" "))
                 };
-                let prefix = format!("  {i}: ");
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("{prefix}{}{note}",
-                        Self::combat_row(view, id, eligible_blockers, &prefix, &note, panel_w))));
-                r += 1;
+                Self::combat_row_layout(view, id, eligible_blockers, str_cols(&format!("  {i}: ")), &note, panel_w)
+            }).collect();
+            let blk_heights: Vec<usize> = blk_layouts.iter().map(CombatRowLayout::height).collect();
+            let (blk_off, blk_n, blk_paged) =
+                Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get());
+            blk_shown.set(blk_n);
+            for i in blk_off..blk_off + blk_n {
+                Self::draw_combat_row(&mut out, col, &mut r, i,
+                    str_cols(&format!("  {i}: ")), &blk_layouts[i], Color::Reset);
             }
+
             if blk_paged {
                 let marker = format!("  … showing {}-{} of 0-{} — b = next page",
                     blk_off, blk_off + blk_n.saturating_sub(1), eligible_blockers.len() - 1);
@@ -5811,28 +5838,8 @@ mod tests {
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
 
-    /// Issue #80: a menu label longer than the panel is clipped from the
-    /// MIDDLE with a visible ellipsis, never from the end — the tail is
-    /// what tells otherwise-identical entries apart (" targeting X").
-    #[test]
-    fn clip_middle_keeps_the_disambiguating_tail() {
-        let label = "Olivia Voldaren 3/3 (your): {1}{R}: Deal 1 damage to \
-                     another target creature, make it a Vampire, +1/+1 \
-                     counter on Olivia targeting Fiend Hunter 1/3 (opp)";
-        let clipped = CliPlayer::clip_middle(label, 113);
-        assert_eq!(clipped.chars().count(), 113);
-        assert!(clipped.contains('…'), "truncation is visible");
-        assert!(clipped.starts_with("Olivia Voldaren"), "the head survives");
-        assert!(clipped.ends_with("targeting Fiend Hunter 1/3 (opp)"),
-            "the target suffix survives: {clipped}");
-
-        // Short labels pass through untouched, cap-edge cases don't panic.
-        assert_eq!(CliPlayer::clip_middle("Pass priority", 113), "Pass priority");
-        assert_eq!(CliPlayer::clip_middle("abcdef", 1), "…");
-        assert_eq!(CliPlayer::clip_middle("abcdef", 0), "");
-    }
-
     /// One equip label per Champion, differing only in whom it targets and
+
     /// whom it sacrifices.
     fn hauberk_row(target: u64, sacrifice: u64) -> MenuLabel {
         MenuLabel {
@@ -5921,10 +5928,6 @@ mod tests {
     fn the_menu_wrap_measures_display_columns_not_chars() {
         let wide = "四人日本語のカード名がとても長い場合のテスト";
         assert!(wide.chars().count() < str_cols(wide), "test precondition: wide chars");
-        assert!(str_cols(&CliPlayer::clip_middle(wide, 20)) <= 20);
-        assert_eq!(clip_cols_from_end("稲妻稲妻稲", 5), "妻稲",
-            "the last whole characters that fit");
-
         let lines = CliPlayer::wrap_row(wide, 20);
         assert!(lines.len() >= 3, "{lines:?}");
         for line in &lines {
@@ -6624,21 +6627,24 @@ mod tests {
     /// meant pressing `m` eleven more times to wrap back around to it.
     #[test]
     fn a_menu_pages_backwards_too() {
-        // Ten items, four to a page.
-        assert_eq!(CliPlayer::prev_menu_offset(4, 4, 10), 0);
-        assert_eq!(CliPlayer::prev_menu_offset(8, 4, 10), 4);
-        // From the top, back to the last page — which is the final whole
-        // step below the end, not the end itself.
-        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 10), 8);
+        // Ten one-line items in a five-line pane: four to a page once the
+        // marker has its line.
+        let ten = [1usize; 10];
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 4), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 8), 4);
+        // From the top, back to the last page — the last four rows.
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 0), 6);
         // A menu that fits has one page, and `p` stays on it.
-        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 4), 0);
-        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 0), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[1; 4], 5, 0), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 5, 0), 0);
         // Round trip: forwards then backwards is where you started.
         let mut off = 0;
-        for _ in 0..3 { off = CliPlayer::next_menu_offset(off, 4, 10); }
-        for _ in 0..3 { off = CliPlayer::prev_menu_offset(off, 4, 10); }
+        for _ in 0..2 { off = CliPlayer::next_menu_offset(off, 4, 10); }
+        assert_eq!(off, 8);
+        for _ in 0..2 { off = CliPlayer::prev_menu_offset_lines(&ten, 5, off); }
         assert_eq!(off, 0);
     }
+
 
     /// Issue #260: the truncation marker is the LAST row a short pane
     /// sacrifices, not the first — a menu that does not fit has to say so,
@@ -7022,10 +7028,13 @@ mod tests {
     /// row ran through the pane's right border and overwrote the CARDS pane
     /// on exactly the line the defender reads to choose a block.
     ///
-    /// What gives way is the ability list; the name, the attack target
-    /// (CR 508.1a) and the `(#id)` disambiguator (#136) stay.
+    /// Nothing gives way (#318): the row wraps under its index, every line
+    /// fits the pane, and the note the caller paints in colour rides on the
+    /// last line when it fits there and on a line of its own when it does
+    /// not.
     #[test]
-    fn a_combat_row_is_clamped_to_the_pane_it_is_drawn_in() {
+    fn a_combat_row_wraps_to_the_pane_it_is_drawn_in() {
+
         let mut inq = creature(90, "Elite Inquisitor", 0);
         inq.keywords = vec![mtg_engine::types::Keyword::FirstStrike,
                             mtg_engine::types::Keyword::Vigilance];
@@ -7044,21 +7053,35 @@ mod tests {
             "test precondition: the entry is wider than the pane ({} > {panel})",
             unclamped.chars().count());
 
-        let prefix = "  0: ";
-        let suffix = " (can block: 0)";
-        let row = CliPlayer::combat_row(&v, ObjectId(90), &ids, prefix, suffix, panel);
-        assert!(prefix.chars().count() + row.chars().count() + suffix.chars().count() <= panel,
-            "the whole row fits the {panel}-column pane: {prefix}{row}{suffix}");
-        assert!(row.starts_with("Elite Inquisitor"),
-            "the creature is still named: {row}");
-        assert!(row.contains('…'), "and the ability list is what gave way: {row}");
+        let prefix_w = str_cols("  0: ");
+        let note = " (can block: 0)";
+        let row = CliPlayer::combat_row_layout(&v, ObjectId(90), &ids, prefix_w, note, panel);
+        assert!(row.lines.len() >= 2, "the entry wraps: {row:?}");
+        for line in row.lines.iter().chain(&row.note_lines) {
+            assert!(prefix_w + str_cols(line) <= panel,
+                "every line fits the {panel}-column pane: {line:?}");
+        }
+        assert_eq!(row.text(), format!("{unclamped}{note}"), "nothing is cut");
+        assert!(row.lines[0].starts_with("Elite Inquisitor"), "{row:?}");
+
+        // A note that fits after the last line stays there; one that does
+        // not gets a line of its own rather than pushing through the border.
+        let short = CliPlayer::combat_row_layout(&v, ObjectId(90), &ids, prefix_w, "", panel);
+        assert!(short.note_lines.is_empty() && short.note.is_empty());
+        let wide_note = format!(" (can block: {})", (0..30).map(|i| i.to_string()).collect::<Vec<_>>().join(" "));
+        let long = CliPlayer::combat_row_layout(&v, ObjectId(90), &ids, prefix_w, &wide_note, panel);
+        assert!(!long.note_lines.is_empty(), "{long:?}");
+        assert_eq!(long.height(), long.lines.len() + long.note_lines.len());
+        assert_eq!(long.text(), format!("{unclamped}{wide_note}"));
     }
 
-    /// The same clamp keeps the tail, which is the half a block decision
-    /// cannot do without: which planeswalker an attacker is aimed at
-    /// (CR 508.1a) and the id that tells two identical rows apart (#136).
+    /// The row keeps the tail a block decision cannot do without — which
+    /// planeswalker an attacker is aimed at (CR 508.1a) and the id that
+    /// tells two identical rows apart (#136) — and, now that nothing is
+    /// cut, the ability list too.
     #[test]
-    fn a_clamped_combat_row_keeps_the_attack_target_and_the_id() {
+    fn a_wrapped_combat_row_keeps_the_attack_target_and_the_id() {
+
         let mut walker = creature(51, "Liliana of the Veil", 0);
         walker.card_types = vec![CardType::Planeswalker];
         walker.counters.insert(mtg_engine::types::CounterType::Loyalty, 4);
@@ -7076,17 +7099,20 @@ mod tests {
         v.battlefield = vec![walker, long(18), long(19)];
         let ids = vec![ObjectId(18), ObjectId(19)];
 
-        let row = CliPlayer::combat_row(&v, ObjectId(18), &ids, "  0: ", "",
-            CliPlayer::middle_panel_width_at(100));
-        assert!(row.starts_with("Terror of Kruin Pass"),
-            "the creature is still named: {row}");
-        assert!(row.ends_with("(#18)"),
-            "and the id that tells the two apart is still on the end: {row}");
-        assert!(row.contains("loyalty]"),
-            "so is enough of the attack target to see it is a planeswalker: {row}");
-        assert!(!row.contains("vigilance"),
-            "the ability list is what gave way, all of it here: {row}");
+        let panel = CliPlayer::middle_panel_width_at(100);
+        let row = CliPlayer::combat_row_layout(&v, ObjectId(18), &ids, str_cols("  0: "), "", panel);
+        let text = row.text();
+        assert!(text.starts_with("Terror of Kruin Pass"), "the creature is named: {text}");
+        assert!(text.ends_with("(#18)"),
+            "and the id that tells the two apart is on the end: {text}");
+        assert!(text.contains("Liliana of the Veil [4 loyalty]"),
+            "so is the attack target, whole: {text}");
+        assert!(text.contains("vigilance"), "and so is the ability list: {text}");
+        for line in &row.lines {
+            assert!(str_cols("  0: ") + str_cols(line) <= panel, "a line overflows: {line:?}");
+        }
     }
+
 
     /// Issue #243: the keywords the block turns on are on the line the block
     /// is chosen from.
