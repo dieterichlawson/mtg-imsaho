@@ -231,7 +231,7 @@ fn next_unordered_attacker(state: &GameState) -> Option<(ObjectId, Vec<ObjectId>
 
 /// Log an attacker's order once every blocker has a place in it. Only worth
 /// saying when there was a choice to make.
-fn log_completed_order(state: &mut GameState, attacker: ObjectId) {
+pub(crate) fn log_completed_order(state: &mut GameState, attacker: ObjectId) {
     let order = state.combat.as_ref()
         .and_then(|c| c.damage_assignment_order.get(&attacker))
         .cloned()

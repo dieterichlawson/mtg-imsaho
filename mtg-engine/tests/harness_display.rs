@@ -71,6 +71,7 @@ fn a_transformed_cards_trigger_label_names_the_face_that_is_showing() {
     let trigger = PendingTrigger {
         source: TriggerSource::new(pariah, card_id, P0, "transform back if 2+ spells cast"),
         event: TriggerEvent::Upkeep,
+        ordered: false,
     };
     let label = trigger.display_name_with_state(&reg, Some(&state));
 

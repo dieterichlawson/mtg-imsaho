@@ -243,6 +243,7 @@ fn trigger_processing_survives_an_event_about_a_missing_object() {
     let mut state = GameState::new(2);
     state.events.push(mtg_engine::events::GameEvent::CreatureDied {
         object: mtg_engine::ids::ObjectId(999),
+        name: String::new(),
         card_id: mtg_engine::ids::CardId(0),
         controller: mtg_engine::ids::PlayerId(0),
         damaged_by: Vec::new(),

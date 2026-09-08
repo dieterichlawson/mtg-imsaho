@@ -75,6 +75,7 @@ fn resolve_after_source_dies_targeting(
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource { chosen_targets: targets, ..TriggerSource::new(source, card_id, controller, "") },
         event,
+        ordered: false,
     }));
     state.move_object(source, Zone::Graveyard, reg);
     mtg_engine::triggers::resolve_next_trigger(state, reg);
@@ -185,6 +186,7 @@ fn balefire_dragon_token_wipes_the_board_after_ceasing_to_exist() {
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource::new(token, card_id, P0, ""),
         event: TriggerEvent::CombatDamageToPlayer { damaged_player: P1, amount: 6 },
+        ordered: false,
     }));
     state.move_object(token, Zone::Graveyard, &reg);
     mtg_engine::sba::check_state_based_actions(&mut state, &reg);
@@ -608,7 +610,7 @@ fn gutter_grime_makes_its_ooze_after_dying_alongside_the_creature() {
     state.move_object(creature, Zone::Graveyard, &reg);
 
     resolve_after_source_dies(&mut state, &reg, grime, TriggerEvent::CreatureDied {
-        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
+        dead: DeadCreature { id: creature, name: String::new(), controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
     });
 
     assert_eq!(count_tokens_named_by(&state, "Ooze", P0), 1,
@@ -628,7 +630,7 @@ fn murder_of_crows_offers_its_draw_after_dying_alongside_the_creature() {
     state.move_object(creature, Zone::Graveyard, &reg);
 
     resolve_after_source_dies(&mut state, &reg, murder, TriggerEvent::CreatureDied {
-        dead: DeadCreature { id: creature, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
+        dead: DeadCreature { id: creature, name: String::new(), controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
     });
 
     assert!(state.awaiting_action.is_some(),
@@ -651,7 +653,7 @@ fn selhoff_occultist_mills_after_dying_alongside_the_creature() {
 
     resolve_after_source_dies_targeting(&mut state, &reg, occultist,
         TriggerEvent::CreatureDied {
-            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
+            dead: DeadCreature { id: other, name: String::new(), controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
         },
         vec![Target::Player(P1)]);
 
@@ -674,7 +676,7 @@ fn rage_thrower_deals_its_damage_after_dying_alongside_the_creature() {
 
     resolve_after_source_dies_targeting(&mut state, &reg, thrower,
         TriggerEvent::CreatureDied {
-            dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
+            dead: DeadCreature { id: other, name: String::new(), controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
         },
         vec![Target::Player(P1)]);
 
@@ -696,7 +698,7 @@ fn a_trigger_that_counters_its_own_permanent_does_nothing_once_it_has_died() {
     state.move_object(other, Zone::Graveyard, &reg);
 
     resolve_after_source_dies(&mut state, &reg, knot, TriggerEvent::CreatureDied {
-        dead: DeadCreature { id: other, controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
+        dead: DeadCreature { id: other, name: String::new(), controller: P0, damaged_by: vec![], toughness: 2, is_token: false, subtypes: Vec::new() },
     });
 
     assert_eq!(counters_of(&state, knot, CounterType::PlusOnePlusOne), 0,

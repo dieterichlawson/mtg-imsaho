@@ -108,6 +108,7 @@ fn hollowhenge_scavengers_life_goes_to_its_last_controller() {
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource::new(scavenger, card_id, P0, "Hollowhenge Scavenger"),
         event: TriggerEvent::SelfEntered,
+        ordered: false,
     }));
     // Killed with its own trigger already on the stack.
     state.move_object(scavenger, Zone::Graveyard, &reg);
@@ -908,6 +909,7 @@ fn elder_cathars_human_check_is_made_on_resolution() {
                 ..TriggerSource::new(ec, card_id, P0, "Elder Cathar")
             },
             event: TriggerEvent::SelfDies,
+            ordered: false,
         }));
         state.move_object(ec, Zone::Graveyard, &reg);
 

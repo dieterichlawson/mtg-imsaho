@@ -199,16 +199,18 @@ fn geist_no_spurious_end_combat_trigger_when_did_not_attack() {
     // so there is no Angel token to exile and no reason for a triggered ability.
     let has_end_combat_trigger = state.stack.iter()
         .filter_map(|e| e.as_trigger())
-        .any(|t| matches!(t, PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndCombat }))
+        .any(|t| matches!(t, PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndCombat, .. }))
         || state.pending_trigger_pushes_ap.iter()
             .any(|t| matches!(t, PendingTrigger {
                 source: TriggerSource { .. },
                 event: TriggerEvent::EndCombat,
+                ..
             }))
         || state.pending_trigger_pushes_nap.iter()
             .any(|t| matches!(t, PendingTrigger {
                 source: TriggerSource { .. },
                 event: TriggerEvent::EndCombat,
+                ..
             }));
 
     assert_eq!(

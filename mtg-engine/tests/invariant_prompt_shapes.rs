@@ -578,7 +578,7 @@ fn a_trigger_order_prompt_orders_its_own_queue() {
                   ap_queue: bool, player: PlayerId| AwaitingAction::ResolutionChoice {
         player, source,
         choice: ResolutionChoiceKind::ChooseTriggerOrder {
-            description: "d".into(), options, ap_queue, indices } };
+            description: "d".into(), options, ap_queue, indices, details: vec![] } };
     let labels = || vec!["a".into(), "b".into()];
 
     let mut ap = state.clone();

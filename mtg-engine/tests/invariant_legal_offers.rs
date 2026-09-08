@@ -462,7 +462,7 @@ fn every_resolution_prompt_enumerates_to_its_own_options() {
             controller: P0 },
         ResolutionChoiceKind::ChooseTriggerOrder {
             description: "?".into(), options: vec!["a".into(), "b".into()],
-            ap_queue: true, indices: vec![0, 1] },
+            ap_queue: true, indices: vec![0, 1], details: vec![] },
     ];
 
     for choice in kinds {

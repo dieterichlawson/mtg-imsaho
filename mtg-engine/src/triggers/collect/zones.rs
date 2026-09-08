@@ -78,13 +78,15 @@ pub(super) fn creature_died(
     registry: &CardRegistry,
     c: &mut Collector,
 ) {
-    let GameEvent::CreatureDied { object, card_id, controller, damaged_by, last_known_toughness, is_token, subtypes } = event else { return };
+    let GameEvent::CreatureDied { object, name, card_id, controller, damaged_by, last_known_toughness, is_token, subtypes } = event else { return };
     let dead_id = *object;
     let dead_card_id = *card_id;
     let dead_controller = *controller;
     let dead = DeadCreature {
         id: dead_id,
+        name: name.clone(),
         controller: dead_controller,
+
         damaged_by: damaged_by.clone(),
         toughness: *last_known_toughness,
         is_token: *is_token,

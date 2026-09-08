@@ -34,7 +34,7 @@ fn upkeep_stack_entries(state: &mut GameState, reg: &CardRegistry, object: Objec
         .filter(|e| matches!(e, StackEntry::Trigger(
             PendingTrigger {
                 source: TriggerSource { id: object_id, .. },
-                event: TriggerEvent::Upkeep }) if *object_id == object))
+                event: TriggerEvent::Upkeep, .. }) if *object_id == object))
         .count()
 }
 
@@ -196,7 +196,7 @@ fn etb_stack_entries(state: &mut GameState, reg: &CardRegistry, object: ObjectId
         .filter(|e| matches!(e, StackEntry::Trigger(
             PendingTrigger {
                 source: TriggerSource { id: object_id, .. },
-                event: TriggerEvent::SelfEntered }) if *object_id == object))
+                event: TriggerEvent::SelfEntered, .. }) if *object_id == object))
         .count()
 }
 

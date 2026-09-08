@@ -75,7 +75,7 @@ fn every_event_that_names_a_player_is_range_checked() {
         GameEvent::Discarded { player: g, object: bear },
         GameEvent::LibraryShuffled { player: g },
         GameEvent::EnteredBattlefield { object: bear, controller: g },
-        GameEvent::CreatureDied { object: bear, card_id, controller: g, damaged_by: vec![],
+        GameEvent::CreatureDied { object: bear, name: "Grizzly Bears".into(), card_id, controller: g, damaged_by: vec![],
                                   last_known_toughness: 2, is_token: false, subtypes: vec![] },
         GameEvent::LeftBattlefield { object: bear, to: Zone::Graveyard, last_controller: g },
         GameEvent::CreatureCardMilled { object: bear, milled_player: g },
@@ -500,7 +500,7 @@ fn a_death_event_is_a_zone_change_to_the_graveyard() {
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let card_id = state.get_object(bear).unwrap().card_id;
     let died = |controller: PlayerId, is_token: bool| GameEvent::CreatureDied {
-        object: bear, card_id, controller, damaged_by: vec![],
+        object: bear, name: "Grizzly Bears".into(), card_id, controller, damaged_by: vec![],
         last_known_toughness: 2, is_token, subtypes: vec![] };
 
     let mut dead = state.clone();

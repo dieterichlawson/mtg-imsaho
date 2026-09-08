@@ -44,7 +44,12 @@ pub enum GameEvent {
     /// `subtypes` is the active face's, which is why "whenever another **Human**
     /// dies" cannot read the object: a werewolf that died as a Werewolf is a
     /// Human again by the time anything looks.
-    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32, is_token: bool, subtypes: Vec<String> },
+    /// A creature died, with its last known information (CR 608.2g). `name`
+    /// is its name as it died: a token is gone from `state.objects` by the
+    /// time a trigger it caused is ordered, and the player ordering it
+    /// needs to know which death it is for (issue #325).
+    CreatureDied { object: ObjectId, name: String, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32, is_token: bool, subtypes: Vec<String> },
+
     PlayerLost { player: PlayerId, reason: LossReason },
     GameEnded { result: GameResult },
     PriorityPassed { player: PlayerId },

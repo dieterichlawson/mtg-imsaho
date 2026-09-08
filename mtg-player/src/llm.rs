@@ -2069,6 +2069,8 @@ impl LlmPlayer {
                     ResolvedChoice::ChosenIndex(_, ref label) => {
                         label.clone()
                     }
+                    ResolvedChoice::ChosenOrder(order) => format!("Order: {}",
+                        order.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")),
                     ResolvedChoice::ChosenSubset(ids) => {
                         let names: Vec<String> = ids.iter()
                             .map(|id| Self::obj_name(view, *id))

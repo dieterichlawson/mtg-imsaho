@@ -1278,7 +1278,7 @@ fn front_face_civilized_scholar_has_no_end_step_trigger() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let end_step_triggers = state.stack.iter().filter(|e| matches!(e,
-        StackEntry::Trigger(PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndStep })
+        StackEntry::Trigger(PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndStep, .. })
     )).count();
     assert_eq!(end_step_triggers, 0,
         "Front-face Civilized Scholar has no EndStep trigger per oracle");
@@ -1299,7 +1299,7 @@ fn back_face_homicidal_brute_has_end_step_trigger() {
     mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let end_step_triggers = state.stack.iter().filter(|e| matches!(e,
-        StackEntry::Trigger(PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndStep })
+        StackEntry::Trigger(PendingTrigger { source: TriggerSource { .. }, event: TriggerEvent::EndStep, .. })
     )).count();
     assert_eq!(end_step_triggers, 1,
         "Back-face Homicidal Brute should fire its end-step transform-back trigger");

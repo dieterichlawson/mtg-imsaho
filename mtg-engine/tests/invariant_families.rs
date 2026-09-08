@@ -383,7 +383,7 @@ fn choice_prompts_offer_real_things() {
 
     let mut s = state.clone();
     s.awaiting_action = Some(prompt(ResolutionChoiceKind::ChooseTriggerOrder {
-        description: "d".into(), options: vec!["a".into(), "b".into()], ap_queue: true, indices: vec![0, 5] }));
+        description: "d".into(), options: vec!["a".into(), "b".into()], ap_queue: true, indices: vec![0, 5], details: vec![] }));
     flags_core(&s, &reg, "index 0 is past the queue of 0");
 
     let mut s = state.clone();
@@ -617,7 +617,7 @@ fn zone_change_and_tap_events_are_checked() {
     clean(&state, &reg);
 
     let mut s = state.clone();
-    s.events = vec![GameEvent::CreatureDied { object: bear, card_id: s.get_object(bear).unwrap().card_id, controller: P0,
+    s.events = vec![GameEvent::CreatureDied { object: bear, name: "Grizzly Bears".into(), card_id: s.get_object(bear).unwrap().card_id, controller: P0,
         damaged_by: vec![], last_known_toughness: 2, is_token: false, subtypes: vec![] }];
     flags_core(&s, &reg, "without leaving the battlefield afterwards (CR 700.4)");
     let mut s = state.clone();
@@ -965,7 +965,7 @@ fn verb_events_leave_the_object_where_the_verb_puts_it() {
 
     let mut s = state.clone();
     s.creature_died_this_turn = false;
-    s.events = vec![GameEvent::CreatureDied { object: bear, card_id: s.get_object(bear).unwrap().card_id, controller: P0,
+    s.events = vec![GameEvent::CreatureDied { object: bear, name: "Grizzly Bears".into(), card_id: s.get_object(bear).unwrap().card_id, controller: P0,
         damaged_by: vec![], last_known_toughness: 2, is_token: false, subtypes: vec![] }];
     flags_core(&s, &reg, "but creature_died_this_turn is false");
 }
@@ -1688,9 +1688,10 @@ fn every_trigger_that_appeared_names_the_event_that_made_it() {
     let spell = spell_in_hand(&mut prev, &reg, "Moment of Heroism", P0);
 
     let died = |id: ObjectId, cid: mtg_engine::ids::CardId, who: PlayerId| GameEvent::CreatureDied {
-        object: id, card_id: cid, controller: who, damaged_by: vec![],
+        object: id, name: String::new(), card_id: cid, controller: who, damaged_by: vec![],
         last_known_toughness: 2, is_token: false, subtypes: vec![] };
     let dead_creature = DeadCreature {
+        name: String::new(),
         id: other, controller: P1, damaged_by: vec![], toughness: 2,
         is_token: false, subtypes: vec![] };
 

@@ -3817,6 +3817,23 @@ pub enum AwaitingAction {
 /// of mulligans themselves.
 pub const OPENING_HAND_SIZE: usize = 7;
 
+/// One trigger as a `ChooseTriggerOrder` prompt describes it, in parts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriggerOrderOption {
+    /// The object whose ability this is.
+    pub source: ObjectId,
+    /// Its name, from the face that is up.
+    pub source_name: String,
+    /// Its power and toughness, when it is a creature on the battlefield.
+    pub power_toughness: Option<(i32, i32)>,
+    /// What kind of trigger: "dies trigger", "upkeep trigger".
+    pub kind: String,
+    /// What the ability does, in the card's own words (may be empty).
+    pub ability: String,
+    /// What set it off: "Unruly Mob (#23) died", "the upkeep step began".
+    pub cause: String,
+}
+
 /// Describes what kind of mid-resolution choice is needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResolutionChoiceKind {
@@ -3933,7 +3950,15 @@ pub enum ResolutionChoiceKind {
         /// Positions of the group's triggers in that queue, parallel to
         /// `options`.
         indices: Vec<usize>,
+        /// What each trigger is, in parts, parallel to `options` — the
+        /// source, its P/T, the ability, and what set it off — so a player
+        /// ordering a dozen can be shown everything about each of them,
+        /// not one line of prose per row (issue #325). Empty in a prompt
+        /// saved before this field existed.
+        #[serde(default)]
+        details: Vec<TriggerOrderOption>,
     },
+
     /// CR 509.2: the attacking player announces the damage assignment order
     /// among the creatures blocking one attacker. Answered by `ChosenIndex`
     /// over `options`: the chosen blocker takes the next place in the order,

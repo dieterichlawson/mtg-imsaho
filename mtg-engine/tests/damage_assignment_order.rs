@@ -176,3 +176,35 @@ fn a_blocker_that_leaves_combat_drops_out_of_the_order() {
     assert_eq!(state.get_object(survivor).unwrap().damage_marked, 4,
         "with the first blocker gone, everything is assigned to the next one in order");
 }
+
+/// Issue #325: the whole damage assignment order in one answer (CR 509.2),
+/// recorded and logged as the order it is.
+#[test]
+fn a_whole_order_places_every_blocker_at_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 5, 5);
+    let a = ready_creature(&mut state, P1, 1, 1);
+    let b = ready_creature(&mut state, P1, 2, 2);
+    let c = ready_creature(&mut state, P1, 3, 3);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(a, attacker), (b, attacker), (c, attacker)], &reg);
+
+    let (_, remaining, _) = pending_order_prompt(&state).expect("a triple block asks for the order");
+    let index_of = |x| remaining.iter().position(|&r| r == x).expect("offered");
+    // c first, then a, then b.
+    let order = vec![index_of(c), index_of(a), index_of(b)];
+    let bad = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenOrder(vec![0, 0, 1]),
+    }, &reg);
+    assert!(pending_order_prompt(&bad).is_some(), "a non-permutation is refused and the prompt stands");
+
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenOrder(order),
+    }, &reg);
+    assert!(pending_order_prompt(&state).is_none(), "one answer settles the attacker");
+    assert_eq!(state.combat.as_ref().unwrap().damage_assignment_order.get(&attacker),
+        Some(&vec![c, a, b]));
+    assert!(state.game_log.iter().any(|e| e.message.contains("announced the damage assignment order")),
+        "the order is logged: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}

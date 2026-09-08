@@ -466,12 +466,27 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
             }
             distinct(remaining, w, v);
         }
-        K::ChooseTriggerOrder { options, ap_queue, indices, .. } => {
+        K::ChooseTriggerOrder { options, ap_queue, indices, details, .. } => {
             let w = "trigger-order prompt";
             let q = if *ap_queue { &state.pending_trigger_pushes_ap } else { &state.pending_trigger_pushes_nap };
             if indices.len() != options.len() || indices.len() < 2 {
                 v.push(format!("{w} with {} options for {} indices", options.len(), indices.len()));
             }
+            // The parts describe the same triggers as the options, in the
+            // same order (issue #325); a prompt from an older save has none.
+            if !details.is_empty() {
+                if details.len() != options.len() {
+                    v.push(format!("{w} with {} details for {} options", details.len(), options.len()));
+                }
+                for (k, (d, &i)) in details.iter().zip(indices).enumerate() {
+                    if let Some(t) = q.get(i) {
+                        if d.source != t.source.id {
+                            v.push(format!("{w} detail {k} names #{} for a trigger from #{}", d.source.0, t.source.id.0));
+                        }
+                    }
+                }
+            }
+
             if indices.windows(2).any(|w2| w2[0] >= w2[1]) {
                 v.push(format!("{w} indices {indices:?} are not increasing"));
             }
