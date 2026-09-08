@@ -2578,6 +2578,63 @@ fn a_pending_cast_that_vanishes_with_the_card_is_flagged() {
     s.stack.push(StackEntry::Spell(card));
     flags_transition(&prev, Some(&answer), &s, &reg,
         &format!("pending cast of #{} ended with the card moved but no SpellCast", card.0));
+
+    // The stash that stays is the same stash: a pending cast replaced by a
+    // different one is a cast that was dropped, whatever the new one says.
+    let other = spell_in_hand(&mut prev, &reg, "Brimstone Volley", P0);
+    let mut s = next(&prev);
+    s.pending_spell_cast = Some(stash(&prev, other));
+    flags_transition(&prev, Some(&answer), &s, &reg,
+        &format!("the pending cast switched from #{} to #{}", card.0, other.0));
+
+    // And a stash still waiting on the same card is not a switch — the
+    // prompt was answered and the cast is still being paid for.
+    let mut s = next(&prev);
+    s.pending_spell_cast = Some(stash(&prev, card));
+    quiet_transition_about(&prev, Some(&answer), &s, &reg, "the pending cast switched");
+}
+
+/// CR 608.2m: a resolution that was paused for a choice is resumed, not
+/// dropped. The clause only speaks for a spell that is still the same object
+/// in the same place — a spell that finished resolving, or one that left and
+/// came back as a new object (CR 400.7), was never dropped.
+#[test]
+fn a_paused_resolution_is_resumed_and_not_dropped() {
+    let (mut prev, reg) = base();
+    let bolt = spell_in_hand(&mut prev, &reg, "Brimstone Volley", P0);
+    prev.move_object(bolt, Zone::Stack, &reg);
+    prev.stack.push(StackEntry::Spell(bolt));
+    prev.resolving_spell = Some(bolt);
+    let answer = mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
+    };
+
+    // Still resolving, still on the stack: the pause is a pause.
+    let s = next(&prev);
+    quiet_transition_about(&prev, Some(&answer), &s, &reg, "was dropped while still in the stack zone");
+
+    // The resolution is forgotten and the spell is left sitting there.
+    let mut s = next(&prev);
+    s.resolving_spell = None;
+    flags_transition(&prev, Some(&answer), &s, &reg,
+        &format!("resolving spell #{} was dropped while still in the stack zone (CR 608.2m)", bolt.0));
+
+    // It left and came back: same id, new object, and the old resolution is
+    // not owed anything (CR 400.7).
+    let mut s = next(&prev);
+    s.resolving_spell = None;
+    s.get_object_mut(bolt).unwrap().zone_change_count += 2;
+    quiet_transition_about(&prev, Some(&answer), &s, &reg, "was dropped while still in the stack zone");
+
+    // And a permanent spell that finished resolving is off the stack zone
+    // without having moved since: nothing to resume.
+    let mut prev2 = prev.clone();
+    let bear = spell_in_hand(&mut prev2, &reg, "Grizzly Bears", P0);
+    prev2.move_object(bear, Zone::Battlefield, &reg);
+    prev2.resolving_spell = Some(bear);
+    let mut s = next(&prev2);
+    s.resolving_spell = None;
+    quiet_transition_about(&prev2, Some(&answer), &s, &reg, "was dropped while still in the stack zone");
 }
 
 #[test]
