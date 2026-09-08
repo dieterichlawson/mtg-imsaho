@@ -28,6 +28,13 @@ fn flags_core(state: &GameState, reg: &CardRegistry, needle: &str) {
 }
 
 #[track_caller]
+fn quiet_core_about(state: &GameState, reg: &CardRegistry, needle: &str) {
+    let v = check_core(state, reg);
+    assert!(!v.iter().any(|m| m.contains(needle)),
+        "expected no core violation containing {needle:?}, got: {v:?}");
+}
+
+#[track_caller]
 fn flags_settled(state: &GameState, reg: &CardRegistry, needle: &str) {
     let v = check_settled(state, reg);
     assert!(v.iter().any(|m| m.contains(needle)), "expected a settled violation containing {needle:?}, got: {v:?}");
@@ -439,6 +446,45 @@ fn a_stashed_payment_that_names_the_wrong_permanents_is_flagged() {
         &format!("would sacrifice #{} which is not a creature the caster controls (CR 701.21a)", fodder.0));
     flags_core(&with(&|c| c.sacrifice = Some(c.object_id)), &reg,
         "which is not a creature the caster controls (CR 701.21a)");
+}
+
+/// CR 601.2h/608.2m: the shapes a mid-cast prompt has that are healthy —
+/// an exile cost asking for an exact number of cards, a resolving spell
+/// that is on the stack, and one state-triggered ability in flight.
+#[test]
+fn a_healthy_cast_time_prompt_is_not_flagged() {
+    let (mut state, reg) = base();
+    let drake = castable_spell(&mut state, &reg, "Stitched Drake", P0);
+    for _ in 0..2 {
+        named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    }
+    let after = mtg_engine::engine::submit_action(&state, &cast_action(drake, vec![]), &reg);
+    let (min, max) = match &after.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseExileFromGraveyard {
+            min, max, .. }, .. }) => (*min, *max),
+        other => panic!("test precondition: an exile-cost prompt, got {other:?}"),
+    };
+    assert_eq!(min, max, "Stitched Drake exiles exactly one creature card");
+    clean_core(&after, &reg);
+
+    // CR 608.2m: a spell whose resolution is paused is still on the stack.
+    let (mut state, reg) = base();
+    let bolt = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let mut s = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(bear)]);
+    // A resolving spell has left the stack list but is still in the stack
+    // zone until CR 608.2m moves it.
+    s.stack.retain(|e| e.as_spell() != Some(bolt));
+    s.resolving_spell = Some(bolt);
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: bolt,
+        choice: ResolutionChoiceKind::YesNo { description: "d".into(), source_card: bolt },
+    });
+    let s = as_collected(&s);
+    quiet_core_about(&s, &reg, "resolving_spell");
+    let mut gone = s.clone();
+    gone.get_object_mut(bolt).unwrap().zone = Zone::Graveyard;
+    flags_core(&gone, &reg, "is in Graveyard");
 }
 
 /// CR 601.2b/602.2: the prompt a payment is waiting on is *that* payment's

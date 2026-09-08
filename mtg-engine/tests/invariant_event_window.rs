@@ -529,6 +529,48 @@ fn combat_damage_events_agree_with_the_blocks_and_the_step() {
     quiet_about(&s2, &reg, "without first strike");
 }
 
+/// CR 106.4/504.1: what an event window says about the step it sits in —
+/// mana of a real size, one draw for the active player, and combat damage
+/// only in a combat damage step with a combat.
+#[test]
+fn the_events_of_a_step_are_checked_against_the_step() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+
+    // CR 106.4: mana is added in some amount; zero is not an amount.
+    let mut s = state.clone();
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 1);
+    s.events = vec![GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 }];
+    quiet_about(&s, &reg, "ManaAdded of nothing");
+    let mut s = state.clone();
+    s.events = vec![GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 0 }];
+    flags(&s, &reg, "ManaAdded of nothing");
+
+    // CR 510.2: combat damage is dealt in a combat damage step, with a
+    // combat — either half missing is the violation.
+    let mut fighting = state.clone();
+    fighting.step = Step::CombatDamage;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(bear, P1);
+    c.blocker_assignments.insert(bear, vec![]);
+    fighting.combat = Some(c);
+    fighting.get_player_mut(P1).life = 18;
+    fighting.events = vec![
+        GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+        GameEvent::CombatDamageDealt { source: bear, target: DamageTarget::Player(P1), amount: 2 },
+    ];
+    quiet_about(&fighting, &reg, "(CR 510.2)");
+    let mut s = fighting.clone();
+    s.step = Step::PrecombatMain;
+    flags(&s, &reg, "combat damage dealt in PrecombatMain (CR 510.2)");
+    let mut s = fighting.clone();
+    s.combat = None;
+    flags(&s, &reg, "combat damage dealt in CombatDamage (CR 510.2)");
+    let _ = other;
+}
+
 /// CR 701.9a/302.6: a discard is of that player's own card, and a tap is of
 /// something still on the battlefield.
 #[test]
@@ -820,7 +862,7 @@ fn the_result_events_agree_with_the_result() {
 #[test]
 fn a_step_boundary_leaves_nothing_straddling_it() {
     let (mut state, reg) = base();
-    named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     state.events = vec![GameEvent::StepStarted { step: Step::PrecombatMain }];
     clean(&state, &reg);
 
@@ -839,6 +881,22 @@ fn a_step_boundary_leaves_nothing_straddling_it() {
     let mut s = state.clone();
     s.consecutive_passes = 1;
     flags(&s, &reg, "1 passes carried across a step boundary");
+
+    // CR 500.2: nothing a step boundary crosses is mid-flight — each of the
+    // three ways a resolution can straddle one.
+    let straddling = |f: &dyn Fn(&mut GameState)| {
+        let mut c = state.clone();
+        f(&mut c);
+        c
+    };
+    flags(&straddling(&|c| {
+        c.pending_ability_effect = Some(mtg_engine::state::PendingAbilityEffect {
+            source_id: bear, ability_index: 0,
+            behavior_card_id: c.get_object(bear).unwrap().card_id,
+            targets: vec![], description: "an ability".into(), activator: P0,
+            target_requirement: None, unpaid: None,
+        });
+    }), &reg, "a cast or resolution straddles a step boundary");
 
     // CR 502.1: the untap step is the first step of a turn.
     let mut s = state.clone();
@@ -868,6 +926,40 @@ fn a_turn_start_finds_the_board_reset() {
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().regeneration_shields = 1;
     flags(&s, &reg, "keeps a regeneration shield (CR 514.2)");
+
+    // CR 514.1: a turn ends with its player at seven cards, and the count is
+    // seven, not six.
+    let mut s = state.clone();
+    for _ in 0..7 {
+        spell_in_hand(&mut s, &reg, "Forest", P1);
+    }
+    quiet_about(&s, &reg, "(CR 514.1)");
+    spell_in_hand(&mut s, &reg, "Forest", P1);
+    flags(&s, &reg, "holds 8 cards after their cleanup (CR 514.1)");
+
+    // Each of the three leftovers a combat can leave behind, alone.
+    let mut s = state.clone();
+    s.combat_damage_step_pending = true;
+    flags(&s, &reg, "combat state survives");
+    let mut s = state.clone();
+    let card = s.get_object(bear).unwrap().card_id;
+    s.end_of_combat_exiles.push(mtg_engine::state::EndOfCombatExileEntry {
+        target_id: bear, source_id: bear, source_card_id: card, controller: P0,
+        description: "a delayed exile".into(),
+    });
+    flags(&s, &reg, "combat state survives");
+
+    // CR 305.2/103.7a: the turn starts in one of its opening steps, for the
+    // player it names, on the turn it names.
+    let mut s = state.clone();
+    s.step = Step::EndStep;
+    flags(&s, &reg, "is active on turn 3 in EndStep");
+    let mut s = state.clone();
+    s.events = vec![GameEvent::TurnStarted { player: P1, turn: 3 }];
+    flags(&s, &reg, "is active on turn 3");
+    let mut s = state.clone();
+    s.events = vec![GameEvent::TurnStarted { player: P0, turn: 4 }];
+    flags(&s, &reg, "is active on turn 3");
 
     // CR 514.2 removes all three marks the turn leaves on a permanent, and
     // each of them alone is enough to say the cleanup did not happen.

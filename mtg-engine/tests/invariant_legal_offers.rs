@@ -200,6 +200,21 @@ fn a_cast_offer_names_a_castable_card() {
     l.actions.insert(1, cast_action(ObjectId(4242), vec![Target::Object(bear)]));
     flags(&state, P0, &l, &reg, "names a missing object");
 
+    // CR 305.1: a land offered to be played is in the acting player's hand
+    // — each half of that alone.
+    let mut s = state.clone();
+    let mine = spell_in_hand(&mut s, &reg, "Forest", P0);
+    let theirs = spell_in_hand(&mut s, &reg, "Forest", P1);
+    let played = named_permanent(&mut s, &reg, "Forest", P0);
+    let playing = |id: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::PlayLand { object_id: id });
+        l
+    };
+    quiet_about(&s, P0, &playing(mine), &reg, "(CR 305.1)");
+    flags(&s, P0, &playing(theirs), &reg, "(CR 305.1)");
+    flags(&s, P0, &playing(played), &reg, "(CR 305.1)");
+
     // CR 305.9: a land is played, not cast.
     let mut s = state.clone();
     let forest = spell_in_hand(&mut s, &reg, "Forest", P0);
@@ -498,6 +513,9 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
         l
     };
     quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "which is not an available untapped source");
+    quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "twice (CR 602.2h)");
+    quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "under Stony Silence");
+    flags(&state, P0, &tapping(vec![(forest, 0), (forest, 0)]), &reg, "twice (CR 602.2h)");
     flags(&state, P0, &tapping(vec![(theirs, 0)]), &reg, "which is not an available untapped source");
     flags(&state, P0, &tapping(vec![(in_hand, 0)]), &reg, "which is not an available untapped source");
     flags(&state, P0, &tapping(vec![(forest, 7)]), &reg, "which is not an available untapped source");
@@ -982,6 +1000,17 @@ fn the_blockers_prompt_is_the_board_read_back() {
         min_blockers.clear();
     }
     flags(&s, P1, &l, &reg, "which has menace (CR 702.111)");
+
+    // Two is the number menace asks for, and asking for it is not itself a
+    // violation: the clause is about a minimum of one or none.
+    let mut s = state.clone();
+    grant_keyword(&mut s, attacker, Keyword::Menace);
+    let with_two = mtg_engine::engine::legal_actions(&s, &reg);
+    assert!(matches!(&with_two.combat_prompt,
+        Some(CombatPrompt::ChooseBlockers { min_blockers, .. }) if min_blockers.get(&attacker) == Some(&2)),
+        "the prompt asks for two blockers");
+    quiet_about(&s, P1, &with_two, &reg, "requires 2 blockers");
+    quiet_about(&s, P1, &with_two, &reg, "(CR 702.111)");
 
     // And a minimum is only asked for an attacker that is attacking, and is
     // only ever more than one.
