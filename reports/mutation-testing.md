@@ -513,15 +513,20 @@ mutant, `outcome<TAB>mutant`. Two passes:
 2. **Every one of those 367 against the whole `mtg-engine` suite**, because
    a miss against nine binaries is only a lead. 359 of them still exist
    under their filed identity; the other 8 had moved a line or two and were
-   re-tested under their current one. Two passes, because tests were being
-   written between them: **119 died to the first, 32 more to the second**,
-   and **215 are alive**.
+   re-tested under their current one — 7 of them, at any rate: one was
+   dropped by the remapping and is re-tested at the end of this write-up.
+   Two passes, because tests were being written between them: **119 died to
+   the first, 32 more to the second**, and **215 came out the other side**.
+
+Two more passes followed (§ *The second round*): a fourth cargo-mutants run
+over everything still alive, and a test written for one site by name.
 
 So of the 1301 mutants the filed lines name: **929 were already dead**
-before this pass began, **151 died to the tests written in it**, 9 are
-accepted as equivalent or unreachable with the reasons below, 206 are
-recorded on the backlog (116 normalized lines), and 5 do not compile. A
-mutant is "alive" below only if it survived both passes.
+before this pass began, **286 died to the tests written in it** (119 + 32 +
+132 + 3, one pass at a time), **13 are accepted** as equivalent or
+unreachable with the reasons below, **68 are recorded on the backlog** (49
+normalized lines), and 5 do not compile. A mutant is "alive" below only if
+it survived every pass.
 
 ## What was killed, and why those
 
@@ -573,7 +578,47 @@ been found by reading — which is the argument for the instrument.
 | `prompts.rs::check_choice` / `mulligan_shape` | a trigger-target prompt whose queue front differs by controller or already has its target; the mulligan phase's three conditions each alone; a queued bottoming for a non-player or past a hand; the legend-rule group by name, controller and zone; a damage prompt's options; a library search of somebody else's library; a token attacking its own controller or a creature | `invariant_prompt_shapes.rs`: new cases in `a_trigger_target_prompt_is_for_the_front_of_the_queue`, `the_mulligan_phase_is_turn_one_before_anything_happened`, `the_legend_rule_prompt_is_the_duplicate_group`, and `a_prompts_options_are_ones_its_effect_could_act_on` |
 | `objects.rs::check_core` | a modal spell's chosen mode, out of range and in range (the test that claimed this was vacuous — see above); a copy token whose name cache disagrees with its face | `invariant_object_shapes.rs`: the rewritten `a_modal_spell_on_the_stack_chose_one_of_its_modes`, `a_copy_whose_name_cache_disagrees_with_its_face_is_flagged` |
 
+## The second round: judging the backlog instead of bucketing it
+
+The 215 that came out of the first round were sorted into "test this" and
+"backlog" by *shape* — a `&&` flip here, a deleted match arm there — and 206
+of them went on the backlog on that basis. That was a bucketing, not a
+judgment, and it does not survive the guide's two questions. Asked one at a
+time — *if this shipped, what would a person see go wrong?* and *would the
+test survive a correct rewrite?* — most of them have the same answer, and it
+is not "shrug": each names a rule somebody could watch break (a step skipped,
+a turn handed to the wrong player, damage that appears from nowhere, a loss
+with no reason the state can show), and the test for it asserts the rule, not
+the implementation.
+
+So they got states. A fourth cargo-mutants run over all 215, against the
+tests those readings produced, **caught 132 and missed 83**.
+
+| where | what had no bad state behind it | new test |
+| --- | --- | --- |
+| `transition.rs::walk` | every step succession CR 500.1 allows (turn one's skipped draw, an attack nobody declared, two combat damage steps, two cleanups, cleanup to untap across a turn) and the same jumps where the rules forbid them; a turn that starts for the wrong player, at the wrong number, or out of the middle of a turn; the opening hands, which sit outside the turn structure | `invariant_families.rs`: `the_step_and_turn_succession_of_a_transition_is_checked`, `the_mulligan_phases_own_succession_is_checked` |
+| `transition.rs::identity` / `monotone` / `per_turn` | an object's card changing without a copy or a zone change; a monotone record going backwards; land drops and spells cast against their events, across a turn boundary too | `invariant_families.rs`: `identity_and_monotone_edges_are_checked_one_at_a_time`, `the_per_turn_records_are_checked_against_the_events` |
+| `transition.rs::status_ledgers` | tap and untap as edges with the right verb about the right permanent; marked damage growing by what was dealt and shrinking only through regeneration or cleanup; regeneration tapping and leaving combat; an attack stamp with a declaration behind it | `invariant_families.rs::the_status_ledgers_of_a_permanent_are_checked` |
+| `transition.rs::life_and_loss` / `mana_ledger` | a draw off the top of the player's own library; the life chain starting and ending where the player is, with an intermediate 0 still a loss (CR 704.5a is about the state, not the endpoints); each loss reason against what the state shows; mana appearing only through `ManaAdded` | `invariant_families.rs`: `the_life_and_loss_ledger_is_checked`, `the_mana_ledger_is_checked` |
+| `transition.rs::action_contract` | a land play that moved from hand to battlefield with its event, each half alone; a cast whose cost left the pool, generic part included, with mana tapped inside the same window counting as paid and mana added for the wrong player or colour not; a mana ability that leaves step, priority and stack alone; the hand-size discard moving exactly the cards it names; a mulligan that shuffles before it draws, moves its count, empties the old hand and draws the new one; a bottoming that bottoms exactly what was asked for | `invariant_families.rs`: `the_costs_an_action_pays_are_checked_against_the_pool`, `the_hand_shaping_actions_move_exactly_what_they_name` |
+| `legal.rs` / `prompts.rs` boundaries | the legal side of each boundary the earlier tests only broke: a menace prompt asking for exactly two blockers, a tap plan naming one source once, a land offered from the acting player's own hand, an exile cost asking for an exact number of cards, a spell paused off the stack list but still in the stack zone, mana added in a real amount, and combat damage in a combat damage step with a combat — each half of which alone is the violation | `invariant_prompt_shapes.rs::a_healthy_cast_time_prompt_is_not_flagged`, `invariant_event_window.rs::the_events_of_a_step_are_checked_against_the_step`, and new cases across `invariant_legal_offers.rs` |
+| `stack.rs::check_core` | the granted-flashback lookup: Past in Flames grants flashback to every instant and sorcery in a graveyard at once, so Devil's Play's `{X}{R}` grant sits beside a `{1}{R}{R}` one, and reading the wrong grant invents an X nobody announced | `invariant_families.rs::a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell` |
+
+The last row is the fifth pass, and it is also a correction: the granted-
+flashback lookup had been written up as *unreachable* in the accepted list
+below, on the argument that no granted flashback cost in this pool has an X
+in it. That argument is right about the grant naming the spell being cast
+and wrong about the mutants, which read a *different* grant — one that
+really can carry an X. The two mutants that read the wrong grant are killed
+now; the third, which reads no grant at all, is genuinely unreachable and
+stays accepted with the corrected reason.
+
+
 ## Accepted, with reasons
+
+Thirteen mutants, ten normalized lines, each one read against the source
+rather than sorted by shape. They are in `reports/mutants-accepted.txt` with
+these reasons attached.
 
 **`replace + with *` on a "later events" scan** — `events.rs` 374:57 (lifelink),
 504:30 (`PlayerLost` → `GameEnded`), 517:39 (`CreatureDied` → `TurnStarted` /
@@ -593,30 +638,74 @@ bucket.
 has exactly two modes, so both predicates are false for every reachable
 input. Unreachable with the current pool.
 
-**`stack.rs` 106:103 `replace == with !=`** — the `GrantFlashback { target }`
-lookup in the X-cost clause, reached only for a spell cast with flashback
-that a *granted* flashback gave it, and that has an X in that granted cost.
-Snapcaster Mage grants flashback to instants; the pool's X spell with a
-flashback cost (Devil's Play) prints its own, so `d.flashback_cost` answers
-first and the `or_else` never runs. Unreachable with the current pool.
+**`stack.rs` 424:78 `replace == with !=`** — the X-funding prompt's "was the
+sacrifice already made?" test. Reaching it needs an activated ability with
+both an X in its cost and a sacrifice cost; the pool's three sacrifice-cost
+abilities (Grimgrin, Skirsdag Cultist, Disciple of Griselbrand) have no X.
+Unreachable with the current pool. The `delete !` a few characters away
+stays on the backlog instead, because its normalized form would cover every
+other `!` in `check_core` too.
+
+**`stack.rs` 106:95, the guard `*target == obj.id` forced to `false`** — the
+granted-flashback lookup finds nothing instead of the right grant. The two
+answers differ only when a *granted* flashback cost has an X in it: Devil's
+Play is the pool's one card whose mana cost has an X, and it prints its own
+flashback cost, which is consulted first and short-circuits the lookup
+before the grant is ever read. Unreachable with the current pool — and,
+unlike the other two mutants of that same guard, not fixable by a test,
+which is why they were killed and this one was not.
+
+**`legal.rs` 740:21 `replace - with +` in `choose`** — `k.min(n - k)` becomes
+`k.min(n + k)`, which is plain `k` (the function has already returned 0 if
+`k > n`). The `min` is the C(n,k) = C(n,n−k) symmetry, taken only so the fold
+runs the shorter way round; the binomial it computes is the same number.
+Equivalent.
+
+**`legal.rs` 451:27 `replace < with <=`** — `def.loyalty_change < 0` becomes
+`<= 0`, admitting a change of exactly 0 to a body whose test is
+`0.unsigned_abs() > counters`, i.e. `0 > n`, false for every n. The extra
+input reaches the clause and cannot make it speak. Equivalent.
+
+**`transition.rs` 594:48 `replace + with -` in `mana_demanded`** — the term is
+`cost.colorless_amount()`, the `{C}` symbol, which post-dates this card pool:
+`ManaSymbol::Colorless` appears nowhere under `src/cards`. The term is always
+0, and `x + 0` is `x - 0`. Unreachable with the current pool.
+
+**`transition.rs` 853:45 `replace > with >=`** — `s > d` compares the position
+of the `LibraryShuffled` event with the position of the first `CardDrawn` in
+one and the same event vector. Two events of different kinds cannot occupy
+the same index, so `s == d` is impossible and the two comparisons agree on
+every input. Equivalent.
 
 ## What is left, and why it is a backlog and not a shrug
 
-The survivors that neither died nor earned a written "equivalent" go to
-`reports/mutants-backlog.txt`. Two shapes dominate, and both are honest
-gaps rather than arid mutants:
+Sixty-eight mutants over 49 normalized lines, in
+`reports/mutants-backlog.txt`. Each was read individually: the answer to
+"what would a person see go wrong?" is a real answer in every case — a
+blinded clause, or a clause that would accept a state it exists to reject —
+and what is missing is the fixture, not the argument. Two patterns account
+for nearly all of them:
 
-- **Conjunct-by-conjunct coverage of clauses whose first case now exists.**
-  A clause like "on the battlefield, controlled by the acting player, and a
-  creature" needs three states, and this pass wrote them for the ones the
-  filed survivors pointed at. Where a neighbouring clause has the same shape
-  and no survivor pointed at it, no test was written: the leads are what the
-  instrument is for, and writing the other two states on spec is how a suite
-  gets rigid.
-- **Clauses whose bad state needs a card the pool does not have.** These are
-  one card away from testable and are not equivalent — they will become
-  reachable the moment the card pool grows, which is why they are recorded
-  rather than accepted.
+- **A `&&`/`||` flip inside a multi-conjunct clause.** Distinguishing the
+  mutant needs a state that satisfies exactly one conjunct, which usually
+  means a fixture built to be wrong in one specific way and right in every
+  other. The second round wrote these for the transition and event families;
+  what is left is mostly `legal.rs::prompt_offers` and `stack.rs`, where the
+  one-conjunct-wrong state has to be assembled from a live prompt.
+- **A deleted match arm.** Distinguishing it needs an event or action of that
+  exact kind reaching the checker in a state where the arm's own test fails —
+  two conditions at once, and the second is the expensive one.
 
-The backlog is the weekly workflow's "do not re-file" list, so every one of
-these stays out of the issue tracker until somebody works it.
+Neither is equivalent; both are unwritten. The backlog is also the weekly
+workflow's "do not re-file" list, so these stay out of the issue tracker
+until somebody works them.
+
+## The one that got lost
+
+`prompts.rs:514:99: replace && with || in library_option` was filed, missed
+the nine-binary pass, and then vanished: the remap that moved eight shifted
+mutants onto their current line numbers matched its neighbour at column 75
+and dropped it. It is re-tested here — `a_prompts_options_are_ones_its_effect_could_act_on`
+kills it — and recorded as `pass4-caught` in the raw log. Mentioned because
+the arithmetic in the re-run should close, and until this was chased it was
+off by one.
