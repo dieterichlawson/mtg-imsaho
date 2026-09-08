@@ -481,3 +481,142 @@ produced. Reaching a difference needs a printed hexproof or protection card
 in a non-battlefield zone that the checker still sees named as a target,
 which no card in this pool produces. Watched surviving under its own mutant
 after the three kills above were in place.
+
+# The invariant checker's own clauses, re-run and triaged — 2026-09-08 (issues #276–#279)
+
+Weekly-mutants run 33964071700 filed 335 surviving mutants across four
+issues, every one of them in `mtg-engine/src/invariants/` — the fuzzing
+oracle. Filed lines carry no line:col (that is how the workflow's accepted
+list survives unrelated edits), so they name 1301 mutants in the tree as it
+stands; 15 more name code that no longer exists at all — `arity_ok` moved
+to `engine/targeting.rs`, `copy_choice_live` and the `AddCounters` and
+`CopyCreature` pending effects are gone — and are simply retired here.
+
+The sweep that produced them ran against the tree of 2026-09-05; the
+checker has had a battery of self-tests since (`## The invariant checker,
+self-tested`), so the first question was how many were still alive.
+
+## The re-run
+
+`reports/mutants-rerun-2026-09-08.txt` is the raw record: one line per
+mutant, `outcome<TAB>mutant`. Two passes:
+
+1. **All 1301 of them against the nine test binaries that exercise the
+   checker** (`combat_rules`, `control_durations`, `invariant_checker`,
+   `invariant_event_window`, `invariant_families`, `invariant_legal_offers`,
+   `invariant_object_shapes`, `invariant_prompt_shapes`,
+   `resolution_time_checks`), in six shards of ~215 each. Narrowing the test
+   set cut the per-mutant cost from ~30 s to ~7 s, which is what made
+   re-testing all of them affordable at all. **929 caught, 367 missed, 5
+   unviable** — so two thirds of what was filed a weekly run ago is already
+   dead, killed by the self-test battery that landed after the sweep.
+2. **Every one of those 367 against the whole `mtg-engine` suite**, because
+   a miss against nine binaries is only a lead. 359 of them still exist
+   under their filed identity; the other 8 had moved a line or two and were
+   re-tested under their current one. Two passes, because tests were being
+   written between them: **119 died to the first, 32 more to the second**,
+   and **215 are alive**.
+
+So of the 1301 mutants the filed lines name: **929 were already dead**
+before this pass began, **151 died to the tests written in it**, 9 are
+accepted as equivalent or unreachable with the reasons below, 206 are
+recorded on the backlog (116 normalized lines), and 5 do not compile. A
+mutant is "alive" below only if it survived both passes.
+
+## What was killed, and why those
+
+The productive bucket in the guide's terms is the third one — *an oracle
+clause* — and the survivors sorted into two shapes:
+
+- **A clause with no bad state behind it at all.** Its message existed and
+  nothing in the suite produced it. Every one of these is worth a test: the
+  clause is load-bearing by construction (it is the only thing that reports
+  its own class of bug), and the test is the guide's non-brittle shape —
+  build a healthy state, corrupt one property, assert the message.
+- **A clause whose bad state was built once, for a conjunction or a
+  disjunction of several conditions.** A chain like "turn one, and the first
+  turn, and the untap step" is only tested by breaking each condition by
+  itself; a test that breaks all three at once passes under a mutant that
+  drops any one of them. These are worth a case each, and the case is cheap:
+  the fixture already exists.
+
+Both are the same underlying gap — the state that distinguishes the mutant
+was never built — and both fixes read as tests of the rules, not of the
+implementation.
+
+### One vacuous test, found on the way
+
+`invariant_object_shapes.rs::a_modal_spell_on_the_stack_chose_one_of_its_modes`
+cast **Brimstone Volley**, which is not modal, and wrapped its whole body in
+`if matches!(…, ModalChoice(_))` — a guard that was never true. The test
+passed by doing nothing, and every CR 700.2 clause it claimed to cover was
+untested; four mutants inside them survived every sweep since. It casts
+**Ghoulcaller's Chant** now, which is the pool's one modal spell, and checks
+the boundary the guard hid (a chosen mode past the end of the list, and the
+last real mode in range).
+
+That is the second vacuous test this campaign has found (the first was
+`a_first_strike_blocker_kills_before_the_attacker_strikes_back`, whose
+assertion held under its own mutant because a dead blocker's damage clears
+on the zone change). Both were found by mutation, and neither could have
+been found by reading — which is the argument for the instrument.
+
+## The clauses that got tests
+
+| where | what had no bad state behind it | new test |
+| --- | --- | --- |
+| `transition.rs::action_contract` | a declaration naming an attacker nobody submitted, or one not eligible; a block by a tapped creature, by the attacking player's own creature, or one never submitted; a cast refused that moved the card anyway; an activation that neither reached the stack nor backed out; a concede that does not record the loss; a mid-payment cast that vanishes with the card and no `SpellCast` | `invariant_families.rs`: `a_declaration_that_disagrees_with_the_submitted_attackers_is_flagged`, `…_blocks_is_flagged`, `a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged`, `an_activation_that_neither_went_on_the_stack_nor_backed_out_is_flagged`, `a_concede_that_does_not_record_the_loss_is_flagged`, `a_pending_cast_that_vanishes_with_the_card_is_flagged` |
+| `stack.rs::check_trigger` / `check_core` | a trigger carrying a target its ability never asked for (and matched by kind, not merely by the card having some targeting ability); an Aura on the stack targeting the wrong kind of thing; a stashed payment naming permanents the caster does not control, cards outside their graveyard, or the same one twice; and the healthy shapes — an instant above the sorcery it answered, an ability that really did sacrifice something, one state trigger in flight | `invariant_families.rs`: `a_trigger_carrying_a_target_its_ability_never_asked_for_is_flagged`, `an_aura_on_the_stack_targeting_the_wrong_kind_of_thing_is_flagged`, `a_stashed_payment_that_names_the_wrong_permanents_is_flagged`, `a_payment_waiting_under_the_wrong_prompt_is_flagged`, `the_healthy_shapes_of_the_stack_are_not_flagged` |
+| `events.rs::damage` | a blocker hitting something other than what it blocks; a blocked attacker reaching the player without trample; life loss for the wrong player or of the wrong amount; lifelink with no life gain; a regular striker dealing in the first-strike step | `invariant_event_window.rs::combat_damage_events_agree_with_the_blocks_and_the_step` |
+| `events.rs::steps` / `zone_changes` | the cleanup's three marks (damage, who dealt it, deathtouch) each alone; an entry event about a permanent that is not there afterwards; a creature that entered this action and is not summoning sick; a planeswalker's printed loyalty; the zone an object's last announced move put it in; a discard of somebody else's card or of a token; a tap of something that has left | `invariant_event_window.rs`: `an_entry_event_describes_the_permanent_that_arrived`, `a_discard_names_its_players_card_and_a_tap_a_permanent`, and new cases in `a_turn_start_finds_the_board_reset` |
+| `legal.rs::activate` / `combat_prompt` | counters an ability cannot remove; equip offered outside a main phase; an artifact ability under Stony Silence; targets for an ability that does not target; a minus ability past the planeswalker's loyalty; and each way an attacker evades a blocker — flying answered by flying or reach, intimidate by an artifact or a shared color, protection, "can't be blocked" | `invariant_legal_offers.rs::an_activation_offer_can_pay_what_the_ability_costs`, and new cases in `the_blockers_prompt_is_the_board_read_back` |
+| `prompts.rs::check_choice` / `mulligan_shape` | a trigger-target prompt whose queue front differs by controller or already has its target; the mulligan phase's three conditions each alone; a queued bottoming for a non-player or past a hand; the legend-rule group by name, controller and zone; a damage prompt's options; a library search of somebody else's library; a token attacking its own controller or a creature | `invariant_prompt_shapes.rs`: new cases in `a_trigger_target_prompt_is_for_the_front_of_the_queue`, `the_mulligan_phase_is_turn_one_before_anything_happened`, `the_legend_rule_prompt_is_the_duplicate_group`, and `a_prompts_options_are_ones_its_effect_could_act_on` |
+| `objects.rs::check_core` | a modal spell's chosen mode, out of range and in range (the test that claimed this was vacuous — see above); a copy token whose name cache disagrees with its face | `invariant_object_shapes.rs`: the rewritten `a_modal_spell_on_the_stack_chose_one_of_its_modes`, `a_copy_whose_name_cache_disagrees_with_its_face_is_flagged` |
+
+## Accepted, with reasons
+
+**`replace + with *` on a "later events" scan** — `events.rs` 374:57 (lifelink),
+504:30 (`PlayerLost` → `GameEnded`), 517:39 (`CreatureDied` → `TurnStarted` /
+`LeftBattlefield`), 554:41 (`LeftBattlefield` → a token's return), 565:47
+(entry → a later untap step), 462:24 (the untap-step window).
+
+`events[i * 1..]` is `events[i..]`: the mutation re-includes the event the
+arm is currently examining. Every one of these scans looks for a *different*
+kind of event than the arm it sits in — a `PlayerLost` is not a `GameEnded`,
+a `CreatureDied` is not a `TurnStarted`, a `LeftBattlefield` is not an
+`EnteredBattlefield` — so the extra element can never match and the mutated
+program cannot behave differently. Equivalent, in the guide's first accept
+bucket.
+
+**`objects.rs` 261:60 `replace < with >`** — `modes.len() < 2` becomes
+`modes.len() > 2`. Ghoulcaller's Chant is the pool's only modal spell and it
+has exactly two modes, so both predicates are false for every reachable
+input. Unreachable with the current pool.
+
+**`stack.rs` 106:103 `replace == with !=`** — the `GrantFlashback { target }`
+lookup in the X-cost clause, reached only for a spell cast with flashback
+that a *granted* flashback gave it, and that has an X in that granted cost.
+Snapcaster Mage grants flashback to instants; the pool's X spell with a
+flashback cost (Devil's Play) prints its own, so `d.flashback_cost` answers
+first and the `or_else` never runs. Unreachable with the current pool.
+
+## What is left, and why it is a backlog and not a shrug
+
+The survivors that neither died nor earned a written "equivalent" go to
+`reports/mutants-backlog.txt`. Two shapes dominate, and both are honest
+gaps rather than arid mutants:
+
+- **Conjunct-by-conjunct coverage of clauses whose first case now exists.**
+  A clause like "on the battlefield, controlled by the acting player, and a
+  creature" needs three states, and this pass wrote them for the ones the
+  filed survivors pointed at. Where a neighbouring clause has the same shape
+  and no survivor pointed at it, no test was written: the leads are what the
+  instrument is for, and writing the other two states on spec is how a suite
+  gets rigid.
+- **Clauses whose bad state needs a card the pool does not have.** These are
+  one card away from testable and are not equivalent — they will become
+  reachable the moment the card pool grows, which is why they are recorded
+  rather than accepted.
+
+The backlog is the weekly workflow's "do not re-file" list, so every one of
+these stays out of the issue tracker until somebody works it.

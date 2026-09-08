@@ -362,3 +362,26 @@ mtg-engine/src/mana.rs: replace && with || in compute_autotap
 # tail IS there on two identically-named sources.
 mtg-engine/src/triggers.rs: replace > with >= in process_pending_trigger_pushes
 mtg-engine/src/invariants/events.rs: replace match guard on_bf(state, *tid) with true in spells_and_lands
+
+
+# The 2026-09-08 re-run of issues #276–#279 (see reports/mutation-testing.md,
+# "The invariant checker's own clauses, re-run and triaged"). `events[i * 1..]`
+# is `events[i..]`: the mutation re-includes the event the arm is examining,
+# and every one of these scans looks for a different kind of event than the arm
+# it sits in, so the extra element can never match. The `objects.rs` boundary
+# reads `modes.len() < 2` as `> 2`, and the pool's one modal spell has exactly
+# two modes. The `stack.rs` one is the granted-flashback lookup in the X-cost
+# clause, reachable only for a spell whose GRANTED flashback cost has an X in
+# it, which no card in this pool produces. The same normalized line also
+# covers `check_core`'s other surviving `==`, in the X-funding prompt's
+# "was the sacrifice already made?" block: reaching it needs an activated
+# ability with both an X in its cost and a sacrifice cost, and the pool's
+# three sacrifice-cost abilities (Grimgrin, Skirsdag Cultist, Disciple of
+# Griselbrand) have no X. The `delete !` in that same block stays on the
+# backlog rather than here, because its normalized form would cover every
+# other `!` in `check_core` too.
+mtg-engine/src/invariants/events.rs: replace + with * in damage
+mtg-engine/src/invariants/events.rs: replace + with * in untap_step_scope
+mtg-engine/src/invariants/events.rs: replace + with * in zone_changes
+mtg-engine/src/invariants/objects.rs: replace < with > in check_core
+mtg-engine/src/invariants/stack.rs: replace == with != in check_core
