@@ -13,7 +13,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::LegalActions;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::invariants::check_legal;
-use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
 use mtg_engine::types::*;
 
 fn base() -> (GameState, CardRegistry) {
@@ -237,10 +237,42 @@ fn a_cast_offer_names_a_castable_card() {
     ]);
     flags(&s, P0, &legal, &reg, "is offered while casting it is forbidden");
 
+    // CR 307.1: sorcery speed is for sorceries. An instant is offered
+    // outside the main phase and off an empty stack, and so is a permanent
+    // spell with flash — being either one is enough.
+    let mut s = state.clone();
+    s.step = Step::DeclareBlockers;
+    let bolt = castable_spell(&mut s, &reg, "Brimstone Volley", P0);
+    s.priority_player = Some(P0);
+    let mut l = wrong_legal(&s, &reg);
+    l.actions.insert(1, cast_action(bolt, vec![Target::Player(P1)]));
+    quiet_about(&s, P0, &l, &reg, "(CR 307.1)");
+    let creature = castable_spell(&mut s, &reg, "Grizzly Bears", P0);
+    let mut l = wrong_legal(&s, &reg);
+    l.actions.insert(1, cast_action(creature, vec![]));
+    flags(&s, P0, &l, &reg, "at sorcery speed outside p0's main phase with an empty stack (CR 307.1)");
+
     // CR 115.5: a spell does not target itself.
     let mut l = legal.clone();
     l.actions.insert(1, cast_action(pump, vec![Target::Object(pump)]));
     flags(&state, P0, &l, &reg, "targets itself (CR 115.5)");
+
+    // A target in the stack zone is one the stack actually holds: the spell
+    // that is on the only stack entry is a real target, and the clause is
+    // about one that is on none.
+    let mut s = state.clone();
+    let onstack = castable_spell(&mut s, &reg, "Brimstone Volley", P0);
+    s.get_object_mut(onstack).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(onstack));
+    s.priority_player = Some(P0);
+    let mut l = wrong_legal(&s, &reg);
+    l.actions.insert(1, cast_action(pump, vec![Target::Object(onstack)]));
+    quiet_about(&s, P0, &l, &reg, "in the stack zone that is on no stack entry");
+    let mut s2 = s.clone();
+    s2.stack.clear();
+    let mut l = wrong_legal(&s2, &reg);
+    l.actions.insert(1, cast_action(pump, vec![Target::Object(onstack)]));
+    flags(&s2, P0, &l, &reg, "in the stack zone that is on no stack entry");
 
     // A target named twice is one target offered twice.
     let mut l = legal.clone();
@@ -438,6 +470,47 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     l.actions.insert(1, named);
     flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
 
+    // The other way a card grants an ability to a permanent that is not
+    // printed with it: a copy that keeps the copier's own abilities (CR
+    // 706.2, Evil Twin). The grantor has to be the card this permanent is a
+    // copy of AND a card that grants its abilities to its copies.
+    let (mut copies, reg) = base();
+    let bear = named_permanent(&mut copies, &reg, "Grizzly Bears", P1);
+    let twin = enters_as_copy_of(&mut copies, &reg, "Evil Twin", P0, Some(bear));
+    copies.get_object_mut(twin).unwrap().zone = Zone::Battlefield;
+    add_mana(&mut copies, P0, &[(ManaType::Blue, 1), (ManaType::Black, 1)]);
+    copies.priority_player = Some(P0);
+    let evil_twin_card = reg.get_id_by_name("Evil Twin").unwrap();
+    assert_eq!(copies.get_object(twin).unwrap().copy_grantor, Some(evil_twin_card),
+        "precondition: the copy remembers what printed it");
+    let through = |cid: mtg_engine::ids::CardId| {
+        let mut l = wrong_legal(&copies, &reg);
+        l.actions.insert(1, Action::ActivateAbility {
+            object_id: twin, ability_index: 0, targets: vec![Target::Object(bear)],
+            tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: Some(cid) });
+        l
+    };
+    quiet_about(&copies, P0, &through(evil_twin_card), &reg, "neither grants it as a copy");
+    let grizzly = copies.get_object(bear).unwrap().card_id;
+    flags(&copies, P0, &through(grizzly), &reg,
+        "which neither grants it as a copy nor is attached under p0");
+
+    // Being the card a permanent is printed as is not enough on its own:
+    // under Essence of the Wild a Grizzly Bears enters as a copy of the
+    // Essence, so the Bears is what it is printed as and grants a copy
+    // nothing (CR 706.2).
+    let (mut wild, reg) = base();
+    let essence = named_permanent(&mut wild, &reg, "Essence of the Wild", P0);
+    let shaped = enters_as_copy_of(&mut wild, &reg, "Grizzly Bears", P0, Some(essence));
+    wild.get_object_mut(shaped).unwrap().zone = Zone::Battlefield;
+    wild.priority_player = Some(P0);
+    let printed = wild.get_object(shaped).unwrap().copy_grantor.expect("printed as a Bears");
+    let mut l = wrong_legal(&wild, &reg);
+    l.actions.insert(1, Action::ActivateAbility {
+        object_id: shaped, ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: None, x_value: None, source_card_id: Some(printed) });
+    flags(&wild, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+
     // CR 605.3a: a mana ability offer names a permanent of the acting
     // player's, on the battlefield, with that ability — each half alone.
     let (mut state, reg) = base();
@@ -598,6 +671,15 @@ fn an_activation_offer_names_an_ability_its_source_has() {
     // CR 601.2b: X is funded through the prompt, not announced in the offer.
     let l = with(&|a| if let Action::ActivateAbility { x_value, .. } = a { *x_value = Some(2) });
     flags(&state, P0, &l, &reg, "announces X before funding");
+
+    // CR 602.2: the source is on the battlefield AND the acting player
+    // controls it. Either one alone is the violation.
+    let mut s = state.clone();
+    s.get_object_mut(priest).unwrap().controller = P1;
+    flags(&s, P0, &legal, &reg, "controlled by p1 offered to p0 (CR 602.2)");
+    let mut s = state.clone();
+    s.get_object_mut(priest).unwrap().zone = Zone::Graveyard;
+    flags(&s, P0, &legal, &reg, "offered to p0 (CR 602.2)");
 }
 
 /// CR 606.3/118.3: a loyalty offer is a planeswalker you control, at
@@ -829,6 +911,39 @@ fn an_offer_never_names_an_object_that_does_not_exist() {
     l.actions.insert(1, Action::ActivateLoyaltyAbility {
         object_id: bear, ability_index: 0, targets: vec![Target::Object(ObjectId(4242))] });
     flags(&state, P0, &l, &reg, "an offer names #4242 which does not exist");
+
+    // Every kind of offer that names an object is read, not just the one
+    // this test started with: each arm of the sweep is its own way for a
+    // ghost id to reach a player's menu.
+    let ghost = ObjectId(4242);
+    let cases: Vec<(&str, Action)> = vec![
+        ("a land", Action::PlayLand { object_id: ghost }),
+        ("a mana ability", Action::ActivateManaAbility { object_id: ghost, ability_index: 0 }),
+        ("a cast", Action::CastSpell {
+            object_id: bear, targets: vec![Target::Object(ghost)], sacrifice: None,
+            exile_count: None, exile_ids: vec![], tap_plan: vec![], alternative_cost: None }),
+        ("an activation", Action::ActivateAbility {
+            object_id: bear, ability_index: 0, targets: vec![], tap_plan: vec![(ghost, 0)],
+            sacrifice: None, x_value: None, source_card_id: None }),
+        ("a discard", Action::DiscardCards { cards: vec![ghost] }),
+        ("a bottoming", Action::BottomCards { cards: vec![ghost] }),
+    ];
+    for (what, action) in cases {
+        let mut l = legal.clone();
+        l.actions.insert(1, action);
+        let v = check_legal(&state, P0, &l, &reg);
+        assert!(v.iter().any(|m| m.contains("an offer names #4242 which does not exist")),
+            "{what} naming an object that is not there is caught: {v:?}");
+    }
+
+    // CR 104.1: a finished game is not offering anything, so nothing about
+    // the list it last held is a violation.
+    let mut over = state.clone();
+    over.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    let mut l = legal.clone();
+    l.actions.insert(1, Action::PlayLand { object_id: ghost });
+    assert_eq!(check_legal(&over, P0, &l, &reg), Vec::<String>::new(),
+        "a game with a result is past being offered anything");
 }
 
 /// CR 508.1a/508.1d/506.2: the attackers prompt is the board's own answer
@@ -1052,6 +1167,21 @@ fn nothing_an_artifact_could_do_is_offered_under_stony_silence() {
         exile_count: None, exile_ids: vec![], alternative_cost: None,
         tap_plan: vec![(ring, 0)] });
     flags(&s, P0, &l, &reg, "tap plan taps artifact #");
+
+    // The lock is about artifacts: under it, a land still taps for mana and
+    // may still be tapped by a plan.
+    let forest = named_permanent(&mut s, &reg, "Forest", P0);
+    let legal_with_land = mtg_engine::engine::legal_actions(&s, &reg);
+    assert!(legal_with_land.actions.iter().any(|a| matches!(a,
+        Action::ActivateManaAbility { object_id, .. } if *object_id == forest)),
+        "precondition: the Forest's mana ability is offered under the lock");
+    quiet_about(&s, P0, &legal_with_land, &reg, "offered under Stony Silence");
+    let mut l = legal_with_land.clone();
+    l.actions.insert(1, Action::CastSpell {
+        object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+        exile_count: None, exile_ids: vec![], alternative_cost: None,
+        tap_plan: vec![(forest, 0)] });
+    quiet_about(&s, P0, &l, &reg, "under Stony Silence");
 }
 
 /// The collapsed views the interactive and LLM players act through offer
@@ -1128,6 +1258,31 @@ fn an_x_funding_offer_names_the_players_own_sources() {
     // The prompt and the stash name the same spell.
     let mut s = state.clone();
     s.pending_spell_cast.as_mut().unwrap().object_id = mountain;
+    flags(&s, P0, &legal, &reg, "with no matching stash");
+
+    // An ability's X is funded through the same prompt and answered by the
+    // other stash: the ability one, naming the source that was activated
+    // (Kessig Wolf Run's {X}{R}{G}).
+    let (mut abil, reg) = base();
+    let run = named_permanent(&mut abil, &reg, "Kessig Wolf Run", P0);
+    let beast = named_permanent(&mut abil, &reg, "Grizzly Bears", P0);
+    abil.get_object_mut(run).unwrap().summoning_sick = false;
+    add_mana(&mut abil, P0, &[(ManaType::Red, 1), (ManaType::Green, 1)]);
+    named_permanent(&mut abil, &reg, "Mountain", P0);
+    named_permanent(&mut abil, &reg, "Forest", P0);
+    abil.priority_player = Some(P0);
+    let activate = mtg_engine::engine::legal_actions(&abil, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == run && targets.contains(&Target::Object(beast))))
+        .expect("the Wolf Run's {X}{R}{G} ability is offered");
+    let abil = mtg_engine::engine::submit_action(&abil, &activate, &reg);
+    assert!(matches!(&abil.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }, .. })),
+        "precondition: an ability funding prompt is up, got {:?}", abil.awaiting_action);
+    let legal = mtg_engine::engine::legal_actions(&abil, &reg);
+    quiet_about(&abil, P0, &legal, &reg, "with no matching stash");
+    let mut s = abil.clone();
+    s.pending_ability_effect.as_mut().unwrap().source_id = beast;
     flags(&s, P0, &legal, &reg, "with no matching stash");
 }
 

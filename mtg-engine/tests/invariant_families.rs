@@ -949,6 +949,24 @@ fn step_and_turn_start_windows_are_checked() {
     s.events = vec![GameEvent::StepStarted { step: Step::Draw }];
     s.step = Step::Draw;
     flags_core(&s, &reg, "the draw step drew [] for p0 (CR 504.1)");
+    // One card for the active player is the draw step doing its job.
+    let mut s = state.clone();
+    let card = stock_library(&mut s, &reg, P0, 1)[0];
+    s.step = Step::Draw;
+    s.get_player_mut(P0).library_order.retain(|id| *id != card);
+    s.get_object_mut(card).unwrap().zone = Zone::Hand;
+    s.events = vec![
+        GameEvent::StepStarted { step: Step::Draw },
+        GameEvent::CardDrawn { player: P0, object: card },
+    ];
+    quiet_core_about(&s, &reg, "(CR 504.1)");
+    // For somebody else, or twice, it is not.
+    let mut s2 = s.clone();
+    s2.events[1] = GameEvent::CardDrawn { player: P1, object: card };
+    flags_core(&s2, &reg, "(CR 504.1)");
+    let mut s2 = s.clone();
+    s2.events.push(GameEvent::CardDrawn { player: P0, object: card });
+    flags_core(&s2, &reg, "(CR 504.1)");
     let mut s = state.clone();
     s.events = vec![GameEvent::StepStarted { step: Step::EndStep }];
     flags_core(&s, &reg, "the last step to start was EndStep but the state is in PrecombatMain");
@@ -1047,6 +1065,32 @@ fn unscanned_events_and_unbucketed_triggers_are_flagged() {
     ));
     s.priority_player = None;
     flags_core(&s, &reg, "1 trigger(s) collected but not bucketed at a decision point (CR 603.3b)");
+    // A state trigger is what `pending_triggers` is FOR: it is unbucketed,
+    // which is the complaint above, and it is not the wrong kind of trigger
+    // to be sitting there.
+    quiet_core_about(&s, &reg, "only state and copy-ETB triggers are queued there");
+
+    // CR 103: the opening-hand loop never runs the collector, so the claim
+    // that every event has been scanned is not made about it. Nor is it made
+    // about a finished game, which stops before the collector runs. Both
+    // conditions are the reason the clause is silent, one at a time.
+    let quiet_windows = [
+        {
+            let mut s = state.clone();
+            s.trigger_event_index = 0;
+            s.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+            s
+        },
+        {
+            let mut s = state.clone();
+            s.trigger_event_index = 0;
+            s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+            s
+        },
+    ];
+    for s in quiet_windows {
+        quiet_core_about(&s, &reg, "events scanned for triggers at a decision point");
+    }
 }
 
 /// CR 601.2/602.2: the player casting or activating holds priority through
@@ -1622,6 +1666,13 @@ fn the_per_turn_records_are_checked_against_the_events() {
     flags_transition(&p, None, &boundary(3, false), &reg, "cast 2 spells last turn but the record says 3");
     clean_transition(&p, None, &boundary(3, true), &reg);
     flags_transition(&p, None, &boundary(2, true), &reg, "cast 3 spells last turn but the record says 2");
+    // The reconciliation reads the events of one action, so it is only owed
+    // when the window is one action. Over a batch there are no events to
+    // read and the count of what came before the turn started cannot be
+    // recovered — asking anyway would report every batched turn boundary.
+    let mut c = boundary(4, false);
+    c.submit_seq += 1;
+    quiet_transition_about(&p, None, &c, &reg, "spells last turn but the record says");
 
     // Morbid is a per-turn flag: it is not reset mid-turn, and it is not
     // set without a death.
@@ -1778,6 +1829,21 @@ fn the_status_ledgers_of_a_permanent_are_checked() {
     combat.any_attackers_declared = true;
     s.combat = Some(combat);
     quiet_transition_about(&shielded, None, &s, &reg, "still in combat");
+    // Blocking keeps it in combat too, and the assignment that names it is
+    // the one that counts — not merely that somebody is blocking.
+    let mut s = next(&shielded);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.regeneration_shields = 0;
+        o.tapped = true;
+    }
+    s.events.push(GameEvent::Tapped { object: bear });
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(other, P0);
+    combat.blocker_assignments.insert(other, vec![bear]);
+    combat.any_attackers_declared = true;
+    s.combat = Some(combat);
+    flags_transition(&shielded, None, &s, &reg, "regenerated but is still in combat (CR 701.15a)");
     // A permanent that was already tapped regenerates without a new tap.
     let mut tapped_shield = shielded.clone();
     tapped_shield.get_object_mut(bear).unwrap().tapped = true;
@@ -1818,6 +1884,48 @@ fn the_status_ledgers_of_a_permanent_are_checked() {
     };
     clean_transition(&lib, None, &draw(0), &reg);
     flags_transition(&lib, None, &draw(2), &reg, "from below the top 1");
+
+    // How deep "the top" reaches is how many cards left this player's
+    // library, not how many were drawn: milling two and then drawing takes
+    // the third card down, and that is the top card of what was left.
+    let mut c = next(&lib);
+    for (i, &id) in cards.iter().enumerate() {
+        c.get_player_mut(P0).library_order.retain(|&x| x != id);
+        {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = if i == 2 { Zone::Hand } else { Zone::Graveyard };
+            o.zone_change_count += 1;
+        }
+        c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Library,
+            to: if i == 2 { Zone::Hand } else { Zone::Graveyard } });
+    }
+    c.events.push(GameEvent::CardDrawn { player: P0, object: cards[2] });
+    quiet_transition_about(&lib, None, &c, &reg, "(CR 121.3)");
+
+    // And it is this player's library that is counted. An opponent emptying
+    // theirs in the same window does not widen the top of this one.
+    let mut two_libs = lib.clone();
+    let theirs = stock_library(&mut two_libs, &reg, P1, 3);
+    let mut c = next(&two_libs);
+    for &id in &theirs {
+        c.get_player_mut(P1).library_order.retain(|&x| x != id);
+        {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Graveyard;
+            o.zone_change_count += 1;
+        }
+        c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Library, to: Zone::Graveyard });
+    }
+    let deep = cards[1];
+    c.get_player_mut(P0).library_order.retain(|&x| x != deep);
+    {
+        let o = c.get_object_mut(deep).unwrap();
+        o.zone = Zone::Hand;
+        o.zone_change_count += 1;
+    }
+    c.events.push(GameEvent::ObjectMoved { object: deep, from: Zone::Library, to: Zone::Hand });
+    c.events.push(GameEvent::CardDrawn { player: P0, object: deep });
+    flags_transition(&two_libs, None, &c, &reg, "from below the top 1");
 
     // A card that was never in that library at all.
     let mut c = next(&lib);
@@ -1870,6 +1978,15 @@ fn the_life_and_loss_ledger_is_checked() {
     clean_transition(&prev, None, &dies(0, 0), &reg);
     clean_transition(&prev, None, &dies(-3, -3), &reg);
     flags_transition(&prev, None, &dies(5, 5), &reg, "lost to 0 life without their life reaching 0 (CR 704.5a)");
+    // Life that arrives at zero without going through a LifeChanged never
+    // reached zero as far as anything can tell: the window has to show it.
+    let mut c = next(&prev);
+    c.get_player_mut(P1).life = 0;
+    c.get_player_mut(P1).lost = true;
+    c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::LifeReachedZero });
+    flags_transition(&prev, None, &c, &reg, "lost to 0 life without their life reaching 0 (CR 704.5a)");
     // A player who was already at zero when the window opened, and a window
     // whose chain dips to zero and comes back, are both the rule being met.
     let mut at_zero = prev.clone();
@@ -2129,6 +2246,44 @@ fn the_costs_an_action_pays_are_checked_against_the_pool() {
     s.events.push(GameEvent::Tapped { object: forest });
     s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
     flags_transition(&already, Some(&tap), &s, &reg, "tapped #");
+
+    // CR 602.2f: an activation cost is spent out of the pool like any other,
+    // and mana tapped for it inside the same window counts as paid. The
+    // ledger reads the window; a ledger that subtracted what was added
+    // instead of adding it would report every activation paid this way.
+    let (mut prev, reg) = base();
+    let cathar = named_permanent(&mut prev, &reg, "Selfless Cathar", P0);
+    prev.priority_player = Some(P0);
+    prev.get_player_mut(P0).mana_pool.mana.clear();
+    let activate = mtg_engine::actions::Action::ActivateAbility {
+        object_id: cathar, ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: Some(cathar), x_value: None, source_card_id: None,
+    };
+    let card_id = prev.get_object(cathar).unwrap().card_id;
+    let onto_stack = |added: &[(ManaType, u32)], left: &[(ManaType, u32)]| {
+        let mut c = next(&prev);
+        c.get_player_mut(P0).mana_pool.mana.clear();
+        for (t, n) in left {
+            c.get_player_mut(P0).mana_pool.mana.insert(*t, *n);
+        }
+        c.stack.push(StackEntry::Ability {
+            source_id: cathar, ability_index: 0, behavior_card_id: card_id,
+            targets: vec![], activator: P0, x_value: None, target_requirement: None,
+            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false,
+        });
+        for (t, n) in added {
+            c.events.push(GameEvent::ManaAdded { player: P0, mana_type: *t, amount: *n });
+        }
+        c
+    };
+    // {1}{W} tapped for and spent inside the window.
+    quiet_transition_about(&prev, Some(&activate),
+        &onto_stack(&[(ManaType::White, 1), (ManaType::Green, 1)], &[]), &reg, "(CR 602.2f)");
+    // The same two mana added and then still sitting in the pool: the
+    // ability went on the stack without its cost being paid.
+    flags_transition(&prev, Some(&activate),
+        &onto_stack(&[(ManaType::White, 1), (ManaType::Green, 1)],
+                    &[(ManaType::White, 1), (ManaType::Green, 1)]), &reg, "(CR 602.2f)");
 }
 
 /// CR 514.1/103.5: the hand-size discard, the mulligan and the bottoming
@@ -2457,6 +2612,14 @@ fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
     flags_transition(&p, Some(&cast), &s, &reg,
         &format!("CastSpell #{} was refused but left traces", card.0));
 
+    // Refused with the card still in hand, but the window is not empty: the
+    // cast tapped for mana and then backed out without giving it back. Each
+    // of the three traces is a trace on its own.
+    let mut s = next(&prev);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    flags_transition(&prev, Some(&cast), &s, &reg,
+        &format!("CastSpell #{} was refused but left traces", card.0));
+
     // Waiting on a cost: the card stays where it is until the cost is paid.
     let mut waiting = next(&prev);
     waiting.pending_spell_cast = Some(stash(&prev, card));
@@ -2523,6 +2686,23 @@ fn an_activation_that_neither_went_on_the_stack_nor_backed_out_is_flagged() {
         assert!(!check_transition(&prev, Some(&activate), &s, &reg).is_empty(),
             "a stash naming {what} is not this activation");
     }
+
+    // Backing out cleanly is allowed to have cost something: the mana the
+    // player tapped for, and the tap itself, are the only traces a refused
+    // activation may leave — and either alone is still clean.
+    let mut s = next(&prev);
+    s.events.push(GameEvent::Tapped { object: land });
+    quiet_transition_about(&prev, Some(&activate), &s, &reg,
+        "neither went on the stack nor was refused cleanly");
+    let mut s = next(&prev);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    quiet_transition_about(&prev, Some(&activate), &s, &reg,
+        "neither went on the stack nor was refused cleanly");
+    // Anything else is not a cost.
+    let mut s = next(&prev);
+    s.events.push(GameEvent::ManaAdded { player: P1, mana_type: ManaType::Green, amount: 1 });
+    flags_transition(&prev, Some(&activate), &s, &reg,
+        &format!("ActivateAbility #{}/0 neither went on the stack nor was refused cleanly", land.0));
 }
 
 /// CR 104.3a: conceding is losing, recorded as such. A concede that leaves
@@ -2578,6 +2758,63 @@ fn a_pending_cast_that_vanishes_with_the_card_is_flagged() {
     s.stack.push(StackEntry::Spell(card));
     flags_transition(&prev, Some(&answer), &s, &reg,
         &format!("pending cast of #{} ended with the card moved but no SpellCast", card.0));
+
+    // The stash that stays is the same stash: a pending cast replaced by a
+    // different one is a cast that was dropped, whatever the new one says.
+    let other = spell_in_hand(&mut prev, &reg, "Brimstone Volley", P0);
+    let mut s = next(&prev);
+    s.pending_spell_cast = Some(stash(&prev, other));
+    flags_transition(&prev, Some(&answer), &s, &reg,
+        &format!("the pending cast switched from #{} to #{}", card.0, other.0));
+
+    // And a stash still waiting on the same card is not a switch — the
+    // prompt was answered and the cast is still being paid for.
+    let mut s = next(&prev);
+    s.pending_spell_cast = Some(stash(&prev, card));
+    quiet_transition_about(&prev, Some(&answer), &s, &reg, "the pending cast switched");
+}
+
+/// CR 608.2m: a resolution that was paused for a choice is resumed, not
+/// dropped. The clause only speaks for a spell that is still the same object
+/// in the same place — a spell that finished resolving, or one that left and
+/// came back as a new object (CR 400.7), was never dropped.
+#[test]
+fn a_paused_resolution_is_resumed_and_not_dropped() {
+    let (mut prev, reg) = base();
+    let bolt = spell_in_hand(&mut prev, &reg, "Brimstone Volley", P0);
+    prev.move_object(bolt, Zone::Stack, &reg);
+    prev.stack.push(StackEntry::Spell(bolt));
+    prev.resolving_spell = Some(bolt);
+    let answer = mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
+    };
+
+    // Still resolving, still on the stack: the pause is a pause.
+    let s = next(&prev);
+    quiet_transition_about(&prev, Some(&answer), &s, &reg, "was dropped while still in the stack zone");
+
+    // The resolution is forgotten and the spell is left sitting there.
+    let mut s = next(&prev);
+    s.resolving_spell = None;
+    flags_transition(&prev, Some(&answer), &s, &reg,
+        &format!("resolving spell #{} was dropped while still in the stack zone (CR 608.2m)", bolt.0));
+
+    // It left and came back: same id, new object, and the old resolution is
+    // not owed anything (CR 400.7).
+    let mut s = next(&prev);
+    s.resolving_spell = None;
+    s.get_object_mut(bolt).unwrap().zone_change_count += 2;
+    quiet_transition_about(&prev, Some(&answer), &s, &reg, "was dropped while still in the stack zone");
+
+    // And a permanent spell that finished resolving is off the stack zone
+    // without having moved since: nothing to resume.
+    let mut prev2 = prev.clone();
+    let bear = spell_in_hand(&mut prev2, &reg, "Grizzly Bears", P0);
+    prev2.move_object(bear, Zone::Battlefield, &reg);
+    prev2.resolving_spell = Some(bear);
+    let mut s = next(&prev2);
+    s.resolving_spell = None;
+    quiet_transition_about(&prev2, Some(&answer), &s, &reg, "was dropped while still in the stack zone");
 }
 
 #[test]
@@ -3992,6 +4229,48 @@ fn the_zone_ledger_pairs_every_verb_with_its_move() {
     s.move_object(card, Zone::Hand, &reg);
     s.events.push(GameEvent::CardDrawn { player: P0, object: card });
     flags_transition(&prev, None, &s, &reg, "which was not in p0's library (CR 121.1)");
+    // Unless it went back in and came out again inside the window: two zone
+    // changes is a card that was shuffled in and then drawn, which is a draw
+    // out of the library the player had.
+    let mut s = next(&prev);
+    s.get_object_mut(card).unwrap().zone = Zone::Hand;
+    s.get_object_mut(card).unwrap().zone_change_count += 2;
+    s.events.push(GameEvent::ObjectMoved { object: card, from: Zone::Hand, to: Zone::Library });
+    s.events.push(GameEvent::ObjectMoved { object: card, from: Zone::Library, to: Zone::Hand });
+    s.events.push(GameEvent::CardDrawn { player: P0, object: card });
+    no_transition_flag(&prev, None, &s, &reg, "(CR 121.1)");
+
+    // A verb whose move went somewhere else entirely is not paired: the
+    // ledger asks for the move the verb names, both halves of it. A card
+    // milled out of the library is not a card drawn out of it.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).library_order.retain(|id| *id != library[0]);
+    s.move_object(library[0], Zone::Graveyard, &reg);
+    s.events.push(GameEvent::CardDrawn { player: P0, object: library[0] });
+    flags_transition(&prev, None, &s, &reg, "without the matching zone change");
+
+    // CR 702.34a: the flashback mark says the cast came from the graveyard,
+    // so a marked cast out of the hand is not paired.
+    let mut s = next(&prev);
+    s.move_object(card, Zone::Stack, &reg);
+    s.get_object_mut(card).unwrap().cast_with_flashback = true;
+    s.stack.push(StackEntry::Spell(card));
+    s.events.push(GameEvent::SpellCast { player: P0, object: card });
+    flags_transition(&prev, None, &s, &reg, "SpellCast #");
+
+    // CR 111.7: a token that has left the battlefield ceases to exist, which
+    // is not the same as one vanishing off it.
+    let mut prev2 = prev.clone();
+    let token = named_permanent(&mut prev2, &reg, "Grizzly Bears", P0);
+    prev2.get_object_mut(token).unwrap().is_token = true;
+    let mut s = next(&prev2);
+    s.move_object(token, Zone::Graveyard, &reg);
+    s.objects.remove(&token);
+    no_transition_flag(&prev2, None, &s, &reg, "ceased to exist after moving to the battlefield");
+    let mut s = next(&prev2);
+    s.events.push(GameEvent::ObjectMoved { object: token, from: Zone::Graveyard, to: Zone::Battlefield });
+    s.objects.remove(&token);
+    flags_transition(&prev2, None, &s, &reg, "ceased to exist after moving to the battlefield");
 }
 
 /// CR 120.3/302.6/508.1/701.15a: the per-object status ledgers each need a

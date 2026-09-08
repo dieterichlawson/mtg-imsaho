@@ -180,3 +180,11 @@ bucket is finished at whatever percentage that leaves. Working the backlog is
 worth doing when the leads are productive and worth stopping when they are
 not; a session that closes ten arid survivors with written reasons has done
 more for the codebase than one that adds ten rigid tests.
+
+A backlog entry is a hypothesis, not a fact. Putting a survivor there says
+"a test should kill this and nobody has written it yet", and the only way to
+find out is to write it. When the 2026-09-08 re-run's backlog was worked
+through one mutant at a time, 60 of 68 got a test — and 8 turned out to be
+unreachable on any state the engine can build, which no amount of reading
+the mutant's *shape* had revealed. Sorting by shape is how a backlog gets
+long; reading each one against the source is how it gets short.

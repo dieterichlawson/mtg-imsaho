@@ -424,3 +424,55 @@ mtg-engine/src/invariants/legal.rs: replace - with + in choose
 mtg-engine/src/invariants/legal.rs: replace < with <= in loyalty
 mtg-engine/src/invariants/transition.rs: replace + with - in mana_demanded
 mtg-engine/src/invariants/transition.rs: replace > with >= in action_contract
+
+# The 2026-09-08 backlog, worked (see reports/mutation-testing.md, "The
+# third round: the backlog, worked"). Sixty of the sixty-eight got a test;
+# these eight are what re-reading the rest against the source says cannot
+# be told apart on any state this engine can reach.
+#
+#   transition.rs, the `Discarded` guard `*player == who` forced to true:
+#     the window is one action's events, and the only action that discards
+#     for a player is that player's own hand-size discard. No reachable
+#     window carries a Discarded event for anybody else, so widening the
+#     collector cannot pick one up.
+#
+#   transition.rs `|| with &&` in `action_contract`: the two surviving
+#     occurrences are inside the legend rule's `doomed`, whose damage,
+#     deathtouch and toughness disjuncts only matter when the kept
+#     permanent is off the battlefield with no `LeftBattlefield` event in
+#     the window. `move_object` is the only way off the battlefield and
+#     always emits one, so the event disjunct beside them is already true
+#     whenever they are consulted. (The other two occurrences of this
+#     normalized line, in the cast and activation contracts, were killed.)
+#
+#   transition.rs `|| with &&` and `> with <` in `life_and_loss`: both are
+#     in `refilled`, which asks whether a card came into the library after
+#     a draw from an empty one. A card that arrived from elsewhere has both
+#     disjuncts true (moving always bumps the zone-change count) and one
+#     already in the library has both false; the states that would tell the
+#     two apart -- arriving without a count bump, or a count bump while
+#     staying in the library -- neither `move_object` nor
+#     `put_into_library` can produce. (`> with <` also covers the CR 704.5a
+#     boundary, which was killed.)
+#
+#   events.rs `&& with ||` in `damage`: the two surviving occurrences guard
+#     the protection-from-a-colour check for damage to a PLAYER, and
+#     nothing in this pool grants a player protection from a colour --
+#     `grants_player_protection_from` has no implementation outside the
+#     trait default. The clause cannot speak either way. (The other four
+#     occurrences of this normalized line were killed.)
+#
+#   stack.rs `delete !` in `check_core`: the X-funding prompt's "was the
+#     sacrifice already made?" block, which needs an activated ability with
+#     both an X in its cost and a sacrifice cost. The pool has none: the
+#     only abilities with X are Kessig Wolf Run's and Mikaeus's, and
+#     neither sacrifices. Same block, same argument as the `== with !=`
+#     entry above; both normalized lines are coarser than the site, so a
+#     later sweep that finds another `!` or `==` alive in `check_core`
+#     should split them rather than trust these.
+mtg-engine/src/invariants/transition.rs: replace match guard *player == who with true in action_contract
+mtg-engine/src/invariants/transition.rs: replace || with && in action_contract
+mtg-engine/src/invariants/transition.rs: replace || with && in life_and_loss
+mtg-engine/src/invariants/transition.rs: replace > with < in life_and_loss
+mtg-engine/src/invariants/events.rs: replace && with || in damage
+mtg-engine/src/invariants/stack.rs: delete ! in check_core

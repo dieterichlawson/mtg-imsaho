@@ -36,70 +36,8 @@ mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
 # real loop, which nothing does yet.
 
 
-# From the 2026-09-08 re-run of issues #276-#279: what survived the
-# invariant checker's own self-test battery after the tests written in that
-# pass, each one read individually against the two questions in
-# docs/mutation-testing-guide.md rather than sorted by shape. These are the
-# ones where the answer to "what would a person see go wrong?" is a real
-# answer -- a blinded clause, or a clause that would accept a state it is
-# there to reject -- but the state that shows it needs scaffolding no
-# fixture builds yet.
-#
-# Two patterns account for nearly all of them. A `&&`/`||` flip inside a
-# multi-conjunct clause needs a state that satisfies exactly one conjunct,
-# which usually means a fixture built to be wrong in one specific way. A
-# deleted match arm needs an event or action of that exact kind reaching the
-# checker in a state where the arm's own test fails. Neither is equivalent;
-# both are just unwritten.
-#
-# The triage, and the numbers behind it, are written up in
-# reports/mutation-testing.md.
-mtg-engine/src/invariants/events.rs: delete match arm GameEvent::CardDrawn{player, ..} in steps
-mtg-engine/src/invariants/events.rs: delete match arm GameEvent::LeftBattlefield{object, ..} in blockers
-mtg-engine/src/invariants/events.rs: replace && with || in damage
-mtg-engine/src/invariants/events.rs: replace && with || in spells_and_lands
-mtg-engine/src/invariants/events.rs: replace && with || in zone_changes
-mtg-engine/src/invariants/events.rs: replace == with != in names_object
-mtg-engine/src/invariants/events.rs: replace || with && in damage
-mtg-engine/src/invariants/legal.rs: delete match arm Action::ActivateAbility{object_id, targets, sacrifice, tap_plan, ..} in prompt_offers
-mtg-engine/src/invariants/legal.rs: delete match arm Action::CastSpell{object_id, targets, sacrifice, exile_ids, tap_plan, ..} in prompt_offers
-mtg-engine/src/invariants/legal.rs: delete match arm Action::DiscardCards{cards} | Action::BottomCards{cards} in prompt_offers
-mtg-engine/src/invariants/legal.rs: delete match arm Action::PlayLand{object_id} | Action::ActivateManaAbility{object_id, ..} in prompt_offers
-mtg-engine/src/invariants/legal.rs: replace != with == in prompt_offers
-mtg-engine/src/invariants/legal.rs: replace && with || in activate
-mtg-engine/src/invariants/legal.rs: replace && with || in check_legal
-mtg-engine/src/invariants/legal.rs: replace && with || in tap_plan_ok
-mtg-engine/src/invariants/legal.rs: replace == with != in activate
-mtg-engine/src/invariants/legal.rs: replace == with != in cast
-mtg-engine/src/invariants/legal.rs: replace || with && in activate
-mtg-engine/src/invariants/legal.rs: replace || with && in cast
-mtg-engine/src/invariants/legal.rs: replace || with && in check_legal
-mtg-engine/src/invariants/prompts.rs: delete match arm K::PayOrNot{source_spell_id, ..} in check_choice
-mtg-engine/src/invariants/prompts.rs: delete match arm K::YesNo{source_card, ..} in check_choice
-mtg-engine/src/invariants/prompts.rs: delete match arm PendingEffect::CantBlockThisTurn{..} in check_choice
-mtg-engine/src/invariants/prompts.rs: delete match arm PendingEffect::DebuffUntilEOT{..} in check_choice
-mtg-engine/src/invariants/prompts.rs: replace && with || in check_choice
-mtg-engine/src/invariants/prompts.rs: replace && with || in library_option
-mtg-engine/src/invariants/prompts.rs: replace < with <= in check_choice
-mtg-engine/src/invariants/prompts.rs: replace match guard !player_ok(state, *p) with true in check_choice
-mtg-engine/src/invariants/prompts.rs: replace || with && in tba_common
-mtg-engine/src/invariants/stack.rs: delete ! in check_core
-mtg-engine/src/invariants/stack.rs: delete match arm TriggerEvent::StateTriggered in check_core
-mtg-engine/src/invariants/stack.rs: replace && with || in check_core
-mtg-engine/src/invariants/transition.rs: delete match arm (Some(a), Some(b)) in status_ledgers
-mtg-engine/src/invariants/transition.rs: replace != with == in action_contract
-mtg-engine/src/invariants/transition.rs: replace && with || in action_contract
-mtg-engine/src/invariants/transition.rs: replace && with || in per_turn
-mtg-engine/src/invariants/transition.rs: replace && with || in zone_ledger
-mtg-engine/src/invariants/transition.rs: replace + with - in action_contract
-mtg-engine/src/invariants/transition.rs: replace == with != in action_contract
-mtg-engine/src/invariants/transition.rs: replace == with != in status_ledgers
-mtg-engine/src/invariants/transition.rs: replace == with != in zone_ledger
-mtg-engine/src/invariants/transition.rs: replace > with < in life_and_loss
-mtg-engine/src/invariants/transition.rs: replace match guard *player == who with true in action_contract
-mtg-engine/src/invariants/transition.rs: replace match guard c2.object_id != id with false in action_contract
-mtg-engine/src/invariants/transition.rs: replace match guard c2.object_id != id with true in action_contract
-mtg-engine/src/invariants/transition.rs: replace match guard cur.get_object(*object).is_some_and(|o| o.owner == p) with false in status_ledgers
-mtg-engine/src/invariants/transition.rs: replace match guard cur.get_object(*object).is_some_and(|o| o.owner == p) with true in status_ledgers
-mtg-engine/src/invariants/transition.rs: replace || with && in action_contract
-mtg-engine/src/invariants/transition.rs: replace || with && in life_and_loss
+# The 2026-09-08 re-run's backlog is empty. All 68 entries were worked:
+# 60 got a test that kills them, and 8 were re-read against the source and
+# moved to reports/mutants-accepted.txt as unreachable on any state this
+# engine can produce. reports/mutation-testing.md, "The third round: the
+# backlog, worked", has the account.
