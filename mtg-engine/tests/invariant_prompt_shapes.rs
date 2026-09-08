@@ -925,6 +925,13 @@ fn a_library_prompt_offers_cards_that_are_in_that_library() {
     let mut s = state.clone();
     s.awaiting_action = Some(search(vec![theirs[0]], P0));
     flags(&s, &reg, "which is not in p0's library (CR 701.23a)");
+    // Being listed in the searcher's order is not enough: the card is in
+    // the library zone AND theirs. A card the opponent owns that has found
+    // its way into this player's list is still not theirs to search.
+    let mut s = state.clone();
+    s.get_player_mut(P0).library_order.push(theirs[0]);
+    s.awaiting_action = Some(search(vec![theirs[0]], P0));
+    flags(&s, &reg, "which is not in p0's library (CR 701.23a)");
 
     let mut s = state.clone();
     s.awaiting_action = Some(search(vec![mine[0], mine[0]], P0));
