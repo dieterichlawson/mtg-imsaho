@@ -949,6 +949,24 @@ fn step_and_turn_start_windows_are_checked() {
     s.events = vec![GameEvent::StepStarted { step: Step::Draw }];
     s.step = Step::Draw;
     flags_core(&s, &reg, "the draw step drew [] for p0 (CR 504.1)");
+    // One card for the active player is the draw step doing its job.
+    let mut s = state.clone();
+    let card = stock_library(&mut s, &reg, P0, 1)[0];
+    s.step = Step::Draw;
+    s.get_player_mut(P0).library_order.retain(|id| *id != card);
+    s.get_object_mut(card).unwrap().zone = Zone::Hand;
+    s.events = vec![
+        GameEvent::StepStarted { step: Step::Draw },
+        GameEvent::CardDrawn { player: P0, object: card },
+    ];
+    quiet_core_about(&s, &reg, "(CR 504.1)");
+    // For somebody else, or twice, it is not.
+    let mut s2 = s.clone();
+    s2.events[1] = GameEvent::CardDrawn { player: P1, object: card };
+    flags_core(&s2, &reg, "(CR 504.1)");
+    let mut s2 = s.clone();
+    s2.events.push(GameEvent::CardDrawn { player: P0, object: card });
+    flags_core(&s2, &reg, "(CR 504.1)");
     let mut s = state.clone();
     s.events = vec![GameEvent::StepStarted { step: Step::EndStep }];
     flags_core(&s, &reg, "the last step to start was EndStep but the state is in PrecombatMain");

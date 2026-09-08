@@ -273,6 +273,15 @@ fn a_land_played_event_describes_a_land_that_arrived() {
     let mut s = state.clone();
     s.priority_player = Some(P1);
     flags(&s, &reg, "played a land but priority is");
+
+    // Unless nobody holds priority because the action raised a prompt: the
+    // rule is about the decision point after the action, and there is not
+    // one yet.
+    let mut s = state.clone();
+    s.priority_player = None;
+    s.awaiting_action = Some(mtg_engine::state::AwaitingAction::DiscardToHandSize {
+        player: P0, discard_count: 1 });
+    quiet_about(&s, &reg, "played a land but priority is");
 }
 
 /// CR 509.1a/509.1b/509.1h: what a `BlockersDeclared` event says — each
@@ -308,6 +317,17 @@ fn a_blockers_declared_event_describes_a_legal_block() {
     let bystander = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
     s.events = vec![GameEvent::BlockersDeclared { assignments: vec![(blocker, bystander)] }];
     flags(&s, &reg, "not an attacker");
+    // Unless it left the battlefield in the same action: combat has
+    // forgotten it (CR 506.4) and the declaration is the record of what
+    // happened before it did.
+    let mut s = state.clone();
+    let bystander = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(bystander).unwrap().zone = Zone::Graveyard;
+    s.events = vec![
+        GameEvent::BlockersDeclared { assignments: vec![(blocker, bystander)] },
+        GameEvent::LeftBattlefield { object: bystander, to: Zone::Graveyard, last_controller: P0 },
+    ];
+    quiet_about(&s, &reg, "not an attacker");
 
     // CR 509.1a: the blocker is a creature the defending player controls.
     let mut s = state.clone();
@@ -622,6 +642,12 @@ fn an_entry_event_describes_the_permanent_that_arrived() {
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().summoning_sick = false;
     flags(&s, &reg, "entered this action but is not summoning sick (CR 302.6)");
+    // A token is not exempt for being a token: the exemption is for one
+    // still being asked whom it attacks, and that prompt has to be up.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().summoning_sick = false;
+    s.get_object_mut(bear).unwrap().is_token = true;
+    flags(&s, &reg, "entered this action but is not summoning sick (CR 302.6)");
 
     // CR 400.7: the object is where the last move it announced put it.
     let mut s = base().0;
@@ -685,6 +711,7 @@ fn a_zone_change_event_leaves_the_card_where_it_says() {
     let (mut state, reg) = base();
     let drawn = stock_library(&mut state, &reg, P0, 1)[0];
     state.get_object_mut(drawn).unwrap().name = "Forest".into();
+    let elsewhere = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
 
     // A clean draw: out of the library, off the library order, into hand.
     let mut clean_draw = state.clone();
@@ -697,6 +724,21 @@ fn a_zone_change_event_leaves_the_card_where_it_says() {
     let mut s = clean_draw.clone();
     s.get_player_mut(P0).library_order.push(drawn);
     flags(&s, &reg, "is still listed in p0's library");
+
+    // CR 121.1: the card ends up in hand, unless a later event in the same
+    // action says where it went instead — and "later event" means one about
+    // this card, not any card at all.
+    let mut s = clean_draw.clone();
+    s.get_object_mut(drawn).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(drawn));
+    s.events.push(GameEvent::ObjectMoved { object: drawn, from: Zone::Hand, to: Zone::Stack });
+    quiet_about(&s, &reg, "(CR 121.1)");
+    let mut s = clean_draw.clone();
+    s.get_object_mut(drawn).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(drawn));
+    s.get_object_mut(elsewhere).unwrap().tapped = true;
+    s.events.push(GameEvent::Tapped { object: elsewhere });
+    flags(&s, &reg, "but it is in Stack (CR 121.1)");
 
     // Drawn but somewhere other than hand, with nothing later moving it.
     let mut s = clean_draw.clone();
