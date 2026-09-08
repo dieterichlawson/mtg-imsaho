@@ -113,10 +113,18 @@ impl CardBehavior for GrimgrinCorpseBorn {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // The engine already sacrificed another creature as part of paying the cost.
         // Now untap Grimgrin and add a +1/+1 counter.
-        state.untap(object_id);
+        // CR 701.20a: only tapped permanents can be untapped. Grimgrin is
+        // often already untapped — an opponent's Spidery Grasp, or a previous
+        // activation — and the line used to claim the untap regardless, the
+        // same way `resolve_card_effect` below would if it did not branch on
+        // `DestroyResult` (issue #359).
+        let untapped = state.untap(object_id);
         state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-        state.log(crate::state::LogLevel::Event,
-            "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
+        state.log(crate::state::LogLevel::Event, if untapped {
+            "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into()
+        } else {
+            "Grimgrin: sacrificed creature, already untapped, +1/+1 counter".to_string()
+        });
     }
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, chosen_targets: &[Target], registry: &CardRegistry) {

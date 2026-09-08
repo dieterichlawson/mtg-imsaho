@@ -2360,7 +2360,13 @@ impl GameState {
         }
     }
 
-    /// CR 701.20a: untap a permanent, emitting `Untapped`.
+    /// CR 701.20a: untap a permanent, emitting `Untapped`. Returns whether it
+    /// actually became untapped.
+    ///
+    /// "Only tapped permanents can be untapped", so this is a no-op on an
+    /// untapped one — and, as with [`GameState::tap`], a caller that logs the
+    /// untap as a fact must branch on the return rather than assert it (issue
+    /// #359).
     ///
     /// The one place an *effect* clears `tapped`, so the event is emitted the
     /// same way wherever the untap comes from — the untap step, "Untap target
@@ -2372,15 +2378,17 @@ impl GameState {
     /// Not for a permanent *leaving* the battlefield, where the flag is reset
     /// because CR 400.7 makes it a new object rather than because anything
     /// untapped it, and not for one entering tapped, which was never untapped.
-    pub fn untap(&mut self, id: ObjectId) {
+    pub fn untap(&mut self, id: ObjectId) -> bool {
         match self.get_object_mut(id) {
             Some(obj) if obj.tapped => obj.tapped = false,
-            _ => return,
+            _ => return false,
         }
         self.events.push(crate::events::GameEvent::Untapped { object: id });
+        true
     }
 
-    /// Tap a permanent (CR 701.21a), emitting `Tapped`.
+    /// Tap a permanent (CR 701.21a), emitting `Tapped`. Returns whether it
+    /// actually became tapped.
     ///
     /// "Only untapped permanents can be tapped", so tapping one that is
     /// already tapped does nothing at all — not even an event. That is the
@@ -2388,10 +2396,18 @@ impl GameState {
     /// so the write is invisible, but the event it should not have sent is
     /// not.
     ///
+    /// The return value is the other half. A caller that writes a log line
+    /// *asserting the tap* must branch on it, exactly as `resolve_card_effect`
+    /// branches on `DestroyResult`: a second Claustrophobia on a creature the
+    /// first one is already holding down logged "Claustrophobia taps enchanted
+    /// creature" about a tap that did not happen, and a player replaying the
+    /// log cannot tell that case from the real one (issue #359). A caller that
+    /// only wants the permanent tapped can ignore it.
+    ///
     /// This is for a permanent *becoming* tapped. A permanent that arrives on
     /// the battlefield tapped was never untapped there and is not tapped by
     /// anything — see [`GameState::arrives_tapped`].
-    pub fn tap(&mut self, id: ObjectId) {
+    pub fn tap(&mut self, id: ObjectId) -> bool {
         match self.get_object_mut(id) {
             // CR 110.5: tapped is a status of permanents. An effect resolving
             // through last-known information can name an object that has
@@ -2402,9 +2418,10 @@ impl GameState {
             Some(obj) if obj.zone == crate::types::Zone::Battlefield && !obj.tapped => {
                 obj.tapped = true;
             }
-            _ => return,
+            _ => return false,
         }
         self.events.push(crate::events::GameEvent::Tapped { object: id });
+        true
     }
 
     /// A permanent arrives on the battlefield tapped.

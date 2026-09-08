@@ -1616,6 +1616,51 @@ fn grimgrin_sacrifice_untaps_and_counters() {
     assert_eq!(new_state.get_object(zombie).unwrap().zone, Zone::Graveyard);
 }
 
+/// CR 701.20a: "only tapped permanents can be untapped". Grimgrin is often
+/// already untapped when the ability resolves — an opponent's Spidery Grasp,
+/// or a previous activation — and the line claimed the untap regardless
+/// (issue #359).
+///
+/// The card's own `resolve_card_effect` branches on `DestroyResult` for
+/// exactly this reason: "the log must not claim a destruction that did not
+/// happen, or a player reading it back cannot tell the two cases apart". The
+/// untap a few functions away now draws the same distinction.
+#[test]
+fn grimgrins_log_line_does_not_claim_an_untap_that_did_not_happen() {
+    let reg = registry();
+
+    // Tapped: the untap really happens, and is reported.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    state.get_object_mut(grimgrin).unwrap().tapped = true;
+    let zombie = ready_creature(&mut state, P0, 2, 2);
+    let after = activate_sacrificing(&state, &reg, grimgrin, 0, vec![], zombie);
+    assert!(!after.get_object(grimgrin).unwrap().tapped, "test setup");
+    assert!(after.game_log.iter().any(|e|
+        e.message == "Grimgrin: sacrificed creature, untapped, +1/+1 counter"),
+        "the real untap is reported; log: {:?}",
+        after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    // Untapped: the sacrifice and the counter happen, the untap does not.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    state.get_object_mut(grimgrin).unwrap().tapped = false;
+    let zombie = ready_creature(&mut state, P0, 2, 2);
+    let after = activate_sacrificing(&state, &reg, grimgrin, 0, vec![], zombie);
+
+    assert_eq!(after.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1,
+        "the counter still goes on");
+    assert_eq!(after.get_object(zombie).unwrap().zone, Zone::Graveyard,
+        "and the sacrifice still happened");
+    assert!(!after.game_log.iter().any(|e|
+        e.message == "Grimgrin: sacrificed creature, untapped, +1/+1 counter"),
+        "nothing untapped, so the log does not say it did; log: {:?}",
+        after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(after.game_log.iter().any(|e| e.message.contains("already untapped")),
+        "it says what did happen instead; log: {:?}",
+        after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
 #[test]
 fn grimgrin_sacrifice_not_available_without_other_creatures() {
     let reg = registry();

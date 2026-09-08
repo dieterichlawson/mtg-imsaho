@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope};
 use crate::actions::Target;
 
 /// Galvanic Juggernaut — {4} 5/5 Artifact Creature — Juggernaut.
@@ -44,10 +44,10 @@ impl CardBehavior for GalvanicJuggernaut {
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // CR 400.7: a Juggernaut that has left the battlefield is a different
         // object, and there is nothing there to untap.
-        let was_tapped = state.get_object(self_id)
-            .is_some_and(|o| o.zone == Zone::Battlefield && o.tapped);
-        if was_tapped {
-            state.untap(self_id);
+        // `untap` is itself the guard — it is a no-op on an untapped
+        // permanent (CR 701.20a) and says so — so the hand-rolled "was it
+        // tapped" check this used to keep is the same question asked twice.
+        if state.untap(self_id) {
             state.log(crate::state::LogLevel::Event,
                 "Galvanic Juggernaut untapped (creature died)".to_string());
         }

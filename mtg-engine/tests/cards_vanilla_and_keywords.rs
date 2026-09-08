@@ -392,6 +392,47 @@ fn claustrophobia_taps_creature() {
     assert_eq!(state.get_object(cl).unwrap().attached_to, Some(creature));
 }
 
+/// CR 701.21a: "only untapped permanents can be tapped". A second
+/// Claustrophobia on a creature the first one is already holding down taps
+/// nothing, and the log must not say it did.
+///
+/// The line went out unconditionally after `state.tap`, which is a deliberate
+/// no-op on an already-tapped permanent — not even an event — so the log
+/// asserted a state change that never happened and a reader could not tell it
+/// from the real one (issue #359). It also named no creature; now it does.
+#[test]
+fn a_second_claustrophobia_does_not_log_a_tap_that_did_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    let first = castable_spell(&mut state, &reg, "Claustrophobia", P0);
+    let mut state = cast_and_resolve(&state, &reg, first, vec![Target::Object(creature)]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    assert!(state.get_object(creature).unwrap().tapped, "test setup: the first one taps it");
+
+    let taps_after_first = state.game_log.iter()
+        .filter(|e| e.message.contains("Claustrophobia taps")).count();
+    assert_eq!(taps_after_first, 1, "the real tap is reported, naming the creature: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(state.game_log.iter().any(|e|
+        e.message == format!("Claustrophobia taps {}", state.obj_name(creature))),
+        "and names it the way every other log line does; log: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    // The creature is still tapped, so the second Aura's trigger taps nothing.
+    let second = castable_spell(&mut state, &reg, "Claustrophobia", P0);
+    let mut state = cast_and_resolve(&state, &reg, second, vec![Target::Object(creature)]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    assert_eq!(state.get_object(second).unwrap().attached_to, Some(creature),
+        "test setup: the second one really did attach");
+
+    assert_eq!(state.game_log.iter()
+        .filter(|e| e.message.contains("Claustrophobia taps")).count(), 1,
+        "the second Aura tapped nothing, so it says nothing; log: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
 /// CR 113.7a: the enters trigger is on the stack independently of the Aura, so
 /// destroying Claustrophobia in response does not save the creature from being
 /// tapped — and CR 608.2g says "enchanted creature" is then the one the Aura

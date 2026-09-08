@@ -54,9 +54,15 @@ impl CardBehavior for Claustrophobia {
     /// creature was never tapped at all.
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         if let Some(target_id) = state.attached_creature(object_id) {
-            state.tap(target_id);
-            state.log(crate::state::LogLevel::Event,
-                "Claustrophobia taps enchanted creature".to_string());
+            // CR 701.21a: only untapped permanents can be tapped. A second
+            // Claustrophobia on a creature the first is already holding down
+            // taps nothing, and saying so anyway is a log line about a state
+            // change that did not happen (issue #359).
+            if state.tap(target_id) {
+                let name = state.obj_name(target_id);
+                state.log(crate::state::LogLevel::Event,
+                    format!("Claustrophobia taps {name}"));
+            }
         }
     }
 }
