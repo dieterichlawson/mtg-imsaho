@@ -16,6 +16,18 @@ use mtg_engine::invariants::check_core;
 use mtg_engine::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind, StackEntry};
 use mtg_engine::types::*;
 
+fn cast_stash(state: &GameState, card: ObjectId) -> mtg_engine::state::PendingSpellCast {
+    mtg_engine::state::PendingSpellCast {
+        object_id: card,
+        player: state.get_object(card).unwrap().controller,
+        card_id: state.get_object(card).unwrap().card_id,
+        targets: vec![], sacrifice: None, exile_ids: vec![], exile_count: None,
+        tap_plan: vec![], alternative_cost: None,
+        non_x_mana_cost: ManaCost::new(vec![]), is_flashback: false,
+        cast_from_graveyard: false,
+    }
+}
+
 fn base() -> (GameState, CardRegistry) {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -72,14 +84,35 @@ fn a_turn_based_prompt_is_raised_on_a_quiet_game() {
     s.stack.push(StackEntry::Spell(bear));
     flags(&s, &reg, "with 1 entries on the stack (CR 500.2)");
 
-    let mut s = state.clone();
-    s.pending_triggers.push(mtg_engine::triggers::PendingTrigger::new(
+    // Each of the three queues a trigger can be waiting in is its own way
+    // of not being quiet yet (CR 603.3b).
+    let waiting = mtg_engine::triggers::PendingTrigger::new(
         mtg_engine::triggers::TriggerSource::new(bear, card_id, P0, "a triggered ability"),
-        mtg_engine::triggers::TriggerEvent::Upkeep));
-    flags(&s, &reg, "attackers prompt with triggers still queued");
+        mtg_engine::triggers::TriggerEvent::Upkeep);
+    for queue in [0, 1, 2] {
+        let mut s = state.clone();
+        match queue {
+            0 => s.pending_triggers.push(waiting.clone()),
+            1 => s.pending_trigger_pushes_ap.push(waiting.clone()),
+            _ => s.pending_trigger_pushes_nap.push(waiting.clone()),
+        }
+        flags(&s, &reg, "attackers prompt with triggers still queued");
+    }
 
+    // And each of the three ways a cast or a resolution can still be in
+    // flight (CR 601.2, 608.2).
     let mut s = state.clone();
     s.resolving_spell = Some(bear);
+    flags(&s, &reg, "with a cast or resolution in progress");
+    let mut s = state.clone();
+    s.pending_spell_cast = Some(cast_stash(&state, bear));
+    flags(&s, &reg, "with a cast or resolution in progress");
+    let mut s = state.clone();
+    s.pending_ability_effect = Some(mtg_engine::state::PendingAbilityEffect {
+        source_id: bear, ability_index: 0, behavior_card_id: card_id,
+        targets: vec![], description: "an ability".into(), activator: P0,
+        target_requirement: None, unpaid: None,
+    });
     flags(&s, &reg, "with a cast or resolution in progress");
 
     let mut s = state.clone();
@@ -325,6 +358,25 @@ fn a_resolution_prompt_offers_real_things_once_each() {
     s.awaiting_action = Some(prompt(ResolutionChoiceKind::ChoosePile {
         description: "d".into(), pile_1: vec![bear], pile_2: vec![other], source_id: other }));
     flags(&s, &reg, "carries a choice for #");
+    // The two prompts that name their source under a different field name
+    // are read the same way.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(ResolutionChoiceKind::YesNo {
+        description: "d".into(), source_card: other }));
+    flags(&s, &reg, "carries a choice for #");
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(ResolutionChoiceKind::PayOrNot {
+        description: "d".into(), spell_id: bear, source_spell_id: other,
+        cost: ManaCost::new(vec![ManaSymbol::Generic(1)]) }));
+    flags(&s, &reg, "carries a choice for #");
+
+    // And a valid player among the options is not a missing one: the range
+    // check is a check, not a blanket refusal of players.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(ResolutionChoiceKind::ChooseTarget {
+        description: "d".into(), options: vec![Target::Player(P1)], optional: false,
+        effect: PendingEffect::DealDamage { amount: 2, source_id: bear } }));
+    quiet_about(&s, &reg, "who is not a player");
 }
 
 /// CR 608.2d: a target prompt offers things the effect can act on — on the
@@ -379,6 +431,20 @@ fn a_target_prompt_offers_what_its_effect_can_act_on() {
         PendingEffect::DealDamage { amount: 2, source_id: mine },
         vec![Target::Object(land)]));
     flags(&s, &reg, "which is no battlefield creature or planeswalker");
+
+    // The two effects that debuff or forbid a block act on creatures on the
+    // battlefield the same way destroy does, and are read the same way.
+    for (what, effect) in [
+        ("debuff", PendingEffect::DebuffUntilEOT { power: -2, toughness: -2, source_name: "x".into() }),
+        ("can't-block", PendingEffect::CantBlockThisTurn { source_name: "x".into() }),
+    ] {
+        let mut s = state.clone();
+        s.awaiting_action = Some(prompt(effect.clone(), vec![Target::Object(land)]));
+        flags(&s, &reg, &format!("{what} prompt offers"));
+        let mut s = state.clone();
+        s.awaiting_action = Some(prompt(effect, vec![Target::Object(theirs)]));
+        quiet_about(&s, &reg, &format!("{what} prompt offers"));
+    }
 }
 
 /// CR 704.5j: the legend-rule prompt is exactly the duplicate group, is
@@ -600,18 +666,31 @@ fn a_trigger_target_prompt_is_for_the_front_of_the_queue() {
         vec![Target::Object(ghoul), Target::Object(other)], false, P0));
     flags(&s, &reg, "but the queue's front is #");
 
-    // A prompt with nothing to choose between, or an optional one.
+    // A prompt with nothing to choose between, or an optional one. Two
+    // options is the smallest real choice and is not one of those.
     let mut s = state.clone();
     s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
     s.awaiting_action = Some(prompt(ghoul, vec![Target::Object(other)], false, P0));
     flags(&s, &reg, "trigger-target prompt with 1 options, optional=false");
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    quiet_about(&s, &reg, "options, optional=");
 
-    // CR 603.3b: the active player's triggers go first.
+    // CR 603.3b: the active player's triggers go first — which is a rule
+    // about the NON-active player answering while they wait. The active
+    // player answering out of that same queue is the queue being worked.
     let mut s = state.clone();
     s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
     s.awaiting_action = Some(prompt(ghoul,
         vec![Target::Object(ghoul), Target::Object(other)], false, P1));
     flags(&s, &reg, "while the active player's triggers wait (CR 603.3b)");
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    quiet_about(&s, &reg, "while the active player's triggers wait");
     let _ = card_id;
 }
 
