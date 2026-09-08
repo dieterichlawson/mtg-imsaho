@@ -37,6 +37,7 @@ fn a_trigger_fizzles_when_its_target_stops_satisfying_the_cards_restriction() {
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource { chosen_targets: vec![Target::Object(not_a_spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
         event: TriggerEvent::Upkeep,
+        ordered: false,
     }));
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
@@ -58,6 +59,7 @@ fn a_trigger_with_a_still_legal_target_resolves() {
     state.stack.push(StackEntry::Trigger(PendingTrigger {
         source: TriggerSource { chosen_targets: vec![Target::Object(spirit)], ..TriggerSource::new(angel, angel_card, P0, "Angel of Flight Alabaster") },
         event: TriggerEvent::Upkeep,
+        ordered: false,
     }));
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
@@ -213,6 +215,7 @@ fn a_trigger_whose_target_became_illegal_changes_nothing() {
                 ..TriggerSource::new(source, card_id, P0, name)
             },
             event: event_of(source),
+            ordered: false,
         }));
 
         sabotage(&mut state, target, &reg);

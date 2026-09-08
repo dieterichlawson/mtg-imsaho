@@ -267,7 +267,13 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   and `ChooseDamageAssignmentOrder`, so past 8 options the ordering becomes
   the card browser with no board, no stack and no shortcuts (#325), and the
   `--log` writes N identical lines for N distinct choices because #116's
-  `[source #id]` tail never reached it (#326). Verify the answer with two
+  `[source #id]` tail never reached it (#326). Both fixed: both ordering
+  prompts now take over the screen — every trigger with its source, P/T,
+  ability and cause, the stack, pane shortcuts that come back to the same
+  prompt — and take the whole order as one list of numbers (bare Enter keeps
+  the order shown); the log names each trigger's source by id. Re-probe the
+  new reader with V1-style garbage: repeats, gaps, out-of-range numbers, a
+  number followed by a letter, and pane keys typed mid-list. Verify the answer with two
   `--resume`s of one saved trigger prompt answered in opposite orders — the
   save round-trips the prompt exactly. Unreached: an ordering whose FINAL
   board state differs (no order-dependent trigger pair is cheap in ISD; try

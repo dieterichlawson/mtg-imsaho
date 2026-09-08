@@ -73,7 +73,7 @@ fn elder_cathar_trigger_is_removed_with_no_legal_targets() {
         .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
             PendingTrigger {
                 source: TriggerSource { id: dead_id, .. },
-                event: TriggerEvent::SelfDies }) if *dead_id == cathar))
+                event: TriggerEvent::SelfDies, .. }) if *dead_id == cathar))
         .count();
     assert_eq!(on_stack, 0,
         "with no creature its controller controls, Elder Cathar's ability has \
@@ -139,6 +139,6 @@ fn count_upkeep_entries(state: &GameState, object: mtg_engine::ids::ObjectId) ->
         .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
             PendingTrigger {
                 source: TriggerSource { id: object_id, .. },
-                event: TriggerEvent::Upkeep }) if *object_id == object))
+                event: TriggerEvent::Upkeep, .. }) if *object_id == object))
         .count()
 }

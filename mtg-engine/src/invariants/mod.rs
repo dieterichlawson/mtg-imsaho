@@ -296,6 +296,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                 K::ChooseCardFromHand { cards, .. } => cards.is_empty(),
                 K::ChooseTriggerOrder { options, .. } => options.is_empty(),
                 K::ChooseDamageAssignmentOrder { options, .. } => options.is_empty(),
+                K::ChooseDamageEffect { options, .. } => options.is_empty(),
                 K::DividePermanentsIntoPiles { permanents, .. } => permanents.is_empty(),
                 _ => false,
             };
@@ -474,6 +475,20 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
                 "{waiting} collected trigger(s) still queued while a player holds priority"
             ));
         }
+    }
+
+    // Damage is queued only inside the action that deals it, or across the
+    // CR 616.1 prompt that action raised about one of its events. At any
+    // other decision point the queue is empty: damage that is neither dealt
+    // nor being chosen about is damage the game has lost (issue #323).
+    if !state.pending_damage.is_empty()
+        && !matches!(&state.awaiting_action,
+            Some(crate::state::AwaitingAction::ResolutionChoice {
+                choice: crate::state::ResolutionChoiceKind::ChooseDamageEffect { .. }, .. }))
+    {
+        v.push(format!(
+            "{} damage event(s) queued with no damage-effect choice open",
+            state.pending_damage.len()));
     }
 
     // A battlefield creature has a power and a toughness — state-based

@@ -50,17 +50,13 @@ impl CardBehavior for BalefireDragon {
             .map(|o| o.id)
             .collect();
 
+        // One batch: "each creature" is dealt its damage at once, so every
+        // event is settled (CR 616.1) before any of it lands.
         for creature_id in creatures {
-            let effect = crate::state::PendingEffect::DealDamage {
-                amount,
-                source_id: self_id,
-            };
-            crate::engine::apply_pending_effect(
-                state,
-                &crate::actions::Target::Object(creature_id),
-                &effect,
-                registry,
-            );
+            crate::damage::queue_damage(state, self_id,
+                crate::events::DamageTarget::Object(creature_id), amount,
+                crate::damage::DamageKind::NonCombat);
         }
+        crate::damage::process_pending_damage(state, registry);
     }
 }

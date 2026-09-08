@@ -251,6 +251,8 @@ pub(crate) fn death_event(state: &GameState, id: ObjectId, registry: Option<&Car
     }
     let (cid, ctrl, damaged_by, is_token) = state.get_object(id)
         .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new(), false), |o| (o.card_id, o.controller, o.damaged_by.clone(), o.is_token));
+    let name = state.get_object(id).map(|o| o.name.clone()).unwrap_or_default();
+
     let last_known_toughness = registry
         .and_then(|r| state.effective_toughness(id, r))
         .or_else(|| state.get_object(id).and_then(|o| o.toughness))
@@ -259,7 +261,7 @@ pub(crate) fn death_event(state: &GameState, id: ObjectId, registry: Option<&Car
     // face: `move_object` clears `is_transformed` on the way out (CR 400.7), so
     // a Werewolf that died would read back as the Human on its front.
     let subtypes = registry.map(|r| state.subtypes_of(id, r)).unwrap_or_default();
-    Some(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token, subtypes })
+    Some(GameEvent::CreatureDied { object: id, name, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token, subtypes })
 }
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.

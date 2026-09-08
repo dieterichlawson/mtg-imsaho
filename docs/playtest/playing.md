@@ -650,11 +650,16 @@ illegal or dubious resolutions do.
   opponent-only and library-only (Dream Twist at yourself and Armored Skaab's
   self-mill must NOT fire it; a discarded creature must not either) and that
   milling to zero loses on the next DRAW (104.3c, 704.5b), not when the library
-  empties. All of that held. Where it breaks is CR 616.1: the affected player
-  never chooses the order when two effects modify one damage event — `damage.rs`
-  runs prevention → multiplier → replacement with no prompt, so Inquisitor's
-  Flail on a Zombie mills 2×power (#323), and `replacement.rs::apply` still
-  documents that pool as unreachable. Unreached: lifelink on a Zombie is
+  empties. All of that held. Where it broke was CR 616.1: the affected player
+  never chose the order when two effects modified one damage event — `damage.rs`
+  ran prevention → multiplier → replacement with no prompt, so Inquisitor's
+  Flail on a Zombie milled 2×power (#323), and `replacement.rs::apply` still
+  documented that pool as unreachable. Fixed: the defender is now asked, as a
+  numbered choice naming what each effect would do, whenever the order changes
+  the outcome — re-verify Flail + Alchemist (mill 2 if the Alchemist is chosen
+  first, 4 if the Flail is), Ghostly Possession + Alchemist (the defender may
+  take the mill), and that Flail + Possession on one creature asks nothing.
+  Unreached: lifelink on a Zombie is
   impossible in ISD (Butcher's Cleaver grants it only to Humans), so "no damage
   event means no lifelink" stays unverified; Ghoulcaller's Bell's "each player
   mills a card" as a one-event two-player probe went undrawn in two games

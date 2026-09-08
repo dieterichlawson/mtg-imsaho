@@ -395,6 +395,53 @@ fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: 
     let _ = out.flush();
 }
 
+/// What one key does to the line being typed at a prompt. Shared by both
+/// line readers, so the two cannot disagree about it.
+///
+/// Three kinds of key reach here (Enter, Ctrl-C and the readers' own
+/// shortcuts are taken before it):
+///
+/// - a plain character is typed;
+/// - Backspace and Ctrl-U edit (#79);
+/// - everything else — Tab, the arrows, Home/End, Delete, the function
+///   keys, and any Ctrl/Alt chord — is a SEPARATOR: it is never typed as a
+///   character (#51: Ctrl-L must not become the `l` shortcut, and crossterm
+///   reports Ctrl-\ as the digit `4` with CONTROL set), but it is not
+///   dropped either. Dropping it silently concatenated the digits typed on
+///   either side of it: `0 <Tab> 1` became the buffer `01`, which the reader
+///   accepted as option 1 — at a mulligan-bottoming prompt, an irreversible
+///   choice the player never typed (issue #322). As a separator the same
+///   keystrokes read `0 1`, which every numeric prompt refuses out loud, and
+///   which a multi-select prompt reads as the two indices they are.
+///
+/// Returns whether the buffer changed, so the caller knows to repaint.
+fn edit_line(buf: &mut String, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    match code {
+        KeyCode::Backspace => buf.pop().is_some(),
+        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+            let had = !buf.is_empty();
+            buf.clear();
+            had
+        }
+        KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            buf.push(c);
+            true
+        }
+        _ => {
+            // One separator is enough, and one at the start would only be
+            // trimmed: the buffer is read with its ends trimmed, so a Tab
+            // pressed before or after a number changes nothing.
+            if buf.is_empty() || buf.ends_with(' ') {
+                false
+            } else {
+                buf.push(' ');
+                true
+            }
+        }
+    }
+}
+
+
 fn col_width(c: char) -> usize {
     unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)
 }
@@ -414,34 +461,174 @@ fn clip_cols(s: &str, max: usize) -> String {
     out
 }
 
-/// The narrowest column budget in which appending an object id to a menu row
-/// still leaves something worth reading. Below it the row would be an
-/// ellipsis and a number.
-const MENU_ID_MIN_ROOM: usize = 12;
+/// The page of a menu `render_paged` drew: which rows, and what it had to
+/// fit them in — enough for the caller to page backwards exactly when the
+/// rows are of uneven height (issue #318).
+/// What a pager's marker says the keys are. One string per pager, so the
+/// row can be measured before the page it describes is chosen.
+const MENU_PAGE_KEYS: &str = "m/p = next/prev page (any number works)";
+const ATTACKERS_PAGE_KEYS: &str = "m = next page";
+const BLOCKERS_PAGE_KEYS: &str = "b = next page";
+
+/// The pane keys the combat prompts advertise.
+const ATTACK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]";
+/// How to answer an ordering screen, and the panes it can step into.
+const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
+
+const BLOCK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=page]";
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct MenuPage {
+    /// The first row shown.
+    offset: usize,
+    /// How many rows were shown from it.
+    shown: usize,
+    /// Lines the menu had available.
+    avail: usize,
+    /// Lines the paging marker takes in the pane it was drawn in.
+    marker_h: usize,
+    /// Every row's height in lines, wrapped to the pane it was drawn in.
+    heights: Vec<usize>,
+}
+
+/// Which ordering a `prompt_ordering` screen is for (issue #325).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OrderingKind {
+    /// CR 603.3b: a player's simultaneous triggers, onto the stack.
+    Triggers,
+    /// CR 509.2: an attacker's blockers, for damage assignment.
+    Blockers,
+}
+
+/// What the engine handed the ordering screen.
+struct OrderingPrompt<'a> {
+    kind: OrderingKind,
+    description: &'a str,
+    /// One line of text per option, as the engine names them.
+    options: &'a [String],
+    /// The parts of each trigger, parallel to `options`; empty for a
+    /// blocker list or a prompt from an older save.
+    details: &'a [mtg_engine::state::TriggerOrderOption],
+}
+
+/// One line of input at the ordering prompt, read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OrderInput {
+    /// A complete ordering: every index exactly once.
+    Order(Vec<usize>),
+    /// One of the info panes.
+    Pane(char),
+    NextPage,
+    PrevPage,
+    /// Refused, with the reason to show.
+    Invalid(String),
+}
+
+/// How a line of the ordering screen is painted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Style { Title, Bold, Dim, Row, Plain }
+
+/// The slice of a screen's body lines on show, for paging a body taller
+/// than the terminal with `m`/`p`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BodyPage {
+    start: usize,
+    end: usize,
+    len: usize,
+    avail: usize,
+    paged: bool,
+}
+
+impl BodyPage {
+    fn new(len: usize, avail: usize, offset: usize) -> Self {
+        let paged = len > avail;
+        // One line goes to the "… showing" marker when paging.
+        let per_page = if paged { avail.saturating_sub(1).max(1) } else { avail };
+        let start = if paged { offset.min(len.saturating_sub(1)) / per_page * per_page } else { 0 };
+        let end = (start + per_page).min(len);
+        BodyPage { start, end, len, avail, paged }
+    }
+
+    fn per_page(&self) -> usize {
+        if self.paged { self.avail.saturating_sub(1).max(1) } else { self.avail.max(1) }
+    }
+
+    /// `m`: the next page, wrapping to the top.
+    fn next_offset(&self) -> usize {
+        if self.end >= self.len { 0 } else { self.end }
+    }
+
+    /// `p`: the previous page, wrapping to the last.
+    fn prev_offset(&self) -> usize {
+        if self.start == 0 {
+            self.len.saturating_sub(1) / self.per_page() * self.per_page()
+        } else {
+            self.start.saturating_sub(self.per_page())
+        }
+    }
+}
+
+/// One combat-list row as it will be drawn: the entry's lines, and the
+
+/// caller's coloured note — kept whole, on the last line or on lines of its
+/// own (issues #328, #318).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct CombatRowLayout {
+    /// The entry, wrapped to the pane.
+    lines: Vec<String>,
+    /// The note as the caller passed it (leading space included).
+    note: String,
+    /// The note wrapped onto lines of its own, when it did not fit after
+    /// the entry's last line. Empty when it did, or when there is no note.
+    note_lines: Vec<String>,
+}
+
+impl CombatRowLayout {
+    /// Lines the row takes on screen.
+    fn height(&self) -> usize {
+        self.lines.len() + self.note_lines.len()
+    }
+
+    /// Everything the row says, line breaks taken back out.
+    #[cfg(test)]
+    fn text(&self) -> String {
+        let mut s = self.lines.join(" ");
+        if self.note_lines.is_empty() {
+            s.push_str(&self.note);
+        } else {
+            s.push(' ');
+            s.push_str(&self.note_lines.join(" "));
+        }
+        s
+    }
+}
 
 /// What a menu row stands for: an action to submit, or a spell to walk
 /// through the casting flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DisplayEntry {
+
+
     /// Index into `LegalActions::actions`.
     Direct(usize),
     /// Index into `LegalActions::castable_spells`.
     Cast(usize),
 }
 
-/// One row of a menu, in the three regions a clip has to treat differently.
+/// One row of a menu: its text, and the objects that make it the choice it
+/// is.
 ///
-/// A row's identity is the objects it names — an ability's source, its
-/// targets, the creature its cost sacrifices. `head` and `tail` carry those;
-/// `elastic` is prose (the ability's own description, a tap plan) that may be
-/// eaten to make room. Clipping one opaque string cannot tell them apart, so
-/// eight Demonmail Hauberk equips differing only in which Champion they
-/// targeted rendered as two lines (issue #258).
+/// The text is shown whole. It used to be clipped to the pane in three
+/// regions (a head and tail that named objects, prose in between that could
+/// be eaten), and every clip strategy lost something a real game turned out
+/// to need: the target (#36, #80), the source (#257), the description (#258),
+/// and finally the third card of a "Bottom A, B, C" row, which is what told
+/// 14 of 25 bottoming options apart (issue #318). A row that does not fit
+/// its line now wraps onto the next, under a hanging indent, and nothing on
+/// it is ever cut.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 struct MenuLabel {
-    head: String,
-    elastic: String,
-    tail: String,
+    text: String,
     /// The objects that give this row its identity, in a fixed order:
     /// source, then each target, then the sacrifice. Two rows with the same
     /// ids are interchangeable; two rows with different ids are not, however
@@ -450,37 +637,21 @@ struct MenuLabel {
 }
 
 impl MenuLabel {
-    /// A row with nothing to protect and nothing to tell apart.
+    /// A row with nothing to tell apart.
     fn plain(s: impl Into<String>) -> Self {
-        MenuLabel { head: s.into(), ..MenuLabel::default() }
+        MenuLabel { text: s.into(), ..MenuLabel::default() }
     }
 
     fn full(&self) -> String {
-        format!("{}{}{}", self.head, self.elastic, self.tail)
+        self.text.clone()
     }
 }
+
 
 /// Display width of `s` in terminal columns.
 fn str_cols(s: &str) -> usize {
     s.chars().map(col_width).sum()
 }
-
-/// The LAST `max` display columns of `s` — `clip_cols`' mirror, for a clip
-/// that has to keep the end of a string rather than its start.
-fn clip_cols_from_end(s: &str, max: usize) -> String {
-    let mut cols = 0;
-    let mut kept: Vec<char> = Vec::new();
-    for c in s.chars().rev() {
-        let w = col_width(c);
-        if cols + w > max {
-            break;
-        }
-        cols += w;
-        kept.push(c);
-    }
-    kept.into_iter().rev().collect()
-}
-
 
 /// One line of a full-screen info view (`l`/`g`/`e`), carrying just enough
 /// styling for the shared pager to render it (issues #101/#102).
@@ -851,16 +1022,66 @@ impl CliPlayer {
     /// Pulled out of the pager so the arithmetic is testable without a
     /// terminal, and so the one prompt that could page and the ones that
     /// could not stop disagreeing about it (#96, #261).
+    #[cfg(test)]
     fn menu_page(len: usize, avail: usize, offset: usize) -> (usize, usize, bool) {
+        Self::menu_page_lines(&vec![1; len], avail, offset, 1)
+    }
+
+
+    /// `menu_page` for rows of uneven height: `heights[i]` is the number of
+    /// lines row `i` takes once wrapped (issue #318). The page is as many
+    /// whole rows from `offset` as fit in `avail` lines — always at least
+    /// one, so a row taller than the pane still shows what it can rather
+    /// than nothing — with `marker_h` lines kept for the "… showing" marker
+    /// whenever the menu does not fit whole. The marker wraps like any other
+    /// row, so how many lines it needs is the caller's to measure.
+    fn menu_page_lines(heights: &[usize], avail: usize, offset: usize, marker_h: usize) -> (usize, usize, bool) {
+        let len = heights.len();
         let offset = offset.min(len.saturating_sub(1));
-        let remaining = len - offset;
+        let remaining: usize = heights[offset..].iter().sum();
         let paged = offset > 0 || remaining > avail;
-        let shown = if paged {
-            avail.saturating_sub(1).max(1).min(remaining)
-        } else {
-            remaining
-        };
+        let budget = if paged { avail.saturating_sub(marker_h).max(1) } else { avail };
+        let mut shown = 0;
+        let mut used = 0;
+        for &h in &heights[offset..] {
+            if shown > 0 && used + h > budget {
+                break;
+            }
+            used += h;
+            shown += 1;
+        }
         (offset, shown, paged)
+    }
+
+    /// A pane row too wide for the panel, laid out as several: the first
+    /// line keeps the row's own leading indent and every continuation lines
+    /// up under it.
+    ///
+    /// The chrome under a menu — the paging marker, the hint line — used to
+    /// be cut at the panel edge (issue #53) or, in the combat panes, printed
+    /// at full length straight over the border and into the card panel. A
+    /// row of a menu has wrapped since issue #318; the rows that describe
+    /// the menu wrap the same way.
+    fn wrap_indented(text: &str, width: usize) -> Vec<String> {
+        let trimmed = text.trim_start_matches(' ');
+        let indent_n = text.chars().count() - trimmed.chars().count();
+        let indent = " ".repeat(indent_n);
+        Self::word_wrap(trimmed, width.saturating_sub(indent_n))
+            .into_iter().map(|l| format!("{indent}{l}")).collect()
+    }
+
+    /// The "… showing a-b of 0-n" row, in one place: every pane that pages
+    /// says the same thing, and `marker_lines` can measure it before the
+    /// page that will be shown is known.
+    fn page_marker(offset: usize, shown: usize, last: usize, keys: &str) -> String {
+        format!("  \u{2026} showing {}-{} of 0-{} \u{2014} {keys}",
+            offset, offset + shown.saturating_sub(1), last)
+    }
+
+    /// How many lines that row takes at its widest, so a page can reserve
+    /// them before it knows which page it is.
+    fn marker_lines(last: usize, keys: &str, width: usize) -> usize {
+        Self::wrap_indented(&Self::page_marker(last, 1, last, keys), width).len()
     }
 
     /// What `m` does: the next page, wrapping to the top at the end. One
@@ -870,24 +1091,41 @@ impl CliPlayer {
         if offset + shown >= len { 0 } else { offset + shown }
     }
 
-    /// What `p` does: the previous page, wrapping to the last one at the top.
+    /// What `p` does: the page that ends just above `offset` — as many
+    /// whole rows as fit in the marker-less budget, walking back — or, from
+    /// the top, the last page.
     ///
     /// Paging used to be forward-only, so overshooting a 253-name list meant
-    /// pressing `m` eleven more times to come back around (issue #255).
-    fn prev_menu_offset(offset: usize, shown: usize, len: usize) -> usize {
-        let page = shown.max(1);
-        if offset == 0 {
-            // The last page: the final whole step below `len`.
-            len.saturating_sub(1) / page * page
-        } else {
-            offset.saturating_sub(page)
+    /// pressing `m` eleven more times to come back around (issue #255). It
+    /// then stepped back by a fixed page size, which rows of uneven height
+    /// made a guess; measured in lines it is exact (issue #318).
+    fn prev_menu_offset_lines(heights: &[usize], avail: usize, offset: usize, marker_h: usize) -> usize {
+
+        let len = heights.len();
+        if len == 0 {
+            return 0;
         }
+        let budget = avail.saturating_sub(marker_h).max(1);
+        let end = if offset == 0 || offset > len { len } else { offset };
+        let mut start = end;
+        let mut used = 0;
+        while start > 0 {
+            let h = heights[start - 1];
+            if start < end && used + h > budget {
+                break;
+            }
+            used += h;
+            start -= 1;
+        }
+        start
     }
+
 
     /// `render`, starting the action menu at `menu_offset` (issue #96 — a
     /// menu longer than the pane is paged with 'm', not guessed at).
-    /// Returns how many menu entries were shown from that offset.
-    fn render_paged(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> usize {
+    /// Returns the page it drew, so the caller can page from it exactly.
+    fn render_paged(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
+
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -1258,9 +1496,9 @@ impl CliPlayer {
         }
 
         // Action list (only when actions are provided)
-        let mut menu_shown = 0usize;
+        let mut page = MenuPage::default();
         if let Some(labels) = actions {
-            // Rows left for the menu once the hint and prompt rows below it
+            // Lines left for the menu once the hint and prompt rows below it
             // are reserved. A menu longer than the pane used to keep printing
             // past the bottom — 11 of 35 mulligan-bottom options were simply
             // invisible (#60) — and the marker #60 added still left hidden
@@ -1269,58 +1507,73 @@ impl CliPlayer {
             // renders a page starting at `menu_offset`, advanced with 'm';
             // indices are absolute, so any number works from any page.
             // Two rows below the menu are the hint line and the input row.
-            let avail = h.saturating_sub(row as usize + 2);
-            let (offset, shown, paged) = Self::menu_page(labels.len(), avail, menu_offset);
-            menu_shown = shown;
-            // Clip to the panel like every other row — but from the middle,
-            // and never silently: the tail is what tells otherwise-identical
-            // entries apart (" targeting X", ", sacrificing Y"), and
-            // end-clipping it re-created the #36 blind-target menu for any
-            // ability whose description ran long — three self-hits in real
-            // games (issue #80).
-            //
-            // One budget for the whole page, not one per row: the prefix used
-            // to be measured from each row's own index, so entry 6 and entry
-            // 10 were clipped one column apart and differed only in where the
-            // ellipsis fell. The page is also clipped together, so a
-            // collision the CLIP creates is caught here rather than never
-            // (issue #258).
-            let idx_w = (offset + shown).saturating_sub(1).to_string().chars().count();
+            // Two kinds of row sit under the menu, and both wrap rather
+            // than being cut: the hint line, whose height is known now, and
+            // the paging marker, whose height is the same whichever page it
+            // ends up describing. Under them is the input row.
+            let hints = Self::menu_hints(labels, has_right);
+            let hint_lines = Self::wrap_indented(hints, mid_w);
+            let marker_h = Self::marker_lines(
+                labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
+            let avail = h.saturating_sub(row as usize + hint_lines.len() + 1);
+            // A row that does not fit the pane wraps under a hanging indent;
+            // nothing on it is cut. Every way of clipping a row lost the
+            // part of it a real game needed — most recently the third card
+            // of a "Bottom A, B, C" row, so 14 of 25 bottoming options
+            // printed as 5 identical lines at 100 columns (issue #318). The
+            // index column is as wide as the widest index, so the text of
+            // every row, and every continuation line, starts in the same
+            // column.
+            let idx_w = labels.len().saturating_sub(1).to_string().chars().count();
             let plen = 4 + idx_w;
-            let lines = Self::clip_menu_page(
-                &labels[offset..offset + shown], mid_w.saturating_sub(plen));
-            for (i, line) in lines.iter().enumerate().map(|(n, l)| (offset + n, l)) {
-                if row as usize >= h { break; }
-                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
-                let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                    SetAttribute(Attribute::Reset), Print(": "));
-                Self::print_action_label(&mut out, line);
-                row += 1;
+            let rows = Self::wrap_menu_rows(labels, mid_w.saturating_sub(plen));
+            let heights: Vec<usize> = rows.iter().map(|r| r.len().max(1)).collect();
+            let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, menu_offset, marker_h);
+            page = MenuPage { offset, shown, avail, marker_h, heights };
+            let indent = " ".repeat(plen);
+            'rows: for (i, lines) in rows.iter().enumerate().skip(offset).take(shown) {
+                for (k, line) in lines.iter().enumerate() {
+                    if row as usize >= h { break 'rows; }
+                    Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                    let _ = execute!(out, cursor::MoveTo(mid_col, row));
+                    if k == 0 {
+                        let _ = execute!(out,
+                            SetAttribute(Attribute::Bold), Print(format!("  {i:>idx_w$}")),
+                            SetAttribute(Attribute::Reset), Print(": "));
+                    } else {
+                        let _ = execute!(out, Print(&indent));
+                    }
+                    Self::print_action_label(&mut out, line);
+                    row += 1;
+                }
             }
             // The marker is the LAST row sacrificed, not the first: a menu
             // that does not fit has to say so, or the pane reads as a game
             // that has stopped asking (issue #260).
-            if paged && (row as usize) < h {
+            if paged {
+                let marker = Self::page_marker(offset, shown, labels.len() - 1, MENU_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, mid_w) {
+                    if row as usize >= h { break; }
+                    Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                    let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                        SetAttribute(Attribute::Dim), Print(&line),
+                        SetAttribute(Attribute::Reset));
+                    row += 1;
+                }
+            }
+
+            // Kept inside the panel like every other row — at full length
+            // this ate the right border and the card panel behind it (#53) —
+            // but wrapped rather than cut, so the last pane key is still
+            // legible at 100 columns (issue #318).
+            for line in &hint_lines {
+                if row as usize >= h { break; }
                 Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
-                let marker = format!(
-                    "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
-                    offset, offset + shown - 1, labels.len() - 1);
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(clip_cols(&marker, mid_w)),
+                    SetAttribute(Attribute::Dim), Print(line),
                     SetAttribute(Attribute::Reset));
                 row += 1;
             }
-            let hints = Self::menu_hints(labels, has_right);
-            // Clipped to the panel like every other row — at full length this
-            // ate the right border and the card panel behind it (#53).
-            if (row as usize) < h {
-                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
-                let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(clip_cols(hints, mid_w)),
-                    SetAttribute(Attribute::Reset));
-            }
-            row += 1;
         }
 
         // ── Right panel: card reference ──
@@ -1339,8 +1592,9 @@ impl CliPlayer {
         Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
         let _ = execute!(out, cursor::MoveTo(mid_col, row), Print("  > "));
         let _ = out.flush();
-        menu_shown
+        page
     }
+
 
     /// Display name for a counter kind, as it reads on a battlefield line.
     fn counter_display_name(ct: mtg_engine::types::CounterType) -> &'static str {
@@ -1517,70 +1771,11 @@ impl CliPlayer {
 
         // Helper: render creatures, enchantments, artifacts
         let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
-            let creature_labels = creatures.iter().map(|c| {
-                let pt = match (c.effective_power, c.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    },
-                };
-                let auras = aura_map.get(&c.object_id)
-                    .map(|names| format!(" [{}]", names.join(",")))
-                    .unwrap_or_default();
-                let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
-                // A hasty creature isn't slowed by summoning sickness —
-                // '[S]' read as "cannot attack" on a creature whose attack
-                // was perfectly legal (issue #139).
-                let sick = Self::is_summoning_sick(c);
-                // CR 506.3a/509.1a: attacking and blocking are public state,
-                // and `[T]` — the same mark a creature gets for tapping for
-                // mana — was the only thing the pane said about either
-                // (issue #245).
-                let combat = if c.attacking.is_some() {
-                    " [ATK]"
-                } else if !c.blocking.is_empty() {
-                    " [BLK]"
-                } else {
-                    ""
-                };
-                // CR 111.4 leaves the word "Token" out of a token's name, so
-                // the pane says it here instead — otherwise a Spirit token and
-                // a card named Spirit render identically, and the CARDS pane
-                // (which excludes tokens) is the only thing that tells them
-                // apart (issues #331, #334).
-                let flags = format!("{}{}{}{}{}",
-                    if c.is_token { " [tok]" } else { "" },
-                    if c.tapped { " [T]" } else { "" },
-                    if sick { " [S]" } else { "" },
-                    combat,
-                    dmg);
-                // The permanent's live keywords and protections. A flying
-                // token rendered exactly like a ground creature, and a
-                // creature that had lost defender still read "Defender" from
-                // its printed card — the block decision is made off this line
-                // (issue #243).
-                let mut abilities: Vec<String> = c.keywords.iter()
-                    .map(|k| format!("{k:?}").to_lowercase())
-                    .collect();
-                abilities.extend(c.protections.iter().cloned());
-                let kw = if abilities.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", abilities.join(", "))
-                };
-                // head is what must survive, elastic is what may be elided:
-                // the flags used to be last and were the first thing a long
-                // attachment list pushed off the end, so a tapped, damaged,
-                // summoning-sick voltron creature read as a clean untapped
-                // one (issue #270).
-                (format!("{}{}{}", c.name, pt, CliPlayer::counters_suffix(&c.counters)),
-                 format!("{auras}{kw}"),
-                 flags)
-            }).collect::<Vec<(String, String, String)>>()
-                .into_iter()
+            let creature_labels = creatures.iter()
+                .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
                 .map(|(head, elastic, flags)| Self::elide_middle(&head, &elastic, &flags, max_w))
                 .collect();
+
             for (n, label) in collapse(creature_labels) {
                 let truncated: String = counted_line(n, &label).chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
@@ -1603,10 +1798,11 @@ impl CliPlayer {
                     let named = e.named_card.as_ref()
                         .map(|n| format!(" [names: {n}]"))
                         .unwrap_or_default();
-                    format!("{}{}{}{}", e.name, host, named,
+                    format!("{}{}{}{}{}", e.name, Self::legend_mark(e), host, named,
                         CliPlayer::counters_suffix(&e.counters))
                 })
                 .collect();
+
             for (n, label) in collapse(enchantment_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(Color::Magenta), Print(counted_line(n, &label)), ResetColor);
@@ -1616,10 +1812,11 @@ impl CliPlayer {
             // attached auras — not in the standalone artifact list.
             let artifact_labels = artifacts.iter()
                 .filter(|a| a.attached_to.is_none())
-                .map(|a| format!("{}{}{}", a.name,
+                .map(|a| format!("{}{}{}{}", a.name, Self::legend_mark(a),
                     CliPlayer::counters_suffix(&a.counters),
                     if a.tapped { " [T]" } else { "" }))
                 .collect();
+
             for (n, label) in collapse(artifact_labels) {
                 let _ = execute!(out, cursor::MoveTo(col, *row), Print(counted_line(n, &label)));
                 *row += 1;
@@ -1628,7 +1825,8 @@ impl CliPlayer {
                 let loyalty = pw.counters.get(&mtg_engine::types::CounterType::Loyalty)
                     .copied().unwrap_or(0);
                 let dmg = if pw.damage_marked > 0 { format!(" ({}d)", pw.damage_marked) } else { String::new() };
-                let text = format!("  {} [{loyalty} loyalty]{dmg}", pw.name);
+                let text = format!("  {}{} [{loyalty} loyalty]{dmg}", pw.name, Self::legend_mark(pw));
+
                 let truncated: String = text.chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
@@ -1649,7 +1847,90 @@ impl CliPlayer {
 
     // (Old render_battlefield removed — replaced by render_battlefield_at)
 
+    /// One creature's battlefield row, in the three regions `elide_middle`
+    /// treats differently: `(head, elastic, flags)`. Pure, so the row is
+    /// testable without a terminal.
+    ///
+    /// `auras` are the names of everything attached to it.
+    fn creature_row_parts(c: &PermanentView, auras: Option<&Vec<String>>) -> (String, String, String) {
+        let pt = match (c.effective_power, c.effective_toughness) {
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
+            _ => match (c.power, c.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            },
+        };
+        let auras = auras
+            .map(|names| format!(" [{}]", names.join(",")))
+            .unwrap_or_default();
+        let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
+        // A hasty creature isn't slowed by summoning sickness —
+        // '[S]' read as "cannot attack" on a creature whose attack
+        // was perfectly legal (issue #139).
+        let sick = Self::is_summoning_sick(c);
+        // CR 506.3a/509.1a: attacking and blocking are public state,
+        // and `[T]` — the same mark a creature gets for tapping for
+        // mana — was the only thing the pane said about either
+        // (issue #245).
+        let combat = if c.attacking.is_some() {
+            " [ATK]"
+        } else if !c.blocking.is_empty() {
+            " [BLK]"
+        } else {
+            ""
+        };
+        // CR 111.4 leaves the word "Token" out of a token's name, so
+        // the pane says it here instead — otherwise a Spirit token and
+        // a card named Spirit render identically, and the CARDS pane
+        // (which excludes tokens) is the only thing that tells them
+        // apart (issues #331, #334).
+        let flags = format!("{}{}{}{}{}",
+            if c.is_token { " [tok]" } else { "" },
+            if c.tapped { " [T]" } else { "" },
+            if sick { " [S]" } else { "" },
+            combat,
+            dmg);
+        // The permanent's live keywords and protections. A flying
+        // token rendered exactly like a ground creature, and a
+        // creature that had lost defender still read "Defender" from
+        // its printed card — the block decision is made off this line
+        // (issue #243). "legendary" leads the list: it is the supertype
+        // that arms the legend rule (CR 704.5j), and nothing on the board
+        // said it until the prompt that took one of two legends away
+        // (issue #333).
+        let mut abilities: Vec<String> = Vec::new();
+        if Self::is_legendary(c) {
+            abilities.push("legendary".into());
+        }
+        abilities.extend(c.keywords.iter().map(|k| format!("{k:?}").to_lowercase()));
+        abilities.extend(c.protections.iter().cloned());
+        let kw = if abilities.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", abilities.join(", "))
+        };
+        // head is what must survive, elastic is what may be elided:
+        // the flags used to be last and were the first thing a long
+        // attachment list pushed off the end, so a tapped, damaged,
+        // summoning-sick voltron creature read as a clean untapped
+        // one (issue #270).
+        (format!("{}{}{}", c.name, pt, CliPlayer::counters_suffix(&c.counters)),
+         format!("{auras}{kw}"),
+         flags)
+    }
+
+    fn is_legendary(p: &PermanentView) -> bool {
+        p.supertypes.contains(&mtg_engine::types::Supertype::Legendary)
+    }
+
+    /// " (legendary)" on a non-creature permanent's row, or nothing. A
+    /// creature's row carries the word among its abilities instead.
+    fn legend_mark(p: &PermanentView) -> &'static str {
+        if Self::is_legendary(p) { " (legendary)" } else { "" }
+    }
+
     fn mid_print(out: &mut io::Stdout, col: u16, row: &mut u16, max_w: usize,
+
                   text: &str, color: Option<Color>, bold: bool) {
         let _ = execute!(out, cursor::MoveTo(col, *row));
         if bold { let _ = execute!(out, SetAttribute(Attribute::Bold)); }
@@ -1828,18 +2109,7 @@ impl CliPlayer {
             row += 1;
             if row >= max_row { break; }
 
-            // Type line + P/T
-            let types: Vec<&str> = card.data.card_types.iter().map(|t| match t {
-                CardType::Creature => "Creature",
-                CardType::Instant => "Instant",
-                CardType::Sorcery => "Sorcery",
-                CardType::Enchantment => "Enchantment",
-                CardType::Artifact => "Artifact",
-                CardType::Land => "Land",
-                CardType::Planeswalker => "Planeswalker",
-            }).collect();
-            let subtypes = if card.data.subtypes.is_empty() { String::new() }
-                else { format!(" — {}", card.data.subtypes.join(" ")) };
+            // Type line + P/T, supertypes first (CR 205.4a, issue #333).
             let pt = if card.star_pt {
                 " */*".to_string()
             } else {
@@ -1848,7 +2118,9 @@ impl CliPlayer {
                     _ => String::new(),
                 }
             };
-            let type_line = format!("{}{}{}", types.join(" "), subtypes, pt);
+            let type_line = format!("{}{}", mtg_engine::types::type_line(
+                &card.data.supertypes, &card.data.card_types, &card.data.subtypes), pt);
+
             let truncated: String = type_line.chars().take(content_w).collect();
             let _ = execute!(out, cursor::MoveTo(right_col, row),
                 SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
@@ -2162,10 +2434,10 @@ impl CliPlayer {
     fn target_menu_labels(view: &GameView, options: &[mtg_engine::actions::Target]) -> Vec<MenuLabel> {
         options.iter().map(|t| match t {
             mtg_engine::actions::Target::Object(id) => MenuLabel {
-                head: Self::perm_name(view, *id),
+                text: Self::perm_name(view, *id),
                 ids: vec![id.0],
-                ..MenuLabel::default()
             },
+
             mtg_engine::actions::Target::Player(pid) => MenuLabel::plain(
                 if *pid == view.you { "You" } else { "Opponent" }),
             mtg_engine::actions::Target::Illegal =>
@@ -2256,7 +2528,7 @@ impl CliPlayer {
         loop {
             let title = notice.take().map_or_else(|| label.to_string(),
                 |n| format!("{n} — {label}"));
-            let menu_shown = Self::render_paged(
+            let page = Self::render_paged(
                 view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
             let input = Self::read_line("");
             match Self::parse_target_input(&input, options.len(), rows) {
@@ -2264,11 +2536,12 @@ impl CliPlayer {
                 TargetInput::Done => return UpToPick::Done,
                 TargetInput::Cancel => return UpToPick::Cancel,
                 TargetInput::NextPage => {
-                    menu_offset = Self::next_menu_offset(menu_offset, menu_shown, labels.len());
+                    menu_offset = Self::next_menu_offset(menu_offset, page.shown, labels.len());
                 }
                 TargetInput::PrevPage => {
-                    menu_offset = Self::prev_menu_offset(menu_offset, menu_shown, labels.len());
+                    menu_offset = Self::prev_menu_offset_lines(&page.heights, page.avail, menu_offset, page.marker_h);
                 }
+
                 // Info panes + card search: a player wants their graveyard
                 // exactly when choosing a target (issue #122).
                 TargetInput::Panel(c) => {
@@ -2350,8 +2623,10 @@ impl CliPlayer {
     /// through [`combat_row`](Self::combat_row), which clamps it; this is
     /// what the tests about *what an entry says* read, so they can state
     /// that without stating a width too.
-    #[cfg(test)]
+    /// A combat-list entry, whole: the creature, its live abilities, its
+    /// damage, what it is attacking, and the id when a twin needs it.
     fn combat_entry(view: &GameView, id: ObjectId, others: &[ObjectId]) -> String {
+
         let (head, elastic, tail) = Self::combat_entry_parts(view, id, others);
         format!("{head}{elastic}{tail}")
     }
@@ -2413,28 +2688,56 @@ impl CliPlayer {
         (head, elastic, tail)
     }
 
-    /// A combat-list row, clamped to the pane it is drawn in (issue #328).
+    /// A combat-list row laid out for the pane it is drawn in: the entry
+    /// wrapped under a hanging indent, and the caller's coloured note —
+    /// `[MUST ATTACK]`, `[needs N+ blockers]`, `(can block: …)` — on the
+    /// end of the last line when it fits there, on a line of its own when
+    /// it does not. Nothing is cut (issues #328, #318).
     ///
-    /// `prefix` is the row's own `"  N: "`, `suffix` whatever the caller
-    /// prints after the entry in its own colour — `[MUST ATTACK]`, `[needs
-    /// N+ blockers]`, `(can block: …)`. Both are budgeted for here so the
-    /// caller can still paint them separately. `panel_w` is the pane's
-    /// content width, passed in rather than measured so the widths that
-    /// matter can be stated in a test without a terminal.
-    fn combat_row(view: &GameView, id: ObjectId, others: &[ObjectId],
-                  prefix: &str, suffix: &str, panel_w: usize) -> String {
-        let (head, elastic, tail) = Self::combat_entry_parts(view, id, others);
-        let budget = panel_w.saturating_sub(str_cols(prefix) + str_cols(suffix));
-        // `elide_middle` gives up the ability list first and the identity
-        // last, which is the trade #270 settled. It can still hand back more
-        // than the budget when the identity alone is wider than the pane —
-        // a Terror of Kruin Pass aimed at a Liliana is 70 columns of name,
-        // attack target and id against a 58-column panel — so `clip_middle`
-        // is the last resort, cutting from the middle so that the creature
-        // at the front and the `-> planeswalker (#id)` at the back both
-        // survive. The frame is never broken, whatever is on the row.
-        Self::clip_middle(&Self::elide_middle(&head, &elastic, &tail, budget), budget)
+    /// `prefix_w` is the width of the row's own `"  N: "`; `panel_w` the
+    /// pane's content width, passed in rather than measured so the widths
+    /// that matter can be stated in a test without a terminal.
+    fn combat_row_layout(view: &GameView, id: ObjectId, others: &[ObjectId],
+                         prefix_w: usize, note: &str, panel_w: usize) -> CombatRowLayout {
+        let budget = panel_w.saturating_sub(prefix_w).max(1);
+        let lines = Self::wrap_row(&Self::combat_entry(view, id, others), budget);
+        let last = lines.last().map_or(0, |l| str_cols(l));
+        let note_lines = if note.is_empty() {
+            Vec::new()
+        } else if last + str_cols(note) <= budget {
+            Vec::new()
+        } else {
+            Self::wrap_row(note.trim_start(), budget)
+        };
+        CombatRowLayout { lines, note: note.to_string(), note_lines }
     }
+
+    /// Paint one laid-out combat row at `(col, r)`, the index in bold and
+    /// the note in `note_color`, advancing `r` past every line it used.
+    fn draw_combat_row(out: &mut io::Stdout, col: u16, r: &mut u16, index: usize,
+                       prefix_w: usize, layout: &CombatRowLayout, note_color: Color) {
+        let indent = " ".repeat(prefix_w);
+        for (k, line) in layout.lines.iter().enumerate() {
+            let _ = execute!(out, cursor::MoveTo(col, *r));
+            if k == 0 {
+                let _ = execute!(out, SetAttribute(Attribute::Bold), Print(format!("  {index}")),
+                    SetAttribute(Attribute::Reset), Print(": "));
+            } else {
+                let _ = execute!(out, Print(&indent));
+            }
+            let _ = execute!(out, Print(line));
+            if k == layout.lines.len() - 1 && layout.note_lines.is_empty() && !layout.note.is_empty() {
+                let _ = execute!(out, SetForegroundColor(note_color), Print(&layout.note), ResetColor);
+            }
+            *r += 1;
+        }
+        for line in &layout.note_lines {
+            let _ = execute!(out, cursor::MoveTo(col, *r), Print(&indent),
+                SetForegroundColor(note_color), Print(line), ResetColor);
+            *r += 1;
+        }
+    }
+
 
     /// The part of a combat entry that decides whether two rows collide.
     fn combat_entry_base(view: &GameView, id: ObjectId) -> String {
@@ -2489,34 +2792,6 @@ impl CliPlayer {
             .unwrap_or_else(|| format!("{id}"))
     }
 
-    /// Truncate `s` to `cap` characters by dropping the MIDDLE behind a
-    /// visible '…': the head names the permanent and ability, the tail
-    /// carries the disambiguating choice (" targeting X", ", sacrificing
-    /// Y"), and both must survive — end-clipping the tail rendered N
-    /// byte-identical menu entries whose choice silently decided who got
-    /// hit (issue #80, defeating the #36 fix).
-    ///
-    /// The last-resort clip. Prefer [`CliPlayer::fit_menu_label`], which
-    /// knows which regions of a row are identity and which are prose.
-    fn clip_middle(s: &str, cap: usize) -> String {
-        if str_cols(s) <= cap {
-            return s.to_string();
-        }
-        if cap <= 1 {
-            return "…".chars().take(cap).collect();
-        }
-        // Rough 3:2 split favors the head; the ellipsis takes one slot.
-        // Measured in display COLUMNS, not chars: a CJK card name is one char
-        // and two cells, so a char-counted clip still overflowed the panel and
-        // painted over the CARDS pane beside it (the #109 defect, #53's
-        // symptom).
-        let tail_cap = (cap - 1) * 2 / 5;
-        let head_cap = cap - 1 - tail_cap;
-        let head = clip_cols(s, head_cap);
-        let tail = clip_cols_from_end(s, tail_cap);
-        format!("{head}…{tail}")
-    }
-
     /// The key hints under a menu.
     ///
     /// A target chooser printed no `enter=` hint of any kind, so the one key
@@ -2545,52 +2820,16 @@ impl CliPlayer {
         }
     }
 
-    /// Render one menu row into `cap` display columns, spending the budget in
-    /// the order that keeps the row distinguishable: the tail first, then the
-    /// head, and only then the prose in between.
+    /// The rows of a menu as they read, with any two that read the same
+    /// told apart.
     ///
-    /// `clip_middle` splits a whole label 3:2 and cannot know which part
-    /// carries the choice. For a Demonmail Hauberk equip — a source, a
-    /// target and a sacrifice in one row — the fixed split landed the
-    /// ellipsis inside the target, the one thing the eight entries differed
-    /// by, so they rendered as two lines (issue #258).
-    fn fit_menu_label(label: &MenuLabel, cap: usize) -> String {
-        let full = label.full();
-        if str_cols(&full) <= cap {
-            return full;
-        }
-        let (h, t) = (str_cols(&label.head), str_cols(&label.tail));
-        // The prose between the names is what gets eaten first.
-        if let Some(room) = cap.checked_sub(h + t) {
-            if room >= 1 {
-                return format!("{}{}…{}", label.head, clip_cols(&label.elastic, room - 1), label.tail);
-            }
-        }
-        // Not even the two names fit: keep the tail whole and cut the head,
-        // because the tail is where the choice is.
-        if let Some(room) = cap.checked_sub(t + 1) {
-            if room >= 1 {
-                return format!("{}…{}", clip_cols(&label.head, room), label.tail);
-            }
-        }
-        // Nothing but the tail can survive.
-        Self::clip_middle(&label.tail, cap)
-    }
-
-    /// Render one page of menu rows, and tell apart any two that come out
-    /// looking the same.
-    ///
-    /// Duplication used to be computed once over the FULL labels, before the
-    /// renderer clipped them — so a collision *created by* the clip was never
-    /// seen, and two entries that target different creatures could print the
-    /// same line. Rows whose identity objects are the same are genuinely
-    /// interchangeable and are left alike (that is #54's collapse); rows that
-    /// name different objects get those objects' ids, the #136/#100
-    /// convention.
-    fn clip_menu_page(labels: &[MenuLabel], cap: usize) -> Vec<String> {
-        let mut out: Vec<String> = labels.iter()
-            .map(|l| Self::fit_menu_label(l, cap))
-            .collect();
+    /// Rows whose identity objects are the same are genuinely
+    /// interchangeable and are left alike (that is #54's collapse); rows
+    /// that name different objects get those objects' ids, the #136/#100
+    /// convention — two Wooden Stakes, or one Stake offered against two
+    /// identical tokens, read the same and are not the same (issue #257).
+    fn menu_row_texts(labels: &[MenuLabel]) -> Vec<String> {
+        let mut out: Vec<String> = labels.iter().map(MenuLabel::full).collect();
         let mut handled = vec![false; out.len()];
         for k in 0..out.len() {
             if handled[k] { continue; }
@@ -2610,17 +2849,78 @@ impl CliPlayer {
                     .map(|id| format!("#{id}"))
                     .collect();
                 if named.is_empty() { continue; }
-                let suffix = format!(" ({})", named.join(" "));
-                // On a pane too narrow to hold both, the id wins nothing:
-                // a row clipped to the ellipsis plus an id says less than
-                // the row did. MENU_ID_MIN_ROOM is what "readable" means.
-                let Some(room) = cap.checked_sub(str_cols(&suffix)) else { continue };
-                if room < MENU_ID_MIN_ROOM { continue; }
-                out[j] = format!("{}{}", Self::fit_menu_label(&labels[j], room), suffix);
+                out[j] = format!("{} ({})", out[j], named.join(" "));
             }
         }
         out
     }
+
+    /// One menu row broken into lines of at most `width` display columns,
+    /// losing nothing (issue #318).
+    ///
+    /// A row breaks after a comma before it breaks at a space: the rows
+    /// that overflow in practice are lists — "Bottom A, B, C", "tap
+    /// Mountain, Mountain, Forest" — and a list reads as a list when each
+    /// line ends on an item. The longest comma-terminated prefix that fits
+    /// is taken; failing a comma, the longest space-terminated one; failing
+    /// any space, the word is cut at the column. Measured in display
+    /// columns, not chars, so a wide-character name wraps where it should
+    /// (#109, #53).
+    fn wrap_row(text: &str, width: usize) -> Vec<String> {
+        if width == 0 || text.is_empty() {
+            return vec![text.to_string()];
+        }
+        let mut lines = Vec::new();
+        let mut rest = text;
+        loop {
+            if str_cols(rest) <= width {
+                lines.push(rest.to_string());
+                return lines;
+            }
+            // Byte offsets, with the columns used up to each char, so the
+            // break candidates are found in one pass. A comma counts as a
+            // break as soon as the comma itself fits — the space after it
+            // is swallowed by the break, so it need not.
+            let mut cols = 0;
+            let mut last_comma: Option<usize> = None; // byte index just after ','
+            let mut last_space: Option<usize> = None; // byte index of ' '
+            let mut hard_end = rest.len();
+            let mut it = rest.char_indices().peekable();
+            while let Some((i, c)) = it.next() {
+                let w = col_width(c);
+                if cols + w > width {
+                    hard_end = i;
+                    break;
+                }
+                cols += w;
+                match c {
+                    ' ' if i > 0 => last_space = Some(i),
+                    // A comma that separates items, not one inside a number.
+                    ',' if i > 0 && it.peek().is_none_or(|&(_, next)| next == ' ') => {
+                        last_comma = Some(i + 1);
+                    }
+                    _ => {}
+                }
+            }
+            let cut = last_comma.or(last_space).unwrap_or(hard_end);
+
+            let (line, tail) = rest.split_at(cut);
+            lines.push(line.trim_end().to_string());
+            rest = tail.trim_start();
+            if rest.is_empty() {
+                return lines;
+            }
+        }
+    }
+
+    /// Every menu row wrapped to `width` columns: one `Vec` of lines per row,
+    /// rows that read the same already told apart by id.
+    fn wrap_menu_rows(labels: &[MenuLabel], width: usize) -> Vec<Vec<String>> {
+        Self::menu_row_texts(labels).iter()
+            .map(|text| Self::wrap_row(text, width))
+            .collect()
+    }
+
 
     /// " targeting X" for an action's chosen targets, or "" when untargeted.
     /// The legal-action list pre-expands one entry per target, so a label
@@ -2709,19 +3009,19 @@ impl CliPlayer {
             _ => None,
         }));
         if let Some(sac) = forced_sac { ids.push(sac.0); }
+        let notes = if notes.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", notes.join(", "))
+        };
         MenuLabel {
-            head: format!("{verb} {}{zone_note}", cs.name),
-            elastic: if notes.is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", notes.join(", "))
-            },
-            tail: format!("{}{}",
+            text: format!("{verb} {}{zone_note}{notes}{}{}", cs.name,
                 Self::targets_suffix(view, &forced_targets),
                 Self::sacrifice_suffix(view, forced_sac)),
             ids,
         }
     }
+
 
     fn format_action(view: &GameView, action: &Action) -> String {
         match action {
@@ -2826,6 +3126,8 @@ impl CliPlayer {
                     ResolvedChoice::ChosenIndex(_, ref label) => {
                         label.clone()
                     }
+                    ResolvedChoice::ChosenOrder(order) => format!("Order: {}",
+                        order.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")),
                     ResolvedChoice::ChosenSubset(ids) => {
                         let names: Vec<String> = ids.iter()
                             .map(|id| Self::perm_name(view, *id))
@@ -2971,27 +3273,21 @@ impl CliPlayer {
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                     quit_at_prompt();
                 }
-                // Ctrl-U kills the line (issue #79), here as in the menu reader.
-                KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    buf.clear();
-                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                // Typing, editing (Ctrl-U kills the line, #79), and the
+                // unbound keys that separate rather than vanish (#51, #322)
+                // — one definition, shared with the menu reader.
+                _ => {
+                    if edit_line(&mut buf, code, modifiers) {
+                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                    }
                 }
-                KeyCode::Backspace => {
-                    buf.pop();
-                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                }
-                KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                    buf.push(c);
-                    repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                }
-                // Unbound chords are ignored, never typed (#51).
-                _ => {}
             }
         }
         let _ = execute!(out, event::DisableBracketedPaste, Print("\r\n"));
         tui_raw_off();
         buf.trim().to_string()
     }
+
 
     /// A y/n confirmation that answers on a single keypress: `y` confirms,
     /// `n` or Esc declines, anything else visibly re-prompts. Runs in raw
@@ -3148,37 +3444,28 @@ impl CliPlayer {
                         repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                     KeyCode::Enter => {
-                        break Some(buf.clone());
+                        // Trimmed, like the other reader's line: a separator
+                        // key pressed after the number (#322) must not turn
+                        // "0" into a refused "0 ".
+                        break Some(buf.trim().to_string());
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         quit_at_prompt();
                     }
-                    KeyCode::Backspace => {
-                        buf.pop();
-                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                    // Typing; Ctrl-U to kill the line — the standard readline
+                    // binding and the documented recovery from a garbled
+                    // prompt (issue #79); and every unbound key as a
+                    // separator, never typed (#51) and never silently
+                    // dropped between two digits (#322). See `edit_line`.
+                    _ => {
+                        if edit_line(&mut buf, code, modifiers) {
+                            repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
+                        }
                     }
-                    // Ctrl-U: kill the line, the standard readline binding
-                    // and the documented recovery from a garbled prompt.
-                    // Without it the stray characters stayed in the buffer
-                    // and corrupted the next input — exactly the situation
-                    // the recovery step exists for (issue #79).
-                    KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        buf.clear();
-                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                    }
-                    // Unbound chords are ignored, never typed: Ctrl-L must
-                    // not become the 'l' shortcut, and crossterm reports the
-                    // 0x1C-0x1F control codes (Ctrl-\ among them - SIGQUIT's
-                    // key) as the DIGITS 4-7 with CONTROL set, which used to
-                    // silently pick menu entries (#51).
-                    KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                        buf.push(c);
-                        repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
-                    }
-                    _ => {}
                 }
             }
         };
+
 
         let _ = execute!(stdout(), event::DisableBracketedPaste);
         tui_raw_off();
@@ -3262,26 +3549,17 @@ impl CliPlayer {
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
                     Self::print_colored(&mut out, Color::Cyan, &format!(" {}", perm.name));
 
-                    let types: Vec<&str> = perm.card_types.iter().map(|t| match t {
-                        CardType::Land => "Land",
-                        CardType::Creature => "Creature",
-                        CardType::Instant => "Instant",
-                        CardType::Sorcery => "Sorcery",
-                        CardType::Enchantment => "Enchantment",
-                        CardType::Artifact => "Artifact",
-                        CardType::Planeswalker => "Planeswalker",
-                    }).collect();
-                    // CR 205.3: the type line is types AND subtypes, and
-                    // the subtypes are the live ones — the printed ones plus
-                    // anything an effect granted. Every "as long as ... is a
-                    // Human" card in the set turns on a fact this page used
-                    // to refuse to state (issue #297).
-                    let type_line = if perm.subtypes.is_empty() {
-                        types.join(" ")
-                    } else {
-                        format!("{} — {}", types.join(" "), perm.subtypes.join(" "))
-                    };
+                    // CR 205.1: the type line is supertypes, types AND
+                    // subtypes, and the subtypes are the live ones — the
+                    // printed ones plus anything an effect granted. Every "as
+                    // long as ... is a Human" card in the set turns on a fact
+                    // this page used to refuse to state (issue #297), and
+                    // "Legendary" — the word that arms the legend rule — was
+                    // printed nowhere in the game (issue #333).
+                    let type_line = mtg_engine::types::type_line(
+                        &perm.supertypes, &perm.card_types, &perm.subtypes);
                     let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
+
 
                     // The permanent's live keywords and protections, which
                     // the view has always computed and no pane ever printed:
@@ -3749,19 +4027,12 @@ impl CliPlayer {
                     Self::print_colored(&mut out, Color::Cyan, &format!(" {}", data.name));
                     let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
                     let _ = execute!(out, Print(format!("  Mana cost: {cost}\n")));
-                    let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                        CardType::Land => "Land",
-                        CardType::Creature => "Creature",
-                        CardType::Instant => "Instant",
-                        CardType::Sorcery => "Sorcery",
-                        CardType::Enchantment => "Enchantment",
-                        CardType::Artifact => "Artifact",
-                        CardType::Planeswalker => "Planeswalker",
-                    }).collect();
-                    let _ = execute!(out, Print(format!("  Type: {}\n", types.join(" "))));
-                    if !data.subtypes.is_empty() {
-                        let _ = execute!(out, Print(format!("  Subtypes: {}\n", data.subtypes.join(", "))));
-                    }
+                    // The whole type line as the card prints it (CR 205.1):
+                    // supertypes first (issue #333), then types, then the
+                    // subtypes — which used to be a separate row.
+                    let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
+                        &data.supertypes, &data.card_types, &data.subtypes))));
+
                     if let (Some(p), Some(t)) = (data.power, data.toughness) {
                         let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
                     }
@@ -3917,7 +4188,13 @@ impl CliPlayer {
         // creatures, with nothing saying the other six existed (issue #260).
         let list_offset = std::cell::Cell::new(0usize);
         let list_shown = std::cell::Cell::new(0usize);
+        // The rows' heights and the lines they had, so `p` can step back
+        // exactly over rows of uneven height (issue #318).
+        let list_heights: std::cell::RefCell<Vec<usize>> = std::cell::RefCell::new(Vec::new());
+        let list_avail = std::cell::Cell::new(0usize);
+        let list_marker_h = std::cell::Cell::new(1usize);
         let draw = || -> u16 {
+
             Self::render(view, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
@@ -3926,37 +4203,45 @@ impl CliPlayer {
                 SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
                 Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
+            let panel_w = Self::middle_panel_width_at(Self::term_width());
             // Rows still owed below the list: the planeswalker block, the
-            // hint line, the prompt row and the refusal row under it.
-            let reserved = 3 + if defending_planeswalkers.is_empty() {
+            // hint line (which wraps, so its height is measured, not
+            // assumed), the prompt row and the refusal row under it.
+            let hint_lines = Self::wrap_indented(ATTACK_HINTS, panel_w);
+            let marker_h = Self::marker_lines(
+                eligible.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
+            let reserved = 2 + hint_lines.len() + if defending_planeswalkers.is_empty() {
                 0
             } else {
                 defending_planeswalkers.len() + 1
             };
             let avail = h.saturating_sub(r as usize + reserved);
+            // Every row laid out first, so the page is measured in the lines
+            // the rows actually take (issue #318).
+            let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
+                let tag = if must_attack.contains(&id) { " [MUST ATTACK]" } else { "" };
+                Self::combat_row_layout(view, id, eligible, str_cols(&format!("  {i}: ")), tag, panel_w)
+            }).collect();
+            let heights: Vec<usize> = layouts.iter().map(CombatRowLayout::height).collect();
             let (offset, shown, paged) =
-                Self::menu_page(eligible.len(), avail, list_offset.get());
+                Self::menu_page_lines(&heights, avail, list_offset.get(), marker_h);
             list_shown.set(shown);
-            let panel_w = Self::middle_panel_width_at(Self::term_width());
+            list_avail.set(avail);
+            list_marker_h.set(marker_h);
+            *list_heights.borrow_mut() = heights;
             for (i, &id) in eligible.iter().enumerate().skip(offset).take(shown) {
-                let forced = must_attack.contains(&id);
-                let tag = if forced { " [MUST ATTACK]" } else { "" };
-                let color = if forced { Color::Red } else { Color::Reset };
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!(": {}",
-                        Self::combat_row(view, id, eligible, &format!("  {i}: "), tag, panel_w))),
-                    SetForegroundColor(color), Print(tag), ResetColor);
-                r += 1;
+                let color = if must_attack.contains(&id) { Color::Red } else { Color::Reset };
+                Self::draw_combat_row(&mut out, col, &mut r, i,
+                    str_cols(&format!("  {i}: ")), &layouts[i], color);
             }
+
             if paged {
-                let marker = format!(
-                    "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
-                    offset, offset + shown.saturating_sub(1), eligible.len() - 1);
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
-                r += 1;
+                let marker = Self::page_marker(offset, shown, eligible.len() - 1, MENU_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, panel_w) {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                    r += 1;
+                }
             }
             if !defending_planeswalkers.is_empty() {
                 let _ = execute!(out, cursor::MoveTo(col, r),
@@ -3974,11 +4259,11 @@ impl CliPlayer {
             // The public zones are decision inputs during combat (CR 404.2,
             // 406.3), so the info panes are advertised and accepted here as
             // at every other prompt (issue #120).
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]"),
-                SetAttribute(Attribute::Reset));
-            r += 1;
+            for line in &hint_lines {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
             let _ = execute!(out, cursor::MoveTo(col, r));
             let _ = out.flush();
             r
@@ -4056,11 +4341,13 @@ impl CliPlayer {
                     continue;
                 }
                 "p" => {
-                    list_offset.set(Self::prev_menu_offset(
-                        list_offset.get(), list_shown.get(), eligible.len()));
+                    list_offset.set(Self::prev_menu_offset_lines(
+                        &list_heights.borrow(), list_avail.get(), list_offset.get(),
+                        list_marker_h.get()));
                     r = draw();
                     continue;
                 }
+
                 _ => {}
             }
 
@@ -4182,47 +4469,56 @@ impl CliPlayer {
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
-            // Rows below: the blockers header, the hint line, the prompt row
-            // and the refusal row under it. The two lists split what is left.
-            let body = h.saturating_sub(r as usize + 4);
+            let panel_w = Self::middle_panel_width_at(Self::term_width());
+            // Rows below: the blockers header, the hint line (measured, since
+            // it wraps), the prompt row and the refusal row under it. The two
+            // lists split what is left.
+            let hint_lines = Self::wrap_indented(BLOCK_HINTS, panel_w);
+            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
             let atk_avail = (body / 2).max(1);
+            let atk_marker_h = Self::marker_lines(
+                attacker_ids.len().saturating_sub(1), ATTACKERS_PAGE_KEYS, panel_w);
+            let blk_marker_h = Self::marker_lines(
+                eligible_blockers.len().saturating_sub(1), BLOCKERS_PAGE_KEYS, panel_w);
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            let (atk_off, atk_n, atk_paged) =
-                Self::menu_page(attacker_ids.len(), atk_avail, atk_offset.get());
-            atk_shown.set(atk_n);
-            let panel_w = Self::middle_panel_width_at(Self::term_width());
-            for (i, &id) in attacker_ids.iter().enumerate().skip(atk_off).take(atk_n) {
+            // Rows are laid out whole and the page measured in their lines
+            // (issue #318).
+            let atk_layouts: Vec<CombatRowLayout> = attacker_ids.iter().enumerate().map(|(i, &id)| {
                 // CR 509.1b: say the minimum-blockers requirement (menace,
                 // Terror of Kruin Pass) up front — an unmarked menace attacker
                 // took a single block the engine then discarded (issue #72).
                 let note = min_blockers.get(&id)
                     .map(|min| format!(" [needs {min}+ blockers]"))
                     .unwrap_or_default();
-                let prefix = format!("  {i}: ");
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("{prefix}{}{note}",
-                        Self::combat_row(view, id, attacker_ids, &prefix, &note, panel_w))));
-                r += 1;
+                Self::combat_row_layout(view, id, attacker_ids, str_cols(&format!("  {i}: ")), &note, panel_w)
+            }).collect();
+            let atk_heights: Vec<usize> = atk_layouts.iter().map(CombatRowLayout::height).collect();
+            let (atk_off, atk_n, atk_paged) =
+                Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get(), atk_marker_h);
+            atk_shown.set(atk_n);
+            for i in atk_off..atk_off + atk_n {
+                Self::draw_combat_row(&mut out, col, &mut r, i,
+                    str_cols(&format!("  {i}: ")), &atk_layouts[i], Color::Reset);
             }
+
             if atk_paged {
-                let marker = format!("  … showing {}-{} of 0-{} — m = next page",
-                    atk_off, atk_off + atk_n.saturating_sub(1), attacker_ids.len() - 1);
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
-                r += 1;
+                let marker = Self::page_marker(
+                    atk_off, atk_n, attacker_ids.len() - 1, ATTACKERS_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, panel_w) {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                    r += 1;
+                }
             }
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             let blk_avail = h.saturating_sub(r as usize + 3).max(1);
-            let (blk_off, blk_n, blk_paged) =
-                Self::menu_page(eligible_blockers.len(), blk_avail, blk_offset.get());
-            blk_shown.set(blk_n);
-            for (i, &id) in eligible_blockers.iter().enumerate().skip(blk_off).take(blk_n) {
+            let blk_layouts: Vec<CombatRowLayout> = eligible_blockers.iter().enumerate().map(|(i, &id)| {
                 // Which attackers this creature may legally block (CR 509.1b —
                 // evasion like flying is per-pairing, so say it up front).
                 let legal: Vec<String> = legal_blocks.get(&id)
@@ -4238,26 +4534,33 @@ impl CliPlayer {
                 } else {
                     format!(" (can block: {})", legal.join(" "))
                 };
-                let prefix = format!("  {i}: ");
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(format!("{prefix}{}{note}",
-                        Self::combat_row(view, id, eligible_blockers, &prefix, &note, panel_w))));
-                r += 1;
+                Self::combat_row_layout(view, id, eligible_blockers, str_cols(&format!("  {i}: ")), &note, panel_w)
+            }).collect();
+            let blk_heights: Vec<usize> = blk_layouts.iter().map(CombatRowLayout::height).collect();
+            let (blk_off, blk_n, blk_paged) =
+                Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get(), blk_marker_h);
+            blk_shown.set(blk_n);
+            for i in blk_off..blk_off + blk_n {
+                Self::draw_combat_row(&mut out, col, &mut r, i,
+                    str_cols(&format!("  {i}: ")), &blk_layouts[i], Color::Reset);
             }
+
             if blk_paged {
-                let marker = format!("  … showing {}-{} of 0-{} — b = next page",
-                    blk_off, blk_off + blk_n.saturating_sub(1), eligible_blockers.len() - 1);
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
-                r += 1;
+                let marker = Self::page_marker(
+                    blk_off, blk_n, eligible_blockers.len() - 1, BLOCKERS_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, panel_w) {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                    r += 1;
+                }
             }
             // Blocking is exactly where the public zones are decision inputs
             // (CR 404.2, 406.3) — advertise the info panes here (#120).
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=page]"),
-                SetAttribute(Attribute::Reset));
-            r += 1;
+            for line in &hint_lines {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
             let _ = execute!(out, cursor::MoveTo(col, r));
             let _ = out.flush();
             r
@@ -4807,7 +5110,255 @@ impl CliPlayer {
         }
     }
 
+    /// The one-screen ordering prompt (issue #325): every item being ordered,
+    /// numbered, with everything known about it; the stack it is going onto;
+    /// and one line of input — the numbers in the order chosen.
+    ///
+    /// The screen takes the whole terminal, so the board, the stack, the
+    /// graveyards, the exile zone, the log and the deck are one key away and
+    /// the prompt is redrawn when the pane closes. Enter alone keeps the
+    /// order as listed. The body pages with `m`/`p` when it is taller than
+    /// the terminal, and no row on it is ever clipped.
+    fn prompt_ordering(view: &GameView, prompt: &OrderingPrompt) -> Action {
+        let n = prompt.options.len();
+        let rows = Self::ordering_rows(view, prompt);
+        let mut notice: Option<String> = None;
+        let mut offset = 0usize;
+        loop {
+            let page = Self::draw_ordering_screen(view, prompt, &rows, notice.take().as_deref(), offset);
+            let redraw = || { Self::draw_ordering_screen(view, prompt, &rows, None, offset); };
+            let input = Self::read_line_redrawing("  Order> ", &redraw);
+            match Self::parse_order_input(&input, n) {
+                OrderInput::Order(order) => {
+                    return Action::ResolveChoice {
+                        choice: mtg_engine::actions::ResolvedChoice::ChosenOrder(order),
+                    };
+                }
+                OrderInput::Pane(c) => match c {
+                    's' => Self::show_stack(view),
+                    'i' => Self::show_battlefield_inspector(view),
+                    'g' => Self::show_graveyards(view),
+                    'e' => Self::show_exile(view),
+                    'l' => Self::show_log(&view.display_log),
+                    _ => Self::show_deck_browser(view),
+                },
+                OrderInput::NextPage => offset = page.next_offset(),
+                OrderInput::PrevPage => offset = page.prev_offset(),
+                OrderInput::Invalid(why) => notice = Some(why),
+            }
+        }
+    }
+
+    /// One line of input at the ordering prompt, read.
+    ///
+    /// The numbers, in any spacing, commas allowed, are the order; every
+    /// index exactly once. An empty line keeps the listed order — the
+    /// screen says so, which is what makes Enter safe here (#76, #123).
+    /// The pane keys and the pagers are the same letters as everywhere else.
+    fn parse_order_input(input: &str, n: usize) -> OrderInput {
+        let t = input.trim();
+        if t.is_empty() {
+            return OrderInput::Order((0..n).collect());
+        }
+        match t {
+            "s" | "i" | "g" | "e" | "l" | "d" => return OrderInput::Pane(t.chars().next().unwrap_or('s')),
+            "m" => return OrderInput::NextPage,
+            "p" => return OrderInput::PrevPage,
+            _ => {}
+        }
+        let mut order = Vec::with_capacity(n);
+        for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
+            let Ok(k) = tok.parse::<usize>() else {
+                return OrderInput::Invalid(format!(
+                    "'{}' is not a number — type the indices in order, e.g. \"2 0 1\"", quote_input(tok)));
+            };
+            if k >= n {
+                return OrderInput::Invalid(format!("{k} is out of range — the entries are numbered 0-{}", n.saturating_sub(1)));
+            }
+            if order.contains(&k) {
+                return OrderInput::Invalid(format!("{k} is listed twice — each entry goes in the order exactly once"));
+            }
+            order.push(k);
+        }
+        let missing: Vec<String> = (0..n).filter(|k| !order.contains(k)).map(|k| k.to_string()).collect();
+        if !missing.is_empty() {
+            return OrderInput::Invalid(format!(
+                "every entry needs a place: missing {}", missing.join(", ")));
+        }
+        OrderInput::Order(order)
+    }
+
+    /// The rows of the ordering screen, one per option, as `(index, lines)`
+    /// — the lines unwrapped; the screen wraps them to its width. With the
+    /// engine's per-trigger details a row says whose ability it is, its
+    /// P/T, what it does and what set it off; without them (a prompt from
+    /// an older save, or a blocker list) it is the option's text.
+    fn ordering_rows(view: &GameView, prompt: &OrderingPrompt) -> Vec<Vec<String>> {
+        let _ = view;
+        prompt.options.iter().enumerate().map(|(k, option)| {
+            match prompt.details.get(k) {
+                Some(d) => {
+                    let pt = d.power_toughness.map(|(p, t)| format!(" {p}/{t}")).unwrap_or_default();
+                    let what = if d.ability.is_empty() {
+                        d.kind.clone()
+                    } else {
+                        format!("{}: {}", d.kind, d.ability)
+                    };
+                    vec![
+                        format!("{} (#{}){pt} — {what}", d.source_name, d.source.0),
+                        format!("triggered by: {}", d.cause),
+                    ]
+                }
+                None => vec![option.clone()],
+            }
+        }).collect()
+    }
+
+    /// The oracle text of every distinct source among the triggers being
+    /// ordered, from the registry — "all their info" includes what the card
+    /// says, and a source that has already died is on no pane.
+    fn ordering_sources(prompt: &OrderingPrompt) -> Vec<(String, Vec<String>)> {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for d in prompt.details {
+            if seen.contains(&d.source_name) { continue; }
+            seen.push(d.source_name.clone());
+            let Some(data) = registry.get_id_by_name(&d.source_name).and_then(|id| registry.card_data(id)) else { continue };
+            let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+            let pt = match (data.power, data.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            };
+            let head = format!("{}{cost} — {}{pt}", data.name,
+                mtg_engine::types::type_line(&data.supertypes, &data.card_types, &data.subtypes));
+            let text: Vec<String> = data.oracle_text.lines().map(str::to_string).collect();
+            out.push((head, text));
+        }
+        out
+    }
+
+    /// Paint the ordering screen and return the page of body lines it drew.
+    fn draw_ordering_screen(view: &GameView, prompt: &OrderingPrompt, rows: &[Vec<String>],
+                            notice: Option<&str>, offset: usize) -> BodyPage {
+        let mut out = stdout();
+        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
+        let (w, h) = (term_w as usize, term_h as usize);
+        let text_w = w.saturating_sub(2).max(20);
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+
+        // Header: what is being decided.
+        let (title, rule) = match prompt.kind {
+            OrderingKind::Triggers => (" ORDER YOUR TRIGGERS",
+                "The first you list goes on the stack FIRST and resolves LAST; the last you list resolves FIRST (CR 603.3b)."),
+            OrderingKind::Blockers => (" DAMAGE ASSIGNMENT ORDER",
+                "The first you list is assigned damage FIRST, and must be assigned lethal damage before the next gets any (CR 510.1c)."),
+        };
+        let mut header: Vec<(Style, String)> = vec![(Style::Title, title.to_string())];
+        for line in Self::word_wrap(prompt.description, text_w) {
+            header.push((Style::Dim, format!(" {line}")));
+        }
+        header.push((Style::Plain, String::new()));
+
+        // Body: the stack as it stands, the rows, and the sources.
+        let idx_w = rows.len().saturating_sub(1).to_string().len();
+        let indent = idx_w + 4;
+        let mut body: Vec<(Style, String)> = Vec::new();
+        if prompt.kind == OrderingKind::Triggers {
+            body.push((Style::Bold, " Stack now (top first):".into()));
+            if view.stack.is_empty() {
+                body.push((Style::Dim, "   (empty)".into()));
+            } else {
+                for (i, item) in view.stack.iter().enumerate().take(6) {
+                    let line = format!("   {i}: {}", Self::stack_entry_headline(view, item));
+                    for l in Self::wrap_row(&line, text_w) { body.push((Style::Dim, l)); }
+                }
+                if view.stack.len() > 6 {
+                    body.push((Style::Dim, format!("   … and {} more (s = the whole stack)", view.stack.len() - 6)));
+                }
+            }
+            body.push((Style::Plain, String::new()));
+            body.push((Style::Bold, " Triggers to order:".into()));
+        } else {
+            body.push((Style::Bold, " Blockers to order:".into()));
+        }
+        for (k, lines) in rows.iter().enumerate() {
+            for (j, line) in lines.iter().enumerate() {
+                let wrapped = Self::wrap_row(line, text_w.saturating_sub(indent).max(10));
+                for (m, piece) in wrapped.into_iter().enumerate() {
+                    if j == 0 && m == 0 {
+                        body.push((Style::Row, format!("  {k:>idx_w$}: {piece}")));
+                    } else {
+                        let style = if j == 0 { Style::Plain } else { Style::Dim };
+                        body.push((style, format!("{}{piece}", " ".repeat(indent))));
+                    }
+                }
+            }
+        }
+        let sources = Self::ordering_sources(prompt);
+        if !sources.is_empty() {
+            body.push((Style::Plain, String::new()));
+            body.push((Style::Bold, " Sources:".into()));
+            // Oracle text is prose, so it breaks at spaces. `wrap_row`'s
+            // comma-first rule is for the rows that are lists — it turned
+            // "At the beginning of your upkeep, look at ..." into a stub
+            // line with two words on it.
+            for (head, text) in &sources {
+                for l in Self::word_wrap(head, text_w.saturating_sub(2)) { body.push((Style::Plain, format!("  {l}"))); }
+                for line in text {
+                    for l in Self::word_wrap(line, text_w.saturating_sub(4)) { body.push((Style::Dim, format!("    {l}"))); }
+                }
+            }
+        }
+
+        // Footer: how to answer, the pane keys, any refusal, the input row.
+        // Both footer rows are sentences, not lists: they break at spaces
+        // and every continuation lines up under the first line's indent
+        // rather than starting at column 0.
+        let mut footer: Vec<(Style, String)> = Vec::new();
+        for line in Self::wrap_indented(&format!(" {rule}"), text_w) { footer.push((Style::Dim, line)); }
+        for line in Self::wrap_indented(ORDER_HOW_TO, text_w) { footer.push((Style::Dim, line)); }
+        // The notice row and the input row are always reserved.
+        let reserved = header.len() + footer.len() + 2;
+        let avail = h.saturating_sub(reserved).max(1);
+        let page = BodyPage::new(body.len(), avail, offset);
+
+        let mut row: u16 = 0;
+        let put = |out: &mut io::Stdout, row: &mut u16, style: Style, text: &str| {
+            let _ = execute!(out, cursor::MoveTo(0, *row));
+            match style {
+                Style::Title => Self::print_colored(out, Color::Cyan, text),
+                Style::Bold => { let _ = execute!(out, SetAttribute(Attribute::Bold), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Dim => { let _ = execute!(out, SetAttribute(Attribute::Dim), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Row => {
+                    // "  N: " in bold, the rest through the mana colourer.
+                    let split = text.find(": ").map_or(text.len(), |p| p + 2);
+                    let _ = execute!(out, SetAttribute(Attribute::Bold), Print(&text[..split]), SetAttribute(Attribute::Reset));
+                    Self::print_with_mana(out, &text[split..], None);
+                }
+                Style::Plain => Self::print_with_mana(out, text, None),
+            }
+            *row += 1;
+        };
+        for (s, l) in &header { put(&mut out, &mut row, *s, l); }
+        for (s, l) in &body[page.start..page.end] { put(&mut out, &mut row, *s, l); }
+        if page.paged {
+            put(&mut out, &mut row, Style::Dim, &format!(
+                " … showing lines {}-{} of {} — m/p = next/prev page", page.start + 1, page.end, body.len()));
+        }
+        for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
+        if let Some(msg) = notice {
+            let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
+                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+        }
+        row += 1;
+        let _ = execute!(out, cursor::MoveTo(0, row));
+        let _ = out.flush();
+        page
+    }
+
     fn library_search_ui(view: &GameView, actions: &[Action], title: &str, decline: Option<Action>) -> Action {
+
         use mtg_engine::actions::ResolvedChoice;
 
         // Collect card info for each option.
@@ -5118,11 +5669,11 @@ impl CliPlayer {
     /// objects it names so two rows that read alike can still be told apart.
     fn menu_label_for(view: &GameView, action: &Action) -> MenuLabel {
         MenuLabel {
-            head: Self::format_action(view, action),
+            text: Self::format_action(view, action),
             ids: Self::action_object_ids(action),
-            ..MenuLabel::default()
         }
     }
+
 
     /// Build the priority menu: the rows, and what each row stands for.
     ///
@@ -5221,18 +5772,16 @@ impl CliPlayer {
                     if let Some(sac) = sacrifice { ids.push(sac.0); }
                     let label = match desc {
                         Some(d) => MenuLabel {
-                            head: format!("{}: ", Self::perm_name(view, *object_id)),
-                            elastic: d,
-                            tail: format!("{}{}", Self::targets_suffix(view, targets), sac_suffix),
+                            text: format!("{}: {d}{}{sac_suffix}", Self::perm_name(view, *object_id),
+                                Self::targets_suffix(view, targets)),
                             ids,
                         },
                         None => MenuLabel {
-                            head: Self::format_action(view, action),
-                            elastic: String::new(),
-                            tail: sac_suffix,
+                            text: format!("{}{sac_suffix}", Self::format_action(view, action)),
                             ids,
                         },
                     };
+
                     display.push(DisplayEntry::Direct(i));
                     display_labels.push(label);
                 }
@@ -5309,6 +5858,30 @@ impl Player for CliPlayer {
             return Self::prompt_pile_division(view, permanents, description);
         }
 
+        // An ordering is one decision, answered on one screen that shows
+        // everything being ordered (issue #325): the triggers a player puts
+        // on the stack (CR 603.3b), or the blockers an attacker's damage is
+        // assigned among (CR 509.2). These prompts are flat `ChosenIndex`
+        // lists too, and past eight options the card browser below used to
+        // take them — the whole board, the stack and every pane shortcut
+        // gone at the one decision where the stack is what the player needs.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder {
+            description, options, details, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_ordering(view, &OrderingPrompt {
+                kind: OrderingKind::Triggers, description, options, details,
+            });
+        }
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+            description, options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_ordering(view, &OrderingPrompt {
+                kind: OrderingKind::Blockers, description, options, details: &[],
+            });
+        }
+
         // Special case: library search — show interactive card browser.
         if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. }))
             && legal_actions.len() > 1
@@ -5332,12 +5905,13 @@ impl Player for CliPlayer {
             // A long list of card NAMES is the same kind of question and
             // wants the same browser (issue #255). Kept to genuinely long
             // ones: a modal choice or a card-type choice is also `ChosenIndex`
-            // and reads better as three numbered rows.
-            let naming_cards = card_count > 8 && legal_actions.iter().all(|a| matches!(a,
-                Action::ResolveChoice {
-                    choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(_, _)
-                }
-            ));
+            // and reads better as three numbered rows. And kept to prompts
+            // that ARE about card names: any flat `ChosenIndex` list past
+            // eight entries used to qualify, which is how a trigger-ordering
+            // prompt with nine triggers turned into a card search (#325).
+            let naming_cards = card_count > 8 && matches!(legal.resolution_prompt,
+                Some(mtg_engine::state::ResolutionChoiceKind::ChooseCardName { .. }));
+
             if (all_chosen_cards && card_count > 3) || naming_cards {
                 let title = legal.context.as_deref().unwrap_or("Choose a card");
                 return Self::library_search_ui(view, legal_actions, title, decline);
@@ -5384,9 +5958,10 @@ impl Player for CliPlayer {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
                 PassMode::UntilNextTurn { .. } => "AUTO-PASS",
             });
-            let menu_shown = Self::render_paged(view, Some(&display_labels),
+            let page = Self::render_paged(view, Some(&display_labels),
                 notice.take().as_deref().or(legal.context.as_deref()),
                 &view.display_log, &self.card_filter, pass_label, menu_offset);
+
 
             // Read input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -5496,16 +6071,17 @@ impl Player for CliPlayer {
                 // fits, so 'm' never falls through to be misread as input.
                 "m" => {
                     menu_offset = Self::next_menu_offset(
-                        menu_offset, menu_shown, display_labels.len());
+                        menu_offset, page.shown, display_labels.len());
                     continue;
                 }
                 // Backwards, because paging was forward-only: overshooting a
                 // long list meant going all the way around (issue #255).
                 "p" => {
-                    menu_offset = Self::prev_menu_offset(
-                        menu_offset, menu_shown, display_labels.len());
+                    menu_offset = Self::prev_menu_offset_lines(
+                        &page.heights, page.avail, menu_offset, page.marker_h);
                     continue;
                 }
+
                 "" => {
                     // Enter = pass if available. Without a Pass option this
                     // is a mandatory choice with no "do nothing" — refuse
@@ -5691,126 +6267,225 @@ mod tests {
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
 
-    /// Issue #80: a menu label longer than the panel is clipped from the
-    /// MIDDLE with a visible ellipsis, never from the end — the tail is
-    /// what tells otherwise-identical entries apart (" targeting X").
-    #[test]
-    fn clip_middle_keeps_the_disambiguating_tail() {
-        let label = "Olivia Voldaren 3/3 (your): {1}{R}: Deal 1 damage to \
-                     another target creature, make it a Vampire, +1/+1 \
-                     counter on Olivia targeting Fiend Hunter 1/3 (opp)";
-        let clipped = CliPlayer::clip_middle(label, 113);
-        assert_eq!(clipped.chars().count(), 113);
-        assert!(clipped.contains('…'), "truncation is visible");
-        assert!(clipped.starts_with("Olivia Voldaren"), "the head survives");
-        assert!(clipped.ends_with("targeting Fiend Hunter 1/3 (opp)"),
-            "the target suffix survives: {clipped}");
-
-        // Short labels pass through untouched, cap-edge cases don't panic.
-        assert_eq!(CliPlayer::clip_middle("Pass priority", 113), "Pass priority");
-        assert_eq!(CliPlayer::clip_middle("abcdef", 1), "…");
-        assert_eq!(CliPlayer::clip_middle("abcdef", 0), "");
-    }
-
     /// One equip label per Champion, differing only in whom it targets and
+
     /// whom it sacrifices.
     fn hauberk_row(target: u64, sacrifice: u64) -> MenuLabel {
         MenuLabel {
-            head: "Demonmail Hauberk (your): ".to_string(),
-            elastic: "Equip—Sacrifice a creature".to_string(),
-            tail: format!(
-                " targeting Champion of the Parish {t}/{t} (your), sacrificing Champion of the Parish {s}/{s} (your)",
+            text: format!(
+                "Demonmail Hauberk (your): Equip—Sacrifice a creature targeting Champion of the Parish {t}/{t} (your), sacrificing Champion of the Parish {s}/{s} (your)",
                 t = target, s = sacrifice),
             ids: vec![7, target, sacrifice],
         }
     }
 
-    /// Issue #258: eight Demonmail Hauberk equips that differ only in which
-    /// Champion they target rendered as two byte-identical lines — the clip
-    /// split the whole label 3:2 and landed the ellipsis inside the target,
-    /// the one thing they differed by.
+    /// Everything the row said, with the line breaks taken back out — what
+    /// a wrapped row must always equal (issue #318).
+    fn unwrapped(lines: &[String]) -> String {
+        lines.join(" ")
+    }
+
+    /// Issue #258, then #318: eight Demonmail Hauberk equips that differ only
+    /// in which Champion they target rendered as two byte-identical lines,
+    /// because a clip has to lose something and lost the target. Wrapped,
+    /// every row is whole: each line fits the pane, and the lines of a row
+    /// read back to exactly the row.
     #[test]
-    fn middle_clipping_keeps_distinct_equip_entries_distinguishable() {
+    fn a_wrapped_row_fits_the_pane_and_loses_nothing() {
         let rows: Vec<MenuLabel> = (1..=4).flat_map(|t| (1..=2).map(move |s| hauberk_row(t, s)))
             .collect();
         assert_eq!(rows.len(), 8);
 
-        let lines = CliPlayer::clip_menu_page(&rows, 113);
-        for line in &lines {
-            assert!(str_cols(line) <= 113, "row overflows the panel: {line:?}");
+        let wrapped = CliPlayer::wrap_menu_rows(&rows, 113);
+        for (row, lines) in rows.iter().zip(&wrapped) {
+            assert!(lines.len() >= 2, "the row is wider than 113 columns: {lines:?}");
+            for line in lines {
+                assert!(str_cols(line) <= 113, "a line overflows the panel: {line:?}");
+            }
+            assert_eq!(unwrapped(lines), row.full(), "nothing is cut");
         }
-        let mut sorted = lines.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(sorted.len(), lines.len(),
-            "eight different equips, eight different rows; got {lines:#?}");
+        let mut texts: Vec<String> = wrapped.iter().map(|l| unwrapped(l)).collect();
+        texts.sort();
+        texts.dedup();
+        assert_eq!(texts.len(), 8, "eight different equips, eight different rows");
     }
 
-    /// Issue #258 / #80: the head names the permanent, the tail carries the
-    /// choice, and the ability's own description is the only part that may be
-    /// eaten to make room.
-    #[test]
-    fn a_menu_row_keeps_its_object_names_when_the_description_is_what_overflows() {
-        let row = hauberk_row(3, 1);
-        let fitted = CliPlayer::fit_menu_label(&row, 113);
-
-        assert!(str_cols(&fitted) <= 113);
-        assert!(fitted.starts_with("Demonmail Hauberk"),
-            "the permanent is still named: {fitted:?}");
-        assert!(fitted.ends_with("sacrificing Champion of the Parish 1/1 (your)"),
-            "the tail survives whole: {fitted:?}");
-        assert!(fitted.contains("targeting Champion of the Parish 3/3 (your)"),
-            "the target survives whole: {fitted:?}");
-        // The description goes first, then the head — never the choice.
-        assert!(!fitted.contains("Equip"), "the prose is what was eaten: {fitted:?}");
-        let ellipsis = fitted.find('…').expect("truncation is visible");
-        let targeting = fitted.find(" targeting").expect("the tail is there");
-        assert!(ellipsis < targeting, "the cut falls before the choice: {fitted:?}");
-    }
-
-    /// Issue #257: rows that name different objects must be tellable apart
-    /// even at a width where no name survives — and rows that name the SAME
-    /// objects must stay alike, or #54's collapse of interchangeable
-    /// duplicates is undone.
+    /// Issue #257: rows that name different objects must be tellable apart,
+    /// and rows that name the SAME objects must stay alike, or #54's
+    /// collapse of interchangeable duplicates is undone. Nothing is clipped
+    /// now, so the only collision left is two rows that genuinely read the
+    /// same — a Stake against two identical tokens — and the id settles it.
     #[test]
     fn colliding_menu_rows_are_told_apart_by_object_id() {
-        let narrow = CliPlayer::clip_menu_page(&[hauberk_row(3, 1), hauberk_row(4, 1)], 40);
-        assert_ne!(narrow[0], narrow[1], "different targets, different rows: {narrow:#?}");
-        assert!(narrow[0].contains("#3") && narrow[1].contains("#4"),
-            "told apart by object id: {narrow:#?}");
-        for line in &narrow {
-            assert!(str_cols(line) <= 40, "row overflows the panel: {line:?}");
-        }
+        let stake = |target: u64| MenuLabel {
+            text: "Wooden Stake (your): Equip targeting Zombie 2/2 (opp)".to_string(),
+            ids: vec![7, target],
+        };
+        let texts = CliPlayer::menu_row_texts(&[stake(3), stake(4)]);
+        assert_ne!(texts[0], texts[1], "different targets, different rows: {texts:#?}");
+        assert!(texts[0].ends_with("(#3)") && texts[1].ends_with("(#4)"),
+            "told apart by object id: {texts:#?}");
 
-        let same = CliPlayer::clip_menu_page(&[hauberk_row(3, 1), hauberk_row(3, 1)], 40);
+        let same = CliPlayer::menu_row_texts(&[stake(3), stake(3)]);
         assert_eq!(same[0], same[1],
             "the same offer twice is one row twice, not two numbered ones");
+        let distinct = CliPlayer::menu_row_texts(&[hauberk_row(3, 1), hauberk_row(4, 1)]);
+        assert!(!distinct[0].contains('#'),
+            "rows that already read differently get no id: {distinct:#?}");
     }
 
-    /// A pane too narrow for both the label and an id gets the label: an
-    /// ellipsis and a number says less than the row already did.
+    /// A pane too narrow for a word cuts the word at the column and carries
+    /// the rest down — it does not drop it. Every character of the row is on
+    /// the screen somewhere.
     #[test]
-    fn a_pane_too_narrow_for_an_id_keeps_the_label() {
-        let lines = CliPlayer::clip_menu_page(&[hauberk_row(3, 1), hauberk_row(4, 1)], 10);
-        for line in &lines {
-            assert!(str_cols(line) <= 10, "row overflows the panel: {line:?}");
-            assert!(!line.contains('#'), "no room for an id: {line:?}");
+    fn a_narrow_pane_wraps_and_keeps_every_character() {
+        for width in [10usize, 4, 1] {
+            let lines = CliPlayer::wrap_row(&hauberk_row(3, 1).full(), width);
+            for line in &lines {
+                assert!(str_cols(line) <= width, "width {width}: a line overflows: {line:?}");
+            }
+            let squashed: String = lines.concat().replace(' ', "");
+            assert_eq!(squashed, hauberk_row(3, 1).full().replace(' ', ""),
+                "width {width}: every character survives");
         }
     }
 
-    /// Issue #109 in the menu clip: counting chars let a wide-character label
-    /// overflow the panel and paint over the CARDS pane beside it (#53).
+    /// Issue #109 in the menu: counting chars let a wide-character label
+    /// overflow the panel and paint over the CARDS pane beside it (#53). The
+    /// wrap measures display columns.
     #[test]
-    fn the_menu_clip_measures_display_columns_not_chars() {
+    fn the_menu_wrap_measures_display_columns_not_chars() {
         let wide = "四人日本語のカード名がとても長い場合のテスト";
         assert!(wide.chars().count() < str_cols(wide), "test precondition: wide chars");
-        assert!(str_cols(&CliPlayer::clip_middle(wide, 20)) <= 20);
-        assert_eq!(clip_cols_from_end("稲妻稲妻稲", 5), "妻稲",
-            "the last whole characters that fit");
-
-        let row = MenuLabel { head: wide.to_string(), ..MenuLabel::default() };
-        assert!(str_cols(&CliPlayer::fit_menu_label(&row, 20)) <= 20);
+        let lines = CliPlayer::wrap_row(wide, 20);
+        assert!(lines.len() >= 3, "{lines:?}");
+        for line in &lines {
+            assert!(str_cols(line) <= 20, "a line overflows the panel: {line:?}");
+        }
+        assert_eq!(lines.concat(), wide);
     }
+
+    /// Issue #318, the repro: at 100 columns the middle panel gives a
+    /// three-card bottoming row 52 columns, and 14 of the 25 rows clipped to
+    /// 5 identical lines. Wrapped, all 25 are whole and distinct, and a row
+    /// breaks after a card — after the comma — so each line ends on a name.
+    #[test]
+    fn the_bottoming_menu_of_issue_318_reads_whole_at_100_columns() {
+        let hand = ["Disciple of Griselbrand", "Curse of Death's Hold", "Charmbreaker Devils",
+                    "Kessig Cagebreakers", "Geist of Saint Traft", "Hollowhenge Scavenger"];
+        let mut rows: Vec<MenuLabel> = Vec::new();
+        for a in 0..hand.len() {
+            for b in a + 1..hand.len() {
+                for c in b + 1..hand.len() {
+                    rows.push(MenuLabel::plain(format!("Bottom {}, {}, {}", hand[a], hand[b], hand[c])));
+                }
+            }
+        }
+        assert_eq!(rows.len(), 20);
+
+        let wrapped = CliPlayer::wrap_menu_rows(&rows, 52);
+        let mut seen = std::collections::HashSet::new();
+        for (row, lines) in rows.iter().zip(&wrapped) {
+            for line in lines {
+                assert!(str_cols(line) <= 52, "a line overflows the panel: {line:?}");
+            }
+            assert_eq!(unwrapped(lines), row.full(), "nothing is cut");
+            assert!(seen.insert(unwrapped(lines)), "distinct rows stay distinct");
+            // Every line but the last ends on a whole card.
+            for line in &lines[..lines.len() - 1] {
+                assert!(line.ends_with(','), "a list breaks after an item: {line:?}");
+            }
+        }
+    }
+
+    /// The break falls after the last comma that fits, or, with no comma in
+    /// reach, at the last space — and a single word wider than the pane is
+    /// cut at the column rather than pushing the frame apart.
+    #[test]
+    fn a_row_breaks_after_a_comma_before_it_breaks_at_a_space() {
+        assert_eq!(CliPlayer::wrap_row("Bottom Forest, Island, Swamp", 22),
+            vec!["Bottom Forest, Island,", "Swamp"]);
+        assert_eq!(CliPlayer::wrap_row("Bottom Forest, Island, Swamp", 16),
+            vec!["Bottom Forest,", "Island, Swamp"]);
+        assert_eq!(CliPlayer::wrap_row("Cast Brimstone Volley targeting Opponent", 24),
+            vec!["Cast Brimstone Volley", "targeting Opponent"]);
+        assert_eq!(CliPlayer::wrap_row("Pass priority", 40), vec!["Pass priority"]);
+        assert_eq!(CliPlayer::wrap_row("abcdefghij", 4), vec!["abcd", "efgh", "ij"]);
+        assert_eq!(CliPlayer::wrap_row("", 10), vec![""], "an empty row is one empty line");
+        assert_eq!(CliPlayer::wrap_row("anything at all", 0), vec!["anything at all"],
+            "no width is no wrapping, not an endless loop");
+    }
+
+    /// The rows that describe a menu — the paging marker and the hint line —
+    /// are kept inside the panel by wrapping, not by cutting. Every
+    /// continuation lines up under the first line's own indent.
+    #[test]
+    fn the_chrome_under_a_menu_wraps_inside_the_panel() {
+        let hints = "  [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]";
+        let lines = CliPlayer::wrap_indented(hints, 64);
+        assert!(lines.len() > 1, "67 columns of hints do not fit 64: {lines:?}");
+        assert!(lines.iter().all(|l| str_cols(l) <= 64), "nothing overflows: {lines:?}");
+        assert!(lines.iter().all(|l| l.starts_with("  ")), "the indent is kept: {lines:?}");
+        assert!(lines.iter().all(|l| !l.trim_end().ends_with('=')),
+            "a key is never cut in half: {lines:?}");
+        assert_eq!(lines.concat().split_whitespace().collect::<Vec<_>>(),
+            hints.split_whitespace().collect::<Vec<_>>(),
+            "and every key survives, which clipping is exactly what did not");
+
+        // A marker measures the same whichever page it ends up describing,
+        // so a page can reserve its rows before choosing one.
+        let marker = CliPlayer::page_marker(0, 17, 24, MENU_PAGE_KEYS);
+        assert_eq!(marker,
+            "  \u{2026} showing 0-16 of 0-24 \u{2014} m/p = next/prev page (any number works)");
+        assert_eq!(CliPlayer::wrap_indented(&marker, 64).len(),
+            CliPlayer::marker_lines(24, MENU_PAGE_KEYS, 64),
+            "what is reserved is what is drawn");
+        assert_eq!(CliPlayer::marker_lines(24, MENU_PAGE_KEYS, 200), 1,
+            "and a wide pane needs one row");
+
+        // The reserve reaches the pager: a two-line marker takes two rows
+        // off the budget, not one.
+        assert_eq!(CliPlayer::menu_page_lines(&[1; 10], 6, 0, 1), (0, 5, true));
+        assert_eq!(CliPlayer::menu_page_lines(&[1; 10], 6, 0, 2), (0, 4, true));
+    }
+
+    /// A page is measured in lines, not rows, once rows can wrap (issue
+    /// #318): three two-line rows fill a six-line pane, the marker takes a
+    /// line when the menu does not fit, and a row taller than the pane is
+    /// still shown rather than skipped.
+    #[test]
+    fn paging_counts_lines_not_rows() {
+        let heights = [2usize, 2, 2, 2, 1];
+        // Nine lines in a six-line pane: paged, five lines of budget, so two
+        // rows fit.
+        assert_eq!(CliPlayer::menu_page_lines(&heights, 6, 0, 1), (0, 2, true));
+        // From the third row: 2 + 2 + 1 = 5 fits the budget exactly.
+        assert_eq!(CliPlayer::menu_page_lines(&heights, 6, 2, 1), (2, 3, true));
+        // Everything fits: no marker, no budget lost to it.
+        assert_eq!(CliPlayer::menu_page_lines(&heights, 9, 0, 1), (0, 5, false));
+        // A row taller than the pane shows anyway.
+        assert_eq!(CliPlayer::menu_page_lines(&[7, 1], 3, 0, 1), (0, 1, true));
+        // The unit-height case is the old behaviour exactly.
+        assert_eq!(CliPlayer::menu_page(30, 10, 0), CliPlayer::menu_page_lines(&[1; 30], 10, 0, 1));
+        assert_eq!(CliPlayer::menu_page(30, 10, 27), CliPlayer::menu_page_lines(&[1; 30], 10, 27, 1));
+    }
+
+    /// `p` from an uneven page lands on the page that ends just above it,
+    /// and from the top on the last page — not on a fixed stride's guess.
+    #[test]
+    fn the_previous_page_is_exact_with_uneven_rows() {
+        let heights = [2usize, 2, 2, 2, 1];
+        // From row 2 (the second page), back to row 0.
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 2, 1), 0);
+        // From row 4, the budget of 5 holds rows 2 and 3 (2 + 2) — not row 1.
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 4, 1), 2);
+        // From the top, the last page: rows 2..5 (2 + 2 + 1 = 5).
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 0, 1), 2);
+        // A budget too small for even one row still steps back one row.
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[7, 7, 7], 3, 2, 1), 1);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 6, 0, 1), 0);
+    }
+
 
     /// Issue #257: an untargeted ability on one of six identically-named
     /// creatures is a different action per creature, and the row's identity
@@ -5969,8 +6644,180 @@ mod tests {
         }
     }
 
+    /// Issue #325: the ordering prompt reads one line — the indices in
+    /// order, in any spacing, commas allowed — and refuses anything that is
+    /// not every index exactly once, saying which. Enter alone keeps the
+    /// order shown; the pane keys and pagers are the usual letters.
+    #[test]
+    fn an_ordering_is_every_index_exactly_once() {
+        assert_eq!(CliPlayer::parse_order_input("2 0 1", 3), OrderInput::Order(vec![2, 0, 1]));
+        assert_eq!(CliPlayer::parse_order_input(" 2,0, 1 ", 3), OrderInput::Order(vec![2, 0, 1]));
+        assert_eq!(CliPlayer::parse_order_input("", 3), OrderInput::Order(vec![0, 1, 2]),
+            "Enter keeps the order shown");
+        assert_eq!(CliPlayer::parse_order_input("s", 3), OrderInput::Pane('s'));
+        assert_eq!(CliPlayer::parse_order_input("i", 3), OrderInput::Pane('i'));
+        assert_eq!(CliPlayer::parse_order_input("m", 3), OrderInput::NextPage);
+        assert_eq!(CliPlayer::parse_order_input("p", 3), OrderInput::PrevPage);
+        for (input, why) in [
+            ("0 1", "missing 2"), ("0 1 1", "listed twice"), ("0 1 3", "out of range"),
+            ("0 x 1", "not a number"), ("0 1 2 2", "listed twice"),
+        ] {
+            match CliPlayer::parse_order_input(input, 3) {
+                OrderInput::Invalid(msg) => assert!(msg.contains(why), "{input:?}: {msg}"),
+                other => panic!("{input:?} was accepted as {other:?}"),
+            }
+        }
+    }
+
+    /// A row of the ordering screen says whose trigger it is (by id and P/T),
+    /// what it does, and what set it off; without the engine's details it is
+    /// the option text.
+    #[test]
+    fn an_ordering_row_says_whose_what_and_why() {
+        use mtg_engine::state::TriggerOrderOption;
+        let v = view(Step::PrecombatMain, 8, true);
+        let details = vec![TriggerOrderOption {
+            source: ObjectId(34), source_name: "Unruly Mob".into(), power_toughness: Some((1, 1)),
+            kind: "triggered ability".into(), ability: "put a +1/+1 counter on Unruly Mob".into(),
+            cause: "Unruly Mob (#23) died".into(),
+        }];
+        let options = vec!["Unruly Mob's triggered ability (put a +1/+1 counter on Unruly Mob) [source 1/1, #34]".to_string()];
+        let rows = CliPlayer::ordering_rows(&v, &OrderingPrompt {
+            kind: OrderingKind::Triggers, description: "d", options: &options, details: &details });
+        assert_eq!(rows, vec![vec![
+            "Unruly Mob (#34) 1/1 — triggered ability: put a +1/+1 counter on Unruly Mob".to_string(),
+            "triggered by: Unruly Mob (#23) died".to_string(),
+        ]]);
+        let bare = CliPlayer::ordering_rows(&v, &OrderingPrompt {
+            kind: OrderingKind::Blockers, description: "d", options: &options, details: &[] });
+        assert_eq!(bare, vec![vec![options[0].clone()]]);
+    }
+
+    /// The ordering screen's body pages when it is taller than the terminal,
+    /// keeping a line for the marker, and `m`/`p` walk the pages and wrap.
+    #[test]
+    fn the_ordering_screen_pages_its_body() {
+        let one = BodyPage::new(5, 10, 0);
+        assert!(!one.paged);
+        assert_eq!((one.start, one.end), (0, 5));
+        let first = BodyPage::new(20, 6, 0);
+        assert!(first.paged);
+        assert_eq!((first.start, first.end), (0, 5), "five lines, one for the marker");
+        let second = BodyPage::new(20, 6, first.next_offset());
+        assert_eq!((second.start, second.end), (5, 10));
+        let last = BodyPage::new(20, 6, BodyPage::new(20, 6, 0).prev_offset());
+        assert_eq!((last.start, last.end), (15, 20), "p from the top is the last page");
+        assert_eq!(last.next_offset(), 0, "m from the last page wraps to the top");
+        assert_eq!(second.prev_offset(), 0);
+    }
+
+    /// Issue #333: nothing on the battlefield said a permanent was a
+
+    /// legend, so the legend rule (CR 704.5j) fired with no warning. A
+    /// legendary creature's row carries "legendary" ahead of its keywords;
+    /// a non-creature legend gets the word after its name.
+    #[test]
+    fn a_legends_battlefield_row_says_so() {
+        let mut mikaeus = creature(24, "Mikaeus, the Lunarch", 0);
+        mikaeus.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        mikaeus.keywords = vec![mtg_engine::types::Keyword::Flying];
+        let (head, elastic, _flags) = CliPlayer::creature_row_parts(&mikaeus, None);
+        assert_eq!(head, "Mikaeus, the Lunarch 2/2");
+        assert_eq!(elastic, " (legendary, flying)");
+
+        let plain = creature(25, "Grizzly Bears", 0);
+        let (_, elastic, _) = CliPlayer::creature_row_parts(&plain, None);
+        assert_eq!(elastic, "", "a non-legend says nothing about it");
+
+        let mut grimoire = creature(26, "Grimoire of the Dead", 0);
+        grimoire.card_types = vec![CardType::Artifact];
+        grimoire.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        assert_eq!(CliPlayer::legend_mark(&grimoire), " (legendary)");
+        assert_eq!(CliPlayer::legend_mark(&plain), "");
+    }
+
+    /// Issue #322: a key the line reader does not bind — Tab, an arrow,
+
+    /// Home, a function key — used to be dropped, and dropping it
+    /// concatenated the digits typed either side of it: `0 <Tab> 1` was the
+    /// buffer `01`, accepted as option 1, at a prompt where `0 1` is refused.
+    /// Such a key now separates what is typed around it, so the same
+    /// keystrokes read `0 1` and get the same refusal.
+    #[test]
+    fn an_unbound_key_between_two_digits_keeps_them_apart() {
+        let none = KeyModifiers::NONE;
+        for (name, code) in [
+            ("Tab", KeyCode::Tab), ("BackTab", KeyCode::BackTab),
+            ("Left", KeyCode::Left), ("Right", KeyCode::Right),
+            ("Home", KeyCode::Home), ("End", KeyCode::End),
+            ("Delete", KeyCode::Delete), ("Insert", KeyCode::Insert),
+            ("F1", KeyCode::F(1)), ("Esc", KeyCode::Esc),
+            ("Up", KeyCode::Up), ("PageDown", KeyCode::PageDown),
+        ] {
+            let mut buf = String::new();
+            edit_line(&mut buf, KeyCode::Char('0'), none);
+            let changed = edit_line(&mut buf, code, none);
+            edit_line(&mut buf, KeyCode::Char('1'), none);
+            assert_eq!(buf, "0 1", "{name} between two digits");
+            assert!(changed, "{name} is painted, not swallowed");
+        }
+    }
+
+    /// Issue #51 still holds: an unbound chord is never typed as its
+    /// character. Ctrl-L is not the `l` shortcut, and crossterm's report of
+    /// Ctrl-\ as the digit `4` with CONTROL set does not pick option 4. Those
+    /// chords separate like any other unbound key.
+    #[test]
+    fn an_unbound_chord_is_a_separator_and_never_its_character() {
+        let mut buf = String::from("1");
+        edit_line(&mut buf, KeyCode::Char('l'), KeyModifiers::CONTROL);
+        assert_eq!(buf, "1 ");
+        edit_line(&mut buf, KeyCode::Char('4'), KeyModifiers::CONTROL);
+        assert_eq!(buf, "1 ", "a second separator in a row adds nothing");
+        edit_line(&mut buf, KeyCode::Char('x'), KeyModifiers::ALT);
+        assert_eq!(buf, "1 ");
+        assert!(!buf.contains('l') && !buf.contains('4') && !buf.contains('x'));
+    }
+
+    /// A separator pressed before anything is typed, or after the number,
+    /// changes nothing the reader will see: the line is read trimmed, so
+    /// `<Tab> 0 <Tab> <Enter>` is still the answer `0`. A separator is only
+    /// ever inserted BETWEEN characters.
+    #[test]
+    fn a_separator_at_either_end_is_not_kept() {
+        let none = KeyModifiers::NONE;
+        let mut buf = String::new();
+        assert!(!edit_line(&mut buf, KeyCode::Tab, none), "nothing to separate yet");
+        assert_eq!(buf, "");
+        edit_line(&mut buf, KeyCode::Char('0'), none);
+        edit_line(&mut buf, KeyCode::Tab, none);
+        assert_eq!(buf.trim(), "0");
+    }
+
+    /// The editing keys keep their meaning through the shared helper:
+    /// Backspace takes one character (a separator included), Ctrl-U kills
+    /// the line (#79), and the return value says whether there is anything
+    /// new to paint.
+    #[test]
+    fn editing_keys_still_edit() {
+        let none = KeyModifiers::NONE;
+        let mut buf = String::new();
+        assert!(!edit_line(&mut buf, KeyCode::Backspace, none), "nothing to erase");
+        assert!(edit_line(&mut buf, KeyCode::Char('1'), none));
+        assert!(edit_line(&mut buf, KeyCode::Char('2'), none));
+        assert!(edit_line(&mut buf, KeyCode::Tab, none));
+        assert_eq!(buf, "12 ");
+        assert!(edit_line(&mut buf, KeyCode::Backspace, none));
+        assert_eq!(buf, "12", "Backspace erases the separator like any character");
+        assert!(edit_line(&mut buf, KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(buf, "");
+        assert!(!edit_line(&mut buf, KeyCode::Char('u'), KeyModifiers::CONTROL),
+            "an already-empty line has nothing to repaint");
+    }
+
     /// The prompt row is drawn inside the middle panel, so it has the
     /// panel's width and not the terminal's. Three hints read 50, 60 and 61
+
     /// columns against a panel 58 columns across at 100 — the first width
     /// at which the CARDS pane exists, and where the panel is narrowest — so
     /// two of them erased the frame's own right border before the player
@@ -6310,21 +7157,24 @@ mod tests {
     /// meant pressing `m` eleven more times to wrap back around to it.
     #[test]
     fn a_menu_pages_backwards_too() {
-        // Ten items, four to a page.
-        assert_eq!(CliPlayer::prev_menu_offset(4, 4, 10), 0);
-        assert_eq!(CliPlayer::prev_menu_offset(8, 4, 10), 4);
-        // From the top, back to the last page — which is the final whole
-        // step below the end, not the end itself.
-        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 10), 8);
+        // Ten one-line items in a five-line pane: four to a page once the
+        // marker has its line.
+        let ten = [1usize; 10];
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 4, 1), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 8, 1), 4);
+        // From the top, back to the last page — the last four rows.
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 0, 1), 6);
         // A menu that fits has one page, and `p` stays on it.
-        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 4), 0);
-        assert_eq!(CliPlayer::prev_menu_offset(0, 4, 0), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[1; 4], 5, 0, 1), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 5, 0, 1), 0);
         // Round trip: forwards then backwards is where you started.
         let mut off = 0;
-        for _ in 0..3 { off = CliPlayer::next_menu_offset(off, 4, 10); }
-        for _ in 0..3 { off = CliPlayer::prev_menu_offset(off, 4, 10); }
+        for _ in 0..2 { off = CliPlayer::next_menu_offset(off, 4, 10); }
+        assert_eq!(off, 8);
+        for _ in 0..2 { off = CliPlayer::prev_menu_offset_lines(&ten, 5, off, 1); }
         assert_eq!(off, 0);
     }
+
 
     /// Issue #260: the truncation marker is the LAST row a short pane
     /// sacrifices, not the first — a menu that does not fit has to say so,
@@ -6543,6 +7393,7 @@ mod tests {
             object_id: ObjectId(id),
             card_id: mtg_engine::ids::CardId(0),
             name: "Island".into(),
+            supertypes: vec![],
             card_types: vec![CardType::Land],
             controller: PlayerId(controller),
             owner: PlayerId(controller),
@@ -6592,6 +7443,7 @@ mod tests {
             card_id: mtg_engine::ids::CardId(0),
             name: name.into(),
             cost: None,
+            supertypes: vec![],
             card_types: vec![CardType::Instant],
             power: None,
             toughness: None,
@@ -6618,6 +7470,7 @@ mod tests {
             object_id: ObjectId(id),
             card_id: mtg_engine::ids::CardId(0),
             name: name.into(),
+            supertypes: vec![],
             card_types: vec![CardType::Creature],
             controller: PlayerId(controller),
             owner: PlayerId(controller),
@@ -6705,10 +7558,13 @@ mod tests {
     /// row ran through the pane's right border and overwrote the CARDS pane
     /// on exactly the line the defender reads to choose a block.
     ///
-    /// What gives way is the ability list; the name, the attack target
-    /// (CR 508.1a) and the `(#id)` disambiguator (#136) stay.
+    /// Nothing gives way (#318): the row wraps under its index, every line
+    /// fits the pane, and the note the caller paints in colour rides on the
+    /// last line when it fits there and on a line of its own when it does
+    /// not.
     #[test]
-    fn a_combat_row_is_clamped_to_the_pane_it_is_drawn_in() {
+    fn a_combat_row_wraps_to_the_pane_it_is_drawn_in() {
+
         let mut inq = creature(90, "Elite Inquisitor", 0);
         inq.keywords = vec![mtg_engine::types::Keyword::FirstStrike,
                             mtg_engine::types::Keyword::Vigilance];
@@ -6727,21 +7583,35 @@ mod tests {
             "test precondition: the entry is wider than the pane ({} > {panel})",
             unclamped.chars().count());
 
-        let prefix = "  0: ";
-        let suffix = " (can block: 0)";
-        let row = CliPlayer::combat_row(&v, ObjectId(90), &ids, prefix, suffix, panel);
-        assert!(prefix.chars().count() + row.chars().count() + suffix.chars().count() <= panel,
-            "the whole row fits the {panel}-column pane: {prefix}{row}{suffix}");
-        assert!(row.starts_with("Elite Inquisitor"),
-            "the creature is still named: {row}");
-        assert!(row.contains('…'), "and the ability list is what gave way: {row}");
+        let prefix_w = str_cols("  0: ");
+        let note = " (can block: 0)";
+        let row = CliPlayer::combat_row_layout(&v, ObjectId(90), &ids, prefix_w, note, panel);
+        assert!(row.lines.len() >= 2, "the entry wraps: {row:?}");
+        for line in row.lines.iter().chain(&row.note_lines) {
+            assert!(prefix_w + str_cols(line) <= panel,
+                "every line fits the {panel}-column pane: {line:?}");
+        }
+        assert_eq!(row.text(), format!("{unclamped}{note}"), "nothing is cut");
+        assert!(row.lines[0].starts_with("Elite Inquisitor"), "{row:?}");
+
+        // A note that fits after the last line stays there; one that does
+        // not gets a line of its own rather than pushing through the border.
+        let short = CliPlayer::combat_row_layout(&v, ObjectId(90), &ids, prefix_w, "", panel);
+        assert!(short.note_lines.is_empty() && short.note.is_empty());
+        let wide_note = format!(" (can block: {})", (0..30).map(|i| i.to_string()).collect::<Vec<_>>().join(" "));
+        let long = CliPlayer::combat_row_layout(&v, ObjectId(90), &ids, prefix_w, &wide_note, panel);
+        assert!(!long.note_lines.is_empty(), "{long:?}");
+        assert_eq!(long.height(), long.lines.len() + long.note_lines.len());
+        assert_eq!(long.text(), format!("{unclamped}{wide_note}"));
     }
 
-    /// The same clamp keeps the tail, which is the half a block decision
-    /// cannot do without: which planeswalker an attacker is aimed at
-    /// (CR 508.1a) and the id that tells two identical rows apart (#136).
+    /// The row keeps the tail a block decision cannot do without — which
+    /// planeswalker an attacker is aimed at (CR 508.1a) and the id that
+    /// tells two identical rows apart (#136) — and, now that nothing is
+    /// cut, the ability list too.
     #[test]
-    fn a_clamped_combat_row_keeps_the_attack_target_and_the_id() {
+    fn a_wrapped_combat_row_keeps_the_attack_target_and_the_id() {
+
         let mut walker = creature(51, "Liliana of the Veil", 0);
         walker.card_types = vec![CardType::Planeswalker];
         walker.counters.insert(mtg_engine::types::CounterType::Loyalty, 4);
@@ -6759,17 +7629,20 @@ mod tests {
         v.battlefield = vec![walker, long(18), long(19)];
         let ids = vec![ObjectId(18), ObjectId(19)];
 
-        let row = CliPlayer::combat_row(&v, ObjectId(18), &ids, "  0: ", "",
-            CliPlayer::middle_panel_width_at(100));
-        assert!(row.starts_with("Terror of Kruin Pass"),
-            "the creature is still named: {row}");
-        assert!(row.ends_with("(#18)"),
-            "and the id that tells the two apart is still on the end: {row}");
-        assert!(row.contains("loyalty]"),
-            "so is enough of the attack target to see it is a planeswalker: {row}");
-        assert!(!row.contains("vigilance"),
-            "the ability list is what gave way, all of it here: {row}");
+        let panel = CliPlayer::middle_panel_width_at(100);
+        let row = CliPlayer::combat_row_layout(&v, ObjectId(18), &ids, str_cols("  0: "), "", panel);
+        let text = row.text();
+        assert!(text.starts_with("Terror of Kruin Pass"), "the creature is named: {text}");
+        assert!(text.ends_with("(#18)"),
+            "and the id that tells the two apart is on the end: {text}");
+        assert!(text.contains("Liliana of the Veil [4 loyalty]"),
+            "so is the attack target, whole: {text}");
+        assert!(text.contains("vigilance"), "and so is the ability list: {text}");
+        for line in &row.lines {
+            assert!(str_cols("  0: ") + str_cols(line) <= panel, "a line overflows: {line:?}");
+        }
     }
+
 
     /// Issue #243: the keywords the block turns on are on the line the block
     /// is chosen from.

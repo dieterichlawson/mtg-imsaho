@@ -37,6 +37,12 @@ fn quiet_about(state: &GameState, acting: PlayerId, legal: &LegalActions, reg: &
         "expected no legal-set violation containing {needle:?}, got: {v:?}");
 }
 
+/// The offers the engine would make for `state`, for a test that then adds
+/// one of its own.
+fn wrong_legal(state: &GameState, reg: &CardRegistry) -> LegalActions {
+    mtg_engine::engine::legal_actions(state, reg)
+}
+
 #[track_caller]
 fn clean(state: &GameState, acting: PlayerId, legal: &LegalActions, reg: &CardRegistry) {
     assert_eq!(check_legal(state, acting, legal, reg), Vec::<String>::new());
@@ -194,6 +200,21 @@ fn a_cast_offer_names_a_castable_card() {
     l.actions.insert(1, cast_action(ObjectId(4242), vec![Target::Object(bear)]));
     flags(&state, P0, &l, &reg, "names a missing object");
 
+    // CR 305.1: a land offered to be played is in the acting player's hand
+    // — each half of that alone.
+    let mut s = state.clone();
+    let mine = spell_in_hand(&mut s, &reg, "Forest", P0);
+    let theirs = spell_in_hand(&mut s, &reg, "Forest", P1);
+    let played = named_permanent(&mut s, &reg, "Forest", P0);
+    let playing = |id: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::PlayLand { object_id: id });
+        l
+    };
+    quiet_about(&s, P0, &playing(mine), &reg, "(CR 305.1)");
+    flags(&s, P0, &playing(theirs), &reg, "(CR 305.1)");
+    flags(&s, P0, &playing(played), &reg, "(CR 305.1)");
+
     // CR 305.9: a land is played, not cast.
     let mut s = state.clone();
     let forest = spell_in_hand(&mut s, &reg, "Forest", P0);
@@ -244,6 +265,290 @@ fn a_cast_offer_names_a_castable_card() {
         object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
         exile_count: Some(1), exile_ids: vec![bear], alternative_cost: None, tap_plan: vec![] });
     flags(&state, P0, &l, &reg, "which is not in p0's graveyard");
+
+    // Each half of "a creature you control on the battlefield", alone: a
+    // creature the opponent controls, a permanent that is not a creature,
+    // and a creature card in a graveyard.
+    let sacrificing = |s: &GameState, victim: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::CastSpell {
+            object_id: pump, targets: vec![Target::Object(bear)], sacrifice: Some(victim),
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] });
+        let _ = s;
+        l
+    };
+    let mut s = state.clone();
+    let theirs = named_permanent(&mut s, &reg, "Grizzly Bears", P1);
+    flags(&s, P0, &sacrificing(&s, theirs), &reg, "(CR 701.17a)");
+    let mut s = state.clone();
+    let land = named_permanent(&mut s, &reg, "Forest", P0);
+    flags(&s, P0, &sacrificing(&s, land), &reg, "(CR 701.17a)");
+    let mut s = state.clone();
+    let buried_creature = named_card_in_graveyard(&mut s, &reg, "Grizzly Bears", P0);
+    flags(&s, P0, &sacrificing(&s, buried_creature), &reg, "(CR 701.17a)");
+    // And the one that is right is not flagged.
+    quiet_about(&state, P0, &sacrificing(&state, bear), &reg, "(CR 701.17a)");
+
+    // The same for the exile cost: the spell itself, a card in somebody
+    // else's graveyard, and a card that is not in a graveyard at all.
+    let exiling = |ids: Vec<ObjectId>| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::CastSpell {
+            object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+            exile_count: Some(1), exile_ids: ids, alternative_cost: None, tap_plan: vec![] });
+        l
+    };
+    let mut s = state.clone();
+    let mine_gy = named_card_in_graveyard(&mut s, &reg, "Forest", P0);
+    let theirs_gy = named_card_in_graveyard(&mut s, &reg, "Forest", P1);
+    quiet_about(&s, P0, &exiling(vec![mine_gy]), &reg, "which is not in p0's graveyard");
+    flags(&s, P0, &exiling(vec![theirs_gy]), &reg, "which is not in p0's graveyard");
+    flags(&s, P0, &exiling(vec![pump]), &reg, "which is not in p0's graveyard");
+
+    // CR 601.3a: each permission to cast from a graveyard, alone.
+    let from_gy = |s: &GameState, id: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, cast_action(id, vec![Target::Object(bear)]));
+        let _ = s;
+        l
+    };
+    // A printed flashback cost.
+    let mut s = state.clone();
+    let flashback = named_card_in_graveyard(&mut s, &reg, "Silent Departure", P0);
+    quiet_about(&s, P0, &from_gy(&s, flashback), &reg, "(CR 601.3a)");
+    // A granted one (Snapcaster Mage).
+    let mut s = state.clone();
+    let granted = named_card_in_graveyard(&mut s, &reg, "Moment of Heroism", P0);
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantFlashback {
+        target: granted, cost: ManaCost::new(vec![ManaSymbol::Colored(Color::White)]) });
+    quiet_about(&s, P0, &from_gy(&s, granted), &reg, "(CR 601.3a)");
+}
+
+/// CR 118.3/602.2b/606.3: the rest of what an activation offer promises —
+/// counters it can actually remove, a timing restriction it respects, an
+/// artifact ability Stony Silence has not shut off, no targets for an
+/// ability that does not target, and loyalty the planeswalker actually has.
+#[test]
+fn an_activation_offer_can_pay_what_the_ability_costs() {
+    let (mut state, reg) = base();
+    // Mikaeus the Lunarch: "{T}, Remove a +1/+1 counter from Mikaeus: ...".
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    state.get_object_mut(mikaeus).unwrap().summoning_sick = false;
+    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let remove = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, ability_index, .. }
+        if *object_id == mikaeus && *ability_index == 1))
+        .expect("the counter-removal ability is offered").clone();
+    clean(&state, P0, &legal, &reg);
+
+    // The counter is gone, but the ability is still on the menu.
+    let mut s = state.clone();
+    s.remove_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    let mut l = legal.clone();
+    l.actions.retain(|a| !matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+        if *object_id == mikaeus && *ability_index == 0));
+    flags(&s, P0, &l, &reg, "counters it does not have");
+
+    // CR 602.2b: an ability with no target requirement is offered with no
+    // targets.
+    let mut targeted = remove.clone();
+    if let Action::ActivateAbility { targets, .. } = &mut targeted {
+        targets.push(Target::Player(P1));
+    }
+    let mut l = legal.clone();
+    l.actions.insert(1, targeted);
+    flags(&state, P0, &l, &reg, "carries targets for an untargeted ability");
+
+    // Equip is sorcery-speed only (CR 702.6b): offered in a main phase with
+    // an empty stack, and nowhere else.
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let equip = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == flail))
+        .expect("equip is offered in a main phase").clone();
+    clean(&state, P0, &legal, &reg);
+    assert!(matches!(&equip, Action::ActivateAbility { targets, .. }
+        if targets.contains(&Target::Object(bear))), "equip targets the creature");
+
+    let mut s = state.clone();
+    s.step = Step::DeclareBlockers;
+    let mut l = legal.clone();
+    l.actions.retain(|a| !matches!(a, Action::CastSpell { .. }));
+    flags(&s, P0, &l, &reg, "activates only as a sorcery");
+
+    // CR 602.2: Stony Silence shuts off an artifact's activated abilities.
+    let mut s = state.clone();
+    named_permanent(&mut s, &reg, "Stony Silence", P1);
+    flags(&s, P0, &legal, &reg, "on an artifact under Stony Silence");
+
+    // CR 602.2: an ability offered "through" another card is one that card
+    // really grants — attached to this permanent under the acting player
+    // (Blazing Torch), or granted to a copy of it (Evil Twin).
+    let (mut state, reg) = base();
+    let bearer = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bearer).unwrap().summoning_sick = false;
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    state.get_object_mut(torch).unwrap().attached_to = Some(bearer);
+    let torch_card = state.get_object(torch).unwrap().card_id;
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let granted = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, source_card_id: Some(cid), .. }
+        if *object_id == bearer && *cid == torch_card))
+        .expect("the Torch grants its bearer an ability").clone();
+    clean(&state, P0, &legal, &reg);
+
+    // The Torch attached elsewhere, or under the opponent, or gone: the
+    // offer is through a card that grants this permanent nothing.
+    for wrong in [
+        {
+            let mut s = state.clone();
+            s.get_object_mut(torch).unwrap().attached_to = Some(victim);
+            s
+        },
+        {
+            let mut s = state.clone();
+            s.get_object_mut(torch).unwrap().controller = P1;
+            s
+        },
+        {
+            let mut s = state.clone();
+            s.get_object_mut(torch).unwrap().zone = Zone::Graveyard;
+            s
+        },
+    ] {
+        let mut l = wrong_legal(&wrong, &reg);
+        l.actions.insert(1, granted.clone());
+        flags(&wrong, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+    }
+
+    // A card that is nowhere near this permanent.
+    let mut named = granted.clone();
+    if let Action::ActivateAbility { source_card_id, .. } = &mut named {
+        *source_card_id = Some(state.get_object(victim).unwrap().card_id);
+    }
+    let mut l = legal.clone();
+    l.actions.insert(1, named);
+    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+
+    // CR 605.3a: a mana ability offer names a permanent of the acting
+    // player's, on the battlefield, with that ability — each half alone.
+    let (mut state, reg) = base();
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let theirs = named_permanent(&mut state, &reg, "Forest", P1);
+    let in_hand = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let mana_from = |id: ObjectId, idx: usize| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::ActivateManaAbility { object_id: id, ability_index: idx });
+        l
+    };
+    quiet_about(&state, P0, &mana_from(forest, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(theirs, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(in_hand, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(bear, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(forest, 7), &reg, "(CR 605.3a)");
+    // A tapped land has no mana ability available, and is not offered.
+    let mut s = state.clone();
+    s.get_object_mut(forest).unwrap().tapped = true;
+    flags(&s, P0, &mana_from(forest, 0), &reg, "(CR 605.3a)");
+
+    // CR 701.17a: an activation's sacrifice cost names a creature its
+    // controller has on the battlefield — and "another creature" means
+    // another one.
+    let (mut state, reg) = base();
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    state.get_object_mut(grimgrin).unwrap().summoning_sick = false;
+    state.get_object_mut(grimgrin).unwrap().tapped = true;
+    let fodder = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+    let buried = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let sacrificing = |victim: ObjectId| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::ActivateAbility {
+            object_id: grimgrin, ability_index: 0, targets: vec![], tap_plan: vec![],
+            sacrifice: Some(victim), x_value: None, source_card_id: None });
+        l
+    };
+    quiet_about(&state, P0, &sacrificing(fodder), &reg, "(CR 701.17a)");
+    flags(&state, P0, &sacrificing(theirs), &reg, "(CR 701.17a)");
+    flags(&state, P0, &sacrificing(land), &reg, "(CR 701.17a)");
+    flags(&state, P0, &sacrificing(buried), &reg, "(CR 701.17a)");
+    // "Sacrifice another creature": not this one.
+    flags(&state, P0, &sacrificing(grimgrin), &reg, "(CR 701.17a)");
+    // And naming none at all when the cost asks for one.
+    let mut l = legal.clone();
+    l.actions.insert(1, Action::ActivateAbility {
+        object_id: grimgrin, ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: None, x_value: None, source_card_id: None });
+    flags(&state, P0, &l, &reg, "names no creature to sacrifice (CR 701.17a)");
+
+    // CR 602.2h: a tap plan taps the caster's own battlefield permanents,
+    // each for a mana ability it really has.
+    let (mut state, reg) = base();
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let theirs = named_permanent(&mut state, &reg, "Forest", P1);
+    let in_hand = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let pump = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let tapping = |plan: Vec<(ObjectId, usize)>| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::CastSpell {
+            object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: plan });
+        l
+    };
+    quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "which is not an available untapped source");
+    quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "twice (CR 602.2h)");
+    quiet_about(&state, P0, &tapping(vec![(forest, 0)]), &reg, "under Stony Silence");
+    flags(&state, P0, &tapping(vec![(forest, 0), (forest, 0)]), &reg, "twice (CR 602.2h)");
+    flags(&state, P0, &tapping(vec![(theirs, 0)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(in_hand, 0)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(forest, 7)]), &reg, "which is not an available untapped source");
+    flags(&state, P0, &tapping(vec![(bear, 0)]), &reg, "which is not an available untapped source");
+
+    // CR 118.3: a minus ability the planeswalker cannot pay for.
+    let (mut state, reg) = base();
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 3);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(legal.actions.iter().any(|a| matches!(a, Action::ActivateLoyaltyAbility { .. })),
+        "a planeswalker offers its loyalty abilities");
+    clean(&state, P0, &legal, &reg);
+
+    let mut s = state.clone();
+    set_loyalty(&mut s, liliana, 1);
+    flags(&s, P0, &legal, &reg, "(CR 118.3)");
+
+    // CR 118.3 lets a walker pay its loyalty down to exactly zero, so the
+    // ability that costs everything it has is still a legal offer.
+    let cost = legal.actions.iter().find_map(|a| match a {
+        Action::ActivateLoyaltyAbility { object_id, ability_index, .. } if *object_id == liliana =>
+            reg.get(s.get_object(liliana).unwrap().card_id)
+                .and_then(|b| b.loyalty_abilities(&s, liliana).into_iter()
+                    .find(|d| d.ability_index == *ability_index)
+                    .filter(|d| d.loyalty_change < 0)
+                    .map(|d| d.loyalty_change.unsigned_abs())),
+        _ => None,
+    }).expect("Liliana offers a minus ability");
+    let mut s = state.clone();
+    set_loyalty(&mut s, liliana, cost);
+    quiet_about(&s, P0, &legal, &reg, "(CR 118.3)");
 }
 
 /// CR 602.2/602.5/701.17a: an activation offer names an ability its source
@@ -462,7 +767,7 @@ fn every_resolution_prompt_enumerates_to_its_own_options() {
             controller: P0 },
         ResolutionChoiceKind::ChooseTriggerOrder {
             description: "?".into(), options: vec!["a".into(), "b".into()],
-            ap_queue: true, indices: vec![0, 1] },
+            ap_queue: true, indices: vec![0, 1], details: vec![] },
     ];
 
     for choice in kinds {
@@ -612,6 +917,81 @@ fn the_blockers_prompt_is_the_board_read_back() {
     }
     flags(&state, P1, &l, &reg, "with nothing in the way (CR 509.1a)");
 
+    // CR 509.1b: each way an attacker evades a blocker, and for each the
+    // blocker that answers it — a chain of evasions is only tested by
+    // walking every link of it.
+    let evasion_offers = |s: &GameState, reg: &CardRegistry| {
+        let mut l = mtg_engine::engine::legal_actions(s, reg);
+        if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+            for (_, list) in legal_blocks.iter_mut() {
+                if !list.contains(&attacker) { list.push(attacker); }
+            }
+        }
+        l
+    };
+
+    // Flying: a ground blocker is refused; flying or reach may block.
+    let mut s = state.clone();
+    grant_keyword(&mut s, attacker, Keyword::Flying);
+    flags(&s, P1, &evasion_offers(&s, &reg), &reg, "which evades it (CR 509.1b)");
+    let mut with_reach = s.clone();
+    grant_keyword(&mut with_reach, blocker, Keyword::Reach);
+    quiet_about(&with_reach, P1, &evasion_offers(&with_reach, &reg), &reg, "which evades it");
+    let mut with_flying = s.clone();
+    grant_keyword(&mut with_flying, blocker, Keyword::Flying);
+    quiet_about(&with_flying, P1, &evasion_offers(&with_flying, &reg), &reg, "which evades it");
+
+    // Intimidate: only an artifact creature or one sharing a color. The
+    // attacker is white and the blocker green, so they share none.
+    let mut s = state.clone();
+    // A white ground creature: Chapel Geist would evade by flying instead,
+    // which would not tell the two clauses apart.
+    let ghost = named_permanent(&mut s, &reg, "Doomed Traveler", P0);
+    grant_keyword(&mut s, ghost, Keyword::Intimidate);
+    if let Some(c) = s.combat.as_mut() {
+        c.attackers.insert(ghost, P1);
+        c.blocker_assignments.insert(ghost, vec![]);
+    }
+    let intimidate_offers = |s: &GameState, reg: &CardRegistry| {
+        let mut l = mtg_engine::engine::legal_actions(s, reg);
+        if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+            for (_, list) in legal_blocks.iter_mut() {
+                if !list.contains(&ghost) { list.push(ghost); }
+            }
+        }
+        l
+    };
+    assert!(s.colors_of(ghost, &reg).iter().all(|c| !s.colors_of(blocker, &reg).contains(c)),
+        "test setup: the Traveler and the Bears share no color");
+    assert!(!s.has_keyword(ghost, Keyword::Flying, &reg), "test setup: it evades by intimidate alone");
+    flags(&s, P1, &intimidate_offers(&s, &reg), &reg, "which evades it (CR 509.1b)");
+    let mut sharing = s.clone();
+    sharing.get_object_mut(blocker).unwrap().colors = sharing.colors_of(ghost, &reg);
+    quiet_about(&sharing, P1, &intimidate_offers(&sharing, &reg), &reg, "which evades it");
+    let mut artifact = s.clone();
+    artifact.get_object_mut(blocker).unwrap().card_types.push(CardType::Artifact);
+    quiet_about(&artifact, P1, &intimidate_offers(&artifact, &reg), &reg, "which evades it");
+
+    // Protection from the blocker, and "can't be blocked" outright.
+    let mut s = state.clone();
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantProtection {
+        target: attacker,
+        filter: CreatureFilter::HasCardType(CardType::Creature),
+    });
+    flags(&s, P1, &evasion_offers(&s, &reg), &reg, "which evades it (CR 509.1b)");
+
+    let mut s = state.clone();
+    let stalker = named_permanent(&mut s, &reg, "Invisible Stalker", P0);
+    if let Some(c) = s.combat.as_mut() {
+        c.attackers.insert(stalker, P1);
+        c.blocker_assignments.insert(stalker, vec![]);
+    }
+    let mut l = mtg_engine::engine::legal_actions(&s, &reg);
+    if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+        for (_, list) in legal_blocks.iter_mut() { list.push(stalker); }
+    }
+    flags(&s, P1, &l, &reg, "which evades it (CR 509.1b)");
+
     // CR 702.111: menace asks for two, and the prompt says so.
     let mut s = state.clone();
     grant_keyword(&mut s, attacker, Keyword::Menace);
@@ -620,6 +1000,17 @@ fn the_blockers_prompt_is_the_board_read_back() {
         min_blockers.clear();
     }
     flags(&s, P1, &l, &reg, "which has menace (CR 702.111)");
+
+    // Two is the number menace asks for, and asking for it is not itself a
+    // violation: the clause is about a minimum of one or none.
+    let mut s = state.clone();
+    grant_keyword(&mut s, attacker, Keyword::Menace);
+    let with_two = mtg_engine::engine::legal_actions(&s, &reg);
+    assert!(matches!(&with_two.combat_prompt,
+        Some(CombatPrompt::ChooseBlockers { min_blockers, .. }) if min_blockers.get(&attacker) == Some(&2)),
+        "the prompt asks for two blockers");
+    quiet_about(&s, P1, &with_two, &reg, "requires 2 blockers");
+    quiet_about(&s, P1, &with_two, &reg, "(CR 702.111)");
 
     // And a minimum is only asked for an attacker that is attacking, and is
     // only ever more than one.

@@ -673,6 +673,7 @@ fn every_kind_of_empty_prompt_is_flagged() {
             options: vec![],
             ap_queue: true,
             indices: vec![],
+            details: vec![],
         }),
         ("a damage assignment order", K::ChooseDamageAssignmentOrder {
             description: "order".into(),
@@ -706,6 +707,7 @@ fn every_kind_of_empty_prompt_is_flagged() {
             options: vec!["a".into(), "b".into()],
             ap_queue: true,
             indices: vec![0, 1],
+            details: vec![],
         },
     });
     assert!(!check_settled(&base, &reg).iter().any(|m| m.contains("nothing to choose")),

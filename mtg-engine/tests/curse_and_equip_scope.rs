@@ -29,7 +29,7 @@ fn upkeep_entries(state: &GameState, curse: ObjectId) -> usize {
         .filter(|e| matches!(e, StackEntry::Trigger(
             PendingTrigger {
                 source: TriggerSource { id: object_id, .. },
-                event: TriggerEvent::Upkeep }) if *object_id == curse))
+                event: TriggerEvent::Upkeep, .. }) if *object_id == curse))
         .count()
 }
 

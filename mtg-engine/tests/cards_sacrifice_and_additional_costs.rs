@@ -74,8 +74,10 @@ fn a_sacrifice_cost_activation_is_logged_before_the_sacrifice() {
     let position = |needle: &str| new_state.game_log.iter()
         .position(|e| e.message.contains(needle))
         .unwrap_or_else(|| panic!("log line containing {needle:?} not found"));
-    assert!(position("activated ability on Selfless Cathar") < position("Selfless Cathar died"),
+    assert!(position("activated ability on Selfless Cathar")
+            < position(&format!("Selfless Cathar (#{}) died", cathar.0)),
         "the activation announcement precedes the sacrifice that paid for it");
+
 }
 
 /// Ruling: "You can activate Selfless Cathar's ability even if you control no

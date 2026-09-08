@@ -113,11 +113,11 @@ impl CardBehavior for MikaeusTheLunarch {
 
         match ability_index {
             0 => {
-                // Put a +1/+1 counter on Mikaeus.
+                // Put a +1/+1 counter on Mikaeus. `add_counters` writes the
+                // line; the activation line already named the ability.
                 state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-                state.log(crate::state::LogLevel::Event,
-                    "Mikaeus, the Lunarch: +1/+1 counter added".into());
             }
+
             1 => {
                 // The counter removal was the cost, paid on activation.
                 // Put a +1/+1 counter on each other creature you control.

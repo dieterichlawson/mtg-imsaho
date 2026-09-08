@@ -362,22 +362,57 @@ fn a_tokens_name_and_types_describe_what_it_is() {
 #[test]
 fn a_modal_spell_on_the_stack_chose_one_of_its_modes() {
     let (mut state, reg) = base();
-    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-    let modal = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
-    let state = cast_onto_stack(&state, &reg, modal, vec![Target::Object(bear)]);
-
-    // A spell with no modes carrying a chosen one is checked elsewhere; the
-    // gap here is a modal spell whose mode is missing or out of range.
+    // Ghoulcaller's Chant is the pool's modal spell. This test used to cast
+    // Brimstone Volley, which has one mode, and skipped its whole body
+    // behind a `matches!` guard that was never true — so every clause below
+    // went untested and four mutants inside them survived the sweep.
+    let ghoul = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let modal = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
     let modal_card = state.get_object(modal).unwrap().card_id;
-    if matches!(reg.get(modal_card).map(|b| b.target_requirement()),
-                Some(mtg_engine::cards::TargetRequirement::ModalChoice(_))) {
-        let mut s = state.clone();
-        s.get_object_mut(modal).unwrap().chosen_mode = None;
-        flags(&s, &reg, "is a modal spell on the stack with no mode chosen (CR 700.2)");
-        let mut s = state.clone();
-        s.get_object_mut(modal).unwrap().chosen_mode = Some(99);
-        flags(&s, &reg, "(CR 700.2)");
-    }
+    let modes = match reg.get(modal_card).map(|b| b.target_requirement()) {
+        Some(mtg_engine::cards::TargetRequirement::ModalChoice(m)) => m.len(),
+        other => panic!("Ghoulcaller's Chant is modal, not {other:?}"),
+    };
+    assert!(modes >= 2, "a modal spell offers a choice: {modes} mode(s)");
+    let state = cast_onto_stack(&state, &reg, modal, vec![Target::Object(ghoul)]);
+    assert_eq!(state.get_object(modal).unwrap().chosen_mode, Some(0),
+        "one creature card is the first mode");
+
+    let mut s = state.clone();
+    s.get_object_mut(modal).unwrap().chosen_mode = None;
+    flags(&s, &reg, "is a modal spell on the stack with no mode chosen (CR 700.2)");
+
+    // Past the end of the list: the mode chosen is no mode the card offers.
+    let mut s = state.clone();
+    s.get_object_mut(modal).unwrap().chosen_mode = Some(modes);
+    flags(&s, &reg, &format!("chosen mode {modes} of {modes} modes (CR 700.2)"));
+    let mut s = state.clone();
+    s.get_object_mut(modal).unwrap().chosen_mode = Some(99);
+    flags(&s, &reg, &format!("chosen mode 99 of {modes} modes (CR 700.2)"));
+
+    // The last mode the card really offers is in range, and is not flagged.
+    let mut s = state.clone();
+    s.get_object_mut(modal).unwrap().chosen_mode = Some(modes - 1);
+    assert!(check_core(&s, &reg).iter().all(|m| !m.contains("CR 700.2")),
+        "the last real mode is in range");
+}
+
+/// CR 707.8: a copy's cached name is the name of the face it copies. A
+/// stale cache is what every "same name" effect then reads — the legend
+/// rule, Nevermore, Sever the Bloodline.
+#[test]
+fn a_copy_whose_name_cache_disagrees_with_its_face_is_flagged() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let token = state.create_token_copy(bear, P0, &reg);
+    // The token entering is an event the collector would have scanned by the
+    // time anything checks the state (CR 603.3).
+    state.trigger_event_index = state.events.len();
+    assert_eq!(check_core(&state, &reg), Vec::<String>::new(), "a fresh copy token is clean");
+
+    let mut s = state.clone();
+    s.get_object_mut(token).unwrap().name = "Chapel Geist".into();
+    flags(&s, &reg, "name cache says \"Chapel Geist\" but the face is \"Grizzly Bears\" (CR 707.8)");
 }
 
 /// CR 614.12b: a permanent still waiting on its enters-as-a-copy choice has

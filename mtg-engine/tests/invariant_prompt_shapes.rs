@@ -185,10 +185,42 @@ fn the_mulligan_phase_is_turn_one_before_anything_happened() {
     assert_eq!(check_core(&s, &reg), Vec::<String>::new());
     let keeping = s.clone();
 
+    // Turn one, the first turn, in the untap step: each alone, because a
+    // chain of three is only tested by breaking each of them by itself.
     let mut s = keeping.clone();
     s.turn_number = 2;
     s.is_first_turn = false;
     flags(&s, &reg, "mulligan phase on turn 2");
+
+    let mut s = keeping.clone();
+    s.turn_number = 2;
+    flags(&s, &reg, "mulligan phase on turn 2");
+
+    let mut s = keeping.clone();
+    s.is_first_turn = false;
+    flags(&s, &reg, "mulligan phase on turn 1");
+
+    let mut s = keeping.clone();
+    s.step = Step::Upkeep;
+    flags(&s, &reg, "mulligan phase on turn 1 in Upkeep");
+
+    // CR 103.4: a queued bottoming is one player's, and never more cards
+    // than an opening hand holds.
+    let mut s = keeping.clone();
+    s.pending_mulligan_bottoms.push((P0, 1));
+    assert!(!check_core(&s, &reg).iter().any(|m| m.contains("queued bottoming")),
+        "one card for a real player is the ordinary case: {:?}", check_core(&s, &reg));
+    // Seven is the opening hand, and the most a keep can ever owe.
+    let mut s = keeping.clone();
+    s.pending_mulligan_bottoms.push((P0, 7));
+    assert!(!check_core(&s, &reg).iter().any(|m| m.contains("queued bottoming")),
+        "a whole hand is a legal bottoming: {:?}", check_core(&s, &reg));
+    let mut s = keeping.clone();
+    s.pending_mulligan_bottoms.push((P0, 8));
+    flags(&s, &reg, "queued bottoming of 8 for p0");
+    let mut s = keeping.clone();
+    s.pending_mulligan_bottoms.push((PlayerId(9), 1));
+    flags(&s, &reg, "queued bottoming of 1 for p9");
 
     let mut s = keeping.clone();
     s.priority_player = Some(P0);
@@ -210,6 +242,14 @@ fn the_mulligan_phase_is_turn_one_before_anything_happened() {
 
     let mut s = keeping.clone();
     s.get_player_mut(P0).land_plays_remaining = 0;
+    flags(&s, &reg, "already has turn state");
+
+    let mut s = keeping.clone();
+    s.get_player_mut(P0).lost = true;
+    flags(&s, &reg, "already has turn state");
+
+    let mut s = keeping.clone();
+    s.get_player_mut(P0).has_drawn_from_empty = true;
     flags(&s, &reg, "already has turn state");
 
     let mut s = keeping.clone();
@@ -373,6 +413,129 @@ fn the_legend_rule_prompt_is_the_duplicate_group() {
     let mut s = state.clone();
     s.awaiting_action = Some(legend(vec![Target::Object(a), Target::Object(b)], false, P1));
     flags(&s, &reg, "legend-rule prompt for p1 answered by p0");
+
+    // The group is "legends of that name that THIS player controls on the
+    // battlefield" — each half of that alone, since a copy under the
+    // opponent, a same-named non-legend, or one in another zone is not part
+    // of the group and offering it is a permanent destroyed for nothing.
+    let mut s = state.clone();
+    let theirs = named_permanent(&mut s, &reg, "Geist of Saint Traft", P1);
+    s.awaiting_action = Some(legend(
+        vec![Target::Object(a), Target::Object(b), Target::Object(theirs)], false, P0));
+    flags(&s, &reg, "(CR 704.5j)");
+
+    let mut s = state.clone();
+    let elsewhere = named_card_in_graveyard(&mut s, &reg, "Geist of Saint Traft", P0);
+    s.awaiting_action = Some(legend(
+        vec![Target::Object(a), Target::Object(b), Target::Object(elsewhere)], false, P0));
+    flags(&s, &reg, "(CR 704.5j)");
+
+    // A legend of another name is another group (CR 704.5j is per name).
+    let mut s = state.clone();
+    let other_legend = named_permanent(&mut s, &reg, "Mikaeus, the Lunarch", P0);
+    s.awaiting_action = Some(legend(
+        vec![Target::Object(a), Target::Object(b), Target::Object(other_legend)], false, P0));
+    flags(&s, &reg, "(CR 704.5j)");
+
+    // Three of them is still one group, and still not flagged.
+    let mut s = state.clone();
+    let c = named_permanent(&mut s, &reg, "Geist of Saint Traft", P0);
+    s.awaiting_action = Some(legend(
+        vec![Target::Object(a), Target::Object(b), Target::Object(c)], false, P0));
+    quiet_about(&s, &reg, "(CR 704.5j)");
+}
+
+/// CR 608.2d/701.23a/508.4b: the things a prompt offers are things the
+/// effect could really act on — a battlefield creature or planeswalker for
+/// damage, a card in the searcher's own library for a search, and an
+/// opponent or their planeswalker for a token that entered attacking.
+#[test]
+fn a_prompts_options_are_ones_its_effect_could_act_on() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let walker = named_permanent(&mut state, &reg, "Liliana of the Veil", P1);
+    let in_gy = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let source = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+
+    let damage = |options: Vec<Target>| AwaitingAction::ResolutionChoice {
+        player: P0, source,
+        choice: ResolutionChoiceKind::ChooseTarget {
+            description: "d".into(), options, optional: false,
+            effect: PendingEffect::DealDamage { amount: 1, source_id: source } } };
+
+    // A creature and a planeswalker on the battlefield are both damageable.
+    let mut s = state.clone();
+    s.awaiting_action = Some(damage(vec![Target::Object(bear), Target::Object(walker)]));
+    quiet_about(&s, &reg, "damage prompt offers");
+    // A creature in a graveyard is not.
+    let mut s = state.clone();
+    s.awaiting_action = Some(damage(vec![Target::Object(bear), Target::Object(in_gy)]));
+    flags(&s, &reg, "which is no battlefield creature or planeswalker");
+    // Nor is a land.
+    let mut s = state.clone();
+    let land = named_permanent(&mut s, &reg, "Forest", P0);
+    s.awaiting_action = Some(damage(vec![Target::Object(bear), Target::Object(land)]));
+    flags(&s, &reg, "which is no battlefield creature or planeswalker");
+
+    // CR 508.4b: a token put onto the battlefield attacking is sent at an
+    // opponent or a planeswalker they control.
+    let mut with_token = state.clone();
+    with_token.combat = Some(mtg_engine::state::CombatState::new());
+    let token = with_token.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    let attacks = |s: &GameState, options: Vec<Target>| AwaitingAction::ResolutionChoice {
+        player: P0, source: token,
+        choice: ResolutionChoiceKind::ChooseTarget {
+            description: "d".into(), options, optional: false,
+            effect: PendingEffect::TokenAttacks {
+                token_id: token, remaining: vec![], source_id: s.get_object(token).unwrap().id } } };
+
+    let mut s = with_token.clone();
+    s.awaiting_action = Some(attacks(&with_token, vec![Target::Player(P1), Target::Object(walker)]));
+    quiet_about(&s, &reg, "(CR 508.4b)");
+    // Its own controller, or their own planeswalker, is not an option.
+    let mut s = with_token.clone();
+    s.awaiting_action = Some(attacks(&with_token, vec![Target::Player(P1), Target::Player(P0)]));
+    flags(&s, &reg, "(CR 508.4b)");
+    let mut s = with_token.clone();
+    let mine = named_permanent(&mut s, &reg, "Liliana of the Veil", P0);
+    s.awaiting_action = Some(attacks(&with_token, vec![Target::Player(P1), Target::Object(mine)]));
+    flags(&s, &reg, "(CR 508.4b)");
+    // Nor is a creature the opponent controls: a token attacks a player or a
+    // planeswalker, never a creature.
+    let mut s = with_token.clone();
+    let theirs = named_permanent(&mut s, &reg, "Grizzly Bears", P1);
+    s.awaiting_action = Some(attacks(&with_token, vec![Target::Player(P1), Target::Object(theirs)]));
+    flags(&s, &reg, "(CR 508.4b)");
+
+    // CR 701.23a: a search offers cards from the searcher's own library.
+    let searching = |options: Vec<Target>| AwaitingAction::ResolutionChoice {
+        player: P0, source,
+        choice: ResolutionChoiceKind::ChooseTarget {
+            description: "d".into(), options, optional: false,
+            effect: PendingEffect::FinishLibrarySearch {
+                searcher: P0, destination: Zone::Hand, tapped: false } } };
+    let mut s = state.clone();
+    let mine = s.create_object(s.get_object(bear).unwrap().card_id, P0, Zone::Library, Some(2), Some(2));
+    s.get_player_mut(P0).library_order.push(mine);
+    let theirs = s.create_object(s.get_object(bear).unwrap().card_id, P1, Zone::Library, Some(2), Some(2));
+    s.get_player_mut(P1).library_order.push(theirs);
+    let mut ok = s.clone();
+    ok.awaiting_action = Some(searching(vec![Target::Object(mine)]));
+    quiet_about(&ok, &reg, "(CR 701.23a)");
+    // Somebody else's library.
+    let mut bad = s.clone();
+    bad.awaiting_action = Some(searching(vec![Target::Object(theirs)]));
+    flags(&bad, &reg, "(CR 701.23a)");
+    // A card that says it is in the library but is in no library order.
+    let mut bad = s.clone();
+    bad.get_player_mut(P0).library_order.retain(|&id| id != mine);
+    bad.awaiting_action = Some(searching(vec![Target::Object(mine)]));
+    flags(&bad, &reg, "(CR 701.23a)");
+    // And a search offers cards, not players.
+    let mut bad = s.clone();
+    bad.awaiting_action = Some(searching(vec![Target::Player(P1)]));
+    flags(&bad, &reg, "library search offers");
 }
 
 /// CR 603.3d/603.3b: a trigger-target prompt is for the trigger the answer
@@ -403,9 +566,36 @@ fn a_trigger_target_prompt_is_for_the_front_of_the_queue() {
         vec![Target::Object(ghoul), Target::Object(other)], false, P0));
     flags(&s, &reg, "trigger-target prompt with no queued trigger");
 
-    // A queue whose front is a different trigger.
+    // The prompt the front of the queue really is waiting on.
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    assert!(!check_core(&s, &reg).iter().any(|m| m.contains("but the queue's front is #")),
+        "the prompt matches the queue's front: {:?}", check_core(&s, &reg));
+
+    // Each way it can fail to match, one at a time — a chain of three
+    // conditions is only tested by breaking each of them alone.
     let mut s = state.clone();
     s.pending_trigger_pushes_ap.push(queued(other, P0, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    flags(&s, &reg, "but the queue's front is #");
+
+    // The same trigger, but its controller is not the player being asked
+    // (CR 603.3d: the trigger's controller chooses its targets).
+    let mut s = state.clone();
+    s.pending_trigger_pushes_ap.push(queued(ghoul, P1, &s));
+    s.awaiting_action = Some(prompt(ghoul,
+        vec![Target::Object(ghoul), Target::Object(other)], false, P0));
+    flags(&s, &reg, "but the queue's front is #");
+
+    // The same trigger, already carrying a target: the question was
+    // answered once and is being asked again.
+    let mut s = state.clone();
+    let mut answered = queued(ghoul, P0, &s);
+    answered.source.chosen_targets = vec![Target::Object(other)];
+    s.pending_trigger_pushes_ap.push(answered);
     s.awaiting_action = Some(prompt(ghoul,
         vec![Target::Object(ghoul), Target::Object(other)], false, P0));
     flags(&s, &reg, "but the queue's front is #");
@@ -578,7 +768,7 @@ fn a_trigger_order_prompt_orders_its_own_queue() {
                   ap_queue: bool, player: PlayerId| AwaitingAction::ResolutionChoice {
         player, source,
         choice: ResolutionChoiceKind::ChooseTriggerOrder {
-            description: "d".into(), options, ap_queue, indices } };
+            description: "d".into(), options, ap_queue, indices, details: vec![] } };
     let labels = || vec!["a".into(), "b".into()];
 
     let mut ap = state.clone();

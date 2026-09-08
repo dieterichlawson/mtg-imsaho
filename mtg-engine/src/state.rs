@@ -344,6 +344,15 @@ pub struct GameState {
     #[serde(default)]
     pub pending_trigger_pushes_nap: Vec<crate::triggers::PendingTrigger>,
 
+    /// Damage queued but not yet dealt (`damage::queue_damage`). Each entry
+    /// is settled — every replacement and prevention effect that applies to
+    /// it applied, the affected player choosing the order where it matters
+    /// (CR 616.1) — before any of it is dealt. Empty whenever a player holds
+    /// priority: the queue lives inside one action, or across the
+    /// `ChooseDamageEffect` prompt that action raised.
+    #[serde(default)]
+    pub pending_damage: Vec<crate::damage::PendingDamage>,
+
     /// Queue of (player, `bottom_count`) pairs waiting for the London-mulligan
     /// bottoming sub-phase. Populated as each player finishes their keep/mull
     /// decision. Drained by `advance_mulligan_phase`.
@@ -426,7 +435,14 @@ pub enum TemporaryEffect {
     /// other than <filter>." The filter names the creatures that still deal
     /// damage; everything else is prevented. Moonmist supplies Wolves and
     /// Werewolves — the engine does not know that, and shouldn't.
-    PreventCombatDamageExcept { filter: crate::types::CreatureFilter },
+    /// `source_name` is the card that made the effect, for the player
+    /// choosing it among other effects on one damage event (CR 616.1) and
+    /// for the log; empty in a save from before it existed.
+    PreventCombatDamageExcept {
+        filter: crate::types::CreatureFilter,
+        #[serde(default)]
+        source_name: String,
+    },
     /// P/T modifier that disappears if source leaves the battlefield.
     /// Used by static abilities like Instigator Gang's "attacking creatures get +1/+0".
     ModifyPTWhileSourceInPlay {
@@ -584,6 +600,7 @@ impl GameState {
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
             pending_trigger_pushes_nap: Vec::new(),
+            pending_damage: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
             mulligan_round_position: 0,
             mulligan_round_mulled: false,
@@ -1074,17 +1091,17 @@ impl GameState {
         let leaving = self.objects.get(&id)
             .is_some_and(|obj| obj.zone == Zone::Battlefield) && to != Zone::Battlefield;
         let is_creature = leaving && self.is_creature(id, registry);
-        let log_msg = self.objects.get(&id).and_then(|obj| {
-            if !leaving {
-                return None;
-            }
+        let log_msg = leaving.then(|| {
             let dest = match (to, is_creature) {
                 (Zone::Graveyard, true) => "died",
                 (Zone::Graveyard, false) => "was put into its owner's graveyard",
                 (Zone::Exile, _) => "was exiled",
                 _ => "left the battlefield",
             };
-            Some(format!("{} {}", obj.name, dest))
+            // With the id, like the lines around it: a sweeper's four
+            // "Unruly Mob died" were indistinguishable from each other and
+            // from the triggers they produced (issue #326).
+            format!("{} {}", self.obj_name(id), dest)
         });
 
         if let Some(msg) = log_msg {
@@ -1458,9 +1475,10 @@ impl GameState {
         // nothing.
         for (counter_type, count) in &entering.counters {
             if *count > 0 {
-                self.add_counters(id, *counter_type, *count);
+                self.add_counters_quiet(id, *counter_type, *count);
             }
         }
+
         if !entering.counters.is_empty() {
             let name = self.obj_name(id);
             let what = entering.counters.iter()
@@ -2729,8 +2747,33 @@ impl GameState {
             .any(|c| self.player_has_protection_from(player, c, registry))
     }
 
-    /// Add counters to a permanent.
+    /// Add counters to a permanent, and say so.
+    ///
+    /// The line is written here, once, for the same reason `deal_damage`
+    /// and `change_life` write theirs: every caller used to be responsible
+    /// for its own, and most had none. Twelve Unruly Mob triggers resolving
+    /// in a row took two survivors from 1/1 to 4/4 with no log entry at all,
+    /// so the order the player had chosen for them (CR 603.3b) could not be
+    /// read back out of `--log` (issue #326). A card's own line, where it
+    /// has one, says *why*; this one says what changed and what it is now.
+    ///
+    /// A permanent *entering* with counters (CR 614.1c) says so in its own
+    /// words instead — see `add_counters_quiet`.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        if !self.add_counters_quiet(id, counter_type, count) {
+            return;
+        }
+        let now = self.get_counter_count(id, counter_type);
+        let name = self.obj_name(id);
+        self.log(LogLevel::Event, format!(
+            "{name} gets {} (now {now})", Self::counters_phrase(counter_type, count)));
+    }
+
+    /// `add_counters` without the log line. For the one caller that already
+    /// has a better line — a permanent entering with its counters, which is
+    /// one event ("enters with 2 +1/+1 counters", issue #299) and not an
+    /// entry followed by a placement. Returns whether the counters landed.
+    pub fn add_counters_quiet(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) -> bool {
         // CR 121.1: counters go on permanents. A permanent that has left the
         // battlefield is a different object, so a counter aimed at it lands
         // nowhere — an ability that resolves after its source was destroyed
@@ -2741,13 +2784,25 @@ impl GameState {
         // counters regardless of zone, the Ooze it made came in 1/1 instead of
         // the 0/0 the ruling requires. The counter then rode along if the
         // Grime was ever reanimated.
-        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
-            return;
+        if count == 0 || self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+            return false;
         }
         if let Some(obj) = self.objects.get_mut(&id) {
             *obj.counters.entry(counter_type).or_insert(0) += count;
         }
+        true
     }
+
+    /// "a +1/+1 counter", "2 loyalty counters" — how a number of counters
+    /// reads in a log line.
+    fn counters_phrase(counter_type: crate::types::CounterType, count: u32) -> String {
+        if count == 1 {
+            format!("a {counter_type} counter")
+        } else {
+            format!("{count} {counter_type} counters")
+        }
+    }
+
 
     /// Create a regeneration shield on a permanent (CR 701.15).
     ///
@@ -2780,6 +2835,7 @@ impl GameState {
     /// sacrificed in the same cost, and the removal has to happen before the
     /// zone change clears them all (CR 601.2h).
     pub fn remove_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        let before = self.get_counter_count(id, counter_type);
         if let Some(obj) = self.objects.get_mut(&id) {
             if let Some(current) = obj.counters.get_mut(&counter_type) {
                 *current = current.saturating_sub(count);
@@ -2788,7 +2844,17 @@ impl GameState {
                 }
             }
         }
+        // Logged like `add_counters`, for what actually came off: "remove
+        // three" from a permanent holding two removes two.
+        let removed = before.saturating_sub(self.get_counter_count(id, counter_type));
+        if removed > 0 {
+            let name = self.obj_name(id);
+            self.log(LogLevel::Event, format!(
+                "{name} loses {} (now {})",
+                Self::counters_phrase(counter_type, removed), before - removed));
+        }
     }
+
 
     /// Get the number of counters of a type on a permanent.
     #[must_use]
@@ -3866,6 +3932,23 @@ pub enum AwaitingAction {
 /// of mulligans themselves.
 pub const OPENING_HAND_SIZE: usize = 7;
 
+/// One trigger as a `ChooseTriggerOrder` prompt describes it, in parts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriggerOrderOption {
+    /// The object whose ability this is.
+    pub source: ObjectId,
+    /// Its name, from the face that is up.
+    pub source_name: String,
+    /// Its power and toughness, when it is a creature on the battlefield.
+    pub power_toughness: Option<(i32, i32)>,
+    /// What kind of trigger: "dies trigger", "upkeep trigger".
+    pub kind: String,
+    /// What the ability does, in the card's own words (may be empty).
+    pub ability: String,
+    /// What set it off: "Unruly Mob (#23) died", "the upkeep step began".
+    pub cause: String,
+}
+
 /// Describes what kind of mid-resolution choice is needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResolutionChoiceKind {
@@ -3982,7 +4065,15 @@ pub enum ResolutionChoiceKind {
         /// Positions of the group's triggers in that queue, parallel to
         /// `options`.
         indices: Vec<usize>,
+        /// What each trigger is, in parts, parallel to `options` — the
+        /// source, its P/T, the ability, and what set it off — so a player
+        /// ordering a dozen can be shown everything about each of them,
+        /// not one line of prose per row (issue #325). Empty in a prompt
+        /// saved before this field existed.
+        #[serde(default)]
+        details: Vec<TriggerOrderOption>,
     },
+
     /// CR 509.2: the attacking player announces the damage assignment order
     /// among the creatures blocking one attacker. Answered by `ChosenIndex`
     /// over `options`: the chosen blocker takes the next place in the order,
@@ -3998,6 +4089,26 @@ pub enum ResolutionChoiceKind {
         remaining: Vec<ObjectId>,
         /// Display names of those blockers.
         options: Vec<String>,
+    },
+    /// CR 616.1: two or more replacement and/or prevention effects apply to
+    /// one damage event and the order changes what happens, so the affected
+    /// player — the damaged player, or the damaged permanent's controller —
+    /// chooses which applies first. Answered by `ChosenIndex` over
+    /// `options`. The chosen effect applies, and the effects that still
+    /// apply to the event as modified are asked about again if the order
+    /// among them still matters (issue #323).
+    ChooseDamageEffect {
+        description: String,
+        /// The effects that apply, parallel to `options`.
+        effects: Vec<crate::damage::DamageEffect>,
+        /// What each would do, for the player choosing.
+        options: Vec<String>,
+        /// The event as it stands — the first unsettled entry of
+        /// `pending_damage`, which the answer is checked against.
+        source: ObjectId,
+        target: crate::events::DamageTarget,
+        amount: u32,
+        kind: crate::damage::DamageKind,
     },
     /// Divide permanents into two piles (Liliana of the Veil -6).
     /// The choosing player selects a subset to form pile 1; the rest form pile 2.

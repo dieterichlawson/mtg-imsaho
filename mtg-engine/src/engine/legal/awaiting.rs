@@ -272,7 +272,8 @@ pub(crate) fn legal_actions_while_awaiting(
                     })
                     .collect(),
                 ResolutionChoiceKind::ChooseTriggerOrder { options, .. }
-                | ResolutionChoiceKind::ChooseDamageAssignmentOrder { options, .. } => options
+                | ResolutionChoiceKind::ChooseDamageAssignmentOrder { options, .. }
+                | ResolutionChoiceKind::ChooseDamageEffect { options, .. } => options
                     .iter()
                     .enumerate()
                     .map(|(i, name)| Action::ResolveChoice {
@@ -296,7 +297,8 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseXFunding { description, .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. }
                 | ResolutionChoiceKind::ChooseTriggerOrder { description, .. }
-                | ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. } => {
+                | ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. }
+                | ResolutionChoiceKind::ChooseDamageEffect { description, .. } => {
                     description.clone()
                 }
                 // The description says what is being decided AND carries the

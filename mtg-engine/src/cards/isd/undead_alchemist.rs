@@ -88,6 +88,18 @@ impl CardBehavior for UndeadAlchemist {
         });
     }
 
+    fn replacement_offer(
+        &self,
+        state: &GameState,
+        self_id: ObjectId,
+        event: &crate::replacement::ReplaceableEvent,
+        registry: &CardRegistry,
+    ) -> Option<String> {
+        let (player, amount) = replaced_combat_damage(state, self_id, event, registry)?;
+        Some(format!("Undead Alchemist (#{}): instead p{} mills {amount} card{}",
+            self_id.0, player.0, if amount == 1 { "" } else { "s" }))
+    }
+
     fn replace_event(
         &self,
         state: &mut GameState,
@@ -95,25 +107,36 @@ impl CardBehavior for UndeadAlchemist {
         event: &crate::replacement::ReplaceableEvent,
         registry: &CardRegistry,
     ) -> Option<crate::replacement::Replacement> {
-        use crate::replacement::{ReplaceableEvent, Replacement};
-        // "If a Zombie you control would deal combat damage to a player,
-        // instead that player mills that many cards."
-        let ReplaceableEvent::DealsDamage { source, target, amount, combat: true } = event
-            else { return None };
-        let crate::events::DamageTarget::Player(damaged_player) = target else { return None };
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return None,
-        };
-        if state.get_object(*source).map(|o| o.controller) != Some(controller)
-            || !state.has_subtype(*source, "Zombie", registry)
-        {
-            return None;
-        }
-
+        let (player, amount) = replaced_combat_damage(state, self_id, event, registry)?;
         // mill_cards emits CreatureCardMilled, which the trigger system picks
         // up to fire our on_creature_card_milled (exile + Zombie token).
-        crate::engine::mill_cards(state, *damaged_player, *amount as usize, "Undead Alchemist", registry);
-        Some(Replacement::Replaced)
+        crate::engine::mill_cards(state, player, amount as usize, "Undead Alchemist", registry);
+        Some(crate::replacement::Replacement::Replaced)
     }
+}
+
+/// "If a Zombie you control would deal combat damage to a player": the
+/// player and the amount, when `event` is that — the one question both the
+/// offer and the replacement itself turn on, so they cannot disagree.
+fn replaced_combat_damage(
+    state: &GameState,
+    self_id: ObjectId,
+    event: &crate::replacement::ReplaceableEvent,
+    registry: &CardRegistry,
+) -> Option<(PlayerId, u32)> {
+    let crate::replacement::ReplaceableEvent::DealsDamage { source, target, amount, combat: true } = event
+        else { return None };
+    let crate::events::DamageTarget::Player(damaged_player) = target else { return None };
+    // A replacement effect functions only while its source is on the
+    // battlefield (CR 113.6); "you" is its controller (CR 608.2g).
+    if !crate::cards::helpers::still_on_battlefield(state, self_id) {
+        return None;
+    }
+    let controller = crate::cards::helpers::controller_of(state, self_id);
+    if state.get_object(*source).map(|o| o.controller) != Some(controller)
+        || !state.has_subtype(*source, "Zombie", registry)
+    {
+        return None;
+    }
+    Some((*damaged_player, *amount))
 }

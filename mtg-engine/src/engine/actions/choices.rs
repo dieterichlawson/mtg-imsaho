@@ -195,6 +195,116 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         return Applied::ReturnNow;
                     }
                 }
+                (ResolutionChoiceKind::ChooseDamageAssignmentOrder { attacker, remaining, options, .. },
+                 ResolvedChoice::ChosenOrder(order)) => {
+                    // CR 509.2, the whole order at once: every blocker still
+                    // to be placed, each exactly once, first to last.
+                    if !is_permutation(order, remaining.len()) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {order:?} is not an ordering of the {} blockers offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    let attacker = *attacker;
+                    for &k in order {
+                        crate::combat::place_in_damage_assignment_order(&mut *state, attacker, remaining[k]);
+                    }
+                    crate::combat::log_completed_order(&mut *state, attacker);
+                    crate::combat::announce_damage_assignment_order(&mut *state, registry);
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
+                (ResolutionChoiceKind::ChooseDamageEffect { effects, options, source, target, amount, kind, .. },
+                 ResolvedChoice::ChosenIndex(index, _)) => {
+                    // CR 616.1: the chosen effect applies to the damage
+                    // first; the pipeline then re-reads what still applies
+                    // and asks again only if the order among the rest
+                    // matters (issue #323).
+                    let Some(effect) = effects.get(*index) else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} effects offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
+                    let event = crate::damage::PendingDamage {
+                        source: *source, target: *target, amount: *amount, kind: *kind,
+                        applied: Vec::new(), settled: false,
+                    };
+                    let chooser = crate::damage::affected_player(&*state, target);
+                    crate::damage::apply_chosen_effect(&mut *state, chooser, &event, effect, registry);
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
+                (ResolutionChoiceKind::ChooseTriggerOrder { options, ap_queue, indices, .. },
+                 ResolvedChoice::ChosenOrder(order)) => {
+                    // CR 603.3b, the whole order at once (issue #325): every
+                    // offered trigger exactly once, first to last. The group
+                    // is lifted out of its queue and put back at the front
+                    // in that order, each marked as ordered, so the pushes —
+                    // and any target prompt one of them raises on the way
+                    // (CR 603.3d) — run through with no further ordering
+                    // prompt.
+                    let n = options.len();
+                    if !is_permutation(order, n) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {order:?} is not an ordering of the {n} triggers offered"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    let queue_len = if *ap_queue {
+                        state.pending_trigger_pushes_ap.len()
+                    } else {
+                        state.pending_trigger_pushes_nap.len()
+                    };
+                    if indices.len() != n || indices.iter().any(|&q| q >= queue_len) {
+                        state.log(LogLevel::Debug,
+                            "choice refused, the trigger queue no longer holds that group".into());
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    // Named before anything moves, in the order chosen.
+                    let (controller, names): (PlayerId, Vec<String>) = {
+                        let queue = if *ap_queue {
+                            &state.pending_trigger_pushes_ap
+                        } else {
+                            &state.pending_trigger_pushes_nap
+                        };
+                        (queue[indices[0]].source.controller,
+                         order.iter().map(|&k| queue[indices[k]].log_name(registry, state)).collect())
+                    };
+                    {
+                        let queue = if *ap_queue {
+                            &mut state.pending_trigger_pushes_ap
+                        } else {
+                            &mut state.pending_trigger_pushes_nap
+                        };
+                        // Lift the group out, highest position first so the
+                        // lower positions stay valid, keyed by prompt index.
+                        let mut group: Vec<Option<crate::triggers::PendingTrigger>> = vec![None; n];
+                        let mut by_position: Vec<(usize, usize)> = indices.iter().copied().enumerate()
+                            .map(|(k, q)| (q, k)).collect();
+                        by_position.sort_by(|a, b| b.0.cmp(&a.0));
+                        for (q, k) in by_position {
+                            group[k] = Some(queue.remove(q));
+                        }
+                        // Back in at the front, so that the first chosen is
+                        // the front: inserted last to first.
+                        for &k in order.iter().rev() {
+                            let mut trigger = group[k].take().expect("a permutation names each once");
+                            trigger.ordered = true;
+                            queue.insert(0, trigger);
+                        }
+                    }
+                    state.log(LogLevel::Event, format!(
+                        "p{}: ordered {n} triggers — {} (the first goes on the stack first and resolves last)",
+                        controller.0, names.join(", ")));
+                    crate::triggers::process_pending_trigger_pushes(&mut *state, registry);
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
                 (ResolutionChoiceKind::ChooseTriggerOrder { options, ap_queue, indices, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
                     // CR 603.3b: the chosen trigger goes on the stack next.
@@ -220,9 +330,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         return Applied::ReturnNow;
                     }
                     let trigger = queue.remove(queue_index);
+                    // Named with the source id, as the prompt named it — the
+                    // one record of which of several same-named triggers the
+                    // player chose to put on next (issue #326).
+                    let chosen = trigger.log_name(registry, state);
                     state.log(LogLevel::Event, format!(
-                        "p{}: put {} on the stack", trigger.source.controller.0,
-                        trigger.display_name(registry)));
+                        "p{}: put {chosen} on the stack", trigger.source.controller.0));
+
                     crate::triggers::push_one_pending_trigger(&mut *state, trigger, registry);
                     // The rest of the queue — including a re-prompt for the
                     // remaining group, or a target choice the pushed trigger
@@ -610,4 +724,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
         state.resolving_ability_activator = None;
     }
     Applied::Continue
+}
+
+/// Whether `order` lists each of `0..n` exactly once — what a whole-order
+/// answer (`ResolvedChoice::ChosenOrder`) has to be.
+fn is_permutation(order: &[usize], n: usize) -> bool {
+    if order.len() != n {
+        return false;
+    }
+    let mut seen = vec![false; n];
+    order.iter().all(|&i| i < n && !std::mem::replace(&mut seen[i], true))
 }

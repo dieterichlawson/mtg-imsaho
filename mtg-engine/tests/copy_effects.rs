@@ -96,7 +96,7 @@ fn a_copy_fires_the_copied_creatures_etb_ability() {
         .chain(state.pending_trigger_pushes_nap.iter())
         .chain(state.pending_triggers.iter())
         .any(|t| matches!(t,
-            PendingTrigger { source: TriggerSource { id: object_id, .. }, event: TriggerEvent::SelfEntered }
+            PendingTrigger { source: TriggerSource { id: object_id, .. }, event: TriggerEvent::SelfEntered, .. }
             if *object_id == twin))
         || state.stack.iter().any(|e| matches!(e,
             mtg_engine::state::StackEntry::Trigger(t) if t.source.id == twin));
@@ -169,6 +169,7 @@ fn a_token_copy_fires_the_copied_creatures_etb_ability() {
             PendingTrigger {
                 source: TriggerSource { id: watcher_id, .. },
                 event: TriggerEvent::CreatureEntered { .. },
+                ..
             })
         if *watcher_id == mentor));
     assert!(mentor_triggered,

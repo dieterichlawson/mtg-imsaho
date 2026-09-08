@@ -466,12 +466,64 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
             }
             distinct(remaining, w, v);
         }
-        K::ChooseTriggerOrder { options, ap_queue, indices, .. } => {
+        K::ChooseDamageEffect { effects, options, source: event_source, target, amount, kind, .. } => {
+            let w = "damage-effect prompt";
+            // CR 616.1: the choice is the affected player's, among two or
+            // more effects that apply to one event still waiting to be dealt.
+            if options.len() != effects.len() || effects.len() < 2 {
+                v.push(format!("{w} with {} options for {} effects", options.len(), effects.len()));
+            }
+            let affected = crate::damage::affected_player(state, target);
+            if player != affected {
+                v.push(format!("{w} asks p{}, not the affected player p{}", player.0, affected.0));
+            }
+            if source != *event_source {
+                v.push(format!("{w} sourced at #{} for damage from #{}", source.0, event_source.0));
+            }
+            let mut seen: Vec<&crate::damage::DamageEffect> = Vec::new();
+            for e in effects {
+                if seen.contains(&e) {
+                    v.push(format!("{w} offers {e:?} twice"));
+                }
+                seen.push(e);
+            }
+            match state.pending_damage.iter().find(|p| !p.settled) {
+                None => v.push(format!("{w} with no damage waiting to be dealt")),
+                Some(p) => {
+                    if p.source != *event_source || p.target != *target || p.amount != *amount || p.kind != *kind {
+                        v.push(format!("{w} describes {}'s {} damage but the queue's next event is {}'s {}",
+                            event_source.0, amount, p.source.0, p.amount));
+                    }
+                    let applicable = crate::damage::applicable_effects(state, p, registry);
+                    for e in effects {
+                        if !applicable.contains(e) {
+                            v.push(format!("{w} offers {e:?}, which does not apply to the event"));
+                        }
+                    }
+                }
+            }
+        }
+        K::ChooseTriggerOrder { options, ap_queue, indices, details, .. } => {
             let w = "trigger-order prompt";
             let q = if *ap_queue { &state.pending_trigger_pushes_ap } else { &state.pending_trigger_pushes_nap };
             if indices.len() != options.len() || indices.len() < 2 {
                 v.push(format!("{w} with {} options for {} indices", options.len(), indices.len()));
             }
+            // The parts describe the same triggers as the options, in the
+            // same order (issue #325); a prompt from an older save has none.
+            if !details.is_empty() {
+                if details.len() != options.len() {
+                    v.push(format!("{w} with {} details for {} options", details.len(), options.len()));
+                }
+                for (k, (d, &i)) in details.iter().zip(indices).enumerate() {
+                    if let Some(t) = q.get(i) {
+                        if d.source != t.source.id {
+                            v.push(format!("{w} detail {k} names #{} for a trigger from #{}", d.source.0, t.source.id.0));
+                        }
+                    }
+                }
+            }
+
             if indices.windows(2).any(|w2| w2[0] >= w2[1]) {
                 v.push(format!("{w} indices {indices:?} are not increasing"));
             }

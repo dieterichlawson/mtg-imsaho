@@ -242,13 +242,19 @@ fn leaving_the_battlefield_is_logged_by_destination() {
 
     let bear = named_permanent(&mut state, &registry, "Grizzly Bears", P0);
     state.move_object(bear, Zone::Exile, &registry);
-    assert!(state.game_log.iter().any(|e| e.message.contains("Grizzly Bears was exiled")),
+    assert!(state.game_log.iter().any(|e| e.message == format!("Grizzly Bears (#{}) was exiled", bear.0)),
         "battlefield -> exile logs 'was exiled'");
 
     let traveler = named_permanent(&mut state, &registry, "Doomed Traveler", P0);
     state.move_object(traveler, Zone::Graveyard, &registry);
-    assert!(state.game_log.iter().any(|e| e.message.contains("Doomed Traveler died")),
-        "battlefield -> graveyard logs 'died'");
+    // With the object id, like every other line that names an object: four
+    // creatures of one name dying to a sweeper were four identical lines
+    // (issue #326).
+    let died = format!("Doomed Traveler (#{}) died", traveler.0);
+    assert!(state.game_log.iter().any(|e| e.message == died),
+        "battlefield -> graveyard logs '{died}'; log was {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
 
     let in_hand = spell_in_hand(&mut state, &registry, "Elder Cathar", P0);
     let log_len = state.game_log.len();
@@ -290,7 +296,7 @@ fn a_noncreature_permanent_leaving_the_battlefield_is_logged_too() {
         "test setup: CR 704.5m puts the unattached Aura into its owner's graveyard");
 
     let new_lines: Vec<&String> = state.game_log[before..].iter().map(|e| &e.message).collect();
-    assert!(new_lines.iter().any(|m| m.contains("Claustrophobia was put into its owner's graveyard")),
+    assert!(new_lines.iter().any(|m| *m == &format!("Claustrophobia (#{}) was put into its owner's graveyard", aura.0)),
         "the Aura's trip to the graveyard is said out loud; new lines: {new_lines:?}");
     assert!(!new_lines.iter().any(|m| m.contains("Claustrophobia died")),
         "an Aura does not die — only a creature does (CR 700.4); new lines: {new_lines:?}");
@@ -300,13 +306,13 @@ fn a_noncreature_permanent_leaving_the_battlefield_is_logged_too() {
     let forest = named_permanent(&mut state, &registry, "Forest", P0);
     state.move_object(forest, Zone::Graveyard, &registry);
     assert!(state.game_log.iter().any(|e|
-        e.message.contains("Forest was put into its owner's graveyard")),
+        e.message == format!("Forest (#{}) was put into its owner's graveyard", forest.0)),
         "log: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let island = named_permanent(&mut state, &registry, "Island", P0);
     state.move_object(island, Zone::Exile, &registry);
-    assert!(state.game_log.iter().any(|e| e.message.contains("Island was exiled")),
+    assert!(state.game_log.iter().any(|e| e.message == format!("Island (#{}) was exiled", island.0)),
         "log: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 

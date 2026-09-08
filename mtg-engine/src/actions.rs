@@ -138,6 +138,20 @@ pub enum ResolvedChoice {
     /// The label is a human-readable name for the option
     /// (e.g. "Creature" for a card type choice).
     ChosenIndex(usize, String),
+    /// Put every offered option in order, in one answer: the indices of
+    /// the prompt's options, each exactly once, first to last.
+    ///
+    /// For `ChooseTriggerOrder` (CR 603.3b) the first listed trigger goes
+    /// on the stack first and so resolves last; for
+    /// `ChooseDamageAssignmentOrder` (CR 509.2) the first listed blocker is
+    /// assigned damage first. Both prompts also still take a `ChosenIndex`
+    /// naming the next one alone, and re-ask for the rest — the shape a
+    /// player picking from the flat action list uses. One ordering is one
+    /// decision (issue #325): a seat with twelve triggers should not have
+    /// to answer twelve prompts, and the log should record the order as
+    /// the one thing it was.
+    ChosenOrder(Vec<usize>),
+
     /// Choose a subset of objects (e.g., pile division — chosen objects form pile 1, rest form pile 2).
     ChosenSubset(Vec<ObjectId>),
     /// Funding choices for an X-cost spell or ability. Contains the player's

@@ -264,6 +264,9 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - `Ndmg` = N damage marked on it
 - `+1/+1:N`, `-1/-1:N`, `loyalty:N` etc. = counter counts
 
+A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
+
+
 **Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each tagged with its controller and its targets:
 ```
 Stack:
@@ -349,7 +352,11 @@ Combat resolves in this order: declare attackers → declare blockers → first-
 
 **Multi-blocker damage assignment.** When a single attacker is blocked by two or more creatures, the **attacking player** assigns its damage among the blockers. The attacker MUST assign at least lethal damage to the first blocker before any damage spills to the second, and at least lethal to the second before any spills to the third, etc. (Lethal = blocker's toughness minus damage already marked.) Combined blocker toughness is NOT a shared pool — you can't "absorb" 4 damage across a 1/4 and a 2/2 and have them both survive.
 
-**How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one prompt per place in the order, naming the blocker to be assigned damage next. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
+**How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one structured prompt listing the blockers, answered with `order`: every index exactly once, first to last. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
+
+**Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
+
+**Choosing between replacement and prevention effects on damage.** When two or more such effects apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead) on one Zombie's combat damage, or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the numbered options say what each effect would do (`double it to 4`, `instead p1 mills 2 cards`, `prevent all of it`). Pick the effect you want to apply FIRST; it applies, and the others apply afterwards only if they still can — a prevention or a mill ends the damage, so nothing after it happens, while doubling leaves a bigger damage event for the rest. You are only asked when the choice matters; two Flails, or a Flail under a Ghostly Possession, apply on their own.
 
 Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
 - It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
@@ -1391,22 +1398,17 @@ impl LlmPlayer {
                 // becomes (issue #205).
                 for (face_name, data) in card_faces(name, registry) {
                     let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                    let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                        CardType::Creature => "Creature",
-                        CardType::Instant => "Instant",
-                        CardType::Sorcery => "Sorcery",
-                        CardType::Enchantment => "Enchantment",
-                        CardType::Artifact => "Artifact",
-                        CardType::Land => "Land",
-                        CardType::Planeswalker => "Planeswalker",
-                    }).collect();
-                    let subtypes = if data.subtypes.is_empty() { String::new() }
-                        else { format!(" — {}", data.subtypes.join(" ")) };
+                    // The type line as printed, supertypes first (CR 205.4a):
+                    // "Legendary" is what arms the legend rule, and the seat
+                    // never saw the word (issue #333).
+                    let type_line = mtg_engine::types::type_line(
+                        &data.supertypes, &data.card_types, &data.subtypes);
                     let pt = match (data.power, data.toughness) {
                         (Some(p), Some(t)) => format!(" {p}/{t}"),
                         _ => String::new(),
                     };
-                    writeln!(s, "  {}{} {}{}{}", face_name, cost, types.join(" "), subtypes, pt).unwrap();
+                    writeln!(s, "  {}{} {}{}", face_name, cost, type_line, pt).unwrap();
+
                     if !data.oracle_text.is_empty() {
                         writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
                     }
@@ -1934,8 +1936,15 @@ impl LlmPlayer {
         for c in &creatures {
             let power = c.effective_power.or(c.power).unwrap_or(0);
             let toughness = c.effective_toughness.or(c.toughness).unwrap_or(0);
+            // "legendary" leads the ability words: it is the supertype that
+            // arms the legend rule (CR 704.5j), and the board text never
+            // carried it (issue #333).
+            let mut words: Vec<String> = Vec::new();
+            if Self::is_legendary(c) { words.push("legendary".into()); }
             let kw = Self::format_keywords(&c.keywords);
-            let kw_str = if kw.is_empty() { String::new() } else { format!(" {kw}") };
+            if !kw.is_empty() { words.push(kw); }
+            let kw_str = if words.is_empty() { String::new() } else { format!(" {}", words.join(", ")) };
+
             let mut flag_parts: Vec<String> = Vec::new();
             // A token's name is its subtypes alone (CR 111.4), so the board
             // says "token" here rather than in the name (issues #331, #334).
@@ -1963,7 +1972,9 @@ impl LlmPlayer {
         for o in &other {
             if o.attached_to.is_some() { continue; } // skip auras, shown with creature
             let mut flag_parts: Vec<String> = Vec::new();
+            if Self::is_legendary(o) { flag_parts.push("legendary".into()); }
             if o.is_token { flag_parts.push("token".into()); }
+
             if o.tapped { flag_parts.push("T".into()); }
             // The chosen name is the permanent's whole identity (Nevermore's
             // ban) — without it a spell just vanishes from the menu (#130).
@@ -2062,6 +2073,8 @@ impl LlmPlayer {
                     ResolvedChoice::ChosenIndex(_, ref label) => {
                         label.clone()
                     }
+                    ResolvedChoice::ChosenOrder(order) => format!("Order: {}",
+                        order.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")),
                     ResolvedChoice::ChosenSubset(ids) => {
                         let names: Vec<String> = ids.iter()
                             .map(|id| Self::obj_name(view, *id))
@@ -2550,7 +2563,58 @@ impl LlmPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(pile_1_ids) }
     }
 
+    /// Ask for a whole ordering of `rows` (issue #325): the response is the
+    /// list of indices, each exactly once, first to last. A response that is
+    /// not a permutation falls back to the order as listed, which is what
+    /// the flat action list would have produced from the same seat.
+    fn choose_ordering(&mut self, view: &GameView, description: &str, rows: &[String], rule: &str) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let n = rows.len();
+        let listed: String = rows.iter().enumerate()
+            .map(|(i, r)| format!("  {i}: {r}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let action_text = format!(
+            "{description}\n{rule}\n\nEntries to order:\n{listed}\n\n\
+             Respond with `order`: every index from 0 to {} exactly once, in the order you choose.",
+            n.saturating_sub(1));
+        let prompt = self.build_prompt(view, &action_text);
+        let valid_indices: Vec<serde_json::Value> = (0..n).map(|i| serde_json::json!(i)).collect();
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "order": {
+                    "type": "array",
+                    "items": {"type": "integer", "enum": valid_indices},
+                    "description": format!("Every index 0..{} exactly once, first to last", n.saturating_sub(1))
+                }
+            },
+            "required": ["thoughts", "order"]
+        });
+        let response = self.send_message_structured(&prompt, &schema);
+        let order = Self::parse_order_response(&response["order"], n).unwrap_or_else(|| {
+            self.log("FALLBACK", &format!("order response was not a permutation of 0..{n}: {}; keeping the listed order", response["order"]));
+            (0..n).collect()
+        });
+        self.log("CHOSE", &format!("order: {order:?}"));
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order) }
+    }
+
+    /// The `order` array of an ordering response as a permutation of `0..n`,
+    /// or `None` when it is not one.
+    fn parse_order_response(value: &serde_json::Value, n: usize) -> Option<Vec<usize>> {
+        let arr = value.as_array()?;
+        let order: Vec<usize> = arr.iter()
+            .map(|v| v.as_u64().and_then(|x| usize::try_from(x).ok()))
+            .collect::<Option<Vec<_>>>()?;
+        let mut seen = vec![false; n];
+        let ok = order.len() == n && order.iter().all(|&i| i < n && !std::mem::replace(&mut seen[i], true));
+        ok.then_some(order)
+    }
+
     /// Handle a `ChooseExileFromGraveyard` resolution prompt.
+
     ///
     /// The engine surfaces eligible graveyard cards (filtered per the
     /// spell's additional cost: creatures only for Stitched Drake et al.,
@@ -2971,6 +3035,34 @@ impl Player for LlmPlayer {
             return self.choose_pile_division(view, &permanents, legal.context.as_deref());
         }
 
+        // An ordering is one decision (issue #325): the seat lists every
+        // index once, first to last, instead of answering one prompt per
+        // place — twelve simultaneous triggers were twelve round trips.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder {
+            description, options, details, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            let rows: Vec<String> = options.iter().enumerate().map(|(k, o)| match details.get(k) {
+                Some(d) => {
+                    let pt = d.power_toughness.map(|(p, t)| format!(" {p}/{t}")).unwrap_or_default();
+                    let what = if d.ability.is_empty() { d.kind.clone() } else { format!("{}: {}", d.kind, d.ability) };
+                    format!("{} (#{}){pt} — {what} — triggered by: {}", d.source_name, d.source.0, d.cause)
+                }
+                None => o.clone(),
+            }).collect();
+            return self.choose_ordering(view, description, &rows,
+                "The first index you list goes on the stack FIRST and so resolves LAST; the last you list resolves FIRST (CR 603.3b). \
+                 Put the trigger you want to resolve first at the END of the list.");
+        }
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+            description, options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return self.choose_ordering(view, description, options,
+                "The first index you list is assigned damage FIRST and must be assigned lethal damage before the next gets any (CR 510.1c). \
+                 Put the blocker you most want dead first.");
+        }
+
         // Auto-pass when there's nothing interesting to do. Logged at
         // debug level — it can fire many steps in a row.
         if Self::should_auto_pass(view, legal_actions) {
@@ -3367,9 +3459,14 @@ from your hand to put on the bottom of your library.\n\
         }).collect::<Vec<_>>().join(", ")
     }
 
+    fn is_legendary(p: &mtg_engine::view::PermanentView) -> bool {
+        p.supertypes.contains(&mtg_engine::types::Supertype::Legendary)
+    }
+
     /// Format a permanent for combat/selection display: "Name (#id) P/T keywords".
     /// Always includes the object ID for unambiguous reference.
     fn format_combat_creature(view: &GameView, id: ObjectId) -> String {
+
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
             let power = p.effective_power.or(p.power).unwrap_or(0);
             let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
@@ -3796,6 +3893,19 @@ mod tests {
         }
     }
 
+    /// The CR 616.1 prompt is a flat numbered choice like any other, so the
+    /// model needs to be told what it is choosing and what "first" means
+    /// (issue #323).
+    #[test]
+    fn the_damage_effect_choice_is_documented() {
+        let para = GAME_RULES.find("**Choosing between replacement and prevention effects on damage.**")
+            .expect("documented");
+        let rest = &GAME_RULES[para..];
+        for phrase in ["CR 616.1", "AFFECTED player", "apply FIRST", "double it to 4", "prevent all of it"] {
+            assert!(rest.contains(phrase), "the paragraph explains {phrase:?}");
+        }
+    }
+
     /// Both mulligan prompts carry the context markers GAME_RULES documents.
     #[test]
     fn mulligan_prompts_carry_the_documented_context_markers() {
@@ -4088,6 +4198,7 @@ mod tests {
             object_id: ObjectId(id),
             card_id: CardId(0),
             name: name.into(),
+            supertypes: vec![],
             card_types: vec![CardType::Creature],
             controller,
             owner: controller,
@@ -4164,11 +4275,57 @@ this Aura deals 1 damage to that player.";
             "two same-named curses on opposite players must not render identically");
     }
 
+    /// Issue #325: an ordering response is a permutation of the offered
+    /// indices or it is nothing — a duplicate, a gap or an index out of
+    /// range falls back to the listed order rather than a partial one.
+    #[test]
+    fn an_order_response_is_a_permutation_or_nothing() {
+        let ok = serde_json::json!([2, 0, 1]);
+        assert_eq!(LlmPlayer::parse_order_response(&ok, 3), Some(vec![2, 0, 1]));
+        for bad in [serde_json::json!([0, 1]), serde_json::json!([0, 1, 1]), serde_json::json!([0, 1, 3]),
+                    serde_json::json!([0, 1, 2, 0]), serde_json::json!("2 0 1"), serde_json::json!(null),
+                    serde_json::json!([0, -1, 2])] {
+            assert_eq!(LlmPlayer::parse_order_response(&bad, 3), None, "{bad}");
+        }
+        assert_eq!(LlmPlayer::parse_order_response(&serde_json::json!([]), 0), Some(vec![]));
+    }
+
+    /// Issue #333: the board text never said a permanent was legendary, so a
+
+    /// seat could not see the legend rule (CR 704.5j) coming. A legendary
+    /// creature carries "legendary" with its keywords; any other legendary
+    /// permanent carries it in its flags.
+    #[test]
+    fn a_legend_is_marked_on_the_board() {
+        let you = PlayerId(0);
+        let mut mikaeus = perm(24, "Mikaeus, the Lunarch", 1, 1, you);
+        mikaeus.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        mikaeus.keywords = vec![mtg_engine::types::Keyword::Flying];
+        let bears = perm(25, "Grizzly Bears", 2, 2, you);
+        let mut grimoire = perm(26, "Grimoire of the Dead", 0, 0, you);
+        grimoire.card_types = vec![CardType::Artifact];
+        grimoire.power = None;
+        grimoire.toughness = None;
+        grimoire.effective_power = None;
+        grimoire.effective_toughness = None;
+        grimoire.supertypes = vec![mtg_engine::types::Supertype::Legendary];
+        let perms = vec![&mikaeus, &bears, &grimoire];
+
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        let line = |id: u64| output.lines().find(|l| l.contains(&format!("(#{id})")))
+            .unwrap_or_else(|| panic!("#{id} on a line: {output}")).to_string();
+        assert!(line(24).contains("1/1 legendary, flying"), "{}", line(24));
+        assert!(!line(25).contains("legendary"), "{}", line(25));
+        assert!(line(26).contains("[legendary]"), "{}", line(26));
+    }
+
     fn aura(id: u64, name: &str, attached_to: u64, controller: PlayerId) -> PermanentView {
+
         PermanentView {
             object_id: ObjectId(id),
             card_id: CardId(0),
             name: name.into(),
+            supertypes: vec![],
             card_types: vec![CardType::Enchantment],
             controller,
             owner: controller,

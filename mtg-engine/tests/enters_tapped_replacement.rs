@@ -114,7 +114,7 @@ fn check_land_puts_no_trigger_on_the_stack() {
             let entries = state.stack.iter()
                 .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
                     PendingTrigger { source: TriggerSource { id: object_id, .. },
-                        event: TriggerEvent::SelfEntered }) if *object_id == id))
+                        event: TriggerEvent::SelfEntered, .. }) if *object_id == id))
                 .count();
             assert_eq!(entries, 0,
                 "{land} (with a {basic}) must not put an ETB trigger on the \

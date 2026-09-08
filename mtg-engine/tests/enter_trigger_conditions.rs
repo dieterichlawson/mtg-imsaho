@@ -42,7 +42,7 @@ fn enter_watch_triggers(state: &GameState, watcher: ObjectId) -> usize {
         .filter(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(
             PendingTrigger {
                 source: TriggerSource { id: watcher_id, .. },
-                event: TriggerEvent::CreatureEntered { .. } }) if *watcher_id == watcher))
+                event: TriggerEvent::CreatureEntered { .. }, .. }) if *watcher_id == watcher))
         .count()
 }
 

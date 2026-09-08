@@ -75,7 +75,7 @@ fn every_event_that_names_a_player_is_range_checked() {
         GameEvent::Discarded { player: g, object: bear },
         GameEvent::LibraryShuffled { player: g },
         GameEvent::EnteredBattlefield { object: bear, controller: g },
-        GameEvent::CreatureDied { object: bear, card_id, controller: g, damaged_by: vec![],
+        GameEvent::CreatureDied { object: bear, name: "Grizzly Bears".into(), card_id, controller: g, damaged_by: vec![],
                                   last_known_toughness: 2, is_token: false, subtypes: vec![] },
         GameEvent::LeftBattlefield { object: bear, to: Zone::Graveyard, last_controller: g },
         GameEvent::CreatureCardMilled { object: bear, milled_player: g },
@@ -428,6 +428,256 @@ fn a_damage_event_describes_damage_that_could_have_happened() {
     quiet_about(&s, &reg, "no matching life loss");
 }
 
+/// CR 510.1b-d/510.4/702.15b: the rest of what a combat damage event has to
+/// agree with — who may hit whom once blocks are in, which step a striker
+/// deals in, and the life a lifelinker gains in the same breath.
+#[test]
+fn combat_damage_events_agree_with_the_blocks_and_the_step() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let bystander = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::CombatDamage;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(attacker, P1);
+    c.blocker_assignments.insert(attacker, vec![blocker]);
+    c.blocked_attackers.insert(attacker);
+    state.combat = Some(c);
+
+    // The ordinary shape: the attacker and its blocker trade, each hit
+    // marked on the object that took it.
+    let mut trade = state.clone();
+    for (id, by) in [(blocker, attacker), (attacker, blocker)] {
+        trade.get_object_mut(id).unwrap().damage_marked = 2;
+        trade.get_object_mut(id).unwrap().damaged_by.push(by);
+    }
+    trade.events = vec![
+        GameEvent::CombatDamageDealt { source: attacker, target: DamageTarget::Object(blocker), amount: 2 },
+        GameEvent::CombatDamageDealt { source: blocker, target: DamageTarget::Object(attacker), amount: 2 },
+    ];
+    clean(&trade, &reg);
+
+    // CR 510.1d: a blocker's damage goes to the attacker it is blocking.
+    let mut s = trade.clone();
+    s.get_object_mut(bystander).unwrap().damage_marked = 2;
+    s.get_object_mut(bystander).unwrap().damaged_by.push(blocker);
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: blocker, target: DamageTarget::Object(bystander), amount: 2 }];
+    flags(&s, &reg, &format!("a blocker of #{} hit something else (CR 510.1d)", attacker.0));
+
+    // CR 510.1c: a blocked attacker reaches the player only with trample.
+    let mut s = state.clone();
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "a blocked attacker without trample reached the player (CR 510.1c)");
+    grant_keyword(&mut s, attacker, Keyword::Trample);
+    quiet_about(&s, &reg, "without trample reached the player");
+
+    // CR 510.1b: an unblocked attacker hitting the player it is attacking is
+    // the ordinary case, and is not flagged.
+    let mut unblocked = state.clone();
+    unblocked.combat.as_mut().unwrap().blocker_assignments.clear();
+    unblocked.combat.as_mut().unwrap().blocked_attackers.clear();
+    let mut s = unblocked.clone();
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    clean(&s, &reg);
+
+    // CR 120.3a: the life loss is that player's, and is the damage dealt.
+    let mut s = unblocked.clone();
+    s.get_player_mut(P0).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P0, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "no matching life loss for p1 (CR 120.3a)");
+    let mut s = unblocked.clone();
+    s.get_player_mut(P1).life = 19;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 19 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "no matching life loss for p1 (CR 120.3a)");
+
+    // CR 702.15b: lifelink gains its controller that much life, in the same
+    // window, after the damage.
+    let mut s = unblocked.clone();
+    grant_keyword(&mut s, attacker, Keyword::Lifelink);
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "lifelink but no life gain for its controller (CR 702.15b)");
+    s.get_player_mut(P0).life = 22;
+    s.events.push(GameEvent::LifeChanged { player: P0, old: 20, new_life: 22 });
+    quiet_about(&s, &reg, "lifelink but no life gain");
+
+    // CR 510.4: the first-strike step is for first and double strikers.
+    let mut s = trade.clone();
+    s.combat_damage_step_pending = true;
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: attacker, target: DamageTarget::Object(blocker), amount: 2 }];
+    flags(&s, &reg, "dealt in the first-strike step without first strike (CR 510.4)");
+    grant_keyword(&mut s, attacker, Keyword::FirstStrike);
+    quiet_about(&s, &reg, "without first strike");
+    let mut s2 = s.clone();
+    s2.until_end_of_turn.clear();
+    grant_keyword(&mut s2, attacker, Keyword::DoubleStrike);
+    quiet_about(&s2, &reg, "without first strike");
+}
+
+/// CR 106.4/504.1: what an event window says about the step it sits in —
+/// mana of a real size, one draw for the active player, and combat damage
+/// only in a combat damage step with a combat.
+#[test]
+fn the_events_of_a_step_are_checked_against_the_step() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+
+    // CR 106.4: mana is added in some amount; zero is not an amount.
+    let mut s = state.clone();
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 1);
+    s.events = vec![GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 }];
+    quiet_about(&s, &reg, "ManaAdded of nothing");
+    let mut s = state.clone();
+    s.events = vec![GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 0 }];
+    flags(&s, &reg, "ManaAdded of nothing");
+
+    // CR 510.2: combat damage is dealt in a combat damage step, with a
+    // combat — either half missing is the violation.
+    let mut fighting = state.clone();
+    fighting.step = Step::CombatDamage;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(bear, P1);
+    c.blocker_assignments.insert(bear, vec![]);
+    fighting.combat = Some(c);
+    fighting.get_player_mut(P1).life = 18;
+    fighting.events = vec![
+        GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+        GameEvent::CombatDamageDealt { source: bear, target: DamageTarget::Player(P1), amount: 2 },
+    ];
+    quiet_about(&fighting, &reg, "(CR 510.2)");
+    let mut s = fighting.clone();
+    s.step = Step::PrecombatMain;
+    flags(&s, &reg, "combat damage dealt in PrecombatMain (CR 510.2)");
+    let mut s = fighting.clone();
+    s.combat = None;
+    flags(&s, &reg, "combat damage dealt in CombatDamage (CR 510.2)");
+    let _ = other;
+}
+
+/// CR 701.9a/302.6: a discard is of that player's own card, and a tap is of
+/// something still on the battlefield.
+#[test]
+fn a_discard_names_its_players_card_and_a_tap_a_permanent() {
+    let (mut state, reg) = base();
+    let mine = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let mut s = state.clone();
+    s.move_object(mine, Zone::Graveyard, &reg);
+    s.events.push(GameEvent::Discarded { player: P0, object: mine });
+    quiet_about(&s, &reg, "(CR 701.9a)");
+
+    let mut s = state.clone();
+    s.move_object(theirs, Zone::Graveyard, &reg);
+    s.events.push(GameEvent::Discarded { player: P0, object: theirs });
+    flags(&s, &reg, "not that player's card (CR 701.9a)");
+
+    // A token is nobody's card to discard (CR 111.8).
+    let mut s = state.clone();
+    let token = s.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    s.events.push(GameEvent::Discarded { player: P0, object: token });
+    flags(&s, &reg, "not that player's card (CR 701.9a)");
+
+    // A permanent that was tapped in this window is still on the
+    // battlefield at the end of it, unless something announced it leaving.
+    let mut s = base().0;
+    let bear = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(bear).unwrap().tapped = true;
+    s.events = vec![GameEvent::Tapped { object: bear }];
+    quiet_about(&s, &reg, "but is in");
+    s.get_object_mut(bear).unwrap().zone = Zone::Graveyard;
+    flags(&s, &reg, &format!("#{} was tapped but is in Graveyard", bear.0));
+}
+
+/// CR 400.7/302.6/306.5b: what the entry and departure events promise about
+/// the object afterwards — it is where the last move said, a creature that
+/// just arrived is summoning sick, and a planeswalker arrives on its
+/// printed loyalty.
+#[test]
+fn an_entry_event_describes_the_permanent_that_arrived() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bear).unwrap().summoning_sick = true;
+    state.events = vec![GameEvent::EnteredBattlefield { object: bear, controller: P0 }];
+    clean(&state, &reg);
+
+    // CR 302.6: it came under its controller's command this turn.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().summoning_sick = false;
+    flags(&s, &reg, "entered this action but is not summoning sick (CR 302.6)");
+
+    // CR 400.7: the object is where the last move it announced put it.
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.events = vec![GameEvent::LeftBattlefield {
+        object: card, to: Zone::Graveyard, last_controller: P0 }];
+    flags(&s, &reg, "last moved to Graveyard but is in Battlefield");
+
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(card).unwrap().zone = Zone::Exile;
+    s.events = vec![GameEvent::ObjectMoved {
+        object: card, from: Zone::Battlefield, to: Zone::Graveyard }];
+    flags(&s, &reg, "last moved to Graveyard but is in Exile");
+
+    // CR 400.7: an entry event is about a permanent that is on the
+    // battlefield afterwards.
+    let mut s = base().0;
+    let card = spell_in_hand(&mut s, &reg, "Grizzly Bears", P0);
+    s.events = vec![GameEvent::EnteredBattlefield { object: card, controller: P0 }];
+    flags(&s, &reg, "last moved to Battlefield but is in Hand");
+
+    // CR 111.8 is about tokens: a card that leaves and comes back in one
+    // window is an ordinary flicker, not a token returning from nowhere.
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.events = vec![
+        GameEvent::LeftBattlefield { object: card, to: Zone::Exile, last_controller: P0 },
+        GameEvent::EnteredBattlefield { object: card, controller: P0 },
+    ];
+    s.get_object_mut(card).unwrap().summoning_sick = true;
+    quiet_about(&s, &reg, "(CR 111.8)");
+
+    // And the tap ledger is cleared by leaving: tapped, then gone, is not a
+    // permanent that "was tapped but is in Graveyard".
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(card).unwrap().tapped = true;
+    s.events = vec![
+        GameEvent::Tapped { object: card },
+        GameEvent::LeftBattlefield { object: card, to: Zone::Graveyard, last_controller: P0 },
+    ];
+    s.get_object_mut(card).unwrap().zone = Zone::Graveyard;
+    quiet_about(&s, &reg, "was tapped but is in");
+
+    // CR 306.5b: a planeswalker enters with the loyalty its card prints.
+    let mut s = base().0;
+    let walker = named_permanent(&mut s, &reg, "Liliana of the Veil", P0);
+    let printed = counters_of(&s, walker, CounterType::Loyalty);
+    assert!(printed > 0, "test setup: Liliana enters on her printed loyalty");
+    s.events = vec![GameEvent::EnteredBattlefield { object: walker, controller: P0 }];
+    quiet_about(&s, &reg, "(CR 306.5b)");
+    set_loyalty(&mut s, walker, printed + 1);
+    flags(&s, &reg, "(CR 306.5b)");
+}
+
 /// CR 121.1/701.8a/701.17a: what the zone-change events say about where the
 /// card they name ended up.
 #[test]
@@ -500,7 +750,7 @@ fn a_death_event_is_a_zone_change_to_the_graveyard() {
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let card_id = state.get_object(bear).unwrap().card_id;
     let died = |controller: PlayerId, is_token: bool| GameEvent::CreatureDied {
-        object: bear, card_id, controller, damaged_by: vec![],
+        object: bear, name: "Grizzly Bears".into(), card_id, controller, damaged_by: vec![],
         last_known_toughness: 2, is_token, subtypes: vec![] };
 
     let mut dead = state.clone();
@@ -612,7 +862,7 @@ fn the_result_events_agree_with_the_result() {
 #[test]
 fn a_step_boundary_leaves_nothing_straddling_it() {
     let (mut state, reg) = base();
-    named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     state.events = vec![GameEvent::StepStarted { step: Step::PrecombatMain }];
     clean(&state, &reg);
 
@@ -631,6 +881,22 @@ fn a_step_boundary_leaves_nothing_straddling_it() {
     let mut s = state.clone();
     s.consecutive_passes = 1;
     flags(&s, &reg, "1 passes carried across a step boundary");
+
+    // CR 500.2: nothing a step boundary crosses is mid-flight — each of the
+    // three ways a resolution can straddle one.
+    let straddling = |f: &dyn Fn(&mut GameState)| {
+        let mut c = state.clone();
+        f(&mut c);
+        c
+    };
+    flags(&straddling(&|c| {
+        c.pending_ability_effect = Some(mtg_engine::state::PendingAbilityEffect {
+            source_id: bear, ability_index: 0,
+            behavior_card_id: c.get_object(bear).unwrap().card_id,
+            targets: vec![], description: "an ability".into(), activator: P0,
+            target_requirement: None, unpaid: None,
+        });
+    }), &reg, "a cast or resolution straddles a step boundary");
 
     // CR 502.1: the untap step is the first step of a turn.
     let mut s = state.clone();
@@ -660,6 +926,52 @@ fn a_turn_start_finds_the_board_reset() {
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().regeneration_shields = 1;
     flags(&s, &reg, "keeps a regeneration shield (CR 514.2)");
+
+    // CR 514.1: a turn ends with its player at seven cards, and the count is
+    // seven, not six.
+    let mut s = state.clone();
+    for _ in 0..7 {
+        spell_in_hand(&mut s, &reg, "Forest", P1);
+    }
+    quiet_about(&s, &reg, "(CR 514.1)");
+    spell_in_hand(&mut s, &reg, "Forest", P1);
+    flags(&s, &reg, "holds 8 cards after their cleanup (CR 514.1)");
+
+    // Each of the three leftovers a combat can leave behind, alone.
+    let mut s = state.clone();
+    s.combat_damage_step_pending = true;
+    flags(&s, &reg, "combat state survives");
+    let mut s = state.clone();
+    let card = s.get_object(bear).unwrap().card_id;
+    s.end_of_combat_exiles.push(mtg_engine::state::EndOfCombatExileEntry {
+        target_id: bear, source_id: bear, source_card_id: card, controller: P0,
+        description: "a delayed exile".into(),
+    });
+    flags(&s, &reg, "combat state survives");
+
+    // CR 305.2/103.7a: the turn starts in one of its opening steps, for the
+    // player it names, on the turn it names.
+    let mut s = state.clone();
+    s.step = Step::EndStep;
+    flags(&s, &reg, "is active on turn 3 in EndStep");
+    let mut s = state.clone();
+    s.events = vec![GameEvent::TurnStarted { player: P1, turn: 3 }];
+    flags(&s, &reg, "is active on turn 3");
+    let mut s = state.clone();
+    s.events = vec![GameEvent::TurnStarted { player: P0, turn: 4 }];
+    flags(&s, &reg, "is active on turn 3");
+
+    // CR 514.2 removes all three marks the turn leaves on a permanent, and
+    // each of them alone is enough to say the cleanup did not happen.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().damage_marked = 1;
+    flags(&s, &reg, "carries damage from last turn (CR 514.2)");
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().damaged_by.push(bear);
+    flags(&s, &reg, "carries damage from last turn (CR 514.2)");
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().dealt_deathtouch_damage = true;
+    flags(&s, &reg, "carries damage from last turn (CR 514.2)");
 
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().summoning_sick = true;

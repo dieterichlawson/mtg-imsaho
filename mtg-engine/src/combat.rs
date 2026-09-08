@@ -231,7 +231,7 @@ fn next_unordered_attacker(state: &GameState) -> Option<(ObjectId, Vec<ObjectId>
 
 /// Log an attacker's order once every blocker has a place in it. Only worth
 /// saying when there was a choice to make.
-fn log_completed_order(state: &mut GameState, attacker: ObjectId) {
+pub(crate) fn log_completed_order(state: &mut GameState, attacker: ObjectId) {
     let order = state.combat.as_ref()
         .and_then(|c| c.damage_assignment_order.get(&attacker))
         .cloned()
@@ -416,14 +416,33 @@ pub fn fight(state: &mut GameState, a: ObjectId, b: ObjectId, registry: &CardReg
     let power_a = u32::try_from(state.effective_power(a, registry).unwrap_or(0).max(0)).unwrap_or(0);
     let power_b = u32::try_from(state.effective_power(b, registry).unwrap_or(0).max(0)).unwrap_or(0);
 
-    crate::damage::deal_damage(state, a, DamageTarget::Object(b), power_a, crate::damage::DamageKind::NonCombat, registry);
-    crate::damage::deal_damage(state, b, DamageTarget::Object(a), power_b, crate::damage::DamageKind::NonCombat, registry);
+    // Queued together and dealt together, for the same reason: neither half
+    // lands while a choice about the other is open.
+    crate::damage::queue_damage(state, a, DamageTarget::Object(b), power_a, crate::damage::DamageKind::NonCombat);
+    crate::damage::queue_damage(state, b, DamageTarget::Object(a), power_b, crate::damage::DamageKind::NonCombat);
+    crate::damage::process_pending_damage(state, registry);
 }
 
 /// Execute one combat damage step.
 /// If `first_strike_only`, only creatures with first/double strike deal damage.
 /// If not, creatures without first strike deal damage (plus double strikers again).
+///
+/// All of the step's damage is queued first and dealt together at the end
+/// (CR 510.2: combat damage is dealt simultaneously). Where the affected
+/// player has a choice to make about one event (CR 616.1), the step waits
+/// on it with nothing dealt yet; the answer deals the rest.
 fn deal_damage_step(
+    state: &mut GameState,
+    combat: &CombatState,
+    registry: &CardRegistry,
+    first_strike_only: bool,
+) {
+    queue_damage_step(state, combat, registry, first_strike_only);
+    crate::damage::process_pending_damage(state, registry);
+}
+
+/// Queue every event of one combat damage step, in attacker order.
+fn queue_damage_step(
     state: &mut GameState,
     combat: &CombatState,
     registry: &CardRegistry,
@@ -515,12 +534,12 @@ fn deal_damage_step(
                     // defending player, which no version of trample has ever
                     // done (issue #246).
                     Some(walker) if walker_still_there => {
-                        deal_damage_to_creature(
-                            state, attacker_id, walker, attacker_power, registry);
+                        queue_combat_damage_to_creature(
+                            state, attacker_id, walker, attacker_power);
                     }
                     Some(_) => {} // attacked walker is gone: no combat damage
-                    None => deal_damage_to_player(
-                        state, attacker_id, defending_player, attacker_power, registry),
+                    None => queue_combat_damage_to_player(
+                        state, attacker_id, defending_player, attacker_power),
                 }
             }
         } else {
@@ -561,7 +580,7 @@ fn deal_damage_step(
                 if blocker_deals {
                     let blocker_power = u32::try_from(state.effective_power(blocker_id, registry).unwrap_or(0).max(0)).unwrap_or(0);
                     if blocker_power > 0 {
-                        deal_damage_to_creature(state, blocker_id, attacker_id, blocker_power, registry);
+                        queue_combat_damage_to_creature(state, blocker_id, attacker_id, blocker_power);
                     }
                 }
 
@@ -586,7 +605,7 @@ fn deal_damage_step(
                     };
 
                     if assigned > 0 {
-                        deal_damage_to_creature(state, attacker_id, blocker_id, assigned, registry);
+                        queue_combat_damage_to_creature(state, attacker_id, blocker_id, assigned);
                         remaining_power -= assigned;
                     }
                 }
@@ -599,12 +618,12 @@ fn deal_damage_step(
             if has_trample && remaining_power > 0 {
                 match attacked_walker {
                     Some(walker) if walker_still_there => {
-                        deal_damage_to_creature(
-                            state, attacker_id, walker, remaining_power, registry);
+                        queue_combat_damage_to_creature(
+                            state, attacker_id, walker, remaining_power);
                     }
                     Some(_) => {} // attacked walker is gone: overflow lands nowhere
-                    None => deal_damage_to_player(
-                        state, attacker_id, defending_player, remaining_power, registry),
+                    None => queue_combat_damage_to_player(
+                        state, attacker_id, defending_player, remaining_power),
                 }
             }
         }
@@ -618,26 +637,24 @@ pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardReg
     state.subtypes_of(creature_id, registry)
 }
 
-/// Deal combat damage from a source creature to a target creature.
-fn deal_damage_to_creature(
+/// Queue combat damage from a source creature to a target creature.
+fn queue_combat_damage_to_creature(
     state: &mut GameState,
     source: ObjectId,
     target: ObjectId,
     amount: u32,
-    registry: &CardRegistry,
 ) {
-    crate::damage::deal_damage(state, source, DamageTarget::Object(target), amount, crate::damage::DamageKind::Combat, registry);
+    crate::damage::queue_damage(state, source, DamageTarget::Object(target), amount, crate::damage::DamageKind::Combat);
 }
 
-/// Deal combat damage from a source creature to a player.
-fn deal_damage_to_player(
+/// Queue combat damage from a source creature to a player.
+fn queue_combat_damage_to_player(
     state: &mut GameState,
     source: ObjectId,
     player: PlayerId,
     amount: u32,
-    registry: &CardRegistry,
 ) {
-    crate::damage::deal_damage(state, source, DamageTarget::Player(player), amount, crate::damage::DamageKind::Combat, registry);
+    crate::damage::queue_damage(state, source, DamageTarget::Player(player), amount, crate::damage::DamageKind::Combat);
 }
 
 /// Clean up combat state at end of combat. Any delayed triggered abilities

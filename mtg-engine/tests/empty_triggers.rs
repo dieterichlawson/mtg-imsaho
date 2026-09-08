@@ -84,6 +84,7 @@ fn aura_leaving_battlefield_creates_no_ltb_trigger() {
         matches!(e, StackEntry::Trigger(PendingTrigger {
             source: TriggerSource { .. },
             event: TriggerEvent::LeftBattlefield,
+            ..
         }))
     ).count();
     assert_eq!(ltb_count, 0,
@@ -106,6 +107,7 @@ fn fiend_hunter_ltb_trigger_still_fires() {
         matches!(e, StackEntry::Trigger(PendingTrigger {
             source: TriggerSource { .. },
             event: TriggerEvent::LeftBattlefield,
+            ..
         }))
     );
     assert!(has_ltb, "Fiend Hunter's LTB trigger must still fire");
@@ -126,6 +128,7 @@ fn doomed_traveler_selfdies_trigger_still_fires() {
         matches!(e, StackEntry::Trigger(PendingTrigger {
             source: TriggerSource { .. },
             event: TriggerEvent::SelfDies,
+            ..
         }))
     );
     assert!(has_dies, "Doomed Traveler's dies trigger must still fire");

@@ -76,28 +76,16 @@ pub enum Replacement {
 /// event, which is why each candidate is asked once and dropped afterwards.
 ///
 /// CR 616.1 says the affected player chooses the order when several apply.
-/// There is no prompt: candidates are taken in a deterministic order (by
-/// object id).
-///
-/// This used to say that no board in this pool could produce two effects
-/// applicable to one event, which is FALSE and was the reason nobody looked
-/// (issue #323). Undead Alchemist ("if a Zombie you control would deal combat
-/// damage to a player, instead that player mills that many") plus Inquisitor's
-/// Flail ("deals double that damage instead") both modify one combat damage
-/// event and were reached in ordinary play; so were Undead Alchemist plus
-/// Ghostly Possession's prevention. With the Flail the fixed order is a wrong
-/// result, not just a missing choice — the defending player would apply the
-/// Alchemist first and mill 2, and the engine doubles first and mills 4.
-///
-/// Two things have to happen together to fix it, which is why neither is
-/// here yet. This loop is one place a prompt would go, but it cannot see the
-/// other candidates: `damage.rs::deal_damage_to_player` applies combat-damage
-/// prevention and the Flail's multiplier upstream, hardcoded, before this is
-/// ever called. They have to become candidates here first. And a prompt in
-/// this loop suspends the middle of a damage event, which nothing in the
-/// damage pipeline can resume today — CR 510.2 deals combat damage
-/// simultaneously, so the resumption point is per source-and-target, not per
-/// step.
+/// Damage, where different effects do meet — Inquisitor's Flail and Undead
+/// Alchemist on one Zombie's combat damage, Ghostly Possession and the
+/// Alchemist — does not come through here: `damage::process_pending_damage`
+/// lists every effect on a damage event, cards' own (by
+/// `replacement_offer`) alongside the engine's preventions and multipliers,
+/// and asks the affected player (issue #323). What is left here — token
+/// creation, a draw from an empty library — can only meet several copies of
+/// one card (two Parallel Lives, two Laboratory Maniacs), which are
+/// interchangeable, so candidates are taken in object-id order without a
+/// prompt.
 pub fn apply(
     state: &mut GameState,
     event: ReplaceableEvent,

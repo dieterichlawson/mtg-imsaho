@@ -253,6 +253,47 @@ fn replacement_has_exactly_one_mechanism() {
 }
 
 
+/// Every card whose `replace_event` acts on damage answers `replacement_offer`
+/// for it too.
+///
+/// The damage pipeline lists what applies to an event by the read-only offer
+/// and applies it by `replace_event` (CR 616.1, issue #323). A card that
+/// implements only the second is invisible to the list: its effect never
+/// applies, and no player is ever offered it.
+#[test]
+fn a_card_that_replaces_damage_also_offers_the_replacement() {
+    let cards = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).expect("readable").flatten() {
+            let p = e.path();
+            if p.is_dir() { walk(&p, out); }
+            else if p.extension().is_some_and(|x| x == "rs") { out.push(p); }
+        }
+    }
+    walk(&cards, &mut files);
+
+    let mut replacing = 0usize;
+    let mut silent = Vec::new();
+    for f in &files {
+        if f.file_name().is_some_and(|n| n == "mod.rs") {
+            continue; // the trait's own default hooks
+        }
+        let text = std::fs::read_to_string(f).expect("readable");
+        if !text.contains("ReplaceableEvent::DealsDamage") {
+            continue;
+        }
+        replacing += 1;
+        if !text.contains("fn replacement_offer(") {
+            silent.push(f.display().to_string());
+        }
+    }
+    assert!(replacing >= 1, "Undead Alchemist replaces damage; the scan has stopped finding it");
+    assert!(silent.is_empty(),
+        "these cards replace damage without offering it, so the CR 616.1 choice \
+         cannot list them and the effect never applies:\n{}", silent.join("\n"));
+}
+
 /// Ruling: "when determining whether a creature entering under your control
 /// should get a +1/+1 counter, you'll simply look at what the creature will
 /// look like on the battlefield. You'll consider any effects affecting a

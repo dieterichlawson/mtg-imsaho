@@ -563,6 +563,7 @@ fn bug_m_snapcaster_target_chosen_at_stack_time() {
             PendingTrigger {
                 source: TriggerSource { card_id, chosen_targets, .. },
                 event: TriggerEvent::SelfEntered,
+                ..
             }
         ) = e {
             if *card_id == snap_card_id {
@@ -1236,4 +1237,134 @@ fn a_collected_trigger_carries_its_own_abilitys_text() {
         "the enters trigger carries its own text, got {collected:?}");
     assert!(!collected.iter().any(|d| d.contains("return exiled card")),
         "and not the leaves trigger's, got {collected:?}");
+}
+
+/// Issue #325: one ordering is one decision. A `ChosenOrder` answer places
+/// every trigger of the group at once — the first listed goes on the stack
+/// first and so resolves last (CR 603.3b, 608.1) — and the log records the
+/// order as the one thing it was.
+#[test]
+fn a_whole_order_puts_the_triggers_on_the_stack_in_that_order() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mobs: Vec<_> = (0..3).map(|_| named_permanent(&mut state, &registry, "Unruly Mob", P0)).collect();
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    kill_by_damage(&mut state, &registry, victim);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+
+    let (options, details) = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTriggerOrder { options, details, .. }, ..
+        }) => (options.clone(), details.clone()),
+        other => panic!("three distinguishable triggers are ordered by their controller: {other:?}"),
+    };
+    assert_eq!(options.len(), 3);
+    // The prompt carries each trigger in parts: whose, what, and why.
+    assert_eq!(details.len(), 3, "one detail per option: {details:?}");
+    for d in &details {
+        assert!(mobs.contains(&d.source), "the detail names a Mob: {d:?}");
+        assert_eq!(d.source_name, "Unruly Mob");
+        assert_eq!(d.power_toughness, Some((1, 1)));
+        assert_eq!(d.ability, "put a +1/+1 counter on Unruly Mob");
+        assert_eq!(d.cause, format!("{} died", state.obj_name(victim)),
+            "what set it off is spelled out");
+    }
+    // Option k is mob details[k].source; put them on as 2, 0, 1.
+    let order = vec![2usize, 0, 1];
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenOrder(order.clone()),
+    }, &registry);
+    assert!(state.awaiting_action.is_none(), "one answer settles the whole group: {:?}", state.awaiting_action);
+
+    let on_stack: Vec<_> = state.stack.iter().map(|e| match e {
+        StackEntry::Trigger(t) => t.source_object(),
+        other => panic!("only triggers were pushed: {other:?}"),
+    }).collect();
+    let expected: Vec<_> = order.iter().map(|&k| details[k].source).collect();
+    assert_eq!(on_stack, expected, "bottom to top, the order as chosen");
+    assert!(state.game_log.iter().any(|e| e.message.starts_with("p0: ordered 3 triggers")
+            && e.message.contains(&format!("Unruly Mob (#{})", details[2].source.0))),
+        "the decision is one log line naming the sources by id: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
+/// A whole-order answer has to be exactly that: every offered index once.
+/// Anything else is refused and the prompt stands, as with every other
+/// malformed answer.
+#[test]
+fn a_whole_order_must_name_every_trigger_exactly_once() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for _ in 0..3 { named_permanent(&mut state, &registry, "Unruly Mob", P0); }
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    kill_by_damage(&mut state, &registry, victim);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    let prompt = state.awaiting_action.clone();
+    assert!(prompt.is_some());
+
+    for bad in [vec![0usize, 1], vec![0, 1, 1], vec![0, 1, 3], vec![0, 1, 2, 2], vec![]] {
+        let after = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenOrder(bad.clone()),
+        }, &registry);
+        assert!(after.stack.is_empty(), "{bad:?}: nothing was pushed");
+        assert_eq!(format!("{:?}", after.awaiting_action), format!("{prompt:?}"),
+            "{bad:?}: the prompt stands exactly as it was");
+    }
+}
+
+/// An ordered group is not asked about again when a target prompt of one of
+/// its triggers interrupts the run (CR 603.3d): the rest go on in the order
+/// already given.
+#[test]
+fn an_ordered_group_survives_a_target_prompt_in_the_middle() {
+    use mtg_engine::actions::{Action, ResolvedChoice, Target};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // Rage Thrower's death-watch trigger targets a player, Unruly Mob's is
+    // untargeted; with two Mobs the Thrower's target prompt falls between
+    // pushes of an ordered group.
+    let thrower = named_permanent(&mut state, &registry, "Rage Thrower", P0);
+    let mob_a = named_permanent(&mut state, &registry, "Unruly Mob", P0);
+    let mob_b = named_permanent(&mut state, &registry, "Unruly Mob", P0);
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    kill_by_damage(&mut state, &registry, victim);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+
+    let details = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTriggerOrder { details, .. }, ..
+        }) => details.clone(),
+        other => panic!("expected an ordering prompt: {other:?}"),
+    };
+    assert_eq!(details.len(), 3);
+    let index_of = |src| details.iter().position(|d| d.source == src).expect("in the prompt");
+    // Mob A first, then the Thrower (whose target prompt interrupts), then Mob B.
+    let order = vec![index_of(mob_a), index_of(thrower), index_of(mob_b)];
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenOrder(order),
+    }, &registry);
+
+    // The interruption: the Thrower asks whom to hit, and nothing else.
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget { .. }, .. }) => {}
+        other => panic!("the Thrower's target prompt is what interrupts: {other:?}"),
+    }
+    assert_eq!(state.stack.len(), 1, "Mob A went on before the interruption");
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))),
+    }, &registry);
+    assert!(state.awaiting_action.is_none(),
+        "no second ordering prompt: the group was already ordered, got {:?}", state.awaiting_action);
+    let on_stack: Vec<_> = state.stack.iter().map(|e| match e {
+        StackEntry::Trigger(t) => t.source_object(),
+        other => panic!("only triggers: {other:?}"),
+    }).collect();
+    assert_eq!(on_stack, vec![mob_a, thrower, mob_b], "bottom to top, as ordered");
 }

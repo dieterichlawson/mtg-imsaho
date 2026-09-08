@@ -18,6 +18,12 @@ use crate::types::Zone;
 pub struct PendingTrigger {
     pub source: TriggerSource,
     pub event: TriggerEvent,
+    /// Its controller has already put it in order (CR 603.3b) with one
+    /// whole-order answer, so it goes on the stack from the front of its
+    /// queue without another prompt — including after a target prompt of
+    /// its own has interrupted the run (issue #325).
+    #[serde(default)]
+    pub ordered: bool,
 }
 
 /// The object whose triggered ability this is.
@@ -70,7 +76,13 @@ impl TriggerSource {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeadCreature {
     pub id: ObjectId,
+    /// Its name as it died. A token is gone from `state.objects` by the time
+    /// anyone asks, and a player ordering four Unruly Mob triggers needs to
+    /// know which death each one is for (issue #325).
+    #[serde(default)]
+    pub name: String,
     pub controller: PlayerId,
+
     pub damaged_by: Vec<ObjectId>,
     pub toughness: i32,
     pub is_token: bool,
@@ -170,8 +182,51 @@ impl TriggerEvent {
         })
     }
 
+    /// What set this trigger off, for a player deciding how to order it
+    /// against others (issue #325): "Unruly Mob (#23) died", "the upkeep
+    /// step began". Objects are named with their ids where they still exist.
+    #[must_use]
+    pub fn cause(&self, state: &crate::state::GameState) -> String {
+        let name = |id: ObjectId| state.obj_name(id);
+        match self {
+            TriggerEvent::SelfDies => "it died".into(),
+            TriggerEvent::CreatureDied { dead } => {
+                let who = if dead.name.is_empty() { name(dead.id) } else { format!("{} (#{})", dead.name, dead.id.0) };
+                format!("{who} died")
+            }
+            TriggerEvent::SelfEntered => "it entered the battlefield".into(),
+            TriggerEvent::CreatureEntered { entered, .. } =>
+                format!("{} entered the battlefield", name(*entered)),
+            TriggerEvent::CombatDamageToPlayer { damaged_player, amount } =>
+                format!("it dealt {amount} combat damage to p{}", damaged_player.0),
+            TriggerEvent::AnyCombatDamageToPlayer { dealer, damaged_player, amount } =>
+                format!("{} dealt {amount} combat damage to p{}", name(*dealer), damaged_player.0),
+            TriggerEvent::AnyDamageToPlayer { dealer, damaged_player, amount } =>
+                format!("{} dealt {amount} damage to p{}", name(*dealer), damaged_player.0),
+            TriggerEvent::CombatDamageToCreature { damaged_creature, amount } =>
+                format!("it dealt {amount} combat damage to {}", name(*damaged_creature)),
+            TriggerEvent::SpellCast { caster, spell_id } =>
+                format!("p{} cast {}", caster.0, name(*spell_id)),
+            TriggerEvent::Attacks { attacker, defending_player } =>
+                format!("{} attacked p{}", name(*attacker), defending_player.0),
+            TriggerEvent::CreatureAttacked { attacker, .. } => format!("{} attacked", name(*attacker)),
+            TriggerEvent::Blocks { blocked_attacker } => format!("it blocked {}", name(*blocked_attacker)),
+            TriggerEvent::BecomesBlocked { blocker_id } => format!("it was blocked by {}", name(*blocker_id)),
+            TriggerEvent::CreatureCardMilled { milled_object, milled_player } =>
+                format!("{} was milled from p{}'s library", name(*milled_object), milled_player.0),
+            TriggerEvent::LeftBattlefield => "it left the battlefield".into(),
+            TriggerEvent::Upkeep => "the upkeep step began".into(),
+            TriggerEvent::EndStep => "the end step began".into(),
+            TriggerEvent::EndCombat => "the end of combat step began".into(),
+            TriggerEvent::StateTriggered => "its condition was met".into(),
+            TriggerEvent::DelayedTokenExile { target_id } =>
+                format!("the end of combat step began, with {} to exile", name(*target_id)),
+        }
+    }
+
     /// How the stack view names a trigger of this kind.
     fn phrase(&self) -> &'static str {
+
         match self {
             TriggerEvent::SelfDies => "dies trigger",
             TriggerEvent::CreatureDied { .. }
@@ -198,7 +253,32 @@ impl TriggerEvent {
 impl PendingTrigger {
     #[must_use]
     pub fn new(source: TriggerSource, event: TriggerEvent) -> Self {
-        Self { source, event }
+        Self { source, event, ordered: false }
+    }
+
+    /// This trigger in the parts a `ChooseTriggerOrder` prompt shows
+    /// (issue #325).
+    #[must_use]
+    pub fn order_option(&self, registry: &crate::cards::CardRegistry, state: &crate::state::GameState)
+        -> crate::state::TriggerOrderOption
+    {
+        let src = self.source.id;
+        let power_toughness = if state.get_object(src).is_some_and(|o| o.zone == Zone::Battlefield) {
+            match (state.effective_power(src, registry), state.effective_toughness(src, registry)) {
+                (Some(p), Some(t)) => Some((p, t)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        crate::state::TriggerOrderOption {
+            source: src,
+            source_name: self.source_name(registry, Some(state)),
+            power_toughness,
+            kind: self.event.phrase().to_string(),
+            ability: self.source.description.clone(),
+            cause: self.event.cause(state),
+        }
     }
 
     /// The player who controls this trigger.
@@ -237,14 +317,44 @@ impl PendingTrigger {
     /// the source object is now on the trigger regardless of event.
     #[must_use]
     pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
+        self.named(registry, state, false)
+    }
+
+    /// The name a log line uses: the display name with the source's object
+    /// id on the source — `Unruly Mob (#34)'s triggered ability (...)`.
+    ///
+    /// The prompt that orders simultaneous triggers tells same-named
+    /// sources apart by id (#116), and the lines recording what was chosen
+    /// did not, so twelve different decisions logged as twelve identical
+    /// lines and the order could not be read back (issue #326). Every other
+    /// id-bearing line in the log puts the id right after the object's
+    /// name, so this does too.
+    #[must_use]
+    pub fn log_name(&self, registry: &crate::cards::CardRegistry, state: &crate::state::GameState) -> String {
+        self.named(registry, Some(state), true)
+    }
+
+    /// The source's name, from the face that is up if `state` can say
+    /// which.
+    fn source_name(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
         let is_transformed = state
             .and_then(|s| s.get_object(self.source.id))
             .is_some_and(|o| o.is_transformed);
-        let name = registry
+        registry
             .get(self.source.card_id)
             .and_then(|b| if is_transformed { b.back_face_data().map(|d| d.name) } else { None })
             .or_else(|| registry.card_data(self.source.card_id).map(|d| d.name))
-            .unwrap_or_else(|| "Unknown".into());
+            .unwrap_or_else(|| "Unknown".into())
+    }
+
+    /// The name of the source, from the face that is up, if `state` can say
+    /// which; then whose ability and what it does.
+    fn named(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>, with_id: bool) -> String {
+        let mut name = self.source_name(registry, state);
+        if with_id {
+
+            name = format!("{name} (#{})", self.source.id.0);
+        }
         let phrase = self.event.phrase();
         if self.source.description.is_empty() {
             format!("{name}'s {phrase}")
@@ -253,6 +363,7 @@ impl PendingTrigger {
         }
     }
 }
+
 /// Look up the description for a trigger from the card's `TriggeredAbilityDef`.
 /// For transformed DFCs, also check the back face's triggered abilities.
 fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
@@ -388,7 +499,13 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
             } else {
                 &state.pending_trigger_pushes_nap
             };
+            // A trigger its controller has already placed with a whole-order
+            // answer goes on next without asking again (issue #325). The
+            // front is the next of that order: a target prompt puts the
+            // trigger it interrupted back at the front, flag and all.
+            let settled = queue[0].ordered;
             let controller = queue[0].source.controller;
+
             let indices: Vec<usize> = queue.iter().enumerate()
                 .filter(|(_, t)| t.source.controller == controller)
                 .map(|(i, _)| i)
@@ -398,10 +515,14 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                 queue[i].source.id != first.source.id
                     || queue[i].source.description != first.source.description
             });
-            if indices.len() >= 2 && distinguishable {
+            if !settled && indices.len() >= 2 && distinguishable {
                 let mut options: Vec<String> = indices.iter()
                     .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
                     .collect();
+                let details: Vec<crate::state::TriggerOrderOption> = indices.iter()
+                    .map(|&i| queue[i].order_option(registry, state))
+                    .collect();
+
                 // CR 603.3b: an ordering choice must identify what is being
                 // ordered. Two same-named permanents' triggers rendered
                 // byte-identical (issue #116) — tag each repeated option
@@ -426,12 +547,13 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                     player: controller,
                     source,
                     choice: crate::state::ResolutionChoiceKind::ChooseTriggerOrder {
-                        description: "Your abilities triggered together: choose the next one \
-                                      to put on the stack (ones put on later resolve first)"
+                        description: "Your abilities triggered together: put them on the stack \
+                                      in the order you choose (the last one put on resolves first)"
                             .into(),
                         options,
                         ap_queue,
                         indices,
+                        details,
                     },
                 });
                 return;
@@ -454,8 +576,9 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
 /// after each `StackEntry::Trigger` push.
 pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards::CardRegistry) {
     let Some(crate::state::StackEntry::Trigger(t)) = state.stack.last() else { return };
-    let name = t.display_name_with_state(registry, Some(state));
+    let name = t.log_name(registry, state);
     let controller = t.controller();
+
     let targets = t.chosen_targets().to_vec();
     let msg = if targets.is_empty() {
         format!("p{}'s {} goes on the stack", controller.0, name)
@@ -505,8 +628,10 @@ pub(crate) fn push_one_pending_trigger(
         0 => {
             // CR 603.3c: a triggered ability with no legal targets is
             // removed from the stack (i.e., never goes on it).
+            let name = trigger.log_name(registry, state);
             state.log(crate::state::LogLevel::Event,
-                format!("Trigger removed: no legal targets ({})", trigger.display_name(registry)));
+                format!("Trigger removed: no legal targets ({name})"));
+
         }
         1 => {
             // Auto-pick the single legal target.
@@ -608,10 +733,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });
         if !any_legal {
-            let name = trigger.display_name(registry);
+            let name = trigger.log_name(registry, state);
             state.log(crate::state::LogLevel::Event, format!("{name} fizzled (all targets illegal)"));
             return true;
         }
+
     }
 
     // CR 113.7a: a triggered ability on the stack exists independently of its
@@ -623,7 +749,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // and cost Rakish Heir its counter when the Heir traded in combat. There
     // is one rule and it is stated here: the source's zone is not consulted.
     // A handler that genuinely needs its permanent present checks for itself.
-    let PendingTrigger { source, event } = trigger;
+    let PendingTrigger { source, event, .. } = trigger;
+
     let targets = source.chosen_targets;
     let Some(behavior) = registry.get(source.card_id) else {
         // The delayed exile trigger is raised by the engine and needs no
