@@ -323,6 +323,59 @@ contradict the CR.
   controls a Human"; the Overseer and a werewolf DFC on the battlefield together;
   and CR 613.7 dependency, which looks unreachable — ISD's other type effects
   (Olivia Voldaren, Grimoire of the Dead) only ADD a subtype and are off-colour
+- C38 [tried 2026-09-08 → #326 comment; every CR claim held] the upkeep-trigger
+  engine as a clock: give BOTH decks upkeep triggers so one upkeep holds triggers
+  from both players, and check CR 603.3b/603.3d, 603.4 and 603.2 on the same step.
+  Two one-off pairs (Endless Ranks of the Dead / Bloodgift Demon / Ghoulraiser /
+  Altar's Reap against Mayor of Avabruck / Gatstaf Shepherd / Villagers of
+  Estwald / Splinterfright, then the same black deck against Curse of the Bloody
+  Tome / Delver of Secrets). AP's triggers went on the stack first and resolved
+  last, each player ordered only their own group, Bloodgift Demon chose its target
+  on the way onto the stack (self-target offered) and still drew and drained after
+  Altar's Reap sacrificed the Demon in response, and a dead permanent contributed
+  no trigger to the next upkeep. Two corrections: Endless Ranks of the Dead's
+  current Oracle has NO "if you control two or more Zombies" clause, so that probe
+  reduces to X-counted-on-resolution (0/1/1/2 tokens at 1/2/3/4 Zombies); and the
+  ISD curses read "at the beginning of ENCHANTED PLAYER's upkeep", which makes
+  Curse of the Bloody Tome / Curse of Oblivion the cheapest way to hand the
+  NON-active player a trigger on the active player's upkeep. Unreached: three or
+  more distinct AP triggers in one group, Angel of Flight Alabaster's targeted
+  upkeep trigger losing its target in response (608.2b), and an upkeep trigger
+  from a permanent that changes controller between trigger and resolution
+- C39 [tried 2026-09-08 → #362, #363; every CR claim held] vigilance and haste as
+  a tempo axis: an aggro deck that attacks every turn while keeping blockers up
+  (Elite Inquisitor, Abbey Griffin, Thraben Sentry, Geist-Honored Monk, Intangible
+  Virtue on tokens) against one that lands threats and swings the same turn (Manor
+  Skeleton, Night Revelers, Falkenrath Marauders, Traitorous Blood). A vigilance
+  attacker is untapped and in the eligible-BLOCKERS list on the opponent's turn
+  (508.1f); one tapped by an Avacynian Priest is ABSENT from the attacker list
+  rather than offered (508.1a); summoning sickness gates both attacking and a {T}
+  ability while haste — printed, conditional (Night Revelers' Human check) or
+  granted (Traitorous Blood on a Tree of Redemption, whose {T} life-exchange became
+  activatable the turn it changed control) — lifts both (302.6); Intangible Virtue
+  reached tokens only; Falkenrath Marauders took exactly two counters per combat
+  damage EVENT. Best unplanned state: a Thraben Sentry that attacked with vigilance
+  and transformed into Thraben Militia mid-combat stayed untapped and stayed an
+  attacker while its already-transformed sibling was tapped. Unreached: Skirsdag
+  High Priest's morbid {T} on the turn it enters (morbid masks the sickness check —
+  set up a death first), and a haste grant that ENDS mid-turn on a creature that
+  already attacked
+- C40 [tried 2026-09-08 → #357; every CR claim held] intimidate as an evasion clock
+  (CR 702.13a): push damage through a board that ought to block. One-off decks —
+  Spectral Rider (W), Brain Weevil (B), Gruesome Deformity on a Galvanic Juggernaut
+  (the only colourless attacker in the pool) and Gatstaf Shepherd, whose back face
+  Gatstaf Howler is green by COLOUR INDICATOR (CR 204.2) and not by a cost —
+  against blockers of every class: Walking Corpse / Doomed Traveler / Savannah
+  Lions (sharing), Grizzly Bears (not sharing), One-Eyed Scarecrow and Creepy Doll
+  (artifact creatures; Equipment does not count), Geist of Saint Traft (the pool's
+  only multicoloured creature) and Vampire Interloper, which must be ABSENT from
+  the list under 509.1b even though it is black facing a black attacker. All of
+  that passed, as did 105.2c (a colourless attacker is blockable only by artifacts)
+  and multi-block plus the 509.2 order prompt. What broke is that no pane prints a
+  permanent's colour, so the Howler's is unobtainable (#357). Unreachable and still
+  open: granting intimidate AFTER blockers are declared (509.1h) — Gruesome
+  Deformity is a sorcery-speed Aura and ISD has no flash grant — and any mid-combat
+  colour change, which ISD cannot produce
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
@@ -634,3 +687,71 @@ illegal or dubious resolutions do.
   Unreached: Essence of the Wild (not drafted into any deck), Geist of Saint
   Traft's and Garruk Relentless's own legend-rule instances, and whether Garruk
   Relentless and Garruk, the Veil-Cursed correctly coexist under one controller
+- L40 [tried 2026-09-08 → #358, #359; every CR claim held] the untap step (CR 502)
+  and "doesn't untap during your untap step": Claustrophobia, Galvanic Juggernaut,
+  Grimgrin Corpse-Born, Avacynian Priest, Spidery Grasp and the vigilance creatures,
+  in one-off WU/GW-vs-UB probe decks. Verified that no priority is offered in untap
+  (502.4 — the CLI never prompts, the log goes Untap→Upkeep) across ~50 untap steps,
+  that only the ACTIVE player's permanents untap (502.1), and that the restriction is
+  read AT the untap step, not latched when the permanent was tapped — the sharpest
+  route is an Avacynian Priest tapping an UNTAPPED Grimgrin at the end of its
+  controller's turn, which then stays tapped on their next untap step. Also verified:
+  removing Claustrophobia AFTER the untap step leaves the creature tapped for a whole
+  turn cycle while removing it BEFORE lets the creature untap; a Juggernaut untaps
+  mid-combat from its own death trigger and stays a legal attacker (506.4); Grimgrin
+  enters tapped (614.1c), is absent from the attacker list while tapped, and its
+  sacrifice ability leaves the menu when it is the only creature (601.2h); summoning
+  sickness clears at the untap step even for permanents that did not untap (302.6);
+  vigilance means there is nothing to undo. Both defects are in the log. UNREACHABLE
+  in this pool: a "doesn't untap" permanent under a NEW controller at an untap step —
+  Traitorous Blood expires at cleanup and Olivia needs 5 power — and any trigger that
+  fires during the untap step, so the "waits for upkeep" half of 503.1 is untested
+- L41 [tried 2026-09-08 → #355, #356; every CR 701.12 claim held] the fight event:
+  only TWO cards reach it — Prey Upon and Nightfall Predator (Daybreak Ranger's back
+  face). Garruk Relentless's 0 ability is NOT a fight and is correctly implemented as
+  two damage instructions; don't re-check it here. Verified: simultaneous damage
+  (701.12a/704.5g), illegal target → neither creature deals or is dealt damage on both
+  the spell and the ability path (701.12b, via Ranger's Guile hexproof and via killing
+  the target in response), self-fight at twice power (701.12c), deathtouch (702.2),
+  indestructible with damage still marked (702.12b), fight during combat counting
+  toward lethal at the same SBA check, Prey Upon's two target restrictions enforced
+  separately and hexproof creatures absent from its menu (702.11b), and fight damage
+  surviving BOTH Moonmist and Ghostly Possession because it is not combat damage
+  (701.12d). Unreached in two games: Creepy Doll's "deals combat damage to a creature"
+  trigger and a 0-power fighter (Tree of Redemption) — both look right in source; stack
+  them higher and give the target seat more ramp, it stalled on three lands both games
+- L42 [tried 2026-09-08 → #326, #356 comments; both 603.4 checks held] the intervening
+  "if" clause: an intervening-"if" trigger is checked twice — it does not trigger unless
+  the condition is true at the event, and it is removed from the stack if the condition
+  is false on resolution. The scoping fact this night established, which shapes any
+  future attempt: NO implemented card has an intervening-"if" condition that can change
+  between trigger and resolution. Every one is "last turn's spell count" (the 12
+  werewolf DFCs, both faces) or "a creature died this turn" (Woodland Sleuth, Morkrut
+  Banshee, Hollowhenge Scavenger, Reaper from the Abyss), both frozen once the trigger
+  fires, so the classic "kill the Zombie in response" demonstration is unbuildable here
+  — and Endless Ranks of the Dead has had that clause errata'd off its Oracle text. What
+  held: no trigger on the stack on six upkeeps where the condition was false; Morkrut
+  Banshee entering with nothing dead produced no trigger and no phantom target prompt;
+  Reaper sat through an end step with two legal targets and nothing dead; a spell cast
+  in response never stopped a werewolf trigger; and Moonmist cast in response to Gatstaf
+  Shepherd's OWN trigger flipped it forward and let the trigger flip it back (603.4 +
+  712.8, via `resolving_trigger_from_back_face`). Also confirmed each-upkeep scope and
+  603.3b ordering
+- L43 [proposed 2026-09-08, from L42 and CR 608.2b] the intervening "if" that is still
+  true when the target has gone. L42 established both 603.4 checks but never reached the
+  interaction with 608.2b. Reaper from the Abyss is the only implemented card with an
+  intervening "if" AND a target: get morbid on (Altar's Reap sacrificing your own
+  creature), have TWO non-Demon creatures and 2 spare mana at the end step, let the
+  trigger choose one, then remove that target in response (a second Altar's Reap, Victim
+  of Night). The condition is still true, so the ability must be removed for having no
+  legal target — verify the log says THAT and not "morbid was false", and that no
+  creature is destroyed. Then do it with Morkrut Banshee's ETB. Budget 8 lands: 17 Swamp
+  / 8 Morkrut Banshee / 4 Reaper / 4 Altar's Reap / 4 Typhoid Rats / 3 Victim of Night
+  gets there by turn 13 on --seed 5150
+- L44 [proposed 2026-09-08, from L42] audit the FIRST 603.4 check card by card, since no
+  implemented condition can go false between trigger and resolution. For each of Woodland
+  Sleuth, Hollowhenge Scavenger, Morkrut Banshee, Homicidal Brute (Civilized Scholar's
+  back face) and the 12 werewolf DFCs, read the .rs for a `should_trigger` gate, then
+  play the card with the condition false and confirm nothing appears on the stack (`s`)
+  and nothing appears in `--log`. Homicidal Brute's "if this creature didn't attack this
+  turn" is ungated as far as L42 could tell and was never played — start there
