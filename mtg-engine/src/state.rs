@@ -1058,17 +1058,33 @@ impl GameState {
         }
 
         // Collect log info before mutating.
+        //
+        // Every permanent leaving the battlefield is reported, not only a
+        // creature. The gate here used to be `obj.power.is_some()`, so an
+        // Aura, an Equipment, a land or any other noncreature permanent
+        // changed zone in complete silence: two Claustrophobias put into their
+        // owner's graveyard by CR 704.5m produced not one line between them,
+        // and a player replaying the log — or an LLM seat reading it — could
+        // not tell the Auras were gone (issue #358). The SBA that moves them
+        // is one of half a dozen routes off the battlefield, which is why the
+        // line belongs here and not in `sba.rs`.
+        //
+        // Only a creature "dies" (CR 700.4); everything else is put into a
+        // graveyard.
+        let leaving = self.objects.get(&id)
+            .is_some_and(|obj| obj.zone == Zone::Battlefield) && to != Zone::Battlefield;
+        let is_creature = leaving && self.is_creature(id, registry);
         let log_msg = self.objects.get(&id).and_then(|obj| {
-            if obj.zone == Zone::Battlefield && to != Zone::Battlefield && obj.power.is_some() {
-                let dest = match to {
-                    Zone::Graveyard => "died",
-                    Zone::Exile => "was exiled",
-                    _ => "left the battlefield",
-                };
-                Some(format!("{} {}", obj.name, dest))
-            } else {
-                None
+            if !leaving {
+                return None;
             }
+            let dest = match (to, is_creature) {
+                (Zone::Graveyard, true) => "died",
+                (Zone::Graveyard, false) => "was put into its owner's graveyard",
+                (Zone::Exile, _) => "was exiled",
+                _ => "left the battlefield",
+            };
+            Some(format!("{} {}", obj.name, dest))
         });
 
         if let Some(msg) = log_msg {
