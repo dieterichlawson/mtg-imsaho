@@ -352,7 +352,9 @@ Combat resolves in this order: declare attackers → declare blockers → first-
 
 **Multi-blocker damage assignment.** When a single attacker is blocked by two or more creatures, the **attacking player** assigns its damage among the blockers. The attacker MUST assign at least lethal damage to the first blocker before any damage spills to the second, and at least lethal to the second before any spills to the third, etc. (Lethal = blocker's toughness minus damage already marked.) Combined blocker toughness is NOT a shared pool — you can't "absorb" 4 damage across a 1/4 and a 2/2 and have them both survive.
 
-**How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one prompt per place in the order, naming the blocker to be assigned damage next. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
+**How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one structured prompt listing the blockers, answered with `order`: every index exactly once, first to last. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
+
+**Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
 
 Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
 - It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
@@ -2559,7 +2561,58 @@ impl LlmPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(pile_1_ids) }
     }
 
+    /// Ask for a whole ordering of `rows` (issue #325): the response is the
+    /// list of indices, each exactly once, first to last. A response that is
+    /// not a permutation falls back to the order as listed, which is what
+    /// the flat action list would have produced from the same seat.
+    fn choose_ordering(&mut self, view: &GameView, description: &str, rows: &[String], rule: &str) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let n = rows.len();
+        let listed: String = rows.iter().enumerate()
+            .map(|(i, r)| format!("  {i}: {r}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let action_text = format!(
+            "{description}\n{rule}\n\nEntries to order:\n{listed}\n\n\
+             Respond with `order`: every index from 0 to {} exactly once, in the order you choose.",
+            n.saturating_sub(1));
+        let prompt = self.build_prompt(view, &action_text);
+        let valid_indices: Vec<serde_json::Value> = (0..n).map(|i| serde_json::json!(i)).collect();
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "order": {
+                    "type": "array",
+                    "items": {"type": "integer", "enum": valid_indices},
+                    "description": format!("Every index 0..{} exactly once, first to last", n.saturating_sub(1))
+                }
+            },
+            "required": ["thoughts", "order"]
+        });
+        let response = self.send_message_structured(&prompt, &schema);
+        let order = Self::parse_order_response(&response["order"], n).unwrap_or_else(|| {
+            self.log("FALLBACK", &format!("order response was not a permutation of 0..{n}: {}; keeping the listed order", response["order"]));
+            (0..n).collect()
+        });
+        self.log("CHOSE", &format!("order: {order:?}"));
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order) }
+    }
+
+    /// The `order` array of an ordering response as a permutation of `0..n`,
+    /// or `None` when it is not one.
+    fn parse_order_response(value: &serde_json::Value, n: usize) -> Option<Vec<usize>> {
+        let arr = value.as_array()?;
+        let order: Vec<usize> = arr.iter()
+            .map(|v| v.as_u64().and_then(|x| usize::try_from(x).ok()))
+            .collect::<Option<Vec<_>>>()?;
+        let mut seen = vec![false; n];
+        let ok = order.len() == n && order.iter().all(|&i| i < n && !std::mem::replace(&mut seen[i], true));
+        ok.then_some(order)
+    }
+
     /// Handle a `ChooseExileFromGraveyard` resolution prompt.
+
     ///
     /// The engine surfaces eligible graveyard cards (filtered per the
     /// spell's additional cost: creatures only for Stitched Drake et al.,
@@ -2978,6 +3031,34 @@ impl Player for LlmPlayer {
         {
             let permanents = permanents.clone();
             return self.choose_pile_division(view, &permanents, legal.context.as_deref());
+        }
+
+        // An ordering is one decision (issue #325): the seat lists every
+        // index once, first to last, instead of answering one prompt per
+        // place — twelve simultaneous triggers were twelve round trips.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder {
+            description, options, details, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            let rows: Vec<String> = options.iter().enumerate().map(|(k, o)| match details.get(k) {
+                Some(d) => {
+                    let pt = d.power_toughness.map(|(p, t)| format!(" {p}/{t}")).unwrap_or_default();
+                    let what = if d.ability.is_empty() { d.kind.clone() } else { format!("{}: {}", d.kind, d.ability) };
+                    format!("{} (#{}){pt} — {what} — triggered by: {}", d.source_name, d.source.0, d.cause)
+                }
+                None => o.clone(),
+            }).collect();
+            return self.choose_ordering(view, description, &rows,
+                "The first index you list goes on the stack FIRST and so resolves LAST; the last you list resolves FIRST (CR 603.3b). \
+                 Put the trigger you want to resolve first at the END of the list.");
+        }
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+            description, options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return self.choose_ordering(view, description, options,
+                "The first index you list is assigned damage FIRST and must be assigned lethal damage before the next gets any (CR 510.1c). \
+                 Put the blocker you most want dead first.");
         }
 
         // Auto-pass when there's nothing interesting to do. Logged at
@@ -4179,7 +4260,23 @@ this Aura deals 1 damage to that player.";
             "two same-named curses on opposite players must not render identically");
     }
 
+    /// Issue #325: an ordering response is a permutation of the offered
+    /// indices or it is nothing — a duplicate, a gap or an index out of
+    /// range falls back to the listed order rather than a partial one.
+    #[test]
+    fn an_order_response_is_a_permutation_or_nothing() {
+        let ok = serde_json::json!([2, 0, 1]);
+        assert_eq!(LlmPlayer::parse_order_response(&ok, 3), Some(vec![2, 0, 1]));
+        for bad in [serde_json::json!([0, 1]), serde_json::json!([0, 1, 1]), serde_json::json!([0, 1, 3]),
+                    serde_json::json!([0, 1, 2, 0]), serde_json::json!("2 0 1"), serde_json::json!(null),
+                    serde_json::json!([0, -1, 2])] {
+            assert_eq!(LlmPlayer::parse_order_response(&bad, 3), None, "{bad}");
+        }
+        assert_eq!(LlmPlayer::parse_order_response(&serde_json::json!([]), 0), Some(vec![]));
+    }
+
     /// Issue #333: the board text never said a permanent was legendary, so a
+
     /// seat could not see the legend rule (CR 704.5j) coming. A legendary
     /// creature carries "legendary" with its keywords; any other legendary
     /// permanent carries it in its flags.
