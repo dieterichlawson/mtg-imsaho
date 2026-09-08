@@ -1622,6 +1622,13 @@ fn the_per_turn_records_are_checked_against_the_events() {
     flags_transition(&p, None, &boundary(3, false), &reg, "cast 2 spells last turn but the record says 3");
     clean_transition(&p, None, &boundary(3, true), &reg);
     flags_transition(&p, None, &boundary(2, true), &reg, "cast 3 spells last turn but the record says 2");
+    // The reconciliation reads the events of one action, so it is only owed
+    // when the window is one action. Over a batch there are no events to
+    // read and the count of what came before the turn started cannot be
+    // recovered — asking anyway would report every batched turn boundary.
+    let mut c = boundary(4, false);
+    c.submit_seq += 1;
+    quiet_transition_about(&p, None, &c, &reg, "spells last turn but the record says");
 
     // Morbid is a per-turn flag: it is not reset mid-turn, and it is not
     // set without a death.
@@ -1778,6 +1785,21 @@ fn the_status_ledgers_of_a_permanent_are_checked() {
     combat.any_attackers_declared = true;
     s.combat = Some(combat);
     quiet_transition_about(&shielded, None, &s, &reg, "still in combat");
+    // Blocking keeps it in combat too, and the assignment that names it is
+    // the one that counts — not merely that somebody is blocking.
+    let mut s = next(&shielded);
+    {
+        let o = s.get_object_mut(bear).unwrap();
+        o.regeneration_shields = 0;
+        o.tapped = true;
+    }
+    s.events.push(GameEvent::Tapped { object: bear });
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(other, P0);
+    combat.blocker_assignments.insert(other, vec![bear]);
+    combat.any_attackers_declared = true;
+    s.combat = Some(combat);
+    flags_transition(&shielded, None, &s, &reg, "regenerated but is still in combat (CR 701.15a)");
     // A permanent that was already tapped regenerates without a new tap.
     let mut tapped_shield = shielded.clone();
     tapped_shield.get_object_mut(bear).unwrap().tapped = true;
@@ -1818,6 +1840,48 @@ fn the_status_ledgers_of_a_permanent_are_checked() {
     };
     clean_transition(&lib, None, &draw(0), &reg);
     flags_transition(&lib, None, &draw(2), &reg, "from below the top 1");
+
+    // How deep "the top" reaches is how many cards left this player's
+    // library, not how many were drawn: milling two and then drawing takes
+    // the third card down, and that is the top card of what was left.
+    let mut c = next(&lib);
+    for (i, &id) in cards.iter().enumerate() {
+        c.get_player_mut(P0).library_order.retain(|&x| x != id);
+        {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = if i == 2 { Zone::Hand } else { Zone::Graveyard };
+            o.zone_change_count += 1;
+        }
+        c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Library,
+            to: if i == 2 { Zone::Hand } else { Zone::Graveyard } });
+    }
+    c.events.push(GameEvent::CardDrawn { player: P0, object: cards[2] });
+    quiet_transition_about(&lib, None, &c, &reg, "(CR 121.3)");
+
+    // And it is this player's library that is counted. An opponent emptying
+    // theirs in the same window does not widen the top of this one.
+    let mut two_libs = lib.clone();
+    let theirs = stock_library(&mut two_libs, &reg, P1, 3);
+    let mut c = next(&two_libs);
+    for &id in &theirs {
+        c.get_player_mut(P1).library_order.retain(|&x| x != id);
+        {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Graveyard;
+            o.zone_change_count += 1;
+        }
+        c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Library, to: Zone::Graveyard });
+    }
+    let deep = cards[1];
+    c.get_player_mut(P0).library_order.retain(|&x| x != deep);
+    {
+        let o = c.get_object_mut(deep).unwrap();
+        o.zone = Zone::Hand;
+        o.zone_change_count += 1;
+    }
+    c.events.push(GameEvent::ObjectMoved { object: deep, from: Zone::Library, to: Zone::Hand });
+    c.events.push(GameEvent::CardDrawn { player: P0, object: deep });
+    flags_transition(&two_libs, None, &c, &reg, "from below the top 1");
 
     // A card that was never in that library at all.
     let mut c = next(&lib);
@@ -1870,6 +1934,15 @@ fn the_life_and_loss_ledger_is_checked() {
     clean_transition(&prev, None, &dies(0, 0), &reg);
     clean_transition(&prev, None, &dies(-3, -3), &reg);
     flags_transition(&prev, None, &dies(5, 5), &reg, "lost to 0 life without their life reaching 0 (CR 704.5a)");
+    // Life that arrives at zero without going through a LifeChanged never
+    // reached zero as far as anything can tell: the window has to show it.
+    let mut c = next(&prev);
+    c.get_player_mut(P1).life = 0;
+    c.get_player_mut(P1).lost = true;
+    c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::LifeReachedZero);
+    c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+    c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::LifeReachedZero });
+    flags_transition(&prev, None, &c, &reg, "lost to 0 life without their life reaching 0 (CR 704.5a)");
     // A player who was already at zero when the window opened, and a window
     // whose chain dips to zero and comes back, are both the rule being met.
     let mut at_zero = prev.clone();
@@ -4112,6 +4185,48 @@ fn the_zone_ledger_pairs_every_verb_with_its_move() {
     s.move_object(card, Zone::Hand, &reg);
     s.events.push(GameEvent::CardDrawn { player: P0, object: card });
     flags_transition(&prev, None, &s, &reg, "which was not in p0's library (CR 121.1)");
+    // Unless it went back in and came out again inside the window: two zone
+    // changes is a card that was shuffled in and then drawn, which is a draw
+    // out of the library the player had.
+    let mut s = next(&prev);
+    s.get_object_mut(card).unwrap().zone = Zone::Hand;
+    s.get_object_mut(card).unwrap().zone_change_count += 2;
+    s.events.push(GameEvent::ObjectMoved { object: card, from: Zone::Hand, to: Zone::Library });
+    s.events.push(GameEvent::ObjectMoved { object: card, from: Zone::Library, to: Zone::Hand });
+    s.events.push(GameEvent::CardDrawn { player: P0, object: card });
+    no_transition_flag(&prev, None, &s, &reg, "(CR 121.1)");
+
+    // A verb whose move went somewhere else entirely is not paired: the
+    // ledger asks for the move the verb names, both halves of it. A card
+    // milled out of the library is not a card drawn out of it.
+    let mut s = next(&prev);
+    s.get_player_mut(P0).library_order.retain(|id| *id != library[0]);
+    s.move_object(library[0], Zone::Graveyard, &reg);
+    s.events.push(GameEvent::CardDrawn { player: P0, object: library[0] });
+    flags_transition(&prev, None, &s, &reg, "without the matching zone change");
+
+    // CR 702.34a: the flashback mark says the cast came from the graveyard,
+    // so a marked cast out of the hand is not paired.
+    let mut s = next(&prev);
+    s.move_object(card, Zone::Stack, &reg);
+    s.get_object_mut(card).unwrap().cast_with_flashback = true;
+    s.stack.push(StackEntry::Spell(card));
+    s.events.push(GameEvent::SpellCast { player: P0, object: card });
+    flags_transition(&prev, None, &s, &reg, "SpellCast #");
+
+    // CR 111.7: a token that has left the battlefield ceases to exist, which
+    // is not the same as one vanishing off it.
+    let mut prev2 = prev.clone();
+    let token = named_permanent(&mut prev2, &reg, "Grizzly Bears", P0);
+    prev2.get_object_mut(token).unwrap().is_token = true;
+    let mut s = next(&prev2);
+    s.move_object(token, Zone::Graveyard, &reg);
+    s.objects.remove(&token);
+    no_transition_flag(&prev2, None, &s, &reg, "ceased to exist after moving to the battlefield");
+    let mut s = next(&prev2);
+    s.events.push(GameEvent::ObjectMoved { object: token, from: Zone::Graveyard, to: Zone::Battlefield });
+    s.objects.remove(&token);
+    flags_transition(&prev2, None, &s, &reg, "ceased to exist after moving to the battlefield");
 }
 
 /// CR 120.3/302.6/508.1/701.15a: the per-object status ledgers each need a
