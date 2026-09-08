@@ -476,7 +476,85 @@ struct MenuPage {
     heights: Vec<usize>,
 }
 
+/// Which ordering a `prompt_ordering` screen is for (issue #325).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OrderingKind {
+    /// CR 603.3b: a player's simultaneous triggers, onto the stack.
+    Triggers,
+    /// CR 509.2: an attacker's blockers, for damage assignment.
+    Blockers,
+}
+
+/// What the engine handed the ordering screen.
+struct OrderingPrompt<'a> {
+    kind: OrderingKind,
+    description: &'a str,
+    /// One line of text per option, as the engine names them.
+    options: &'a [String],
+    /// The parts of each trigger, parallel to `options`; empty for a
+    /// blocker list or a prompt from an older save.
+    details: &'a [mtg_engine::state::TriggerOrderOption],
+}
+
+/// One line of input at the ordering prompt, read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OrderInput {
+    /// A complete ordering: every index exactly once.
+    Order(Vec<usize>),
+    /// One of the info panes.
+    Pane(char),
+    NextPage,
+    PrevPage,
+    /// Refused, with the reason to show.
+    Invalid(String),
+}
+
+/// How a line of the ordering screen is painted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Style { Title, Bold, Dim, Row, Plain }
+
+/// The slice of a screen's body lines on show, for paging a body taller
+/// than the terminal with `m`/`p`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BodyPage {
+    start: usize,
+    end: usize,
+    len: usize,
+    avail: usize,
+    paged: bool,
+}
+
+impl BodyPage {
+    fn new(len: usize, avail: usize, offset: usize) -> Self {
+        let paged = len > avail;
+        // One line goes to the "… showing" marker when paging.
+        let per_page = if paged { avail.saturating_sub(1).max(1) } else { avail };
+        let start = if paged { offset.min(len.saturating_sub(1)) / per_page * per_page } else { 0 };
+        let end = (start + per_page).min(len);
+        BodyPage { start, end, len, avail, paged }
+    }
+
+    fn per_page(&self) -> usize {
+        if self.paged { self.avail.saturating_sub(1).max(1) } else { self.avail.max(1) }
+    }
+
+    /// `m`: the next page, wrapping to the top.
+    fn next_offset(&self) -> usize {
+        if self.end >= self.len { 0 } else { self.end }
+    }
+
+    /// `p`: the previous page, wrapping to the last.
+    fn prev_offset(&self) -> usize {
+        if self.start == 0 {
+            self.len.saturating_sub(1) / self.per_page() * self.per_page()
+        } else {
+            self.start.saturating_sub(self.per_page())
+        }
+    }
+}
+
 /// One combat-list row as it will be drawn: the entry's lines, and the
+
 /// caller's coloured note — kept whole, on the last line or on lines of its
 /// own (issues #328, #318).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -4956,7 +5034,252 @@ impl CliPlayer {
         }
     }
 
+    /// The one-screen ordering prompt (issue #325): every item being ordered,
+    /// numbered, with everything known about it; the stack it is going onto;
+    /// and one line of input — the numbers in the order chosen.
+    ///
+    /// The screen takes the whole terminal, so the board, the stack, the
+    /// graveyards, the exile zone, the log and the deck are one key away and
+    /// the prompt is redrawn when the pane closes. Enter alone keeps the
+    /// order as listed. The body pages with `m`/`p` when it is taller than
+    /// the terminal, and no row on it is ever clipped.
+    fn prompt_ordering(view: &GameView, prompt: &OrderingPrompt) -> Action {
+        let n = prompt.options.len();
+        let rows = Self::ordering_rows(view, prompt);
+        let mut notice: Option<String> = None;
+        let mut offset = 0usize;
+        loop {
+            let page = Self::draw_ordering_screen(view, prompt, &rows, notice.take().as_deref(), offset);
+            let redraw = || { Self::draw_ordering_screen(view, prompt, &rows, None, offset); };
+            let input = Self::read_line_redrawing("  Order> ", &redraw);
+            match Self::parse_order_input(&input, n) {
+                OrderInput::Order(order) => {
+                    return Action::ResolveChoice {
+                        choice: mtg_engine::actions::ResolvedChoice::ChosenOrder(order),
+                    };
+                }
+                OrderInput::Pane(c) => match c {
+                    's' => Self::show_stack(view),
+                    'i' => Self::show_battlefield_inspector(view),
+                    'g' => Self::show_graveyards(view),
+                    'e' => Self::show_exile(view),
+                    'l' => Self::show_log(&view.display_log),
+                    _ => Self::show_deck_browser(view),
+                },
+                OrderInput::NextPage => offset = page.next_offset(),
+                OrderInput::PrevPage => offset = page.prev_offset(),
+                OrderInput::Invalid(why) => notice = Some(why),
+            }
+        }
+    }
+
+    /// One line of input at the ordering prompt, read.
+    ///
+    /// The numbers, in any spacing, commas allowed, are the order; every
+    /// index exactly once. An empty line keeps the listed order — the
+    /// screen says so, which is what makes Enter safe here (#76, #123).
+    /// The pane keys and the pagers are the same letters as everywhere else.
+    fn parse_order_input(input: &str, n: usize) -> OrderInput {
+        let t = input.trim();
+        if t.is_empty() {
+            return OrderInput::Order((0..n).collect());
+        }
+        match t {
+            "s" | "i" | "g" | "e" | "l" | "d" => return OrderInput::Pane(t.chars().next().unwrap_or('s')),
+            "m" => return OrderInput::NextPage,
+            "p" => return OrderInput::PrevPage,
+            _ => {}
+        }
+        let mut order = Vec::with_capacity(n);
+        for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
+            let Ok(k) = tok.parse::<usize>() else {
+                return OrderInput::Invalid(format!(
+                    "'{}' is not a number — type the indices in order, e.g. \"2 0 1\"", quote_input(tok)));
+            };
+            if k >= n {
+                return OrderInput::Invalid(format!("{k} is out of range — the entries are numbered 0-{}", n.saturating_sub(1)));
+            }
+            if order.contains(&k) {
+                return OrderInput::Invalid(format!("{k} is listed twice — each entry goes in the order exactly once"));
+            }
+            order.push(k);
+        }
+        let missing: Vec<String> = (0..n).filter(|k| !order.contains(k)).map(|k| k.to_string()).collect();
+        if !missing.is_empty() {
+            return OrderInput::Invalid(format!(
+                "every entry needs a place: missing {}", missing.join(", ")));
+        }
+        OrderInput::Order(order)
+    }
+
+    /// The rows of the ordering screen, one per option, as `(index, lines)`
+    /// — the lines unwrapped; the screen wraps them to its width. With the
+    /// engine's per-trigger details a row says whose ability it is, its
+    /// P/T, what it does and what set it off; without them (a prompt from
+    /// an older save, or a blocker list) it is the option's text.
+    fn ordering_rows(view: &GameView, prompt: &OrderingPrompt) -> Vec<Vec<String>> {
+        let _ = view;
+        prompt.options.iter().enumerate().map(|(k, option)| {
+            match prompt.details.get(k) {
+                Some(d) => {
+                    let pt = d.power_toughness.map(|(p, t)| format!(" {p}/{t}")).unwrap_or_default();
+                    let what = if d.ability.is_empty() {
+                        d.kind.clone()
+                    } else {
+                        format!("{}: {}", d.kind, d.ability)
+                    };
+                    vec![
+                        format!("{} (#{}){pt} — {what}", d.source_name, d.source.0),
+                        format!("triggered by: {}", d.cause),
+                    ]
+                }
+                None => vec![option.clone()],
+            }
+        }).collect()
+    }
+
+    /// The oracle text of every distinct source among the triggers being
+    /// ordered, from the registry — "all their info" includes what the card
+    /// says, and a source that has already died is on no pane.
+    fn ordering_sources(prompt: &OrderingPrompt) -> Vec<(String, Vec<String>)> {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for d in prompt.details {
+            if seen.contains(&d.source_name) { continue; }
+            seen.push(d.source_name.clone());
+            let Some(data) = registry.get_id_by_name(&d.source_name).and_then(|id| registry.card_data(id)) else { continue };
+            let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+            let pt = match (data.power, data.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            };
+            let head = format!("{}{cost} — {}{pt}", data.name,
+                mtg_engine::types::type_line(&data.supertypes, &data.card_types, &data.subtypes));
+            let text: Vec<String> = data.oracle_text.lines().map(str::to_string).collect();
+            out.push((head, text));
+        }
+        out
+    }
+
+    /// Paint the ordering screen and return the page of body lines it drew.
+    fn draw_ordering_screen(view: &GameView, prompt: &OrderingPrompt, rows: &[Vec<String>],
+                            notice: Option<&str>, offset: usize) -> BodyPage {
+        let mut out = stdout();
+        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
+        let (w, h) = (term_w as usize, term_h as usize);
+        let text_w = w.saturating_sub(2).max(20);
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+
+        // Header: what is being decided.
+        let (title, rule) = match prompt.kind {
+            OrderingKind::Triggers => (" ORDER YOUR TRIGGERS",
+                "The first you list goes on the stack FIRST and resolves LAST; the last you list resolves FIRST (CR 603.3b)."),
+            OrderingKind::Blockers => (" DAMAGE ASSIGNMENT ORDER",
+                "The first you list is assigned damage FIRST, and must be assigned lethal damage before the next gets any (CR 510.1c)."),
+        };
+        let mut header: Vec<(Style, String)> = vec![(Style::Title, title.to_string())];
+        for line in Self::word_wrap(prompt.description, text_w) {
+            header.push((Style::Dim, format!(" {line}")));
+        }
+        header.push((Style::Plain, String::new()));
+
+        // Body: the stack as it stands, the rows, and the sources.
+        let idx_w = rows.len().saturating_sub(1).to_string().len();
+        let indent = idx_w + 4;
+        let mut body: Vec<(Style, String)> = Vec::new();
+        if prompt.kind == OrderingKind::Triggers {
+            body.push((Style::Bold, " Stack now (top first):".into()));
+            if view.stack.is_empty() {
+                body.push((Style::Dim, "   (empty)".into()));
+            } else {
+                for (i, item) in view.stack.iter().enumerate().take(6) {
+                    let line = format!("   {i}: {}", Self::stack_entry_headline(view, item));
+                    for l in Self::wrap_row(&line, text_w) { body.push((Style::Dim, l)); }
+                }
+                if view.stack.len() > 6 {
+                    body.push((Style::Dim, format!("   … and {} more (s = the whole stack)", view.stack.len() - 6)));
+                }
+            }
+            body.push((Style::Plain, String::new()));
+            body.push((Style::Bold, " Triggers to order:".into()));
+        } else {
+            body.push((Style::Bold, " Blockers to order:".into()));
+        }
+        for (k, lines) in rows.iter().enumerate() {
+            for (j, line) in lines.iter().enumerate() {
+                let wrapped = Self::wrap_row(line, text_w.saturating_sub(indent).max(10));
+                for (m, piece) in wrapped.into_iter().enumerate() {
+                    if j == 0 && m == 0 {
+                        body.push((Style::Row, format!("  {k:>idx_w$}: {piece}")));
+                    } else {
+                        let style = if j == 0 { Style::Plain } else { Style::Dim };
+                        body.push((style, format!("{}{piece}", " ".repeat(indent))));
+                    }
+                }
+            }
+        }
+        let sources = Self::ordering_sources(prompt);
+        if !sources.is_empty() {
+            body.push((Style::Plain, String::new()));
+            body.push((Style::Bold, " Sources:".into()));
+            for (head, text) in &sources {
+                for l in Self::wrap_row(head, text_w.saturating_sub(2)) { body.push((Style::Plain, format!("  {l}"))); }
+                for line in text {
+                    for l in Self::wrap_row(line, text_w.saturating_sub(4)) { body.push((Style::Dim, format!("    {l}"))); }
+                }
+            }
+        }
+
+        // Footer: how to answer, the pane keys, any refusal, the input row.
+        let mut footer: Vec<(Style, String)> = Vec::new();
+        for line in Self::word_wrap(rule, text_w) { footer.push((Style::Dim, format!(" {line}"))); }
+        footer.push((Style::Dim,
+            " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]".into()));
+        let footer: Vec<(Style, String)> = footer.into_iter()
+            .flat_map(|(s, l)| Self::wrap_row(&l, text_w).into_iter().map(move |x| (s, x)))
+            .collect();
+        // The notice row and the input row are always reserved.
+        let reserved = header.len() + footer.len() + 2;
+        let avail = h.saturating_sub(reserved).max(1);
+        let page = BodyPage::new(body.len(), avail, offset);
+
+        let mut row: u16 = 0;
+        let put = |out: &mut io::Stdout, row: &mut u16, style: Style, text: &str| {
+            let _ = execute!(out, cursor::MoveTo(0, *row));
+            match style {
+                Style::Title => Self::print_colored(out, Color::Cyan, text),
+                Style::Bold => { let _ = execute!(out, SetAttribute(Attribute::Bold), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Dim => { let _ = execute!(out, SetAttribute(Attribute::Dim), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Row => {
+                    // "  N: " in bold, the rest through the mana colourer.
+                    let split = text.find(": ").map_or(text.len(), |p| p + 2);
+                    let _ = execute!(out, SetAttribute(Attribute::Bold), Print(&text[..split]), SetAttribute(Attribute::Reset));
+                    Self::print_with_mana(out, &text[split..], None);
+                }
+                Style::Plain => Self::print_with_mana(out, text, None),
+            }
+            *row += 1;
+        };
+        for (s, l) in &header { put(&mut out, &mut row, *s, l); }
+        for (s, l) in &body[page.start..page.end] { put(&mut out, &mut row, *s, l); }
+        if page.paged {
+            put(&mut out, &mut row, Style::Dim, &format!(
+                " … showing lines {}-{} of {} — m/p = next/prev page", page.start + 1, page.end, body.len()));
+        }
+        for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
+        if let Some(msg) = notice {
+            let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
+                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+        }
+        row += 1;
+        let _ = execute!(out, cursor::MoveTo(0, row));
+        let _ = out.flush();
+        page
+    }
+
     fn library_search_ui(view: &GameView, actions: &[Action], title: &str, decline: Option<Action>) -> Action {
+
         use mtg_engine::actions::ResolvedChoice;
 
         // Collect card info for each option.
@@ -5456,6 +5779,30 @@ impl Player for CliPlayer {
             return Self::prompt_pile_division(view, permanents, description);
         }
 
+        // An ordering is one decision, answered on one screen that shows
+        // everything being ordered (issue #325): the triggers a player puts
+        // on the stack (CR 603.3b), or the blockers an attacker's damage is
+        // assigned among (CR 509.2). These prompts are flat `ChosenIndex`
+        // lists too, and past eight options the card browser below used to
+        // take them — the whole board, the stack and every pane shortcut
+        // gone at the one decision where the stack is what the player needs.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder {
+            description, options, details, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_ordering(view, &OrderingPrompt {
+                kind: OrderingKind::Triggers, description, options, details,
+            });
+        }
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+            description, options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_ordering(view, &OrderingPrompt {
+                kind: OrderingKind::Blockers, description, options, details: &[],
+            });
+        }
+
         // Special case: library search — show interactive card browser.
         if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. }))
             && legal_actions.len() > 1
@@ -5479,12 +5826,13 @@ impl Player for CliPlayer {
             // A long list of card NAMES is the same kind of question and
             // wants the same browser (issue #255). Kept to genuinely long
             // ones: a modal choice or a card-type choice is also `ChosenIndex`
-            // and reads better as three numbered rows.
-            let naming_cards = card_count > 8 && legal_actions.iter().all(|a| matches!(a,
-                Action::ResolveChoice {
-                    choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(_, _)
-                }
-            ));
+            // and reads better as three numbered rows. And kept to prompts
+            // that ARE about card names: any flat `ChosenIndex` list past
+            // eight entries used to qualify, which is how a trigger-ordering
+            // prompt with nine triggers turned into a card search (#325).
+            let naming_cards = card_count > 8 && matches!(legal.resolution_prompt,
+                Some(mtg_engine::state::ResolutionChoiceKind::ChooseCardName { .. }));
+
             if (all_chosen_cards && card_count > 3) || naming_cards {
                 let title = legal.context.as_deref().unwrap_or("Choose a card");
                 return Self::library_search_ui(view, legal_actions, title, decline);
@@ -6184,7 +6532,75 @@ mod tests {
         }
     }
 
+    /// Issue #325: the ordering prompt reads one line — the indices in
+    /// order, in any spacing, commas allowed — and refuses anything that is
+    /// not every index exactly once, saying which. Enter alone keeps the
+    /// order shown; the pane keys and pagers are the usual letters.
+    #[test]
+    fn an_ordering_is_every_index_exactly_once() {
+        assert_eq!(CliPlayer::parse_order_input("2 0 1", 3), OrderInput::Order(vec![2, 0, 1]));
+        assert_eq!(CliPlayer::parse_order_input(" 2,0, 1 ", 3), OrderInput::Order(vec![2, 0, 1]));
+        assert_eq!(CliPlayer::parse_order_input("", 3), OrderInput::Order(vec![0, 1, 2]),
+            "Enter keeps the order shown");
+        assert_eq!(CliPlayer::parse_order_input("s", 3), OrderInput::Pane('s'));
+        assert_eq!(CliPlayer::parse_order_input("i", 3), OrderInput::Pane('i'));
+        assert_eq!(CliPlayer::parse_order_input("m", 3), OrderInput::NextPage);
+        assert_eq!(CliPlayer::parse_order_input("p", 3), OrderInput::PrevPage);
+        for (input, why) in [
+            ("0 1", "missing 2"), ("0 1 1", "listed twice"), ("0 1 3", "out of range"),
+            ("0 x 1", "not a number"), ("0 1 2 2", "listed twice"),
+        ] {
+            match CliPlayer::parse_order_input(input, 3) {
+                OrderInput::Invalid(msg) => assert!(msg.contains(why), "{input:?}: {msg}"),
+                other => panic!("{input:?} was accepted as {other:?}"),
+            }
+        }
+    }
+
+    /// A row of the ordering screen says whose trigger it is (by id and P/T),
+    /// what it does, and what set it off; without the engine's details it is
+    /// the option text.
+    #[test]
+    fn an_ordering_row_says_whose_what_and_why() {
+        use mtg_engine::state::TriggerOrderOption;
+        let v = view(Step::PrecombatMain, 8, true);
+        let details = vec![TriggerOrderOption {
+            source: ObjectId(34), source_name: "Unruly Mob".into(), power_toughness: Some((1, 1)),
+            kind: "triggered ability".into(), ability: "put a +1/+1 counter on Unruly Mob".into(),
+            cause: "Unruly Mob (#23) died".into(),
+        }];
+        let options = vec!["Unruly Mob's triggered ability (put a +1/+1 counter on Unruly Mob) [source 1/1, #34]".to_string()];
+        let rows = CliPlayer::ordering_rows(&v, &OrderingPrompt {
+            kind: OrderingKind::Triggers, description: "d", options: &options, details: &details });
+        assert_eq!(rows, vec![vec![
+            "Unruly Mob (#34) 1/1 — triggered ability: put a +1/+1 counter on Unruly Mob".to_string(),
+            "triggered by: Unruly Mob (#23) died".to_string(),
+        ]]);
+        let bare = CliPlayer::ordering_rows(&v, &OrderingPrompt {
+            kind: OrderingKind::Blockers, description: "d", options: &options, details: &[] });
+        assert_eq!(bare, vec![vec![options[0].clone()]]);
+    }
+
+    /// The ordering screen's body pages when it is taller than the terminal,
+    /// keeping a line for the marker, and `m`/`p` walk the pages and wrap.
+    #[test]
+    fn the_ordering_screen_pages_its_body() {
+        let one = BodyPage::new(5, 10, 0);
+        assert!(!one.paged);
+        assert_eq!((one.start, one.end), (0, 5));
+        let first = BodyPage::new(20, 6, 0);
+        assert!(first.paged);
+        assert_eq!((first.start, first.end), (0, 5), "five lines, one for the marker");
+        let second = BodyPage::new(20, 6, first.next_offset());
+        assert_eq!((second.start, second.end), (5, 10));
+        let last = BodyPage::new(20, 6, BodyPage::new(20, 6, 0).prev_offset());
+        assert_eq!((last.start, last.end), (15, 20), "p from the top is the last page");
+        assert_eq!(last.next_offset(), 0, "m from the last page wraps to the top");
+        assert_eq!(second.prev_offset(), 0);
+    }
+
     /// Issue #333: nothing on the battlefield said a permanent was a
+
     /// legend, so the legend rule (CR 704.5j) fired with no warning. A
     /// legendary creature's row carries "legendary" ahead of its keywords;
     /// a non-creature legend gets the word after its name.
