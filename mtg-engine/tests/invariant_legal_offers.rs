@@ -829,6 +829,30 @@ fn an_offer_never_names_an_object_that_does_not_exist() {
     l.actions.insert(1, Action::ActivateLoyaltyAbility {
         object_id: bear, ability_index: 0, targets: vec![Target::Object(ObjectId(4242))] });
     flags(&state, P0, &l, &reg, "an offer names #4242 which does not exist");
+
+    // Every kind of offer that names an object is read, not just the one
+    // this test started with: each arm of the sweep is its own way for a
+    // ghost id to reach a player's menu.
+    let ghost = ObjectId(4242);
+    let cases: Vec<(&str, Action)> = vec![
+        ("a land", Action::PlayLand { object_id: ghost }),
+        ("a mana ability", Action::ActivateManaAbility { object_id: ghost, ability_index: 0 }),
+        ("a cast", Action::CastSpell {
+            object_id: bear, targets: vec![Target::Object(ghost)], sacrifice: None,
+            exile_count: None, exile_ids: vec![], tap_plan: vec![], alternative_cost: None }),
+        ("an activation", Action::ActivateAbility {
+            object_id: bear, ability_index: 0, targets: vec![], tap_plan: vec![(ghost, 0)],
+            sacrifice: None, x_value: None, source_card_id: None }),
+        ("a discard", Action::DiscardCards { cards: vec![ghost] }),
+        ("a bottoming", Action::BottomCards { cards: vec![ghost] }),
+    ];
+    for (what, action) in cases {
+        let mut l = legal.clone();
+        l.actions.insert(1, action);
+        let v = check_legal(&state, P0, &l, &reg);
+        assert!(v.iter().any(|m| m.contains("an offer names #4242 which does not exist")),
+            "{what} naming an object that is not there is caught: {v:?}");
+    }
 }
 
 /// CR 508.1a/508.1d/506.2: the attackers prompt is the board's own answer
