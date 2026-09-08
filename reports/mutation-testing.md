@@ -719,6 +719,13 @@ So the second round's own claim — "these are honest gaps rather than arid
 mutants" — was right about 60 of 68 and wrong about 8, and the way to
 find out was to write the tests.
 
+**Verified**: a fifth cargo-mutants run over all 68 at the branch head —
+`60 caught, 8 missed in 13m` — and the eight it misses are exactly the
+eight argued unreachable above, name for name. Each kill was also watched
+failing under its own mutant as it was written, which is the check this
+campaign has learned not to skip: a mutation-motivated test is not done
+until it has been seen killing its mutant.
+
 ## The one that got lost
 
 `prompts.rs:514:99: replace && with || in library_option` was filed, missed
