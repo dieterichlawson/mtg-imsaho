@@ -884,48 +884,33 @@ impl GameState {
         owner: PlayerId,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
-        let source = self.get_object(source_id);
+        let Some(source) = self.get_object(source_id) else { return ObjectId(0) };
         // CR 707.8a: a copy of a permanent with its back face up shows that
         // face too. The copied characteristics below already come from the
         // face that is up; the flag is what makes every accessor agree.
-        let source_transformed = source.is_some_and(|o| o.is_transformed);
-        let (obj_name, obj_power, obj_toughness, card_id, is_legendary, obj_colors, obj_keywords, obj_card_types, obj_subtypes) = match source {
-            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.is_legendary, o.colors.clone(), o.keywords.clone(), o.card_types.clone(), o.subtypes.clone()),
-            None => return ObjectId(0),
-        };
+        let source_transformed = source.is_transformed;
+        let card_id = source.card_id;
+        let is_legendary = source.is_legendary;
+
         // CR 706.2: a copy takes the *copiable* values — what is printed on the
         // face now showing, plus earlier copy effects — and nothing an effect
-        // has since done to the permanent. So this reads the active face and
-        // falls back to the object's own fields only for a token, which has no
-        // face to read (the ruling's "if the copied creature is a token, the
-        // token copies the original characteristics of that token").
+        // has since done to the permanent.
         //
-        // Reading `obj.power` / `obj.toughness` instead would copy a token's
-        // stand-in fields for a real card, and `face_data` also answers with
-        // the *back* face of a transformed permanent, where
-        // `card_data(card_id)` always answered with the front. Nothing writes
-        // a printed P/T any more — Tree of Redemption's exchange is a
-        // layer-7b effect (CR 613.4b), so it is not copied either, which is
-        // the same rule stated once instead of guarded twice.
-        let face = self.face_data(source_id, registry);
-        let (name, power, toughness, colors, keywords, card_types, subtypes) = match face {
-            Some(d) => {
-                // Colors come from the mana cost, which is where a card's
-                // colour lives (CR 105.2).
-                let mut cols = Vec::new();
-                if let Some(ref cost) = d.cost {
-                    for sym in &cost.symbols {
-                        if let crate::types::ManaSymbol::Colored(c) = sym {
-                            if !cols.contains(c) {
-                                cols.push(*c);
-                            }
-                        }
-                    }
-                }
-                (d.name.clone(), d.power, d.toughness, cols, d.keywords.clone(), d.card_types.clone(), d.subtypes.clone())
-            }
-            None => (obj_name, obj_power, obj_toughness, obj_colors, obj_keywords, obj_card_types, obj_subtypes),
-        };
+        // That is exactly what the `printed_*_of` family answers, for a card
+        // and for a token alike (the ruling's "if the copied creature is a
+        // token, the token copies the original characteristics of that
+        // token"). This used to be a second, hand-rolled copy of that logic —
+        // read the face, else the object's own vectors — and the two drifted:
+        // a token's vectors hold its grants as well as its printed types, so
+        // copying a Zombie token that Olivia Voldaren had made a Vampire
+        // produced a Vampire Zombie. One caller of one accessor cannot drift
+        // from itself.
+        let name = self.name_of(source_id, registry);
+        let (power, toughness) = self.printed_pt_of(source_id, registry);
+        let colors = self.printed_colors_of(source_id, registry);
+        let keywords = self.printed_keywords_of(source_id, registry);
+        let card_types = self.printed_card_types_of(source_id, registry);
+        let subtypes = self.printed_subtypes_of(source_id, registry);
 
         let all_ids = self.create_token_with_subtypes(
             &name,
