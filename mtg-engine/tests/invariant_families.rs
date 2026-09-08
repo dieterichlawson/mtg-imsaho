@@ -2491,6 +2491,38 @@ fn an_activation_that_neither_went_on_the_stack_nor_backed_out_is_flagged() {
     s.events.push(GameEvent::CardDrawn { player: P0, object: bear });
     flags_transition(&prev, Some(&activate), &s, &reg,
         &format!("ActivateAbility #{}/0 neither went on the stack nor was refused cleanly", land.0));
+
+    // CR 602.2b: an activation whose costs are not settled yet is stashed
+    // instead of pushed, and the stash is what says the activation is still
+    // in flight. A stash that names something else does not: the activation
+    // this action announced is still nowhere, and each of the three things
+    // the stash must agree about is its own way of naming something else.
+    let stash = |source: ObjectId, index: usize, activator: PlayerId| {
+        mtg_engine::state::PendingAbilityEffect {
+            source_id: source, ability_index: index,
+            behavior_card_id: prev.get_object(land).unwrap().card_id,
+            targets: vec![], description: "Add {G}".into(), activator,
+            target_requirement: None, unpaid: None,
+        }
+    };
+    let mut s = next(&prev);
+    s.pending_ability_effect = Some(stash(land, 0, P0));
+    s.get_object_mut(bear).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(bear));
+    quiet_transition_about(&prev, Some(&activate), &s, &reg,
+        "neither went on the stack nor was refused cleanly");
+
+    for (what, effect) in [("the ability", stash(land, 1, P0)),
+                           ("the activator", stash(land, 0, P1))] {
+        let mut s = next(&prev);
+        s.pending_ability_effect = Some(effect);
+        s.get_object_mut(bear).unwrap().zone = Zone::Stack;
+        s.stack.push(StackEntry::Spell(bear));
+        flags_transition(&prev, Some(&activate), &s, &reg,
+            &format!("ActivateAbility #{}/0 neither went on the stack nor was refused cleanly", land.0));
+        assert!(!check_transition(&prev, Some(&activate), &s, &reg).is_empty(),
+            "a stash naming {what} is not this activation");
+    }
 }
 
 /// CR 104.3a: conceding is losing, recorded as such. A concede that leaves
