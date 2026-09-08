@@ -1065,6 +1065,32 @@ fn unscanned_events_and_unbucketed_triggers_are_flagged() {
     ));
     s.priority_player = None;
     flags_core(&s, &reg, "1 trigger(s) collected but not bucketed at a decision point (CR 603.3b)");
+    // A state trigger is what `pending_triggers` is FOR: it is unbucketed,
+    // which is the complaint above, and it is not the wrong kind of trigger
+    // to be sitting there.
+    quiet_core_about(&s, &reg, "only state and copy-ETB triggers are queued there");
+
+    // CR 103: the opening-hand loop never runs the collector, so the claim
+    // that every event has been scanned is not made about it. Nor is it made
+    // about a finished game, which stops before the collector runs. Both
+    // conditions are the reason the clause is silent, one at a time.
+    let quiet_windows = [
+        {
+            let mut s = state.clone();
+            s.trigger_event_index = 0;
+            s.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+            s
+        },
+        {
+            let mut s = state.clone();
+            s.trigger_event_index = 0;
+            s.result = Some(mtg_engine::state::GameResult::Winner(P0));
+            s
+        },
+    ];
+    for s in quiet_windows {
+        quiet_core_about(&s, &reg, "events scanned for triggers at a decision point");
+    }
 }
 
 /// CR 601.2/602.2: the player casting or activating holds priority through
