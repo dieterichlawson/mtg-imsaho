@@ -229,13 +229,26 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
         // example, a "Goblin Scout creature token", is named "Goblin Scout".
         // No literal "Token" in it: that word is the renderer's, and a name
         // carrying it matches nothing a card can be named.
+        //
+        // Against the token's PRINTED subtypes, not its current ones. The same
+        // rule ends "once a token is on the battlefield, changing its name
+        // doesn't change its subtype(s), and vice versa": a Zombie token that
+        // Olivia Voldaren has made a Vampire is still named "Zombie", and
+        // reading `obj.subtypes` — printed plus granted — called that a
+        // violation on every seed where Olivia pointed at a token.
         if obj.is_token && obj.card_id == CardId(0) {
+            // A token with no recorded face — a save written before the field
+            // existed, or an object a test made a token by hand — has only its
+            // object-level vector to answer with. Checking that is what the
+            // whole rule used to do, so falling back to it leaves no token
+            // unchecked.
+            let printed = obj.token_face.as_ref().map_or(&obj.subtypes, |f| &f.subtypes);
             let words: Vec<&str> = obj.name.split_whitespace().collect();
-            if words.len() != obj.subtypes.len()
-                || !words.iter().all(|w| obj.subtypes.iter().any(|s| s == w))
+            if words.len() != printed.len()
+                || !words.iter().all(|w| printed.iter().any(|s| s == w))
             {
                 v.push(format!("{tag}: token name {:?} is not its subtypes {:?} (CR 111.4)",
-                    obj.name, obj.subtypes));
+                    obj.name, printed));
             }
         }
 

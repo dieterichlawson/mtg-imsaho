@@ -332,6 +332,61 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   Unreached: resume against a mid-write reader (V20's ground), the LLM
   `resume_from_log` recap path (no metered seats), and whether any
   save-sourced string reaches a PROMPT rather than the banner
+- V39 [tried 2026-09-08 → #350, #351, #352, #353, #354, comment on #318] the terminal
+  geometry matrix (distinct from V11's mid-game resize storm — this is STATIC size ×
+  prompt type): reach a screen, then render it COLD at 300x10, 200x50, 120x45, 100x30,
+  80x24, 70x20, 60x15, 40x12, 40x80 and 20x5, and read every one with `capture-pane -p`
+  measuring each row's display width and the columns holding a `│`. `--save`/`--resume`
+  is the cheap way to put one position on many terminals; cold-starting at the size is
+  what separates a static defect from a resize one, and both exist. Read `render_paged`'s
+  `has_right = w >= 100` first: the CARDS gutter switches on at exactly 100 columns and
+  the middle panel drops from 63 (at 80) to 58, so 100 is narrower for content than 99
+  and is the worst width in the program — #318, #350 and #351 all live there. Everything
+  in `render_paged` goes through `clip_cols` except three lines (`status`, `opp_stats`,
+  `your_stats`), and the two combat prompts clip nothing at all, so hunt unbounded
+  `Print`. Below 70 columns the combat prompts stop drawing their creature lists entirely
+  while still committing a declaration (#352), and both freeze `col`/`term_w` outside
+  their redraw closure (#353). 200x50 and 120x45 were clean on every screen; the program
+  survived 20x5 and 1x1 and came back. Unreached: the trigger-ordering prompt,
+  `prompt_x_funding`, `library_search_ui` and the `/` search box at any size; a CJK/emoji
+  card name against the clip arithmetic; and whether a minimum-size refusal would beat
+  the 20x5 frame
+- V40 [tried 2026-09-08 → #360, #361] the hotseat seat-switch boundary: in
+  `--p1 cli --p2 cli` two players share one terminal, so read `GameView::for_player` and
+  every `view.you` in `cli.rs` and then hunt a viewpoint that is stale, wrong or absent —
+  both mulligan decisions and the BOTTOM-N prompt, priority on the opponent's turn,
+  declare blockers, a target chosen for an opponent's trigger, and `d`/`g`/`e`/`l`/`i`/
+  `s`/`/` opened as each seat in turn. Capture at `sleep 0.1` as well as 0.8 to catch a
+  frame that has not re-scoped yet. The 2026-09-08 sweep found the RENDERING clean — the
+  view is per-seat, `render_paged` opens with `Clear(All)`, `LogLevel::Private` keeps the
+  look-at out of `--log`, the mulligan bottoming is logged unnamed, and the deck browser,
+  search box and CARDS gutter read own-hand plus public zones only — so the boundary
+  worth attacking is INPUT, not pixels: `LAST_DECISION_IDENTITY` is written only by
+  `choose_action`, so `choose_attackers`/`choose_blockers` are invisible to #71's drain
+  and one seat's stray keystroke lands on the other seat's menu (#360), and `confirm_yn`
+  has no drain at all (#361), so the two compose into a burst that concedes the opponent's
+  game with no prompt ever drawn. Unreached: a cross-seat `library_search_ui` (the one
+  reader with no drain), and whether `--resume` re-seats a burst mid-flight
+- V41 [tried 2026-09-08 → #364, #365, #366, #367, comment on #362] the eight side viewers
+  as a SET: `d` `g` `e` `l` `i` `s` `/` and `m`/`b`/`p` are advertised on the hint line at
+  every prompt and had never been audited as a contract — a viewer is read-only, available
+  where advertised, returns you to exactly the decision you left, and tells the truth.
+  Read `menu_hints`, `parse_target_input`'s `"lgedis/"` set, `show_paged_lines`/
+  `page_window` and `show_battlefield_inspector` first, then sweep every viewer against
+  every prompt: `cp` the `--save`, open, close, `diff` (a paused prompt is quiet — the
+  file is only written at a decision), and `capture-pane`-diff the return. Read-only and
+  return HELD everywhere across 9 prompt kinds and 60+ opens, including across a
+  `--resume`; escape is uniform (Enter closes, an unrecognised key inside a viewer closes
+  it and never leaks through, nothing nests or sticks); and both leak questions came back
+  clean (`d` aggregates by name and hides library order, `/` only searches zones the seat
+  can see). The bugs are all presentation: `i` has no pager at all (#364), both pagers
+  size pages in entries while printing wrapped rows (#365), `i` is accepted-but-
+  unadvertised at every menu while `/` is silently dead below 100 columns (#366), `g`
+  orders its blocks by seat where `e` anchors them to "you" (#367), and the stack view
+  drops the ids the chooser and ordering prompt print (#362). Unreached: declare blockers,
+  `prompt_exile_from_graveyard`, and `library_search_ui` — which binds no viewer key at
+  all, so a Forbidden Alchemy choice is made with no board, no graveyard and no log on
+  screen
 
 **The Operator** neither plays to win nor tries to break anything: runs
 the binary the way an operator would and checks it kept its promises.

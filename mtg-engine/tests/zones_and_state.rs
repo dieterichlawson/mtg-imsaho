@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::Action;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::types::*;
@@ -264,6 +264,56 @@ fn leaving_the_battlefield_is_logged_by_destination() {
             || e.message.contains("Elder Cathar was exiled")
             || e.message.contains("Elder Cathar left the battlefield")),
         "a card that was never on the battlefield gets no leave-the-battlefield line");
+}
+
+/// Every permanent leaving the battlefield is reported, not only a creature.
+///
+/// The line was gated on the object having a power, so an Aura, an Equipment,
+/// a land — anything without one — changed zone in complete silence. Two
+/// Claustrophobias put into their owner's graveyard by CR 704.5m produced not
+/// one line between them, and a player replaying the log could not tell the
+/// Auras were gone (issue #358).
+///
+/// Only a creature "dies" (CR 700.4), so the noncreature line says what
+/// actually happened to it.
+#[test]
+fn a_noncreature_permanent_leaving_the_battlefield_is_logged_too() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // The reported case: an Aura whose creature leaves goes to the graveyard
+    // as a state-based action, through none of the paths that log for
+    // themselves.
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    let aura = castable_spell(&mut state, &registry, "Claustrophobia", P0);
+    let mut state = cast_and_resolve(&state, &registry, aura, vec![Target::Object(creature)]);
+    assert_eq!(state.get_object(aura).unwrap().attached_to, Some(creature), "test setup");
+
+    let before = state.game_log.len();
+    state.move_object(creature, Zone::Hand, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    assert_eq!(state.get_object(aura).unwrap().zone, Zone::Graveyard,
+        "test setup: CR 704.5m puts the unattached Aura into its owner's graveyard");
+
+    let new_lines: Vec<&String> = state.game_log[before..].iter().map(|e| &e.message).collect();
+    assert!(new_lines.iter().any(|m| *m == &format!("Claustrophobia (#{}) was put into its owner's graveyard", aura.0)),
+        "the Aura's trip to the graveyard is said out loud; new lines: {new_lines:?}");
+    assert!(!new_lines.iter().any(|m| m.contains("Claustrophobia died")),
+        "an Aura does not die — only a creature does (CR 700.4); new lines: {new_lines:?}");
+
+    // A land is a permanent too, and exile reads the same for either.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forest = named_permanent(&mut state, &registry, "Forest", P0);
+    state.move_object(forest, Zone::Graveyard, &registry);
+    assert!(state.game_log.iter().any(|e|
+        e.message == format!("Forest (#{}) was put into its owner's graveyard", forest.0)),
+        "log: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let island = named_permanent(&mut state, &registry, "Island", P0);
+    state.move_object(island, Zone::Exile, &registry);
+    assert!(state.game_log.iter().any(|e| e.message == format!("Island (#{}) was exiled", island.0)),
+        "log: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
 /// CR 400.7: leaving the battlefield makes a new object. Runtime-granted

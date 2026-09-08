@@ -258,7 +258,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
                             || !target_requirement.as_ref().is_none_or(|req|
                                     is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
                             || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) => {
-                            newly_illegal.push(format!("{} (#{})", state.obj_name(id), id.0));
+                            newly_illegal.push(state.obj_name(id));
                             Target::Illegal
                         }
                     other => other,
@@ -352,7 +352,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
             .map(|t| match t {
                 Target::Object(id)
                     if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) => {
-                        newly_illegal.push(format!("{} (#{})", state.obj_name(id), id.0));
+                        newly_illegal.push(state.obj_name(id));
                         Target::Illegal
                     }
                 other => other,

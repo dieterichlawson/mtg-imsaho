@@ -584,7 +584,7 @@ pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards:
         format!("p{}'s {} goes on the stack", controller.0, name)
     } else {
         let names: Vec<String> = targets.iter().map(|tg| match tg {
-            Target::Object(id) => format!("{} (#{})", state.obj_name(*id), id.0),
+            Target::Object(id) => state.obj_name(*id),
             Target::Player(p) => format!("p{}", p.0),
             Target::Illegal => "an illegal target".into(),
         }).collect();

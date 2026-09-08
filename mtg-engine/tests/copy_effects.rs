@@ -212,6 +212,44 @@ fn a_token_copy_takes_its_sources_colors_from_wherever_they_live() {
         "and colour, got {:?}", copy_obj.colors);
 }
 
+/// CR 707.2: a copy takes copiable values only — never what an effect has
+/// since done to the permanent. Olivia Voldaren's "it becomes a Vampire" is
+/// such an effect, and it is not copied, whether the creature it points at is
+/// a card or a token.
+///
+/// A token used to be the exception by accident: its printed types and its
+/// grants shared one vector, so `create_token_copy` and `printed_subtypes_of`
+/// both handed the granted Vampire to the copy.
+#[test]
+fn a_copy_does_not_take_a_creature_type_granted_after_printing() {
+    let reg = registry();
+
+    // The source is a token.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let zombie = state.create_token_with_subtypes(
+        "", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+        vec![], vec!["Zombie".to_string()], &reg)[0];
+    state.get_object_mut(zombie).unwrap().subtypes.push("Vampire".to_string());
+    assert!(state.has_subtype(zombie, "Vampire", &reg), "test precondition");
+
+    let copy = state.create_token_copy(zombie, P0, &reg);
+    assert!(state.has_subtype(copy, "Zombie", &reg),
+        "the printed type is copied, got {:?}", state.subtypes_of(copy, &reg));
+    assert!(!state.has_subtype(copy, "Vampire", &reg),
+        "a granted type is not copiable (CR 707.2), got {:?}", state.subtypes_of(copy, &reg));
+    assert_eq!(state.get_object(copy).unwrap().name, "Zombie");
+
+    // The source is a card, which has always worked — the two must agree.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bears).unwrap().subtypes.push("Vampire".to_string());
+    let copy = state.create_token_copy(bears, P0, &reg);
+    assert!(state.has_subtype(copy, "Bear", &reg),
+        "the printed type is copied, got {:?}", state.subtypes_of(copy, &reg));
+    assert!(!state.has_subtype(copy, "Vampire", &reg),
+        "a granted type is not copiable (CR 707.2), got {:?}", state.subtypes_of(copy, &reg));
+}
+
 // ── Evil Twin's "except it has..." clause ────────────────────────
 
 

@@ -666,6 +666,7 @@ impl GameState {
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            token_face: None,
         };
         self.objects.insert(id, obj);
         id
@@ -820,6 +821,10 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let id = self.next_id();
+        let colors_printed = colors.clone();
+        let keywords_printed = keywords.clone();
+        let card_types_printed = card_types.clone();
+        let subtypes_printed = subtypes.clone();
         let obj = GameObject {
             id,
             card_id: CardId(0), // sentinel for tokens
@@ -861,6 +866,18 @@ impl GameState {
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            // The token's printed half, frozen here. Everything an effect
+            // grants it later goes into the vectors above, exactly as it does
+            // for a card, and the two stay tellable apart.
+            token_face: Some(TokenFace {
+                name: name.to_string(),
+                power: Some(power),
+                toughness: Some(toughness),
+                colors: colors_printed,
+                keywords: keywords_printed,
+                card_types: card_types_printed,
+                subtypes: subtypes_printed,
+            }),
         };
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
@@ -884,48 +901,33 @@ impl GameState {
         owner: PlayerId,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
-        let source = self.get_object(source_id);
+        let Some(source) = self.get_object(source_id) else { return ObjectId(0) };
         // CR 707.8a: a copy of a permanent with its back face up shows that
         // face too. The copied characteristics below already come from the
         // face that is up; the flag is what makes every accessor agree.
-        let source_transformed = source.is_some_and(|o| o.is_transformed);
-        let (obj_name, obj_power, obj_toughness, card_id, is_legendary, obj_colors, obj_keywords, obj_card_types, obj_subtypes) = match source {
-            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.is_legendary, o.colors.clone(), o.keywords.clone(), o.card_types.clone(), o.subtypes.clone()),
-            None => return ObjectId(0),
-        };
+        let source_transformed = source.is_transformed;
+        let card_id = source.card_id;
+        let is_legendary = source.is_legendary;
+
         // CR 706.2: a copy takes the *copiable* values — what is printed on the
         // face now showing, plus earlier copy effects — and nothing an effect
-        // has since done to the permanent. So this reads the active face and
-        // falls back to the object's own fields only for a token, which has no
-        // face to read (the ruling's "if the copied creature is a token, the
-        // token copies the original characteristics of that token").
+        // has since done to the permanent.
         //
-        // Reading `obj.power` / `obj.toughness` instead would copy a token's
-        // stand-in fields for a real card, and `face_data` also answers with
-        // the *back* face of a transformed permanent, where
-        // `card_data(card_id)` always answered with the front. Nothing writes
-        // a printed P/T any more — Tree of Redemption's exchange is a
-        // layer-7b effect (CR 613.4b), so it is not copied either, which is
-        // the same rule stated once instead of guarded twice.
-        let face = self.face_data(source_id, registry);
-        let (name, power, toughness, colors, keywords, card_types, subtypes) = match face {
-            Some(d) => {
-                // Colors come from the mana cost, which is where a card's
-                // colour lives (CR 105.2).
-                let mut cols = Vec::new();
-                if let Some(ref cost) = d.cost {
-                    for sym in &cost.symbols {
-                        if let crate::types::ManaSymbol::Colored(c) = sym {
-                            if !cols.contains(c) {
-                                cols.push(*c);
-                            }
-                        }
-                    }
-                }
-                (d.name.clone(), d.power, d.toughness, cols, d.keywords.clone(), d.card_types.clone(), d.subtypes.clone())
-            }
-            None => (obj_name, obj_power, obj_toughness, obj_colors, obj_keywords, obj_card_types, obj_subtypes),
-        };
+        // That is exactly what the `printed_*_of` family answers, for a card
+        // and for a token alike (the ruling's "if the copied creature is a
+        // token, the token copies the original characteristics of that
+        // token"). This used to be a second, hand-rolled copy of that logic —
+        // read the face, else the object's own vectors — and the two drifted:
+        // a token's vectors hold its grants as well as its printed types, so
+        // copying a Zombie token that Olivia Voldaren had made a Vampire
+        // produced a Vampire Zombie. One caller of one accessor cannot drift
+        // from itself.
+        let name = self.name_of(source_id, registry);
+        let (power, toughness) = self.printed_pt_of(source_id, registry);
+        let colors = self.printed_colors_of(source_id, registry);
+        let keywords = self.printed_keywords_of(source_id, registry);
+        let card_types = self.printed_card_types_of(source_id, registry);
+        let subtypes = self.printed_subtypes_of(source_id, registry);
 
         let all_ids = self.create_token_with_subtypes(
             &name,
@@ -1073,22 +1075,34 @@ impl GameState {
         }
 
         // Collect log info before mutating.
-        let log_msg = self.objects.get(&id).and_then(|obj| {
-            if obj.zone == Zone::Battlefield && to != Zone::Battlefield && obj.power.is_some() {
-                let dest = match to {
-                    Zone::Graveyard => "died",
-                    Zone::Exile => "was exiled",
-                    _ => "left the battlefield",
-                };
-                // With the id, like the lines around it: a sweeper's four
-                // "Unruly Mob died" were indistinguishable from each other and
-                // from the triggers they produced (issue #326).
-                Some(format!("{} {}", self.obj_name(id), dest))
-            } else {
-                None
-            }
+        //
+        // Every permanent leaving the battlefield is reported, not only a
+        // creature. The gate here used to be `obj.power.is_some()`, so an
+        // Aura, an Equipment, a land or any other noncreature permanent
+        // changed zone in complete silence: two Claustrophobias put into their
+        // owner's graveyard by CR 704.5m produced not one line between them,
+        // and a player replaying the log — or an LLM seat reading it — could
+        // not tell the Auras were gone (issue #358). The SBA that moves them
+        // is one of half a dozen routes off the battlefield, which is why the
+        // line belongs here and not in `sba.rs`.
+        //
+        // Only a creature "dies" (CR 700.4); everything else is put into a
+        // graveyard.
+        let leaving = self.objects.get(&id)
+            .is_some_and(|obj| obj.zone == Zone::Battlefield) && to != Zone::Battlefield;
+        let is_creature = leaving && self.is_creature(id, registry);
+        let log_msg = leaving.then(|| {
+            let dest = match (to, is_creature) {
+                (Zone::Graveyard, true) => "died",
+                (Zone::Graveyard, false) => "was put into its owner's graveyard",
+                (Zone::Exile, _) => "was exiled",
+                _ => "left the battlefield",
+            };
+            // With the id, like the lines around it: a sweeper's four
+            // "Unruly Mob died" were indistinguishable from each other and
+            // from the triggers they produced (issue #326).
+            format!("{} {}", self.obj_name(id), dest)
         });
-
 
         if let Some(msg) = log_msg {
             self.log(LogLevel::Event, msg);
@@ -1559,6 +1573,13 @@ impl GameState {
     }
 
     /// Return "`CardName` (#id)" for use in log messages.
+    ///
+    /// The id is already in it. Appending another one — `format!("{} (#{})",
+    /// state.obj_name(id), id.0)` — is what three of the callers here did, and
+    /// in a comma-joined list of targets the result reads as two entries:
+    /// "target Grizzly Bears (#74) (#74) is illegal" is a partial fizzle
+    /// (CR 608.2b, second sentence) wearing the shape of a full one (issue
+    /// #356). Log lines name an object by calling this and nothing else.
     #[must_use]
     pub fn obj_name(&self, id: ObjectId) -> String {
         let name = self.get_object(id).map_or_else(|| "?".into(), |o| o.name.clone());
@@ -2373,7 +2394,13 @@ impl GameState {
         }
     }
 
-    /// CR 701.20a: untap a permanent, emitting `Untapped`.
+    /// CR 701.20a: untap a permanent, emitting `Untapped`. Returns whether it
+    /// actually became untapped.
+    ///
+    /// "Only tapped permanents can be untapped", so this is a no-op on an
+    /// untapped one — and, as with [`GameState::tap`], a caller that logs the
+    /// untap as a fact must branch on the return rather than assert it (issue
+    /// #359).
     ///
     /// The one place an *effect* clears `tapped`, so the event is emitted the
     /// same way wherever the untap comes from — the untap step, "Untap target
@@ -2385,15 +2412,17 @@ impl GameState {
     /// Not for a permanent *leaving* the battlefield, where the flag is reset
     /// because CR 400.7 makes it a new object rather than because anything
     /// untapped it, and not for one entering tapped, which was never untapped.
-    pub fn untap(&mut self, id: ObjectId) {
+    pub fn untap(&mut self, id: ObjectId) -> bool {
         match self.get_object_mut(id) {
             Some(obj) if obj.tapped => obj.tapped = false,
-            _ => return,
+            _ => return false,
         }
         self.events.push(crate::events::GameEvent::Untapped { object: id });
+        true
     }
 
-    /// Tap a permanent (CR 701.21a), emitting `Tapped`.
+    /// Tap a permanent (CR 701.21a), emitting `Tapped`. Returns whether it
+    /// actually became tapped.
     ///
     /// "Only untapped permanents can be tapped", so tapping one that is
     /// already tapped does nothing at all — not even an event. That is the
@@ -2401,10 +2430,18 @@ impl GameState {
     /// so the write is invisible, but the event it should not have sent is
     /// not.
     ///
+    /// The return value is the other half. A caller that writes a log line
+    /// *asserting the tap* must branch on it, exactly as `resolve_card_effect`
+    /// branches on `DestroyResult`: a second Claustrophobia on a creature the
+    /// first one is already holding down logged "Claustrophobia taps enchanted
+    /// creature" about a tap that did not happen, and a player replaying the
+    /// log cannot tell that case from the real one (issue #359). A caller that
+    /// only wants the permanent tapped can ignore it.
+    ///
     /// This is for a permanent *becoming* tapped. A permanent that arrives on
     /// the battlefield tapped was never untapped there and is not tapped by
     /// anything — see [`GameState::arrives_tapped`].
-    pub fn tap(&mut self, id: ObjectId) {
+    pub fn tap(&mut self, id: ObjectId) -> bool {
         match self.get_object_mut(id) {
             // CR 110.5: tapped is a status of permanents. An effect resolving
             // through last-known information can name an object that has
@@ -2415,9 +2452,10 @@ impl GameState {
             Some(obj) if obj.zone == crate::types::Zone::Battlefield && !obj.tapped => {
                 obj.tapped = true;
             }
-            _ => return,
+            _ => return false,
         }
         self.events.push(crate::events::GameEvent::Tapped { object: id });
+        true
     }
 
     /// A permanent arrives on the battlefield tapped.
@@ -2943,9 +2981,12 @@ impl GameState {
     // transformed, the front face otherwise. The object-level vectors
     // (`card_types`, `subtypes`, `colors`, `keywords`) are the granted half —
     // what an effect added at runtime, like Olivia Voldaren's "Vampire" or
-    // Grimoire of the Dead's "Zombie". Tokens are the one exception: they have
-    // no registry face, so their object-level fields carry their printed
-    // characteristics instead.
+    // Grimoire of the Dead's "Zombie". A token has no registry face, so
+    // `token_face` is its printed half: its object-level vectors start as a
+    // copy of it and then accumulate grants exactly as a card's do. Reading
+    // those vectors as a token's printed characteristics — which the
+    // `printed_*_of` family used to do — hands a grant to a copy effect, which
+    // takes copiable values only (CR 707.2).
     //
     // Union, never override, and never duplicate the face onto the object.
     // Both of those went wrong here before: `card_types_of` and `colors_of`
@@ -3184,9 +3225,20 @@ impl GameState {
             && !self.has_keyword(id, crate::types::Keyword::Haste, registry))
     }
 
-    /// Printed keywords of the object: the active face's, or the object's own
-    /// for something with no registry face (a generic token, whose
-    /// `obj.keywords` ARE its printed keywords).
+    /// The printed half of a token — the characteristics the effect that
+    /// created it gave it (CR 111.4, CR 707.2).
+    ///
+    /// This is what `face_data` is for a card, and the `printed_*_of` family
+    /// consults it for the same reason: a token's object-level vectors carry
+    /// its grants as well as its printed types, so they are not the printed
+    /// half and must not be read as one.
+    #[must_use]
+    pub fn token_face_of(&self, id: ObjectId) -> Option<&TokenFace> {
+        self.get_object(id).and_then(|o| o.token_face.as_ref())
+    }
+
+    /// Printed keywords of the object: the active face's, or a token's
+    /// `token_face` — the keywords the effect that created it gave it.
     ///
     /// This is the printed set only — keywords granted by continuous or
     /// temporary effects are not included. Ask `has_keyword` for the full
@@ -3195,6 +3247,9 @@ impl GameState {
     pub fn printed_keywords_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Keyword> {
         if let Some(data) = self.face_data(id, registry) {
             return data.keywords;
+        }
+        if let Some(face) = self.token_face_of(id) {
+            return face.keywords.clone();
         }
         self.get_object(id).map(|o| o.keywords.clone()).unwrap_or_default()
     }
@@ -3206,6 +3261,9 @@ impl GameState {
         if let Some(data) = self.face_data(id, registry) {
             return data.card_types;
         }
+        if let Some(face) = self.token_face_of(id) {
+            return face.card_types.clone();
+        }
         self.get_object(id).map(|o| o.card_types.clone()).unwrap_or_default()
     }
 
@@ -3216,6 +3274,9 @@ impl GameState {
     pub fn printed_subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
         if let Some(data) = self.face_data(id, registry) {
             return data.subtypes;
+        }
+        if let Some(face) = self.token_face_of(id) {
+            return face.subtypes.clone();
         }
         self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default()
     }
@@ -3243,6 +3304,9 @@ impl GameState {
             }
             return cols;
         }
+        if let Some(face) = self.token_face_of(id) {
+            return face.colors.clone();
+        }
         self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default()
     }
 
@@ -3252,6 +3316,9 @@ impl GameState {
     pub fn printed_pt_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> (Option<i32>, Option<i32>) {
         if let Some(data) = self.face_data(id, registry) {
             return (data.power, data.toughness);
+        }
+        if let Some(face) = self.token_face_of(id) {
+            return (face.power, face.toughness);
         }
         self.get_object(id).map_or((None, None), |o| (o.power, o.toughness))
     }
@@ -3503,6 +3570,37 @@ pub struct GameObject {
     /// (CR 400.7) — a new object makes a new choice.
     #[serde(default)]
     pub entering_copy_choice: EnterAsCopyChoice,
+
+    /// A token's printed characteristics, as the effect that created it set
+    /// them. `None` for anything that is not a token.
+    ///
+    /// The characteristics layer above splits an object into a printed half
+    /// (its active face) and a granted half (the object-level vectors). A
+    /// token has no face, so both halves used to share one vector and
+    /// nothing could tell them apart. Two things read the wrong half as a
+    /// result: the CR 111.4 check took a token's *current* subtypes for the
+    /// ones its name was derived from — "once a token is on the battlefield,
+    /// changing its name doesn't change its subtype(s), and vice versa", so
+    /// Olivia Voldaren making a Zombie token a Vampire looked like a
+    /// violation — and `printed_subtypes_of` handed that granted Vampire to
+    /// copy effects, which take only copiable values (CR 707.2).
+    ///
+    /// Written once at creation and never again: it is the token's face.
+    #[serde(default)]
+    pub token_face: Option<TokenFace>,
+}
+
+/// The printed half of a token — what the effect that created it said it was
+/// (CR 111.4, CR 707.2). The face a token would have if it had a card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TokenFace {
+    pub name: String,
+    pub power: Option<i32>,
+    pub toughness: Option<i32>,
+    pub colors: Vec<crate::types::Color>,
+    pub keywords: Vec<crate::types::Keyword>,
+    pub card_types: Vec<crate::types::CardType>,
+    pub subtypes: Vec<String>,
 }
 
 /// Whether a permanent that chooses what to enter as has been asked yet, and
