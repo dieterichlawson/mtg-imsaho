@@ -246,6 +246,84 @@ fn a_cast_offer_names_a_castable_card() {
     flags(&state, P0, &l, &reg, "which is not in p0's graveyard");
 }
 
+/// CR 118.3/602.2b/606.3: the rest of what an activation offer promises —
+/// counters it can actually remove, a timing restriction it respects, an
+/// artifact ability Stony Silence has not shut off, no targets for an
+/// ability that does not target, and loyalty the planeswalker actually has.
+#[test]
+fn an_activation_offer_can_pay_what_the_ability_costs() {
+    let (mut state, reg) = base();
+    // Mikaeus the Lunarch: "{T}, Remove a +1/+1 counter from Mikaeus: ...".
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    state.get_object_mut(mikaeus).unwrap().summoning_sick = false;
+    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let remove = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, ability_index, .. }
+        if *object_id == mikaeus && *ability_index == 1))
+        .expect("the counter-removal ability is offered").clone();
+    clean(&state, P0, &legal, &reg);
+
+    // The counter is gone, but the ability is still on the menu.
+    let mut s = state.clone();
+    s.remove_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    let mut l = legal.clone();
+    l.actions.retain(|a| !matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+        if *object_id == mikaeus && *ability_index == 0));
+    flags(&s, P0, &l, &reg, "counters it does not have");
+
+    // CR 602.2b: an ability with no target requirement is offered with no
+    // targets.
+    let mut targeted = remove.clone();
+    if let Action::ActivateAbility { targets, .. } = &mut targeted {
+        targets.push(Target::Player(P1));
+    }
+    let mut l = legal.clone();
+    l.actions.insert(1, targeted);
+    flags(&state, P0, &l, &reg, "carries targets for an untargeted ability");
+
+    // Equip is sorcery-speed only (CR 702.6b): offered in a main phase with
+    // an empty stack, and nowhere else.
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let equip = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == flail))
+        .expect("equip is offered in a main phase").clone();
+    clean(&state, P0, &legal, &reg);
+    assert!(matches!(&equip, Action::ActivateAbility { targets, .. }
+        if targets.contains(&Target::Object(bear))), "equip targets the creature");
+
+    let mut s = state.clone();
+    s.step = Step::DeclareBlockers;
+    let mut l = legal.clone();
+    l.actions.retain(|a| !matches!(a, Action::CastSpell { .. }));
+    flags(&s, P0, &l, &reg, "activates only as a sorcery");
+
+    // CR 602.2: Stony Silence shuts off an artifact's activated abilities.
+    let mut s = state.clone();
+    named_permanent(&mut s, &reg, "Stony Silence", P1);
+    flags(&s, P0, &legal, &reg, "on an artifact under Stony Silence");
+
+    // CR 118.3: a minus ability the planeswalker cannot pay for.
+    let (mut state, reg) = base();
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 3);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(legal.actions.iter().any(|a| matches!(a, Action::ActivateLoyaltyAbility { .. })),
+        "a planeswalker offers its loyalty abilities");
+    clean(&state, P0, &legal, &reg);
+
+    let mut s = state.clone();
+    set_loyalty(&mut s, liliana, 1);
+    flags(&s, P0, &legal, &reg, "(CR 118.3)");
+}
+
 /// CR 602.2/602.5/701.17a: an activation offer names an ability its source
 /// actually has, whose costs its controller can actually pay.
 #[test]

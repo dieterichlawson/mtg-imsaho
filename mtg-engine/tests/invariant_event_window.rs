@@ -428,6 +428,107 @@ fn a_damage_event_describes_damage_that_could_have_happened() {
     quiet_about(&s, &reg, "no matching life loss");
 }
 
+/// CR 510.1b-d/510.4/702.15b: the rest of what a combat damage event has to
+/// agree with — who may hit whom once blocks are in, which step a striker
+/// deals in, and the life a lifelinker gains in the same breath.
+#[test]
+fn combat_damage_events_agree_with_the_blocks_and_the_step() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let bystander = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::CombatDamage;
+    let mut c = mtg_engine::state::CombatState::new();
+    c.any_attackers_declared = true;
+    c.attackers.insert(attacker, P1);
+    c.blocker_assignments.insert(attacker, vec![blocker]);
+    c.blocked_attackers.insert(attacker);
+    state.combat = Some(c);
+
+    // The ordinary shape: the attacker and its blocker trade, each hit
+    // marked on the object that took it.
+    let mut trade = state.clone();
+    for (id, by) in [(blocker, attacker), (attacker, blocker)] {
+        trade.get_object_mut(id).unwrap().damage_marked = 2;
+        trade.get_object_mut(id).unwrap().damaged_by.push(by);
+    }
+    trade.events = vec![
+        GameEvent::CombatDamageDealt { source: attacker, target: DamageTarget::Object(blocker), amount: 2 },
+        GameEvent::CombatDamageDealt { source: blocker, target: DamageTarget::Object(attacker), amount: 2 },
+    ];
+    clean(&trade, &reg);
+
+    // CR 510.1d: a blocker's damage goes to the attacker it is blocking.
+    let mut s = trade.clone();
+    s.get_object_mut(bystander).unwrap().damage_marked = 2;
+    s.get_object_mut(bystander).unwrap().damaged_by.push(blocker);
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: blocker, target: DamageTarget::Object(bystander), amount: 2 }];
+    flags(&s, &reg, &format!("a blocker of #{} hit something else (CR 510.1d)", attacker.0));
+
+    // CR 510.1c: a blocked attacker reaches the player only with trample.
+    let mut s = state.clone();
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "a blocked attacker without trample reached the player (CR 510.1c)");
+    grant_keyword(&mut s, attacker, Keyword::Trample);
+    quiet_about(&s, &reg, "without trample reached the player");
+
+    // CR 510.1b: an unblocked attacker hitting the player it is attacking is
+    // the ordinary case, and is not flagged.
+    let mut unblocked = state.clone();
+    unblocked.combat.as_mut().unwrap().blocker_assignments.clear();
+    unblocked.combat.as_mut().unwrap().blocked_attackers.clear();
+    let mut s = unblocked.clone();
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    clean(&s, &reg);
+
+    // CR 120.3a: the life loss is that player's, and is the damage dealt.
+    let mut s = unblocked.clone();
+    s.get_player_mut(P0).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P0, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "no matching life loss for p1 (CR 120.3a)");
+    let mut s = unblocked.clone();
+    s.get_player_mut(P1).life = 19;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 19 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "no matching life loss for p1 (CR 120.3a)");
+
+    // CR 702.15b: lifelink gains its controller that much life, in the same
+    // window, after the damage.
+    let mut s = unblocked.clone();
+    grant_keyword(&mut s, attacker, Keyword::Lifelink);
+    s.get_player_mut(P1).life = 18;
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt {
+                        source: attacker, target: DamageTarget::Player(P1), amount: 2 }];
+    flags(&s, &reg, "lifelink but no life gain for its controller (CR 702.15b)");
+    s.get_player_mut(P0).life = 22;
+    s.events.push(GameEvent::LifeChanged { player: P0, old: 20, new_life: 22 });
+    quiet_about(&s, &reg, "lifelink but no life gain");
+
+    // CR 510.4: the first-strike step is for first and double strikers.
+    let mut s = trade.clone();
+    s.combat_damage_step_pending = true;
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: attacker, target: DamageTarget::Object(blocker), amount: 2 }];
+    flags(&s, &reg, "dealt in the first-strike step without first strike (CR 510.4)");
+    grant_keyword(&mut s, attacker, Keyword::FirstStrike);
+    quiet_about(&s, &reg, "without first strike");
+    let mut s2 = s.clone();
+    s2.until_end_of_turn.clear();
+    grant_keyword(&mut s2, attacker, Keyword::DoubleStrike);
+    quiet_about(&s2, &reg, "without first strike");
+}
+
 /// CR 121.1/701.8a/701.17a: what the zone-change events say about where the
 /// card they name ended up.
 #[test]
