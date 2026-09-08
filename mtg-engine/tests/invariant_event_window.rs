@@ -534,6 +534,52 @@ fn combat_damage_events_agree_with_the_blocks_and_the_step() {
     s.get_player_mut(P0).life = 22;
     s.events.push(GameEvent::LifeChanged { player: P0, old: 20, new_life: 22 });
     quiet_about(&s, &reg, "lifelink but no life gain");
+    // The life gained is the damage dealt: the right player gaining the
+    // wrong amount is no more a lifelink gain than the wrong player is.
+    let mut s2 = s.clone();
+    s2.get_player_mut(P0).life = 21;
+    *s2.events.last_mut().unwrap() = GameEvent::LifeChanged { player: P0, old: 20, new_life: 21 };
+    flags(&s2, &reg, "lifelink but no life gain for its controller (CR 702.15b)");
+
+    // CR 510.1b: an unblocked attacker may hit the planeswalker it is
+    // attacking, which is the other thing "unblocked" allows.
+    let mut s = unblocked.clone();
+    let walker = named_permanent(&mut s, &reg, "Liliana of the Veil", P1);
+    s.combat.as_mut().unwrap().attackers.remove(&attacker);
+    s.combat.as_mut().unwrap().attackers.insert(attacker, P1);
+    s.combat.as_mut().unwrap().planeswalker_defenders.insert(attacker, walker);
+    s.get_object_mut(walker).unwrap().damage_marked = 2;
+    s.get_object_mut(walker).unwrap().damaged_by.push(attacker);
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: attacker, target: DamageTarget::Object(walker), amount: 2 }];
+    quiet_about(&s, &reg, "(CR 510.1b)");
+
+    // CR 510.1c: a blocked trampler still may not hit a creature that is not
+    // blocking it — the trample exemption is for the planeswalker it is
+    // attacking, not for anything on the board.
+    let mut s = trade.clone();
+    grant_keyword(&mut s, attacker, Keyword::Trample);
+    s.get_object_mut(bystander).unwrap().damage_marked = 2;
+    s.get_object_mut(bystander).unwrap().damaged_by.push(attacker);
+    s.events = vec![GameEvent::CombatDamageDealt {
+        source: attacker, target: DamageTarget::Object(bystander), amount: 2 }];
+    flags(&s, &reg, &format!("a blocked attacker hit #{} which is not blocking it (CR 510.1c)", bystander.0));
+    // But a creature that has left the battlefield with damage still marked
+    // on it is not there to be hit, and is not reported.
+    let mut s2 = s.clone();
+    s2.get_object_mut(bystander).unwrap().zone = Zone::Graveyard;
+    quiet_about(&s2, &reg, "which is not blocking it (CR 510.1c)");
+
+    // CR 510.4 is asked only of a window where nothing left the
+    // battlefield: once something has, the keywords a source had when it
+    // struck cannot be looked up on the board any more, and the clause
+    // would report every ordinary trade in which a creature died.
+    let mut s = trade.clone();
+    s.combat_damage_step_pending = true;
+    s.get_object_mut(blocker).unwrap().zone = Zone::Graveyard;
+    s.events.push(GameEvent::LeftBattlefield {
+        object: blocker, to: Zone::Graveyard, last_controller: P1 });
+    quiet_about(&s, &reg, "(CR 510.4)");
 
     // CR 510.4: the first-strike step is for first and double strikers.
     let mut s = trade.clone();
