@@ -511,6 +511,42 @@ fn a_target_that_gained_hexproof_in_response_is_skipped_and_the_rest_resolve() {
         state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
+/// The partial-fizzle line names the dropped target ONCE.
+///
+/// `obj_name` already renders "Name (#id)", and this site appended a second
+/// id: "target Grizzly Bears (#74) (#74) is illegal". The message is built by
+/// comma-joining the dropped targets, so "(#74) (#74)" has exactly the shape
+/// of two entries — it reads as every target dropping out, which is a full
+/// fizzle (CR 608.2b, first sentence) and the opposite of what happened. That
+/// distinction is what a reader consults this line for (issue #356).
+#[test]
+fn the_partial_fizzle_line_names_the_dropped_target_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let spell = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
+    let mut state = cast_onto_stack(&state, &reg, spell,
+        vec![Target::Object(land), Target::Object(creature)]);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {
+        target: creature,
+        keyword: Keyword::Hexproof,
+    });
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let line = state.game_log.iter()
+        .map(|e| e.message.clone())
+        .find(|m| m.contains("is illegal, resolving with the rest"))
+        .expect("the partial fizzle is said out loud");
+    let expected = format!("(#{})", creature.0);
+    assert_eq!(line.matches(&expected).count(), 1,
+        "the dropped target is named once, not twice; line: {line:?}");
+    assert!(line.contains(&format!("target {}", state.obj_name(creature))),
+        "and it is named the way every other log line names an object; \
+         line: {line:?}");
+}
+
 /// An ABILITY resolving with every target still legal says nothing about
 /// illegal ones — the partial-fizzle line is for a partial fizzle.
 ///

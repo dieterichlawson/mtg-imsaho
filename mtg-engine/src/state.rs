@@ -1539,6 +1539,13 @@ impl GameState {
     }
 
     /// Return "`CardName` (#id)" for use in log messages.
+    ///
+    /// The id is already in it. Appending another one — `format!("{} (#{})",
+    /// state.obj_name(id), id.0)` — is what three of the callers here did, and
+    /// in a comma-joined list of targets the result reads as two entries:
+    /// "target Grizzly Bears (#74) (#74) is illegal" is a partial fizzle
+    /// (CR 608.2b, second sentence) wearing the shape of a full one (issue
+    /// #356). Log lines name an object by calling this and nothing else.
     #[must_use]
     pub fn obj_name(&self, id: ObjectId) -> String {
         let name = self.get_object(id).map_or_else(|| "?".into(), |o| o.name.clone());

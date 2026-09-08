@@ -516,6 +516,54 @@ fn burning_vengeance_triggers_on_flashback() {
         "Burning Vengeance should deal 2 damage to opponent on flashback cast");
 }
 
+/// The line that records a trigger going on the stack names its object target
+/// ONCE.
+///
+/// `obj_name` already renders "Name (#id)" and this site appended a second id,
+/// so a trigger aimed at a creature logged "... targeting Walking Corpse (#28)
+/// (#28)". The targets are comma-joined, so the doubled id reads as two of
+/// them (issue #356).
+#[test]
+fn a_triggers_log_line_names_its_object_target_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _bv = named_permanent(&mut state, &reg, "Burning Vengeance", P0);
+    let victim = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+
+    let spell = state.create_object(
+        reg.get_id_by_name("Think Twice").unwrap(), P0, Zone::Stack, None, None);
+    state.get_object_mut(spell).unwrap().cast_with_flashback = true;
+    state.get_object_mut(spell).unwrap().cast_from_zone = Some(Zone::Graveyard);
+    state.get_object_mut(spell).unwrap().name = "Think Twice".into();
+    state.events.push(GameEvent::SpellCast { player: P0, object: spell });
+
+    // "Deals 2 damage to any target" — answer the CR 603.3d prompt with the
+    // creature rather than the player, so the line renders an object.
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { choice:
+            mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, .. }) =>
+            options.clone(),
+        other => panic!("expected a target prompt, got {other:?}"),
+    };
+    let target = options.iter()
+        .find(|t| matches!(t, Target::Object(id) if *id == victim))
+        .expect("the creature is a legal 'any target'")
+        .clone();
+    let state = mtg_engine::engine::submit_action(&state, &mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(target)),
+    }, &reg);
+
+    let line = state.game_log.iter()
+        .map(|e| e.message.clone())
+        .find(|m| m.contains("goes on the stack targeting"))
+        .expect("the trigger and its target are recorded");
+    let expected = format!("(#{})", victim.0);
+    assert_eq!(line.matches(&expected).count(), 1,
+        "the target is named once, not twice; line: {line:?}");
+}
+
 /// Burning Vengeance does not trigger on normal spell casts.
 #[test]
 fn burning_vengeance_ignores_non_flashback() {
