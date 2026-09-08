@@ -2129,6 +2129,44 @@ fn the_costs_an_action_pays_are_checked_against_the_pool() {
     s.events.push(GameEvent::Tapped { object: forest });
     s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
     flags_transition(&already, Some(&tap), &s, &reg, "tapped #");
+
+    // CR 602.2f: an activation cost is spent out of the pool like any other,
+    // and mana tapped for it inside the same window counts as paid. The
+    // ledger reads the window; a ledger that subtracted what was added
+    // instead of adding it would report every activation paid this way.
+    let (mut prev, reg) = base();
+    let cathar = named_permanent(&mut prev, &reg, "Selfless Cathar", P0);
+    prev.priority_player = Some(P0);
+    prev.get_player_mut(P0).mana_pool.mana.clear();
+    let activate = mtg_engine::actions::Action::ActivateAbility {
+        object_id: cathar, ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: Some(cathar), x_value: None, source_card_id: None,
+    };
+    let card_id = prev.get_object(cathar).unwrap().card_id;
+    let onto_stack = |added: &[(ManaType, u32)], left: &[(ManaType, u32)]| {
+        let mut c = next(&prev);
+        c.get_player_mut(P0).mana_pool.mana.clear();
+        for (t, n) in left {
+            c.get_player_mut(P0).mana_pool.mana.insert(*t, *n);
+        }
+        c.stack.push(StackEntry::Ability {
+            source_id: cathar, ability_index: 0, behavior_card_id: card_id,
+            targets: vec![], activator: P0, x_value: None, target_requirement: None,
+            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false,
+        });
+        for (t, n) in added {
+            c.events.push(GameEvent::ManaAdded { player: P0, mana_type: *t, amount: *n });
+        }
+        c
+    };
+    // {1}{W} tapped for and spent inside the window.
+    quiet_transition_about(&prev, Some(&activate),
+        &onto_stack(&[(ManaType::White, 1), (ManaType::Green, 1)], &[]), &reg, "(CR 602.2f)");
+    // The same two mana added and then still sitting in the pool: the
+    // ability went on the stack without its cost being paid.
+    flags_transition(&prev, Some(&activate),
+        &onto_stack(&[(ManaType::White, 1), (ManaType::Green, 1)],
+                    &[(ManaType::White, 1), (ManaType::Green, 1)]), &reg, "(CR 602.2f)");
 }
 
 /// CR 514.1/103.5: the hand-size discard, the mulligan and the bottoming
@@ -2457,6 +2495,14 @@ fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
     flags_transition(&p, Some(&cast), &s, &reg,
         &format!("CastSpell #{} was refused but left traces", card.0));
 
+    // Refused with the card still in hand, but the window is not empty: the
+    // cast tapped for mana and then backed out without giving it back. Each
+    // of the three traces is a trace on its own.
+    let mut s = next(&prev);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    flags_transition(&prev, Some(&cast), &s, &reg,
+        &format!("CastSpell #{} was refused but left traces", card.0));
+
     // Waiting on a cost: the card stays where it is until the cost is paid.
     let mut waiting = next(&prev);
     waiting.pending_spell_cast = Some(stash(&prev, card));
@@ -2523,6 +2569,23 @@ fn an_activation_that_neither_went_on_the_stack_nor_backed_out_is_flagged() {
         assert!(!check_transition(&prev, Some(&activate), &s, &reg).is_empty(),
             "a stash naming {what} is not this activation");
     }
+
+    // Backing out cleanly is allowed to have cost something: the mana the
+    // player tapped for, and the tap itself, are the only traces a refused
+    // activation may leave — and either alone is still clean.
+    let mut s = next(&prev);
+    s.events.push(GameEvent::Tapped { object: land });
+    quiet_transition_about(&prev, Some(&activate), &s, &reg,
+        "neither went on the stack nor was refused cleanly");
+    let mut s = next(&prev);
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    quiet_transition_about(&prev, Some(&activate), &s, &reg,
+        "neither went on the stack nor was refused cleanly");
+    // Anything else is not a cost.
+    let mut s = next(&prev);
+    s.events.push(GameEvent::ManaAdded { player: P1, mana_type: ManaType::Green, amount: 1 });
+    flags_transition(&prev, Some(&activate), &s, &reg,
+        &format!("ActivateAbility #{}/0 neither went on the stack nor was refused cleanly", land.0));
 }
 
 /// CR 104.3a: conceding is losing, recorded as such. A concede that leaves
