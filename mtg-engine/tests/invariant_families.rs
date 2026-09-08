@@ -4407,6 +4407,43 @@ fn an_x_spell_on_the_stack_announced_its_x() {
     flags_core(&s, &reg, "has an X cost but no X announced (CR 601.2b)");
 }
 
+/// CR 702.34a/601.2b: flashback that a spell was GRANTED costs what the
+/// grant naming that spell says, and X is read off that cost. Past in Flames
+/// grants flashback to every instant and sorcery in a graveyard at once, so
+/// the grants sit side by side and the wrong one carries the wrong cost —
+/// Devil's Play is the one card in the pool whose mana cost has an X in it,
+/// and reading its grant for someone else's spell invents an unannounced X.
+#[test]
+fn a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell() {
+    let (mut state, reg) = base();
+    let play = named_card_in_graveyard(&mut state, &reg, "Devil's Play", P0);
+    let volley = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
+    let mut state = cast_onto_stack(&state, &reg, volley, vec![Target::Player(P1)]);
+
+    // Both cards sat in the graveyard when Past in Flames resolved; the X
+    // one is listed first, so a lookup that ignores the target finds it.
+    let x_cost = reg.card_data(state.get_object(play).unwrap().card_id).unwrap().cost.unwrap();
+    assert!(x_cost.has_x(), "precondition: Devil's Play costs an X");
+    let volley_cost = reg.card_data(state.get_object(volley).unwrap().card_id).unwrap().cost.unwrap();
+    assert!(!volley_cost.has_x(), "precondition: Brimstone Volley does not");
+    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: play, cost: x_cost });
+    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: volley, cost: volley_cost });
+    {
+        // CR 702.34a: flashback casts the card from the graveyard.
+        let o = state.get_object_mut(volley).unwrap();
+        o.cast_with_flashback = true;
+        o.cast_from_zone = Some(Zone::Graveyard);
+    }
+    assert!(reg.card_data(state.get_object(volley).unwrap().card_id).unwrap().flashback_cost.is_none(),
+        "precondition: the grant is the only flashback cost this spell has");
+
+    // The engine's own reachable board: Past in Flames grants flashback to
+    // every instant and sorcery in the graveyard at once, so Devil's Play's
+    // {X}{R} grant really does sit next to Brimstone Volley's {1}{R}{R} one.
+    // Only the grant naming the spell being cast may be read.
+    assert_eq!(check_core(&as_collected(&state), &reg), Vec::<String>::new());
+}
+
 /// CR 601.2/601.2h: a cast still being paid for is described consistently
 /// by its stash — the caster, the card, the zone, the costs it plans to pay
 /// with, and the prompt that is asking about it.
