@@ -314,6 +314,246 @@ fn a_cast_in_progress_is_checked_against_its_prompt_and_zones() {
     flags_core(&s, &reg, "would exile");
 }
 
+/// CR 603.3d: a trigger is given a target only when the ability that
+/// triggered asks for one, and never more than one. A trigger carrying a
+/// target its ability never declared resolves against something nobody
+/// chose — and `chosen_targets` is the only record, so nothing else notices.
+#[test]
+fn a_trigger_carrying_a_target_its_ability_never_asked_for_is_flagged() {
+    let (mut state, reg) = base();
+    // Rage Thrower's death trigger targets a player; Grizzly Bears has no
+    // triggered ability at all.
+    let thrower = named_permanent(&mut state, &reg, "Rage Thrower", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let dead = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.get_object_mut(dead).unwrap().zone = Zone::Graveyard;
+
+    let died = || mtg_engine::triggers::TriggerEvent::CreatureDied {
+        dead: mtg_engine::triggers::DeadCreature {
+            id: dead, name: "Grizzly Bears".into(), controller: P1, damaged_by: vec![],
+            toughness: 2, is_token: false, subtypes: vec!["Bear".into()],
+        },
+    };
+    let with_targets = |src: ObjectId, s: &GameState, targets: Vec<Target>| {
+        let mut source = mtg_engine::triggers::TriggerSource::new(
+            src, s.get_object(src).unwrap().card_id, P0, "t");
+        source.chosen_targets = targets;
+        mtg_engine::triggers::PendingTrigger::new(source, died())
+    };
+
+    // Rage Thrower's morbid trigger does target, so one target is right.
+    let mut s = state.clone();
+    s.stack.push(StackEntry::Trigger(with_targets(thrower, &s, vec![Target::Player(P1)])));
+    clean_core(&s, &reg);
+
+    let mut s = state.clone();
+    s.stack.push(StackEntry::Trigger(with_targets(bear, &s, vec![Target::Player(P1)])));
+    flags_core(&s, &reg, "carries a target but the ability does not target");
+
+    let mut s = state.clone();
+    s.stack.push(StackEntry::Trigger(with_targets(thrower, &s, vec![Target::Player(P1), Target::Player(P0)])));
+    flags_core(&s, &reg, "has 2 targets");
+
+    // The ability that targets is matched by kind, not merely by existing:
+    // Rage Thrower's targeting ability is its morbid one, so an upkeep
+    // trigger from the same card carrying a target is still wrong.
+    let mut s = state.clone();
+    let mut source = mtg_engine::triggers::TriggerSource::new(
+        thrower, s.get_object(thrower).unwrap().card_id, P0, "t");
+    source.chosen_targets = vec![Target::Player(P1)];
+    s.stack.push(StackEntry::Trigger(mtg_engine::triggers::PendingTrigger::new(
+        source, mtg_engine::triggers::TriggerEvent::Upkeep)));
+    flags_core(&s, &reg, "carries a target but the ability does not target");
+}
+
+/// CR 303.4a: an Aura spell targets what its enchant ability names. An Aura
+/// that enchants players but is on the stack targeting an object resolves
+/// onto something it cannot legally be attached to.
+#[test]
+fn an_aura_on_the_stack_targeting_the_wrong_kind_of_thing_is_flagged() {
+    let (mut state, reg) = base();
+    // Curse of the Pierced Heart enchants a player; Bonds of Faith a creature.
+    let curse = spell_in_hand(&mut state, &reg, "Curse of the Pierced Heart", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.get_object_mut(curse).unwrap().zone = Zone::Stack;
+    state.get_object_mut(curse).unwrap().targets = vec![Target::Player(P1)];
+    state.stack.push(StackEntry::Spell(curse));
+    clean_core(&state, &reg);
+
+    let mut s = state.clone();
+    s.get_object_mut(curse).unwrap().targets = vec![Target::Object(bear)];
+    flags_core(&s, &reg, "enchants players but targets an object");
+}
+
+/// CR 601.2h/602.2: the cost a cast is still paying names permanents its
+/// caster controls and untapped, each once, and cards in their own
+/// graveyard, each once. A stash that says otherwise taps or exiles
+/// something the player never offered.
+#[test]
+fn a_stashed_payment_that_names_the_wrong_permanents_is_flagged() {
+    let (mut state, reg) = base();
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let theirs = named_permanent(&mut state, &reg, "Forest", P1);
+    let tapped = named_permanent(&mut state, &reg, "Forest", P0);
+    state.get_object_mut(tapped).unwrap().tapped = true;
+    let fodder = named_card_in_graveyard(&mut state, &reg, "Forest", P0);
+    let theirs_gy = named_card_in_graveyard(&mut state, &reg, "Forest", P1);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let their_bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    // A real mid-payment cast: the stash and the prompt it waits on.
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2)]);
+    let state = cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]);
+    assert!(state.pending_spell_cast.is_some(), "test precondition: the cast is stashed");
+    clean_core(&state, &reg);
+
+    let with = |f: &dyn Fn(&mut mtg_engine::state::PendingSpellCast)| {
+        let mut s = state.clone();
+        f(s.pending_spell_cast.as_mut().unwrap());
+        s
+    };
+
+    clean_core(&with(&|c| { c.tap_plan.push((forest, 0)); c.exile_ids.push(fodder); }), &reg);
+
+    flags_core(&with(&|c| { c.tap_plan.push((forest, 0)); c.tap_plan.push((forest, 0)); }), &reg,
+        &format!("taps #{} twice", forest.0));
+    flags_core(&with(&|c| c.tap_plan.push((theirs, 0))), &reg,
+        &format!("plans to tap #{} which is not an untapped permanent of the caster", theirs.0));
+    flags_core(&with(&|c| c.tap_plan.push((tapped, 0))), &reg,
+        &format!("plans to tap #{} which is not an untapped permanent of the caster", tapped.0));
+    flags_core(&with(&|c| { c.exile_ids.push(fodder); c.exile_ids.push(fodder); }), &reg,
+        &format!("exiles #{} twice", fodder.0));
+    flags_core(&with(&|c| c.exile_ids.push(forest)), &reg,
+        &format!("would exile #{} which is not in the caster's graveyard", forest.0));
+    flags_core(&with(&|c| c.exile_ids.push(theirs_gy)), &reg,
+        &format!("would exile #{} which is not in the caster's graveyard", theirs_gy.0));
+
+    // CR 701.21a: the creature an additional cost sacrifices is one the
+    // caster controls on the battlefield, and never the spell itself.
+    clean_core(&with(&|c| c.sacrifice = Some(bear)), &reg);
+    flags_core(&with(&|c| c.sacrifice = Some(forest)), &reg,
+        &format!("would sacrifice #{} which is not a creature the caster controls (CR 701.21a)", forest.0));
+    flags_core(&with(&|c| c.sacrifice = Some(their_bear)), &reg,
+        &format!("would sacrifice #{} which is not a creature the caster controls (CR 701.21a)", their_bear.0));
+    flags_core(&with(&|c| c.sacrifice = Some(fodder)), &reg,
+        &format!("would sacrifice #{} which is not a creature the caster controls (CR 701.21a)", fodder.0));
+    flags_core(&with(&|c| c.sacrifice = Some(c.object_id)), &reg,
+        "which is not a creature the caster controls (CR 701.21a)");
+}
+
+/// CR 601.2b/602.2: the prompt a payment is waiting on is *that* payment's
+/// prompt. A mid-cast stash under somebody else's question is a cast that
+/// will be finished by an answer given to a different spell.
+#[test]
+fn a_payment_waiting_under_the_wrong_prompt_is_flagged() {
+    let (mut state, reg) = base();
+    let play = castable_spell(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2)]);
+    let state = cast_onto_stack(&state, &reg, play, vec![Target::Player(P1)]);
+    let (funding_source, options) = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding {
+            source_id, options, .. }, .. }) => (*source_id, options.clone()),
+        other => panic!("test precondition: an X-funding prompt, got {other:?}"),
+    };
+    clean_core(&state, &reg);
+
+    // The prompt names the stashed cast; a prompt for anything else is one
+    // the answer would finish the wrong payment with.
+    let mut s = state.clone();
+    s.pending_spell_cast.as_mut().unwrap().object_id = play;
+    if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding {
+        source_id, .. }, source, .. }) = &mut s.awaiting_action {
+        let decoy = ObjectId(funding_source.0 + 1000);
+        *source_id = decoy;
+        *source = decoy;
+    }
+    flags_core(&s, &reg, "but the stash is for");
+
+    // The same for an activation: its stash and its funding prompt are one
+    // ability's, not two.
+    let mut s = state.clone();
+    s.pending_spell_cast = None;
+    s.pending_ability_effect = Some(mtg_engine::state::PendingAbilityEffect {
+        source_id: funding_source,
+        ability_index: 0,
+        behavior_card_id: s.get_object(funding_source).unwrap().card_id,
+        targets: vec![],
+        description: "an ability".into(),
+        activator: P0,
+        target_requirement: None,
+        unpaid: None,
+    });
+    if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding {
+        is_ability, options: o, .. }, .. }) = &mut s.awaiting_action {
+        *is_ability = true;
+        *o = options;
+    }
+    clean_core(&s, &reg);
+
+    let mut wrong = s.clone();
+    wrong.pending_ability_effect.as_mut().unwrap().activator = P1;
+    flags_core(&wrong, &reg, "but the pending prompt is for something else");
+
+    let mut wrong = s.clone();
+    if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding {
+        is_ability, .. }, .. }) = &mut wrong.awaiting_action {
+        *is_ability = false;
+    }
+    flags_core(&wrong, &reg, "but the pending prompt is for something else");
+}
+
+/// The healthy shapes the stack checker polices, which a clause that fires
+/// on everything would flag: an instant sitting above the sorcery it was
+/// cast in response to (CR 307.1 is about sorceries, not instants), an
+/// ability that really did sacrifice something, one state trigger in
+/// flight, and an exile prompt asking for an exact number of cards.
+#[test]
+fn the_healthy_shapes_of_the_stack_are_not_flagged() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let sorcery = spell_in_hand(&mut state, &reg, "Rolling Temblor", P0);
+    let instant = spell_in_hand(&mut state, &reg, "Brimstone Volley", P0);
+    for id in [sorcery, instant] {
+        state.get_object_mut(id).unwrap().zone = Zone::Stack;
+    }
+    state.get_object_mut(instant).unwrap().targets = vec![Target::Object(bear)];
+    state.stack.push(StackEntry::Spell(sorcery));
+    state.stack.push(StackEntry::Spell(instant));
+    clean_core(&state, &reg);
+
+    // An activated ability that paid by sacrificing a creature remembers
+    // both the creature and its toughness (morbid, Brimstone Volley's
+    // "that creature's toughness" family).
+    let mut s = state.clone();
+    s.stack.push(StackEntry::Ability {
+        source_id: bear,
+        ability_index: 0,
+        activator: P0,
+        targets: vec![],
+        target_requirement: None,
+        behavior_card_id: s.get_object(bear).unwrap().card_id,
+        sacrificed: Some(bear),
+        sacrificed_toughness: Some(2),
+        x_value: None,
+        loyalty: false,
+    });
+    clean_core(&s, &reg);
+
+    // CR 603.8: one state-triggered ability in flight is the normal case;
+    // two of the same is the leak.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().state_trigger_on_stack = true;
+    let bear_card = s.get_object(bear).unwrap().card_id;
+    let state_trigger = || StackEntry::Trigger(mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(bear, bear_card, P0, "t"),
+        mtg_engine::triggers::TriggerEvent::StateTriggered,
+    ));
+    s.stack.push(state_trigger());
+    clean_core(&s, &reg);
+    s.stack.push(state_trigger());
+    flags_core(&s, &reg, &format!("#{} has 2 state-triggered abilities in flight (CR 603.8)", bear.0));
+}
+
 // ── prompts ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -986,12 +1226,261 @@ fn clean_transition(prev: &GameState, action: Option<&Action>, cur: &GameState, 
     assert_eq!(check_transition(prev, action, cur, reg), Vec::<String>::new());
 }
 
+/// A mid-payment cast of `card`, the way `cast_spell` stashes one.
+fn stash(state: &GameState, card: ObjectId) -> mtg_engine::state::PendingSpellCast {
+    mtg_engine::state::PendingSpellCast {
+        object_id: card,
+        player: state.get_object(card).unwrap().controller,
+        card_id: state.get_object(card).unwrap().card_id,
+        targets: vec![], sacrifice: None, exile_ids: vec![], exile_count: None,
+        tap_plan: vec![], alternative_cost: None,
+        non_x_mana_cost: ManaCost::new(vec![]), is_flashback: false,
+        cast_from_graveyard: false,
+    }
+}
+
 /// The next decision point, one action later, with nothing having happened.
 fn next(prev: &GameState) -> GameState {
     let mut cur = prev.clone();
     cur.submit_seq = prev.submit_seq + 1;
     cur.events.clear();
     cur
+}
+
+/// CR 508.1: the attackers the engine declares are the ones the player
+/// submitted, plus the ones an effect forces. Anything else is the engine
+/// attacking with a creature nobody chose — the one class of combat bug
+/// that leaves no other trace, since the declaration event *is* the record.
+#[test]
+fn a_declaration_that_disagrees_with_the_submitted_attackers_is_flagged() {
+    let (mut prev, reg) = base();
+    prev.step = Step::DeclareAttackers;
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let sick = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    prev.get_object_mut(sick).unwrap().summoning_sick = true;
+    let forced = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let furor = named_permanent(&mut prev, &reg, "Furor of the Bitten", P0);
+    prev.get_object_mut(furor).unwrap().attached_to = Some(forced);
+    prev.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+
+    let declare = |ids: &[ObjectId]| mtg_engine::actions::Action::DeclareAttackers {
+        attackers: ids.iter().map(|&id| (id, P1)).collect(),
+        planeswalker_attacks: vec![],
+    };
+    // What the engine really does: everything submitted, plus the forced
+    // attacker it adds itself, announced and recorded.
+    let declared = |prev: &GameState, ids: &[ObjectId]| {
+        let mut cur = next(prev);
+        cur.awaiting_action = None;
+        let attackers: Vec<(ObjectId, PlayerId)> = ids.iter().map(|&id| (id, P1)).collect();
+        let mut combat = mtg_engine::state::CombatState::new();
+        for &(id, who) in &attackers {
+            combat.attackers.insert(id, who);
+            combat.blocker_assignments.insert(id, vec![]);
+            combat.any_attackers_declared = true;
+            cur.get_object_mut(id).unwrap().tapped = true;
+            cur.events.push(GameEvent::Tapped { object: id });
+        }
+        cur.combat = Some(combat);
+        cur.events.push(GameEvent::AttackersDeclared { attackers });
+        cur
+    };
+
+    // The forced attacker is legitimately declared without being submitted
+    // (CR 508.1d), and that is not a violation.
+    clean_transition(&prev, Some(&declare(&[bear])), &declared(&prev, &[bear, forced]), &reg);
+
+    // A creature nobody submitted and nothing forces.
+    let vanilla = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    flags_transition(&prev, Some(&declare(&[bear])), &declared(&prev, &[bear, forced, vanilla]), &reg,
+        &format!("#{} was declared attacking but was neither submitted nor forced", vanilla.0));
+
+    // Submitted, but not eligible to attack in the first place.
+    flags_transition(&prev, Some(&declare(&[sick])), &declared(&prev, &[sick, forced]), &reg,
+        &format!("#{} was declared attacking but was not eligible (CR 508.1c)", sick.0));
+
+    // In combat, but in no declaration: the engine put it there itself.
+    let mut cur = declared(&prev, &[bear, forced]);
+    if let Some(c) = cur.combat.as_mut() { c.attackers.insert(vanilla, P1); c.blocker_assignments.insert(vanilla, vec![]); }
+    flags_transition(&prev, Some(&declare(&[bear])), &cur, &reg,
+        &format!("#{} is attacking without having been declared", vanilla.0));
+}
+
+/// CR 509.1a: every block the engine records is one the defender submitted,
+/// by an untapped creature of theirs, against a creature that is actually
+/// attacking.
+#[test]
+fn a_declaration_that_disagrees_with_the_submitted_blocks_is_flagged() {
+    let (mut prev, reg) = base();
+    prev.step = Step::DeclareBlockers;
+    let attacker = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let blocker = named_permanent(&mut prev, &reg, "Grizzly Bears", P1);
+    let tapped = named_permanent(&mut prev, &reg, "Grizzly Bears", P1);
+    prev.get_object_mut(tapped).unwrap().tapped = true;
+    let mine = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(attacker, P1);
+    combat.blocker_assignments.insert(attacker, vec![]);
+    combat.any_attackers_declared = true;
+    prev.combat = Some(combat);
+    prev.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+    prev.priority_player = Some(P1);
+
+    let submit = |pairs: &[(ObjectId, ObjectId)]| mtg_engine::actions::Action::DeclareBlockers {
+        assignments: pairs.to_vec(),
+    };
+    let declared = |pairs: &[(ObjectId, ObjectId)]| {
+        let mut cur = next(&prev);
+        cur.awaiting_action = None;
+        if let Some(c) = cur.combat.as_mut() {
+            for &(b, a) in pairs {
+                c.blocker_assignments.entry(a).or_default().push(b);
+                c.blocked_attackers.insert(a);
+            }
+        }
+        cur.events.push(GameEvent::BlockersDeclared { assignments: pairs.to_vec() });
+        cur
+    };
+
+    clean_transition(&prev, Some(&submit(&[(blocker, attacker)])), &declared(&[(blocker, attacker)]), &reg);
+
+    flags_transition(&prev, Some(&submit(&[])), &declared(&[(blocker, attacker)]), &reg,
+        &format!("#{} blocking #{} was declared but never submitted", blocker.0, attacker.0));
+    flags_transition(&prev, Some(&submit(&[(tapped, attacker)])), &declared(&[(tapped, attacker)]), &reg,
+        &format!("#{} blocking #{} was not a legal block (CR 509.1a)", tapped.0, attacker.0));
+    flags_transition(&prev, Some(&submit(&[(mine, attacker)])), &declared(&[(mine, attacker)]), &reg,
+        &format!("#{} blocking #{} was not a legal block (CR 509.1a)", mine.0, attacker.0));
+}
+
+/// CR 601.2: a cast either goes on the stack, stops on a cost it is waiting
+/// to have paid, or is refused — and a refusal leaves the game exactly as it
+/// was. "Refused, but the card moved anyway" is a spell that half-happened.
+#[test]
+fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
+    let (mut prev, reg) = base();
+    let card = spell_in_hand(&mut prev, &reg, "Grizzly Bears", P0);
+    let other = spell_in_hand(&mut prev, &reg, "Grizzly Bears", P0);
+    let cast = mtg_engine::actions::Action::CastSpell {
+        object_id: card, targets: vec![], sacrifice: None, exile_count: None,
+        exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+    };
+
+    // Refused: nothing moved, nothing announced.
+    clean_transition(&prev, Some(&cast), &next(&prev), &reg);
+
+    // Refused, but the card left the hand.
+    let mut s = next(&prev);
+    s.move_object(card, Zone::Graveyard, &reg);
+    flags_transition(&prev, Some(&cast), &s, &reg,
+        &format!("CastSpell #{} was refused but left traces", card.0));
+
+    // Refused, but another spell appeared on the stack. The stack comparison
+    // ignores triggers, so a trigger sitting there does not mask it.
+    let mut p = prev.clone();
+    let bear = named_permanent(&mut p, &reg, "Grizzly Bears", P0);
+    p.pending_trigger_pushes_ap.clear();
+    p.stack.push(StackEntry::Trigger(mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource {
+            id: bear, card_id: p.get_object(bear).unwrap().card_id, controller: P0,
+            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false,
+        },
+        mtg_engine::triggers::TriggerEvent::Upkeep,
+    )));
+    let mut s = next(&p);
+    s.get_object_mut(other).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(other));
+    flags_transition(&p, Some(&cast), &s, &reg,
+        &format!("CastSpell #{} was refused but left traces", card.0));
+
+    // Waiting on a cost: the card stays where it is until the cost is paid.
+    let mut waiting = next(&prev);
+    waiting.pending_spell_cast = Some(stash(&prev, card));
+    let mut s = waiting.clone();
+    s.move_object(card, Zone::Stack, &reg);
+    flags_transition(&prev, Some(&cast), &s, &reg,
+        &format!("CastSpell #{} is waiting on a cost but the card moved", card.0));
+}
+
+/// CR 602.2: an activation goes on the stack, stops on a cost, or is refused
+/// — and a refusal may have paid mana and tapped things on the way, nothing
+/// more.
+#[test]
+fn an_activation_that_neither_went_on_the_stack_nor_backed_out_is_flagged() {
+    let (mut prev, reg) = base();
+    let land = named_permanent(&mut prev, &reg, "Forest", P0);
+    let bear = spell_in_hand(&mut prev, &reg, "Grizzly Bears", P0);
+    let activate = mtg_engine::actions::Action::ActivateAbility {
+        object_id: land, ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: None, x_value: None, source_card_id: None,
+    };
+
+    clean_transition(&prev, Some(&activate), &next(&prev), &reg);
+
+    let mut s = next(&prev);
+    s.get_object_mut(bear).unwrap().zone = Zone::Stack;
+    s.stack.push(StackEntry::Spell(bear));
+    flags_transition(&prev, Some(&activate), &s, &reg,
+        &format!("ActivateAbility #{}/0 neither went on the stack nor was refused cleanly", land.0));
+
+    let mut s = next(&prev);
+    s.events.push(GameEvent::CardDrawn { player: P0, object: bear });
+    flags_transition(&prev, Some(&activate), &s, &reg,
+        &format!("ActivateAbility #{}/0 neither went on the stack nor was refused cleanly", land.0));
+}
+
+/// CR 104.3a: conceding is losing, recorded as such. A concede that leaves
+/// the player in the game, or blames something else, is the one action whose
+/// whole effect is a single flag.
+#[test]
+fn a_concede_that_does_not_record_the_loss_is_flagged() {
+    let (prev, reg) = base();
+    let concede = mtg_engine::actions::Action::Concede;
+
+    let mut s = next(&prev);
+    s.player_loses(P0, mtg_engine::events::LossReason::Conceded);
+    clean_transition(&prev, Some(&concede), &s, &reg);
+
+    flags_transition(&prev, Some(&concede), &next(&prev), &reg,
+        "p0 conceded but is not recorded as having lost that way");
+
+    let mut s = next(&prev);
+    s.player_loses(P0, mtg_engine::events::LossReason::LifeReachedZero);
+    flags_transition(&prev, Some(&concede), &s, &reg,
+        "p0 conceded but is not recorded as having lost that way");
+}
+
+/// A cast that was waiting on a cost either finishes as a cast spell or is
+/// still waiting. Losing the stash while the card moves is a spell that was
+/// never cast (no `SpellCast`, so nothing that watches casts ever hears it).
+#[test]
+fn a_pending_cast_that_vanishes_with_the_card_is_flagged() {
+    let (mut prev, reg) = base();
+    let card = spell_in_hand(&mut prev, &reg, "Grizzly Bears", P0);
+    prev.pending_spell_cast = Some(stash(&prev, card));
+
+    // The stash is only ever resolved by an answer to the prompt it is
+    // waiting on (CR 601.2), so that is the action the contract is checked
+    // against.
+    let answer = mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
+    };
+
+    // Finished: the card is on the stack and the cast was announced.
+    let mut s = next(&prev);
+    s.pending_spell_cast = None;
+    s.move_object(card, Zone::Stack, &reg);
+    s.stack.push(StackEntry::Spell(card));
+    s.events.push(GameEvent::SpellCast { player: P0, object: card });
+    *s.num_spells_cast_this_turn.entry(P0).or_insert(0) += 1;
+    clean_transition(&prev, Some(&answer), &s, &reg);
+
+    // The stash is gone, the card moved, and no cast was ever announced.
+    let mut s = next(&prev);
+    s.pending_spell_cast = None;
+    s.move_object(card, Zone::Stack, &reg);
+    s.stack.push(StackEntry::Spell(card));
+    flags_transition(&prev, Some(&answer), &s, &reg,
+        &format!("pending cast of #{} ended with the card moved but no SpellCast", card.0));
 }
 
 #[test]
