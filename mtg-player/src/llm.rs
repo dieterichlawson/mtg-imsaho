@@ -356,6 +356,8 @@ Combat resolves in this order: declare attackers → declare blockers → first-
 
 **Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
 
+**Choosing between replacement and prevention effects on damage.** When two or more such effects apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead) on one Zombie's combat damage, or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the numbered options say what each effect would do (`double it to 4`, `instead p1 mills 2 cards`, `prevent all of it`). Pick the effect you want to apply FIRST; it applies, and the others apply afterwards only if they still can — a prevention or a mill ends the damage, so nothing after it happens, while doubling leaves a bigger damage event for the rest. You are only asked when the choice matters; two Flails, or a Flail under a Ghostly Possession, apply on their own.
+
 Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
 - It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
 - Or it can lethal-first the Bell-Ringer (assign 4 → kills it), then 0 left over. Bell-Ringer dies, Walking Corpse survives untouched.
@@ -3888,6 +3890,19 @@ mod tests {
                 GAME_RULES.contains(section),
                 "GAME_RULES must show {section:?}, the shape the harness sends"
             );
+        }
+    }
+
+    /// The CR 616.1 prompt is a flat numbered choice like any other, so the
+    /// model needs to be told what it is choosing and what "first" means
+    /// (issue #323).
+    #[test]
+    fn the_damage_effect_choice_is_documented() {
+        let para = GAME_RULES.find("**Choosing between replacement and prevention effects on damage.**")
+            .expect("documented");
+        let rest = &GAME_RULES[para..];
+        for phrase in ["CR 616.1", "AFFECTED player", "apply FIRST", "double it to 4", "prevent all of it"] {
+            assert!(rest.contains(phrase), "the paragraph explains {phrase:?}");
         }
     }
 
