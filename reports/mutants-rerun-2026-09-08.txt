@@ -1,0 +1,10 @@
+# Re-run of the survivors filed by weekly-mutants run 33964071700 (issues
+# #276, #277, #278, #279 — every one in mtg-engine/src/invariants/) against
+# the suite as of this branch. One line per mutant tested: the outcome, a
+# tab, the mutant as cargo-mutants 27.1.0 names it. Tested against the nine
+# test binaries that exercise the invariant checker (combat_rules,
+# control_durations, invariant_checker, invariant_event_window,
+# invariant_families, invariant_legal_offers, invariant_object_shapes,
+# invariant_prompt_shapes, resolution_time_checks); a "missed" here was then
+# re-run against the whole mtg-engine suite before it counted as alive.
+# The triage of what was still alive is in reports/mutation-testing.md.
