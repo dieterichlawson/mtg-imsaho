@@ -1955,6 +1955,278 @@ fn the_mana_ledger_is_checked() {
     quiet_transition_about(&floating, None, &s, &reg, "(CR 500.4)");
 }
 
+/// CR 305.1/601.2h/602.2f/605.3: what an action that spends something has
+/// to show for it — a land that moved from hand to battlefield with its
+/// event, and a pool that went down by what the cost demanded.
+#[test]
+fn the_costs_an_action_pays_are_checked_against_the_pool() {
+    let (mut prev, reg) = base();
+    let land = spell_in_hand(&mut prev, &reg, "Forest", P0);
+    prev.priority_player = Some(P0);
+
+    // CR 305.1: a land play moves the card and says so. Each half alone.
+    let play = mtg_engine::actions::Action::PlayLand { object_id: land };
+    let played = |from_hand: bool, to_battlefield: bool, announced: bool| {
+        let mut p = prev.clone();
+        if !from_hand {
+            p.get_object_mut(land).unwrap().zone = Zone::Graveyard;
+        }
+        let mut c = next(&p);
+        c.get_player_mut(P0).land_plays_remaining -= 1;
+        {
+            let o = c.get_object_mut(land).unwrap();
+            o.zone = if to_battlefield { Zone::Battlefield } else { Zone::Graveyard };
+            o.zone_change_count += 1;
+        }
+        if announced {
+            c.events.push(GameEvent::LandPlayed { player: P0, object: land });
+        }
+        (p, c)
+    };
+    let (p, c) = played(true, true, true);
+    quiet_transition_about(&p, Some(&play), &c, &reg, "(CR 305.1)");
+    let (p, c) = played(false, true, true);
+    flags_transition(&p, Some(&play), &c, &reg, "(CR 305.1)");
+    let (p, c) = played(true, false, true);
+    flags_transition(&p, Some(&play), &c, &reg, "(CR 305.1)");
+    let (p, c) = played(true, true, false);
+    flags_transition(&p, Some(&play), &c, &reg, "(CR 305.1)");
+
+    // CR 601.2h: casting spends the cost out of the pool — all of it, not
+    // just the coloured pips.
+    let (mut prev, reg) = base();
+    let bear = named_permanent(&mut prev, &reg, "Grizzly Bears", P0);
+    let pump = spell_in_hand(&mut prev, &reg, "Moment of Heroism", P0);
+    prev.priority_player = Some(P0);
+    // {1}{W}: two mana, one of them white.
+    add_mana(&mut prev, P0, &[(ManaType::White, 1), (ManaType::Green, 1)]);
+    let cast = mtg_engine::actions::Action::CastSpell {
+        object_id: pump, targets: vec![Target::Object(bear)], sacrifice: None,
+        exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+    };
+    let casting = |left: &[(ManaType, u32)]| {
+        let mut c = next(&prev);
+        c.get_player_mut(P0).mana_pool.mana.clear();
+        for (t, n) in left {
+            c.get_player_mut(P0).mana_pool.mana.insert(*t, *n);
+        }
+        {
+            let o = c.get_object_mut(pump).unwrap();
+            o.zone = Zone::Stack;
+            o.zone_change_count += 1;
+        }
+        c.stack.push(StackEntry::Spell(pump));
+        *c.num_spells_cast_this_turn.entry(P0).or_insert(0) += 1;
+        c.events.push(GameEvent::ObjectMoved { object: pump, from: Zone::Hand, to: Zone::Stack });
+        c.events.push(GameEvent::SpellCast { player: P0, object: pump });
+        c
+    };
+    quiet_transition_about(&prev, Some(&cast), &casting(&[]), &reg, "(CR 601.2h)");
+
+    // Mana tapped for the cost inside the same window counts as paid: the
+    // pool ends where it started, having gained and spent two.
+    let mut with_taps = prev.clone();
+    with_taps.get_player_mut(P0).mana_pool.mana.clear();
+    let mut c = next(&with_taps);
+    {
+        let o = c.get_object_mut(pump).unwrap();
+        o.zone = Zone::Stack;
+        o.zone_change_count += 1;
+    }
+    c.stack.push(StackEntry::Spell(pump));
+    *c.num_spells_cast_this_turn.entry(P0).or_insert(0) += 1;
+    c.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::White, amount: 1 });
+    c.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    c.events.push(GameEvent::ObjectMoved { object: pump, from: Zone::Hand, to: Zone::Stack });
+    c.events.push(GameEvent::SpellCast { player: P0, object: pump });
+    quiet_transition_about(&with_taps, Some(&cast), &c, &reg, "(CR 601.2h)");
+    // Mana added for somebody else, or of another colour, pays nothing.
+    let mut s = c.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::ManaAdded { .. }));
+    s.events.insert(0, GameEvent::ManaAdded { player: P1, mana_type: ManaType::White, amount: 2 });
+    flags_transition(&with_taps, Some(&cast), &s, &reg, "(CR 601.2h)");
+    let mut s = c.clone();
+    s.events.retain(|e| !matches!(e, GameEvent::ManaAdded { mana_type: ManaType::White, .. }));
+    s.events.insert(0, GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    flags_transition(&with_taps, Some(&cast), &s, &reg, "White mana after 0 + 0 for a cost of 1 (CR 601.2h)");
+    // The generic half never left.
+    flags_transition(&prev, Some(&cast), &casting(&[(ManaType::Green, 1)]), &reg,
+        "for a total cost of 2 (CR 601.2h)");
+    // The coloured pip never left.
+    flags_transition(&prev, Some(&cast), &casting(&[(ManaType::White, 1)]), &reg,
+        "White mana after 1 + 0 for a cost of 1 (CR 601.2h)");
+
+    // CR 605.3: a mana ability does not touch the step, priority or stack,
+    // and does not tap what is already tapped.
+    let (mut prev, reg) = base();
+    let forest = named_permanent(&mut prev, &reg, "Forest", P0);
+    prev.priority_player = Some(P0);
+    let tap = mtg_engine::actions::Action::ActivateManaAbility { object_id: forest, ability_index: 0 };
+    let mut c = next(&prev);
+    c.get_object_mut(forest).unwrap().tapped = true;
+    c.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 1);
+    c.events.push(GameEvent::Tapped { object: forest });
+    c.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    quiet_transition_about(&prev, Some(&tap), &c, &reg, "(CR 605.3)");
+    let mut s = c.clone();
+    s.step = Step::BeginCombat;
+    s.events.push(GameEvent::StepStarted { step: Step::BeginCombat });
+    flags_transition(&prev, Some(&tap), &s, &reg, "changed the step, priority, or the stack (CR 605.3)");
+    let mut s = c.clone();
+    s.priority_player = Some(P1);
+    flags_transition(&prev, Some(&tap), &s, &reg, "changed the step, priority, or the stack (CR 605.3)");
+    // Tapping what was already tapped.
+    let mut already = prev.clone();
+    already.get_object_mut(forest).unwrap().tapped = true;
+    let mut s = next(&already);
+    s.get_player_mut(P0).mana_pool.mana.insert(ManaType::Green, 1);
+    s.events.push(GameEvent::Tapped { object: forest });
+    s.events.push(GameEvent::ManaAdded { player: P0, mana_type: ManaType::Green, amount: 1 });
+    flags_transition(&already, Some(&tap), &s, &reg, "tapped #");
+}
+
+/// CR 514.1/103.5: the hand-size discard, the mulligan and the bottoming
+/// each move exactly the cards they name, in the order the rules give.
+#[test]
+fn the_hand_shaping_actions_move_exactly_what_they_name() {
+    let reg = registry();
+    let mut prev = game_at_step(Step::Cleanup, P0);
+    prev.turn_number = 3;
+    let hand: Vec<mtg_engine::ids::ObjectId> =
+        (0..3).map(|_| spell_in_hand(&mut prev, &reg, "Forest", P0)).collect();
+    prev.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 1 });
+    prev.priority_player = None;
+
+    let discard = mtg_engine::actions::Action::DiscardCards { cards: vec![hand[0]] };
+    let discarded = |ids: &[mtg_engine::ids::ObjectId], announce: &[mtg_engine::ids::ObjectId]| {
+        let mut c = next(&prev);
+        c.awaiting_action = None;
+        for &id in ids {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Graveyard;
+            o.zone_change_count += 1;
+            c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Hand, to: Zone::Graveyard });
+        }
+        for &id in announce {
+            c.events.push(GameEvent::Discarded { player: P0, object: id });
+        }
+        c
+    };
+    quiet_transition_about(&prev, Some(&discard), &discarded(&hand[..1], &hand[..1]), &reg, "(CR 514.1)");
+    // Announced for a card the action did not name.
+    flags_transition(&prev, Some(&discard), &discarded(&hand[1..2], &hand[1..2]), &reg, "(CR 514.1)");
+    // Named but never moved.
+    let mut c = discarded(&[], &hand[..1]);
+    quiet_transition_about(&prev, Some(&discard), &c, &reg, "(CR 514.1)");
+    flags_transition(&prev, Some(&discard), &c, &reg, "was not moved out of p0's hand");
+    let _ = &mut c;
+
+    // CR 103.5: a mulligan shuffles, then draws, and moves the count.
+    let mut opening = game_at_step(Step::Untap, P0);
+    opening.turn_number = 1;
+    opening.is_first_turn = true;
+    opening.priority_player = None;
+    let library: Vec<mtg_engine::ids::ObjectId> = stock_library(&mut opening, &reg, P0, 20);
+    let old_hand: Vec<mtg_engine::ids::ObjectId> =
+        (0..7).map(|_| spell_in_hand(&mut opening, &reg, "Forest", P0)).collect();
+    opening.awaiting_action = Some(AwaitingAction::MulliganDecision { player: P0 });
+
+    let mull = |shuffle_first: bool| {
+        let mut c = next(&opening);
+        c.awaiting_action = None;
+        c.get_player_mut(P0).mulligan_count += 1;
+        for &id in &old_hand {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Library;
+            o.zone_change_count += 1;
+            c.get_player_mut(P0).library_order.push(id);
+            c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Hand, to: Zone::Library });
+        }
+        let mut draws = Vec::new();
+        for &id in library.iter().take(7) {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Hand;
+            o.zone_change_count += 1;
+            c.get_player_mut(P0).library_order.retain(|&x| x != id);
+            draws.push(GameEvent::ObjectMoved { object: id, from: Zone::Library, to: Zone::Hand });
+            draws.push(GameEvent::CardDrawn { player: P0, object: id });
+        }
+        if shuffle_first {
+            c.events.push(GameEvent::LibraryShuffled { player: P0 });
+            c.events.extend(draws);
+        } else {
+            c.events.extend(draws);
+            c.events.push(GameEvent::LibraryShuffled { player: P0 });
+        }
+        c
+    };
+    quiet_transition_about(&opening, Some(&mtg_engine::actions::Action::MulliganMull), &mull(true), &reg, "(CR 103.5)");
+    flags_transition(&opening, Some(&mtg_engine::actions::Action::MulliganMull), &mull(false), &reg,
+        "drew the new hand before shuffling (CR 103.5)");
+    let mut no_shuffle = mull(true);
+    no_shuffle.events.retain(|e| !matches!(e, GameEvent::LibraryShuffled { .. }));
+    flags_transition(&opening, Some(&mtg_engine::actions::Action::MulliganMull), &no_shuffle, &reg,
+        "mulliganed without shuffling (CR 103.5)");
+    let mut no_count = mull(true);
+    no_count.get_player_mut(P0).mulligan_count = opening.get_player(P0).mulligan_count;
+    flags_transition(&opening, Some(&mtg_engine::actions::Action::MulliganMull), &no_count, &reg,
+        "mulliganed without the count moving (CR 103.5)");
+    // CR 103.4: the new hand is the cards that were drawn for it.
+    let mut short = mull(true);
+    let extra = spell_in_hand(&mut short, &reg, "Forest", P0);
+    let _ = extra;
+    flags_transition(&opening, Some(&mtg_engine::actions::Action::MulliganMull), &short, &reg,
+        "drew 7 cards for a new hand of 8");
+    // And a card of the old hand left behind is not a new hand.
+    let mut kept = mull(true);
+    {
+        let o = kept.get_object_mut(old_hand[0]).unwrap();
+        o.zone = Zone::Hand;
+        o.zone_change_count = opening.get_object(old_hand[0]).unwrap().zone_change_count;
+    }
+    kept.get_player_mut(P0).library_order.retain(|&x| x != old_hand[0]);
+    flags_transition(&opening, Some(&mtg_engine::actions::Action::MulliganMull), &kept, &reg,
+        "stayed in hand");
+
+    // CR 103.5: bottoming puts exactly the cards asked for on the bottom.
+    let mut bottoming = opening.clone();
+    bottoming.awaiting_action = Some(AwaitingAction::BottomAfterMulligan { player: P0, count: 1 });
+    let bottom = |ids: Vec<mtg_engine::ids::ObjectId>, to_top: bool| {
+        let mut c = next(&bottoming);
+        c.awaiting_action = None;
+        for &id in &ids {
+            let o = c.get_object_mut(id).unwrap();
+            o.zone = Zone::Library;
+            o.zone_change_count += 1;
+            if to_top {
+                c.get_player_mut(P0).library_order.insert(0, id);
+            } else {
+                c.get_player_mut(P0).library_order.push(id);
+            }
+            c.events.push(GameEvent::ObjectMoved { object: id, from: Zone::Hand, to: Zone::Library });
+        }
+        c
+    };
+    let put = mtg_engine::actions::Action::BottomCards { cards: vec![old_hand[0]] };
+    quiet_transition_about(&bottoming, Some(&put), &bottom(vec![old_hand[0]], false), &reg, "(CR 103.5)");
+    quiet_transition_about(&bottoming, Some(&put), &bottom(vec![old_hand[0]], false), &reg,
+        "did not go from hand to library");
+    quiet_transition_about(&bottoming, Some(&put), &bottom(vec![old_hand[0]], false), &reg,
+        "are not the bottom of");
+    // The wrong number of cards.
+    let two = mtg_engine::actions::Action::BottomCards { cards: vec![old_hand[0], old_hand[1]] };
+    flags_transition(&bottoming, Some(&two), &bottom(vec![old_hand[0], old_hand[1]], false), &reg,
+        "bottomed 2 cards, asked for 1 (CR 103.5)");
+    // On the top instead of the bottom.
+    flags_transition(&bottoming, Some(&put), &bottom(vec![old_hand[0]], true), &reg,
+        "are not the bottom of p0's library");
+    // Named but left in hand.
+    let mut c = next(&bottoming);
+    c.awaiting_action = None;
+    flags_transition(&bottoming, Some(&put), &c, &reg, "did not go from hand to library");
+    let _ = &mut c;
+}
+
 /// CR 103.4: the opening hands are outside the turn structure — the untap
 /// step is announced without a turn starting, and turn 1 is announced
 /// without the counter moving.
