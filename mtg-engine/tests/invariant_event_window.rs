@@ -595,6 +595,36 @@ fn an_entry_event_describes_the_permanent_that_arrived() {
         object: card, from: Zone::Battlefield, to: Zone::Graveyard }];
     flags(&s, &reg, "last moved to Graveyard but is in Exile");
 
+    // CR 400.7: an entry event is about a permanent that is on the
+    // battlefield afterwards.
+    let mut s = base().0;
+    let card = spell_in_hand(&mut s, &reg, "Grizzly Bears", P0);
+    s.events = vec![GameEvent::EnteredBattlefield { object: card, controller: P0 }];
+    flags(&s, &reg, "last moved to Battlefield but is in Hand");
+
+    // CR 111.8 is about tokens: a card that leaves and comes back in one
+    // window is an ordinary flicker, not a token returning from nowhere.
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.events = vec![
+        GameEvent::LeftBattlefield { object: card, to: Zone::Exile, last_controller: P0 },
+        GameEvent::EnteredBattlefield { object: card, controller: P0 },
+    ];
+    s.get_object_mut(card).unwrap().summoning_sick = true;
+    quiet_about(&s, &reg, "(CR 111.8)");
+
+    // And the tap ledger is cleared by leaving: tapped, then gone, is not a
+    // permanent that "was tapped but is in Graveyard".
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(card).unwrap().tapped = true;
+    s.events = vec![
+        GameEvent::Tapped { object: card },
+        GameEvent::LeftBattlefield { object: card, to: Zone::Graveyard, last_controller: P0 },
+    ];
+    s.get_object_mut(card).unwrap().zone = Zone::Graveyard;
+    quiet_about(&s, &reg, "was tapped but is in");
+
     // CR 306.5b: a planeswalker enters with the loyalty its card prints.
     let mut s = base().0;
     let walker = named_permanent(&mut s, &reg, "Liliana of the Veil", P0);
