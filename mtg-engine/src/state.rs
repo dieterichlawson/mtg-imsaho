@@ -649,6 +649,7 @@ impl GameState {
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            token_face: None,
         };
         self.objects.insert(id, obj);
         id
@@ -803,6 +804,10 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let id = self.next_id();
+        let colors_printed = colors.clone();
+        let keywords_printed = keywords.clone();
+        let card_types_printed = card_types.clone();
+        let subtypes_printed = subtypes.clone();
         let obj = GameObject {
             id,
             card_id: CardId(0), // sentinel for tokens
@@ -844,6 +849,18 @@ impl GameState {
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            // The token's printed half, frozen here. Everything an effect
+            // grants it later goes into the vectors above, exactly as it does
+            // for a card, and the two stay tellable apart.
+            token_face: Some(TokenFace {
+                name: name.to_string(),
+                power: Some(power),
+                toughness: Some(toughness),
+                colors: colors_printed,
+                keywords: keywords_printed,
+                card_types: card_types_printed,
+                subtypes: subtypes_printed,
+            }),
         };
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
@@ -2873,9 +2890,12 @@ impl GameState {
     // transformed, the front face otherwise. The object-level vectors
     // (`card_types`, `subtypes`, `colors`, `keywords`) are the granted half —
     // what an effect added at runtime, like Olivia Voldaren's "Vampire" or
-    // Grimoire of the Dead's "Zombie". Tokens are the one exception: they have
-    // no registry face, so their object-level fields carry their printed
-    // characteristics instead.
+    // Grimoire of the Dead's "Zombie". A token has no registry face, so
+    // `token_face` is its printed half: its object-level vectors start as a
+    // copy of it and then accumulate grants exactly as a card's do. Reading
+    // those vectors as a token's printed characteristics — which the
+    // `printed_*_of` family used to do — hands a grant to a copy effect, which
+    // takes copiable values only (CR 707.2).
     //
     // Union, never override, and never duplicate the face onto the object.
     // Both of those went wrong here before: `card_types_of` and `colors_of`
@@ -3114,9 +3134,20 @@ impl GameState {
             && !self.has_keyword(id, crate::types::Keyword::Haste, registry))
     }
 
-    /// Printed keywords of the object: the active face's, or the object's own
-    /// for something with no registry face (a generic token, whose
-    /// `obj.keywords` ARE its printed keywords).
+    /// The printed half of a token — the characteristics the effect that
+    /// created it gave it (CR 111.4, CR 707.2).
+    ///
+    /// This is what `face_data` is for a card, and the `printed_*_of` family
+    /// consults it for the same reason: a token's object-level vectors carry
+    /// its grants as well as its printed types, so they are not the printed
+    /// half and must not be read as one.
+    #[must_use]
+    pub fn token_face_of(&self, id: ObjectId) -> Option<&TokenFace> {
+        self.get_object(id).and_then(|o| o.token_face.as_ref())
+    }
+
+    /// Printed keywords of the object: the active face's, or a token's
+    /// `token_face` — the keywords the effect that created it gave it.
     ///
     /// This is the printed set only — keywords granted by continuous or
     /// temporary effects are not included. Ask `has_keyword` for the full
@@ -3125,6 +3156,9 @@ impl GameState {
     pub fn printed_keywords_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Keyword> {
         if let Some(data) = self.face_data(id, registry) {
             return data.keywords;
+        }
+        if let Some(face) = self.token_face_of(id) {
+            return face.keywords.clone();
         }
         self.get_object(id).map(|o| o.keywords.clone()).unwrap_or_default()
     }
@@ -3136,6 +3170,9 @@ impl GameState {
         if let Some(data) = self.face_data(id, registry) {
             return data.card_types;
         }
+        if let Some(face) = self.token_face_of(id) {
+            return face.card_types.clone();
+        }
         self.get_object(id).map(|o| o.card_types.clone()).unwrap_or_default()
     }
 
@@ -3146,6 +3183,9 @@ impl GameState {
     pub fn printed_subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
         if let Some(data) = self.face_data(id, registry) {
             return data.subtypes;
+        }
+        if let Some(face) = self.token_face_of(id) {
+            return face.subtypes.clone();
         }
         self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default()
     }
@@ -3173,6 +3213,9 @@ impl GameState {
             }
             return cols;
         }
+        if let Some(face) = self.token_face_of(id) {
+            return face.colors.clone();
+        }
         self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default()
     }
 
@@ -3182,6 +3225,9 @@ impl GameState {
     pub fn printed_pt_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> (Option<i32>, Option<i32>) {
         if let Some(data) = self.face_data(id, registry) {
             return (data.power, data.toughness);
+        }
+        if let Some(face) = self.token_face_of(id) {
+            return (face.power, face.toughness);
         }
         self.get_object(id).map_or((None, None), |o| (o.power, o.toughness))
     }
@@ -3433,6 +3479,37 @@ pub struct GameObject {
     /// (CR 400.7) — a new object makes a new choice.
     #[serde(default)]
     pub entering_copy_choice: EnterAsCopyChoice,
+
+    /// A token's printed characteristics, as the effect that created it set
+    /// them. `None` for anything that is not a token.
+    ///
+    /// The characteristics layer above splits an object into a printed half
+    /// (its active face) and a granted half (the object-level vectors). A
+    /// token has no face, so both halves used to share one vector and
+    /// nothing could tell them apart. Two things read the wrong half as a
+    /// result: the CR 111.4 check took a token's *current* subtypes for the
+    /// ones its name was derived from — "once a token is on the battlefield,
+    /// changing its name doesn't change its subtype(s), and vice versa", so
+    /// Olivia Voldaren making a Zombie token a Vampire looked like a
+    /// violation — and `printed_subtypes_of` handed that granted Vampire to
+    /// copy effects, which take only copiable values (CR 707.2).
+    ///
+    /// Written once at creation and never again: it is the token's face.
+    #[serde(default)]
+    pub token_face: Option<TokenFace>,
+}
+
+/// The printed half of a token — what the effect that created it said it was
+/// (CR 111.4, CR 707.2). The face a token would have if it had a card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TokenFace {
+    pub name: String,
+    pub power: Option<i32>,
+    pub toughness: Option<i32>,
+    pub colors: Vec<crate::types::Color>,
+    pub keywords: Vec<crate::types::Keyword>,
+    pub card_types: Vec<crate::types::CardType>,
+    pub subtypes: Vec<String>,
 }
 
 /// Whether a permanent that chooses what to enter as has been asked yet, and
