@@ -37,6 +37,12 @@ fn quiet_about(state: &GameState, acting: PlayerId, legal: &LegalActions, reg: &
         "expected no legal-set violation containing {needle:?}, got: {v:?}");
 }
 
+/// The offers the engine would make for `state`, for a test that then adds
+/// one of its own.
+fn wrong_legal(state: &GameState, reg: &CardRegistry) -> LegalActions {
+    mtg_engine::engine::legal_actions(state, reg)
+}
+
 #[track_caller]
 fn clean(state: &GameState, acting: PlayerId, legal: &LegalActions, reg: &CardRegistry) {
     assert_eq!(check_legal(state, acting, legal, reg), Vec::<String>::new());
@@ -365,6 +371,81 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     let mut s = state.clone();
     named_permanent(&mut s, &reg, "Stony Silence", P1);
     flags(&s, P0, &legal, &reg, "on an artifact under Stony Silence");
+
+    // CR 602.2: an ability offered "through" another card is one that card
+    // really grants — attached to this permanent under the acting player
+    // (Blazing Torch), or granted to a copy of it (Evil Twin).
+    let (mut state, reg) = base();
+    let bearer = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bearer).unwrap().summoning_sick = false;
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    state.get_object_mut(torch).unwrap().attached_to = Some(bearer);
+    let torch_card = state.get_object(torch).unwrap().card_id;
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let granted = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, source_card_id: Some(cid), .. }
+        if *object_id == bearer && *cid == torch_card))
+        .expect("the Torch grants its bearer an ability").clone();
+    clean(&state, P0, &legal, &reg);
+
+    // The Torch attached elsewhere, or under the opponent, or gone: the
+    // offer is through a card that grants this permanent nothing.
+    for wrong in [
+        {
+            let mut s = state.clone();
+            s.get_object_mut(torch).unwrap().attached_to = Some(victim);
+            s
+        },
+        {
+            let mut s = state.clone();
+            s.get_object_mut(torch).unwrap().controller = P1;
+            s
+        },
+        {
+            let mut s = state.clone();
+            s.get_object_mut(torch).unwrap().zone = Zone::Graveyard;
+            s
+        },
+    ] {
+        let mut l = wrong_legal(&wrong, &reg);
+        l.actions.insert(1, granted.clone());
+        flags(&wrong, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+    }
+
+    // A card that is nowhere near this permanent.
+    let mut named = granted.clone();
+    if let Action::ActivateAbility { source_card_id, .. } = &mut named {
+        *source_card_id = Some(state.get_object(victim).unwrap().card_id);
+    }
+    let mut l = legal.clone();
+    l.actions.insert(1, named);
+    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+
+    // CR 605.3a: a mana ability offer names a permanent of the acting
+    // player's, on the battlefield, with that ability — each half alone.
+    let (mut state, reg) = base();
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let theirs = named_permanent(&mut state, &reg, "Forest", P1);
+    let in_hand = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let mana_from = |id: ObjectId, idx: usize| {
+        let mut l = legal.clone();
+        l.actions.insert(1, Action::ActivateManaAbility { object_id: id, ability_index: idx });
+        l
+    };
+    quiet_about(&state, P0, &mana_from(forest, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(theirs, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(in_hand, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(bear, 0), &reg, "(CR 605.3a)");
+    flags(&state, P0, &mana_from(forest, 7), &reg, "(CR 605.3a)");
+    // A tapped land has no mana ability available, and is not offered.
+    let mut s = state.clone();
+    s.get_object_mut(forest).unwrap().tapped = true;
+    flags(&s, P0, &mana_from(forest, 0), &reg, "(CR 605.3a)");
 
     // CR 701.17a: an activation's sacrifice cost names a creature its
     // controller has on the battlefield — and "another creature" means
