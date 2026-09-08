@@ -464,6 +464,19 @@ fn clip_cols(s: &str, max: usize) -> String {
 /// The page of a menu `render_paged` drew: which rows, and what it had to
 /// fit them in — enough for the caller to page backwards exactly when the
 /// rows are of uneven height (issue #318).
+/// What a pager's marker says the keys are. One string per pager, so the
+/// row can be measured before the page it describes is chosen.
+const MENU_PAGE_KEYS: &str = "m/p = next/prev page (any number works)";
+const ATTACKERS_PAGE_KEYS: &str = "m = next page";
+const BLOCKERS_PAGE_KEYS: &str = "b = next page";
+
+/// The pane keys the combat prompts advertise.
+const ATTACK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]";
+/// How to answer an ordering screen, and the panes it can step into.
+const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
+
+const BLOCK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=page]";
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct MenuPage {
     /// The first row shown.
@@ -472,6 +485,8 @@ struct MenuPage {
     shown: usize,
     /// Lines the menu had available.
     avail: usize,
+    /// Lines the paging marker takes in the pane it was drawn in.
+    marker_h: usize,
     /// Every row's height in lines, wrapped to the pane it was drawn in.
     heights: Vec<usize>,
 }
@@ -1009,7 +1024,7 @@ impl CliPlayer {
     /// could not stop disagreeing about it (#96, #261).
     #[cfg(test)]
     fn menu_page(len: usize, avail: usize, offset: usize) -> (usize, usize, bool) {
-        Self::menu_page_lines(&vec![1; len], avail, offset)
+        Self::menu_page_lines(&vec![1; len], avail, offset, 1)
     }
 
 
@@ -1017,14 +1032,15 @@ impl CliPlayer {
     /// lines row `i` takes once wrapped (issue #318). The page is as many
     /// whole rows from `offset` as fit in `avail` lines — always at least
     /// one, so a row taller than the pane still shows what it can rather
-    /// than nothing — with one line kept for the "… showing" marker whenever
-    /// the menu does not fit whole.
-    fn menu_page_lines(heights: &[usize], avail: usize, offset: usize) -> (usize, usize, bool) {
+    /// than nothing — with `marker_h` lines kept for the "… showing" marker
+    /// whenever the menu does not fit whole. The marker wraps like any other
+    /// row, so how many lines it needs is the caller's to measure.
+    fn menu_page_lines(heights: &[usize], avail: usize, offset: usize, marker_h: usize) -> (usize, usize, bool) {
         let len = heights.len();
         let offset = offset.min(len.saturating_sub(1));
         let remaining: usize = heights[offset..].iter().sum();
         let paged = offset > 0 || remaining > avail;
-        let budget = if paged { avail.saturating_sub(1).max(1) } else { avail };
+        let budget = if paged { avail.saturating_sub(marker_h).max(1) } else { avail };
         let mut shown = 0;
         let mut used = 0;
         for &h in &heights[offset..] {
@@ -1035,6 +1051,37 @@ impl CliPlayer {
             shown += 1;
         }
         (offset, shown, paged)
+    }
+
+    /// A pane row too wide for the panel, laid out as several: the first
+    /// line keeps the row's own leading indent and every continuation lines
+    /// up under it.
+    ///
+    /// The chrome under a menu — the paging marker, the hint line — used to
+    /// be cut at the panel edge (issue #53) or, in the combat panes, printed
+    /// at full length straight over the border and into the card panel. A
+    /// row of a menu has wrapped since issue #318; the rows that describe
+    /// the menu wrap the same way.
+    fn wrap_indented(text: &str, width: usize) -> Vec<String> {
+        let trimmed = text.trim_start_matches(' ');
+        let indent_n = text.chars().count() - trimmed.chars().count();
+        let indent = " ".repeat(indent_n);
+        Self::word_wrap(trimmed, width.saturating_sub(indent_n))
+            .into_iter().map(|l| format!("{indent}{l}")).collect()
+    }
+
+    /// The "… showing a-b of 0-n" row, in one place: every pane that pages
+    /// says the same thing, and `marker_lines` can measure it before the
+    /// page that will be shown is known.
+    fn page_marker(offset: usize, shown: usize, last: usize, keys: &str) -> String {
+        format!("  \u{2026} showing {}-{} of 0-{} \u{2014} {keys}",
+            offset, offset + shown.saturating_sub(1), last)
+    }
+
+    /// How many lines that row takes at its widest, so a page can reserve
+    /// them before it knows which page it is.
+    fn marker_lines(last: usize, keys: &str, width: usize) -> usize {
+        Self::wrap_indented(&Self::page_marker(last, 1, last, keys), width).len()
     }
 
     /// What `m` does: the next page, wrapping to the top at the end. One
@@ -1052,13 +1099,13 @@ impl CliPlayer {
     /// pressing `m` eleven more times to come back around (issue #255). It
     /// then stepped back by a fixed page size, which rows of uneven height
     /// made a guess; measured in lines it is exact (issue #318).
-    fn prev_menu_offset_lines(heights: &[usize], avail: usize, offset: usize) -> usize {
+    fn prev_menu_offset_lines(heights: &[usize], avail: usize, offset: usize, marker_h: usize) -> usize {
 
         let len = heights.len();
         if len == 0 {
             return 0;
         }
-        let budget = avail.saturating_sub(1).max(1);
+        let budget = avail.saturating_sub(marker_h).max(1);
         let end = if offset == 0 || offset > len { len } else { offset };
         let mut start = end;
         let mut used = 0;
@@ -1460,7 +1507,15 @@ impl CliPlayer {
             // renders a page starting at `menu_offset`, advanced with 'm';
             // indices are absolute, so any number works from any page.
             // Two rows below the menu are the hint line and the input row.
-            let avail = h.saturating_sub(row as usize + 2);
+            // Two kinds of row sit under the menu, and both wrap rather
+            // than being cut: the hint line, whose height is known now, and
+            // the paging marker, whose height is the same whichever page it
+            // ends up describing. Under them is the input row.
+            let hints = Self::menu_hints(labels, has_right);
+            let hint_lines = Self::wrap_indented(hints, mid_w);
+            let marker_h = Self::marker_lines(
+                labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
+            let avail = h.saturating_sub(row as usize + hint_lines.len() + 1);
             // A row that does not fit the pane wraps under a hanging indent;
             // nothing on it is cut. Every way of clipping a row lost the
             // part of it a real game needed — most recently the third card
@@ -1473,8 +1528,8 @@ impl CliPlayer {
             let plen = 4 + idx_w;
             let rows = Self::wrap_menu_rows(labels, mid_w.saturating_sub(plen));
             let heights: Vec<usize> = rows.iter().map(|r| r.len().max(1)).collect();
-            let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, menu_offset);
-            page = MenuPage { offset, shown, avail, heights };
+            let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, menu_offset, marker_h);
+            page = MenuPage { offset, shown, avail, marker_h, heights };
             let indent = " ".repeat(plen);
             'rows: for (i, lines) in rows.iter().enumerate().skip(offset).take(shown) {
                 for (k, line) in lines.iter().enumerate() {
@@ -1495,27 +1550,30 @@ impl CliPlayer {
             // The marker is the LAST row sacrificed, not the first: a menu
             // that does not fit has to say so, or the pane reads as a game
             // that has stopped asking (issue #260).
-            if paged && (row as usize) < h {
+            if paged {
+                let marker = Self::page_marker(offset, shown, labels.len() - 1, MENU_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, mid_w) {
+                    if row as usize >= h { break; }
+                    Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                    let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                        SetAttribute(Attribute::Dim), Print(&line),
+                        SetAttribute(Attribute::Reset));
+                    row += 1;
+                }
+            }
+
+            // Kept inside the panel like every other row — at full length
+            // this ate the right border and the card panel behind it (#53) —
+            // but wrapped rather than cut, so the last pane key is still
+            // legible at 100 columns (issue #318).
+            for line in &hint_lines {
+                if row as usize >= h { break; }
                 Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
-                let marker = format!(
-                    "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
-                    offset, offset + shown - 1, labels.len() - 1);
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(clip_cols(&marker, mid_w)),
+                    SetAttribute(Attribute::Dim), Print(line),
                     SetAttribute(Attribute::Reset));
                 row += 1;
             }
-
-            let hints = Self::menu_hints(labels, has_right);
-            // Clipped to the panel like every other row — at full length this
-            // ate the right border and the card panel behind it (#53).
-            if (row as usize) < h {
-                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
-                let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(clip_cols(hints, mid_w)),
-                    SetAttribute(Attribute::Reset));
-            }
-            row += 1;
         }
 
         // ── Right panel: card reference ──
@@ -2481,7 +2539,7 @@ impl CliPlayer {
                     menu_offset = Self::next_menu_offset(menu_offset, page.shown, labels.len());
                 }
                 TargetInput::PrevPage => {
-                    menu_offset = Self::prev_menu_offset_lines(&page.heights, page.avail, menu_offset);
+                    menu_offset = Self::prev_menu_offset_lines(&page.heights, page.avail, menu_offset, page.marker_h);
                 }
 
                 // Info panes + card search: a player wants their graveyard
@@ -4134,6 +4192,7 @@ impl CliPlayer {
         // exactly over rows of uneven height (issue #318).
         let list_heights: std::cell::RefCell<Vec<usize>> = std::cell::RefCell::new(Vec::new());
         let list_avail = std::cell::Cell::new(0usize);
+        let list_marker_h = std::cell::Cell::new(1usize);
         let draw = || -> u16 {
 
             Self::render(view, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
@@ -4144,15 +4203,19 @@ impl CliPlayer {
                 SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
                 Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
+            let panel_w = Self::middle_panel_width_at(Self::term_width());
             // Rows still owed below the list: the planeswalker block, the
-            // hint line, the prompt row and the refusal row under it.
-            let reserved = 3 + if defending_planeswalkers.is_empty() {
+            // hint line (which wraps, so its height is measured, not
+            // assumed), the prompt row and the refusal row under it.
+            let hint_lines = Self::wrap_indented(ATTACK_HINTS, panel_w);
+            let marker_h = Self::marker_lines(
+                eligible.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
+            let reserved = 2 + hint_lines.len() + if defending_planeswalkers.is_empty() {
                 0
             } else {
                 defending_planeswalkers.len() + 1
             };
             let avail = h.saturating_sub(r as usize + reserved);
-            let panel_w = Self::middle_panel_width_at(Self::term_width());
             // Every row laid out first, so the page is measured in the lines
             // the rows actually take (issue #318).
             let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
@@ -4160,9 +4223,11 @@ impl CliPlayer {
                 Self::combat_row_layout(view, id, eligible, str_cols(&format!("  {i}: ")), tag, panel_w)
             }).collect();
             let heights: Vec<usize> = layouts.iter().map(CombatRowLayout::height).collect();
-            let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, list_offset.get());
+            let (offset, shown, paged) =
+                Self::menu_page_lines(&heights, avail, list_offset.get(), marker_h);
             list_shown.set(shown);
             list_avail.set(avail);
+            list_marker_h.set(marker_h);
             *list_heights.borrow_mut() = heights;
             for (i, &id) in eligible.iter().enumerate().skip(offset).take(shown) {
                 let color = if must_attack.contains(&id) { Color::Red } else { Color::Reset };
@@ -4171,12 +4236,12 @@ impl CliPlayer {
             }
 
             if paged {
-                let marker = format!(
-                    "  … showing {}-{} of 0-{} — m/p = next/prev page (any number works)",
-                    offset, offset + shown.saturating_sub(1), eligible.len() - 1);
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
-                r += 1;
+                let marker = Self::page_marker(offset, shown, eligible.len() - 1, MENU_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, panel_w) {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                    r += 1;
+                }
             }
             if !defending_planeswalkers.is_empty() {
                 let _ = execute!(out, cursor::MoveTo(col, r),
@@ -4194,11 +4259,11 @@ impl CliPlayer {
             // The public zones are decision inputs during combat (CR 404.2,
             // 406.3), so the info panes are advertised and accepted here as
             // at every other prompt (issue #120).
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]"),
-                SetAttribute(Attribute::Reset));
-            r += 1;
+            for line in &hint_lines {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
             let _ = execute!(out, cursor::MoveTo(col, r));
             let _ = out.flush();
             r
@@ -4277,7 +4342,8 @@ impl CliPlayer {
                 }
                 "p" => {
                     list_offset.set(Self::prev_menu_offset_lines(
-                        &list_heights.borrow(), list_avail.get(), list_offset.get()));
+                        &list_heights.borrow(), list_avail.get(), list_offset.get(),
+                        list_marker_h.get()));
                     r = draw();
                     continue;
                 }
@@ -4403,15 +4469,21 @@ impl CliPlayer {
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
-            // Rows below: the blockers header, the hint line, the prompt row
-            // and the refusal row under it. The two lists split what is left.
-            let body = h.saturating_sub(r as usize + 4);
+            let panel_w = Self::middle_panel_width_at(Self::term_width());
+            // Rows below: the blockers header, the hint line (measured, since
+            // it wraps), the prompt row and the refusal row under it. The two
+            // lists split what is left.
+            let hint_lines = Self::wrap_indented(BLOCK_HINTS, panel_w);
+            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
             let atk_avail = (body / 2).max(1);
+            let atk_marker_h = Self::marker_lines(
+                attacker_ids.len().saturating_sub(1), ATTACKERS_PAGE_KEYS, panel_w);
+            let blk_marker_h = Self::marker_lines(
+                eligible_blockers.len().saturating_sub(1), BLOCKERS_PAGE_KEYS, panel_w);
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            let panel_w = Self::middle_panel_width_at(Self::term_width());
             // Rows are laid out whole and the page measured in their lines
             // (issue #318).
             let atk_layouts: Vec<CombatRowLayout> = attacker_ids.iter().enumerate().map(|(i, &id)| {
@@ -4425,7 +4497,7 @@ impl CliPlayer {
             }).collect();
             let atk_heights: Vec<usize> = atk_layouts.iter().map(CombatRowLayout::height).collect();
             let (atk_off, atk_n, atk_paged) =
-                Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get());
+                Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get(), atk_marker_h);
             atk_shown.set(atk_n);
             for i in atk_off..atk_off + atk_n {
                 Self::draw_combat_row(&mut out, col, &mut r, i,
@@ -4433,11 +4505,13 @@ impl CliPlayer {
             }
 
             if atk_paged {
-                let marker = format!("  … showing {}-{} of 0-{} — m = next page",
-                    atk_off, atk_off + atk_n.saturating_sub(1), attacker_ids.len() - 1);
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
-                r += 1;
+                let marker = Self::page_marker(
+                    atk_off, atk_n, attacker_ids.len() - 1, ATTACKERS_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, panel_w) {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                    r += 1;
+                }
             }
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
@@ -4464,7 +4538,7 @@ impl CliPlayer {
             }).collect();
             let blk_heights: Vec<usize> = blk_layouts.iter().map(CombatRowLayout::height).collect();
             let (blk_off, blk_n, blk_paged) =
-                Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get());
+                Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get(), blk_marker_h);
             blk_shown.set(blk_n);
             for i in blk_off..blk_off + blk_n {
                 Self::draw_combat_row(&mut out, col, &mut r, i,
@@ -4472,19 +4546,21 @@ impl CliPlayer {
             }
 
             if blk_paged {
-                let marker = format!("  … showing {}-{} of 0-{} — b = next page",
-                    blk_off, blk_off + blk_n.saturating_sub(1), eligible_blockers.len() - 1);
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
-                r += 1;
+                let marker = Self::page_marker(
+                    blk_off, blk_n, eligible_blockers.len() - 1, BLOCKERS_PAGE_KEYS);
+                for line in Self::wrap_indented(&marker, panel_w) {
+                    let _ = execute!(out, cursor::MoveTo(col, r),
+                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                    r += 1;
+                }
             }
             // Blocking is exactly where the public zones are decision inputs
             // (CR 404.2, 406.3) — advertise the info panes here (#120).
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Dim),
-                Print("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=page]"),
-                SetAttribute(Attribute::Reset));
-            r += 1;
+            for line in &hint_lines {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
             let _ = execute!(out, cursor::MoveTo(col, r));
             let _ = out.flush();
             r
@@ -5223,22 +5299,25 @@ impl CliPlayer {
         if !sources.is_empty() {
             body.push((Style::Plain, String::new()));
             body.push((Style::Bold, " Sources:".into()));
+            // Oracle text is prose, so it breaks at spaces. `wrap_row`'s
+            // comma-first rule is for the rows that are lists — it turned
+            // "At the beginning of your upkeep, look at ..." into a stub
+            // line with two words on it.
             for (head, text) in &sources {
-                for l in Self::wrap_row(head, text_w.saturating_sub(2)) { body.push((Style::Plain, format!("  {l}"))); }
+                for l in Self::word_wrap(head, text_w.saturating_sub(2)) { body.push((Style::Plain, format!("  {l}"))); }
                 for line in text {
-                    for l in Self::wrap_row(line, text_w.saturating_sub(4)) { body.push((Style::Dim, format!("    {l}"))); }
+                    for l in Self::word_wrap(line, text_w.saturating_sub(4)) { body.push((Style::Dim, format!("    {l}"))); }
                 }
             }
         }
 
         // Footer: how to answer, the pane keys, any refusal, the input row.
+        // Both footer rows are sentences, not lists: they break at spaces
+        // and every continuation lines up under the first line's indent
+        // rather than starting at column 0.
         let mut footer: Vec<(Style, String)> = Vec::new();
-        for line in Self::word_wrap(rule, text_w) { footer.push((Style::Dim, format!(" {line}"))); }
-        footer.push((Style::Dim,
-            " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]".into()));
-        let footer: Vec<(Style, String)> = footer.into_iter()
-            .flat_map(|(s, l)| Self::wrap_row(&l, text_w).into_iter().map(move |x| (s, x)))
-            .collect();
+        for line in Self::wrap_indented(&format!(" {rule}"), text_w) { footer.push((Style::Dim, line)); }
+        for line in Self::wrap_indented(ORDER_HOW_TO, text_w) { footer.push((Style::Dim, line)); }
         // The notice row and the input row are always reserved.
         let reserved = header.len() + footer.len() + 2;
         let avail = h.saturating_sub(reserved).max(1);
@@ -5999,7 +6078,7 @@ impl Player for CliPlayer {
                 // long list meant going all the way around (issue #255).
                 "p" => {
                     menu_offset = Self::prev_menu_offset_lines(
-                        &page.heights, page.avail, menu_offset);
+                        &page.heights, page.avail, menu_offset, page.marker_h);
                     continue;
                 }
 
@@ -6337,6 +6416,39 @@ mod tests {
             "no width is no wrapping, not an endless loop");
     }
 
+    /// The rows that describe a menu — the paging marker and the hint line —
+    /// are kept inside the panel by wrapping, not by cutting. Every
+    /// continuation lines up under the first line's own indent.
+    #[test]
+    fn the_chrome_under_a_menu_wraps_inside_the_panel() {
+        let hints = "  [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]";
+        let lines = CliPlayer::wrap_indented(hints, 64);
+        assert!(lines.len() > 1, "67 columns of hints do not fit 64: {lines:?}");
+        assert!(lines.iter().all(|l| str_cols(l) <= 64), "nothing overflows: {lines:?}");
+        assert!(lines.iter().all(|l| l.starts_with("  ")), "the indent is kept: {lines:?}");
+        assert!(lines.iter().all(|l| !l.trim_end().ends_with('=')),
+            "a key is never cut in half: {lines:?}");
+        assert_eq!(lines.concat().split_whitespace().collect::<Vec<_>>(),
+            hints.split_whitespace().collect::<Vec<_>>(),
+            "and every key survives, which clipping is exactly what did not");
+
+        // A marker measures the same whichever page it ends up describing,
+        // so a page can reserve its rows before choosing one.
+        let marker = CliPlayer::page_marker(0, 17, 24, MENU_PAGE_KEYS);
+        assert_eq!(marker,
+            "  \u{2026} showing 0-16 of 0-24 \u{2014} m/p = next/prev page (any number works)");
+        assert_eq!(CliPlayer::wrap_indented(&marker, 64).len(),
+            CliPlayer::marker_lines(24, MENU_PAGE_KEYS, 64),
+            "what is reserved is what is drawn");
+        assert_eq!(CliPlayer::marker_lines(24, MENU_PAGE_KEYS, 200), 1,
+            "and a wide pane needs one row");
+
+        // The reserve reaches the pager: a two-line marker takes two rows
+        // off the budget, not one.
+        assert_eq!(CliPlayer::menu_page_lines(&[1; 10], 6, 0, 1), (0, 5, true));
+        assert_eq!(CliPlayer::menu_page_lines(&[1; 10], 6, 0, 2), (0, 4, true));
+    }
+
     /// A page is measured in lines, not rows, once rows can wrap (issue
     /// #318): three two-line rows fill a six-line pane, the marker takes a
     /// line when the menu does not fit, and a row taller than the pane is
@@ -6346,16 +6458,16 @@ mod tests {
         let heights = [2usize, 2, 2, 2, 1];
         // Nine lines in a six-line pane: paged, five lines of budget, so two
         // rows fit.
-        assert_eq!(CliPlayer::menu_page_lines(&heights, 6, 0), (0, 2, true));
+        assert_eq!(CliPlayer::menu_page_lines(&heights, 6, 0, 1), (0, 2, true));
         // From the third row: 2 + 2 + 1 = 5 fits the budget exactly.
-        assert_eq!(CliPlayer::menu_page_lines(&heights, 6, 2), (2, 3, true));
+        assert_eq!(CliPlayer::menu_page_lines(&heights, 6, 2, 1), (2, 3, true));
         // Everything fits: no marker, no budget lost to it.
-        assert_eq!(CliPlayer::menu_page_lines(&heights, 9, 0), (0, 5, false));
+        assert_eq!(CliPlayer::menu_page_lines(&heights, 9, 0, 1), (0, 5, false));
         // A row taller than the pane shows anyway.
-        assert_eq!(CliPlayer::menu_page_lines(&[7, 1], 3, 0), (0, 1, true));
+        assert_eq!(CliPlayer::menu_page_lines(&[7, 1], 3, 0, 1), (0, 1, true));
         // The unit-height case is the old behaviour exactly.
-        assert_eq!(CliPlayer::menu_page(30, 10, 0), CliPlayer::menu_page_lines(&[1; 30], 10, 0));
-        assert_eq!(CliPlayer::menu_page(30, 10, 27), CliPlayer::menu_page_lines(&[1; 30], 10, 27));
+        assert_eq!(CliPlayer::menu_page(30, 10, 0), CliPlayer::menu_page_lines(&[1; 30], 10, 0, 1));
+        assert_eq!(CliPlayer::menu_page(30, 10, 27), CliPlayer::menu_page_lines(&[1; 30], 10, 27, 1));
     }
 
     /// `p` from an uneven page lands on the page that ends just above it,
@@ -6364,14 +6476,14 @@ mod tests {
     fn the_previous_page_is_exact_with_uneven_rows() {
         let heights = [2usize, 2, 2, 2, 1];
         // From row 2 (the second page), back to row 0.
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 2), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 2, 1), 0);
         // From row 4, the budget of 5 holds rows 2 and 3 (2 + 2) — not row 1.
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 4), 2);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 4, 1), 2);
         // From the top, the last page: rows 2..5 (2 + 2 + 1 = 5).
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 0), 2);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, 6, 0, 1), 2);
         // A budget too small for even one row still steps back one row.
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&[7, 7, 7], 3, 2), 1);
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 6, 0), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[7, 7, 7], 3, 2, 1), 1);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 6, 0, 1), 0);
     }
 
 
@@ -7048,18 +7160,18 @@ mod tests {
         // Ten one-line items in a five-line pane: four to a page once the
         // marker has its line.
         let ten = [1usize; 10];
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 4), 0);
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 8), 4);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 4, 1), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 8, 1), 4);
         // From the top, back to the last page — the last four rows.
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 0), 6);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&ten, 5, 0, 1), 6);
         // A menu that fits has one page, and `p` stays on it.
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&[1; 4], 5, 0), 0);
-        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 5, 0), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[1; 4], 5, 0, 1), 0);
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&[], 5, 0, 1), 0);
         // Round trip: forwards then backwards is where you started.
         let mut off = 0;
         for _ in 0..2 { off = CliPlayer::next_menu_offset(off, 4, 10); }
         assert_eq!(off, 8);
-        for _ in 0..2 { off = CliPlayer::prev_menu_offset_lines(&ten, 5, off); }
+        for _ in 0..2 { off = CliPlayer::prev_menu_offset_lines(&ten, 5, off, 1); }
         assert_eq!(off, 0);
     }
 
