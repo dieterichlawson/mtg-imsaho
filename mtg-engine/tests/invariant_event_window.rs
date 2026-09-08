@@ -529,6 +529,83 @@ fn combat_damage_events_agree_with_the_blocks_and_the_step() {
     quiet_about(&s2, &reg, "without first strike");
 }
 
+/// CR 701.9a/302.6: a discard is of that player's own card, and a tap is of
+/// something still on the battlefield.
+#[test]
+fn a_discard_names_its_players_card_and_a_tap_a_permanent() {
+    let (mut state, reg) = base();
+    let mine = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let mut s = state.clone();
+    s.move_object(mine, Zone::Graveyard, &reg);
+    s.events.push(GameEvent::Discarded { player: P0, object: mine });
+    quiet_about(&s, &reg, "(CR 701.9a)");
+
+    let mut s = state.clone();
+    s.move_object(theirs, Zone::Graveyard, &reg);
+    s.events.push(GameEvent::Discarded { player: P0, object: theirs });
+    flags(&s, &reg, "not that player's card (CR 701.9a)");
+
+    // A token is nobody's card to discard (CR 111.8).
+    let mut s = state.clone();
+    let token = s.create_token_with_subtypes("", P0, 2, 2, vec![Color::Green],
+        vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
+    s.events.push(GameEvent::Discarded { player: P0, object: token });
+    flags(&s, &reg, "not that player's card (CR 701.9a)");
+
+    // A permanent that was tapped in this window is still on the
+    // battlefield at the end of it, unless something announced it leaving.
+    let mut s = base().0;
+    let bear = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(bear).unwrap().tapped = true;
+    s.events = vec![GameEvent::Tapped { object: bear }];
+    quiet_about(&s, &reg, "but is in");
+    s.get_object_mut(bear).unwrap().zone = Zone::Graveyard;
+    flags(&s, &reg, &format!("#{} was tapped but is in Graveyard", bear.0));
+}
+
+/// CR 400.7/302.6/306.5b: what the entry and departure events promise about
+/// the object afterwards — it is where the last move said, a creature that
+/// just arrived is summoning sick, and a planeswalker arrives on its
+/// printed loyalty.
+#[test]
+fn an_entry_event_describes_the_permanent_that_arrived() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bear).unwrap().summoning_sick = true;
+    state.events = vec![GameEvent::EnteredBattlefield { object: bear, controller: P0 }];
+    clean(&state, &reg);
+
+    // CR 302.6: it came under its controller's command this turn.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().summoning_sick = false;
+    flags(&s, &reg, "entered this action but is not summoning sick (CR 302.6)");
+
+    // CR 400.7: the object is where the last move it announced put it.
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.events = vec![GameEvent::LeftBattlefield {
+        object: card, to: Zone::Graveyard, last_controller: P0 }];
+    flags(&s, &reg, "last moved to Graveyard but is in Battlefield");
+
+    let mut s = base().0;
+    let card = named_permanent(&mut s, &reg, "Grizzly Bears", P0);
+    s.get_object_mut(card).unwrap().zone = Zone::Exile;
+    s.events = vec![GameEvent::ObjectMoved {
+        object: card, from: Zone::Battlefield, to: Zone::Graveyard }];
+    flags(&s, &reg, "last moved to Graveyard but is in Exile");
+
+    // CR 306.5b: a planeswalker enters with the loyalty its card prints.
+    let mut s = base().0;
+    let walker = named_permanent(&mut s, &reg, "Liliana of the Veil", P0);
+    let printed = counters_of(&s, walker, CounterType::Loyalty);
+    assert!(printed > 0, "test setup: Liliana enters on her printed loyalty");
+    s.events = vec![GameEvent::EnteredBattlefield { object: walker, controller: P0 }];
+    quiet_about(&s, &reg, "(CR 306.5b)");
+    set_loyalty(&mut s, walker, printed + 1);
+    flags(&s, &reg, "(CR 306.5b)");
+}
+
 /// CR 121.1/701.8a/701.17a: what the zone-change events say about where the
 /// card they name ended up.
 #[test]
@@ -761,6 +838,18 @@ fn a_turn_start_finds_the_board_reset() {
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().regeneration_shields = 1;
     flags(&s, &reg, "keeps a regeneration shield (CR 514.2)");
+
+    // CR 514.2 removes all three marks the turn leaves on a permanent, and
+    // each of them alone is enough to say the cleanup did not happen.
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().damage_marked = 1;
+    flags(&s, &reg, "carries damage from last turn (CR 514.2)");
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().damaged_by.push(bear);
+    flags(&s, &reg, "carries damage from last turn (CR 514.2)");
+    let mut s = state.clone();
+    s.get_object_mut(bear).unwrap().dealt_deathtouch_damage = true;
+    flags(&s, &reg, "carries damage from last turn (CR 514.2)");
 
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().summoning_sick = true;

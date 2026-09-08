@@ -690,6 +690,81 @@ fn the_blockers_prompt_is_the_board_read_back() {
     }
     flags(&state, P1, &l, &reg, "with nothing in the way (CR 509.1a)");
 
+    // CR 509.1b: each way an attacker evades a blocker, and for each the
+    // blocker that answers it — a chain of evasions is only tested by
+    // walking every link of it.
+    let evasion_offers = |s: &GameState, reg: &CardRegistry| {
+        let mut l = mtg_engine::engine::legal_actions(s, reg);
+        if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+            for (_, list) in legal_blocks.iter_mut() {
+                if !list.contains(&attacker) { list.push(attacker); }
+            }
+        }
+        l
+    };
+
+    // Flying: a ground blocker is refused; flying or reach may block.
+    let mut s = state.clone();
+    grant_keyword(&mut s, attacker, Keyword::Flying);
+    flags(&s, P1, &evasion_offers(&s, &reg), &reg, "which evades it (CR 509.1b)");
+    let mut with_reach = s.clone();
+    grant_keyword(&mut with_reach, blocker, Keyword::Reach);
+    quiet_about(&with_reach, P1, &evasion_offers(&with_reach, &reg), &reg, "which evades it");
+    let mut with_flying = s.clone();
+    grant_keyword(&mut with_flying, blocker, Keyword::Flying);
+    quiet_about(&with_flying, P1, &evasion_offers(&with_flying, &reg), &reg, "which evades it");
+
+    // Intimidate: only an artifact creature or one sharing a color. The
+    // attacker is white and the blocker green, so they share none.
+    let mut s = state.clone();
+    // A white ground creature: Chapel Geist would evade by flying instead,
+    // which would not tell the two clauses apart.
+    let ghost = named_permanent(&mut s, &reg, "Doomed Traveler", P0);
+    grant_keyword(&mut s, ghost, Keyword::Intimidate);
+    if let Some(c) = s.combat.as_mut() {
+        c.attackers.insert(ghost, P1);
+        c.blocker_assignments.insert(ghost, vec![]);
+    }
+    let intimidate_offers = |s: &GameState, reg: &CardRegistry| {
+        let mut l = mtg_engine::engine::legal_actions(s, reg);
+        if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+            for (_, list) in legal_blocks.iter_mut() {
+                if !list.contains(&ghost) { list.push(ghost); }
+            }
+        }
+        l
+    };
+    assert!(s.colors_of(ghost, &reg).iter().all(|c| !s.colors_of(blocker, &reg).contains(c)),
+        "test setup: the Traveler and the Bears share no color");
+    assert!(!s.has_keyword(ghost, Keyword::Flying, &reg), "test setup: it evades by intimidate alone");
+    flags(&s, P1, &intimidate_offers(&s, &reg), &reg, "which evades it (CR 509.1b)");
+    let mut sharing = s.clone();
+    sharing.get_object_mut(blocker).unwrap().colors = sharing.colors_of(ghost, &reg);
+    quiet_about(&sharing, P1, &intimidate_offers(&sharing, &reg), &reg, "which evades it");
+    let mut artifact = s.clone();
+    artifact.get_object_mut(blocker).unwrap().card_types.push(CardType::Artifact);
+    quiet_about(&artifact, P1, &intimidate_offers(&artifact, &reg), &reg, "which evades it");
+
+    // Protection from the blocker, and "can't be blocked" outright.
+    let mut s = state.clone();
+    s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantProtection {
+        target: attacker,
+        filter: CreatureFilter::HasCardType(CardType::Creature),
+    });
+    flags(&s, P1, &evasion_offers(&s, &reg), &reg, "which evades it (CR 509.1b)");
+
+    let mut s = state.clone();
+    let stalker = named_permanent(&mut s, &reg, "Invisible Stalker", P0);
+    if let Some(c) = s.combat.as_mut() {
+        c.attackers.insert(stalker, P1);
+        c.blocker_assignments.insert(stalker, vec![]);
+    }
+    let mut l = mtg_engine::engine::legal_actions(&s, &reg);
+    if let Some(CombatPrompt::ChooseBlockers { legal_blocks, .. }) = &mut l.combat_prompt {
+        for (_, list) in legal_blocks.iter_mut() { list.push(stalker); }
+    }
+    flags(&s, P1, &l, &reg, "which evades it (CR 509.1b)");
+
     // CR 702.111: menace asks for two, and the prompt says so.
     let mut s = state.clone();
     grant_keyword(&mut s, attacker, Keyword::Menace);
