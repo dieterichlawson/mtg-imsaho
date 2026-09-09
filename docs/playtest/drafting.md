@@ -216,3 +216,21 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   failed, that a hang anywhere still reaches a fatal, and that the in-flight
   calls of the seats which did not fail are killed rather than orphaned when
   the run exits
+- D18 [proposed 2026-09-09, from #398 and #404] the draft's own copy of the
+  harness contract. `mtg-draft-runner/src/llm_client.rs` builds its own
+  prompts, its own schemas and its own `claude -p` invocation, and #404 is
+  what that costs: the game backend's hang fix never reached this copy.
+  #398 is the same shape on the schema side — a top-level property key the
+  API refuses is a 400 before the model reads anything, and the seat cannot
+  tell that apart from an answer it did not like. The deck-build schema keys
+  by CARD NAME and is legal only because it nests them under `maindeck`; the
+  pick schema uses an index enum. Neither is guaranteed by anything but a
+  `debug_assert`. Walk the two schema builders and the prompt text against
+  the game side's (`mtg-player/src/llm.rs`) and list every place they have
+  drifted — retry counts, timeouts, session handling, how a refusal is told
+  from a bad answer, what happens to a schema the API rejects. Each
+  difference is either a fix that did not travel or a decision nobody wrote
+  down. Then ask D6's question of the deck-build prompt specifically: 45
+  cards keyed as 45 schema properties is a large object for a model to fill
+  in correctly, and a wrong count there is a deck that fails legality rather
+  than a deck that plays badly
