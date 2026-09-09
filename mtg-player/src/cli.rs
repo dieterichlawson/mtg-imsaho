@@ -451,6 +451,24 @@ fn clip_cols(s: &str, max: usize) -> String {
     out
 }
 
+/// Clip a row made of several styled runs to one shared column budget.
+///
+/// A middle-panel row is not always a single `Print`: the turn/phase header
+/// is a bold status followed by a yellow pass-mode label. The bound belongs
+/// to the row, not to each run — clipping them independently lets the pair
+/// overrun together — so later runs are shortened, and emptied, as the
+/// budget runs out (#350).
+fn clip_row(runs: &[&str], budget: usize) -> Vec<String> {
+    let mut left = budget;
+    runs.iter()
+        .map(|r| {
+            let s = clip_cols(r, left);
+            left -= str_cols(&s);
+            s
+        })
+        .collect()
+}
+
 /// The page of a menu `render_paged` drew: which rows, and what it had to
 /// fit them in — enough for the caller to page backwards exactly when the
 /// rows are of uneven height (issue #318).
@@ -1321,41 +1339,18 @@ impl CliPlayer {
 
         // ── Middle panel: main game ──
         let mut row: u16 = 0;
-        // Readable step name
-        let step_name = match view.step {
-            Step::Untap => "Untap",
-            Step::Upkeep => "Upkeep",
-            Step::Draw => "Draw",
-            Step::PrecombatMain => "Main Phase 1",
-            Step::BeginCombat => "Begin Combat",
-            Step::DeclareAttackers => "Declare Attackers",
-            Step::DeclareBlockers => "Declare Blockers",
-            // Two damage steps rendered identically with first strikers in
-            // combat (issue #140, CR 510.4).
-            Step::CombatDamage if view.first_strike_damage_step => "First-Strike Combat Damage",
-            Step::CombatDamage => "Combat Damage",
-            Step::EndCombat => "End Combat",
-            Step::PostcombatMain => "Main Phase 2",
-            Step::EndStep => "End Step",
-            Step::Cleanup => "Cleanup (Discard to 7)",
-        };
+        let step_name = Self::step_name(view);
 
-        // Turn/phase bar. The seat is named in the log's p0/p1 scheme —
-        // nothing else told a hotseat player which seat was being prompted,
-        // or (before the first keep/mulligan) who is on the play (#115).
-        let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
-        let on_play = if view.turn_number == 1 {
-            if view.active_player == view.you { ", on the play" } else { ", on the draw" }
-        } else {
-            ""
-        };
         let pass_label = pass_mode_label.map(|l| format!(" [{l}]")).unwrap_or_default();
-        let status = format!(" Turn {} - {} | {} (you are p{}{})",
-            view.turn_number, step_name, whose_turn, view.you.0, on_play);
+        let status = Self::status_text(view, step_name);
+        // The header is two runs sharing the panel's width: unbounded, it ran
+        // past the border and the terminal soft-wrapped the tail onto the
+        // STACK/LOG pane below (#350).
+        let header = clip_row(&[&status, &pass_label], mid_w);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
-        if !pass_label.is_empty() {
-            let _ = execute!(out, SetForegroundColor(Color::Yellow), Print(&pass_label), ResetColor);
+            SetAttribute(Attribute::Bold), Print(&header[0]), SetAttribute(Attribute::Reset));
+        if !header[1].is_empty() {
+            let _ = execute!(out, SetForegroundColor(Color::Yellow), Print(&header[1]), ResetColor);
         }
         row += 1;
 
@@ -1398,7 +1393,7 @@ impl CliPlayer {
         } else {
             let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
         }
-        let _ = execute!(out, Print(&opp_stats));
+        let _ = execute!(out, Print(clip_cols(&opp_stats, mid_w)));
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
@@ -1450,7 +1445,7 @@ impl CliPlayer {
         } else {
             let _ = execute!(out, SetForegroundColor(Color::Green));
         }
-        let _ = execute!(out, Print(&your_stats));
+        let _ = execute!(out, Print(clip_cols(&your_stats, mid_w)));
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
@@ -3240,6 +3235,47 @@ impl CliPlayer {
     /// typed into a prompt — has this much room and no more. Taking the
     /// width as an argument is what lets the widths that matter be stated
     /// without a terminal to measure.
+    /// The readable name of the step the view is in.
+    fn step_name(view: &GameView) -> &'static str {
+        match view.step {
+            Step::Untap => "Untap",
+            Step::Upkeep => "Upkeep",
+            Step::Draw => "Draw",
+            Step::PrecombatMain => "Main Phase 1",
+            Step::BeginCombat => "Begin Combat",
+            Step::DeclareAttackers => "Declare Attackers",
+            Step::DeclareBlockers => "Declare Blockers",
+            // Two damage steps rendered identically with first strikers in
+            // combat (issue #140, CR 510.4).
+            Step::CombatDamage if view.first_strike_damage_step => "First-Strike Combat Damage",
+            Step::CombatDamage => "Combat Damage",
+            Step::EndCombat => "End Combat",
+            Step::PostcombatMain => "Main Phase 2",
+            Step::EndStep => "End Step",
+            Step::Cleanup => "Cleanup (Discard to 7)",
+        }
+    }
+
+    /// The turn/phase bar, without the pass-mode label that rides after it.
+    ///
+    /// The seat is named in the log's p0/p1 scheme — nothing else told a
+    /// hotseat player which seat was being prompted, or (before the first
+    /// keep/mulligan) who is on the play (#115).
+    ///
+    /// Built apart from the drawing so the widths that matter can be stated
+    /// without a terminal to measure, the way `middle_panel_width_at` is
+    /// (#350).
+    fn status_text(view: &GameView, step_name: &str) -> String {
+        let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
+        let on_play = if view.turn_number == 1 {
+            if view.active_player == view.you { ", on the play" } else { ", on the draw" }
+        } else {
+            ""
+        };
+        format!(" Turn {} - {} | {} (you are p{}{})",
+            view.turn_number, step_name, whose_turn, view.you.0, on_play)
+    }
+
     fn middle_panel_width_at(w: usize) -> usize {
         let has_right = w >= 100;
         let gutter_w = w / 5;
@@ -6794,6 +6830,61 @@ yourself at some considerable length";
         // off the budget, not one.
         assert_eq!(CliPlayer::menu_page_lines(&[1; 10], 6, 0, 1), (0, 5, true));
         assert_eq!(CliPlayer::menu_page_lines(&[1; 10], 6, 0, 2), (0, 4, true));
+    }
+
+    /// Issue #350: the turn/phase header and the two life-stat lines are
+    /// bounded by the panel they are drawn in, like every other row in
+    /// `render_paged`.
+    ///
+    /// 100 columns is the worst common width, and worse than 80: the CARDS
+    /// gutter switches on at exactly `w >= 100`, so the middle panel drops
+    /// from 63 columns to 58 — one column narrower than the longest turn-1
+    /// header. Unbounded, the tail ran past the border and the terminal
+    /// soft-wrapped it onto the STACK/LOG pane below.
+    #[test]
+    fn the_header_and_stat_lines_fit_the_panel_they_are_drawn_in() {
+        let panel = CliPlayer::middle_panel_width_at(100);
+        assert_eq!(panel, 58, "the width the issue was captured at");
+
+        // Turn 1, not your turn: " … (you are p0, on the draw)", the case
+        // from the repro, and one column too wide for the panel.
+        let v = view(Step::Untap, 1, false);
+        let status = CliPlayer::status_text(&v, CliPlayer::step_name(&v));
+        assert_eq!(status, " Turn 1 - Untap | Opponent's turn (you are p0, on the draw)");
+        assert!(str_cols(&status) > panel,
+            "test precondition: {} columns of header in a {panel}-column panel",
+            str_cols(&status));
+        assert!(str_cols(&clip_row(&[&status, ""], panel).concat()) <= panel);
+
+        // The header gets longer during ordinary play, and the pass-mode
+        // label rides after it on the same row: the bound is on the row, so
+        // the pair cannot overrun together.
+        let v = view(Step::Cleanup, 12, false);
+        let status = CliPlayer::status_text(&v, CliPlayer::step_name(&v));
+        assert_eq!(status, " Turn 12 - Cleanup (Discard to 7) | Opponent's turn (you are p0)");
+        let row = clip_row(&[&status, " [passing to end of turn]"], panel);
+        assert!(str_cols(&row.concat()) <= panel,
+            "status plus pass label fits: {row:?}");
+        assert!(row[1].is_empty(),
+            "a header that already spends the budget leaves the label nothing: {row:?}");
+
+        // A label that does fit is kept whole, after the run before it.
+        let short = clip_row(&[" Turn 2 - Draw | Your turn (you are p0)", " [auto-pass]"], panel);
+        assert_eq!(short[1], " [auto-pass]", "a label that fits is not cut: {short:?}");
+        assert!(str_cols(&short.concat()) <= panel);
+
+        // The two life-stat lines are one run each, and the widest of them
+        // fits once bounded.
+        for stats in ["▸ Opp: 20hp  53lib  0gy  0ex  7hand",
+                      "  You: 20hp  53lib  0gy  0ex  7hand"] {
+            assert!(str_cols(&clip_cols(stats, panel)) <= panel, "{stats:?}");
+        }
+        // At the narrow widths in the matrix they are genuinely cut, which is
+        // the point: cut inside the panel beats wrapped onto the pane below.
+        let narrow = CliPlayer::middle_panel_width_at(40);
+        let cut = clip_cols("▸ Opp: 20hp  53lib  0gy  0ex  7hand", narrow);
+        assert!(str_cols(&cut) <= narrow, "{cut:?} in {narrow} columns");
+        assert!(cut.starts_with("▸ Opp:"), "the head is what survives: {cut:?}");
     }
 
     /// A page is measured in lines, not rows, once rows can wrap (issue
