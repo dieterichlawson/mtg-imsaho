@@ -759,11 +759,17 @@ fn curse_of_oblivion_does_nothing_with_an_empty_graveyard() {
 }
 
 /// With three or more cards the enchanted player chooses which two to exile,
-/// one prompt at a time. This is the branch that carries a countdown in the
-/// effect key, and it had no test — an off-by-one there would exile one card or
-/// three instead of two.
+/// on one screen. "Exiles two cards" is one question with two answers, and it
+/// used to be asked twice in a row, the count carried in the effect key.
+///
+/// An off-by-one in the count would exile one card or three instead of two,
+/// so both bounds are pinned: the prompt asks for exactly two, and a wrong
+/// count is refused rather than half-applied.
 #[test]
 fn curse_of_oblivion_lets_the_cursed_player_choose_exactly_two_of_several() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P1);
     attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
@@ -774,36 +780,51 @@ fn curse_of_oblivion_lets_the_cursed_player_choose_exactly_two_of_several() {
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
-    // First prompt — and it goes to the *cursed* player, not the Curse's
+    // One screen, and it goes to the *cursed* player, not the Curse's
     // controller.
-    match state.awaiting_action {
-        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player, .. }) =>
-            assert_eq!(player, P1, "the enchanted player chooses"),
-        _ => panic!("expected a choice of card to exile"),
+    let Some(AwaitingAction::ResolutionChoice {
+        player, choice: ResolutionChoiceKind::ChooseObjectSet { options, min, max, .. }, .. })
+        = &state.awaiting_action else {
+        panic!("expected one set prompt, got {:?}", state.awaiting_action);
+    };
+    assert_eq!(*player, P1, "the enchanted player chooses");
+    assert_eq!((*min, *max), (2, 2), "two cards, not one and not three");
+    assert_eq!(options.len(), 4, "every card in that graveyard is listed: {options:?}");
+
+    let answer = |s: &mtg_engine::state::GameState, ids: Vec<ObjectId>| {
+        mtg_engine::engine::submit_action(s,
+            &Action::ResolveChoice { choice: ResolvedChoice::ChosenObjectSet(ids) }, &reg)
+    };
+
+    // A card in somebody else's graveyard was never on the screen, so it is
+    // not an answer this player could have given.
+    let mut with_outsider = state.clone();
+    let outsider = with_outsider.create_object(CardId(9999), P0, Zone::Graveyard, None, None);
+
+    // A wrong answer is refused, and refused means nothing happened: the
+    // question is still up and the graveyard is untouched. Too few, too
+    // many, none, the same card twice, and a card that was never offered.
+    for wrong in [vec![g[0]], vec![g[0], g[1], g[2]], vec![], vec![g[0], g[0]],
+                  vec![g[0], outsider]] {
+        let after = answer(&with_outsider, wrong.clone());
+        assert!(matches!(&after.awaiting_action,
+            Some(AwaitingAction::ResolutionChoice {
+                choice: ResolutionChoiceKind::ChooseObjectSet { .. }, .. })),
+            "{wrong:?}: the question stays up");
+        assert!(g.iter().chain(std::iter::once(&outsider))
+                .all(|id| after.get_object(*id).unwrap().zone == Zone::Graveyard),
+            "{wrong:?}: and nothing was exiled");
     }
-    let mut state = mtg_engine::engine::submit_action(
-        &state,
-        &mtg_engine::actions::Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
-                Some(mtg_engine::actions::Target::Object(g[0]))) },
-        &reg,
-    );
 
-    // Second prompt.
-    assert!(state.awaiting_action.is_some(), "a second card is still owed");
-    state = mtg_engine::engine::submit_action(
-        &state,
-        &mtg_engine::actions::Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
-                Some(mtg_engine::actions::Target::Object(g[1]))) },
-        &reg,
-    );
-
-    assert!(state.awaiting_action.is_none(), "two is two — no third prompt");
+    // Two is two.
+    let state = answer(&state, vec![g[0], g[1]]);
+    assert!(state.awaiting_action.is_none(), "two is two — no second prompt");
     let exiled = g.iter().filter(|&&id| state.get_object(id).unwrap().zone == Zone::Exile).count();
     assert_eq!(exiled, 2, "exactly two cards left the graveyard");
     assert_eq!(state.get_object(g[0]).unwrap().zone, Zone::Exile);
     assert_eq!(state.get_object(g[1]).unwrap().zone, Zone::Exile);
+    assert_eq!(state.get_object(g[2]).unwrap().zone, Zone::Graveyard,
+        "and the ones not named stayed");
 }
 
 // ── Curse of the Nightly Hunt ─────────────────────────────────────

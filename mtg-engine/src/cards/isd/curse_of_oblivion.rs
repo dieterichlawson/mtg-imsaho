@@ -69,72 +69,53 @@ impl CardBehavior for CurseOfOblivion {
             .filter(|o| state.is_card(o.id))
             .map(|o| Target::Object(o.id))
             .collect();
-        if gy_cards.is_empty() {
+        // "Exiles two cards" is one question with two answers, not two
+        // questions: asking twice is two screens of the same graveyard.
+        // Fewer than two cards there and it takes what there is (CR 
+        // 608.2: do as much as you can).
+        let ids: Vec<ObjectId> = gy_cards.iter()
+            // This list was built from the graveyard a line above, so it
+            // holds only `Target::Object`.
+            .filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None })
+            .collect();
+        if ids.is_empty() {
             return;
         }
-        // If 2 or fewer cards, just exile them all — no choice needed.
-        if gy_cards.len() <= 2 {
-            let to_exile: Vec<ObjectId> = gy_cards.iter()
-                // This list was built from the graveyard a line above, so it
-                // holds only `Target::Object`.
-                .filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None })
-                .collect();
-            let count = to_exile.len();
-            for id in to_exile {
+        // Nothing to decide when the graveyard holds exactly what is owed.
+        if ids.len() <= 2 {
+            let count = ids.len();
+            for id in ids {
                 state.move_object(id, Zone::Exile, registry);
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Curse of Oblivion: p{} exiled {} card(s) from graveyard", cursed_player.0, count));
+                format!("Curse of Oblivion: p{} exiled {count} card(s) from graveyard",
+                    cursed_player.0));
             return;
         }
-        // Present choice: cursed player picks a card to exile (will need to pick again for second).
-        // For now, present as a mandatory single-target choice.
+        let owed = 2.min(ids.len());
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: cursed_player,
             source: self_id,
-            choice: ResolutionChoiceKind::ChooseTarget {
-                description: "Curse of Oblivion: choose a card to exile from your graveyard".into(),
-                options: gy_cards,
-                optional: false,
-                effect: PendingEffect::CardEffect { source_id: self_id, key: "1".into() },
+            choice: ResolutionChoiceKind::ChooseObjectSet {
+                description: format!(
+                    "Curse of Oblivion: choose {owed} cards to exile from your graveyard"),
+                options: ids,
+                min: owed,
+                max: owed,
+                effect: PendingEffect::CardEffect { source_id: self_id, key: String::new() },
             },
         });
     }
 
-    /// "At the beginning of enchanted player's upkeep, that player exiles two
-    /// cards from their graveyard." The chained second choice is this card's
-    /// own loop; `key` carries how many exiles are still owed.
-    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, key: &str, target: &Target, registry: &CardRegistry) {
+    /// One exile, run once per card the set prompt above came back with.
+    ///
+    /// It used to be the card's own loop, re-raising a prompt from inside
+    /// the answer to the last one and carrying the remaining count in `key`.
+    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
         let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
         state.move_object(*id, Zone::Exile, registry);
         state.log(crate::state::LogLevel::Event,
             format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
-
-        let remaining: u32 = key.parse().unwrap_or(0);
-        if remaining == 0 {
-            return;
-        }
-        let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, owner)
-            .iter()
-            .filter(|o| state.is_card(o.id))
-            .map(|o| Target::Object(o.id))
-            .collect();
-        if gy_cards.is_empty() {
-            return;
-        }
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: owner,
-            source: source_id,
-            choice: ResolutionChoiceKind::ChooseTarget {
-                description: "Curse of Oblivion: choose another card to exile".into(),
-                options: gy_cards,
-                optional: false,
-                effect: PendingEffect::CardEffect {
-                    source_id,
-                    key: (remaining - 1).to_string(),
-                },
-            },
-        });
     }
 }

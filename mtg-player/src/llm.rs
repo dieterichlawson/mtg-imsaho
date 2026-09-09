@@ -2095,6 +2095,16 @@ impl LlmPlayer {
                             format!("Target: {}", names.join(", "))
                         }
                     }
+                    ResolvedChoice::ChosenObjectSet(ids) => {
+                        if ids.is_empty() {
+                            "Choose: (none)".to_string()
+                        } else {
+                            let names: Vec<String> = ids.iter()
+                                .map(|id| Self::obj_name(view, *id))
+                                .collect();
+                            format!("Choose: [{}]", names.join(", "))
+                        }
+                    }
                     ResolvedChoice::ChosenExileSet(ids) => {
                         if ids.is_empty() {
                             "Exile: (none)".to_string()
@@ -2646,20 +2656,22 @@ impl LlmPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(chosen) }
     }
 
-    fn choose_exile_from_graveyard(
+    /// Mark a subset of objects: one boolean per card, which is the shape
+    /// every "choose some of these" question takes for this seat.
+    ///
+    /// `verb` is what a `true` means — "exile this card", "choose this card"
+    /// — and goes in both the instruction and each field's description.
+    fn choose_object_subset(
         &mut self,
         view: &GameView,
         options: &[mtg_engine::ids::ObjectId],
         min: usize,
         max: usize,
         description: &str,
-    ) -> Action {
-        use mtg_engine::actions::ResolvedChoice;
-
+        verb: &str,
+    ) -> Vec<mtg_engine::ids::ObjectId> {
         if options.is_empty() {
-            // No candidates — respond with an empty set. Engine will
-            // accept this iff min==0.
-            return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(vec![]) };
+            return vec![];
         }
 
         let labels = Self::format_combat_creature_list(view, options);
@@ -2676,8 +2688,8 @@ impl LlmPlayer {
 
         let action_text = format!(
             "{description}\n\n\
-             {count_note} Set true to exile each card; false to keep it.\n\n\
-             Graveyard options:\n{card_list}"
+             {count_note} Set true to {verb}; false to leave it.\n\n\
+             Options:\n{card_list}"
         );
         let prompt = self.build_prompt(view, &action_text);
 
@@ -2689,7 +2701,7 @@ impl LlmPlayer {
         for label in &labels {
             props.insert(label.clone(), serde_json::json!({
                 "type": "boolean",
-                "description": "true = exile this card, false = keep it",
+                "description": format!("true = {verb}, false = leave it"),
             }));
         }
 
@@ -2705,7 +2717,7 @@ impl LlmPlayer {
 
         let response = self.send_message_structured(&prompt, &schema);
 
-        // Parse: collect IDs where the response is `true`.
+        // Collect the ids the response marked true.
         let mut chosen: Vec<mtg_engine::ids::ObjectId> = Vec::new();
         for (i, label) in labels.iter().enumerate() {
             if response.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false) {
@@ -2714,6 +2726,21 @@ impl LlmPlayer {
                 }
             }
         }
+        chosen
+    }
+
+    /// Exile-from-graveyard additional cost: mark the cards to exile.
+    fn choose_exile_from_graveyard(
+        &mut self,
+        view: &GameView,
+        options: &[mtg_engine::ids::ObjectId],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let chosen = self.choose_object_subset(
+            view, options, min, max, description, "exile this card");
 
         // For fixed-count costs, the engine validates and cancels on
         // mismatch. We log here so the diagnostic trail is clear.
@@ -2727,6 +2754,41 @@ impl LlmPlayer {
         }
 
         Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) }
+    }
+
+    /// A set of objects chosen while an effect resolves — Curse of
+    /// Oblivion's two cards out of a graveyard.
+    ///
+    /// Unlike the exile cost above there is no cast to cancel: a wrong count
+    /// leaves the question unanswered and the effect waiting, so the
+    /// shortfall is filled in from the options rather than sent as-is.
+    fn choose_object_set(
+        &mut self,
+        view: &GameView,
+        options: &[mtg_engine::ids::ObjectId],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let mut chosen = self.choose_object_subset(
+            view, options, min, max, description, "choose this card");
+        chosen.truncate(max);
+        if chosen.len() < min {
+            self.log("VALIDATION", &format!(
+                "object-set: chose {} but required at least {min}; filling from the options",
+                chosen.len()));
+            for id in options {
+                if chosen.len() >= min {
+                    break;
+                }
+                if !chosen.contains(id) {
+                    chosen.push(*id);
+                }
+            }
+        }
+        self.log("CHOSE", &format!("{} object(s)", chosen.len()));
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenObjectSet(chosen) }
     }
 
     /// Handle a `ChooseXFunding` resolution prompt.
@@ -3033,6 +3095,17 @@ impl Player for LlmPlayer {
             let (options, min, max, description) =
                 (options.clone(), *min, *max, description.clone());
             return self.choose_target_set(view, &options, min, max, &description);
+        }
+
+        // A set of objects chosen while an effect resolves: the same
+        // boolean-per-card shape. Curse of Oblivion used to ask twice.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
+            options, min, max, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            let (options, min, max, description) =
+                (options.clone(), *min, *max, description.clone());
+            return self.choose_object_set(view, &options, min, max, &description);
         }
 
         // Exile-from-graveyard additional cost: boolean-per-card choice.
