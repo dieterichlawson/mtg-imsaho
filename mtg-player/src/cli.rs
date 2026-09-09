@@ -3337,6 +3337,27 @@ impl CliPlayer {
             view.turn_number, step_name, whose_turn, view.you.0, on_play)
     }
 
+    /// The middle panel's left edge, measured now.
+    ///
+    /// The combat prompts used to cache this above the closure that repaints
+    /// them, so every redraw after a resize — SIGWINCH's included, and the
+    /// one that follows closing an info pane — painted the whole prompt block
+    /// at the width it was *entered* at: after 70x20 -> 200x50 the list, the
+    /// hints and the row being typed into all landed in the LOG pane, and it
+    /// never recovered (#353). `render` re-measures on every draw; so does
+    /// this now.
+    fn middle_panel_col() -> u16 {
+        Self::middle_panel_col_at(Self::term_width())
+    }
+
+    /// The middle panel's left edge at terminal width `w`, which is where
+    /// `render_paged` puts `mid_col`. Stated as a function of the width, like
+    /// `middle_panel_width_at`, so the geometry is checkable without a
+    /// terminal.
+    fn middle_panel_col_at(w: usize) -> u16 {
+        u16::try_from(w / 5 + 1).unwrap_or(u16::MAX)
+    }
+
     fn middle_panel_width_at(w: usize) -> usize {
         let has_right = w >= 100;
         let gutter_w = w / 5;
@@ -4324,9 +4345,6 @@ impl CliPlayer {
         // Layout is computed once; `draw` repaints the whole prompt screen,
         // so the info panes can be offered here and the view restored after
         // one is closed (issue #120).
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
-        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
 
         // The list pages like the action menu does. It used to print straight
         // down from the cursor with no pager and no marker, so on a 26-row
@@ -4362,7 +4380,7 @@ impl CliPlayer {
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
             Self::clear_mid_from(&mut out, r);
-            let _ = execute!(out, cursor::MoveTo(col, r),
+            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
                 Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
@@ -4383,25 +4401,25 @@ impl CliPlayer {
             *list_heights.borrow_mut() = heights;
             for (i, &id) in eligible.iter().enumerate().skip(offset).take(shown) {
                 let color = if must_attack.contains(&id) { Color::Red } else { Color::Reset };
-                Self::draw_combat_row(&mut out, col, &mut r, i,
+                Self::draw_combat_row(&mut out, Self::middle_panel_col(), &mut r, i,
                     str_cols(&format!("  {i}: ")), &layouts[i], color);
             }
 
             if paged {
                 let marker = Self::page_marker(offset, shown, eligible.len() - 1, MENU_PAGE_KEYS);
                 for line in Self::wrap_indented(&marker, panel_w) {
-                    let _ = execute!(out, cursor::MoveTo(col, r),
+                    let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                         SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
                     r += 1;
                 }
             }
             if !defending_planeswalkers.is_empty() {
-                let _ = execute!(out, cursor::MoveTo(col, r),
+                let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                     SetForegroundColor(Color::Yellow),
                     Print(" Attackable planeswalkers (use N>pwM):"), ResetColor);
                 r += 1;
                 for (i, &id) in defending_planeswalkers.iter().enumerate() {
-                    let _ = execute!(out, cursor::MoveTo(col, r),
+                    let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                         SetAttribute(Attribute::Bold), Print(format!("  pw{i}")),
                         SetAttribute(Attribute::Reset),
                         Print(format!(": {}", Self::perm_name(view, id))));
@@ -4412,11 +4430,11 @@ impl CliPlayer {
             // 406.3), so the info panes are advertised and accepted here as
             // at every other prompt (issue #120).
             for line in &hint_lines {
-                let _ = execute!(out, cursor::MoveTo(col, r),
+                let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                     SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
                 r += 1;
             }
-            let _ = execute!(out, cursor::MoveTo(col, r));
+            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r));
             let _ = out.flush();
             r
         };
@@ -4443,8 +4461,6 @@ impl CliPlayer {
         // Rejection messages render inside the pane at the prompt row, not
         // via bare println! at column 0 — those landed on the LOG panel and
         // merged with its text into garbage (issue #110).
-        let w = term_w as usize;
-        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
         // A refusal is drawn under the prompt and LEFT there while the player
         // retypes: it used to be printed, slept on for 900 ms and then
         // erased, so the message was on screen exactly while the program was
@@ -4453,15 +4469,15 @@ impl CliPlayer {
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1), Clear(ClearType::UntilNewLine));
             if let Some(msg) = msg {
                 let _ = execute!(stdout(), SetForegroundColor(Color::Red),
-                    Print(clip_cols(msg, mid_w)), ResetColor);
+                    Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
             }
             // Back to the prompt row: `read_line` prints its prompt at the
             // cursor, so leaving it here put the prompt on the end of the
             // notice.
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r));
             let _ = stdout().flush();
         };
         let mut notice: Option<String> = None;
@@ -4470,7 +4486,7 @@ impl CliPlayer {
             // Clear the row before re-prompting: a rejected entry's characters
             // otherwise stay on screen and visually merge with the next
             // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
-            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r), Clear(ClearType::UntilNewLine));
             // The last refusal, held until this attempt is answered (#291).
             paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
@@ -4602,11 +4618,6 @@ impl CliPlayer {
 
         // Layout once; `draw` repaints the whole prompt screen so the info
         // panes can be offered here too (issue #120).
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
-        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-        let w = term_w as usize;
-        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
 
         // Both lists page like the action menu (issue #260): the prompt used
         // to print straight down from the cursor, so a pane that could not
@@ -4641,7 +4652,7 @@ impl CliPlayer {
             Self::clear_mid_from(&mut out, r);
             let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
             let atk_avail = (body / 2).max(1);
-            let _ = execute!(out, cursor::MoveTo(col, r),
+            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
@@ -4661,7 +4672,7 @@ impl CliPlayer {
                 Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get(), atk_marker_h);
             atk_shown.set(atk_n);
             for i in atk_off..atk_off + atk_n {
-                Self::draw_combat_row(&mut out, col, &mut r, i,
+                Self::draw_combat_row(&mut out, Self::middle_panel_col(), &mut r, i,
                     str_cols(&format!("  {i}: ")), &atk_layouts[i], Color::Reset);
             }
 
@@ -4669,12 +4680,12 @@ impl CliPlayer {
                 let marker = Self::page_marker(
                     atk_off, atk_n, attacker_ids.len() - 1, ATTACKERS_PAGE_KEYS);
                 for line in Self::wrap_indented(&marker, panel_w) {
-                    let _ = execute!(out, cursor::MoveTo(col, r),
+                    let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                         SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
                     r += 1;
                 }
             }
-            let _ = execute!(out, cursor::MoveTo(col, r),
+            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
@@ -4702,7 +4713,7 @@ impl CliPlayer {
                 Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get(), blk_marker_h);
             blk_shown.set(blk_n);
             for i in blk_off..blk_off + blk_n {
-                Self::draw_combat_row(&mut out, col, &mut r, i,
+                Self::draw_combat_row(&mut out, Self::middle_panel_col(), &mut r, i,
                     str_cols(&format!("  {i}: ")), &blk_layouts[i], Color::Reset);
             }
 
@@ -4710,7 +4721,7 @@ impl CliPlayer {
                 let marker = Self::page_marker(
                     blk_off, blk_n, eligible_blockers.len() - 1, BLOCKERS_PAGE_KEYS);
                 for line in Self::wrap_indented(&marker, panel_w) {
-                    let _ = execute!(out, cursor::MoveTo(col, r),
+                    let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                         SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
                     r += 1;
                 }
@@ -4718,11 +4729,11 @@ impl CliPlayer {
             // Blocking is exactly where the public zones are decision inputs
             // (CR 404.2, 406.3) — advertise the info panes here (#120).
             for line in &hint_lines {
-                let _ = execute!(out, cursor::MoveTo(col, r),
+                let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                     SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
                 r += 1;
             }
-            let _ = execute!(out, cursor::MoveTo(col, r));
+            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r));
             let _ = out.flush();
             r
         };
@@ -4737,15 +4748,15 @@ impl CliPlayer {
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1), Clear(ClearType::UntilNewLine));
             if let Some(msg) = msg {
                 let _ = execute!(stdout(), SetForegroundColor(Color::Red),
-                    Print(clip_cols(msg, mid_w)), ResetColor);
+                    Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
             }
             // Back to the prompt row: `read_line` prints its prompt at the
             // cursor, so leaving it here put the prompt on the end of the
             // notice.
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
+            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r));
             let _ = stdout().flush();
         };
         let mut notice: Option<String> = None;
@@ -4753,7 +4764,7 @@ impl CliPlayer {
         loop {
             // Same stale-row clearing as the attack prompt (issue #35), and
             // the same held-until-answered notice row (issue #291).
-            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
+            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r), Clear(ClearType::UntilNewLine));
             paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
                 "  Block (blocker:attacker / enter=none)> ", &|| { draw(); });
@@ -7007,6 +7018,38 @@ yourself at some considerable length";
         let unfixed = CliPlayer::prompt_block_row(19, 20, 1 + 1);
         assert_eq!(20usize.saturating_sub(unfixed + 1 + (2 + hint_lines)), 0,
             "the defect: zero rows for the list");
+    }
+
+    /// Issue #353: the combat prompts' geometry is a function of the current
+    /// terminal width, not of the width the prompt was entered at.
+    ///
+    /// They used to cache `col`/`mid_w` above the closure that repaints them,
+    /// so after a resize the whole block — headings, creature rows, hints and
+    /// the row being typed into — was painted at the old column, into the LOG
+    /// pane, and stayed there through every redraw. The cached bindings are
+    /// gone; what is left to pin is that the column they measure is the one
+    /// `render_paged` draws the panel at, at every width.
+    #[test]
+    fn the_combat_column_is_the_panel_the_frame_draws() {
+        for w in [40usize, 60, 70, 80, 99, 100, 120, 200] {
+            let col = CliPlayer::middle_panel_col_at(w) as usize;
+            assert_eq!(col, w / 5 + 1, "the frame's mid_col at {w}");
+            // The panel runs from that column to its right separator, so the
+            // column and the width are two halves of one geometry.
+            assert_eq!(col + CliPlayer::middle_panel_width_at(w),
+                CliPlayer::middle_panel_edge_at(w),
+                "column plus width is the panel's edge at {w}");
+        }
+        // The two sides of the 100-column CARDS-gutter step move together:
+        // the column grows and the panel narrows.
+        assert_eq!(CliPlayer::middle_panel_col_at(99), 20);
+        assert_eq!(CliPlayer::middle_panel_col_at(100), 21);
+        assert!(CliPlayer::middle_panel_width_at(100) < CliPlayer::middle_panel_width_at(99));
+        // And a resize really does move it, which is the whole defect: a
+        // prompt entered at 70 and repainted at 200 must not keep column 15.
+        assert_ne!(CliPlayer::middle_panel_col_at(70), CliPlayer::middle_panel_col_at(200));
+        assert_eq!(CliPlayer::middle_panel_col_at(70), 15);
+        assert_eq!(CliPlayer::middle_panel_col_at(200), 41);
     }
 
     /// A page is measured in lines, not rows, once rows can wrap (issue
