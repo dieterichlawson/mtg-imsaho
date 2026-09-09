@@ -4896,22 +4896,22 @@ impl CliPlayer {
     fn prompt_target_set(
         view: &GameView,
         options: &[mtg_engine::actions::Target],
+        fixed: &[mtg_engine::actions::Target],
         min: usize,
         max: usize,
         description: &str,
     ) -> Action {
         use mtg_engine::actions::{ResolvedChoice, Target};
-        let rows: Vec<String> = options.iter().map(|t| match t {
+        let label = |t: &Target| match t {
             Target::Object(id) => Self::target_label(view, *id),
             Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
             Target::Illegal => "(illegal)".into(),
-        }).collect();
-        let (title, detail) = Self::rule_title(description, 60);
+        };
+        let rows: Vec<String> = options.iter().map(&label).collect();
         let pick = SetPick {
-            title,
-            question: format!("{}{}",
-                detail.map(|d| format!("{d} ")).unwrap_or_default(),
-                Self::set_question(min, max, options.len(), "targets below")),
+            title: Self::target_set_title(description),
+            question: Self::target_set_question(
+                &fixed.iter().map(&label).collect::<Vec<_>>(), min, max, options.len()),
             rows,
             min,
             max,
@@ -5149,6 +5149,37 @@ impl CliPlayer {
         } else {
             format!("Mark between {min} and {max} of the {n} {what}.")
         }
+    }
+
+    /// The heading at a target-set prompt.
+    ///
+    /// Every other marking screen is headed by a short upper-case line
+    /// naming the action — "DISCARD 1 CARD", "BOTTOM 2 CARDS AFTER
+    /// MULLIGAN" — and this one is headed the same way. The engine's
+    /// description is "<card>: choose up to N targets", whose second half
+    /// the question line below says better, against the real row count.
+    fn target_set_title(description: &str) -> String {
+        let name = description.split_once(": ").map_or(description, |(head, _)| head);
+        format!("CHOOSE TARGETS FOR {}", name.trim().to_uppercase())
+    }
+
+    /// The question at a target-set prompt.
+    ///
+    /// A slot with something already named in front of it is the second half
+    /// of a question — Memory's Journey names a player and then asks for
+    /// cards from THEIR graveyard, and which player that is decides what the
+    /// rows even are. Say it, or the list has no context.
+    ///
+    /// The engine's own description says "choose up to N" too, and is not
+    /// repeated here: [`set_question`](Self::set_question) says the same
+    /// thing against the actual row count.
+    fn target_set_question(already: &[String], min: usize, max: usize, n: usize) -> String {
+        let prefix = if already.is_empty() {
+            String::new()
+        } else {
+            format!("Targeting {}. ", already.join(", "))
+        };
+        format!("{prefix}{}", Self::set_question(min, max, n, "targets below"))
     }
 
     /// A card in hand as the hand panel writes it.
@@ -6009,10 +6040,10 @@ impl Player for CliPlayer {
         // stopped enumerating one cast per subset (issue #360), so this is
         // where the targets are chosen.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
-            options, min, max, description, ..
+            options, min, max, description, fixed, ..
         }) = legal.resolution_prompt.as_ref()
         {
-            return Self::prompt_target_set(view, options, *min, *max, description);
+            return Self::prompt_target_set(view, options, fixed, *min, *max, description);
         }
 
         // A set of cards out of a list: a checklist, not a menu of every
@@ -7111,6 +7142,27 @@ yourself at some considerable length";
         assert!(matches!(CliPlayer::parse_card_set_input("none", 3, true), SetInput::None));
         // A fixed-count cost cannot be answered with nothing.
         assert!(CliPlayer::set_count_error(0, 1, 1).contains("exactly 1"));
+    }
+
+    /// A target slot with a target already named in front of it says which
+    /// one, because that is what decides the rows.
+    #[test]
+    fn a_target_set_question_names_what_is_already_targeted() {
+        // The heading names the action, like every other marking screen,
+        // and never carries the question.
+        assert_eq!(CliPlayer::target_set_title("Feeling of Dread: choose up to 2 targets"),
+            "CHOOSE TARGETS FOR FEELING OF DREAD");
+        assert_eq!(CliPlayer::target_set_title("Memory's Journey"),
+            "CHOOSE TARGETS FOR MEMORY'S JOURNEY");
+        // A bare "up to N": nothing in front, so nothing to say.
+        assert_eq!(CliPlayer::target_set_question(&[], 0, 2, 4),
+            "Mark up to 2 of the 4 targets below.");
+        // Memory's Journey: the player was named first, and the cards are
+        // from that player's graveyard.
+        assert_eq!(CliPlayer::target_set_question(&["Opponent".into()], 0, 3, 5),
+            "Targeting Opponent. Mark up to 3 of the 5 targets below.");
+        assert_eq!(CliPlayer::target_set_question(&["You".into(), "Grizzly Bears".into()], 1, 1, 2),
+            "Targeting You, Grizzly Bears. Mark 1 of the 2 targets below.");
     }
 
     /// The refusals a set screen gives, and what each is about.
