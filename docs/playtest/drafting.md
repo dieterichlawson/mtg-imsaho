@@ -203,3 +203,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   every prompt that names a card, and the response schemas keyed by card name
   (#398). Verify the seat is never shown, nor asked to answer with, two
   different names for the same physical card
+
+- D17 [proposed 2026-09-09, from #404 and the join loop in `main.rs`] which
+  seat the fatal blames, and whether one seat can block the report: the pick
+  loop joins the seats' scoped threads in seat order, so `Error: seat N could
+  not make pack P pick Q` names the lowest-numbered failed seat rather than
+  the one that failed first — and a seat that hangs is joined ahead of a
+  higher-numbered seat that failed, so the run blocks instead of reporting.
+  Set up a `CLAUDE_CODE_BIN` stub that keys its behaviour off the seat (the
+  pick prompt's pool listing identifies it) and make seat 3 fail while seat 0
+  hangs, then the reverse. Verify the message names the seat that actually
+  failed, that a hang anywhere still reaches a fatal, and that the in-flight
+  calls of the seats which did not fail are killed rather than orphaned when
+  the run exits
