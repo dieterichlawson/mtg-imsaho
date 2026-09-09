@@ -9,6 +9,13 @@ it answers.
 This is the newest subject and the thinnest. Almost nothing here has
 been played.
 
+It is also the surface that fails most quietly. The CLI tells you when it
+is broken — a clipped row is visible, a wedged prompt is visible. Here a
+rejected schema, a prompt too long to read and a seat that answered
+nothing all look the same from outside: the game plays on. See "One
+decision, three surfaces" in `README.md`; several ideas below are the
+harness half of a CLI idea, and are worth running on the same night.
+
 ## Before you start
 
 The seat is `--p1 claude-code` (`cc`), which runs `claude -p` on the
@@ -90,3 +97,41 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   every call site (`mtg-player/src/llm.rs` lines 1889/2014/2045/2077 pass
   `&[]`) against its own display list, and force a collapsed list at each —
   any other guard or lookup keyed off the wrong list is the same bug
+- H8 [proposed 2026-09-09, from #398] the response schema is checked by the
+  API before the model ever sees it: top-level property keys must match
+  `^[a-zA-Z0-9_.-]{1,64}$`, and a key that fails is a 400 — no tokens, no
+  answer, and a harness that turns the failure into `{}`, which reads
+  exactly like a seat declining. #398 was three prompts keyed by card
+  display name; a `cc` seat could not cast Skaab Goliath at all, six
+  attempts in one game, and nothing in the game log said why. Walk every
+  `send_message_structured` call site and check its schema against the
+  pattern — the isolated two-command repro is in #398 and needs no game.
+  Then check the OTHER half, which no test can: that a schema the API
+  accepts is one the model can actually answer. `enum` lists of a hundred
+  indices, `minItems`/`maxItems` that contradict the prompt text, a
+  `required` field the prompt never explains. And check what the harness
+  does with a refusal: an empty answer must be distinguishable from a
+  chosen "none", or a seat that never got the question looks like a seat
+  that passed
+- H9 [proposed 2026-09-09, from V7/V42 and `format_action_prompt`] the
+  prompt as a thing with a SIZE. The CLI wraps, pages and clips; the LLM
+  prompt does none of that — `format_action_prompt` joins every legal
+  action into one comma-separated line with no cap, and the board state,
+  the card reference and the log all grow without one. Play a `cc` seat
+  into the widest boards V42 builds and read what it is handed: how long
+  is the actions line at 60 legal actions, how much of the prompt is the
+  recap, and is the thing being decided still findable in it. A prompt a
+  person would call unreadable is the model's whole input. File a gap when
+  the decision is buried, not for length alone
+- H10 [proposed 2026-09-09, from the random seat's "up to N" answer] the
+  seat that answers with a constant. Not the LLM seat: `mtg-player/src/random.rs`
+  is what the invariant fuzzer plays, so a prompt it answers with a legal
+  no-op is a prompt the fuzzer never really exercises — and nothing fails,
+  which is what makes it worth a night. The "up to N" target slot had
+  `min` of zero and the seat took the minimum, so 178 casts of Feeling of
+  Dread across eight seeded games named no target and tapped nothing.
+  Read every `resolution_prompt` arm in `random.rs`, ask what it answers
+  when the prompt allows nothing, and then measure: run seeded games with
+  a deck built for that prompt and count how often the effect actually
+  DOES something in the `--log`. A seat that always answers the same way
+  is a hole in the oracle whatever the tests say
