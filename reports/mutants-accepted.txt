@@ -395,11 +395,6 @@ mtg-engine/src/invariants/events.rs: replace match guard on_bf(state, *tid) with
 #     has an X, and it prints its own flashback cost, which is consulted first
 #     and short-circuits the lookup.
 #
-#   legal.rs `- with +` in `choose`: `k.min(n - k)` becomes `k.min(n + k)`,
-#     i.e. plain `k` (the function returns 0 above when `k > n`). The `min` is
-#     the C(n,k) = C(n,n-k) symmetry, taken only to run the shorter fold; the
-#     binomial it computes is the same number either way.
-#
 #   legal.rs `< with <=` in `loyalty`: `def.loyalty_change < 0` becomes
 #     `<= 0`, which lets a change of exactly 0 into the body -- where the test
 #     is `0.unsigned_abs() > counters`, i.e. `0 > n`, false for every n.
@@ -420,7 +415,6 @@ mtg-engine/src/invariants/events.rs: replace + with * in zone_changes
 mtg-engine/src/invariants/objects.rs: replace < with > in check_core
 mtg-engine/src/invariants/stack.rs: replace == with != in check_core
 mtg-engine/src/invariants/stack.rs: replace match guard *target == obj.id with false in check_core
-mtg-engine/src/invariants/legal.rs: replace - with + in choose
 mtg-engine/src/invariants/legal.rs: replace < with <= in loyalty
 mtg-engine/src/invariants/transition.rs: replace + with - in mana_demanded
 mtg-engine/src/invariants/transition.rs: replace > with >= in action_contract

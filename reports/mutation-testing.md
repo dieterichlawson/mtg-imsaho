@@ -525,7 +525,7 @@ a time.
 
 So of the 1301 mutants the filed lines name: **929 were already dead**
 before this pass began, **346 died to the tests written in it** (119 + 32 +
-132 + 3 + 60, one pass at a time), **21 are accepted** as equivalent or
+132 + 3 + 60, one pass at a time), **20 are accepted** as equivalent or
 unreachable with the reasons below and in
 `reports/mutants-accepted.txt`, **none are left on the backlog**, and 5 do
 not compile.
@@ -618,11 +618,14 @@ stays accepted with the corrected reason.
 
 ## Accepted, with reasons
 
-Twenty-one mutants over sixteen normalized lines, each one read against the
+Twenty mutants over fifteen normalized lines, each one read against the
 source rather than sorted by shape. All of them are in
-`reports/mutants-accepted.txt` with their reasons attached; the thirteen
+`reports/mutants-accepted.txt` with their reasons attached; the twelve
 this pass settled first are set out below, and the eight the third round
-added are argued in that file.
+added are argued in that file. (A thirteenth, the binomial in
+`legal.rs::choose`, is gone with the function: the offer for a set of
+cards is no longer counted against C(n,k), because it is no longer
+enumerated.)
 
 **`replace + with *` on a "later events" scan** — `events.rs` 374:57 (lifelink),
 504:30 (`PlayerLost` → `GameEnded`), 517:39 (`CreatureDied` → `TurnStarted` /
@@ -658,12 +661,6 @@ flashback cost, which is consulted first and short-circuits the lookup
 before the grant is ever read. Unreachable with the current pool — and,
 unlike the other two mutants of that same guard, not fixable by a test,
 which is why they were killed and this one was not.
-
-**`legal.rs` 740:21 `replace - with +` in `choose`** — `k.min(n - k)` becomes
-`k.min(n + k)`, which is plain `k` (the function has already returned 0 if
-`k > n`). The `min` is the C(n,k) = C(n,n−k) symmetry, taken only so the fold
-runs the shorter way round; the binomial it computes is the same number.
-Equivalent.
 
 **`legal.rs` 451:27 `replace < with <=`** — `def.loyalty_change < 0` becomes
 `<= 0`, admitting a change of exactly 0 to a body whose test is
