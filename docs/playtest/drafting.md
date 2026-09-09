@@ -137,3 +137,17 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   a `cc` seat, and treat any decision the seat cannot answer as the bug —
   a drafted deck the seat cannot pilot makes the whole tournament result
   meaningless
+
+- D12 [proposed 2026-09-09, from #402] seeded-run identity beyond the packs:
+  the draft half of a `--seed` run reproduces exactly and the tournament half
+  does not, because `to_decklist` returns a `HashMap`'s iteration order and
+  `DraftDeck.lands` is a `HashMap` too, so the seeded shuffle shuffles a
+  differently-ordered list each process. Point `CLAUDE_CODE_BIN` at a stub
+  that answers every pick, deck build and game decision from the prompt text
+  alone, run the same `--seed` twice, and diff the two logs line for line
+  after masking timestamps and thread ids. Audit the rest of the path the
+  same way — `deck_schema_for`'s property order, `parse_deck_response`'s
+  expansion of `{name: count}`, and the order the tournament spawns its
+  matches in. Verify every log line and every prompt a seat is handed is
+  identical between the two runs, and that anything which legitimately varies
+  is recorded somewhere a reader can replay from
