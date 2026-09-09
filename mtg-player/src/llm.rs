@@ -57,6 +57,23 @@ fn mulligan_is_dominated(view: &GameView) -> bool {
     view.your_mulligan_count as usize >= mtg_engine::state::OPENING_HAND_SIZE
 }
 
+/// Whether a string may be a *top-level* property key of a tool's
+/// input schema.
+///
+/// The API checks these against `^[a-zA-Z0-9_.-]{1,64}$` and rejects the
+/// whole request with a 400 if one fails — before the model sees it, so
+/// the seat gets no answer and the engine cancels whatever was waiting.
+/// A card's display name (`Spectral Rider (#62)`) fails on the space, the
+/// parentheses and the `#`; issue #398 is six casts lost to it in one
+/// game. Keys nested below the top level are not checked, which is why
+/// `choose_pile_division` survives doing the same thing one level down.
+#[must_use]
+pub fn schema_key_is_legal(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 64
+        && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+}
+
 pub fn thinking_param(model: &str) -> serde_json::Value {
     let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
     if wants_budget {
@@ -2386,6 +2403,19 @@ impl LlmPlayer {
 
     /// Send a message with a custom JSON response schema, returning parsed JSON.
     fn send_message_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        // Every structured request goes through here, so this is the one
+        // place that can see them all. A top-level key the API's pattern
+        // refuses is a 400 before the model reads anything, and the seat
+        // cannot tell that apart from having declined (#398) — so fail
+        // loudly where a developer will see it, and let a live game take
+        // the retry path rather than crash mid-tournament.
+        debug_assert!(
+            schema.get("properties").and_then(serde_json::Value::as_object)
+                .is_none_or(|p| p.keys().all(|k| schema_key_is_legal(k))),
+            "a top-level schema key is one the API will refuse (#398): {:?}",
+            schema.get("properties").and_then(serde_json::Value::as_object)
+                .map(|p| p.keys().filter(|k| !schema_key_is_legal(k))
+                    .cloned().collect::<Vec<_>>()));
         self.log("PROMPT", user_message);
         let result = self.backend.send_with_schema(user_message, schema);
         self.log_thinking();
@@ -2560,6 +2590,82 @@ impl LlmPlayer {
 
     /// Handle a `ChooseExileFromGraveyard` resolution prompt.
 
+    /// Ask the seat to mark a subset of a numbered list, and get back the
+    /// positions it marked.
+    ///
+    /// The answer is an array of indices under one fixed key, NOT one
+    /// boolean per option keyed by the option's name. A tool schema's
+    /// top-level property keys must match `^[a-zA-Z0-9_.-]{1,64}$`, and a
+    /// card's display name — `Spectral Rider (#62)`, or `0: Grizzly Bears`
+    /// — has spaces and parentheses in it. Keying by name gets the whole
+    /// request rejected with a 400 before the model ever sees it, which is
+    /// issue #398: a `cc` seat could not cast Skaab Goliath at all, six
+    /// times in one game, because the question was never put to it.
+    ///
+    /// `choose_card_set` already answered this with an index array; this is
+    /// the same answer for every other "mark some of these".
+    fn mark_indices(
+        &mut self,
+        view: &GameView,
+        labels: &[String],
+        min: usize,
+        max: usize,
+        description: &str,
+        instruction: &str,
+        noun: &str,
+    ) -> Vec<usize> {
+        let mut listing = String::new();
+        for (i, label) in labels.iter().enumerate() {
+            writeln!(listing, "{i}: {label}").unwrap();
+        }
+        let count_note = if min == max {
+            format!("Pick exactly {min} {noun}{}.", if min == 1 { "" } else { "s" })
+        } else {
+            format!("Pick anywhere from {min} to {max} {noun}s.")
+        };
+        let action_text = format!(
+            "{description}\n\n{count_note} {instruction}\n\nOptions:\n{listing}"
+        );
+        let prompt = self.build_prompt(view, &action_text);
+
+        let valid: Vec<usize> = (0..labels.len()).collect();
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {
+                    "type": "string",
+                    "description": "Concise but complete summary of your internal thoughts",
+                },
+                "indices": {
+                    "type": "array",
+                    "items": {"type": "integer", "enum": valid},
+                    "minItems": min,
+                    "maxItems": max,
+                    "description": format!(
+                        "The 0-indexed positions to pick, from the numbered list. \
+                         {count_note}"),
+                },
+            },
+            "required": ["thoughts", "indices"],
+            "additionalProperties": false,
+        });
+
+        let response = self.send_message_structured(&prompt, &schema);
+        let mut chosen: Vec<usize> = Vec::new();
+        if let Some(arr) = response["indices"].as_array() {
+            for v in arr {
+                let Some(i) = v.as_u64().and_then(|i| usize::try_from(i).ok()) else { continue };
+                // A repeat or an out-of-range index is not a second choice;
+                // both are answers the engine would refuse for a reason the
+                // seat did not intend.
+                if i < labels.len() && !chosen.contains(&i) {
+                    chosen.push(i);
+                }
+            }
+        }
+        chosen
+    }
+
     ///
     /// The engine surfaces eligible graveyard cards (filtered per the
     /// spell's additional cost: creatures only for Stitched Drake et al.,
@@ -2598,51 +2704,13 @@ impl LlmPlayer {
             };
             format!("{i}: {name}")
         }).collect();
-        let mut card_list = String::new();
-        for label in &labels {
-            writeln!(card_list, "- {label}").unwrap();
-        }
-        let count_note = if min == max {
-            format!("You must pick exactly {min} target{}.", if min == 1 { "" } else { "s" })
-        } else {
-            format!("You may pick anywhere from {min} to {max} targets.")
-        };
-        let action_text = format!(
-            "{description}\n\n\
-             {count_note} Set true to target it; false to leave it alone.\n\n\
-             Options:\n{card_list}"
-        );
-        let prompt = self.build_prompt(view, &action_text);
-
-        let mut props = serde_json::Map::new();
-        props.insert("thoughts".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Concise but complete summary of your internal thoughts",
-        }));
-        for label in &labels {
-            props.insert(label.clone(), serde_json::json!({
-                "type": "boolean",
-                "description": "true = target this, false = leave it alone",
-            }));
-        }
-        let mut required = vec!["thoughts".to_string()];
-        for label in &labels { required.push(label.clone()); }
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": props,
-            "required": required,
-            "additionalProperties": false,
-        });
-
-        let response = self.send_message_structured(&prompt, &schema);
-        let mut chosen: Vec<Target> = Vec::new();
-        for (i, label) in labels.iter().enumerate() {
-            if response.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false) {
-                if let Some(t) = options.get(i) {
-                    chosen.push(t.clone());
-                }
-            }
-        }
+        let picked = self.mark_indices(
+            view, &labels, min, max, description,
+            "Name the targets you want; leaving a slot empty is allowed where the count says so.",
+            "target");
+        let mut chosen: Vec<Target> = picked.into_iter()
+            .filter_map(|i| options.get(i).cloned())
+            .collect();
         // Too many is a cast the engine would cancel, so trim to what the
         // slot holds rather than throwing the cast away; too few is only
         // possible where the slot demands more than the seat marked, and
@@ -2675,58 +2743,11 @@ impl LlmPlayer {
         }
 
         let labels = Self::format_combat_creature_list(view, options);
-        let mut card_list = String::new();
-        for label in &labels {
-            writeln!(card_list, "- {label}").unwrap();
-        }
-
-        let count_note = if min == max {
-            format!("You must pick exactly {min} card{}.", if min == 1 { "" } else { "s" })
-        } else {
-            format!("You may pick anywhere from {min} to {max} cards.")
-        };
-
-        let action_text = format!(
-            "{description}\n\n\
-             {count_note} Set true to {verb}; false to leave it.\n\n\
-             Options:\n{card_list}"
-        );
-        let prompt = self.build_prompt(view, &action_text);
-
-        let mut props = serde_json::Map::new();
-        props.insert("thoughts".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Concise but complete summary of your internal thoughts",
-        }));
-        for label in &labels {
-            props.insert(label.clone(), serde_json::json!({
-                "type": "boolean",
-                "description": format!("true = {verb}, false = leave it"),
-            }));
-        }
-
-        let mut required = vec!["thoughts".to_string()];
-        for label in &labels { required.push(label.clone()); }
-
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": props,
-            "required": required,
-            "additionalProperties": false,
-        });
-
-        let response = self.send_message_structured(&prompt, &schema);
-
-        // Collect the ids the response marked true.
-        let mut chosen: Vec<mtg_engine::ids::ObjectId> = Vec::new();
-        for (i, label) in labels.iter().enumerate() {
-            if response.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false) {
-                if let Some(id) = options.get(i) {
-                    chosen.push(*id);
-                }
-            }
-        }
-        chosen
+        let instruction = format!("Name the cards to {verb}.");
+        self.mark_indices(view, &labels, min, max, description, &instruction, "card")
+            .into_iter()
+            .filter_map(|i| options.get(i).copied())
+            .collect()
     }
 
     /// Exile-from-graveyard additional cost: mark the cards to exile.

@@ -53,8 +53,25 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   deck-out endings actually end the game
 - V6 concede at the weirdest legal moment: mid-choice, during combat,
   with triggers on the stack
-- V7 UI overflow: giant board states, longest card names, full hand +
-  full graveyard displays; look for broken rendering
+- V7 does everything printed FIT? "Look for broken rendering" scheduled
+  nothing, and this is the single richest vein the subject has: #318 (menu
+  rows head-clipped), #350 (header and life lines printed unclipped, erasing
+  the pane border at 100 columns and wrapping into the STACK pane at 70),
+  #351 (combat hints over the border and onto the prompt row), #352 (at 70x20
+  the combat prompts show NO creature list and still accept a declaration),
+  #355 (the input row erases a line of the CARDS pane every frame), #364 (`i`
+  has no pager at all — half the board unreachable at 32 permanents), #365
+  (pagers count entries while printing wrapped rows, so a page scrolls its
+  own heading away), #366 (`/` silently dead below 100 columns). Sweep it as
+  a contract rather than a rummage. Three properties, each checkable: every
+  line a pane prints is inside that pane and inside the terminal; a list
+  longer than the body pages, and the pager can reach its LAST entry; a page
+  is sized in rendered lines, not in entries. Build the stressors —
+  `20 Armored Skaab / 20 Makeshift Mauler` for long names, a 40-card
+  graveyard, 30+ permanents a side, a nine-trigger upkeep — and walk every
+  screen at 70x20, 80x24, exactly 100 wide, and 200x50, `capture-pane`-ing
+  each. `draw_set_screen` is the one to copy from: it wraps rows into lines
+  FIRST and pages the lines, which is why it has none of these
 - V8 search/menu abuse: the CLI's `/` search, `d`, `l`, `g`, `e` panes
   spammed at every prompt
 - V9 rapid concede/new-game churn: concede and immediately relaunch a
@@ -394,6 +411,27 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   `prompt_exile_from_graveyard`, and `library_search_ui` — which binds no viewer key at
   all, so a Forbidden Alchemy choice is made with no board, no graveyard and no log on
   screen
+
+- V42 [proposed 2026-09-09, from #318, #398 and
+  `mtg-engine/tests/prompt_shapes.rs`] how big can a question get? A prompt
+  that offers one row per way of answering it grows as `C(n,k)`, `|a| x |b|`
+  or `n + C(n,2)`, and every such prompt in the pool has now been converted
+  to a marking screen or a slot-at-a-time ask — mulligan bottoming, cleanup
+  discard, exile costs, pile division, "up to N" targets, ordered pairs,
+  Ghoulcaller's Chant's modes, Curse of Oblivion's two cards. This asks
+  whether that HELD, and whether anything else grows. Method: build the
+  widest legal board for each prompt kind (a 12-Zombie graveyard for the
+  Chant, 8 creatures a side for Prey Upon, 16 lands and 16 creatures for
+  Into the Maw of Hell, a 40-card graveyard for Harvest Pyre), then count
+  the `CastSpell` rows the menu carries and the rows the screen lists.
+  Rows should track the number of OBJECTS, not their combinations. Read
+  `prompt_shapes.rs` first — it sweeps requirement shapes and will already
+  have failed on a new card, so what it cannot see is the interesting part:
+  activated abilities, resolution prompts that ask N times in a row, and
+  anything the CLI itself expands. Ask the LLM side of the same board in
+  the same sitting: `format_action_prompt` joins every action into one
+  comma-separated line with no cap, so a blowup that a person can page past
+  is a prompt a model cannot read at all
 
 **The Operator** neither plays to win nor tries to break anything: runs
 the binary the way an operator would and checks it kept its promises.
