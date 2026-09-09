@@ -198,12 +198,11 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // for the exile cost below.
         let resuming = state.pending_spell_cast.as_ref()
             .is_some_and(|p| p.object_id == object_id);
-        if let Some((options, min, max)) = (!resuming).then(|| {
-            crate::engine::targeting::up_to_slot(&state, player, object_id, &target_req, targets, behavior, registry)
+        if let Some(slot) = (!resuming).then(|| {
+            crate::engine::targeting::set_slot(&state, player, object_id, &target_req, targets, behavior, registry)
         }).flatten()
         {
-            let fixed_len = targets.len().min(usize::from(matches!(
-                target_req, crate::cards::TargetRequirement::TwoTargets(..))));
+            let crate::engine::targeting::SetSlot { options, min, max, fixed_len } = slot;
             if targets.len() == fixed_len && max > 0 {
                 let non_x_mana_cost = if has_x { cost.without_x() } else { cost.clone() };
                 state.pending_spell_cast = Some(crate::state::PendingSpellCast {
@@ -224,8 +223,18 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                     player,
                     source: object_id,
                     choice: crate::state::ResolutionChoiceKind::ChooseTargetSet {
-                        description: format!("{}: choose up to {max} target{}",
-                            data.name, if max == 1 { "" } else { "s" }),
+                        description: {
+                            // "up to two" and "two" are different questions,
+                            // and the prompt is the only place the player is
+                            // told which one this is.
+                            let how_many = if min == max {
+                                format!("{min}")
+                            } else {
+                                format!("up to {max}")
+                            };
+                            format!("{}: choose {how_many} target{}",
+                                data.name, if max == 1 { "" } else { "s" })
+                        },
                         options,
                         min,
                         max,

@@ -110,14 +110,30 @@ fn candidate_req(req: &crate::cards::TargetRequirement) -> &crate::cards::Target
 
 /// How many targets a requirement takes at most: N for "up to N", one
 /// otherwise.
-/// The "up to N" slot of a requirement, if it has one: the options for it,
-/// how many may be chosen, and how many targets come before it.
+/// A target slot that is a *set* rather than a list of announcements: what
+/// may go in it, how many, and how many targets are named before it.
 ///
-/// `UpToTargets` is the slot itself; `TwoTargets(a, UpToTargets(..))` has
-/// one fixed target in front of it (Memory's Journey names a player, then
-/// up to three cards from their graveyard). Everything else has none, and
-/// its targets are enumerated as before.
-pub(crate) fn up_to_slot(
+/// Two requirements have one. `UpToTargets` is the slot itself, with nothing
+/// in front. `TwoTargets(a, UpToTargets(..))` has one fixed target in front
+/// — Memory's Journey names a player, then up to three cards from *their*
+/// graveyard, so the options are not known until the player is.
+///
+/// Everything else is enumerated. A `TwoTargets` with two different slots is
+/// an ordered pair, where which target went in which slot is the answer, and
+/// marking cannot express that. One whose slots want the same thing is a set
+/// (Ghoulcaller's Chant's "two target Zombie creature cards"), but the only
+/// such card is modal and its mode is read back off how many targets it
+/// named, so see `generate_cast_actions_with_targets` for why that one stays
+/// enumerated.
+pub(crate) struct SetSlot {
+    pub options: Vec<crate::actions::Target>,
+    pub min: usize,
+    pub max: usize,
+    /// How many of the cast's targets precede the slot and stay as given.
+    pub fixed_len: usize,
+}
+
+pub(crate) fn set_slot(
     state: &GameState,
     caster: PlayerId,
     spell_id: ObjectId,
@@ -125,13 +141,13 @@ pub(crate) fn up_to_slot(
     chosen: &[crate::actions::Target],
     behavior: &dyn crate::cards::CardBehavior,
     registry: &CardRegistry,
-) -> Option<(Vec<crate::actions::Target>, usize, usize)> {
+) -> Option<SetSlot> {
     use crate::cards::TargetRequirement as R;
     match req {
         R::UpToTargets(max, _) => {
             let options = valid_targets_for_req(state, caster, spell_id, req, behavior, registry);
             let max = (*max).min(options.len());
-            Some((options, 0, max))
+            Some(SetSlot { options, min: 0, max, fixed_len: 0 })
         }
         R::TwoTargets(_, second) if matches!(**second, R::UpToTargets(..)) => {
             // The first slot has to be named before the second's options
@@ -140,7 +156,7 @@ pub(crate) fn up_to_slot(
             let first = chosen.first()?;
             let options = second_slot_options(state, caster, spell_id, second, first, behavior, registry);
             let max = most_targets(second).min(options.len());
-            Some((options, fewest_targets(second), max))
+            Some(SetSlot { options, min: fewest_targets(second), max, fixed_len: 1 })
         }
         _ => None,
     }
@@ -201,6 +217,8 @@ fn dedup_by_target_set(actions: &mut Vec<Action>) {
         }
     });
 }
+
+
 
 pub(crate) fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -268,6 +286,13 @@ pub(crate) fn generate_cast_actions_with_targets(
             // and pairing every candidate with every other produced each set
             // twice, once in each order. That is not a second choice; it just
             // doubles the branching factor for whoever is picking.
+            //
+            // It is still enumerated, unlike the other set-shaped slots. The
+            // Chant is modal, and a cast's mode is read back off how many
+            // targets it named (`detect_modal_choice_mode`), so the empty
+            // announcement a prompt would need is exactly how mode 1 with
+            // nothing chosen would look. Reducing this one means putting the
+            // mode on `CastSpell` rather than inferring it.
             //
             // Where the slots differ (Prey Upon's "creature you control fights
             // creature you don't", Memory's Journey's player-then-their-cards)
