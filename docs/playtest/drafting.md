@@ -78,12 +78,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   limited — size, only cards from that seat's own pool, basics unlimited,
   DFC and split names counted once — and the decklist that gets played in
   the tournament identical to the one the log says was built
-- D5 [Operator] log completeness: `main` seeds from `rand::thread_rng()`
-  and there is no `--seed`, so the log is the only record a draft leaves.
-  Verify a reader with the log alone can reconstruct the whole run — pack
-  contents, every pick in order with the pack it came from, pass
-  direction, final pools, decks, pairings and results — and file what is
-  missing
+- D5 [Operator] log completeness: the log used to be the only record a
+  draft left; #212 and #218 gave the runner `--seed`, `--save` and
+  `--resume`, so it now has three. The reconstruction question stands and
+  has gained a second half. Verify a reader with the log alone can rebuild
+  the whole run — pack contents, every pick in order with the pack it came
+  from, pass direction, final pools, decks, pairings and results — and
+  then verify the other two agree with it: re-running the seed the log
+  header records reproduces that run exactly, and a `--resume` from a
+  mid-draft snapshot lands on the same position rather than a plausible
+  one
 - D6 [Handler] draft prompt sufficiency: what a drafting seat is told
   against what it needs to pick well. Is its pool so far shown at every
   pick, with colours and curve, or only the pack? Does it know the pack
