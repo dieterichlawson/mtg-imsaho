@@ -1042,7 +1042,19 @@ impl CliPlayer {
     /// menu goes through `render_paged`, which hands back how many rows it
     /// drew.
     fn render(view: &GameView, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
-        let _ = Self::render_paged_noticed(view, None, message, None, log, card_filter, pass_mode_label, 0);
+        let _ = Self::render_paged_noticed(view, None, message, None, log, card_filter, pass_mode_label, 0, 0);
+    }
+
+    /// `render`, for a caller that goes on to draw its own question under the
+    /// rule and needs `reserve_below` rows left for it.
+    ///
+    /// The two combat prompts append an eligible-creature list, its paging
+    /// marker and its hints below the heading, and the board above must give
+    /// those rows up rather than the list being budgeted out of existence:
+    /// at 70x20 DECLARE ATTACKERS printed "Eligible attackers:" with nothing
+    /// under it and still took an irreversible declaration (#352).
+    fn render_reserving(view: &GameView, message: Option<&str>, log: &[String], reserve_below: usize) {
+        let _ = Self::render_paged_noticed(view, None, message, None, log, "", None, 0, reserve_below);
     }
 
     /// Blank the middle panel's part of one row, keeping the frame.
@@ -1057,6 +1069,24 @@ impl CliPlayer {
         if has_right {
             let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
+        }
+    }
+
+    /// Blank the middle panel from `from` to the foot of the screen, keeping
+    /// the frame, before a prompt draws its own question over the board.
+    ///
+    /// The anchored block is drawn OVER the board (#260), so a prompt row
+    /// shorter than the board row under it leaves that row's tail on screen.
+    /// The menu path clears row by row as it draws; the combat prompts draw a
+    /// list of unknown height and clear the whole foot up front (#352).
+    fn clear_mid_from(out: &mut io::Stdout, from: u16) {
+        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
+        let w = term_w as usize;
+        let has_right = w >= 100;
+        let mid_col = u16::try_from(w / 5 + 1).unwrap_or(u16::MAX);
+        let sep = u16::try_from(Self::middle_panel_edge_at(w)).unwrap_or(u16::MAX);
+        for row in from..term_h {
+            Self::clear_mid_row(out, mid_col, sep, has_right, row);
         }
     }
 
@@ -1199,7 +1229,7 @@ impl CliPlayer {
     /// menu longer than the pane is paged with 'm', not guessed at).
     /// Returns the page it drew, so the caller can page from it exactly.
     fn render_paged(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
-        Self::render_paged_noticed(view, actions, message, None, log, card_filter, pass_mode_label, menu_offset)
+        Self::render_paged_noticed(view, actions, message, None, log, card_filter, pass_mode_label, menu_offset, 0)
     }
 
     /// `render_paged` with a notice: one line of feedback about the last
@@ -1212,7 +1242,7 @@ impl CliPlayer {
     /// player looking at "0: Yes / 1: No" with nothing saying what was
     /// being asked.
     #[allow(clippy::too_many_arguments)]
-    fn render_paged_noticed(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, notice: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
+    fn render_paged_noticed(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, notice: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize, reserve_below: usize) -> MenuPage {
 
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -1511,10 +1541,15 @@ impl CliPlayer {
             // hint row + input row, and for a menu one option and its marker.
             let furniture = if actions.is_some() { 2 } else { 1 };
             let menu_floor = if actions.is_some() { 2 } else { 0 };
-            let min_block = title_rows + menu_floor + furniture;
-            if h.saturating_sub(row as usize) < min_block {
-                row = u16::try_from(h.saturating_sub(min_block)).unwrap_or(0);
-            }
+            // A caller that draws its own question under the rule — the two
+            // combat prompts, which append an eligible-creature list, its
+            // marker and its hints — says how many rows that takes.
+            // `actions.is_some()` cannot say it: those prompts pass no menu,
+            // so the floor inferred here was one input row and the list they
+            // went on to draw had no reservation at all (#352).
+            let min_block = title_rows + (menu_floor + furniture).max(reserve_below);
+            row = u16::try_from(Self::prompt_block_row(row as usize, h, min_block))
+                .unwrap_or(0);
         }
 
         // The actions separator. A rule is ONE line: it carries the
@@ -3235,6 +3270,32 @@ impl CliPlayer {
     /// typed into a prompt — has this much room and no more. Taking the
     /// width as an argument is what lets the widths that matter be stated
     /// without a terminal to measure.
+    /// Which row the prompt block starts on: where the board ended, or far
+    /// enough up the pane to fit `min_block` rows, whichever is higher.
+    ///
+    /// The block is anchored to the foot and drawn over the board, so a short
+    /// pane scrolls the board off above rather than pushing the question off
+    /// below (#260). Pulled out so the arithmetic is testable without a
+    /// terminal, the way `menu_page_lines` is (#352).
+    fn prompt_block_row(board_end: usize, h: usize, min_block: usize) -> usize {
+        if h.saturating_sub(board_end) < min_block {
+            h.saturating_sub(min_block)
+        } else {
+            board_end
+        }
+    }
+
+    /// How many lines of a prompt's own list must survive the board above it.
+    ///
+    /// One, whenever there is anything to list: `menu_page_lines` draws a row
+    /// taller than its budget rather than skipping it, so one line of
+    /// reservation is enough to put the first entry on the screen. None when
+    /// there is nothing to list, so an empty prompt does not push the board
+    /// off for a row it will not draw (#352).
+    fn list_floor(n: usize) -> usize {
+        usize::from(n > 0)
+    }
+
     /// The readable name of the step the view is in.
     fn step_name(view: &GameView) -> &'static str {
         match view.step {
@@ -4279,15 +4340,6 @@ impl CliPlayer {
         let list_avail = std::cell::Cell::new(0usize);
         let list_marker_h = std::cell::Cell::new(1usize);
         let draw = || -> u16 {
-
-            Self::render(view, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
-            let mut out = stdout();
-            let mut r = cursor::position().unwrap_or((0, 20)).1;
-            let h = terminal::size().map_or(30, |(_, h)| h as usize);
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-                Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
-            r += 1;
             let panel_w = Self::middle_panel_width_at(Self::term_width());
             // Rows still owed below the list: the planeswalker block, the
             // hint line (which wraps, so its height is measured, not
@@ -4300,7 +4352,22 @@ impl CliPlayer {
             } else {
                 defending_planeswalkers.len() + 1
             };
-            let avail = h.saturating_sub(r as usize + reserved);
+            // The board gives up the rows this prompt needs, rather than the
+            // list being budgeted out of existence below it: the heading, at
+            // least one creature, the marker that says how many more there
+            // are, and the furniture above (#352).
+            Self::render_reserving(view, Some("DECLARE ATTACKERS"), &view.display_log,
+                1 + Self::list_floor(eligible.len()) + marker_h + reserved);
+            let mut out = stdout();
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let h = terminal::size().map_or(30, |(_, h)| h as usize);
+            Self::clear_mid_from(&mut out, r);
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+                Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
+            r += 1;
+            let avail = h.saturating_sub(r as usize + reserved)
+                .max(Self::list_floor(eligible.len()));
             // Every row laid out first, so the page is measured in the lines
             // the rows actually take (issue #318).
             let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
@@ -4550,21 +4617,30 @@ impl CliPlayer {
         let blk_offset = std::cell::Cell::new(0usize);
         let blk_shown = std::cell::Cell::new(0usize);
         let draw = || -> u16 {
-            Self::render(view, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
-            let mut out = stdout();
-            let mut r = cursor::position().unwrap_or((0, 20)).1;
-            let h = terminal::size().map_or(30, |(_, h)| h as usize);
             let panel_w = Self::middle_panel_width_at(Self::term_width());
             // Rows below: the blockers header, the hint line (measured, since
             // it wraps), the prompt row and the refusal row under it. The two
             // lists split what is left.
             let hint_lines = Self::wrap_indented(BLOCK_HINTS, panel_w);
-            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
-            let atk_avail = (body / 2).max(1);
             let atk_marker_h = Self::marker_lines(
                 attacker_ids.len().saturating_sub(1), ATTACKERS_PAGE_KEYS, panel_w);
             let blk_marker_h = Self::marker_lines(
                 eligible_blockers.len().saturating_sub(1), BLOCKERS_PAGE_KEYS, panel_w);
+            // Both index spaces have to be on the screen the block is typed
+            // into: the two headings, a row of each list, both markers, the
+            // hints and the two input rows. Without this the board took every
+            // row and the prompt asked for `blocker:attacker` pairs with
+            // neither list visible (#352).
+            Self::render_reserving(view, Some("DECLARE BLOCKERS"), &view.display_log,
+                2 + Self::list_floor(attacker_ids.len()) + atk_marker_h
+                  + Self::list_floor(eligible_blockers.len()) + blk_marker_h
+                  + hint_lines.len() + 2);
+            let mut out = stdout();
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let h = terminal::size().map_or(30, |(_, h)| h as usize);
+            Self::clear_mid_from(&mut out, r);
+            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
+            let atk_avail = (body / 2).max(1);
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
@@ -6279,7 +6355,7 @@ impl Player for CliPlayer {
             // was refused.
             let page = Self::render_paged_noticed(view, Some(&display_labels),
                 legal.context.as_deref(), notice.take().as_deref(),
-                &view.display_log, &self.card_filter, pass_label, menu_offset);
+                &view.display_log, &self.card_filter, pass_label, menu_offset, 0);
 
 
             // Read input
@@ -6885,6 +6961,52 @@ yourself at some considerable length";
         let cut = clip_cols("▸ Opp: 20hp  53lib  0gy  0ex  7hand", narrow);
         assert!(str_cols(&cut) <= narrow, "{cut:?} in {narrow} columns");
         assert!(cut.starts_with("▸ Opp:"), "the head is what survives: {cut:?}");
+    }
+
+    /// Issue #352: a combat prompt's creature list is the content the prompt
+    /// exists to show, so the board above gives up rows for it rather than
+    /// the list being budgeted out of existence below it.
+    ///
+    /// At 70x20 DECLARE ATTACKERS printed "Eligible attackers:" with nothing
+    /// under it — and still took an irreversible declaration — because the
+    /// bottom anchor from #260 inferred its floor from `actions.is_some()`,
+    /// which is false for a prompt that draws its own list.
+    #[test]
+    fn a_combat_prompt_reserves_the_rows_its_list_needs() {
+        // One line of list is reserved whenever there is anything to list,
+        // and none when there is not: an empty prompt does not push the board
+        // off for a row it will not draw.
+        assert_eq!(CliPlayer::list_floor(0), 0);
+        assert_eq!(CliPlayer::list_floor(1), 1);
+        assert_eq!(CliPlayer::list_floor(8), 1);
+
+        // A pane with room to spare leaves the board where it ended.
+        assert_eq!(CliPlayer::prompt_block_row(12, 45, 8), 12,
+            "no anchoring when the block already fits");
+        // A pane without room pulls the block up to fit, over the board.
+        assert_eq!(CliPlayer::prompt_block_row(16, 20, 8), 12);
+        // And a block taller than the whole pane starts at the top rather
+        // than underflowing.
+        assert_eq!(CliPlayer::prompt_block_row(4, 5, 9), 0);
+
+        // The 70x20 case: DECLARE ATTACKERS over two eligible creatures. The
+        // heading, one creature, the marker and the furniture below it —
+        // hint lines, the prompt row and the refusal row under it.
+        let panel = CliPlayer::middle_panel_width_at(70);
+        let hint_lines = CliPlayer::wrap_indented(ATTACK_HINTS, panel).len();
+        let marker_h = CliPlayer::marker_lines(1, MENU_PAGE_KEYS, panel);
+        let reserve = 1 + CliPlayer::list_floor(2) + marker_h + (2 + hint_lines);
+        // The board on this screen runs to the foot of a 20-row pane.
+        let row = CliPlayer::prompt_block_row(19, 20, 1 + reserve);
+        let avail = 20usize.saturating_sub(row + 1 + (2 + hint_lines));
+        assert!(avail >= 1 + marker_h,
+            "a creature row and its marker fit: {avail} rows from row {row}");
+        // Which is what the pre-fix budget did not leave: with the block
+        // floored at one input row, the board ended at 19 and the list got
+        // nothing.
+        let unfixed = CliPlayer::prompt_block_row(19, 20, 1 + 1);
+        assert_eq!(20usize.saturating_sub(unfixed + 1 + (2 + hint_lines)), 0,
+            "the defect: zero rows for the list");
     }
 
     /// A page is measured in lines, not rows, once rows can wrap (issue
