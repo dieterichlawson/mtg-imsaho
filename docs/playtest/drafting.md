@@ -36,6 +36,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
 - `docs/isd-booster-collation.md` describes what a real Innistrad pack
   is, in enough detail to check a generated one against it — rarity
   slots, foil rate, and which cards can and cannot share a pack.
+- **A `mtg-draft-runner` run is two different harnesses in sequence.** The
+  draft phase uses this crate's own prompts, schemas and backends in
+  `llm_client.rs`; the tournament phase that follows hands the drafted
+  decks to `mtg-player`'s game harness (`mtg-player/src/llm.rs` and
+  `llm/claude_code.rs`) and plays them there. A probe that stops when the
+  picks stop has tested half the program — D7 passed a full all-`cc`
+  draft on the same day the tournament phase could not cast a Skaab
+  Goliath at all (#398).
 - The correctness questions here are mostly about *silence*: this
   program has fallbacks that substitute a decision when a seat's answer
   doesn't parse, and a run that quietly fell back looks a lot like a run
@@ -111,3 +119,17 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   nothing on disk to resume from. The fatal may well be right; the question
   is whether an hour of real drafting can be lost to a transient, whether
   the error says what happened, and whether anything is checkpointed
+- D11 [proposed 2026-09-09, from #398, #399] the tournament phase on the
+  subscription seat: D7 verified the draft's `claude -p` contract and
+  stopped at the last pick. Take a completed draft through to standings
+  with every seat `cc` (`--players 2 --best-of 1 --model cc --seed <n>` is
+  about ten minutes) and audit the *games* the same way — one `claude -p`
+  per decision, session continuity across the match, no metered call, and
+  every prompt kind the drafted decks can reach actually answerable. The
+  known break is that a schema keyed by card name is rejected outright, so
+  the seat is mute at that prompt and the engine cancels the cast (#398)
+  while nothing in the standings says a seat was mute (#399). Generalize
+  it: enumerate the prompt kinds a limited deck reaches, reach each one on
+  a `cc` seat, and treat any decision the seat cannot answer as the bug —
+  a drafted deck the seat cannot pilot makes the whole tournament result
+  meaningless
