@@ -112,6 +112,25 @@ pub struct LegalActions {
     pub set_prompt: Option<crate::actions::SetPrompt>,
 }
 
+impl LegalActions {
+    /// Whether this offers the acting player nothing at all — no menu and
+    /// no prompt of any kind.
+    ///
+    /// Four places asked this question with four copies of the same list of
+    /// fields: the mulligan loop, the game loop, the runner's checks and the
+    /// fuzz harness. Adding a fourth kind of prompt left three of them
+    /// saying a bottoming was a game with nothing to do — the mulligan loop
+    /// silently skipped it and kept a seven-card hand, and the fuzzer
+    /// reported a stuck game. One place to add the next kind to.
+    #[must_use]
+    pub fn offers_nothing(&self) -> bool {
+        self.actions.is_empty()
+            && self.combat_prompt.is_none()
+            && self.resolution_prompt.is_none()
+            && self.set_prompt.is_none()
+    }
+}
+
 
 
 
@@ -1095,11 +1114,9 @@ fn run_mulligan_phase_inner<F>(
         };
 
         let legal = legal_actions(state, registry);
-        if legal.actions.is_empty() && legal.set_prompt.is_none() {
+        if legal.offers_nothing() {
             // Safety: if somehow no action is legal (e.g. zero cards to
-            // bottom), just clear and continue. A set prompt IS the
-            // question — the bottoming has no enumerated actions beside it
-            // — so an empty action list is not an empty prompt.
+            // bottom), just clear and continue.
             state.awaiting_action = None;
             advance_mulligan_phase(state, registry);
             continue;
@@ -1252,11 +1269,7 @@ fn run_game_loop_inner<F>(
         // pending" and left the resolved card orphaned in the stack zone
         // (found by seeded fuzzing: Corpse Lunge's exile cost, ug vs wb
         // coverage decks, seed 550).
-        if legal.actions.is_empty()
-            && legal.combat_prompt.is_none()
-            && legal.resolution_prompt.is_none()
-            && legal.set_prompt.is_none()
-        {
+        if legal.offers_nothing() {
             advance_or_resolve(state, registry);
             continue;
         }

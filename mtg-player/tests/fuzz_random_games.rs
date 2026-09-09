@@ -123,14 +123,7 @@ fn play(seed: u64, registry: &CardRegistry) -> GameOutcome {
                 }
                 Some(_) => {}
             }
-            // A prompt IS the question, whatever kind it is: the offers for
-            // a set of cards (the mulligan bottoming, the cleanup discard)
-            // carry no enumerated actions beside them at all.
-            if legal.actions.is_empty()
-                && legal.combat_prompt.is_none()
-                && legal.resolution_prompt.is_none()
-                && legal.set_prompt.is_none()
-            {
+            if legal.offers_nothing() {
                 found.push("no legal actions and no prompt: the game is stuck".into());
             }
             // Save/resume soundness: the state survives a serialization
