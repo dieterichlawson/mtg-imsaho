@@ -306,7 +306,14 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   the ISD pool would not give), `prompt_pile_division` (Liliana's ultimate),
   Divine Reckoning, Forbidden Alchemy, Mulch, Make a Wish, Creeping
   Renaissance, Ghoulcaller's Chant, Moan of the Unhallowed, Sever the
-  Bloodline, Grimoire of the Dead, and Skaab Goliath's exactly-2
+  Bloodline, Grimoire of the Dead, and Skaab Goliath's exactly-2.
+  **Superseded 2026-09-09**: `combinations()` is gone from the engine and
+  every question in this family is now one marking screen (`pick_set` in
+  `cli.rs`) — a numbered list you toggle with `1 3 5`, plus `a`/`n`/Enter.
+  The enumerated-row bugs above cannot recur, but the screen is new and
+  unplayed: try it at a 15-card bottoming, at Skaab Ruinator's exactly-3,
+  at an "up to two target creatures" (Travel Preparations, Feeling of
+  Dread), and at `prompt_pile_division`, with the same hostile inputs
 - V38 [tried 2026-09-07 → #313, #314, #315, #316, #317] the resume boundary as
   a state machine (distinct from V3's honest reload, V14's corrupted saves,
   V20's contention, V30's every-snapshot-loadable and V34's every-field): the
