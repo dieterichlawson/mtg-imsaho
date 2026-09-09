@@ -164,3 +164,17 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `--resume` and the snapshot it came from, and that a resume with a
   different `--guide-N` than the save was drafted under is refused or noted
   rather than silently producing a hybrid draft
+
+- D14 [proposed 2026-09-09, from #404, #399] subprocess-lifecycle parity
+  between the two `claude -p` backends: `mtg-draft-runner/src/llm_client.rs`
+  and `mtg-player/src/llm/claude_code.rs` are two copies of one protocol and
+  have now diverged in both directions — #218's wall-clock retry budget
+  exists only in the draft copy (#399), and #203/#206's working timeout,
+  process group, signal handlers and workdir sweep only in the game copy
+  (#404). Set up one `CLAUDE_CODE_BIN` stub with a mode per failure (exit,
+  `is_error`, unparsable, hang-with-descendant, hang-with-exec, SIGINT,
+  SIGTERM, SIGHUP) and drive BOTH backends through every mode. Verify the
+  observable behaviour is identical: the same retry policy, a timeout that
+  actually returns, the same fatal wording, and after every mode no orphan
+  process and no leaked scratch directory. Any difference is either a fix
+  that reached one copy only, or an argument for deleting one copy
