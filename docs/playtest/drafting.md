@@ -151,3 +151,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   matches in. Verify every log line and every prompt a seat is handed is
   identical between the two runs, and that anything which legitimately varies
   is recorded somewhere a reader can replay from
+
+- D13 [proposed 2026-09-09, from #401] what else a resume launders: #401
+  found the pick log, the substituted-pick counter and `--save` all skipped
+  by the replay branch, so a resumed draft cannot be told from one nobody
+  interrupted. Take the rest of the run's bookkeeping the same way. Set up a
+  draft that fails after the deck-build phase and one that fails
+  mid-tournament, snapshot each, and resume. Verify that the end-of-run token
+  usage totals of a draft split across three resumes can be added back up to
+  the real cost (today each run reports only its own calls), that the
+  substituted-*deck* report survives a resume, that the log header records
+  `--resume` and the snapshot it came from, and that a resume with a
+  different `--guide-N` than the save was drafted under is refused or noted
+  rather than silently producing a hybrid draft
