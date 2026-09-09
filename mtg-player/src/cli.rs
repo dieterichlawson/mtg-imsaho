@@ -478,6 +478,12 @@ const MENU_PAGE_KEYS: &str = "m/p = next/prev page (any number works)";
 const ATTACKERS_PAGE_KEYS: &str = "m = next page";
 const BLOCKERS_PAGE_KEYS: &str = "b = next page";
 
+/// The footer a full-screen viewer shows when its list does not fit, and the
+/// one the deck browser shows. Named so the pager can measure the chrome it
+/// will draw before it chooses the page that fits under it (#365).
+const VIEWER_PAGED_FOOTER: &str = "  n=next page, p=previous, enter=return: ";
+const DECK_PAGED_FOOTER: &str = "  Enter number for details, n=next page, p=previous, enter=return: ";
+
 /// The pane keys the combat prompts advertise.
 const ATTACK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]";
 /// One line of input at a card-set prompt.
@@ -3855,17 +3861,38 @@ impl CliPlayer {
         }
     }
 
-    /// Compute the visible page window: `(start, end, page_size)` for a
-    /// list of `len` lines on a terminal `term_h` rows tall, given the
-    /// current `page` (0-based). Pulled out of the pager so the arithmetic
-    /// is testable without a terminal.
-    fn page_window(len: usize, term_h: usize, page: usize) -> (usize, usize, usize) {
-        let page_size = term_h.saturating_sub(4).max(1);
-        let last_page = if len == 0 { 0 } else { (len - 1) / page_size };
-        let page = page.min(last_page);
-        let start = page * page_size;
-        let end = (start + page_size).min(len);
-        (start, end, page_size)
+    /// How many terminal rows a printed line of `cols` display columns takes
+    /// once the terminal folds it at width `w`.
+    ///
+    /// The viewers print each entry unclipped and let the terminal wrap, so
+    /// an entry wider than the pane is more than one row — "p0 declared
+    /// attackers: …" out of a seven-creature attack is 213 columns. A page
+    /// counted in entries was therefore taller than the window it was given,
+    /// and what the terminal scrolled off the top was the heading that says
+    /// which slice is showing (#365).
+    fn wrapped_height(cols: usize, w: usize) -> usize {
+        if w == 0 { 1 } else { cols.div_ceil(w).max(1) }
+    }
+
+    /// How many rows a full-screen viewer has for its entries: the pane less
+    /// the chrome around them.
+    ///
+    /// The chrome is the caller's to measure, because it wraps too. Assuming
+    /// one row for the heading and one for the footer is what let a 47-column
+    /// heading on a 34-column pane push the entries a row over the window, so
+    /// the terminal scrolled the heading — the only thing that says which
+    /// slice is showing — off the top (#365).
+    fn viewer_avail(term_h: usize, chrome_rows: usize) -> usize {
+        term_h.saturating_sub(chrome_rows).max(1)
+    }
+
+    /// The display columns one `InfoLine` occupies when printed.
+    fn info_line_cols(line: &InfoLine) -> usize {
+        match line {
+            InfoLine::Plain(s) | InfoLine::Bold(s) | InfoLine::Dim(s) => str_cols(s),
+            // Printed behind a three-space indent.
+            InfoLine::Mana(s) => 3 + str_cols(s),
+        }
     }
 
     /// Full-screen paged line viewer shared by the `l`/`g`/`e` info views.
@@ -3873,21 +3900,43 @@ impl CliPlayer {
     /// than the terminal scrolled off the top with no way back and no
     /// notice (issues #101/#102). This clamps to the terminal height,
     /// pages with n/p, and always says which slice is showing.
-    /// `start_at_end` opens on the last page (the log's most recent
-    /// entries); the list views open at the top.
+    /// `start_at_end` opens on the last WINDOW — a full screen ending at the
+    /// last entry. It used to open on the last page *index*, whose page holds
+    /// `len % page_size` entries, so a 44-entry log on a 45-row terminal
+    /// opened showing three lines and 39 blank rows, and the taller the
+    /// terminal the worse the remainder (#354). The list views open at the
+    /// top.
     fn show_paged_lines(title: &str, lines: &[InfoLine], start_at_end: bool) {
         let mut out = stdout();
-        let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
-        let (_, _, page_size) = Self::page_window(lines.len(), h, 0);
-        let mut page = if start_at_end && !lines.is_empty() {
-            (lines.len() - 1) / page_size
+        let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+        let (w, h) = (term_w as usize, term_h as usize);
+        // Pages are measured in the rows the entries actually take once the
+        // terminal wraps them, not in entries (#365).
+        let heights: Vec<usize> = lines.iter()
+            .map(|l| Self::wrapped_height(Self::info_line_cols(l), w))
+            .collect();
+        // The heading is measured at its widest — which slice it names is not
+        // known until the page is chosen, the same bind `marker_lines`
+        // solves for the menu's marker.
+        let n = lines.len();
+        let widest_heading = format!("{title} (showing {n}-{n} of {n})");
+        let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+            + 1
+            + Self::wrapped_height(str_cols(VIEWER_PAGED_FOOTER), w);
+        let avail = Self::viewer_avail(h, chrome);
+        // The last window is the page that ends at the last entry, which is
+        // exactly what `p` from the top already means.
+        let mut offset = if start_at_end {
+            Self::prev_menu_offset_lines(&heights, avail, 0, 0)
         } else {
             0
         };
         loop {
-            let (start, end, page_size) = Self::page_window(lines.len(), h, page);
+            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, offset, 0);
+            offset = start;
+            let end = start + shown;
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-            let heading = if lines.len() > page_size {
+            let heading = if paged {
                 format!("{} (showing {}-{} of {})", title, start + 1, end, lines.len())
             } else {
                 title.to_string()
@@ -3914,17 +3963,21 @@ impl CliPlayer {
                     }
                 }
             }
-            let footer = if lines.len() > page_size {
-                "  n=next page, p=previous, enter=return: "
+            let footer = if paged {
+                VIEWER_PAGED_FOOTER
             } else {
                 "  Press enter to return..."
             };
             let _ = execute!(out, Print(footer));
             let _ = out.flush();
             match Self::read_line("").trim() {
-                "n" if end < lines.len() => page += 1,
+                "n" if end < lines.len() => offset = end,
                 "n" => {}
-                "p" => page = page.saturating_sub(1),
+                // `p` from the top stays at the top: a viewer scrolls, it
+                // does not wrap around the way the action menu does.
+                "p" if offset > 0 =>
+                    offset = Self::prev_menu_offset_lines(&heights, avail, offset, 0),
+                "p" => {}
                 _ => return,
             }
         }
@@ -4129,11 +4182,55 @@ impl CliPlayer {
 
             // Clamp to the terminal height and page — an unclamped list
             // scrolled the header and the first entries off the top with
-            // no way to reach them (issue #102).
-            let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
-            let (start, end, page_size) = Self::page_window(deck_cards.len(), h, page);
-            page = start / page_size;
-            let heading = if deck_cards.len() > page_size {
+            // no way to reach them (issue #102). The rows are built before
+            // they are paged, because a page is as many rows as fit once the
+            // terminal wraps them, not a fixed count of entries: at 34
+            // columns four of fourteen deck lines wrapped, so the heading and
+            // the first four entries scrolled away — and with the entry count
+            // fitting, the footer offered no `n`/`p` to get them back (#365).
+            let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+            let (w, h) = (term_w as usize, term_h as usize);
+            let rows: Vec<(String, String)> = deck_cards.iter().enumerate().map(|(i, data)| {
+                let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+                let pt = match (data.power, data.toughness) {
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                    _ => String::new(),
+                };
+                let hand = hand_counts.get(&data.name).copied().unwrap_or(0);
+                let b = board_counts.get(&data.name).copied().unwrap_or(0);
+                let g = gy_counts.get(&data.name).copied().unwrap_or(0);
+                let e = exile_counts.get(&data.name).copied().unwrap_or(0);
+                let lib = lib_counts.get(&data.name).copied().unwrap_or(0);
+                let total = hand + b + g + e + lib;
+
+                // Build location breakdown
+                let mut locs = Vec::new();
+                if hand > 0 { locs.push(format!("{hand}hand")); }
+                if b > 0 { locs.push(format!("{b}board")); }
+                if g > 0 { locs.push(format!("{g}gy")); }
+                if e > 0 { locs.push(format!("{e}exile")); }
+                if lib > 0 { locs.push(format!("{lib}lib")); }
+                let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
+
+                (format!("  {i:>2}"),
+                 format!(": {}x {}{}{}{}", total, data.name, cost, pt, loc_str))
+            }).collect();
+            let heights: Vec<usize> = rows.iter()
+                .map(|(a, b)| Self::wrapped_height(str_cols(a) + str_cols(b), w))
+                .collect();
+            let n = deck_cards.len();
+            let widest_heading = format!(
+                " YOUR DECK ({total_cards} cards, showing {n}-{n} of {n} entries)");
+            // Heading, the blank under it, the blank the footer leads with,
+            // and the footer itself.
+            let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+                + 2
+                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
+            let avail = Self::viewer_avail(h, chrome);
+            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
+            page = start;
+            let end = start + shown;
+            let heading = if paged {
                 format!(" YOUR DECK ({total_cards} cards, showing {}-{} of {} entries)",
                     start + 1, end, deck_cards.len())
             } else {
@@ -4142,48 +4239,35 @@ impl CliPlayer {
             Self::print_colored(&mut out, Color::Cyan, &heading);
             let _ = execute!(out, Print("\n"));
 
-            for (i, data) in deck_cards.iter().enumerate().take(end).skip(start) {
-                let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                let pt = match (data.power, data.toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => String::new(),
-                };
-                let h = hand_counts.get(&data.name).copied().unwrap_or(0);
-                let b = board_counts.get(&data.name).copied().unwrap_or(0);
-                let g = gy_counts.get(&data.name).copied().unwrap_or(0);
-                let e = exile_counts.get(&data.name).copied().unwrap_or(0);
-                let lib = lib_counts.get(&data.name).copied().unwrap_or(0);
-                let total = h + b + g + e + lib;
-
-                // Build location breakdown
-                let mut locs = Vec::new();
-                if h > 0 { locs.push(format!("{h}hand")); }
-                if b > 0 { locs.push(format!("{b}board")); }
-                if g > 0 { locs.push(format!("{g}gy")); }
-                if e > 0 { locs.push(format!("{e}exile")); }
-                if lib > 0 { locs.push(format!("{lib}lib")); }
-                let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
-
+            for (idx, tail) in rows.iter().take(end).skip(start) {
                 let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(format!("  {i:>2}")),
+                    SetAttribute(Attribute::Bold), Print(idx),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}x {}{}{}{}\n", total, data.name, cost, pt, loc_str)));
+                    Print(format!("{tail}\n")));
             }
 
-            let footer = if deck_cards.len() > page_size {
-                "\n  Enter number for details, n=next page, p=previous, enter=return: "
+            let footer = if paged {
+                format!("\n{DECK_PAGED_FOOTER}")
             } else {
-                "\n  Enter number for details, or press enter to return: "
+                "\n  Enter number for details, or press enter to return: ".to_string()
             };
-            let _ = execute!(out, Print(footer));
+            let _ = execute!(out, Print(&footer));
             let _ = out.flush();
             let input = Self::read_line("");
 
             if input.is_empty() { return; }
             match input.trim() {
-                "n" if end < deck_cards.len() => { page += 1; continue; }
+                // `page` is a row offset, not a page index: the next page
+                // starts where this one ended, and `p` walks back by whole
+                // rows rather than by a fixed count that uneven heights made
+                // a guess.
+                "n" if end < deck_cards.len() => { page = end; continue; }
                 "n" => continue,
-                "p" => { page = page.saturating_sub(1); continue; }
+                "p" if page > 0 => {
+                    page = Self::prev_menu_offset_lines(&heights, avail, page, 0);
+                    continue;
+                }
+                "p" => continue,
                 _ => {}
             }
 
@@ -8008,26 +8092,110 @@ yourself at some considerable length";
 
     // Issues #101/#102: the info views clamp to the terminal height and
     // page instead of silently truncating (l) or scrolling off the top
-    // (g/e/d). page_window is the shared arithmetic.
+    // (g/e/d). The window is now the menu's own line-based pager rather
+    // than a second copy of the arithmetic, so what is pinned here is what
+    // the viewers ask it for.
     #[test]
-    fn page_window_clamps_and_pages() {
-        // 1086 log entries on a 50-row terminal: 46 visible per page.
-        let (start, end, size) = CliPlayer::page_window(1086, 50, 0);
-        assert_eq!((start, end, size), (0, 46, 46));
-        // The last page holds the remainder, not a full page.
-        let last_page = (1086 - 1) / 46;
-        let (start, end, _) = CliPlayer::page_window(1086, 50, last_page);
-        assert_eq!(end, 1086);
-        assert!(end - start <= 46 && start < end);
-        // A page past the end clamps to the last page.
-        let (s2, e2, _) = CliPlayer::page_window(1086, 50, last_page + 7);
-        assert_eq!((s2, e2), (start, end));
-        // Shorter than a page: everything visible, no paging needed.
-        assert_eq!(CliPlayer::page_window(10, 24, 0), (0, 10, 20));
-        // Degenerate terminal heights never yield a zero page size.
-        assert_eq!(CliPlayer::page_window(5, 3, 0).2, 1);
+    fn the_viewer_window_clamps_and_pages() {
+        let flat = |n: usize| vec![1usize; n];
+        // 1086 log entries on a 50-row terminal: 46 rows of budget, 46
+        // single-row entries visible.
+        assert_eq!(CliPlayer::viewer_avail(50, 4), 46);
+        let (start, shown, paged) = CliPlayer::menu_page_lines(&flat(1086), 46, 0, 0);
+        assert_eq!((start, shown, paged), (0, 46, true));
+        // An offset past the end clamps rather than panicking.
+        let (s2, shown2, _) = CliPlayer::menu_page_lines(&flat(1086), 46, 5000, 0);
+        assert_eq!(s2, 1085);
+        assert_eq!(shown2, 1);
+        // Shorter than a page: everything visible, no paging offered.
+        assert_eq!(CliPlayer::menu_page_lines(&flat(10), 20, 0, 0), (0, 10, false));
+        // Degenerate terminal heights never yield a zero budget.
+        assert_eq!(CliPlayer::viewer_avail(3, 4), 1);
+        assert_eq!(CliPlayer::viewer_avail(0, 4), 1);
         // Empty list stays empty without panicking.
-        assert_eq!(CliPlayer::page_window(0, 24, 0), (0, 0, 20));
+        assert_eq!(CliPlayer::menu_page_lines(&flat(0), 20, 0, 0), (0, 0, false));
+    }
+
+    /// Issue #354: opening the log at the end shows the last WINDOW, not the
+    /// last page index — whose page holds `len % page_size` entries, so a
+    /// 44-entry log on a 45-row terminal opened with three lines and 39 blank
+    /// rows, and the taller the terminal the worse the remainder.
+    #[test]
+    fn a_viewer_opened_at_the_end_shows_a_full_last_screen() {
+        let flat = |n: usize| vec![1usize; n];
+        // 120x45: 41 rows of budget over 44 entries.
+        let avail = CliPlayer::viewer_avail(45, 4);
+        assert_eq!(avail, 41);
+        let open = CliPlayer::prev_menu_offset_lines(&flat(44), avail, 0, 0);
+        let (start, shown, _) = CliPlayer::menu_page_lines(&flat(44), avail, open, 0);
+        assert_eq!((start, start + shown), (3, 44),
+            "showing 4-44 of 44, not 42-44");
+        assert_eq!(shown, avail, "a full screen, not a remainder");
+
+        // 80x24 over the same log: showing 25-44 of 44.
+        let avail = CliPlayer::viewer_avail(24, 4);
+        let open = CliPlayer::prev_menu_offset_lines(&flat(44), avail, 0, 0);
+        let (start, shown, _) = CliPlayer::menu_page_lines(&flat(44), avail, open, 0);
+        assert_eq!((start, start + shown), (24, 44));
+
+        // The pathological case from the issue: len ≡ 1 (mod page_size)
+        // used to open on one entry of 41 with nineteen blank rows.
+        let open = CliPlayer::prev_menu_offset_lines(&flat(41), avail, 0, 0);
+        let (start, shown, _) = CliPlayer::menu_page_lines(&flat(41), avail, open, 0);
+        assert_eq!((start, shown), (21, 20));
+
+        // A log shorter than the window opens at the top, whole.
+        let open = CliPlayer::prev_menu_offset_lines(&flat(5), avail, 0, 0);
+        assert_eq!(open, 0);
+        // And an empty one does not panic.
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&flat(0), avail, 0, 0), 0);
+    }
+
+    /// Issue #365: a viewer page is measured in the rows its entries take
+    /// once the terminal wraps them, so the page cannot be taller than the
+    /// window and scroll its own "showing X-Y of Z" heading away.
+    #[test]
+    fn a_viewer_page_counts_wrapped_rows_not_entries() {
+        // A line wraps into ceil(cols / width) rows, and never zero.
+        assert_eq!(CliPlayer::wrapped_height(0, 34), 1);
+        assert_eq!(CliPlayer::wrapped_height(34, 34), 1);
+        assert_eq!(CliPlayer::wrapped_height(35, 34), 2);
+        assert_eq!(CliPlayer::wrapped_height(213, 80), 3);
+        // A zero width (no terminal) still counts one row, not a division
+        // by zero.
+        assert_eq!(CliPlayer::wrapped_height(10, 0), 1);
+
+        // The `l` case: sixteen entries, half of them two rows tall, in the
+        // 16 rows a 20-row pane gives. Counted as entries all sixteen were
+        // drawn — 24 rows into a 16-row window, so the heading and the first
+        // entries scrolled off.
+        let heights: Vec<usize> = (0..16).map(|i| if i % 2 == 0 { 2 } else { 1 }).collect();
+        let avail = CliPlayer::viewer_avail(20, 4);
+        assert_eq!(avail, 16);
+        assert_eq!(heights.iter().sum::<usize>(), 24, "taller than the window");
+        let (start, shown, paged) = CliPlayer::menu_page_lines(&heights, avail, 0, 0);
+        assert!(paged, "and so it pages");
+        assert!(heights[start..start + shown].iter().sum::<usize>() <= avail,
+            "the page fits the window: {shown} entries");
+
+        // The `d` case: fourteen deck entries at 34 columns, four of which
+        // wrap. The count fits a 20-row pane, so the browser offered no
+        // n/p — but the rows did not fit, and those entries were
+        // unreachable. Measured in rows it pages, so they are reachable.
+        let deck: Vec<usize> = (0..14).map(|i| if i < 4 { 2 } else { 1 }).collect();
+        assert_eq!(deck.len(), 14, "fits a 16-row window when counted as entries");
+        assert_eq!(deck.iter().sum::<usize>(), 18, "but is 18 rows");
+        let (_, shown, paged) = CliPlayer::menu_page_lines(&deck, avail, 0, 0);
+        assert!(paged, "so n/p are offered");
+        assert!(shown < 14, "and the page stops short of the whole list");
+
+        // Paging forward then back returns to the top: every entry is
+        // reachable, which is what #102 asked for.
+        let (_, first, _) = CliPlayer::menu_page_lines(&deck, avail, 0, 0);
+        let (s2, shown2, _) = CliPlayer::menu_page_lines(&deck, avail, first, 0);
+        assert_eq!(s2 + shown2, 14, "the second page reaches the last entry");
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&deck, avail, s2, 0), 0,
+            "and p comes back to the top");
     }
 
     // Issue #100: land targets carry the same (your)/(opp) marker as every
