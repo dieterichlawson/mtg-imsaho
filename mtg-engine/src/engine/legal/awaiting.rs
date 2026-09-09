@@ -296,6 +296,7 @@ pub(crate) fn legal_actions_while_awaiting(
                     })
                     .collect(),
                 ResolutionChoiceKind::ChooseXFunding { .. }
+                | ResolutionChoiceKind::ChooseTargetSet { .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { .. } => {
                     // Structured prompt — can't be enumerated as a flat
                     // action list. Player implementations see the
@@ -311,6 +312,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseCardName { description, .. }
                 | ResolutionChoiceKind::ChooseXFunding { description, .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. }
+                | ResolutionChoiceKind::ChooseTargetSet { description, .. }
                 | ResolutionChoiceKind::ChooseTriggerOrder { description, .. }
                 | ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. }
                 | ResolutionChoiceKind::ChooseDamageEffect { description, .. } => {

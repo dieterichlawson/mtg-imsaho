@@ -163,6 +163,9 @@ pub enum ResolvedChoice {
     /// `ExileCreaturesFromGraveyard(n)` (Stitched Drake / Skaab
     /// Ruinator / etc. — fixed count).
     ChosenExileSet(Vec<ObjectId>),
+    /// The targets chosen for an "up to N" slot (CR 601.2c), answering
+    /// `ChooseTargetSet`.
+    ChosenTargetSet(Vec<Target>),
     /// Cancel the cast in progress: the human's escape at the exile-cost
     /// prompt (issue #262), and how a seat answers a fixed-count
     /// exile-choice prompt it cannot satisfy. The engine rolls back: the

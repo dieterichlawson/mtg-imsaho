@@ -110,6 +110,42 @@ fn candidate_req(req: &crate::cards::TargetRequirement) -> &crate::cards::Target
 
 /// How many targets a requirement takes at most: N for "up to N", one
 /// otherwise.
+/// The "up to N" slot of a requirement, if it has one: the options for it,
+/// how many may be chosen, and how many targets come before it.
+///
+/// `UpToTargets` is the slot itself; `TwoTargets(a, UpToTargets(..))` has
+/// one fixed target in front of it (Memory's Journey names a player, then
+/// up to three cards from their graveyard). Everything else has none, and
+/// its targets are enumerated as before.
+pub(crate) fn up_to_slot(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    req: &crate::cards::TargetRequirement,
+    chosen: &[crate::actions::Target],
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Option<(Vec<crate::actions::Target>, usize, usize)> {
+    use crate::cards::TargetRequirement as R;
+    match req {
+        R::UpToTargets(max, _) => {
+            let options = valid_targets_for_req(state, caster, spell_id, req, behavior, registry);
+            let max = (*max).min(options.len());
+            Some((options, 0, max))
+        }
+        R::TwoTargets(_, second) if matches!(**second, R::UpToTargets(..)) => {
+            // The first slot has to be named before the second's options
+            // are known — Memory's Journey searches the named player's
+            // graveyard.
+            let first = chosen.first()?;
+            let options = second_slot_options(state, caster, spell_id, second, first, behavior, registry);
+            let max = most_targets(second).min(options.len());
+            Some((options, fewest_targets(second), max))
+        }
+        _ => None,
+    }
+}
+
 fn most_targets(req: &crate::cards::TargetRequirement) -> usize {
     match req {
         crate::cards::TargetRequirement::UpToTargets(max, _) => *max,
@@ -198,7 +234,21 @@ pub(crate) fn generate_cast_actions_with_targets(
             let lower = fewest_targets(req2);
             let max2 = most_targets(req2);
 
+            // A second slot that is itself "up to N" is chosen through the
+            // prompt the cast raises, not enumerated: one action per first
+            // target, with the second slot empty. Memory's Journey is
+            // `TwoTargets(PlayerOnly, UpToTargets(3, ...))`, and enumerating
+            // it over a fifteen-card graveyard is about 1,150 actions.
+            let up_to_second = matches!(**req2, TargetRequirement::UpToTargets(..));
             for t1 in &targets1 {
+                if up_to_second {
+                    actions.push(Action::CastSpell {
+                        object_id: spell_id,
+                        targets: vec![t1.clone()],
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+                    });
+                    continue;
+                }
                 let options = second_slot_options(state, caster, spell_id, req2, t1, behavior, registry);
 
                 for k in lower..=max2.min(options.len()) {
@@ -227,22 +277,17 @@ pub(crate) fn generate_cast_actions_with_targets(
             }
             actions
         }
-        TargetRequirement::UpToTargets(max, _) => {
-            // Generate all combinations of 1..=max targets for LLM/random expanded list.
-            let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
-            let mut actions = Vec::new();
-            // Start from 0 to allow "up to N" to mean "0 or more" (e.g., Memory's Journey
-            // can be cast targeting just a player with 0 cards).
-            for k in 0..=(*max).min(options.len()) {
-                for combo in target_combinations(&options, k) {
-                    actions.push(Action::CastSpell {
-                        object_id: spell_id,
-                        targets: combo,
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                    });
-                }
-            }
-            actions
+        TargetRequirement::UpToTargets(..) => {
+            // One cast, with the targets left to the prompt the cast raises
+            // (CR 601.2c). This used to enumerate every subset of size
+            // 0..=max, which is `sum(C(n, k))` actions — a menu that grows
+            // exponentially in the board and that a non-interactive seat
+            // reads in full.
+            vec![Action::CastSpell {
+                object_id: spell_id,
+                targets: vec![],
+                sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+            }]
         }
         // All single-target requirement kinds share the canonical target
         // enumeration in `valid_targets_for_req` — one target per action.

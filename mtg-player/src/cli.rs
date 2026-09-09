@@ -2407,7 +2407,7 @@ impl CliPlayer {
                 // The engine pre-narrowed each first choice's legal second-slot
                 // options (e.g. "cards from THEIR graveyard" — only the chosen
                 // player's cards).
-                let mut remaining = second[idx].clone();
+                let remaining = second[idx].clone();
                 if *second_max <= 1 {
                     if remaining.is_empty() {
                         return None;
@@ -2415,56 +2415,20 @@ impl CliPlayer {
                     let t2 = Self::prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
                     vec![t1, t2]
                 } else {
-                    // "Up to N" second slot: pick 0..=N.
-                    let mut chosen = vec![t1];
-                    for i in 0..*second_max {
-                        if remaining.is_empty() { break; }
-                        let label = format!("{}: select target {} of up to {}",
-                            spell.name, i + 1, second_max);
-                        match Self::prompt_target_up_to(view, &remaining, &label) {
-                            UpToPick::Pick(target) => {
-                                remaining.retain(|t| *t != target);
-                                chosen.push(target);
-                            }
-                            UpToPick::Done => break,
-                            // This slot had no Cancel row at all: every way
-                            // out of it cast the spell (issue #288).
-                            UpToPick::Cancel => return None,
-                        }
-                    }
-                    if chosen.len() <= *second_min {
-                        // A defensive floor. Cancelling now arrives as
-                        // `UpToPick::Cancel`, and `second_min` is 0 whenever
-                        // `second_max > 1` (targeting.rs derives it as
-                        // `usize::from(second_max == 1)`), so this cannot
-                        // fire today — it stays correct if a wide second slot
-                        // ever gains a minimum (issue #288).
-                        return None;
-                    }
-                    chosen
+                    // A wide second slot is chosen on the marking screen the
+                    // cast raises, not one question per pick: this asked
+                    // "select target 1 of up to 3", then again, and again.
+                    let _ = (&remaining, second_min);
+                    vec![t1]
                 }
             }
-            CastTargetSpec::UpToTargets { max, options } => {
-                let mut chosen = Vec::new();
-                let mut remaining = options.clone();
-                for i in 0..*max {
-                    if remaining.is_empty() { break; }
-                    let label = format!("{}: select target {} of up to {}",
-                        spell.name, i + 1, max);
-                    match Self::prompt_target_up_to(view, &remaining, &label) {
-                        UpToPick::Pick(target) => {
-                            remaining.retain(|t| *t != target);
-                            chosen.push(target);
-                        }
-                        UpToPick::Done => break,
-                        UpToPick::Cancel => return None,
-                    }
-                }
-                // CR 601.2c: an "up to N targets" spell may be cast choosing
-                // zero — including when no legal target exists at all. An
-                // empty choice is a real cast, not a cancel; treating it as
-                // one made the menu entry a silent no-op (issue #49).
-                chosen
+            CastTargetSpec::UpToTargets { .. } => {
+                // Likewise: the cast is submitted with the slot empty and
+                // the engine asks for the whole set at once (CR 601.2c).
+                // Choosing zero is a real cast and is said on that screen by
+                // marking none — it is not this branch returning early,
+                // which is how it became a silent no-op in issue #49.
+                Vec::new()
             }
         };
 
@@ -2656,15 +2620,6 @@ impl CliPlayer {
         }
     }
 
-    /// Pick one target of an "up to N" batch, or stop, or back out.
-    ///
-    /// `Done` casts with the targets chosen so far, which is legal at zero
-    /// (CR 601.2c, issue #49); `Cancel` abandons the cast. An empty line is
-    /// `Cancel` — it used to be `Done`, so the key a player reaches for to
-    /// back out cast the spell (issue #288).
-    fn prompt_target_up_to(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> UpToPick {
-        Self::run_target_chooser(view, options, label, ChooserRows::DoneThenCancel)
-    }
 
     // ── Action formatting ──────────────────────────────────────────
 
@@ -3213,6 +3168,19 @@ impl CliPlayer {
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
+                    ResolvedChoice::ChosenTargetSet(ts) => {
+                        if ts.is_empty() {
+                            "Target: (none)".into()
+                        } else {
+                            let names: Vec<String> = ts.iter().map(|t| match t {
+                                mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+                                mtg_engine::actions::Target::Player(pid) =>
+                                    if *pid == view.you { "You".into() } else { "Opponent".into() },
+                                mtg_engine::actions::Target::Illegal => "(illegal)".into(),
+                            }).collect();
+                            format!("Target: {}", names.join(", "))
+                        }
+                    }
                     ResolvedChoice::ChosenExileSet(ids) => {
                         if ids.is_empty() {
                             "Exile: (none)".into()
@@ -4920,6 +4888,62 @@ impl CliPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
     }
 
+    /// Choose the targets for an "up to N" slot (CR 601.2c).
+    ///
+    /// The same marking screen as every other "choose some of these", and
+    /// `c` abandons the cast: nothing has been paid — the spell is still in
+    /// its origin zone — so backing out here costs nothing (#123, #262).
+    fn prompt_target_set(
+        view: &GameView,
+        options: &[mtg_engine::actions::Target],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+        let rows: Vec<String> = options.iter().map(|t| match t {
+            Target::Object(id) => Self::target_label(view, *id),
+            Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
+            Target::Illegal => "(illegal)".into(),
+        }).collect();
+        let (title, detail) = Self::rule_title(description, 60);
+        let pick = SetPick {
+            title,
+            question: format!("{}{}",
+                detail.map(|d| format!("{d} ")).unwrap_or_default(),
+                Self::set_question(min, max, options.len(), "targets below")),
+            rows,
+            min,
+            max,
+            cancel: Some("cancel the cast"),
+        };
+        match Self::pick_set(view, &pick) {
+            Some(ks) => Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenTargetSet(ks.into_iter().map(|k| options[k].clone()).collect()),
+            },
+            None => Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
+        }
+    }
+
+    /// A target object as the pane that holds it writes it: a card in a
+    /// graveyard or hand with its cost and P/T, a permanent by name.
+    fn target_label(view: &GameView, id: mtg_engine::ids::ObjectId) -> String {
+        let card = view.your_hand.iter()
+            .chain(view.graveyards.iter().flat_map(|(_, cards)| cards.iter()))
+            .find(|c| c.object_id == id);
+        match card {
+            Some(c) => {
+                let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                let pt = match (c.power, c.toughness) {
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                    _ => String::new(),
+                };
+                format!("{}{}{}", c.name, cost, pt)
+            }
+            None => Self::perm_name(view, id),
+        }
+    }
+
     /// Divide the permanents into two piles (Liliana of the Veil's -6).
     ///
     /// The same marking screen as every other "choose some of these": what
@@ -5979,6 +6003,16 @@ impl Player for CliPlayer {
         }) = legal.resolution_prompt.as_ref()
         {
             return Self::prompt_exile_from_graveyard(view, options, *min, *max, description);
+        }
+
+        // An "up to N" target slot: the same marking screen. The engine
+        // stopped enumerating one cast per subset (issue #360), so this is
+        // where the targets are chosen.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+            options, min, max, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_target_set(view, options, *min, *max, description);
         }
 
         // A set of cards out of a list: a checklist, not a menu of every

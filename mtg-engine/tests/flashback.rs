@@ -658,18 +658,18 @@ fn feeling_of_dread_taps_creature() {
         "Feeling of Dread should tap the target creature");
 }
 
-/// Ruling: "You can't target the same creature twice to put two +1/+1 counters
-/// on it."
+/// Ruling: "You can't target the same creature twice to put two +1/+1
+/// counters on it."
 ///
 /// CR 601.2c — the same target can't be chosen twice for one instance of the
 /// word "target", and "each of **up to two target creatures**" is one
-/// instance. The engine's own action list already honours it (it enumerates
-/// combinations), but both clients build their `CastSpell` from a per-slot
-/// choice rather than picking a whole offered action, and neither checked:
-/// an LLM answering `[0, 0]` doubled the counters.
+/// instance. There are two ways in: the prompt the cast raises for the "up
+/// to" slot, and a `CastSpell` a client built itself. Both are checked here.
+/// An LLM answering `[0, 0]` doubled the counters.
 #[test]
 fn travel_preparations_cannot_target_the_same_creature_twice() {
-    use mtg_engine::actions::Action;
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -678,16 +678,30 @@ fn travel_preparations_cannot_target_the_same_creature_twice() {
     let other = ready_creature(&mut state, P0, 2, 2);
     let prep = castable_spell(&mut state, &reg, "Travel Preparations", P0);
 
-    let offers: Vec<Vec<Target>> = engine::legal_actions(&state, &reg).actions.into_iter()
-        .filter_map(|a| match a {
-            Action::CastSpell { object_id, targets, .. } if object_id == prep => Some(targets),
-            _ => None,
-        })
-        .collect();
-    assert!(offers.contains(&vec![Target::Object(creature), Target::Object(other)]),
-        "test setup: two distinct creatures are offered together");
-    assert!(!offers.iter().any(|t| t.len() == 2 && t[0] == t[1]),
-        "no offered cast names the same creature twice. Offered: {offers:?}");
+    // The slot is one prompt, not an enumeration of pairs, and it offers each
+    // creature once — so "the same one twice" is not even expressible by
+    // marking, only by an answer built by hand.
+    let asked = cast_onto_stack(&state, &reg, prep, vec![]);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. })
+        = &asked.awaiting_action else {
+        panic!("expected a target-set prompt, got {:?}", asked.awaiting_action);
+    };
+    assert_eq!((*min, *max), (0, 2), "up to two");
+    assert_eq!(options.iter().filter(|t| **t == Target::Object(creature)).count(), 1,
+        "each creature is offered once: {options:?}");
+    assert!(options.contains(&Target::Object(other)), "both are offered: {options:?}");
+
+    // Naming it twice is refused, and a refused set is a cast that did not
+    // happen: nothing was paid, so the card is still in hand.
+    let twice = Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTargetSet(
+            vec![Target::Object(creature), Target::Object(creature)]),
+    };
+    let refused = mtg_engine::engine::submit_action(&asked, &twice, &reg);
+    assert_eq!(refused.get_object(prep).unwrap().zone, Zone::Hand,
+        "the duplicate was refused and the cast did not happen");
+    assert!(refused.awaiting_action.is_none() && refused.pending_spell_cast.is_none());
 
     // And the same list submitted by hand gets one counter, not two.
     let state = cast_and_resolve(&state, &reg, prep,

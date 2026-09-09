@@ -668,7 +668,8 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                         v.push(format!("pile choice offers {} answers, not the two piles", acts.len()));
                     }
                 }
-                K::DividePermanentsIntoPiles { .. } | K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. } => {
+                K::DividePermanentsIntoPiles { .. } | K::ChooseXFunding { .. }
+                | K::ChooseExileFromGraveyard { .. } | K::ChooseTargetSet { .. } => {
                     if !acts.is_empty() {
                         v.push(format!("a structured prompt offers {} flat answers", acts.len()));
                     }

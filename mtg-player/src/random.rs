@@ -66,6 +66,18 @@ impl Player for RandomPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
         }
 
+        // An "up to N" target slot: no enumerated actions — the subsets are
+        // exponential in the board. Take the minimum, the same "minimal
+        // action, always valid" convention as the exile cost above.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+            options, min, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            use mtg_engine::actions::ResolvedChoice;
+            let chosen: Vec<mtg_engine::actions::Target> = options.iter().take(*min).cloned().collect();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(chosen) };
+        }
+
         // Pile division (Liliana of the Veil -6): no enumerated actions —
         // 2^N subsets don't fit in memory on a wide board. Flip a coin per
         // permanent, mirroring the 50% conventions used for combat.
