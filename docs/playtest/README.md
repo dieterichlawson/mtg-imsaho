@@ -45,6 +45,31 @@ D9 and D10 were sitting in `drafting.md` unread. Drafting had by then
 gone longer without a night than any other subject, which is the case the
 first rule exists to catch.
 
+## One decision, three surfaces
+
+The subjects above are separate nights, but they are not separate code.
+Every decision the engine asks for is presented three times — the CLI
+screen, the LLM seat's prompt and response schema, and the random seat
+the fuzzer plays — and a change to one of them is a question about the
+other two.
+
+So when a probe finds something in a prompt, ask the same question of the
+other surfaces before you write it up. It costs a minute and it doubles
+what the night is worth:
+
+- A screen that clips or a menu that explodes is a *token* flood on the
+  LLM side, where nothing wraps and nothing pages: the action list is one
+  comma-joined line with no cap.
+- A prompt the CLI renders fine may be a schema the API refuses outright
+  (#398), and the harness turns that into an empty answer that reads
+  exactly like a seat declining. Nothing in a CLI game can show you this.
+- A prompt both readable surfaces answer well may still be one the random
+  seat answers with a constant, which is how a whole class of resolution
+  stops being fuzzed without any test failing.
+
+File them as separate issues against the right target — the pipeline's
+glossary is in `docs/plans/bug-pipeline.md` — but find them in one sitting.
+
 ## What a guide is, and isn't
 
 Each guide has three parts: where the code and the contract live, how to

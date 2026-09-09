@@ -14,6 +14,58 @@ When running `cargo test`, check for BOTH test failures AND compilation errors. 
 
 Do NOT pipe `cargo test` through `grep "FAILED"` as a way to check test results — this silently drops compilation errors. Instead, check the exit code first (`cargo test; echo $?`), and if non-zero, look at the full output for both "FAILED" and "could not compile" lines.
 
+## Player-facing changes: one decision, three surfaces
+
+Every decision the engine asks for is presented three times, and they are
+separate code:
+
+- `mtg-player/src/cli.rs` — the screen a person reads and types at.
+- `mtg-player/src/llm.rs` — the prompt text and the JSON response schema an
+  LLM seat answers through.
+- `mtg-player/src/random.rs` — the seat the invariant fuzzer plays, which is
+  how most of the engine gets exercised at all.
+
+**Changing what the engine asks means changing all three.** A new
+`ResolutionChoiceKind`, a changed `min`/`max`, a prompt that used to be
+asked twice and is now asked once — each seat has to be walked, not just
+the one you were looking at. The failure mode is quiet on every side but
+the one you tested:
+
+- The CLI shows a screen; the LLM seat gets a schema the API rejects with a
+  400 before the model reads it, and the harness turns that into an empty
+  answer indistinguishable from declining (#398 — a `claude -p` seat could
+  not cast Skaab Goliath at all).
+- The CLI and the LLM seat both work; the random seat answers with the
+  minimum, which for an "up to N" slot is *nothing*, so the fuzzer stops
+  reaching a whole class of resolution and the oracle goes quiet without
+  failing.
+
+Two rules follow, and both have been broken by changes that looked local:
+
+1. **Never key a top-level JSON-schema property by a card name or any
+   runtime string.** The API checks top-level keys against
+   `^[a-zA-Z0-9_.-]{1,64}$`. Use an index array (`mark_indices`,
+   `choose_card_set`) or nest the keys a level down.
+2. **Never let a non-interactive seat answer with a constant** where the
+   constant is a legal no-op. Roll it, or the fuzzer covers nothing.
+
+## Player-facing changes: fit, and the size of a question
+
+Two properties the interactive surface is expected to hold, both of which
+have been broken repeatedly (#318, #350, #351, #352, #364, #365, #366):
+
+- **Everything printed fits.** A row wider than its pane is wrapped or
+  clipped deliberately, never printed over the border into the next pane.
+  A list longer than the screen pages, and the pager can reach its last
+  entry. Pages are sized in *rendered lines*, not in entries, or a page of
+  wrapped rows scrolls its own heading away.
+- **No question grows faster than the board.** A prompt offering one row
+  per way of filling it — every subset, every pair, every mode-and-subset —
+  is `C(n,k)` or `|a| x |b|` rows, which is an unreadable menu for a person
+  and a token flood for a model. Ask for the set on one screen, or ask for
+  one slot at a time. `mtg-engine/tests/prompt_shapes.rs` sweeps the card
+  pool for requirements that would reintroduce this.
+
 ## Repository layout
 
 Keep the repo root tidy. When creating a new file, place it in the correct directory instead of at the root:
