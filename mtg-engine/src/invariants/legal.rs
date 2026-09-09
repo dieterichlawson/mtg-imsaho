@@ -336,7 +336,22 @@ fn cast(state: &GameState, acting: PlayerId, id: ObjectId, targets: &[Target], s
     }
     if let Some(b) = registry.get(obj.card_id) {
         let req = b.target_requirement();
-        if !arity_ok(&req, targets.len()) {
+        // A cast whose remaining targets are asked for on their own screen is
+        // *announced* with only the targets named ahead of that slot — none at
+        // all for "up to N", for the modal set, and for two single slots; the
+        // first of the pair for Memory's Journey. CR 601.2c is satisfied when
+        // the slot is answered, which is where `arity_ok` applies and where
+        // the stack invariant applies it.
+        //
+        // `cast.rs` draws this line off exactly this `set_slot` call, so the
+        // offer side draws it off the same one: a requirement that asks is a
+        // requirement whose announcement carries `fixed_len` targets. Judging
+        // an announcement by the full count instead reads every one of them as
+        // a cast with too few targets.
+        let announcing = crate::engine::set_slot(
+                state, acting, id, &req, targets, b, registry)
+            .is_some_and(|s| targets.len() == s.fixed_len && s.max > 0);
+        if !announcing && !arity_ok(&req, targets.len()) {
             v.push(format!("{what} offers {} targets for {req:?}", targets.len()));
         }
         targets_ok(state, acting, id, true, &req, targets, &what, registry, v);

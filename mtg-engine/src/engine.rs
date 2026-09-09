@@ -44,6 +44,7 @@ pub(crate) use targeting::{
     matches_target_filter,
     build_cast_target_spec, detect_modal_choice_mode, generate_ability_targets,
     generate_cast_actions_with_targets,
+    set_slot,
     valid_targets_for_req,
 };
 

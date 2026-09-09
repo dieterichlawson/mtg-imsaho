@@ -1442,3 +1442,41 @@ fn the_remaining_prompt_offers_are_checked_against_their_prompts() {
     }
     flags(&state, P1, &l, &reg, ", not for the eligible blockers");
 }
+
+/// CR 601.2c: a cast whose remaining targets are asked for on their own
+/// screen is *announced* with only the targets named ahead of that slot —
+/// none at all for the modal set — and the offer invariant may not read that
+/// announcement as a cast with too few targets.
+///
+/// Regression for the nightly-fuzz cluster of 2026-09-09 (#405 and its 49
+/// siblings): "a cast asks for its targets instead of enumerating them"
+/// taught `legal_actions` to announce, but not this checker to expect it, so
+/// every Ghoulcaller's Chant offered over a stocked graveyard was a
+/// violation. The exemption is for the announcement only: a count that no
+/// mode allows is still a violation, and the stack invariant still holds the
+/// spell to a full set of targets once it is cast.
+#[test]
+fn a_cast_with_a_slot_still_to_ask_is_announced_with_no_targets() {
+    let (mut state, reg) = base();
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let z1 = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let z2 = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let z3 = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    state.priority_player = Some(P0);
+
+    // One announcement, with its targets left to the screen the cast raises,
+    // rather than one row per way of filling the slot.
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let offers: Vec<&Action> = legal.actions.iter()
+        .filter(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == chant))
+        .collect();
+    assert_eq!(offers.len(), 1, "expected one Chant announcement, got {offers:?}");
+    assert!(matches!(offers[0], Action::CastSpell { targets, .. } if targets.is_empty()),
+        "expected the announcement to name no targets, got {:?}", offers[0]);
+    clean(&state, P0, &legal, &reg);
+
+    // Not a licence for any count: three targets is neither mode.
+    let mut l = legal.clone();
+    l.actions.push(cast_action(chant, vec![Target::Object(z1), Target::Object(z2), Target::Object(z3)]));
+    flags(&state, P0, &l, &reg, "offers 3 targets");
+}
