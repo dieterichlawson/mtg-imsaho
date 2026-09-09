@@ -5023,12 +5023,9 @@ impl CliPlayer {
         description: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
-        let (title, detail) = Self::rule_title(description, 60);
         let pick = SetPick {
-            title,
-            question: format!("{}{}",
-                detail.map(|d| format!("{d} ")).unwrap_or_default(),
-                Self::set_question(min, max, options.len(), "cards below")),
+            title: Self::prompt_source_name(description),
+            question: Self::set_question(min, max, options.len(), "cards below"),
             rows: Self::graveyard_card_rows(view, options),
             min,
             max,
@@ -5209,8 +5206,20 @@ impl CliPlayer {
     /// description is "<card>: choose up to N targets", whose second half
     /// the question line below says better, against the real row count.
     fn target_set_title(description: &str) -> String {
-        let name = description.split_once(": ").map_or(description, |(head, _)| head);
-        format!("CHOOSE TARGETS FOR {}", name.trim().to_uppercase())
+        format!("CHOOSE TARGETS FOR {}", Self::prompt_source_name(description))
+    }
+
+    /// The source named at the head of an engine prompt description, in the
+    /// upper case every marking screen's heading is written in.
+    ///
+    /// The descriptions read "<source>: <what to do>", and the second half
+    /// is what the question line below says better — against the rows
+    /// actually offered rather than against the effect's own wording.
+    fn prompt_source_name(description: &str) -> String {
+        description.split_once(": ")
+            .map_or(description, |(head, _)| head)
+            .trim()
+            .to_uppercase()
     }
 
     /// The question at a target-set prompt.
@@ -7240,6 +7249,12 @@ yourself at some considerable length";
             "CHOOSE TARGETS FOR FEELING OF DREAD");
         assert_eq!(CliPlayer::target_set_title("Memory's Journey"),
             "CHOOSE TARGETS FOR MEMORY'S JOURNEY");
+        // Every marking screen heads itself the same way, off the source the
+        // engine names — and never carries the question with it.
+        assert_eq!(
+            CliPlayer::prompt_source_name(
+                "Curse of Oblivion: choose 2 cards to exile from your graveyard"),
+            "CURSE OF OBLIVION");
         // A bare "up to N": nothing in front, so nothing to say.
         assert_eq!(CliPlayer::target_set_question(&[], 0, 2, 4),
             "Mark up to 2 of the 4 targets below.");
