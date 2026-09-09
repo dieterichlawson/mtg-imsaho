@@ -4189,6 +4189,28 @@ pub enum ResolutionChoiceKind {
         /// requirement — Memory's Journey names a player first.
         fixed: Vec<crate::actions::Target>,
     },
+    /// Choose a set of objects while something resolves, and run the
+    /// source's effect on each of them.
+    ///
+    /// The set form of [`ChooseTarget`](Self::ChooseTarget), for an effect
+    /// that names a number rather than a target: "that player exiles two
+    /// cards from their graveyard" is one question with two answers, and
+    /// asking it twice in a row is two screens of `n` rows where one screen
+    /// of `n` rows will do.
+    ///
+    /// Not [`ChooseTargetSet`](Self::ChooseTargetSet), which belongs to a
+    /// cast still in its origin zone and resumes it; nothing is mid-cast
+    /// here.
+    ChooseObjectSet {
+        description: String,
+        options: Vec<ObjectId>,
+        /// How many must be chosen, and how many may be. Both are clamped to
+        /// what is actually there — a graveyard of one cannot yield two.
+        min: usize,
+        max: usize,
+        /// Applied once per chosen object, in the order chosen.
+        effect: PendingEffect,
+    },
     ChooseExileFromGraveyard {
         description: String,
         /// Graveyard cards eligible for exile — filtered per the spell's

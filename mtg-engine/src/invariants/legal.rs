@@ -669,7 +669,8 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                     }
                 }
                 K::DividePermanentsIntoPiles { .. } | K::ChooseXFunding { .. }
-                | K::ChooseExileFromGraveyard { .. } | K::ChooseTargetSet { .. } => {
+                | K::ChooseExileFromGraveyard { .. } | K::ChooseTargetSet { .. }
+                | K::ChooseObjectSet { .. } => {
                     if !acts.is_empty() {
                         v.push(format!("a structured prompt offers {} flat answers", acts.len()));
                     }

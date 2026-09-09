@@ -636,6 +636,33 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // SpellCast).
                 // CR 601.2c: the "up to N" slot comes back as a set, and
                 // the cast resumes with the fixed targets in front of it.
+                (ResolutionChoiceKind::ChooseObjectSet { min, max, options, effect, .. },
+                 ResolvedChoice::ChosenObjectSet(chosen)) => {
+                    let n = chosen.len();
+                    let refusal = if n < *min || n > *max {
+                        Some(format!("chose {n}, required {min}..={max}"))
+                    } else if chosen.iter().any(|id| !options.contains(id)) {
+                        Some("chosen object is not one the prompt offered".to_string())
+                    } else if chosen.iter().enumerate().any(|(i, id)| chosen[..i].contains(id)) {
+                        Some("the same object twice".to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(err) = refusal {
+                        // Nothing is mid-cast here and nothing has been paid,
+                        // so a refused set is a question still unanswered
+                        // rather than an effect half-applied.
+                        state.log(LogLevel::Debug,
+                            format!("choice refused, {err}"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    let effect = effect.clone();
+                    for id in chosen.clone() {
+                        apply_pending_effect(
+                            &mut *state, &crate::actions::Target::Object(id), &effect, registry);
+                    }
+                }
                 (ResolutionChoiceKind::ChooseTargetSet { min, max, options, fixed, .. },
                  ResolvedChoice::ChosenTargetSet(chosen)) => {
                     let n = chosen.len();

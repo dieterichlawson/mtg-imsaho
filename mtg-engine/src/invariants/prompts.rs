@@ -580,6 +580,26 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 v.push(format!("{w} asks for up to {max} of {} options", options.len()));
             }
         }
+        K::ChooseObjectSet { options, min, max, .. } => {
+            let w = "object-set prompt";
+            for (i, id) in options.iter().enumerate() {
+                if state.get_object(*id).is_none() {
+                    v.push(format!("{w} offers missing #{}", id.0));
+                }
+                if options[..i].contains(id) {
+                    v.push(format!("{w} offers #{} twice", id.0));
+                }
+            }
+            if min > max {
+                v.push(format!("{w} asks for {min}-{max} objects"));
+            }
+            // The bounds are clamped to what is there when the prompt is
+            // built, so a `max` past the options is a question with no legal
+            // answer — the effect would stall rather than resolve.
+            if *max > options.len() {
+                v.push(format!("{w} asks for up to {max} of {} options", options.len()));
+            }
+        }
         // Stash links and exile options live with the stack checks.
         K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. } | K::YesNo { .. } => {}
     }

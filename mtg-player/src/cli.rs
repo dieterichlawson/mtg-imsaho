@@ -3174,6 +3174,16 @@ impl CliPlayer {
                             format!("Target: {}", names.join(", "))
                         }
                     }
+                    ResolvedChoice::ChosenObjectSet(ids) => {
+                        if ids.is_empty() {
+                            "Choose: (none)".into()
+                        } else {
+                            let names: Vec<String> = ids.iter()
+                                .map(|id| Self::perm_name(view, *id))
+                                .collect();
+                            format!("Choose: [{}]", names.join(", "))
+                        }
+                    }
                     ResolvedChoice::ChosenExileSet(ids) => {
                         if ids.is_empty() {
                             "Exile: (none)".into()
@@ -4979,18 +4989,12 @@ impl CliPlayer {
     /// Harvest Pyre for X=0 or silently exiling `options[0]` for a
     /// fixed-count cost, from a card the player never chose (issue #262);
     /// here Enter is refused until the count is right.
-    fn prompt_exile_from_graveyard(
-        view: &GameView,
-        options: &[mtg_engine::ids::ObjectId],
-        min: usize,
-        max: usize,
-        description: &str,
-    ) -> Action {
-        use mtg_engine::actions::ResolvedChoice;
-        let rows: Vec<String> = options.iter().map(|id| {
-            // Cost and P/T, like the graveyard panel — Corpse Lunge's damage
-            // IS the exiled card's power, and the picker showed names only
-            // (issue #132).
+    /// Graveyard cards as the graveyard panel writes them.
+    ///
+    /// Cost and P/T, not names only — Corpse Lunge's damage IS the exiled
+    /// card's power, and the picker used to show neither (issue #132).
+    fn graveyard_card_rows(view: &GameView, options: &[mtg_engine::ids::ObjectId]) -> Vec<String> {
+        options.iter().map(|id| {
             view.graveyards.iter().flat_map(|(_, cards)| cards.iter())
                 .find(|c| c.object_id == *id)
                 .map(|c| {
@@ -5002,7 +5006,50 @@ impl CliPlayer {
                     format!("{}{}{}", c.name, cost, pt)
                 })
                 .unwrap_or_else(|| Self::perm_name(view, *id))
-        }).collect();
+        }).collect()
+    }
+
+    /// A set of objects chosen while something resolves — Curse of
+    /// Oblivion's two cards out of a graveyard.
+    ///
+    /// The same marking screen, with no cancel: this is an effect resolving,
+    /// not a cast being assembled, so there is nothing to back out of and
+    /// nothing has been paid to get back.
+    fn prompt_object_set(
+        view: &GameView,
+        options: &[mtg_engine::ids::ObjectId],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let (title, detail) = Self::rule_title(description, 60);
+        let pick = SetPick {
+            title,
+            question: format!("{}{}",
+                detail.map(|d| format!("{d} ")).unwrap_or_default(),
+                Self::set_question(min, max, options.len(), "cards below")),
+            rows: Self::graveyard_card_rows(view, options),
+            min,
+            max,
+            cancel: None,
+        };
+        // `pick_set` returns `None` only where a cancel was offered.
+        let ks = Self::pick_set(view, &pick).unwrap_or_default();
+        Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenObjectSet(ks.into_iter().map(|k| options[k]).collect()),
+        }
+    }
+
+    fn prompt_exile_from_graveyard(
+        view: &GameView,
+        options: &[mtg_engine::ids::ObjectId],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let rows = Self::graveyard_card_rows(view, options);
         let (title, detail) = Self::rule_title(description, 60);
         let pick = SetPick {
             title,
@@ -5848,7 +5895,8 @@ impl CliPlayer {
             Action::ResolveChoice { choice } => match choice {
                 ResolvedChoice::ChosenTarget(Some(t)) => of_targets(std::slice::from_ref(t), &mut ids),
                 ResolvedChoice::ChosenCard(id) => ids.push(id.0),
-                ResolvedChoice::ChosenSubset(objs) | ResolvedChoice::ChosenExileSet(objs) =>
+                ResolvedChoice::ChosenSubset(objs) | ResolvedChoice::ChosenExileSet(objs)
+                | ResolvedChoice::ChosenObjectSet(objs) =>
                     ids.extend(objs.iter().map(|o| o.0)),
                 // Nothing this row names is an object: an index, a yes/no, a
                 // funding plan. Two such rows that read alike ARE the same
@@ -6044,6 +6092,16 @@ impl Player for CliPlayer {
         }) = legal.resolution_prompt.as_ref()
         {
             return Self::prompt_exile_from_graveyard(view, options, *min, *max, description);
+        }
+
+        // A set of objects chosen while an effect resolves: the same
+        // marking screen. Curse of Oblivion used to ask "choose a card",
+        // then "choose another".
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
+            options, min, max, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_object_set(view, options, *min, *max, description);
         }
 
         // An "up to N" target slot: the same marking screen. The engine
