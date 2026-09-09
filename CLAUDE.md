@@ -45,7 +45,10 @@ Two rules follow, and both have been broken by changes that looked local:
 1. **Never key a top-level JSON-schema property by a card name or any
    runtime string.** The API checks top-level keys against
    `^[a-zA-Z0-9_.-]{1,64}$`. Use an index array (`mark_indices`,
-   `choose_card_set`) or nest the keys a level down.
+   `choose_card_set`) or nest the keys a level down. There are two request
+   paths, not one: `mtg-player/src/llm.rs` for the game and
+   `mtg-draft-runner/src/llm_client.rs` for the draft, which is a separate
+   copy that has already missed one fix (#404). Both assert this rule.
 2. **Never let a non-interactive seat answer with a constant** where the
    constant is a legal no-op. Roll it, or the fuzzer covers nothing.
 
