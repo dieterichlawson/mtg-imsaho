@@ -621,6 +621,30 @@ fn a_cast_time_prompt_belongs_to_the_caster_for_priority() {
     assert_eq!(engine::cast_time_prompt_player(&state), Some(P1));
 }
 
+/// The same rule for the third cast-time prompt: an "up to N" target slot.
+///
+/// Feeling of Dread is an instant, so the non-active player casting it in
+/// response is the ordinary case — and answering the target question is part
+/// of casting it, not a choice made while something resolved.
+#[test]
+fn an_up_to_target_prompt_belongs_to_the_caster_for_priority() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    ready_creature(&mut state, P0, 2, 2);
+    ready_creature(&mut state, P1, 2, 2);
+    // P1 is the non-active player: the interesting seat.
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P1);
+    state.priority_player = Some(P1);
+
+    let asked = cast_onto_stack(&state, &reg, dread, vec![]);
+    assert!(matches!(&asked.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet { .. }, .. })),
+        "test precondition: a target-set prompt, got {:?}", asked.awaiting_action);
+    assert_eq!(engine::cast_time_prompt_player(&asked), Some(P1),
+        "the question is P1's, and so is the priority after it");
+}
+
 /// The same rule, end to end through the game loop: the non-active player
 /// activates Kessig Wolf Run's X ability on the opponent's turn and funds X.
 /// The first priority pass after the funding must be the activator's — the

@@ -1043,17 +1043,20 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// The player a pending cast-time prompt belongs to: the caster of a spell
-/// waiting on its X funding or exile cost, or the activator of an X-cost
-/// ability waiting on its funding. `None` for every other prompt (and for
-/// no prompt). Answering such a prompt finishes the cast or activation, so
-/// that player receives priority afterwards (CR 117.3c).
+/// waiting on its X funding, its exile cost or an "up to N" target slot, or
+/// the activator of an X-cost ability waiting on its funding. `None` for
+/// every other prompt (and for no prompt). Answering such a prompt finishes
+/// the cast or activation, so that player receives priority afterwards
+/// (CR 117.3c).
 #[must_use]
 pub fn cast_time_prompt_player(state: &GameState) -> Option<PlayerId> {
     use crate::state::ResolutionChoiceKind as K;
     match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
             player,
-            choice: K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. },
+            choice: K::ChooseXFunding { .. }
+                | K::ChooseExileFromGraveyard { .. }
+                | K::ChooseTargetSet { .. },
             ..
         }) => Some(*player),
         _ => None,
@@ -1414,10 +1417,10 @@ fn run_game_loop_inner<F>(
                 // A choice raised while a spell or ability resolved hands
                 // priority to the active player afterwards (CR 117.3b). A
                 // choice that completed a cast or an activation — X funding,
-                // an exile cost — is part of that cast, so the caster keeps
-                // priority (CR 117.3c); the non-active player answering
-                // Devil's Play's funding used to lose priority to the
-                // opponent.
+                // an exile cost, an "up to N" target slot — is part of that
+                // cast, so the caster keeps priority (CR 117.3c); the
+                // non-active player answering Devil's Play's funding used to
+                // lose priority to the opponent.
                 state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
             }
 
