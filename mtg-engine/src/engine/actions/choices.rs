@@ -634,6 +634,64 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // non-empty exile_ids and takes the eager path
                 // (tap mana, pay mana, exile, move to stack, fire
                 // SpellCast).
+                // CR 601.2c: the "up to N" slot comes back as a set, and
+                // the cast resumes with the fixed targets in front of it.
+                (ResolutionChoiceKind::ChooseTargetSet { min, max, options, fixed, .. },
+                 ResolvedChoice::ChosenTargetSet(chosen)) => {
+                    let n = chosen.len();
+                    let refusal = if n < *min || n > *max {
+                        Some(format!("chose {n} targets, required {min}..={max}"))
+                    } else if chosen.iter().any(|t| !options.contains(t)) {
+                        Some("chosen target is not one the spell offered".to_string())
+                    } else if chosen.iter().enumerate().any(|(i, t)| chosen[..i].contains(t)) {
+                        Some("the same target twice (CR 601.2c)".to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(err) = refusal {
+                        // Nothing has been paid: the spell is still in its
+                        // origin zone, so a refused set is a cast that did
+                        // not happen, not one that happened for nothing.
+                        state.log(LogLevel::Event,
+                            format!("Target choice rejected: {err}; cast cancelled"));
+                        state.pending_spell_cast = None;
+                        return Applied::ReturnNow;
+                    }
+                    // The stash STAYS while the cast is resubmitted: it is
+                    // what tells the cast handler this spell has already
+                    // been asked, so "none" is an answer rather than a
+                    // question not yet put. It is cleared once the cast has
+                    // been made.
+                    let pending = state.pending_spell_cast.clone()
+                        .expect("pending_spell_cast must be set for ChosenTargetSet");
+                    let mut targets = fixed.clone();
+                    targets.extend(chosen.iter().cloned());
+                    let cast = crate::actions::Action::CastSpell {
+                        object_id: pending.object_id,
+                        targets,
+                        sacrifice: pending.sacrifice,
+                        exile_count: pending.exile_count,
+                        exile_ids: pending.exile_ids.clone(),
+                        alternative_cost: pending.alternative_cost.clone(),
+                        tap_plan: pending.tap_plan.clone(),
+                    };
+                    state.awaiting_action = None;
+                    let mut after = crate::engine::submit_action_inner(state, &cast, registry);
+                    if after.pending_spell_cast.as_ref()
+                        .is_some_and(|p| p.object_id == pending.object_id)
+                    {
+                        after.pending_spell_cast = None;
+                    }
+                    return Applied::Replace(after);
+                }
+                // Backing out of the target choice is backing out of the
+                // cast, the same escape the exile-cost prompt gives (#262).
+                (ResolutionChoiceKind::ChooseTargetSet { .. }, ResolvedChoice::CancelCast) => {
+                    state.pending_spell_cast = None;
+                    state.awaiting_action = None;
+                    state.log(LogLevel::Event, "Cast cancelled at the target choice".to_string());
+                    return Applied::ReturnNow;
+                }
                 (ResolutionChoiceKind::ChooseExileFromGraveyard { min, max, options, .. },
                  ResolvedChoice::ChosenExileSet(chosen)) => {
                     // Validate: every chosen id must be in options,

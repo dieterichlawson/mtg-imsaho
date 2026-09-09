@@ -33,7 +33,7 @@ pub use mana_sources::{
 pub use targeting::can_be_targeted_by;
 pub(crate) use targeting::can_target_player;
 
-pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, legal_discard_actions, notify_discard};
+pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, notify_discard};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};
 pub(crate) use mana_sources::{
     activatable_mana_abilities, execute_tap_plan_and_pay,
@@ -42,7 +42,7 @@ pub(crate) use mana_sources::{
 pub(crate) use targeting::{
     arity_ok,
     matches_target_filter,
-    build_cast_target_spec, combinations, detect_modal_choice_mode, generate_ability_targets,
+    build_cast_target_spec, detect_modal_choice_mode, generate_ability_targets,
     generate_cast_actions_with_targets,
     valid_targets_for_req,
 };
@@ -105,6 +105,30 @@ pub struct LegalActions {
     /// the only legal response is an `Action::ResolveChoice` constructed by
     /// the player based on this prompt's payload.
     pub resolution_prompt: Option<crate::state::ResolutionChoiceKind>,
+    /// Set when the answer is a SET of objects picked out of a list rather
+    /// than one row of a menu — the mulligan bottoming and the cleanup
+    /// discard. `actions` is empty; the player marks what it wants out of
+    /// `options` and answers with `SetPrompt::answer`.
+    pub set_prompt: Option<crate::actions::SetPrompt>,
+}
+
+impl LegalActions {
+    /// Whether this offers the acting player nothing at all — no menu and
+    /// no prompt of any kind.
+    ///
+    /// Four places asked this question with four copies of the same list of
+    /// fields: the mulligan loop, the game loop, the runner's checks and the
+    /// fuzz harness. Adding a fourth kind of prompt left three of them
+    /// saying a bottoming was a game with nothing to do — the mulligan loop
+    /// silently skipped it and kept a seven-card hand, and the fuzzer
+    /// reported a stuck game. One place to add the next kind to.
+    #[must_use]
+    pub fn offers_nothing(&self) -> bool {
+        self.actions.is_empty()
+            && self.combat_prompt.is_none()
+            && self.resolution_prompt.is_none()
+            && self.set_prompt.is_none()
+    }
 }
 
 
@@ -139,7 +163,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard),
@@ -149,7 +173,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     let Some(player) = state.priority_player else {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None };
     };
 
     let mut actions = Vec::new();
@@ -340,7 +364,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         })
         .collect();
 
-    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None }
+    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None, set_prompt: None }
 }
 
 
@@ -1019,17 +1043,20 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// The player a pending cast-time prompt belongs to: the caster of a spell
-/// waiting on its X funding or exile cost, or the activator of an X-cost
-/// ability waiting on its funding. `None` for every other prompt (and for
-/// no prompt). Answering such a prompt finishes the cast or activation, so
-/// that player receives priority afterwards (CR 117.3c).
+/// waiting on its X funding, its exile cost or an "up to N" target slot, or
+/// the activator of an X-cost ability waiting on its funding. `None` for
+/// every other prompt (and for no prompt). Answering such a prompt finishes
+/// the cast or activation, so that player receives priority afterwards
+/// (CR 117.3c).
 #[must_use]
 pub fn cast_time_prompt_player(state: &GameState) -> Option<PlayerId> {
     use crate::state::ResolutionChoiceKind as K;
     match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
             player,
-            choice: K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. },
+            choice: K::ChooseXFunding { .. }
+                | K::ChooseExileFromGraveyard { .. }
+                | K::ChooseTargetSet { .. },
             ..
         }) => Some(*player),
         _ => None,
@@ -1090,7 +1117,7 @@ fn run_mulligan_phase_inner<F>(
         };
 
         let legal = legal_actions(state, registry);
-        if legal.actions.is_empty() {
+        if legal.offers_nothing() {
             // Safety: if somehow no action is legal (e.g. zero cards to
             // bottom), just clear and continue.
             state.awaiting_action = None;
@@ -1245,10 +1272,7 @@ fn run_game_loop_inner<F>(
         // pending" and left the resolved card orphaned in the stack zone
         // (found by seeded fuzzing: Corpse Lunge's exile cost, ug vs wb
         // coverage decks, seed 550).
-        if legal.actions.is_empty()
-            && legal.combat_prompt.is_none()
-            && legal.resolution_prompt.is_none()
-        {
+        if legal.offers_nothing() {
             advance_or_resolve(state, registry);
             continue;
         }
@@ -1312,6 +1336,7 @@ fn run_game_loop_inner<F>(
                     activatable_abilities: vec![],
                     context: None,
                     resolution_prompt: None,
+                    set_prompt: None,
                 };
                 choose_action(state, acting_player, &pass_only)
             } else {
@@ -1392,10 +1417,10 @@ fn run_game_loop_inner<F>(
                 // A choice raised while a spell or ability resolved hands
                 // priority to the active player afterwards (CR 117.3b). A
                 // choice that completed a cast or an activation — X funding,
-                // an exile cost — is part of that cast, so the caster keeps
-                // priority (CR 117.3c); the non-active player answering
-                // Devil's Play's funding used to lose priority to the
-                // opponent.
+                // an exile cost, an "up to N" target slot — is part of that
+                // cast, so the caster keeps priority (CR 117.3c); the
+                // non-active player answering Devil's Play's funding used to
+                // lose priority to the opponent.
                 state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
             }
 

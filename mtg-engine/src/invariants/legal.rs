@@ -9,7 +9,7 @@
 
 use super::stack::arity_ok;
 use super::{player_ok, Violations};
-use crate::actions::{Action, CombatPrompt, ResolvedChoice, Target};
+use crate::actions::{Action, CombatPrompt, ResolvedChoice, SetPromptKind, Target};
 use crate::cards::{CardRegistry, SacrificeCost, TargetRequirement};
 use crate::engine::LegalActions;
 use crate::ids::{ObjectId, PlayerId};
@@ -87,6 +87,21 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
             v.push(format!("{w} with a combat or resolution prompt attached"));
         }
     };
+    // A set prompt belongs to the two questions that ask for a set, and to
+    // nothing else: it is the only thing on offer when it is there, so a
+    // stray one is a menu the player cannot see.
+    let set_prompt_of = |legal: &LegalActions, want: SetPromptKind, w: &str, v: &mut Violations| {
+        match &legal.set_prompt {
+            Some(p) if p.kind == want => {}
+            Some(p) => v.push(format!("{w} carries a {:?} set prompt", p.kind)),
+            None => v.push(format!("{w} with nothing to choose")),
+        }
+    };
+    let no_set_prompt = |v: &mut Violations, w: &str| {
+        if let Some(p) = &legal.set_prompt {
+            v.push(format!("{w} with a {:?} set prompt attached", p.kind));
+        }
+    };
     let no_views = |v: &mut Violations, w: &str| {
         if !legal.castable_spells.is_empty() || !legal.activatable_abilities.is_empty() {
             v.push(format!("{w} lists castable spells or activatable abilities"));
@@ -99,6 +114,7 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
                 v.push(format!("{w} to p{} who does not hold priority (CR 117.1)", acting.0));
             }
             no_prompts(v, w);
+            no_set_prompt(v, w);
             if !matches!(legal.actions.first(), Some(Action::PassPriority)) || !matches!(legal.actions.last(), Some(Action::Concede)) {
                 v.push(format!("{w} does not start with PassPriority and end with Concede"));
             }
@@ -121,6 +137,7 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
             if !legal.actions.is_empty() {
                 v.push(format!("{w} with {} flat actions", legal.actions.len()));
             }
+            no_set_prompt(v, w);
             no_views(v, w);
         }
         Some(AwaitingAction::DeclareBlockers { defending_player }) => {
@@ -134,6 +151,7 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
             if !legal.actions.is_empty() {
                 v.push(format!("{w} with {} flat actions", legal.actions.len()));
             }
+            no_set_prompt(v, w);
             no_views(v, w);
         }
         Some(AwaitingAction::DiscardToHandSize { player, .. }) => {
@@ -141,10 +159,10 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
             if acting != *player {
                 v.push(format!("{w} offered to p{}, not p{}", acting.0, player.0));
             }
-            if legal.actions.is_empty() {
-                v.push(format!("{w} with nothing to choose"));
+            set_prompt_of(legal, SetPromptKind::DiscardToHandSize, w, v);
+            if !legal.actions.is_empty() {
+                v.push(format!("{w} with {} flat actions", legal.actions.len()));
             }
-            only(&|a| matches!(a, Action::DiscardCards { .. }), w, v);
             no_prompts(v, w);
             no_views(v, w);
         }
@@ -155,6 +173,7 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
             }
             only(&|a| matches!(a, Action::MulliganKeep | Action::MulliganMull), w, v);
             no_prompts(v, w);
+            no_set_prompt(v, w);
             no_views(v, w);
         }
         Some(AwaitingAction::BottomAfterMulligan { player, .. }) => {
@@ -162,7 +181,10 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
             if acting != *player {
                 v.push(format!("{w} offered to p{}, not p{}", acting.0, player.0));
             }
-            only(&|a| matches!(a, Action::BottomCards { .. }), w, v);
+            set_prompt_of(legal, SetPromptKind::BottomAfterMulligan, w, v);
+            if !legal.actions.is_empty() {
+                v.push(format!("{w} with {} flat actions", legal.actions.len()));
+            }
             no_prompts(v, w);
             no_views(v, w);
         }
@@ -179,6 +201,7 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
                 v.push(format!("{w} with a combat prompt attached"));
             }
             only(&|a| matches!(a, Action::ResolveChoice { .. }), w, v);
+            no_set_prompt(v, w);
             no_views(v, w);
         }
     }
@@ -576,23 +599,12 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
     let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, acting).iter().map(|o| o.id).collect();
     match &state.awaiting_action {
         Some(AwaitingAction::DiscardToHandSize { discard_count, .. }) => {
-            let k = (*discard_count).min(hand.len());
-            let mut sets = HashSet::new();
-            for a in &legal.actions {
-                if let Action::DiscardCards { cards } = a {
-                    distinct_ids(cards, "discard offer", v);
-                    if cards.len() != k || cards.iter().any(|c| !hand.contains(c)) {
-                        v.push(format!("discard offer {cards:?} is not {k} cards of p{}'s hand (CR 514.1)", acting.0));
-                    }
-                    let set: BTreeSet<ObjectId> = cards.iter().copied().collect();
-                    if !sets.insert(set) {
-                        v.push(format!("discard offer {cards:?} repeats a set"));
-                    }
-                }
-            }
-            if hand.len() <= 14 && sets.len() != choose(hand.len(), k) {
-                v.push(format!("{} discard offers for {} cards of {} (CR 514.1)", sets.len(), k, hand.len()));
-            }
+            // CR 514.1: exactly the cards over the limit, out of that
+            // player's own hand. The prompt is the hand and the number; it
+            // used to be one action per subset, and the check was that
+            // there were C(hand, n) of them.
+            set_prompt_matches(legal, &hand, (*discard_count).min(hand.len()),
+                "discard prompt", "(CR 514.1)", v);
         }
         Some(AwaitingAction::MulliganDecision { .. }) => {
             // CR 103.4: both answers are always on offer, at every count.
@@ -604,20 +616,10 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
             }
         }
         Some(AwaitingAction::BottomAfterMulligan { count, .. }) => {
-            let mut sets = HashSet::new();
-            for a in &legal.actions {
-                if let Action::BottomCards { cards } = a {
-                    distinct_ids(cards, "bottom offer", v);
-                    if cards.len() != *count || cards.iter().any(|c| !hand.contains(c)) {
-                        v.push(format!("bottom offer {cards:?} is not {count} cards of p{}'s hand (CR 103.5)", acting.0));
-                    }
-                    let set: BTreeSet<ObjectId> = cards.iter().copied().collect();
-                    sets.insert(set);
-                }
-            }
-            if *count <= hand.len() && sets.len() != choose(hand.len(), *count) {
-                v.push(format!("{} bottom offers for {} cards of {} (CR 103.5)", sets.len(), count, hand.len()));
-            }
+            // CR 103.4: as many cards as mulligans taken, out of the hand
+            // that was drawn.
+            set_prompt_matches(legal, &hand, (*count).min(hand.len()),
+                "bottoming prompt", "(CR 103.5)", v);
         }
         Some(AwaitingAction::ResolutionChoice { choice, .. }) => {
             let acts: Vec<&ResolvedChoice> = legal.actions.iter().filter_map(|a| match a {
@@ -666,7 +668,8 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                         v.push(format!("pile choice offers {} answers, not the two piles", acts.len()));
                     }
                 }
-                K::DividePermanentsIntoPiles { .. } | K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. } => {
+                K::DividePermanentsIntoPiles { .. } | K::ChooseXFunding { .. }
+                | K::ChooseExileFromGraveyard { .. } | K::ChooseTargetSet { .. } => {
                     if !acts.is_empty() {
                         v.push(format!("a structured prompt offers {} flat answers", acts.len()));
                     }
@@ -733,13 +736,27 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
     }
 }
 
-fn choose(n: usize, k: usize) -> usize {
-    if k > n {
-        return 0;
+/// The set prompt offers exactly the cards it should, and asks for exactly
+/// the number it should.
+///
+/// The offer for a set of cards used to be one action per subset, and this
+/// was a count against the binomial coefficient. What it checks now is the
+/// thing the player actually sees: which cards are on the list, once each,
+/// and how many of them to mark.
+fn set_prompt_matches(legal: &LegalActions, hand: &[ObjectId], want: usize,
+                      w: &str, cr: &str, v: &mut Violations) {
+    let Some(p) = &legal.set_prompt else { return };
+    distinct_ids(&p.options, w, v);
+    let listed: BTreeSet<ObjectId> = p.options.iter().copied().collect();
+    let held: BTreeSet<ObjectId> = hand.iter().copied().collect();
+    if listed != held {
+        v.push(format!("{w} offers {:?}, not the {} cards of the hand {cr}", p.options, hand.len()));
     }
-    let k = k.min(n - k);
-    (0..k).fold(1usize, |acc, i| acc * (n - i) / (i + 1))
+    if p.min != want || p.max != want {
+        v.push(format!("{w} asks for {}-{} of {} cards, not {want} {cr}", p.min, p.max, p.options.len()));
+    }
 }
+
 
 /// The interactive and LLM players act through the collapsed views rather
 /// than the flat list, so the two must offer the same game.

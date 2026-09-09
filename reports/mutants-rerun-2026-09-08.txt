@@ -18,6 +18,11 @@
 #   pass4-caught     killed after that run, by a test written for it by name
 #   pass5-caught     killed by a test written for it while working the
 #                    backlog down one mutant at a time (the third round)
+#
+# `legal.rs::choose`, the binomial coefficient, no longer exists: the offer
+# for a set of cards is a prompt rather than one action per subset, so
+# nothing counts the offers against C(n,k) any more. Its mutants are left
+# recorded below as they were tested.
 #   alive            survived every pass; triaged into
 #                    reports/mutants-accepted.txt or -backlog.txt
 #

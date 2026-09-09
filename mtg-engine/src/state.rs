@@ -4169,6 +4169,26 @@ pub enum ResolutionChoiceKind {
     /// `ExileCreaturesFromGraveyard(n)` (fixed count): exactly `n` must be
     /// chosen. The count constraint is surfaced to players via `min`/`max`
     /// and enforced at resolve time.
+    /// CR 601.2c: the targets for a spell whose requirement is "up to N",
+    /// chosen as a set rather than enumerated as one cast per subset.
+    ///
+    /// Enumerating them is `sum(C(n, k))`: Memory's Journey with a
+    /// fifteen-card graveyard is about 1,150 `CastSpell` actions, one per
+    /// way of naming up to three cards, and that list IS the menu a
+    /// non-interactive seat reads.
+    ChooseTargetSet {
+        description: String,
+        /// The legal targets for the "up to" slot.
+        options: Vec<crate::actions::Target>,
+        /// How many may be chosen. `min` is 0 for a plain "up to N".
+        min: usize,
+        max: usize,
+        /// The spell being cast, still in its origin zone.
+        source_id: ObjectId,
+        /// The targets already fixed by the earlier slots of the
+        /// requirement — Memory's Journey names a player first.
+        fixed: Vec<crate::actions::Target>,
+    },
     ChooseExileFromGraveyard {
         description: String,
         /// Graveyard cards eligible for exile — filtered per the spell's

@@ -174,16 +174,50 @@ fn two_targets_offers_the_pairs() {
         vec![vec![Target::Object(mine), Target::Object(theirs)]]);
 }
 
+/// "Up to N" is one offer and one question, not a subset per announcement:
+/// the candidates a client sees are the prompt's options, and the ceiling is
+/// its `max`.
 #[test]
-fn up_to_targets_offers_every_subset_up_to_the_ceiling() {
+fn up_to_targets_offers_its_candidates_once_under_the_ceiling() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let (mut state, reg, probe) = probing(
+        TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature)));
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Ambush Viper", P1);
+
+    assert_eq!(offered_target_sets(&state, &reg, probe), vec![Vec::<Target>::new()],
+        "one announcement, with the slot still to be filled");
+
+    let asked = cast_onto_stack(&state, &reg, probe, vec![]);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. })
+        = &asked.awaiting_action else {
+        panic!("expected a target-set prompt, got {:?}", asked.awaiting_action);
+    };
+    assert_eq!((*min, *max), (0, 2), "up to two, and none is a choice (CR 601.2c)");
+    assert_eq!(sorted(options.clone()),
+        sorted(vec![Target::Object(mine), Target::Object(theirs)]),
+        "every creature, each once");
+}
+
+/// The ceiling drops to what is actually there — "up to two" with one
+/// creature on the board cannot ask for two.
+#[test]
+fn up_to_targets_asks_for_no_more_than_the_board_holds() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let (mut state, reg, probe) = probing(
         TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature)));
     named_permanent(&mut state, &reg, "Grizzly Bears", P0);
-    named_permanent(&mut state, &reg, "Ambush Viper", P1);
-    let mut sizes: Vec<usize> = offered_target_sets(&state, &reg, probe)
-        .iter().map(Vec::len).collect();
-    sizes.sort_unstable();
-    assert_eq!(sizes, vec![0, 1, 1, 2]);
+
+    let asked = cast_onto_stack(&state, &reg, probe, vec![]);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. })
+        = &asked.awaiting_action else {
+        panic!("expected a target-set prompt, got {:?}", asked.awaiting_action);
+    };
+    assert_eq!((*min, *max, options.len()), (0, 1, 1));
 }
 
 #[test]

@@ -110,6 +110,58 @@ fn candidate_req(req: &crate::cards::TargetRequirement) -> &crate::cards::Target
 
 /// How many targets a requirement takes at most: N for "up to N", one
 /// otherwise.
+/// A target slot that is a *set* rather than a list of announcements: what
+/// may go in it, how many, and how many targets are named before it.
+///
+/// Two requirements have one. `UpToTargets` is the slot itself, with nothing
+/// in front. `TwoTargets(a, UpToTargets(..))` has one fixed target in front
+/// — Memory's Journey names a player, then up to three cards from *their*
+/// graveyard, so the options are not known until the player is.
+///
+/// Everything else is enumerated. A `TwoTargets` with two different slots is
+/// an ordered pair, where which target went in which slot is the answer, and
+/// marking cannot express that. One whose slots want the same thing is a set
+/// (Ghoulcaller's Chant's "two target Zombie creature cards"), but the only
+/// such card is modal and its mode is read back off how many targets it
+/// named, so see `generate_cast_actions_with_targets` for why that one stays
+/// enumerated.
+pub(crate) struct SetSlot {
+    pub options: Vec<crate::actions::Target>,
+    pub min: usize,
+    pub max: usize,
+    /// How many of the cast's targets precede the slot and stay as given.
+    pub fixed_len: usize,
+}
+
+pub(crate) fn set_slot(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    req: &crate::cards::TargetRequirement,
+    chosen: &[crate::actions::Target],
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Option<SetSlot> {
+    use crate::cards::TargetRequirement as R;
+    match req {
+        R::UpToTargets(max, _) => {
+            let options = valid_targets_for_req(state, caster, spell_id, req, behavior, registry);
+            let max = (*max).min(options.len());
+            Some(SetSlot { options, min: 0, max, fixed_len: 0 })
+        }
+        R::TwoTargets(_, second) if matches!(**second, R::UpToTargets(..)) => {
+            // The first slot has to be named before the second's options
+            // are known — Memory's Journey searches the named player's
+            // graveyard.
+            let first = chosen.first()?;
+            let options = second_slot_options(state, caster, spell_id, second, first, behavior, registry);
+            let max = most_targets(second).min(options.len());
+            Some(SetSlot { options, min: fewest_targets(second), max, fixed_len: 1 })
+        }
+        _ => None,
+    }
+}
+
 fn most_targets(req: &crate::cards::TargetRequirement) -> usize {
     match req {
         crate::cards::TargetRequirement::UpToTargets(max, _) => *max,
@@ -166,6 +218,8 @@ fn dedup_by_target_set(actions: &mut Vec<Action>) {
     });
 }
 
+
+
 pub(crate) fn generate_cast_actions_with_targets(
     state: &GameState,
     caster: PlayerId,
@@ -198,7 +252,21 @@ pub(crate) fn generate_cast_actions_with_targets(
             let lower = fewest_targets(req2);
             let max2 = most_targets(req2);
 
+            // A second slot that is itself "up to N" is chosen through the
+            // prompt the cast raises, not enumerated: one action per first
+            // target, with the second slot empty. Memory's Journey is
+            // `TwoTargets(PlayerOnly, UpToTargets(3, ...))`, and enumerating
+            // it over a fifteen-card graveyard is about 1,150 actions.
+            let up_to_second = matches!(**req2, TargetRequirement::UpToTargets(..));
             for t1 in &targets1 {
+                if up_to_second {
+                    actions.push(Action::CastSpell {
+                        object_id: spell_id,
+                        targets: vec![t1.clone()],
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+                    });
+                    continue;
+                }
                 let options = second_slot_options(state, caster, spell_id, req2, t1, behavior, registry);
 
                 for k in lower..=max2.min(options.len()) {
@@ -219,6 +287,13 @@ pub(crate) fn generate_cast_actions_with_targets(
             // twice, once in each order. That is not a second choice; it just
             // doubles the branching factor for whoever is picking.
             //
+            // It is still enumerated, unlike the other set-shaped slots. The
+            // Chant is modal, and a cast's mode is read back off how many
+            // targets it named (`detect_modal_choice_mode`), so the empty
+            // announcement a prompt would need is exactly how mode 1 with
+            // nothing chosen would look. Reducing this one means putting the
+            // mode on `CastSpell` rather than inferring it.
+            //
             // Where the slots differ (Prey Upon's "creature you control fights
             // creature you don't", Memory's Journey's player-then-their-cards)
             // the order carries meaning and both orderings are real.
@@ -227,22 +302,17 @@ pub(crate) fn generate_cast_actions_with_targets(
             }
             actions
         }
-        TargetRequirement::UpToTargets(max, _) => {
-            // Generate all combinations of 1..=max targets for LLM/random expanded list.
-            let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
-            let mut actions = Vec::new();
-            // Start from 0 to allow "up to N" to mean "0 or more" (e.g., Memory's Journey
-            // can be cast targeting just a player with 0 cards).
-            for k in 0..=(*max).min(options.len()) {
-                for combo in target_combinations(&options, k) {
-                    actions.push(Action::CastSpell {
-                        object_id: spell_id,
-                        targets: combo,
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                    });
-                }
-            }
-            actions
+        TargetRequirement::UpToTargets(..) => {
+            // One cast, with the targets left to the prompt the cast raises
+            // (CR 601.2c). This used to enumerate every subset of size
+            // 0..=max, which is `sum(C(n, k))` actions — a menu that grows
+            // exponentially in the board and that a non-interactive seat
+            // reads in full.
+            vec![Action::CastSpell {
+                object_id: spell_id,
+                targets: vec![],
+                sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+            }]
         }
         // All single-target requirement kinds share the canonical target
         // enumeration in `valid_targets_for_req` — one target per action.
@@ -792,21 +862,4 @@ pub(crate) fn generate_ability_targets(
 ) -> Vec<crate::actions::Target> {
     let Some(target_req) = &ab.target_requirement else { return vec![]; };
     valid_targets_for_req(state, controller, source_id, target_req, behavior, registry)
-}
-pub(crate) fn combinations(items: &[ObjectId], k: usize) -> Vec<Vec<ObjectId>> {
-    if k == 0 {
-        return vec![vec![]];
-    }
-    if items.len() < k {
-        return vec![];
-    }
-    let mut result = Vec::new();
-    for i in 0..=items.len() - k {
-        let rest = combinations(&items[i + 1..], k - 1);
-        for mut combo in rest {
-            combo.insert(0, items[i]);
-            result.push(combo);
-        }
-    }
-    result
 }

@@ -277,16 +277,6 @@ enum TargetInput {
     Invalid,
 }
 
-/// One line typed at the exile-cost picker (see
-/// `prompt_exile_from_graveyard`).
-#[derive(Clone, PartialEq, Eq, Debug)]
-enum ExileEntry {
-    /// Abandon the cast: nothing is paid and the spell stays where it is.
-    Cancel,
-    Chosen(Vec<usize>),
-    /// Say why, and ask again.
-    Reject(String),
-}
 
 /// Why auto-pass stops at a prompt.
 ///
@@ -472,6 +462,41 @@ const BLOCKERS_PAGE_KEYS: &str = "b = next page";
 
 /// The pane keys the combat prompts advertise.
 const ATTACK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]";
+/// One line of input at a card-set prompt.
+#[derive(Debug)]
+enum SetInput {
+    Toggle(Vec<usize>),
+    All,
+    None,
+    Confirm,
+    Cancel,
+    Pane(char),
+    NextPage,
+    PrevPage,
+    Invalid(String),
+}
+
+/// How to answer a set-picking screen, and the panes it can step into.
+const SET_HOW_TO: &str = " Type a number to mark or unmark it, several at once if you like. [a=all] [n=none] [enter = done] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
+
+/// What the screen says when the idle key would commit an empty answer
+/// nobody chose (issue #262).
+const SET_NOTHING_MARKED: &str =
+    "nothing marked — mark the cards you want, or press n for none and then enter";
+
+/// One "choose some of these" screen: what it is called, what it asks, the
+/// rows to mark, how many may be marked, and whether it can be abandoned.
+struct SetPick {
+    title: String,
+    question: String,
+    rows: Vec<String>,
+    min: usize,
+    max: usize,
+    /// `Some(label)` when `c` abandons the choice — an additional cost can
+    /// be backed out of, a turn-based action cannot.
+    cancel: Option<&'static str>,
+}
+
 /// How to answer an ordering screen, and the panes it can step into.
 const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
 
@@ -999,7 +1024,7 @@ impl CliPlayer {
     /// menu goes through `render_paged`, which hands back how many rows it
     /// drew.
     fn render(view: &GameView, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
-        let _ = Self::render_paged(view, None, message, log, card_filter, pass_mode_label, 0);
+        let _ = Self::render_paged_noticed(view, None, message, None, log, card_filter, pass_mode_label, 0);
     }
 
     /// Blank the middle panel's part of one row, keeping the frame.
@@ -1051,6 +1076,37 @@ impl CliPlayer {
             shown += 1;
         }
         (offset, shown, paged)
+    }
+
+    /// A prompt's heading, split into the label its rule carries and the
+    /// question that goes under it.
+    ///
+    /// A horizontal rule is one line by construction: a rule wrapped over
+    /// three lines put "Delver of Secrets: reveal Delver of Secrets from
+    /// the top of your library? (not an instant or sorcery -- no
+    /// transform)" through the middle of the frame, and the question a
+    /// player has to read was spliced between two box rules. Nothing that
+    /// has to be READ goes inside a rule now: the rule names the prompt and
+    /// the words go below it, where they wrap like any other pane row.
+    ///
+    /// The label is the part before the first ": " when that is short
+    /// enough to be a name — which is the convention the card prompts
+    /// follow ("Civilized Scholar: choose a card to discard") — and the
+    /// engine's own upper-case context lines ("MAIN PHASE 1", "DECLARE
+    /// ATTACKERS") pass through whole. Anything else is labelled by kind,
+    /// and the whole heading goes below.
+    fn rule_title(message: &str, width: usize) -> (String, Option<String>) {
+        let msg = message.trim();
+        if str_cols(msg) <= width {
+            return (msg.to_string(), None);
+        }
+        if let Some((head, rest)) = msg.split_once(": ") {
+            let rest = rest.trim();
+            if !head.is_empty() && str_cols(head) <= width && !rest.is_empty() {
+                return (head.to_string(), Some(rest.to_string()));
+            }
+        }
+        ("CHOICE".to_string(), Some(msg.to_string()))
     }
 
     /// A pane row too wide for the panel, laid out as several: the first
@@ -1125,6 +1181,20 @@ impl CliPlayer {
     /// menu longer than the pane is paged with 'm', not guessed at).
     /// Returns the page it drew, so the caller can page from it exactly.
     fn render_paged(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
+        Self::render_paged_noticed(view, actions, message, None, log, card_filter, pass_mode_label, menu_offset)
+    }
+
+    /// `render_paged` with a notice: one line of feedback about the last
+    /// keystroke, drawn under the prompt's own heading rather than in place
+    /// of it.
+    ///
+    /// The notice used to REPLACE the heading (`notice.or(context)`), so at
+    /// a mandatory prompt — the one kind with no "pass" to fall back on —
+    /// a refused keystroke took the question off the screen and left the
+    /// player looking at "0: Yes / 1: No" with nothing saying what was
+    /// being asked.
+    #[allow(clippy::too_many_arguments)]
+    fn render_paged_noticed(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, notice: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
 
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -1437,9 +1507,12 @@ impl CliPlayer {
         // hung game" symptom #76 exists to prevent (issue #260). Anchor it
         // to the bottom and let the board scroll off above instead.
         {
+            // One row for the rule, whatever the heading says, plus the
+            // rows the question under it takes.
             let title_rows = message.map_or(1, |msg| {
-                Self::word_wrap(msg, mid_w.saturating_sub(6)).len()
-            });
+                let (_, detail) = Self::rule_title(msg, mid_w.saturating_sub(6));
+                1 + detail.map_or(0, |d| Self::wrap_indented(&format!("  {d}"), mid_w).len())
+            }) + notice.map_or(0, |n| Self::wrap_indented(&format!("  {n}"), mid_w).len());
             // hint row + input row, and for a menu one option and its marker.
             let furniture = if actions.is_some() { 2 } else { 1 };
             let menu_floor = if actions.is_some() { 2 } else { 0 };
@@ -1449,37 +1522,42 @@ impl CliPlayer {
             }
         }
 
-        // Actions separator with optional label (always drawn, wraps if needed)
+        // The actions separator. A rule is ONE line: it carries the
+        // prompt's label and nothing that has to be read, and the question
+        // itself goes on its own rows underneath, where it wraps like any
+        // other pane row. A rule that wrapped put the box borders through
+        // the middle of the sentence a player was trying to read (#121 is
+        // the version of this that only moved the tee).
         if let Some(msg) = message {
             let prefix = "─── ";
-            let indent = "    ";
             let prefix_len = prefix.chars().count(); // 4
-            // Leave room for prefix/indent + trailing space + at least 1 dash
+            // Leave room for the prefix + trailing space + at least 1 dash
             let text_w = mid_w.saturating_sub(prefix_len + 2);
-            let wrapped = Self::word_wrap(msg, text_w);
-            for (i, line) in wrapped.iter().enumerate() {
-                let leader = if i == 0 { prefix } else { indent };
-                let label = format!("{leader}{line} ");
-                // Dash-fill only the LAST line of a wrapped title: padding
-                // every line spliced the box rule into the middle of the
-                // sentence ("... no ───────┤ / transform)") (issue #121).
-                let full = if i == wrapped.len() - 1 {
-                    format!("{}{}", label, "─".repeat(mid_w.saturating_sub(label.chars().count())))
-                } else {
-                    label
-                };
-                let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
-                // The tee borders belong on the row that carries the rule —
-                // the last one — not the first (issue #121).
-                let left_border = if i == wrapped.len() - 1 { "├" } else { "│" };
-                let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
-                    SetAttribute(Attribute::Dim), Print(left_border), SetAttribute(Attribute::Reset));
-                if has_right {
-                    let right_border = if i == wrapped.len() - 1 { "┤" } else { "│" };
-                    let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
-                        SetAttribute(Attribute::Dim), Print(right_border), SetAttribute(Attribute::Reset));
+            let (title, detail) = Self::rule_title(msg, text_w);
+            let label = format!("{prefix}{title} ");
+            let full = format!("{}{}", label, "─".repeat(mid_w.saturating_sub(str_cols(&label))));
+            let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
+                SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
+            if has_right {
+                let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
+                    SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
+            }
+            row += 1;
+            if let Some(detail) = detail {
+                for line in Self::wrap_indented(&format!("  {detail}"), mid_w) {
+                    if row as usize >= h { break; }
+                    Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                    let _ = execute!(out, cursor::MoveTo(mid_col, row), Print(&line));
+                    row += 1;
                 }
+            }
+            for line in notice.map(|n| Self::wrap_indented(&format!("  {n}"), mid_w)).unwrap_or_default() {
+                if row as usize >= h { break; }
+                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                    SetForegroundColor(Color::Red), Print(&line), ResetColor);
                 row += 1;
             }
         } else {
@@ -2329,7 +2407,7 @@ impl CliPlayer {
                 // The engine pre-narrowed each first choice's legal second-slot
                 // options (e.g. "cards from THEIR graveyard" — only the chosen
                 // player's cards).
-                let mut remaining = second[idx].clone();
+                let remaining = second[idx].clone();
                 if *second_max <= 1 {
                     if remaining.is_empty() {
                         return None;
@@ -2337,56 +2415,20 @@ impl CliPlayer {
                     let t2 = Self::prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
                     vec![t1, t2]
                 } else {
-                    // "Up to N" second slot: pick 0..=N.
-                    let mut chosen = vec![t1];
-                    for i in 0..*second_max {
-                        if remaining.is_empty() { break; }
-                        let label = format!("{}: select target {} of up to {}",
-                            spell.name, i + 1, second_max);
-                        match Self::prompt_target_up_to(view, &remaining, &label) {
-                            UpToPick::Pick(target) => {
-                                remaining.retain(|t| *t != target);
-                                chosen.push(target);
-                            }
-                            UpToPick::Done => break,
-                            // This slot had no Cancel row at all: every way
-                            // out of it cast the spell (issue #288).
-                            UpToPick::Cancel => return None,
-                        }
-                    }
-                    if chosen.len() <= *second_min {
-                        // A defensive floor. Cancelling now arrives as
-                        // `UpToPick::Cancel`, and `second_min` is 0 whenever
-                        // `second_max > 1` (targeting.rs derives it as
-                        // `usize::from(second_max == 1)`), so this cannot
-                        // fire today — it stays correct if a wide second slot
-                        // ever gains a minimum (issue #288).
-                        return None;
-                    }
-                    chosen
+                    // A wide second slot is chosen on the marking screen the
+                    // cast raises, not one question per pick: this asked
+                    // "select target 1 of up to 3", then again, and again.
+                    let _ = (&remaining, second_min);
+                    vec![t1]
                 }
             }
-            CastTargetSpec::UpToTargets { max, options } => {
-                let mut chosen = Vec::new();
-                let mut remaining = options.clone();
-                for i in 0..*max {
-                    if remaining.is_empty() { break; }
-                    let label = format!("{}: select target {} of up to {}",
-                        spell.name, i + 1, max);
-                    match Self::prompt_target_up_to(view, &remaining, &label) {
-                        UpToPick::Pick(target) => {
-                            remaining.retain(|t| *t != target);
-                            chosen.push(target);
-                        }
-                        UpToPick::Done => break,
-                        UpToPick::Cancel => return None,
-                    }
-                }
-                // CR 601.2c: an "up to N targets" spell may be cast choosing
-                // zero — including when no legal target exists at all. An
-                // empty choice is a real cast, not a cancel; treating it as
-                // one made the menu entry a silent no-op (issue #49).
-                chosen
+            CastTargetSpec::UpToTargets { .. } => {
+                // Likewise: the cast is submitted with the slot empty and
+                // the engine asks for the whole set at once (CR 601.2c).
+                // Choosing zero is a real cast and is said on that screen by
+                // marking none — it is not this branch returning early,
+                // which is how it became a silent no-op in issue #49.
+                Vec::new()
             }
         };
 
@@ -2578,15 +2620,6 @@ impl CliPlayer {
         }
     }
 
-    /// Pick one target of an "up to N" batch, or stop, or back out.
-    ///
-    /// `Done` casts with the targets chosen so far, which is legal at zero
-    /// (CR 601.2c, issue #49); `Cancel` abandons the cast. An empty line is
-    /// `Cancel` — it used to be `Done`, so the key a player reaches for to
-    /// back out cast the spell (issue #288).
-    fn prompt_target_up_to(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> UpToPick {
-        Self::run_target_chooser(view, options, label, ChooserRows::DoneThenCancel)
-    }
 
     // ── Action formatting ──────────────────────────────────────────
 
@@ -3135,6 +3168,19 @@ impl CliPlayer {
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
+                    ResolvedChoice::ChosenTargetSet(ts) => {
+                        if ts.is_empty() {
+                            "Target: (none)".into()
+                        } else {
+                            let names: Vec<String> = ts.iter().map(|t| match t {
+                                mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+                                mtg_engine::actions::Target::Player(pid) =>
+                                    if *pid == view.you { "You".into() } else { "Opponent".into() },
+                                mtg_engine::actions::Target::Illegal => "(illegal)".into(),
+                            }).collect();
+                            format!("Target: {}", names.join(", "))
+                        }
+                    }
                     ResolvedChoice::ChosenExileSet(ids) => {
                         if ids.is_empty() {
                             "Exile: (none)".into()
@@ -4842,162 +4888,104 @@ impl CliPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
     }
 
-    /// Ask the human to divide permanents into two piles (Liliana of the
-    /// Veil -6). Lists the permanents with indices; a space-separated list
-    /// picks pile 1 and the rest form pile 2. Empty input is a legal empty
-    /// pile 1. The engine no longer enumerates the 2^N subsets (issue #142),
-    /// so the subset is constructed here from the structured prompt.
+    /// Choose the targets for an "up to N" slot (CR 601.2c).
+    ///
+    /// The same marking screen as every other "choose some of these", and
+    /// `c` abandons the cast: nothing has been paid — the spell is still in
+    /// its origin zone — so backing out here costs nothing (#123, #262).
+    fn prompt_target_set(
+        view: &GameView,
+        options: &[mtg_engine::actions::Target],
+        fixed: &[mtg_engine::actions::Target],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+        let label = |t: &Target| match t {
+            Target::Object(id) => Self::target_label(view, *id),
+            Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
+            Target::Illegal => "(illegal)".into(),
+        };
+        let rows: Vec<String> = options.iter().map(&label).collect();
+        let pick = SetPick {
+            title: Self::target_set_title(description),
+            question: Self::target_set_question(
+                &fixed.iter().map(&label).collect::<Vec<_>>(), min, max, options.len()),
+            rows,
+            min,
+            max,
+            cancel: Some("cancel the cast"),
+        };
+        match Self::pick_set(view, &pick) {
+            Some(ks) => Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenTargetSet(ks.into_iter().map(|k| options[k].clone()).collect()),
+            },
+            None => Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
+        }
+    }
+
+    /// A target object as the pane that holds it writes it: a card in a
+    /// graveyard or hand with its cost and P/T, a permanent by name.
+    fn target_label(view: &GameView, id: mtg_engine::ids::ObjectId) -> String {
+        let card = view.your_hand.iter()
+            .chain(view.graveyards.iter().flat_map(|(_, cards)| cards.iter()))
+            .find(|c| c.object_id == id);
+        match card {
+            Some(c) => {
+                let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                let pt = match (c.power, c.toughness) {
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                    _ => String::new(),
+                };
+                format!("{}{}{}", c.name, cost, pt)
+            }
+            None => Self::perm_name(view, id),
+        }
+    }
+
+    /// Divide the permanents into two piles (Liliana of the Veil's -6).
+    ///
+    /// The same marking screen as every other "choose some of these": what
+    /// is marked is pile 1, what is not is pile 2. The engine never
+    /// enumerated the 2^N subsets here (issue #142) and the screen does not
+    /// either.
     fn prompt_pile_division(
         view: &GameView,
         permanents: &[mtg_engine::ids::ObjectId],
         description: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
-
-        Self::render(view, Some(description), &view.display_log, "", None);
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
-        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-        let w = term_w as usize;
-        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
-        let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
-        let mut r = cursor::position().unwrap_or((0, 20)).1;
-        let mut out = stdout();
-
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Yellow),
-            Print(clip("  Pick the permanents for pile 1; the rest form pile 2.")),
-            ResetColor);
-        r += 1;
-        for (i, &id) in permanents.iter().enumerate() {
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                SetAttribute(Attribute::Reset),
-                Print(clip(&format!(": {}", Self::perm_name(view, id)))));
-            r += 1;
-        }
-        let _ = execute!(out, cursor::MoveTo(col, r));
-        let _ = out.flush();
-
-        let hint = "  pile 1 indices (space-separated, blank = empty pile 1): ";
-        let mut error: Option<String> = None;
-        loop {
-            // The last refusal sits on its own row while the player retypes,
-            // and goes when they answer. It used to be printed over the
-            // prompt row, slept on for 700 ms and erased, so it was on screen
-            // only while the program refused to read (issue #291).
-            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
-            if let Some(msg) = &error {
-                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
-                    SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
-            }
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
-            let _ = stdout().flush();
-            let input = Self::read_line(hint);
-            let trimmed = input.trim();
-            let indices: Vec<usize> = if trimmed.is_empty() {
-                vec![]
-            } else {
-                let parsed: Result<Vec<usize>, _> = trimmed.split_whitespace()
-                    .map(str::parse::<usize>)
-                    .collect();
-                let Ok(v) = parsed else {
-                    error = Some("  Invalid input.".into());
-                    continue;
-                };
-                v
-            };
-            if indices.iter().any(|&i| i >= permanents.len()) {
-                error = Some("  Index out of range.".into());
-                continue;
-            }
-            let mut sorted = indices.clone();
-            sorted.sort_unstable();
-            sorted.dedup();
-            if sorted.len() != indices.len() {
-                error = Some("  Duplicate indices.".into());
-                continue;
-            }
-            let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
-                .map(|i| permanents[i])
-                .collect();
-            return Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(chosen) };
-        }
-    }
-
-    /// The prompt line for the exile-cost picker. No variant mentions a
-    /// blank line: blank is not an answer here any more (issue #262).
-    /// Short enough to leave room to type. These read 50, 60 and 61 columns
-    /// wide, against a middle panel 58 columns across at 100 — the first
-    /// width at which the CARDS pane exists, and where the panel is
-    /// narrowest — so two of the three overran the frame before the player
-    /// touched a key, and the panel bound now added to the reader would have
-    /// left nowhere to echo what they typed (issue #320). The wording they
-    /// gave up, "space-separated", moves one row up to the count line, which
-    /// is drawn clipped and has the room.
-    fn exile_prompt_hint(min: usize, max: usize) -> String {
-        if max == 0 {
-            // The degenerate case: no index exists to type.
-            "  n = nothing (X = 0), c = cancel: ".to_string()
-        } else if min == max {
-            format!("  indices, exactly {min} (c = cancel): ")
-        } else {
-            "  indices, n = none (c = cancel): ".to_string()
-        }
-    }
-
-    /// One line typed at the exile-cost picker.
-    fn parse_exile_entry(input: &str, option_count: usize, min: usize, max: usize) -> ExileEntry {
-        let trimmed = input.trim();
-        if trimmed.eq_ignore_ascii_case("c") || trimmed.eq_ignore_ascii_case("cancel") {
-            return ExileEntry::Cancel;
-        }
-        // The deliberate empty selection, in the vocabulary the combat
-        // prompts already use. It is still refused below when the cost
-        // demands a card, which is the point: X=0 stays reachable and a
-        // fixed-count cost stays un-guessable.
-        let indices: Vec<usize> = if trimmed.eq_ignore_ascii_case("n")
-            || trimmed.eq_ignore_ascii_case("none")
-        {
-            Vec::new()
-        } else if trimmed.is_empty() {
-            return ExileEntry::Reject(
-                "  Enter indices, n for none, or c to cancel the cast.".to_string());
-        } else {
-            let parsed: Result<Vec<usize>, _> = trimmed.split_whitespace()
-                .map(str::parse::<usize>)
-                .collect();
-            let Ok(v) = parsed else {
-                return ExileEntry::Reject("  Invalid input.".to_string());
-            };
-            v
+        let rows: Vec<String> = permanents.iter().map(|id| Self::perm_name(view, *id)).collect();
+        let (title, detail) = Self::rule_title(description, 60);
+        let pick = SetPick {
+            title,
+            question: format!("{}Mark the permanents for pile 1; the {} you leave form pile 2.",
+                detail.map(|d| format!("{d} ")).unwrap_or_default(),
+                if permanents.len() == 1 { "one" } else { "rest" }),
+            rows,
+            min: 0,
+            max: permanents.len(),
+            cancel: None,
         };
-        if indices.iter().any(|&i| i >= option_count) {
-            return ExileEntry::Reject("  Index out of range.".to_string());
+        let chosen = Self::pick_set(view, &pick).unwrap_or_default();
+        Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenSubset(chosen.into_iter().map(|k| permanents[k]).collect()),
         }
-        let mut sorted = indices.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        if sorted.len() != indices.len() {
-            return ExileEntry::Reject("  Duplicate indices.".to_string());
-        }
-        if indices.len() < min || indices.len() > max {
-            return ExileEntry::Reject(format!("  Need between {min} and {max} indices."));
-        }
-        ExileEntry::Chosen(indices)
     }
+
+
 
     /// Ask the human which graveyard cards to exile as an additional cost.
     ///
-    /// Lists candidates with indices and accepts a space-separated list.
-    /// Empty input re-prompts; `n`/`none` is the explicit empty selection
-    /// (Harvest Pyre's X=0); `c`/`cancel` abandons the whole cast. Everywhere
-    /// else in this CLI the idle key is the SAFE key (#123), and here it used
-    /// to commit — burning Harvest Pyre for X=0, or silently exiling
-    /// `options[0]` for a fixed-count cost, from a card the player never
-    /// chose (issue #262). Nothing has been paid at this point: the spell is
-    /// still in its origin zone with `pending_spell_cast` set.
+    /// The same marking screen as every other "choose some of these"
+    /// question. `c` abandons the whole cast: nothing has been paid at this
+    /// point — the spell is still in its origin zone with
+    /// `pending_spell_cast` set — and everywhere else in this CLI the idle
+    /// key is the SAFE key (#123). It used to commit on Enter, burning
+    /// Harvest Pyre for X=0 or silently exiling `options[0]` for a
+    /// fixed-count cost, from a card the player never chose (issue #262);
+    /// here Enter is refused until the count is right.
     fn prompt_exile_from_graveyard(
         view: &GameView,
         options: &[mtg_engine::ids::ObjectId],
@@ -5006,107 +4994,38 @@ impl CliPlayer {
         description: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
-
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
-        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-        let w = term_w as usize;
-        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
-        let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
-
-        // The whole prompt in one closure, as the combat prompts do it: an
-        // info pane or a resize has to be able to repaint it, or the screen
-        // is left showing the pane and not the question (#120, #250).
-        let draw = || -> u16 {
-            // Rendered inside the TUI frame — bare println! straddled the
-            // panel borders and let the previous frame bleed through
-            // mid-sentence (#56).
-            Self::render(view, Some(description), &view.display_log, "", None);
-            let mut r = cursor::position().unwrap_or((0, 20)).1;
-            let mut out = stdout();
-            let count_line = if min == max {
-                format!("  Choose exactly {min} card{}, by space-separated index.",
-                    if min == 1 { "" } else { "s" })
-            } else {
-                format!("  Choose between {min} and {max} cards, by space-separated index.")
-            };
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetForegroundColor(Color::Yellow), Print(clip(&count_line)), ResetColor);
-            r += 1;
-            for (i, &id) in options.iter().enumerate() {
-                // Cost and P/T, like the hand and graveyard panels — Corpse
-                // Lunge's damage IS the exiled card's power, and the picker
-                // showed names only (issue #132).
-                let label = view.graveyards.iter()
-                    .flat_map(|(_, cards)| cards.iter())
-                    .find(|c| c.object_id == id)
-                    .map(|c| {
-                        let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
-                        let pt = match (c.power, c.toughness) {
-                            (Some(p), Some(t)) => format!(" {p}/{t}"),
-                            _ => String::new(),
-                        };
-                        format!("{}{}{}", c.name, cost, pt)
-                    })
-                    .unwrap_or_else(|| Self::perm_name(view, id));
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
-                    SetAttribute(Attribute::Reset),
-                    Print(clip(&format!(": {label}"))));
-                r += 1;
-            }
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Dim),
-                Print(clip("  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack]")),
-                SetAttribute(Attribute::Reset));
-            r += 1;
-            let _ = execute!(out, cursor::MoveTo(col, r));
-            let _ = out.flush();
-            r
+        let rows: Vec<String> = options.iter().map(|id| {
+            // Cost and P/T, like the graveyard panel — Corpse Lunge's damage
+            // IS the exiled card's power, and the picker showed names only
+            // (issue #132).
+            view.graveyards.iter().flat_map(|(_, cards)| cards.iter())
+                .find(|c| c.object_id == *id)
+                .map(|c| {
+                    let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                    let pt = match (c.power, c.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    format!("{}{}{}", c.name, cost, pt)
+                })
+                .unwrap_or_else(|| Self::perm_name(view, *id))
+        }).collect();
+        let (title, detail) = Self::rule_title(description, 60);
+        let pick = SetPick {
+            title,
+            question: format!("{}{}",
+                detail.map(|d| format!("{d} ")).unwrap_or_default(),
+                Self::set_question(min, max, options.len(), "cards below to exile")),
+            rows,
+            min,
+            max,
+            cancel: Some("cancel the cast"),
         };
-        let mut r = draw();
-
-        let hint = Self::exile_prompt_hint(min, max);
-        let mut error: Option<String> = None;
-        loop {
-            // The last refusal sits on its own row while the player retypes,
-            // and goes when they answer. It used to be printed over the
-            // prompt row, slept on for 700 ms and erased, so it was on screen
-            // only while the program refused to read (issue #291).
-            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
-            if let Some(msg) = &error {
-                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
-                    SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
-            }
-            let _ = execute!(stdout(), cursor::MoveTo(col, r));
-            let _ = stdout().flush();
-            let input = Self::read_line_redrawing(&hint, &|| { draw(); });
-            // Info panes, then repaint this prompt (issue #120).
-            match input.as_str() {
-                "l" => { Self::show_log(&view.display_log); r = draw(); continue; }
-                "g" => { Self::show_graveyards(view); r = draw(); continue; }
-                "e" => { Self::show_exile(view); r = draw(); continue; }
-                "d" => { Self::show_deck_browser(view); r = draw(); continue; }
-                "i" => { Self::show_battlefield_inspector(view); r = draw(); continue; }
-                "s" => { Self::show_stack(view); r = draw(); continue; }
-                _ => {}
-            }
-            match Self::parse_exile_entry(&input, options.len(), min, max) {
-                // Cancel is unconditionally safe here: this prompt is raised
-                // from exactly one place (the cast handler), always with
-                // `pending_spell_cast` set, and the engine's arm for it
-                // un-stashes that and leaves the spell where it was.
-                ExileEntry::Cancel =>
-                    return Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
-                ExileEntry::Reject(msg) => { error = Some(msg); continue; }
-                ExileEntry::Chosen(indices) => {
-                    let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
-                        .map(|i| options[i])
-                        .collect();
-                    return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
-                }
-            }
+        match Self::pick_set(view, &pick) {
+            Some(ks) => Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenExileSet(ks.into_iter().map(|k| options[k]).collect()),
+            },
+            None => Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
         }
     }
 
@@ -5186,6 +5105,273 @@ impl CliPlayer {
                 "every entry needs a place: missing {}", missing.join(", ")));
         }
         OrderInput::Order(order)
+    }
+
+
+    /// Choose a SET of cards by marking them (issue #360).
+    ///
+    /// The mulligan bottoming and the cleanup discard used to be offered as
+    /// one menu row per subset: "bottom 3 of 7" is 35 rows of `Bottom A, B,
+    /// C`, read as a combination lock, and at 100 columns fourteen of them
+    /// printed as the same five lines. What a player is doing is marking
+    /// cards, so that is what the screen does — every card in hand, its
+    /// mark, and a number to toggle it.
+    ///
+    /// The screen takes the whole terminal, so the board, the stack, the
+    /// graveyards, exile, the log and the deck are one key away and the
+    /// prompt is redrawn when the pane closes. Enter confirms, and only
+    /// when the count is right: there is no way to answer this by accident,
+    /// which at a mandatory irreversible choice is the point (#123, #262).
+    fn prompt_card_set(view: &GameView, prompt: &mtg_engine::actions::SetPrompt, title: &str) -> Action {
+        let rows: Vec<String> = prompt.options.iter()
+            .map(|id| Self::hand_card_label(view, *id)).collect();
+        let pick = SetPick {
+            title: title.trim().to_string(),
+            question: Self::set_question(prompt.min, prompt.max, prompt.options.len(), "below"),
+            rows,
+            min: prompt.min,
+            max: prompt.max,
+            cancel: None,
+        };
+        match Self::pick_set(view, &pick) {
+            Some(ks) => prompt.answer(ks.into_iter().map(|k| prompt.options[k]).collect()),
+            // `cancel: None` means the loop never returns one.
+            None => unreachable!("a card-set prompt with no cancel was cancelled"),
+        }
+    }
+
+    /// The line that says how many to mark.
+    fn set_question(min: usize, max: usize, n: usize, what: &str) -> String {
+        if min == max {
+            format!("Mark {min} of the {n} {what}.")
+        } else if min == 0 {
+            format!("Mark up to {max} of the {n} {what}.")
+        } else {
+            format!("Mark between {min} and {max} of the {n} {what}.")
+        }
+    }
+
+    /// The heading at a target-set prompt.
+    ///
+    /// Every other marking screen is headed by a short upper-case line
+    /// naming the action — "DISCARD 1 CARD", "BOTTOM 2 CARDS AFTER
+    /// MULLIGAN" — and this one is headed the same way. The engine's
+    /// description is "<card>: choose up to N targets", whose second half
+    /// the question line below says better, against the real row count.
+    fn target_set_title(description: &str) -> String {
+        let name = description.split_once(": ").map_or(description, |(head, _)| head);
+        format!("CHOOSE TARGETS FOR {}", name.trim().to_uppercase())
+    }
+
+    /// The question at a target-set prompt.
+    ///
+    /// A slot with something already named in front of it is the second half
+    /// of a question — Memory's Journey names a player and then asks for
+    /// cards from THEIR graveyard, and which player that is decides what the
+    /// rows even are. Say it, or the list has no context.
+    ///
+    /// The engine's own description says "choose up to N" too, and is not
+    /// repeated here: [`set_question`](Self::set_question) says the same
+    /// thing against the actual row count.
+    fn target_set_question(already: &[String], min: usize, max: usize, n: usize) -> String {
+        let prefix = if already.is_empty() {
+            String::new()
+        } else {
+            format!("Targeting {}. ", already.join(", "))
+        };
+        format!("{prefix}{}", Self::set_question(min, max, n, "targets below"))
+    }
+
+    /// A card in hand as the hand panel writes it.
+    fn hand_card_label(view: &GameView, id: mtg_engine::ids::ObjectId) -> String {
+        view.your_hand.iter().find(|c| c.object_id == id)
+            .map(|c| {
+                let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                let pt = match (c.power, c.toughness) {
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                    _ => String::new(),
+                };
+                format!("{}{}{}", c.name, cost, pt)
+            })
+            .unwrap_or_else(|| Self::perm_name(view, id))
+    }
+
+    /// The one screen for "choose some of these": mark what you want.
+    ///
+    /// Every such question in the game comes here — the mulligan bottoming,
+    /// the cleanup discard, an exile cost, a pile division, a spell's "up to
+    /// N targets" — because they are all the same interaction and none of
+    /// them is a menu. Returns the indices marked, or `None` when the player
+    /// abandoned a choice that may be abandoned.
+    fn pick_set(view: &GameView, pick: &SetPick) -> Option<Vec<usize>> {
+        let mut marked: Vec<bool> = vec![false; pick.rows.len()];
+        // Whether the player has touched the selection at all. Where an
+        // empty answer is legal — Harvest Pyre exiling nothing, X=0 — the
+        // idle key would otherwise COMMIT it, which is issue #262: the safe
+        // key must not be an answer. Marking nothing on purpose is `n`.
+        let mut touched = false;
+        let mut notice: Option<String> = None;
+        let mut offset = 0usize;
+        loop {
+            let page = Self::draw_set_screen(pick, &marked, notice.take().as_deref(), offset);
+            let redraw = || { Self::draw_set_screen(pick, &marked, None, offset); };
+            let input = Self::read_line_redrawing("  Mark> ", &redraw);
+            match Self::parse_card_set_input(&input, pick.rows.len(), pick.cancel.is_some()) {
+                SetInput::Toggle(ks) => {
+                    touched = true;
+                    for k in ks {
+                        marked[k] = !marked[k];
+                    }
+                }
+                SetInput::All => { touched = true; marked.iter_mut().for_each(|m| *m = true); }
+                SetInput::None => { touched = true; marked.iter_mut().for_each(|m| *m = false); }
+                SetInput::Cancel => return None,
+                SetInput::Confirm => {
+                    let chosen: Vec<usize> = marked.iter().enumerate()
+                        .filter(|(_, m)| **m).map(|(i, _)| i).collect();
+                    if chosen.len() < pick.min || chosen.len() > pick.max {
+                        notice = Some(Self::set_count_error(chosen.len(), pick.min, pick.max));
+                        continue;
+                    }
+                    if chosen.is_empty() && !touched {
+                        notice = Some(SET_NOTHING_MARKED.to_string());
+                        continue;
+                    }
+                    return Some(chosen);
+                }
+                SetInput::Pane(c) => match c {
+                    's' => Self::show_stack(view),
+                    'i' => Self::show_battlefield_inspector(view),
+                    'g' => Self::show_graveyards(view),
+                    'e' => Self::show_exile(view),
+                    'l' => Self::show_log(&view.display_log),
+                    _ => Self::show_deck_browser(view),
+                },
+                SetInput::NextPage => offset = page.next_offset(),
+                SetInput::PrevPage => offset = page.prev_offset(),
+                SetInput::Invalid(why) => notice = Some(why),
+            }
+        }
+    }
+
+    /// Why a confirmed selection was refused, in the terms the screen asks
+    /// in: an exact count, a ceiling, or a range.
+    fn set_count_error(have: usize, min: usize, max: usize) -> String {
+        let card = |n: usize| if n == 1 { "card" } else { "cards" };
+        if min == max {
+            format!("{have} marked — mark exactly {min} {}", card(min))
+        } else if min == 0 {
+            format!("{have} marked — mark at most {max} {}", card(max))
+        } else {
+            format!("{have} marked — mark between {min} and {max} cards")
+        }
+    }
+
+    /// Draw the whole set-picking screen and return the page that was drawn.
+    fn draw_set_screen(pick: &SetPick, marked: &[bool], notice: Option<&str>,
+                       offset: usize) -> BodyPage {
+        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
+        let w = term_w as usize;
+        let h = term_h as usize;
+        let text_w = w.saturating_sub(2);
+        let chosen = marked.iter().filter(|m| **m).count();
+
+        let mut header: Vec<(Style, String)> = Vec::new();
+        header.push((Style::Title, format!(" {}", pick.title)));
+        for l in Self::word_wrap(&pick.question, text_w) { header.push((Style::Plain, format!(" {l}"))); }
+        let of = if pick.min == pick.max { pick.min } else { pick.max };
+        header.push((Style::Bold, format!(" {chosen} of {of} marked")));
+        header.push((Style::Plain, String::new()));
+
+        let body: Vec<(Style, String)> = pick.rows.iter().enumerate()
+            .flat_map(|(i, r)| {
+                let mark = if marked.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
+                Self::wrap_indented(&format!(" {mark} {i}: {r}"), text_w)
+                    .into_iter().map(|l| (Style::Row, l)).collect::<Vec<_>>()
+            })
+            .collect();
+
+        let mut footer: Vec<(Style, String)> = Vec::new();
+        let how_to = match pick.cancel {
+            Some(label) => format!("{SET_HOW_TO} [c={label}]"),
+            None => SET_HOW_TO.to_string(),
+        };
+        for line in Self::wrap_indented(&how_to, text_w) { footer.push((Style::Dim, line)); }
+        // The notice row and the input row are always reserved.
+        let reserved = header.len() + footer.len() + 2;
+        let avail = h.saturating_sub(reserved).max(1);
+        let page = BodyPage::new(body.len(), avail, offset);
+
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        let mut row: u16 = 0;
+        let put = |out: &mut io::Stdout, row: &mut u16, style: Style, text: &str| {
+            let _ = execute!(out, cursor::MoveTo(0, *row));
+            match style {
+                Style::Title => Self::print_colored(out, Color::Cyan, text),
+                Style::Bold => { let _ = execute!(out, SetAttribute(Attribute::Bold), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Dim => { let _ = execute!(out, SetAttribute(Attribute::Dim), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Row => {
+                    // The mark and the index in bold, the rest through the
+                    // mana colourer.
+                    let split = text.find(": ").map_or(text.len(), |p| p + 2);
+                    let _ = execute!(out, SetAttribute(Attribute::Bold), Print(&text[..split]), SetAttribute(Attribute::Reset));
+                    Self::print_with_mana(out, &text[split..], None);
+                }
+                Style::Plain => Self::print_with_mana(out, text, None),
+            }
+            *row += 1;
+        };
+        for (s, l) in &header { put(&mut out, &mut row, *s, l); }
+        for (s, l) in &body[page.start..page.end] { put(&mut out, &mut row, *s, l); }
+        if page.paged {
+            put(&mut out, &mut row, Style::Dim, &format!(
+                " … showing lines {}-{} of {} — m/p = next/prev page", page.start + 1, page.end, body.len()));
+        }
+        for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
+        if let Some(msg) = notice {
+            let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
+                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+        }
+        row += 1;
+        let _ = execute!(out, cursor::MoveTo(0, row));
+        let _ = out.flush();
+        page
+    }
+
+    /// One line of input at a card-set prompt, read.
+    ///
+    /// Numbers toggle; `a`/`n` mark all or none; an empty line confirms,
+    /// and is refused unless the count is right. The pane keys and the
+    /// pagers are the same letters as everywhere else.
+    fn parse_card_set_input(input: &str, n: usize, can_cancel: bool) -> SetInput {
+        let t = input.trim();
+        if t.is_empty() {
+            return SetInput::Confirm;
+        }
+        if can_cancel && matches!(t, "c" | "cancel") {
+            return SetInput::Cancel;
+        }
+        match t {
+            "s" | "i" | "g" | "e" | "l" | "d" => return SetInput::Pane(t.chars().next().unwrap_or('s')),
+            "m" => return SetInput::NextPage,
+            "p" => return SetInput::PrevPage,
+            "a" | "all" => return SetInput::All,
+            "n" | "none" => return SetInput::None,
+            _ => {}
+        }
+        let mut ks = Vec::new();
+        for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
+            let Ok(k) = tok.parse::<usize>() else {
+                return SetInput::Invalid(format!(
+                    "'{}' is not a number — type the number of a card to mark or unmark it", quote_input(tok)));
+            };
+            if k >= n {
+                return SetInput::Invalid(format!("{k} is out of range — the cards are numbered 0-{}", n.saturating_sub(1)));
+            }
+            ks.push(k);
+        }
+        SetInput::Toggle(ks)
     }
 
     /// The rows of the ordering screen, one per option, as `(index, lines)`
@@ -5850,6 +6036,22 @@ impl Player for CliPlayer {
             return Self::prompt_exile_from_graveyard(view, options, *min, *max, description);
         }
 
+        // An "up to N" target slot: the same marking screen. The engine
+        // stopped enumerating one cast per subset (issue #360), so this is
+        // where the targets are chosen.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+            options, min, max, description, fixed, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_target_set(view, options, fixed, *min, *max, description);
+        }
+
+        // A set of cards out of a list: a checklist, not a menu of every
+        // way of choosing (issue #360). Toggling is the whole interaction.
+        if let Some(prompt) = legal.set_prompt.as_ref() {
+            return Self::prompt_card_set(view, prompt, legal.context.as_deref().unwrap_or("CHOOSE CARDS"));
+        }
+
         // Pile division: prompt for the indices that form pile 1.
         if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
             permanents, description, ..
@@ -5958,8 +6160,12 @@ impl Player for CliPlayer {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
                 PassMode::UntilNextTurn { .. } => "AUTO-PASS",
             });
-            let page = Self::render_paged(view, Some(&display_labels),
-                notice.take().as_deref().or(legal.context.as_deref()),
+            // The notice goes UNDER the heading, not in place of it: the
+            // question a mandatory prompt is asking has to stay on the
+            // screen while the player is being told their last keystroke
+            // was refused.
+            let page = Self::render_paged_noticed(view, Some(&display_labels),
+                legal.context.as_deref(), notice.take().as_deref(),
                 &view.display_log, &self.card_filter, pass_label, menu_offset);
 
 
@@ -6416,6 +6622,70 @@ mod tests {
             "no width is no wrapping, not an endless loop");
     }
 
+    /// Marking cards is toggling, and the idle key confirms rather than
+    /// choosing something (#123).
+    #[test]
+    fn a_card_set_is_marked_by_number_and_confirmed_by_enter() {
+        use SetInput::*;
+        assert!(matches!(CliPlayer::parse_card_set_input("", 7, false), Confirm));
+        assert!(matches!(CliPlayer::parse_card_set_input("   ", 7, false), Confirm));
+        assert!(matches!(CliPlayer::parse_card_set_input("3", 7, false), Toggle(ref v) if *v == vec![3]));
+        assert!(matches!(CliPlayer::parse_card_set_input("0 2, 5", 7, false), Toggle(ref v) if *v == vec![0, 2, 5]));
+        // Toggling the same card twice in one line is two toggles, which is
+        // what "toggle" means — not an error and not a set-union.
+        assert!(matches!(CliPlayer::parse_card_set_input("2 2", 7, false), Toggle(ref v) if *v == vec![2, 2]));
+        assert!(matches!(CliPlayer::parse_card_set_input("a", 7, false), All));
+        assert!(matches!(CliPlayer::parse_card_set_input("none", 7, false), None));
+        assert!(matches!(CliPlayer::parse_card_set_input("g", 7, false), Pane('g')));
+        assert!(matches!(CliPlayer::parse_card_set_input("m", 7, false), NextPage));
+        assert!(matches!(CliPlayer::parse_card_set_input("p", 7, false), PrevPage));
+        match CliPlayer::parse_card_set_input("7", 7, false) {
+            Invalid(why) => assert!(why.contains("numbered 0-6"), "{why}"),
+            other => panic!("out of range is refused, got {other:?}"),
+        }
+        match CliPlayer::parse_card_set_input("two", 7, false) {
+            Invalid(why) => assert!(why.contains("not a number"), "{why}"),
+            other => panic!("a word is refused, got {other:?}"),
+        }
+        // `c` abandons a choice that may be abandoned — an additional cost
+        // — and is just a word at one that may not.
+        assert!(matches!(CliPlayer::parse_card_set_input("c", 7, true), Cancel));
+        assert!(matches!(CliPlayer::parse_card_set_input("cancel", 7, true), Cancel));
+        assert!(matches!(CliPlayer::parse_card_set_input("c", 7, false), Invalid(_)));
+    }
+
+    /// A horizontal rule carries a label and nothing that has to be read.
+    #[test]
+    fn a_rule_is_one_line_and_the_question_goes_under_it() {
+        // Short enough to be the rule's own label.
+        assert_eq!(CliPlayer::rule_title("MAIN PHASE 1", 60), ("MAIN PHASE 1".into(), None));
+        assert_eq!(CliPlayer::rule_title("BOTTOM 3 CARDS AFTER MULLIGAN", 60),
+            ("BOTTOM 3 CARDS AFTER MULLIGAN".into(), None));
+
+        // The card-prompt convention: the source names the rule, the
+        // question goes below it.
+        let long = "Delver of Secrets: reveal Delver of Secrets from the top of your \
+library? (not an instant or sorcery — no transform)";
+        let (title, detail) = CliPlayer::rule_title(long, 60);
+        assert_eq!(title, "Delver of Secrets");
+        assert_eq!(detail.as_deref(), Some("reveal Delver of Secrets from the top of your library? (not an instant or sorcery — no transform)"));
+        assert!(str_cols(&title) <= 60, "the label fits the rule: {title:?}");
+
+        // A heading with no name in front of it is labelled by kind rather
+        // than cut in half, and the whole of it goes below.
+        let bare = "choose a card to discard, then another, and then explain \
+yourself at some considerable length";
+        let (title, detail) = CliPlayer::rule_title(bare, 40);
+        assert_eq!(title, "CHOICE");
+        assert_eq!(detail.as_deref(), Some(bare));
+
+        // And a name that is itself too long for the rule does not become
+        // the label.
+        let (title, _) = CliPlayer::rule_title(
+            "Some Extremely Long Card Name That Runs On: do a thing", 20);
+        assert_eq!(title, "CHOICE");
+    }
+
     /// The rows that describe a menu — the paging marker and the hint line —
     /// are kept inside the panel by wrapping, not by cutting. Every
     /// continuation lines up under the first line's own indent.
@@ -6627,21 +6897,22 @@ mod tests {
     /// Issue #262: bare Enter used to be a committed answer at the
     /// exile-cost prompt — X=0 for Harvest Pyre, or a silently auto-picked
     /// card for a fixed-count cost. Everywhere else in this CLI the idle key
-    /// is the SAFE key (#123).
+    /// is the SAFE key (#123), and on the marking screen it stays one: it
+    /// confirms what is marked, and an untouched screen has nothing marked.
     #[test]
-    fn an_idle_key_at_the_exile_prompt_commits_nothing() {
-        for (min, max) in [(0usize, 3usize), (1, 1), (2, 2)] {
-            let e = CliPlayer::parse_exile_entry("", 3, min, max);
-            assert!(matches!(e, ExileEntry::Reject(_)), "min={min} max={max}: {e:?}");
-            assert_eq!(CliPlayer::parse_exile_entry("   ", 3, min, max), e,
-                "whitespace is the same non-answer");
+    fn an_idle_key_at_a_set_prompt_commits_nothing() {
+        // Where the count is fixed, an empty confirm fails the count.
+        for (min, max) in [(1usize, 1usize), (2, 2), (2, 7)] {
+            let msg = CliPlayer::set_count_error(0, min, max);
+            assert!(msg.contains("0 marked"), "min={min} max={max}: {msg}");
         }
-        // And nothing in the prompt line invites it.
-        for (min, max) in [(0usize, 3usize), (1, 1), (0, 0)] {
-            let hint = CliPlayer::exile_prompt_hint(min, max);
-            assert!(!hint.contains("blank"), "min={min} max={max}: {hint}");
-            assert!(hint.contains("cancel"), "min={min} max={max}: {hint}");
-        }
+        // Where an empty answer is legal, the count does not refuse it — so
+        // the screen does, until the player says so on purpose.
+        assert!(SET_NOTHING_MARKED.contains("n for none"),
+            "the way to answer 'none' is named: {SET_NOTHING_MARKED}");
+        assert!(matches!(CliPlayer::parse_card_set_input("", 3, false), SetInput::Confirm));
+        assert!(matches!(CliPlayer::parse_card_set_input("n", 3, false), SetInput::None),
+            "and 'none' is a mark, not a confirm");
     }
 
     /// Issue #325: the ordering prompt reads one line — the indices in
@@ -6818,29 +7089,20 @@ mod tests {
     /// The prompt row is drawn inside the middle panel, so it has the
     /// panel's width and not the terminal's. Three hints read 50, 60 and 61
 
-    /// columns against a panel 58 columns across at 100 — the first width
-    /// at which the CARDS pane exists, and where the panel is narrowest — so
-    /// two of them erased the frame's own right border before the player
-    /// touched a key, and every character typed after that erased the CARDS
-    /// pane beside it (issue #320).
-    ///
-    /// Fitting is not enough: a hint that ends exactly at the border leaves
-    /// nowhere to echo what is typed, so each one has to leave room for a
-    /// selection as long as this prompt can ask for.
+    /// Issue #320: the prompt line has to fit what it is drawn in. The
+    /// exile cost used to be asked inside the middle panel, where the hint
+    /// plus room to type had to fit 58 columns; it is asked on its own
+    /// screen now, whose how-to wraps to the terminal instead of running
+    /// off it.
     #[test]
-    fn every_exile_hint_fits_the_panel_with_room_to_type() {
-        // "0 1 2 3 4 5 6 " — the longest answer the pool can demand, since a
-        // graveyard cost picks from what a graveyard holds.
-        const ROOM_TO_TYPE: usize = 14;
-        // 100 is the first width at which the CARDS pane exists, which is
-        // also where the middle panel is narrowest — 58 columns.
-        let panel = CliPlayer::middle_panel_width_at(100);
-        assert_eq!(panel, 58, "the width the issue is about");
-        for (min, max) in [(0usize, 0usize), (1, 1), (3, 3), (0, 5), (2, 7)] {
-            let hint = CliPlayer::exile_prompt_hint(min, max);
-            assert!(hint.chars().count() + ROOM_TO_TYPE <= panel,
-                "min={min} max={max}: {:?} is {} columns of a {panel}-column panel",
-                hint, hint.chars().count());
+    fn the_set_screens_how_to_wraps_to_its_screen() {
+        for width in [58usize, 80, 100, 200] {
+            let lines = CliPlayer::wrap_indented(SET_HOW_TO, width);
+            assert!(lines.iter().all(|l| str_cols(l) <= width),
+                "at {width}: {lines:?}");
+            assert_eq!(lines.concat().split_whitespace().collect::<Vec<_>>(),
+                SET_HOW_TO.split_whitespace().collect::<Vec<_>>(),
+                "and every key survives at {width}");
         }
     }
 
@@ -6867,29 +7129,56 @@ mod tests {
     /// The escape and the deliberate empty selection are different keys, and
     /// the empty one is still refused when the cost demands a card.
     #[test]
-    fn the_exile_prompt_has_a_cancel_and_a_none() {
-        for word in ["c", "cancel", "CANCEL"] {
-            assert_eq!(CliPlayer::parse_exile_entry(word, 3, 1, 1), ExileEntry::Cancel);
+    fn a_set_prompt_has_a_cancel_and_a_none() {
+        // An additional cost can be backed out of; a turn-based action
+        // cannot, and there `c` is just a word.
+        for word in ["c", "cancel"] {
+            assert!(matches!(CliPlayer::parse_card_set_input(word, 3, true), SetInput::Cancel));
+            assert!(matches!(CliPlayer::parse_card_set_input(word, 3, false), SetInput::Invalid(_)));
         }
-        // Harvest Pyre for X=0.
-        assert_eq!(CliPlayer::parse_exile_entry("n", 3, 0, 3), ExileEntry::Chosen(vec![]));
-        assert_eq!(CliPlayer::parse_exile_entry("none", 3, 0, 3), ExileEntry::Chosen(vec![]));
+        // Harvest Pyre for X=0: "none" is a mark of its own, so the empty
+        // answer is chosen rather than fallen into.
+        assert!(matches!(CliPlayer::parse_card_set_input("n", 3, true), SetInput::None));
+        assert!(matches!(CliPlayer::parse_card_set_input("none", 3, true), SetInput::None));
         // A fixed-count cost cannot be answered with nothing.
-        assert!(matches!(CliPlayer::parse_exile_entry("n", 3, 1, 1), ExileEntry::Reject(_)));
+        assert!(CliPlayer::set_count_error(0, 1, 1).contains("exactly 1"));
     }
 
-    /// The refusals that were already right stay word for word.
+    /// A target slot with a target already named in front of it says which
+    /// one, because that is what decides the rows.
     #[test]
-    fn the_exile_prompt_keeps_its_existing_refusals() {
-        assert_eq!(CliPlayer::parse_exile_entry("0 1", 3, 2, 2), ExileEntry::Chosen(vec![0, 1]));
-        assert_eq!(CliPlayer::parse_exile_entry("x", 3, 1, 1),
-            ExileEntry::Reject("  Invalid input.".into()));
-        assert_eq!(CliPlayer::parse_exile_entry("5", 3, 1, 1),
-            ExileEntry::Reject("  Index out of range.".into()));
-        assert_eq!(CliPlayer::parse_exile_entry("0 0", 3, 2, 2),
-            ExileEntry::Reject("  Duplicate indices.".into()));
-        assert_eq!(CliPlayer::parse_exile_entry("0", 3, 2, 2),
-            ExileEntry::Reject("  Need between 2 and 2 indices.".into()));
+    fn a_target_set_question_names_what_is_already_targeted() {
+        // The heading names the action, like every other marking screen,
+        // and never carries the question.
+        assert_eq!(CliPlayer::target_set_title("Feeling of Dread: choose up to 2 targets"),
+            "CHOOSE TARGETS FOR FEELING OF DREAD");
+        assert_eq!(CliPlayer::target_set_title("Memory's Journey"),
+            "CHOOSE TARGETS FOR MEMORY'S JOURNEY");
+        // A bare "up to N": nothing in front, so nothing to say.
+        assert_eq!(CliPlayer::target_set_question(&[], 0, 2, 4),
+            "Mark up to 2 of the 4 targets below.");
+        // Memory's Journey: the player was named first, and the cards are
+        // from that player's graveyard.
+        assert_eq!(CliPlayer::target_set_question(&["Opponent".into()], 0, 3, 5),
+            "Targeting Opponent. Mark up to 3 of the 5 targets below.");
+        assert_eq!(CliPlayer::target_set_question(&["You".into(), "Grizzly Bears".into()], 1, 1, 2),
+            "Targeting You, Grizzly Bears. Mark 1 of the 2 targets below.");
+    }
+
+    /// The refusals a set screen gives, and what each is about.
+    #[test]
+    fn a_set_prompt_says_why_it_refused() {
+        match CliPlayer::parse_card_set_input("x", 3, false) {
+            SetInput::Invalid(why) => assert!(why.contains("not a number"), "{why}"),
+            other => panic!("got {other:?}"),
+        }
+        match CliPlayer::parse_card_set_input("5", 3, false) {
+            SetInput::Invalid(why) => assert!(why.contains("numbered 0-2"), "{why}"),
+            other => panic!("got {other:?}"),
+        }
+        assert_eq!(CliPlayer::set_count_error(1, 2, 2), "1 marked — mark exactly 2 cards");
+        assert_eq!(CliPlayer::set_count_error(4, 0, 3), "4 marked — mark at most 3 cards");
+        assert_eq!(CliPlayer::set_count_error(1, 2, 5), "1 marked — mark between 2 and 5 cards");
     }
 
     /// Issue #288: a bare Enter meant three different things at the three
@@ -7125,6 +7414,7 @@ mod tests {
             activatable_abilities: vec![],
             context: None,
             resolution_prompt: None,
+            set_prompt: None,
         }
     }
 

@@ -67,11 +67,12 @@ fn an_up_to_two_spell_carries_its_ceiling_and_its_candidates() {
     assert!(options.contains(&Target::Object(mine)) && options.contains(&Target::Object(theirs)),
         "either creature can be tapped: {options:?}");
 
-    // The flat list agrees: none, either one, or both.
-    let mut sizes: Vec<usize> = offered_target_sets(&state, &reg, dread)
-        .iter().map(Vec::len).collect();
-    sizes.sort_unstable();
-    assert_eq!(sizes, vec![0, 1, 1, 2]);
+    // The flat list is ONE cast with the slot empty: which targets it gets
+    // is asked afterwards, on the screen that asks for a set (issue #360).
+    // It used to be one action per subset — `sum(C(n, k))`, which is 4 here
+    // and about 1,150 for Memory's Journey over a fifteen-card graveyard.
+    let sets = offered_target_sets(&state, &reg, dread);
+    assert_eq!(sets, vec![Vec::<Target>::new()], "one cast, targets unchosen: {sets:?}");
 }
 
 /// Two separate instances of the word "target" are two slots, each with its
@@ -117,6 +118,64 @@ fn an_up_to_n_second_slot_may_be_left_empty() {
         .expect("so is the caster");
     assert_eq!(second[p1_slot], vec![Target::Object(card)]);
     assert!(second[p0_slot].is_empty(), "p0's graveyard is empty: {:?}", second[p0_slot]);
+}
+
+/// CR 601.2c: an "up to N" slot is chosen through a prompt the cast raises,
+/// and the cast resumes with what comes back. Nothing is paid and the card
+/// does not move until it does, so backing out costs nothing.
+#[test]
+fn an_up_to_slot_is_chosen_through_a_prompt_the_cast_raises() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let (mut state, reg) = base();
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Ambush Viper", P1);
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state.priority_player = Some(P0);
+    let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
+    let pool_before = state.get_player(P0).mana_pool.total();
+    assert!(pool_before > 0, "test precondition: the spell is payable");
+
+    let cast = Action::CastSpell {
+        object_id: dread, targets: vec![], sacrifice: None, exile_count: None,
+        exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+    };
+    let asked = mtg_engine::engine::submit_action(&state, &cast, &reg);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. })
+        = &asked.awaiting_action else {
+        panic!("expected a target-set prompt, got {:?}", asked.awaiting_action);
+    };
+    assert_eq!((*min, *max), (0, 2), "up to two, and none is a choice");
+    assert_eq!(options.len(), 2, "both creatures: {options:?}");
+    // Nothing has happened yet: the card is still in hand and the mana is
+    // still in the pool.
+    assert_eq!(asked.objects_in_zone(Zone::Hand, P0).len(), hand_before);
+    assert_eq!(asked.get_player(P0).mana_pool.total(), pool_before);
+
+    // Answering with a set finishes the cast, with those targets.
+    let answer = Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTargetSet(vec![Target::Object(mine), Target::Object(theirs)]),
+    };
+    let cast_done = mtg_engine::engine::submit_action(&asked, &answer, &reg);
+    let on_stack = cast_done.get_object(dread).expect("the spell exists");
+    assert_eq!(on_stack.zone, Zone::Stack, "the cast finished");
+    assert_eq!(on_stack.targets.len(), 2, "with both targets: {:?}", on_stack.targets);
+
+    // And marking none is a real cast of an "up to" spell (CR 601.2c),
+    // not a cancel — the silent no-op of issue #49.
+    let none = Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(vec![]) };
+    let cast_none = mtg_engine::engine::submit_action(&asked, &none, &reg);
+    assert_eq!(cast_none.get_object(dread).unwrap().zone, Zone::Stack, "still a cast");
+    assert!(cast_none.get_object(dread).unwrap().targets.is_empty());
+
+    // Backing out leaves the game exactly where it was.
+    let cancel = Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+    let backed_out = mtg_engine::engine::submit_action(&asked, &cancel, &reg);
+    assert_eq!(backed_out.get_object(dread).unwrap().zone, Zone::Hand);
+    assert_eq!(backed_out.get_player(P0).mana_pool.total(), pool_before, "nothing was paid");
+    assert!(backed_out.pending_spell_cast.is_none() && backed_out.awaiting_action.is_none());
 }
 
 /// A modal spell's spec offers the candidates of every mode at once — the

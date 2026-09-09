@@ -62,9 +62,16 @@ fn memorys_journey_is_castable() {
          never be cast at all");
 }
 
-/// "Up to three" includes zero — targeting just the player is a legal cast.
+/// "Up to three" includes zero — the player alone is a legal cast.
+///
+/// The announcement names only the player: the card slot is asked for
+/// separately, so this checks the whole way through — the prompt appears, an
+/// empty answer is accepted, and the spell reaches the stack with one target.
 #[test]
 fn memorys_journey_can_be_cast_with_no_card_targets() {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
@@ -72,32 +79,58 @@ fn memorys_journey_can_be_cast_with_no_card_targets() {
 
     let actions = cast_actions_for(&state, &reg, spell);
     assert!(actions.iter().any(|t| t.len() == 1 && matches!(t[0], Target::Player(_))),
-        "'up to three' allows zero, so player-only is a legal announcement; \
-         got {actions:?}");
+        "the player slot is announced on its own; got {actions:?}");
+
+    let asked = cast_onto_stack(&state, &reg, spell, vec![Target::Player(P0)]);
+    assert!(matches!(&asked.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTargetSet { min: 0, .. }, .. })),
+        "the card slot is asked for, and none is an answer: {:?}", asked.awaiting_action);
+
+    let none = Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(vec![]) };
+    let cast = mtg_engine::engine::submit_action(&asked, &none, &reg);
+    let on_stack = cast.get_object(spell).expect("the spell exists");
+    assert_eq!(on_stack.zone, Zone::Stack, "zero cards is still a cast");
+    assert_eq!(on_stack.targets, vec![Target::Player(P0)],
+        "the player and nothing else: {:?}", on_stack.targets);
 }
 
-/// "from THEIR graveyard": a card in someone else's graveyard is never offered
-/// alongside a given player target.
+/// "from THEIR graveyard": the cards offered for the second slot are the
+/// named player's, never a third party's.
+///
+/// The slot is one prompt raised after the player is named, so this is a
+/// property of the prompt's options — the place where the constraint has to
+/// hold now that there is no enumeration to inspect.
 #[test]
 fn memorys_journey_only_offers_the_targeted_players_graveyard() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mine = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
     let theirs = named_card_in_graveyard(&mut state, &reg, "Avacyn's Pilgrim", P1);
     let spell = castable_spell(&mut state, &reg, "Memory's Journey", P0);
 
+    // Both players are announceable, so both branches below are reachable.
     let actions = cast_actions_for(&state, &reg, spell);
-    // Guard against passing vacuously: there must actually BE announcements
-    // that include a card, or the loop below proves nothing.
-    let with_cards = actions.iter().filter(|t| t.len() > 1).count();
-    assert!(with_cards > 0, "expected announcements that include card targets; got {actions:?}");
+    for p in [P0, P1] {
+        assert!(actions.iter().any(|t| t.first() == Some(&Target::Player(p))),
+            "p{} is a legal first target; got {actions:?}", p.0);
+    }
 
-    for targets in &actions {
-        let Some(Target::Player(pid)) = targets.first() else { continue };
-        let wrong_owner = if *pid == P0 { theirs } else { mine };
-        assert!(!targets.contains(&Target::Object(wrong_owner)),
+    for (player, ours, theirs) in [(P0, mine, theirs), (P1, theirs, mine)] {
+        let asked = cast_onto_stack(&state, &reg, spell, vec![Target::Player(player)]);
+        let Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTargetSet { options, .. }, .. })
+            = &asked.awaiting_action else {
+            panic!("expected a card-slot prompt for p{}, got {:?}",
+                player.0, asked.awaiting_action);
+        };
+        assert!(options.contains(&Target::Object(ours)),
+            "p{}'s own graveyard card is offered: {options:?}", player.0);
+        assert!(!options.contains(&Target::Object(theirs)),
             "targeting p{} must not offer a card from the other player's \
-             graveyard; got {targets:?}", pid.0);
+             graveyard; got {options:?}", player.0);
     }
 }
 

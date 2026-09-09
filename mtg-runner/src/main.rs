@@ -749,7 +749,7 @@ stops here — pass --save {path} to keep writing it");
                 Some(_) => {}
             }
 
-            if legal.actions.is_empty() && legal.combat_prompt.is_none() && legal.resolution_prompt.is_none() {
+            if legal.offers_nothing() {
                 extra.push("no legal actions and no prompt: the game is stuck".to_string());
             }
 

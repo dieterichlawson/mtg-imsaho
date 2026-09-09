@@ -163,6 +163,9 @@ pub enum ResolvedChoice {
     /// `ExileCreaturesFromGraveyard(n)` (Stitched Drake / Skaab
     /// Ruinator / etc. — fixed count).
     ChosenExileSet(Vec<ObjectId>),
+    /// The targets chosen for an "up to N" slot (CR 601.2c), answering
+    /// `ChooseTargetSet`.
+    ChosenTargetSet(Vec<Target>),
     /// Cancel the cast in progress: the human's escape at the exile-cost
     /// prompt (issue #262), and how a seat answers a fixed-count
     /// exile-choice prompt it cannot satisfy. The engine rolls back: the
@@ -204,6 +207,56 @@ pub enum CombatPrompt {
         #[serde(default)]
         min_blockers: std::collections::HashMap<ObjectId, u32>,
     },
+}
+
+/// What a `SetPrompt` is asking for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetPromptKind {
+    /// CR 103.4: the cards put on the bottom after mulligans.
+    BottomAfterMulligan,
+    /// CR 514.1: the cards discarded down to hand size in the cleanup step.
+    DiscardToHandSize,
+}
+
+/// A choice of a SET of objects out of a list, offered as the list and the
+/// size, not as one action per subset.
+///
+/// Enumerating the subsets is exponential in the hand and unreadable at any
+/// size: "bottom 3 of 7" is 35 rows of `Bottom A, B, C`, which a player has
+/// to read as a combination lock to find the three cards they meant. The
+/// engine offers the cards and the count; a player marks the ones they
+/// want and answers with the action it already answers with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetPrompt {
+    pub kind: SetPromptKind,
+    /// The player being asked.
+    pub player: crate::ids::PlayerId,
+    /// The objects that may be chosen, in the order they should be shown.
+    pub options: Vec<ObjectId>,
+    /// How many must be chosen, at least and at most. Equal for both of
+    /// today's uses; a range is what "up to N" will need.
+    pub min: usize,
+    pub max: usize,
+}
+
+impl SetPrompt {
+    /// The action that answers this prompt with `cards`.
+    #[must_use]
+    pub fn answer(&self, cards: Vec<ObjectId>) -> Action {
+        match self.kind {
+            SetPromptKind::BottomAfterMulligan => Action::BottomCards { cards },
+            SetPromptKind::DiscardToHandSize => Action::DiscardCards { cards },
+        }
+    }
+
+    /// Whether `cards` is a legal answer: the right number, all from the
+    /// list, none of them twice.
+    #[must_use]
+    pub fn accepts(&self, cards: &[ObjectId]) -> bool {
+        cards.len() >= self.min && cards.len() <= self.max
+            && cards.iter().all(|c| self.options.contains(c))
+            && !cards.iter().enumerate().any(|(i, c)| cards[..i].contains(c))
+    }
 }
 
 /// A spell that can be cast, with its valid target options.

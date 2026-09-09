@@ -326,11 +326,12 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
         let awaiting_stashes_spell = matches!(&state.awaiting_action,
             Some(crate::state::AwaitingAction::ResolutionChoice {
                 choice: crate::state::ResolutionChoiceKind::ChooseXFunding { is_ability: false, .. }
-                    | crate::state::ResolutionChoiceKind::ChooseExileFromGraveyard { .. },
+                    | crate::state::ResolutionChoiceKind::ChooseExileFromGraveyard { .. }
+                    | crate::state::ResolutionChoiceKind::ChooseTargetSet { .. },
                 ..
             }));
         if state.pending_spell_cast.is_some() && !awaiting_stashes_spell {
-            v.push("pending_spell_cast stashed with no funding/exile prompt up (leak)".into());
+            v.push("pending_spell_cast stashed with no funding/exile/target prompt up (leak)".into());
         }
         let awaiting_stashes_ability = matches!(&state.awaiting_action,
             Some(crate::state::AwaitingAction::ResolutionChoice {

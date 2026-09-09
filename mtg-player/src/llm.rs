@@ -2082,6 +2082,19 @@ impl LlmPlayer {
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
+                    ResolvedChoice::ChosenTargetSet(ts) => {
+                        if ts.is_empty() {
+                            "Target: (none)".into()
+                        } else {
+                            let names: Vec<String> = ts.iter().map(|t| match t {
+                                mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
+                                mtg_engine::actions::Target::Player(pid) =>
+                                    if *pid == view.you { "You".into() } else { "Opponent".into() },
+                                mtg_engine::actions::Target::Illegal => "(illegal)".into(),
+                            }).collect();
+                            format!("Target: {}", names.join(", "))
+                        }
+                    }
                     ResolvedChoice::ChosenExileSet(ids) => {
                         if ids.is_empty() {
                             "Exile: (none)".to_string()
@@ -2628,6 +2641,89 @@ impl LlmPlayer {
     /// same shape as `choose_pile_division`. Boolean schemas avoid the
     /// provider-specific `minItems`/`maxItems`/`uniqueItems` constraints
     /// that are patchy across Anthropic and Gemini.
+    /// Pick the targets for an "up to N" slot (CR 601.2c): one boolean per
+    /// candidate, the same shape as the exile-cost choice below.
+    fn choose_target_set(
+        &mut self,
+        view: &GameView,
+        options: &[mtg_engine::actions::Target],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+        if options.is_empty() || max == 0 {
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(vec![]) };
+        }
+
+        // One label per option, made unique so two identical cards are two
+        // distinct schema keys.
+        let labels: Vec<String> = options.iter().enumerate().map(|(i, t)| {
+            let name = match t {
+                Target::Object(id) => Self::obj_name(view, *id),
+                Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
+                Target::Illegal => "(illegal)".into(),
+            };
+            format!("{i}: {name}")
+        }).collect();
+        let mut card_list = String::new();
+        for label in &labels {
+            writeln!(card_list, "- {label}").unwrap();
+        }
+        let count_note = if min == max {
+            format!("You must pick exactly {min} target{}.", if min == 1 { "" } else { "s" })
+        } else {
+            format!("You may pick anywhere from {min} to {max} targets.")
+        };
+        let action_text = format!(
+            "{description}\n\n\
+             {count_note} Set true to target it; false to leave it alone.\n\n\
+             Options:\n{card_list}"
+        );
+        let prompt = self.build_prompt(view, &action_text);
+
+        let mut props = serde_json::Map::new();
+        props.insert("thoughts".to_string(), serde_json::json!({
+            "type": "string",
+            "description": "Concise but complete summary of your internal thoughts",
+        }));
+        for label in &labels {
+            props.insert(label.clone(), serde_json::json!({
+                "type": "boolean",
+                "description": "true = target this, false = leave it alone",
+            }));
+        }
+        let mut required = vec!["thoughts".to_string()];
+        for label in &labels { required.push(label.clone()); }
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": props,
+            "required": required,
+            "additionalProperties": false,
+        });
+
+        let response = self.send_message_structured(&prompt, &schema);
+        let mut chosen: Vec<Target> = Vec::new();
+        for (i, label) in labels.iter().enumerate() {
+            if response.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false) {
+                if let Some(t) = options.get(i) {
+                    chosen.push(t.clone());
+                }
+            }
+        }
+        // Too many is a cast the engine would cancel, so trim to what the
+        // slot holds rather than throwing the cast away; too few is only
+        // possible where the slot demands more than the seat marked, and
+        // there the engine's refusal is the right answer.
+        if chosen.len() > max {
+            self.log("VALIDATION", &format!(
+                "target-set: chose {} of at most {max}; keeping the first {max}", chosen.len()));
+            chosen.truncate(max);
+        }
+        self.log("CHOSE", &format!("{} target(s)", chosen.len()));
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(chosen) }
+    }
+
     fn choose_exile_from_graveyard(
         &mut self,
         view: &GameView,
@@ -3004,6 +3100,19 @@ impl Player for LlmPlayer {
             return self.choose_x_funding(view, options, *source_id, *is_ability, description);
         }
 
+        // An "up to N" target slot: boolean-per-target, the same shape as
+        // the exile cost below. The engine stopped enumerating one cast per
+        // subset (issue #360), which for Memory's Journey over a
+        // fifteen-card graveyard was about 1,150 rows of menu.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+            options, min, max, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            let (options, min, max, description) =
+                (options.clone(), *min, *max, description.clone());
+            return self.choose_target_set(view, &options, min, max, &description);
+        }
+
         // Exile-from-graveyard additional cost: boolean-per-card choice.
         // The engine surfaces eligible graveyard cards via `resolution_prompt`;
         // we build a boolean-per-card schema (see `choose_pile_division` for
@@ -3019,9 +3128,13 @@ impl Player for LlmPlayer {
         if legal_actions.iter().any(|a| matches!(a, Action::MulliganKeep)) {
             return self.choose_mulligan(view, legal_actions);
         }
-        // London mulligan bottoming decision.
-        if matches!(legal_actions.first(), Some(Action::BottomCards { .. })) {
-            return self.choose_mulligan_bottom(view, legal_actions);
+        // A set of cards out of a list — the mulligan bottoming and the
+        // cleanup discard. The engine stopped enumerating the C(hand, n)
+        // subsets (issue #360), so the seat picks indices out of its hand
+        // rather than one row out of a list of every way of picking.
+        if let Some(prompt) = legal.set_prompt.as_ref() {
+            let prompt = prompt.clone();
+            return self.choose_card_set(view, &prompt);
         }
 
         // Pile division (e.g. Liliana of the Veil -6): structured prompt —
@@ -3366,75 +3479,82 @@ from your hand to put on the bottom of your library.\n\
     /// Sends a structured-JSON prompt with the numbered hand and expected
     /// count. Falls back to the first enumerated legal `BottomCards` option
     /// if the response is malformed.
-    fn choose_mulligan_bottom(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
-        // Determine N from the legal actions (every option has the same
-        // length — enumerated combinations).
-        let Some(n) = legal_actions.iter().find_map(|a| match a {
-            Action::BottomCards { cards } => Some(cards.len()),
-            _ => None,
-        }) else {
-            return legal_actions[0].clone();
-        };
-
+    /// Pick a set of cards out of the hand: which to bottom after a
+    /// mulligan (CR 103.4), or which to discard down to hand size (CR
+    /// 514.1). One question, answered with the indices.
+    fn choose_card_set(&mut self, view: &GameView, prompt: &mtg_engine::actions::SetPrompt) -> Action {
+        use mtg_engine::actions::SetPromptKind;
+        let n = prompt.min;
         let hand_text = Self::format_numbered_hand(view);
-        let opp_mulls_text = Self::format_opponent_mulls(view);
-        let play_draw = if view.active_player == view.you {
-            "You are on the play"
-        } else {
-            "You are on the draw"
+        let full_prompt = match prompt.kind {
+            SetPromptKind::BottomAfterMulligan => {
+                let opp_mulls_text = Self::format_opponent_mulls(view);
+                let play_draw = if view.active_player == view.you {
+                    "You are on the play"
+                } else {
+                    "You are on the draw"
+                };
+                Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text)
+            }
+            SetPromptKind::DiscardToHandSize => {
+                let plural = if n == 1 { "" } else { "s" };
+                format!(
+                    "[DISCARD {n} CARD{}]\n\
+                     Cleanup: your hand is over seven cards. Discard {n} card{plural} (CR 514.1).\n\
+                     \n\
+                     Your hand:\n\
+                     {hand_text}",
+                    if n == 1 { "" } else { "S" })
+            }
         };
 
-        let full_prompt = Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text);
-
-        let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
+        let what = match prompt.kind {
+            SetPromptKind::BottomAfterMulligan => "to put on the bottom of your library",
+            SetPromptKind::DiscardToHandSize => "to discard",
+        };
+        let valid_indices: Vec<serde_json::Value> = (0..prompt.options.len())
             .map(|i| serde_json::json!(i))
             .collect();
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
-                "bottom_indices": {
+                "card_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": valid_indices},
-                    "minItems": n,
-                    "maxItems": n,
-                    "description": format!("Exactly {} distinct 0-indexed positions in your hand to put on the bottom of your library", n)
+                    "minItems": prompt.min,
+                    "maxItems": prompt.max,
+                    "description": format!("Exactly {n} distinct 0-indexed positions in your hand {what}")
                 }
             },
-            "required": ["thoughts", "bottom_indices"]
+            "required": ["thoughts", "card_indices"]
         });
 
         let response = self.send_message_structured(&full_prompt, &schema);
 
-        // Parse and validate bottom_indices.
-        let indices: Option<Vec<usize>> = response["bottom_indices"].as_array().map(|arr| {
+        let indices: Option<Vec<usize>> = response["card_indices"].as_array().map(|arr| {
             arr.iter()
                 .filter_map(serde_json::Value::as_i64)
                 .filter(|i| *i >= 0)
                 .map(|i| usize::try_from(i).unwrap_or(0))
                 .collect()
         });
-        let fallback = || -> Action {
-            self.log_rejected("Invalid bottom_indices — defaulting to first legal bottom option");
-            legal_actions[0].clone()
-        };
-
-        let indices = match indices {
-            Some(v) if v.len() == n => v,
-            _ => return fallback(),
-        };
-        // Check distinct and in range.
+        // The fallback is the first `min` cards of the hand, which is the
+        // same answer RandomPlayer gives and is always legal — there is no
+        // enumerated list to fall back into any more.
         let mut seen = std::collections::HashSet::new();
-        for &i in &indices {
-            if i >= view.your_hand.len() || !seen.insert(i) {
-                return fallback();
-            }
+        let ok = indices.as_ref().is_some_and(|v| {
+            v.len() >= prompt.min && v.len() <= prompt.max
+                && v.iter().all(|&i| i < prompt.options.len() && seen.insert(i))
+        });
+        if !ok {
+            self.log_rejected("Invalid card_indices — defaulting to the first cards in hand");
+            return prompt.answer(prompt.options.iter().take(prompt.min).copied().collect());
         }
-        let cards: Vec<ObjectId> = indices.iter()
-            .map(|&i| view.your_hand[i].object_id)
-            .collect();
-        self.log("CHOSE", &format!("bottom indices {indices:?}"));
-        Action::BottomCards { cards }
+        let indices = indices.unwrap_or_default();
+        let cards: Vec<ObjectId> = indices.iter().map(|&i| prompt.options[i]).collect();
+        self.log("CHOSE", &format!("card set {indices:?}"));
+        prompt.answer(cards)
     }
 
     /// Format keyword abilities as a comma-separated lowercase string.
@@ -4000,6 +4120,7 @@ mod tests {
             activatable_abilities: Vec::new(),
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
+            set_prompt: None,
         }
     }
 

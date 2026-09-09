@@ -181,6 +181,72 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
             // Fall through to the eager path and pay as X=0.
         }
 
+        // CR 601.2c: an "up to N" slot is chosen through a prompt rather
+        // than enumerated as one cast per subset. The cast stays in its
+        // origin zone with nothing paid until the set comes back, exactly
+        // as the funding and exile-cost prompts below and above do.
+        //
+        // The slot is unfilled when the submitted targets stop where it
+        // starts: nothing at all for a bare "up to N", the first target
+        // alone for Memory's Journey's player-then-cards. A caller that
+        // named them (a test, a replay, a resumed cast) has more than that
+        // and goes straight through.
+        // A cast that is already mid-flight has been asked: its stash names
+        // it. Without this the answer "none" would be indistinguishable
+        // from "not asked yet" and the prompt would be raised again, for
+        // ever — which is the same ambiguity `exile_count: Some(_)` settles
+        // for the exile cost below.
+        let resuming = state.pending_spell_cast.as_ref()
+            .is_some_and(|p| p.object_id == object_id);
+        if let Some(slot) = (!resuming).then(|| {
+            crate::engine::targeting::set_slot(&state, player, object_id, &target_req, targets, behavior, registry)
+        }).flatten()
+        {
+            let crate::engine::targeting::SetSlot { options, min, max, fixed_len } = slot;
+            if targets.len() == fixed_len && max > 0 {
+                let non_x_mana_cost = if has_x { cost.without_x() } else { cost.clone() };
+                state.pending_spell_cast = Some(crate::state::PendingSpellCast {
+                    object_id,
+                    player,
+                    card_id,
+                    targets: targets.to_vec(),
+                    sacrifice,
+                    exile_ids: exile_ids.to_vec(),
+                    exile_count,
+                    tap_plan: tap_plan.to_vec(),
+                    alternative_cost: alternative_cost.cloned(),
+                    non_x_mana_cost,
+                    is_flashback,
+                    cast_from_graveyard: is_cast_from_graveyard,
+                });
+                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                    player,
+                    source: object_id,
+                    choice: crate::state::ResolutionChoiceKind::ChooseTargetSet {
+                        description: {
+                            // "up to two" and "two" are different questions,
+                            // and the prompt is the only place the player is
+                            // told which one this is.
+                            let how_many = if min == max {
+                                format!("{min}")
+                            } else {
+                                format!("up to {max}")
+                            };
+                            format!("{}: choose {how_many} target{}",
+                                data.name, if max == 1 { "" } else { "s" })
+                        },
+                        options,
+                        min,
+                        max,
+                        source_id: object_id,
+                        fixed: targets.to_vec(),
+                    },
+                });
+                // Spell stays where it is; no mana tapped or paid yet.
+                return Applied::ReturnNow;
+            }
+        }
+
         // Rules-strict exile-cost casting: a spell with an exile-from-graveyard
         // additional cost sets up a `ChooseExileFromGraveyard` prompt and stays
         // in its origin zone until the player submits `ChosenExileSet`, exactly

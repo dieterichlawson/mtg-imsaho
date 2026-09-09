@@ -552,6 +552,34 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 v.push("a name/type prompt offers nothing".into());
             }
         }
+        // CR 601.2c: the options for an "up to N" slot are targets the
+        // spell could legally have chosen, offered once each, and the slot
+        // never asks for more than it holds.
+        K::ChooseTargetSet { options, min, max, fixed, .. } => {
+            let w = "target-set prompt";
+            for (i, t) in options.iter().enumerate() {
+                match t {
+                    Target::Object(id) if state.get_object(*id).is_none() =>
+                        v.push(format!("{w} offers missing #{}", id.0)),
+                    Target::Player(p) if !player_ok(state, *p) =>
+                        v.push(format!("{w} offers p{} who is not a player", p.0)),
+                    Target::Illegal => v.push(format!("{w} offers an Illegal target")),
+                    _ => {}
+                }
+                if options[..i].contains(t) {
+                    v.push(format!("{w} offers {t:?} twice"));
+                }
+                if fixed.contains(t) {
+                    v.push(format!("{w} offers {t:?} which the spell already targets"));
+                }
+            }
+            if min > max {
+                v.push(format!("{w} asks for {min}-{max} targets"));
+            }
+            if *max > options.len() {
+                v.push(format!("{w} asks for up to {max} of {} options", options.len()));
+            }
+        }
         // Stash links and exile options live with the stack checks.
         K::ChooseXFunding { .. } | K::ChooseExileFromGraveyard { .. } | K::YesNo { .. } => {}
     }

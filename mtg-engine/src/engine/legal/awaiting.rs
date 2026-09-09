@@ -10,6 +10,18 @@ use crate::combat;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState};
 
+/// The prompt for a set of cards chosen out of a hand — the mulligan
+/// bottoming and the cleanup discard, which differ only in what the answer
+/// is called. `count` is clamped to the hand: a player asked to discard
+/// more cards than they hold discards all of them (CR 514.1).
+fn hand_set_prompt(state: &GameState, player: crate::ids::PlayerId, count: usize,
+                   kind: crate::actions::SetPromptKind) -> crate::actions::SetPrompt {
+    let options: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
+        .iter().map(|o| o.id).collect();
+    let n = count.min(options.len());
+    crate::actions::SetPrompt { kind, player, options, min: n, max: n }
+}
+
 /// The legal actions for the pending `awaiting_action`, or `None` if the
 /// engine is not waiting on one.
 pub(crate) fn legal_actions_while_awaiting(
@@ -46,6 +58,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 activatable_abilities: vec![],
                 context: Some("DECLARE ATTACKERS".into()),
                 resolution_prompt: None,
+                set_prompt: None,
             }
         }
         AwaitingAction::DeclareBlockers { defending_player } => {
@@ -86,13 +99,21 @@ pub(crate) fn legal_actions_while_awaiting(
                 activatable_abilities: vec![],
                 context: Some("DECLARE BLOCKERS".into()),
                 resolution_prompt: None,
+                set_prompt: None,
             }
         }
         AwaitingAction::DiscardToHandSize {
             player,
             discard_count,
         } => LegalActions {
-            actions: legal_discard_actions(state, *player, *discard_count),
+            // CR 514.1: the cards are chosen, not picked out of a list of
+            // every way of choosing them. Enumerating the subsets is
+            // C(hand, n) rows of "Discard A, B, C" — 35 of them at a hand
+            // of seven discarding three — and reading a menu like that is
+            // working a combination lock.
+            actions: vec![],
+            set_prompt: Some(hand_set_prompt(state, *player, *discard_count,
+                crate::actions::SetPromptKind::DiscardToHandSize)),
             combat_prompt: None,
             castable_spells: vec![],
             activatable_abilities: vec![],
@@ -118,26 +139,20 @@ pub(crate) fn legal_actions_while_awaiting(
                     "MULLIGAN DECISION (mulligans taken: {mull_count})"
                 )),
                 resolution_prompt: None,
+                set_prompt: None,
             }
         }
         AwaitingAction::BottomAfterMulligan { player, count } => {
-            // Enumerate combinations of `count` cards from hand so the
-            // action list is self-contained for simple players. Rich
-            // players (LLM/CLI) can bypass this and construct a
-            // BottomCards action directly — submit_action validates that
-            // the chosen cards are in hand and distinct.
-            let hand: Vec<ObjectId> = state
-                .objects_in_zone(Zone::Hand, *player)
-                .iter()
-                .map(|o| o.id)
-                .collect();
-            let combos = combinations(&hand, *count);
-            let actions: Vec<Action> = combos
-                .into_iter()
-                .map(|cards| Action::BottomCards { cards })
-                .collect();
+            // CR 103.4: the cards are chosen. This used to enumerate every
+            // subset so the action list was self-contained for simple
+            // players, which is C(hand, count) entries — 35 at "bottom 3 of
+            // 7", 14 of them printing as the same five lines at 100
+            // columns. The prompt says which cards and how many; every
+            // player builds the answer from that.
             LegalActions {
-                actions,
+                actions: vec![],
+                set_prompt: Some(hand_set_prompt(state, *player, *count,
+                    crate::actions::SetPromptKind::BottomAfterMulligan)),
                 combat_prompt: None,
                 castable_spells: vec![],
                 activatable_abilities: vec![],
@@ -281,6 +296,7 @@ pub(crate) fn legal_actions_while_awaiting(
                     })
                     .collect(),
                 ResolutionChoiceKind::ChooseXFunding { .. }
+                | ResolutionChoiceKind::ChooseTargetSet { .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { .. } => {
                     // Structured prompt — can't be enumerated as a flat
                     // action list. Player implementations see the
@@ -296,6 +312,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseCardName { description, .. }
                 | ResolutionChoiceKind::ChooseXFunding { description, .. }
                 | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. }
+                | ResolutionChoiceKind::ChooseTargetSet { description, .. }
                 | ResolutionChoiceKind::ChooseTriggerOrder { description, .. }
                 | ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. }
                 | ResolutionChoiceKind::ChooseDamageEffect { description, .. } => {
@@ -357,6 +374,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 activatable_abilities: vec![],
                 context: Some(context),
                 resolution_prompt: Some(choice.clone()),
+                set_prompt: None,
             }
         }
     })

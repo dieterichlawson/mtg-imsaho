@@ -111,9 +111,10 @@ fn every_prompt_shape_is_checked_against_its_prompt() {
     let legal = mtg_engine::engine::legal_actions(&s, &reg);
     clean(&s, P0, &legal, &reg);
     flags(&s, P1, &legal, &reg, "bottoming prompt offered to p1, not p0");
+    // The answer is a set, so there is no menu beside the prompt at all.
     let mut l = legal.clone();
     l.actions.push(Action::MulliganKeep);
-    flags(&s, P0, &l, &reg, "bottoming prompt offers MulliganKeep");
+    flags(&s, P0, &l, &reg, "bottoming prompt with 1 flat actions");
 
     // A discard prompt.
     let mut s = state.clone();
@@ -124,7 +125,7 @@ fn every_prompt_shape_is_checked_against_its_prompt() {
     clean(&s, P0, &legal, &reg);
     flags(&s, P1, &legal, &reg, "discard prompt offered to p1, not p0");
     let mut l = legal.clone();
-    l.actions.clear();
+    l.set_prompt = None;
     flags(&s, P0, &l, &reg, "discard prompt with nothing to choose");
 
     // A resolution prompt carries the choice that is actually pending.
@@ -751,7 +752,7 @@ fn a_tap_plan_taps_each_source_once() {
 /// CR 514.1/103.5: a "choose N of your hand" prompt offers every subset of
 /// that size, once each — all C(n, k) of them.
 #[test]
-fn a_choose_n_of_your_hand_prompt_offers_every_subset_once() {
+fn a_choose_n_of_your_hand_prompt_offers_the_hand_and_the_count() {
     let (mut state, reg) = base();
     let hand: Vec<ObjectId> = (0..5)
         .map(|_| spell_in_hand(&mut state, &reg, "Moment of Heroism", P0))
@@ -760,69 +761,109 @@ fn a_choose_n_of_your_hand_prompt_offers_every_subset_once() {
     state.step = Step::Cleanup;
     state.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 2 });
     let legal = mtg_engine::engine::legal_actions(&state, &reg);
-    assert_eq!(legal.actions.len(), 10, "precondition: C(5, 2) offers");
+    // The offer is the hand and the number, not one row per subset: the
+    // subsets are C(5, 2) here and C(7, 3) at a real bottoming, which is a
+    // menu read as a combination lock (issue #360).
+    assert!(legal.actions.is_empty(), "no enumerated subsets: {:?}", legal.actions);
+    let prompt = legal.set_prompt.clone().expect("a set prompt");
+    assert_eq!(prompt.options, hand, "the whole hand, in hand order");
+    assert_eq!((prompt.min, prompt.max), (2, 2));
     clean(&state, P0, &legal, &reg);
 
-    // One subset missing.
+    // A prompt that leaves a card out, or offers one twice.
     let mut l = legal.clone();
-    l.actions.pop();
-    flags(&state, P0, &l, &reg, "9 discard offers for 2 cards of 5 (CR 514.1)");
+    l.set_prompt.as_mut().unwrap().options.pop();
+    flags(&state, P0, &l, &reg, "not the 5 cards of the hand (CR 514.1)");
+    let mut l = legal.clone();
+    l.set_prompt.as_mut().unwrap().options[1] = hand[0];
+    flags(&state, P0, &l, &reg, "discard prompt lists #");
 
-    // One subset offered twice — a repeat, and one too few distinct sets.
-    let mut l = legal.clone();
-    let dup = l.actions[0].clone();
-    l.actions[9] = dup;
-    flags(&state, P0, &l, &reg, "repeats a set");
+    // A prompt that asks for the wrong number.
+    for (min, max) in [(1usize, 1usize), (2, 3), (3, 3)] {
+        let mut l = legal.clone();
+        l.set_prompt.as_mut().unwrap().min = min;
+        l.set_prompt.as_mut().unwrap().max = max;
+        flags(&state, P0, &l, &reg, "not 2 (CR 514.1)");
+    }
 
-    // A subset of the wrong size, or naming a card that is not in hand.
+    // No prompt at all, and a menu smuggled in beside it.
     let mut l = legal.clone();
-    l.actions[0] = Action::DiscardCards { cards: vec![hand[0]] };
-    flags(&state, P0, &l, &reg, "is not 2 cards of p0's hand (CR 514.1)");
+    l.set_prompt = None;
+    flags(&state, P0, &l, &reg, "discard prompt with nothing to choose");
     let mut l = legal.clone();
-    l.actions[0] = Action::DiscardCards { cards: vec![hand[0], hand[0]] };
-    flags(&state, P0, &l, &reg, "discard offer lists #");
+    l.actions.push(Action::DiscardCards { cards: vec![hand[0], hand[1]] });
+    flags(&state, P0, &l, &reg, "discard prompt with 1 flat actions");
 
-    // The same rule for the bottoming prompt after a mulligan (CR 103.5).
+    // The same rule for the bottoming prompt after a mulligan (CR 103.5),
+    // and the two prompts are told apart.
     let mut s = state.clone();
     s.awaiting_action = Some(AwaitingAction::BottomAfterMulligan { player: P0, count: 2 });
     s.step = Step::PrecombatMain;
     let legal = mtg_engine::engine::legal_actions(&s, &reg);
-    assert_eq!(legal.actions.len(), 10, "precondition: C(5, 2) offers");
+    assert!(legal.actions.is_empty(), "no enumerated subsets: {:?}", legal.actions);
+    assert_eq!(legal.set_prompt.as_ref().map(|p| p.kind),
+        Some(mtg_engine::actions::SetPromptKind::BottomAfterMulligan));
     clean(&s, P0, &legal, &reg);
     let mut l = legal.clone();
-    l.actions.pop();
-    flags(&s, P0, &l, &reg, "9 bottom offers for 2 cards of 5 (CR 103.5)");
+    l.set_prompt.as_mut().unwrap().options.pop();
+    flags(&s, P0, &l, &reg, "not the 5 cards of the hand (CR 103.5)");
     let mut l = legal.clone();
-    l.actions[0] = Action::BottomCards { cards: vec![hand[0]] };
-    flags(&s, P0, &l, &reg, "is not 2 cards of p0's hand (CR 103.5)");
+    l.set_prompt.as_mut().unwrap().kind = mtg_engine::actions::SetPromptKind::DiscardToHandSize;
+    flags(&s, P0, &l, &reg, "carries a DiscardToHandSize set prompt");
+
+    // And a set prompt attached to a question that does not ask for a set.
+    let mut s = state.clone();
+    s.step = Step::PrecombatMain;
+    s.awaiting_action = None;
+    s.priority_player = Some(P0);
+    let mut l = mtg_engine::engine::legal_actions(&s, &reg);
+    clean(&s, P0, &l, &reg);
+    l.set_prompt = legal.set_prompt.clone();
+    flags(&s, P0, &l, &reg, "priority offer with a BottomAfterMulligan set prompt attached");
 }
 
-/// The subset count is a binomial coefficient, and a prompt over a hand
-/// where n and k are far apart is where an arithmetic slip in it shows.
+/// The prompt asks for as many cards as the player has, when they have
+/// fewer than the question names: a hand of two discarding three discards
+/// both (CR 514.1).
 #[test]
-fn the_subset_count_is_the_binomial_coefficient() {
-    let reg = registry();
-    // C(6, 4) = 15, and 4 is the half that is NOT the smaller one — the
-    // count has to come out the same computed either way round.
-    for (n, k, expected) in [(5usize, 2usize, 10usize), (6, 4, 15), (4, 1, 4)] {
-        let mut state = game_at_step(Step::Cleanup, P0);
-        state.turn_number = 3;
-        for _ in 0..n {
-            spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
-        }
-        state.priority_player = None;
-        state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
-            player: P0, discard_count: k });
-        let legal = mtg_engine::engine::legal_actions(&state, &reg);
-        assert_eq!(legal.actions.len(), expected,
-            "precondition: C({n}, {k}) = {expected} offers");
-        clean(&state, P0, &legal, &reg);
+fn a_set_prompt_never_asks_for_more_cards_than_the_hand_holds() {
+    let (mut state, reg) = base();
+    let hand: Vec<ObjectId> = (0..2)
+        .map(|_| spell_in_hand(&mut state, &reg, "Moment of Heroism", P0))
+        .collect();
+    state.priority_player = None;
+    state.step = Step::Cleanup;
+    state.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 3 });
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let prompt = legal.set_prompt.clone().expect("a set prompt");
+    assert_eq!((prompt.min, prompt.max), (2, 2), "as many as there are");
+    assert_eq!(prompt.options, hand);
+    clean(&state, P0, &legal, &reg);
+}
 
-        let mut l = legal.clone();
-        l.actions.pop();
-        flags(&state, P0, &l, &reg,
-            &format!("{} discard offers for {k} cards of {n} (CR 514.1)", expected - 1));
-    }
+/// The answer a set prompt accepts is the one it says it accepts: the
+/// right number of cards, all from its own list, none of them twice.
+#[test]
+fn a_set_prompt_accepts_exactly_the_answers_it_describes() {
+    use mtg_engine::actions::{SetPrompt, SetPromptKind};
+    let ids: Vec<ObjectId> = (1..=4).map(ObjectId).collect();
+    let prompt = SetPrompt {
+        kind: SetPromptKind::BottomAfterMulligan, player: P0,
+        options: ids.clone(), min: 2, max: 2,
+    };
+    assert!(prompt.accepts(&[ids[0], ids[3]]));
+    assert!(prompt.accepts(&[ids[3], ids[0]]), "order is not part of the answer");
+    assert!(!prompt.accepts(&[ids[0]]), "too few");
+    assert!(!prompt.accepts(&[ids[0], ids[1], ids[2]]), "too many");
+    assert!(!prompt.accepts(&[ids[0], ids[0]]), "the same card twice");
+    assert!(!prompt.accepts(&[ids[0], ObjectId(99)]), "a card that is not on the list");
+    assert!(matches!(prompt.answer(vec![ids[0], ids[1]]),
+        Action::BottomCards { ref cards } if *cards == vec![ids[0], ids[1]]));
+
+    let discard = SetPrompt { kind: SetPromptKind::DiscardToHandSize, min: 0, max: 2, ..prompt };
+    assert!(discard.accepts(&[]), "a range that starts at zero takes none");
+    assert!(matches!(discard.answer(vec![ids[2]]),
+        Action::DiscardCards { ref cards } if *cards == vec![ids[2]]));
 }
 
 /// CR 608.2: a resolution prompt's answers are the enumeration of what the
