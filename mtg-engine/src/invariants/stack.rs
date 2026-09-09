@@ -261,6 +261,7 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                 let linked = match choice {
                     ResolutionChoiceKind::ChooseXFunding { is_ability: false, source_id, .. } => *source_id == c.object_id,
                     ResolutionChoiceKind::ChooseExileFromGraveyard { source_id, .. } => *source_id == c.object_id,
+                    ResolutionChoiceKind::ChooseTargetSet { source_id, .. } => *source_id == c.object_id,
                     _ => false,
                 };
                 if !linked || *source != c.object_id || *player != c.player {

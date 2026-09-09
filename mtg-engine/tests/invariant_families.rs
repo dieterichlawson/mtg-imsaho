@@ -548,6 +548,49 @@ fn a_payment_waiting_under_the_wrong_prompt_is_flagged() {
     flags_core(&wrong, &reg, "but the pending prompt is for something else");
 }
 
+/// The target-set prompt is the third question a cast can stop at, so it too
+/// legitimises a stashed `pending_spell_cast` — and the widened clause has to
+/// stay as narrow as the other two.
+///
+/// Adding a prompt kind to the "a stash is fine here" list is exactly the
+/// change that can blind the oracle, so this pins both directions: the real
+/// pairing is clean, and a stash under a target-set prompt for some other
+/// object, or with no prompt at all, is still caught.
+#[test]
+fn a_cast_stopped_at_its_target_set_is_a_healthy_stash() {
+    let (mut state, reg) = base();
+    named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    named_permanent(&mut state, &reg, "Ambush Viper", P1);
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state.priority_player = Some(P0);
+
+    // "Up to two target creatures" — the cast stops to ask which.
+    let state = cast_onto_stack(&state, &reg, dread, vec![]);
+    assert!(matches!(&state.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTargetSet { .. }, .. })),
+        "test precondition: a target-set prompt, got {:?}", state.awaiting_action);
+    assert!(state.pending_spell_cast.is_some(), "test precondition: the cast is stashed");
+    clean_core(&state, &reg);
+
+    // The prompt has to be this cast's. One naming another object is a
+    // question whose answer would finish the wrong spell.
+    let mut wrong = state.clone();
+    let decoy = ObjectId(dread.0 + 1000);
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { source_id, .. }, source, .. })
+        = &mut wrong.awaiting_action {
+        *source_id = decoy;
+        *source = decoy;
+    }
+    flags_core(&wrong, &reg, "but the pending prompt is for");
+
+    // And the stash without the prompt is the leak the clause is there for.
+    let mut leaked = state.clone();
+    leaked.awaiting_action = None;
+    flags_core(&leaked, &reg, "leak");
+}
+
 /// The healthy shapes the stack checker polices, which a clause that fires
 /// on everything would flag: an instant sitting above the sorcery it was
 /// cast in response to (CR 307.1 is about sorceries, not instants), an
