@@ -999,7 +999,7 @@ impl CliPlayer {
     /// menu goes through `render_paged`, which hands back how many rows it
     /// drew.
     fn render(view: &GameView, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
-        let _ = Self::render_paged(view, None, message, log, card_filter, pass_mode_label, 0);
+        let _ = Self::render_paged_noticed(view, None, message, None, log, card_filter, pass_mode_label, 0);
     }
 
     /// Blank the middle panel's part of one row, keeping the frame.
@@ -1051,6 +1051,37 @@ impl CliPlayer {
             shown += 1;
         }
         (offset, shown, paged)
+    }
+
+    /// A prompt's heading, split into the label its rule carries and the
+    /// question that goes under it.
+    ///
+    /// A horizontal rule is one line by construction: a rule wrapped over
+    /// three lines put "Delver of Secrets: reveal Delver of Secrets from
+    /// the top of your library? (not an instant or sorcery -- no
+    /// transform)" through the middle of the frame, and the question a
+    /// player has to read was spliced between two box rules. Nothing that
+    /// has to be READ goes inside a rule now: the rule names the prompt and
+    /// the words go below it, where they wrap like any other pane row.
+    ///
+    /// The label is the part before the first ": " when that is short
+    /// enough to be a name — which is the convention the card prompts
+    /// follow ("Civilized Scholar: choose a card to discard") — and the
+    /// engine's own upper-case context lines ("MAIN PHASE 1", "DECLARE
+    /// ATTACKERS") pass through whole. Anything else is labelled by kind,
+    /// and the whole heading goes below.
+    fn rule_title(message: &str, width: usize) -> (String, Option<String>) {
+        let msg = message.trim();
+        if str_cols(msg) <= width {
+            return (msg.to_string(), None);
+        }
+        if let Some((head, rest)) = msg.split_once(": ") {
+            let rest = rest.trim();
+            if !head.is_empty() && str_cols(head) <= width && !rest.is_empty() {
+                return (head.to_string(), Some(rest.to_string()));
+            }
+        }
+        ("CHOICE".to_string(), Some(msg.to_string()))
     }
 
     /// A pane row too wide for the panel, laid out as several: the first
@@ -1125,6 +1156,20 @@ impl CliPlayer {
     /// menu longer than the pane is paged with 'm', not guessed at).
     /// Returns the page it drew, so the caller can page from it exactly.
     fn render_paged(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
+        Self::render_paged_noticed(view, actions, message, None, log, card_filter, pass_mode_label, menu_offset)
+    }
+
+    /// `render_paged` with a notice: one line of feedback about the last
+    /// keystroke, drawn under the prompt's own heading rather than in place
+    /// of it.
+    ///
+    /// The notice used to REPLACE the heading (`notice.or(context)`), so at
+    /// a mandatory prompt — the one kind with no "pass" to fall back on —
+    /// a refused keystroke took the question off the screen and left the
+    /// player looking at "0: Yes / 1: No" with nothing saying what was
+    /// being asked.
+    #[allow(clippy::too_many_arguments)]
+    fn render_paged_noticed(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, notice: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize) -> MenuPage {
 
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -1437,9 +1482,12 @@ impl CliPlayer {
         // hung game" symptom #76 exists to prevent (issue #260). Anchor it
         // to the bottom and let the board scroll off above instead.
         {
+            // One row for the rule, whatever the heading says, plus the
+            // rows the question under it takes.
             let title_rows = message.map_or(1, |msg| {
-                Self::word_wrap(msg, mid_w.saturating_sub(6)).len()
-            });
+                let (_, detail) = Self::rule_title(msg, mid_w.saturating_sub(6));
+                1 + detail.map_or(0, |d| Self::wrap_indented(&format!("  {d}"), mid_w).len())
+            }) + notice.map_or(0, |n| Self::wrap_indented(&format!("  {n}"), mid_w).len());
             // hint row + input row, and for a menu one option and its marker.
             let furniture = if actions.is_some() { 2 } else { 1 };
             let menu_floor = if actions.is_some() { 2 } else { 0 };
@@ -1449,37 +1497,42 @@ impl CliPlayer {
             }
         }
 
-        // Actions separator with optional label (always drawn, wraps if needed)
+        // The actions separator. A rule is ONE line: it carries the
+        // prompt's label and nothing that has to be read, and the question
+        // itself goes on its own rows underneath, where it wraps like any
+        // other pane row. A rule that wrapped put the box borders through
+        // the middle of the sentence a player was trying to read (#121 is
+        // the version of this that only moved the tee).
         if let Some(msg) = message {
             let prefix = "─── ";
-            let indent = "    ";
             let prefix_len = prefix.chars().count(); // 4
-            // Leave room for prefix/indent + trailing space + at least 1 dash
+            // Leave room for the prefix + trailing space + at least 1 dash
             let text_w = mid_w.saturating_sub(prefix_len + 2);
-            let wrapped = Self::word_wrap(msg, text_w);
-            for (i, line) in wrapped.iter().enumerate() {
-                let leader = if i == 0 { prefix } else { indent };
-                let label = format!("{leader}{line} ");
-                // Dash-fill only the LAST line of a wrapped title: padding
-                // every line spliced the box rule into the middle of the
-                // sentence ("... no ───────┤ / transform)") (issue #121).
-                let full = if i == wrapped.len() - 1 {
-                    format!("{}{}", label, "─".repeat(mid_w.saturating_sub(label.chars().count())))
-                } else {
-                    label
-                };
-                let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
-                // The tee borders belong on the row that carries the rule —
-                // the last one — not the first (issue #121).
-                let left_border = if i == wrapped.len() - 1 { "├" } else { "│" };
-                let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
-                    SetAttribute(Attribute::Dim), Print(left_border), SetAttribute(Attribute::Reset));
-                if has_right {
-                    let right_border = if i == wrapped.len() - 1 { "┤" } else { "│" };
-                    let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
-                        SetAttribute(Attribute::Dim), Print(right_border), SetAttribute(Attribute::Reset));
+            let (title, detail) = Self::rule_title(msg, text_w);
+            let label = format!("{prefix}{title} ");
+            let full = format!("{}{}", label, "─".repeat(mid_w.saturating_sub(str_cols(&label))));
+            let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
+                SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
+            if has_right {
+                let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
+                    SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
+            }
+            row += 1;
+            if let Some(detail) = detail {
+                for line in Self::wrap_indented(&format!("  {detail}"), mid_w) {
+                    if row as usize >= h { break; }
+                    Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                    let _ = execute!(out, cursor::MoveTo(mid_col, row), Print(&line));
+                    row += 1;
                 }
+            }
+            for line in notice.map(|n| Self::wrap_indented(&format!("  {n}"), mid_w)).unwrap_or_default() {
+                if row as usize >= h { break; }
+                Self::clear_mid_row(&mut out, mid_col, right_sep_col, has_right, row);
+                let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                    SetForegroundColor(Color::Red), Print(&line), ResetColor);
                 row += 1;
             }
         } else {
@@ -5958,8 +6011,12 @@ impl Player for CliPlayer {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
                 PassMode::UntilNextTurn { .. } => "AUTO-PASS",
             });
-            let page = Self::render_paged(view, Some(&display_labels),
-                notice.take().as_deref().or(legal.context.as_deref()),
+            // The notice goes UNDER the heading, not in place of it: the
+            // question a mandatory prompt is asking has to stay on the
+            // screen while the player is being told their last keystroke
+            // was refused.
+            let page = Self::render_paged_noticed(view, Some(&display_labels),
+                legal.context.as_deref(), notice.take().as_deref(),
                 &view.display_log, &self.card_filter, pass_label, menu_offset);
 
 
@@ -6414,6 +6471,38 @@ mod tests {
         assert_eq!(CliPlayer::wrap_row("", 10), vec![""], "an empty row is one empty line");
         assert_eq!(CliPlayer::wrap_row("anything at all", 0), vec!["anything at all"],
             "no width is no wrapping, not an endless loop");
+    }
+
+    /// A horizontal rule carries a label and nothing that has to be read.
+    #[test]
+    fn a_rule_is_one_line_and_the_question_goes_under_it() {
+        // Short enough to be the rule's own label.
+        assert_eq!(CliPlayer::rule_title("MAIN PHASE 1", 60), ("MAIN PHASE 1".into(), None));
+        assert_eq!(CliPlayer::rule_title("BOTTOM 3 CARDS AFTER MULLIGAN", 60),
+            ("BOTTOM 3 CARDS AFTER MULLIGAN".into(), None));
+
+        // The card-prompt convention: the source names the rule, the
+        // question goes below it.
+        let long = "Delver of Secrets: reveal Delver of Secrets from the top of your \
+library? (not an instant or sorcery — no transform)";
+        let (title, detail) = CliPlayer::rule_title(long, 60);
+        assert_eq!(title, "Delver of Secrets");
+        assert_eq!(detail.as_deref(), Some("reveal Delver of Secrets from the top of your library? (not an instant or sorcery — no transform)"));
+        assert!(str_cols(&title) <= 60, "the label fits the rule: {title:?}");
+
+        // A heading with no name in front of it is labelled by kind rather
+        // than cut in half, and the whole of it goes below.
+        let bare = "choose a card to discard, then another, and then explain \
+yourself at some considerable length";
+        let (title, detail) = CliPlayer::rule_title(bare, 40);
+        assert_eq!(title, "CHOICE");
+        assert_eq!(detail.as_deref(), Some(bare));
+
+        // And a name that is itself too long for the rule does not become
+        // the label.
+        let (title, _) = CliPlayer::rule_title(
+            "Some Extremely Long Card Name That Runs On: do a thing", 20);
+        assert_eq!(title, "CHOICE");
     }
 
     /// The rows that describe a menu — the paging marker and the hint line —
