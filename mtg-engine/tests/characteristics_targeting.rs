@@ -10,7 +10,8 @@
 
 mod common;
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
+use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
@@ -163,15 +164,36 @@ fn into_the_maw_of_hell_pairs_a_land_with_a_creature_in_that_order() {
     let creature = ready_creature(&mut state, P1, 3, 3);
     let maw = castable_spell(&mut state, &reg, "Into the Maw of Hell", P0);
 
-    let sets = offered_target_sets(&state, &reg, maw);
-    assert!(!sets.is_empty(), "the spell is castable with a land and a creature out");
-    for set in &sets {
-        assert_eq!(set.len(), 2, "each offer names both targets; got {set:?}");
-        assert_eq!(set[0], Target::Object(land),
-            "the first slot is the land it destroys; got {set:?}");
-        assert_eq!(set[1], Target::Object(creature),
-            "and the second is the creature it burns; got {set:?}");
-    }
+    // The slots are asked one at a time now, so the order is visible in the
+    // order of the questions rather than in the order inside an offer.
+    assert!(can_cast(&state, &reg, maw),
+        "the spell is castable with a land and a creature out");
+    let asked = cast_onto_stack(&state, &reg, maw, vec![]);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, .. }, .. })
+        = &asked.awaiting_action else {
+        panic!("expected the first slot's prompt, got {:?}", asked.awaiting_action);
+    };
+    assert_eq!(*options, vec![Target::Object(land)],
+        "the first slot is the land it destroys, not the creature");
+
+    let after = mtg_engine::engine::submit_action(&asked,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(
+            vec![Target::Object(land)]) }, &reg);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, .. }, .. })
+        = &after.awaiting_action else {
+        panic!("expected the second slot's prompt, got {:?}", after.awaiting_action);
+    };
+    assert_eq!(*options, vec![Target::Object(creature)],
+        "and the second is the creature it burns");
+
+    // And the cast records them in that order.
+    let done = mtg_engine::engine::submit_action(&after,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(
+            vec![Target::Object(creature)]) }, &reg);
+    assert_eq!(done.get_object(maw).expect("on the stack").targets,
+        vec![Target::Object(land), Target::Object(creature)]);
 }
 
 /// "Return target creature card from your graveyard to the battlefield" needs a

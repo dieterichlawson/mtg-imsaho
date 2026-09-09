@@ -2151,33 +2151,19 @@ impl LlmPlayer {
                 }
             }
             CastTargetSpec::TwoTargets { first, second, second_min, second_max } => {
-                let t1 = self.prompt_target_selection(view, &format!("{}: select first of two targets", spell.name), first);
-                // The engine pre-narrowed each first choice's legal second-slot
-                // options (e.g. "cards from THEIR graveyard" — only the chosen
-                // player's cards).
-                let idx = first.iter().position(|t| *t == t1).unwrap_or(0);
-                let options = &second[idx];
-                if *second_max <= 1 {
-                    if options.is_empty() {
-                        return Self::fallback_to_expanded(spell.object_id, legal_actions);
-                    }
-                    let t2 = self.prompt_target_selection(view, &format!("{}: select second of two targets", spell.name), options);
-                    vec![t1, t2]
-                } else {
-                    // "Up to N" second slot: pick 0..=N.
-                    let mut chosen = vec![t1];
-                    if !options.is_empty() {
-                        chosen.extend(self.select_up_to_targets(view, &spell.name, *second_max, options));
-                    }
-                    if chosen.len() <= *second_min {
-                        return Self::fallback_to_expanded(spell.object_id, legal_actions);
-                    }
-                    chosen
-                }
+                // The one pair left here is Memory's Journey: its card slot
+                // cannot be described until a player is named, so the player
+                // is chosen now and the cards on the prompt the cast then
+                // raises (`choose_target_set`). Two slots that can both be
+                // described up front are `ChosenAtCast`.
+                let _ = (second, second_min, second_max);
+                vec![self.prompt_target_selection(
+                    view, &format!("{}: select first of two targets", spell.name), first)]
             }
-            CastTargetSpec::UpToTargets { max, options } => {
-                self.select_up_to_targets(view, &spell.name, *max, options)
-            }
+            // The cast asks for these itself (CR 601.2c): submit it bare and
+            // answer the `ChooseTargetSet` prompt it raises, which this seat
+            // handles in `choose_target_set`.
+            CastTargetSpec::ChosenAtCast => vec![],
         };
 
         // Step 2: Choose sacrifice if the spell has a sacrifice additional cost.
@@ -2210,62 +2196,6 @@ impl LlmPlayer {
             alternative_cost: spell.alternative_cost.clone(),
             tap_plan: spell.tap_plan.clone(),
         }
-    }
-
-    /// Structured multi-select: up to `max` targets from `options` (choosing
-    /// fewer — or none — is legal).
-    fn select_up_to_targets(
-        &mut self,
-        view: &GameView,
-        spell_name: &str,
-        max: usize,
-        options: &[mtg_engine::actions::Target],
-    ) -> Vec<mtg_engine::actions::Target> {
-        use mtg_engine::actions::Target;
-        let target_list: String = options.iter().enumerate()
-            .map(|(i, t)| {
-                let desc = match t {
-                    Target::Object(id) => Self::obj_name(view, *id),
-                    Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
-                    Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-                };
-                format!("{i}:{desc}")
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        let prompt = format!(
-            "{}: select up to {} targets (you may choose fewer):\n{}\nPick indices in 0-{}, up to {} entries. Empty list to choose no targets.",
-            spell_name, max, target_list, options.len() - 1, max
-        );
-
-        let valid_indices: Vec<serde_json::Value> = (0..options.len())
-            .map(|i| serde_json::json!(i))
-            .collect();
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
-                "target_indices": {
-                    "type": "array",
-                    "items": {"type": "integer", "enum": valid_indices},
-                    "maxItems": max,
-                    "description": format!("Indices of chosen targets (each in 0..{}, up to {} entries)", options.len() - 1, max)
-                }
-            },
-            "required": ["thoughts", "target_indices"]
-        });
-
-        let response = self.send_message_structured(&prompt, &schema);
-
-        response["target_indices"]
-            .as_array()
-            .map(|arr| arr.iter()
-                .filter_map(|v| v.as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX)))
-                .filter(|&i| i < options.len())
-                .take(max)
-                .map(|i| options[i].clone())
-                .collect())
-            .unwrap_or_default()
     }
 
     /// Choose targets and sacrifice for an activated ability via sequential prompts.
@@ -2385,14 +2315,6 @@ impl LlmPlayer {
         );
         let idx = self.pick_action_index(&prompt, options.len());
         options[idx.min(options.len() - 1)].clone()
-    }
-
-    /// Fallback: find the first matching expanded action for this spell.
-    fn fallback_to_expanded(object_id: ObjectId, legal_actions: &[Action]) -> Action {
-        legal_actions.iter()
-            .find(|a| matches!(a, Action::CastSpell { object_id: oid, .. } if *oid == object_id))
-            .cloned()
-            .unwrap_or(Action::PassPriority)
     }
 
     /// Format a tap plan as a compact string like "2x Plains, Hinterland Harbor".

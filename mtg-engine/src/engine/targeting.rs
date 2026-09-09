@@ -110,27 +110,134 @@ fn candidate_req(req: &crate::cards::TargetRequirement) -> &crate::cards::Target
 
 /// How many targets a requirement takes at most: N for "up to N", one
 /// otherwise.
-/// A target slot that is a *set* rather than a list of announcements: what
-/// may go in it, how many, and how many targets are named before it.
+/// The set a `ModalChoice` asks for, when its modes are the same question
+/// asked for different numbers of targets.
 ///
-/// Two requirements have one. `UpToTargets` is the slot itself, with nothing
-/// in front. `TwoTargets(a, UpToTargets(..))` has one fixed target in front
-/// — Memory's Journey names a player, then up to three cards from *their*
-/// graveyard, so the options are not known until the player is.
+/// The mode is not chosen and then the targets: the count *is* the mode
+/// (`detect_modal_choice_mode` reads it back the same way), so the options
+/// are the union over the modes and the bounds are the smallest and largest
+/// arity. Ghoulcaller's Chant returns one creature card or two Zombie cards,
+/// and one screen of "mark one or two" says both.
 ///
-/// Everything else is enumerated. A `TwoTargets` with two different slots is
-/// an ordered pair, where which target went in which slot is the answer, and
-/// marking cannot express that. One whose slots want the same thing is a set
-/// (Ghoulcaller's Chant's "two target Zombie creature cards"), but the only
-/// such card is modal and its mode is read back off how many targets it
-/// named, so see `generate_cast_actions_with_targets` for why that one stays
-/// enumerated.
+/// `None` when two modes take the same number of targets, because then a
+/// count no longer says which was meant, or when no mode takes more than
+/// one, because then the modes are already one row each.
+fn modal_set(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    modes: &[crate::cards::TargetRequirement],
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Option<SetSlot> {
+    let arities: Vec<usize> = modes.iter().map(fixed_arity).collect::<Option<Vec<_>>>()?;
+    let mut distinct = arities.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    if distinct.len() != arities.len() || *distinct.last()? < 2 {
+        return None;
+    }
+    let per_mode: Vec<Vec<crate::actions::Target>> = modes.iter()
+        .map(|m| valid_targets_for_req(state, caster, spell_id, m, behavior, registry))
+        .collect();
+    let mut options: Vec<crate::actions::Target> = Vec::new();
+    for t in per_mode.iter().flatten() {
+        if !options.contains(t) {
+            options.push(t.clone());
+        }
+    }
+    // A mode with too few candidates to fill it is a mode not on offer, and
+    // the bounds follow the modes that are: one Zombie in the graveyard
+    // beside two other creature cards is mode one only. All of them empty
+    // and there is no cast to make.
+    let live: Vec<usize> = arities.iter().zip(&per_mode)
+        .filter(|(n, opts)| opts.len() >= **n)
+        .map(|(n, _)| *n)
+        .collect();
+    Some(SetSlot {
+        options,
+        min: *live.iter().min()?,
+        max: *live.iter().max()?,
+        fixed_len: 0,
+    })
+}
+
+/// How many targets a requirement takes, when that is a single fixed number.
+///
+/// `None` for "up to N" and for a nested mode — a mode whose own size is a
+/// choice cannot be told apart from its neighbours by a count.
+fn fixed_arity(req: &crate::cards::TargetRequirement) -> Option<usize> {
+    use crate::cards::TargetRequirement as R;
+    match req {
+        R::None => Some(0),
+        R::UpToTargets(..) | R::ModalChoice(..) => None,
+        R::TwoTargets(a, b) => Some(fixed_arity(a)? + fixed_arity(b)?),
+        _ => Some(1),
+    }
+}
+
+/// A target slot asked for as its own question, rather than by enumerating
+/// one cast per way of filling it: what may go in it, how many, and how many
+/// targets are named before it.
+///
+/// A *set* slot takes several targets at once, none distinguishable from
+/// another once chosen: `UpToTargets`, `TwoTargets(a, UpToTargets(..))` with
+/// its first target fixed in front, and the modal set above.
+///
+/// A *single* slot takes exactly one, and a `TwoTargets` with two different
+/// slots is two of them in a row. Which target went in which slot is part of
+/// the answer there, so it cannot be one marking screen — but it need not be
+/// `|a| x |b|` announcements either. Asking twice costs `|a| + |b|`: Into
+/// the Maw of Hell over eight lands and eight creatures a side is 256 rows
+/// enumerated and 32 asked.
 pub(crate) struct SetSlot {
     pub options: Vec<crate::actions::Target>,
     pub min: usize,
     pub max: usize,
     /// How many of the cast's targets precede the slot and stay as given.
     pub fixed_len: usize,
+}
+
+/// The first-slot targets of a two-slot spell that can actually be paired.
+///
+/// A first target with no legal second is not a cast: Prey Upon needs a
+/// creature on each side, and offering the one you control when there is
+/// nothing to fight would be a question whose every answer is refused. Both
+/// an off-by-one and an equality mutation of this comparison once survived
+/// the suite (mutants shard 4), because the only shape the tests built was
+/// the "up to N" one, where the floor is zero and every mutation is
+/// invisible.
+///
+/// The filter is per first target rather than a single yes/no for the spell,
+/// because the second slot's candidates may depend on which first target was
+/// named — no current card both requires its second slot and narrows it that
+/// way, and the day one does, this is where it is already handled.
+fn pairable_first_targets(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    first: &crate::cards::TargetRequirement,
+    second: &crate::cards::TargetRequirement,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Vec<crate::actions::Target> {
+    let floor = fewest_targets(second);
+    valid_targets_for_req(state, caster, spell_id, first, behavior, registry)
+        .into_iter()
+        .filter(|t1| {
+            second_slot_options(state, caster, spell_id, second, t1, behavior, registry).len()
+                >= floor
+        })
+        .collect()
+}
+
+/// The announcement of a cast whose targets are still to be asked for.
+fn empty_cast(spell_id: ObjectId) -> Action {
+    Action::CastSpell {
+        object_id: spell_id,
+        targets: vec![],
+        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+    }
 }
 
 pub(crate) fn set_slot(
@@ -158,6 +265,19 @@ pub(crate) fn set_slot(
             let max = most_targets(second).min(options.len());
             Some(SetSlot { options, min: fewest_targets(second), max, fixed_len: 1 })
         }
+        // Two single slots, asked one at a time. Which slot a target went in
+        // is the answer — Prey Upon's creature you control fights the one
+        // you don't — so this is two questions, not one marking screen.
+        R::TwoTargets(first, second) => {
+            let options = match chosen.first() {
+                None => pairable_first_targets(
+                    state, caster, spell_id, first, second, behavior, registry),
+                Some(t1) =>
+                    second_slot_options(state, caster, spell_id, second, t1, behavior, registry),
+            };
+            Some(SetSlot { options, min: 1, max: 1, fixed_len: chosen.len().min(1) })
+        }
+        R::ModalChoice(modes) => modal_set(state, caster, spell_id, modes, behavior, registry),
         _ => None,
     }
 }
@@ -235,6 +355,14 @@ pub(crate) fn generate_cast_actions_with_targets(
             vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }]
         }
         TargetRequirement::ModalChoice(ref modes) => {
+            // Modes told apart by how many targets they take are one
+            // question, asked once: the count answers both "which mode" and
+            // "which targets". Ghoulcaller's Chant enumerated is `n + C(n,2)`
+            // rows — 78 over a twelve-Zombie graveyard — saying the same
+            // twelve cards over and over.
+            if modal_set(state, caster, spell_id, modes, behavior, registry).is_some() {
+                return vec![empty_cast(spell_id)];
+            }
             let mut actions = Vec::new();
             for mode_req in modes {
                 actions.extend(generate_cast_actions_with_targets(state, caster, spell_id, mode_req, behavior, registry));
@@ -257,7 +385,21 @@ pub(crate) fn generate_cast_actions_with_targets(
             // target, with the second slot empty. Memory's Journey is
             // `TwoTargets(PlayerOnly, UpToTargets(3, ...))`, and enumerating
             // it over a fifteen-card graveyard is about 1,150 actions.
+            // Two single slots are asked one at a time (see [`SetSlot`]), so
+            // the cast is announced with neither named — and only when some
+            // first target can be paired at all. Only the "up to N" second
+            // slot still enumerates its first target, and only because there
+            // are two players to choose between.
             let up_to_second = matches!(**req2, TargetRequirement::UpToTargets(..));
+            if !up_to_second {
+                return if pairable_first_targets(
+                    state, caster, spell_id, req1, req2, behavior, registry).is_empty()
+                {
+                    vec![]
+                } else {
+                    vec![empty_cast(spell_id)]
+                };
+            }
             for t1 in &targets1 {
                 if up_to_second {
                     actions.push(Action::CastSpell {
@@ -308,11 +450,7 @@ pub(crate) fn generate_cast_actions_with_targets(
             // 0..=max, which is `sum(C(n, k))` actions — a menu that grows
             // exponentially in the board and that a non-interactive seat
             // reads in full.
-            vec![Action::CastSpell {
-                object_id: spell_id,
-                targets: vec![],
-                sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-            }]
+            vec![empty_cast(spell_id)]
         }
         // All single-target requirement kinds share the canonical target
         // enumeration in `valid_targets_for_req` — one target per action.
@@ -428,6 +566,34 @@ pub(crate) fn distinct_within_each_target_instance(
 /// Both halves of legality, the way `generate_cast_actions_with_targets`
 /// applies them: the generic zone/hexproof/filter check and the card's own
 /// `is_valid_target`.
+/// Whether the targets named so far are legal *as far as they go*, for a
+/// cast that is about to stop and ask for the rest.
+///
+/// [`targets_are_legal`] asks whether a complete declaration is legal, and a
+/// prefix is not one: an empty list fails "a spell that names one cannot be
+/// cast without it", which is the right answer for a finished cast and the
+/// wrong one for a cast that has not been asked yet. The prefix is checked
+/// against the slots it actually fills, and the rest is checked when it
+/// arrives — the resumed cast comes back through the full gate.
+pub(crate) fn prefix_is_legal(
+    state: &GameState,
+    target_req: &crate::cards::TargetRequirement,
+    prefix: &[crate::actions::Target],
+    caster: PlayerId,
+    source_id: ObjectId,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> bool {
+    use crate::cards::TargetRequirement as R;
+    match target_req {
+        R::TwoTargets(first, _) if prefix.len() == 1 =>
+            targets_are_legal(state, first, prefix, caster, source_id, behavior, registry),
+        // Every other slot that asks is the first thing the cast does, so
+        // there is nothing in front of it to check.
+        _ => prefix.is_empty(),
+    }
+}
+
 pub(crate) fn targets_are_legal(
     state: &GameState,
     target_req: &crate::cards::TargetRequirement,
@@ -728,6 +894,17 @@ pub(crate) fn build_cast_target_spec(
     use crate::actions::CastTargetSpec;
     use crate::cards::TargetRequirement;
 
+    // A slot the cast will ask for is not something a client chooses before
+    // casting. Asked with nothing chosen, so this sees the slot the cast
+    // starts at: Memory's Journey's player still comes first and is still
+    // described below, because its card slot cannot be asked for until the
+    // player is named.
+    if set_slot(state, caster, spell_id, target_req, &[], behavior, registry)
+        .is_some_and(|s| s.fixed_len == 0)
+    {
+        return CastTargetSpec::ChosenAtCast;
+    }
+
     match target_req {
         TargetRequirement::None => CastTargetSpec::NoTargets,
         TargetRequirement::TwoTargets(req1, req2) => {
@@ -753,10 +930,6 @@ pub(crate) fn build_cast_target_spec(
                 second.push(options);
             }
             CastTargetSpec::TwoTargets { first, second, second_min, second_max }
-        }
-        TargetRequirement::UpToTargets(max, _) => {
-            let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
-            CastTargetSpec::UpToTargets { max: *max, options }
         }
         TargetRequirement::ModalChoice(ref modes) => {
             // Collect all possible targets across all modes.

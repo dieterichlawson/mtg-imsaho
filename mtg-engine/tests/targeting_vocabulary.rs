@@ -162,16 +162,37 @@ fn permanent_with_filter_reaches_any_permanent_the_filter_admits() {
     assert_eq!(offered(&state, &reg, probe), vec![Target::Object(theirs)]);
 }
 
+/// Two slots, asked one at a time: each candidate is named once, in the slot
+/// it belongs to, rather than once per pair it could appear in.
 #[test]
-fn two_targets_offers_the_pairs() {
+fn two_targets_asks_for_each_slot_in_turn() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let (mut state, reg, probe) = probing(TargetRequirement::TwoTargets(
         Box::new(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
         Box::new(TargetRequirement::CreatureWithFilter(TargetFilter::YouDontControl)),
     ));
     let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let theirs = named_permanent(&mut state, &reg, "Ambush Viper", P1);
-    assert_eq!(offered_target_sets(&state, &reg, probe),
-        vec![vec![Target::Object(mine), Target::Object(theirs)]]);
+
+    assert_eq!(offered_target_sets(&state, &reg, probe), vec![Vec::<Target>::new()],
+        "one announcement, both slots still to be asked for");
+
+    let ask = |s: &GameState| match &s.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. }) =>
+            (options.clone(), *min, *max),
+        other => panic!("expected a slot prompt, got {other:?}"),
+    };
+
+    let first = cast_onto_stack(&state, &reg, probe, vec![]);
+    assert_eq!(ask(&first), (vec![Target::Object(mine)], 1, 1), "the slot you control");
+
+    let second = mtg_engine::engine::submit_action(&first,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTargetSet(
+                vec![Target::Object(mine)]) }, &reg);
+    assert_eq!(ask(&second), (vec![Target::Object(theirs)], 1, 1), "then the one you don't");
 }
 
 /// "Up to N" is one offer and one question, not a subset per announcement:
