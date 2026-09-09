@@ -3019,9 +3019,13 @@ impl Player for LlmPlayer {
         if legal_actions.iter().any(|a| matches!(a, Action::MulliganKeep)) {
             return self.choose_mulligan(view, legal_actions);
         }
-        // London mulligan bottoming decision.
-        if matches!(legal_actions.first(), Some(Action::BottomCards { .. })) {
-            return self.choose_mulligan_bottom(view, legal_actions);
+        // A set of cards out of a list — the mulligan bottoming and the
+        // cleanup discard. The engine stopped enumerating the C(hand, n)
+        // subsets (issue #360), so the seat picks indices out of its hand
+        // rather than one row out of a list of every way of picking.
+        if let Some(prompt) = legal.set_prompt.as_ref() {
+            let prompt = prompt.clone();
+            return self.choose_card_set(view, &prompt);
         }
 
         // Pile division (e.g. Liliana of the Veil -6): structured prompt —
@@ -3366,75 +3370,82 @@ from your hand to put on the bottom of your library.\n\
     /// Sends a structured-JSON prompt with the numbered hand and expected
     /// count. Falls back to the first enumerated legal `BottomCards` option
     /// if the response is malformed.
-    fn choose_mulligan_bottom(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
-        // Determine N from the legal actions (every option has the same
-        // length — enumerated combinations).
-        let Some(n) = legal_actions.iter().find_map(|a| match a {
-            Action::BottomCards { cards } => Some(cards.len()),
-            _ => None,
-        }) else {
-            return legal_actions[0].clone();
-        };
-
+    /// Pick a set of cards out of the hand: which to bottom after a
+    /// mulligan (CR 103.4), or which to discard down to hand size (CR
+    /// 514.1). One question, answered with the indices.
+    fn choose_card_set(&mut self, view: &GameView, prompt: &mtg_engine::actions::SetPrompt) -> Action {
+        use mtg_engine::actions::SetPromptKind;
+        let n = prompt.min;
         let hand_text = Self::format_numbered_hand(view);
-        let opp_mulls_text = Self::format_opponent_mulls(view);
-        let play_draw = if view.active_player == view.you {
-            "You are on the play"
-        } else {
-            "You are on the draw"
+        let full_prompt = match prompt.kind {
+            SetPromptKind::BottomAfterMulligan => {
+                let opp_mulls_text = Self::format_opponent_mulls(view);
+                let play_draw = if view.active_player == view.you {
+                    "You are on the play"
+                } else {
+                    "You are on the draw"
+                };
+                Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text)
+            }
+            SetPromptKind::DiscardToHandSize => {
+                let plural = if n == 1 { "" } else { "s" };
+                format!(
+                    "[DISCARD {n} CARD{}]\n\
+                     Cleanup: your hand is over seven cards. Discard {n} card{plural} (CR 514.1).\n\
+                     \n\
+                     Your hand:\n\
+                     {hand_text}",
+                    if n == 1 { "" } else { "S" })
+            }
         };
 
-        let full_prompt = Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text);
-
-        let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
+        let what = match prompt.kind {
+            SetPromptKind::BottomAfterMulligan => "to put on the bottom of your library",
+            SetPromptKind::DiscardToHandSize => "to discard",
+        };
+        let valid_indices: Vec<serde_json::Value> = (0..prompt.options.len())
             .map(|i| serde_json::json!(i))
             .collect();
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
-                "bottom_indices": {
+                "card_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": valid_indices},
-                    "minItems": n,
-                    "maxItems": n,
-                    "description": format!("Exactly {} distinct 0-indexed positions in your hand to put on the bottom of your library", n)
+                    "minItems": prompt.min,
+                    "maxItems": prompt.max,
+                    "description": format!("Exactly {n} distinct 0-indexed positions in your hand {what}")
                 }
             },
-            "required": ["thoughts", "bottom_indices"]
+            "required": ["thoughts", "card_indices"]
         });
 
         let response = self.send_message_structured(&full_prompt, &schema);
 
-        // Parse and validate bottom_indices.
-        let indices: Option<Vec<usize>> = response["bottom_indices"].as_array().map(|arr| {
+        let indices: Option<Vec<usize>> = response["card_indices"].as_array().map(|arr| {
             arr.iter()
                 .filter_map(serde_json::Value::as_i64)
                 .filter(|i| *i >= 0)
                 .map(|i| usize::try_from(i).unwrap_or(0))
                 .collect()
         });
-        let fallback = || -> Action {
-            self.log_rejected("Invalid bottom_indices — defaulting to first legal bottom option");
-            legal_actions[0].clone()
-        };
-
-        let indices = match indices {
-            Some(v) if v.len() == n => v,
-            _ => return fallback(),
-        };
-        // Check distinct and in range.
+        // The fallback is the first `min` cards of the hand, which is the
+        // same answer RandomPlayer gives and is always legal — there is no
+        // enumerated list to fall back into any more.
         let mut seen = std::collections::HashSet::new();
-        for &i in &indices {
-            if i >= view.your_hand.len() || !seen.insert(i) {
-                return fallback();
-            }
+        let ok = indices.as_ref().is_some_and(|v| {
+            v.len() >= prompt.min && v.len() <= prompt.max
+                && v.iter().all(|&i| i < prompt.options.len() && seen.insert(i))
+        });
+        if !ok {
+            self.log_rejected("Invalid card_indices — defaulting to the first cards in hand");
+            return prompt.answer(prompt.options.iter().take(prompt.min).copied().collect());
         }
-        let cards: Vec<ObjectId> = indices.iter()
-            .map(|&i| view.your_hand[i].object_id)
-            .collect();
-        self.log("CHOSE", &format!("bottom indices {indices:?}"));
-        Action::BottomCards { cards }
+        let indices = indices.unwrap_or_default();
+        let cards: Vec<ObjectId> = indices.iter().map(|&i| prompt.options[i]).collect();
+        self.log("CHOSE", &format!("card set {indices:?}"));
+        prompt.answer(cards)
     }
 
     /// Format keyword abilities as a comma-separated lowercase string.
@@ -4000,6 +4011,7 @@ mod tests {
             activatable_abilities: Vec::new(),
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
+            set_prompt: None,
         }
     }
 

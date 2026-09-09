@@ -33,7 +33,7 @@ pub use mana_sources::{
 pub use targeting::can_be_targeted_by;
 pub(crate) use targeting::can_target_player;
 
-pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, legal_discard_actions, notify_discard};
+pub(crate) use cards_flow::{card_name, has_castable_with_potential_mana, notify_discard};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};
 pub(crate) use mana_sources::{
     activatable_mana_abilities, execute_tap_plan_and_pay,
@@ -42,7 +42,7 @@ pub(crate) use mana_sources::{
 pub(crate) use targeting::{
     arity_ok,
     matches_target_filter,
-    build_cast_target_spec, combinations, detect_modal_choice_mode, generate_ability_targets,
+    build_cast_target_spec, detect_modal_choice_mode, generate_ability_targets,
     generate_cast_actions_with_targets,
     valid_targets_for_req,
 };
@@ -105,6 +105,11 @@ pub struct LegalActions {
     /// the only legal response is an `Action::ResolveChoice` constructed by
     /// the player based on this prompt's payload.
     pub resolution_prompt: Option<crate::state::ResolutionChoiceKind>,
+    /// Set when the answer is a SET of objects picked out of a list rather
+    /// than one row of a menu — the mulligan bottoming and the cleanup
+    /// discard. `actions` is empty; the player marks what it wants out of
+    /// `options` and answers with `SetPrompt::answer`.
+    pub set_prompt: Option<crate::actions::SetPrompt>,
 }
 
 
@@ -139,7 +144,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard),
@@ -149,7 +154,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     let Some(player) = state.priority_player else {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None };
     };
 
     let mut actions = Vec::new();
@@ -340,7 +345,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         })
         .collect();
 
-    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None }
+    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None, set_prompt: None }
 }
 
 
@@ -1090,9 +1095,11 @@ fn run_mulligan_phase_inner<F>(
         };
 
         let legal = legal_actions(state, registry);
-        if legal.actions.is_empty() {
+        if legal.actions.is_empty() && legal.set_prompt.is_none() {
             // Safety: if somehow no action is legal (e.g. zero cards to
-            // bottom), just clear and continue.
+            // bottom), just clear and continue. A set prompt IS the
+            // question — the bottoming has no enumerated actions beside it
+            // — so an empty action list is not an empty prompt.
             state.awaiting_action = None;
             advance_mulligan_phase(state, registry);
             continue;
@@ -1248,6 +1255,7 @@ fn run_game_loop_inner<F>(
         if legal.actions.is_empty()
             && legal.combat_prompt.is_none()
             && legal.resolution_prompt.is_none()
+            && legal.set_prompt.is_none()
         {
             advance_or_resolve(state, registry);
             continue;
@@ -1312,6 +1320,7 @@ fn run_game_loop_inner<F>(
                     activatable_abilities: vec![],
                     context: None,
                     resolution_prompt: None,
+                    set_prompt: None,
                 };
                 choose_action(state, acting_player, &pass_only)
             } else {

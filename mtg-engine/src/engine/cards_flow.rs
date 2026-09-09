@@ -1,4 +1,3 @@
-use crate::actions::Action;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
@@ -7,22 +6,6 @@ use crate::state::{GameState, LogLevel};
 use crate::types::{Zone, CardType, Keyword, Step};
 use super::*;
 
-/// Generate legal discard actions for hand size.
-pub(crate) fn legal_discard_actions(state: &GameState, player: PlayerId, discard_count: usize) -> Vec<Action> {
-    let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
-        .iter().map(|o| o.id).collect();
-
-    if hand.len() <= discard_count {
-        // Must discard all.
-        return vec![Action::DiscardCards { cards: hand }];
-    }
-
-    // Enumerate all combinations of `discard_count` cards from hand.
-    let combos = combinations(&hand, discard_count);
-    combos.into_iter()
-        .map(|cards| Action::DiscardCards { cards })
-        .collect()
-}
 pub(crate) fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: ObjectId) -> String {
     state.obj_name(obj_id)
 }

@@ -472,6 +472,22 @@ const BLOCKERS_PAGE_KEYS: &str = "b = next page";
 
 /// The pane keys the combat prompts advertise.
 const ATTACK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]";
+/// One line of input at a card-set prompt.
+#[derive(Debug)]
+enum SetInput {
+    Toggle(Vec<usize>),
+    All,
+    None,
+    Confirm,
+    Pane(char),
+    NextPage,
+    PrevPage,
+    Invalid(String),
+}
+
+/// How to answer a card-set screen, and the panes it can step into.
+const SET_HOW_TO: &str = " Type a number to mark or unmark it, several at once if you like. [a=all] [n=none] [enter = done] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
+
 /// How to answer an ordering screen, and the panes it can step into.
 const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
 
@@ -5241,6 +5257,196 @@ impl CliPlayer {
         OrderInput::Order(order)
     }
 
+
+    /// Choose a SET of cards by marking them (issue #360).
+    ///
+    /// The mulligan bottoming and the cleanup discard used to be offered as
+    /// one menu row per subset: "bottom 3 of 7" is 35 rows of `Bottom A, B,
+    /// C`, read as a combination lock, and at 100 columns fourteen of them
+    /// printed as the same five lines. What a player is doing is marking
+    /// cards, so that is what the screen does — every card in hand, its
+    /// mark, and a number to toggle it.
+    ///
+    /// The screen takes the whole terminal, so the board, the stack, the
+    /// graveyards, exile, the log and the deck are one key away and the
+    /// prompt is redrawn when the pane closes. Enter confirms, and only
+    /// when the count is right: there is no way to answer this by accident,
+    /// which at a mandatory irreversible choice is the point (#123, #262).
+    fn prompt_card_set(view: &GameView, prompt: &mtg_engine::actions::SetPrompt, title: &str) -> Action {
+        let mut marked: Vec<bool> = vec![false; prompt.options.len()];
+        let mut notice: Option<String> = None;
+        let mut offset = 0usize;
+        loop {
+            let rows = Self::card_set_rows(view, prompt, &marked);
+            let page = Self::draw_card_set_screen(prompt, title, &rows, &marked,
+                notice.take().as_deref(), offset);
+            let redraw = || { Self::draw_card_set_screen(prompt, title, &rows, &marked, None, offset); };
+            let input = Self::read_line_redrawing("  Mark> ", &redraw);
+            match Self::parse_card_set_input(&input, prompt.options.len()) {
+                SetInput::Toggle(ks) => {
+                    for k in ks {
+                        marked[k] = !marked[k];
+                    }
+                }
+                SetInput::All => marked.iter_mut().for_each(|m| *m = true),
+                SetInput::None => marked.iter_mut().for_each(|m| *m = false),
+                SetInput::Confirm => {
+                    let chosen: Vec<mtg_engine::ids::ObjectId> = prompt.options.iter().enumerate()
+                        .filter(|(i, _)| marked[*i]).map(|(_, id)| *id).collect();
+                    if chosen.len() < prompt.min || chosen.len() > prompt.max {
+                        notice = Some(Self::card_set_count_error(chosen.len(), prompt));
+                        continue;
+                    }
+                    return prompt.answer(chosen);
+                }
+                SetInput::Pane(c) => match c {
+                    's' => Self::show_stack(view),
+                    'i' => Self::show_battlefield_inspector(view),
+                    'g' => Self::show_graveyards(view),
+                    'e' => Self::show_exile(view),
+                    'l' => Self::show_log(&view.display_log),
+                    _ => Self::show_deck_browser(view),
+                },
+                SetInput::NextPage => offset = page.next_offset(),
+                SetInput::PrevPage => offset = page.prev_offset(),
+                SetInput::Invalid(why) => notice = Some(why),
+            }
+        }
+    }
+
+    /// Why a confirmed selection was refused, in the terms the prompt asks
+    /// in: an exact count, or a range.
+    fn card_set_count_error(have: usize, prompt: &mtg_engine::actions::SetPrompt) -> String {
+        let card = |n: usize| if n == 1 { "card" } else { "cards" };
+        if prompt.min == prompt.max {
+            format!("{have} marked — mark exactly {} {}", prompt.min, card(prompt.min))
+        } else {
+            format!("{have} marked — mark between {} and {} cards", prompt.min, prompt.max)
+        }
+    }
+
+    /// One row per card: its mark, its index, and what the hand panel would
+    /// call it.
+    fn card_set_rows(view: &GameView, prompt: &mtg_engine::actions::SetPrompt,
+                     marked: &[bool]) -> Vec<String> {
+        prompt.options.iter().enumerate().map(|(i, id)| {
+            let label = view.your_hand.iter().find(|c| c.object_id == *id)
+                .map(|c| {
+                    let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
+                    let pt = match (c.power, c.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    format!("{}{}{}", c.name, cost, pt)
+                })
+                .unwrap_or_else(|| Self::perm_name(view, *id));
+            let mark = if marked.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
+            format!(" {mark} {i}: {label}")
+        }).collect()
+    }
+
+    /// Draw the whole card-set screen and return the page that was drawn.
+    fn draw_card_set_screen(prompt: &mtg_engine::actions::SetPrompt, title: &str,
+                            rows: &[String], marked: &[bool], notice: Option<&str>,
+                            offset: usize) -> BodyPage {
+        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
+        let w = term_w as usize;
+        let h = term_h as usize;
+        let text_w = w.saturating_sub(2);
+        let chosen = marked.iter().filter(|m| **m).count();
+
+        let mut header: Vec<(Style, String)> = Vec::new();
+        header.push((Style::Title, format!(" {}", title.trim())));
+        let asked = if prompt.min == prompt.max {
+            format!("Mark {} of the {} cards below.", prompt.min, prompt.options.len())
+        } else {
+            format!("Mark between {} and {} of the {} cards below.",
+                prompt.min, prompt.max, prompt.options.len())
+        };
+        for l in Self::word_wrap(&asked, text_w) { header.push((Style::Plain, format!(" {l}"))); }
+        header.push((Style::Bold, format!(" {chosen} of {} marked", prompt.min)));
+        header.push((Style::Plain, String::new()));
+
+        let body: Vec<(Style, String)> = rows.iter()
+            .flat_map(|r| Self::wrap_indented(r, text_w).into_iter().map(|l| (Style::Row, l)))
+            .collect();
+
+        let mut footer: Vec<(Style, String)> = Vec::new();
+        for line in Self::wrap_indented(SET_HOW_TO, text_w) { footer.push((Style::Dim, line)); }
+        // The notice row and the input row are always reserved.
+        let reserved = header.len() + footer.len() + 2;
+        let avail = h.saturating_sub(reserved).max(1);
+        let page = BodyPage::new(body.len(), avail, offset);
+
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        let mut row: u16 = 0;
+        let put = |out: &mut io::Stdout, row: &mut u16, style: Style, text: &str| {
+            let _ = execute!(out, cursor::MoveTo(0, *row));
+            match style {
+                Style::Title => Self::print_colored(out, Color::Cyan, text),
+                Style::Bold => { let _ = execute!(out, SetAttribute(Attribute::Bold), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Dim => { let _ = execute!(out, SetAttribute(Attribute::Dim), Print(text), SetAttribute(Attribute::Reset)); }
+                Style::Row => {
+                    // The mark and the index in bold, the card through the
+                    // mana colourer.
+                    let split = text.find(": ").map_or(text.len(), |p| p + 2);
+                    let _ = execute!(out, SetAttribute(Attribute::Bold), Print(&text[..split]), SetAttribute(Attribute::Reset));
+                    Self::print_with_mana(out, &text[split..], None);
+                }
+                Style::Plain => Self::print_with_mana(out, text, None),
+            }
+            *row += 1;
+        };
+        for (s, l) in &header { put(&mut out, &mut row, *s, l); }
+        for (s, l) in &body[page.start..page.end] { put(&mut out, &mut row, *s, l); }
+        if page.paged {
+            put(&mut out, &mut row, Style::Dim, &format!(
+                " … showing lines {}-{} of {} — m/p = next/prev page", page.start + 1, page.end, body.len()));
+        }
+        for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
+        if let Some(msg) = notice {
+            let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
+                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+        }
+        row += 1;
+        let _ = execute!(out, cursor::MoveTo(0, row));
+        let _ = out.flush();
+        page
+    }
+
+    /// One line of input at a card-set prompt, read.
+    ///
+    /// Numbers toggle; `a`/`n` mark all or none; an empty line confirms,
+    /// and is refused unless the count is right. The pane keys and the
+    /// pagers are the same letters as everywhere else.
+    fn parse_card_set_input(input: &str, n: usize) -> SetInput {
+        let t = input.trim();
+        if t.is_empty() {
+            return SetInput::Confirm;
+        }
+        match t {
+            "s" | "i" | "g" | "e" | "l" | "d" => return SetInput::Pane(t.chars().next().unwrap_or('s')),
+            "m" => return SetInput::NextPage,
+            "p" => return SetInput::PrevPage,
+            "a" | "all" => return SetInput::All,
+            "n" | "none" => return SetInput::None,
+            _ => {}
+        }
+        let mut ks = Vec::new();
+        for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
+            let Ok(k) = tok.parse::<usize>() else {
+                return SetInput::Invalid(format!(
+                    "'{}' is not a number — type the number of a card to mark or unmark it", quote_input(tok)));
+            };
+            if k >= n {
+                return SetInput::Invalid(format!("{k} is out of range — the cards are numbered 0-{}", n.saturating_sub(1)));
+            }
+            ks.push(k);
+        }
+        SetInput::Toggle(ks)
+    }
+
     /// The rows of the ordering screen, one per option, as `(index, lines)`
     /// — the lines unwrapped; the screen wraps them to its width. With the
     /// engine's per-trigger details a row says whose ability it is, its
@@ -5903,6 +6109,12 @@ impl Player for CliPlayer {
             return Self::prompt_exile_from_graveyard(view, options, *min, *max, description);
         }
 
+        // A set of cards out of a list: a checklist, not a menu of every
+        // way of choosing (issue #360). Toggling is the whole interaction.
+        if let Some(prompt) = legal.set_prompt.as_ref() {
+            return Self::prompt_card_set(view, prompt, legal.context.as_deref().unwrap_or("CHOOSE CARDS"));
+        }
+
         // Pile division: prompt for the indices that form pile 1.
         if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
             permanents, description, ..
@@ -6471,6 +6683,33 @@ mod tests {
         assert_eq!(CliPlayer::wrap_row("", 10), vec![""], "an empty row is one empty line");
         assert_eq!(CliPlayer::wrap_row("anything at all", 0), vec!["anything at all"],
             "no width is no wrapping, not an endless loop");
+    }
+
+    /// Marking cards is toggling, and the idle key confirms rather than
+    /// choosing something (#123).
+    #[test]
+    fn a_card_set_is_marked_by_number_and_confirmed_by_enter() {
+        use SetInput::*;
+        assert!(matches!(CliPlayer::parse_card_set_input("", 7), Confirm));
+        assert!(matches!(CliPlayer::parse_card_set_input("   ", 7), Confirm));
+        assert!(matches!(CliPlayer::parse_card_set_input("3", 7), Toggle(ref v) if *v == vec![3]));
+        assert!(matches!(CliPlayer::parse_card_set_input("0 2, 5", 7), Toggle(ref v) if *v == vec![0, 2, 5]));
+        // Toggling the same card twice in one line is two toggles, which is
+        // what "toggle" means — not an error and not a set-union.
+        assert!(matches!(CliPlayer::parse_card_set_input("2 2", 7), Toggle(ref v) if *v == vec![2, 2]));
+        assert!(matches!(CliPlayer::parse_card_set_input("a", 7), All));
+        assert!(matches!(CliPlayer::parse_card_set_input("none", 7), None));
+        assert!(matches!(CliPlayer::parse_card_set_input("g", 7), Pane('g')));
+        assert!(matches!(CliPlayer::parse_card_set_input("m", 7), NextPage));
+        assert!(matches!(CliPlayer::parse_card_set_input("p", 7), PrevPage));
+        match CliPlayer::parse_card_set_input("7", 7) {
+            Invalid(why) => assert!(why.contains("numbered 0-6"), "{why}"),
+            other => panic!("out of range is refused, got {other:?}"),
+        }
+        match CliPlayer::parse_card_set_input("two", 7) {
+            Invalid(why) => assert!(why.contains("not a number"), "{why}"),
+            other => panic!("a word is refused, got {other:?}"),
+        }
     }
 
     /// A horizontal rule carries a label and nothing that has to be read.
@@ -7214,6 +7453,7 @@ yourself at some considerable length";
             activatable_abilities: vec![],
             context: None,
             resolution_prompt: None,
+            set_prompt: None,
         }
     }
 

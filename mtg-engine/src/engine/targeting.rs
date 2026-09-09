@@ -793,20 +793,3 @@ pub(crate) fn generate_ability_targets(
     let Some(target_req) = &ab.target_requirement else { return vec![]; };
     valid_targets_for_req(state, controller, source_id, target_req, behavior, registry)
 }
-pub(crate) fn combinations(items: &[ObjectId], k: usize) -> Vec<Vec<ObjectId>> {
-    if k == 0 {
-        return vec![vec![]];
-    }
-    if items.len() < k {
-        return vec![];
-    }
-    let mut result = Vec::new();
-    for i in 0..=items.len() - k {
-        let rest = combinations(&items[i + 1..], k - 1);
-        for mut combo in rest {
-            combo.insert(0, items[i]);
-            result.push(combo);
-        }
-    }
-    result
-}

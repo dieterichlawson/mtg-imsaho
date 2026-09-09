@@ -81,17 +81,24 @@ impl Player for RandomPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(chosen) };
         }
 
+        // A set of cards out of a list — the mulligan bottoming and the
+        // cleanup discard. There are no enumerated actions to pick from:
+        // the subsets are C(hand, n), which is a menu nobody can read and,
+        // for this player, a list to index into for no benefit. Take the
+        // first `min` in hand order, the same "minimal action, always
+        // valid" convention as the exile cost above, and the same
+        // deterministic opening hand as before: no mulligan RNG beyond the
+        // deal itself.
+        if let Some(prompt) = legal.set_prompt.as_ref() {
+            let chosen: Vec<mtg_engine::ids::ObjectId> =
+                prompt.options.iter().take(prompt.min).copied().collect();
+            return prompt.answer(chosen);
+        }
+
         // Deterministic mulligan policy: always keep the first hand, never
-        // mulligan. For the bottom sub-phase (only reached via a forced keep
-        // at the cap or if this player had previously mulliganed), pick the
-        // first enumerated combination. This avoids introducing opening-hand
-        // RNG beyond the deal itself — desirable for experiments that want
-        // to measure deck quality and piloting, not mulligan variance.
+        // mulligan.
         if let Some(keep_idx) = legal_actions.iter().position(|a| matches!(a, Action::MulliganKeep)) {
             return legal_actions[keep_idx].clone();
-        }
-        if matches!(legal_actions.first(), Some(Action::BottomCards { .. })) {
-            return legal_actions[0].clone();
         }
 
         // Filter out Concede.
