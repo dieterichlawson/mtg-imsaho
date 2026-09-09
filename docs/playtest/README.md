@@ -27,6 +27,24 @@ weeks is a reasonable floor unless you are re-probing a fresh fix). One
 subject a night is normal; two or three probes within it is a night's
 work.
 
+**The floor is per idea, not per subject, and "already played" is a fact
+to look up rather than infer.** The ledger's Mission column starts with
+the id, so this says which ids in a series have ever been run:
+
+```
+grep -oE '\| D[0-9]+' reports/playtests/LEDGER.md | grep -oE 'D[0-9]+' | sort -uV
+```
+
+Compare it against the ids in that subject's guide before concluding the
+series is spent. Ideas are not played in order and a series is never used
+up because its low numbers were: on 2026-09-08 the crew recorded that
+"C1-C37, L1-L39, V1-V38, M1-M5, H1-H5, D1-D7" had all been played inside
+the two-week floor and skipped drafting on that basis, when the ledger
+held D1, D2, D3, D5 and D7 only — D4 and D6 had never been run, and D8,
+D9 and D10 were sitting in `drafting.md` unread. Drafting had by then
+gone longer without a night than any other subject, which is the case the
+first rule exists to catch.
+
 ## What a guide is, and isn't
 
 Each guide has three parts: where the code and the contract live, how to
