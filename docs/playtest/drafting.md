@@ -178,3 +178,15 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   actually returns, the same fatal wording, and after every mode no orphan
   process and no leaked scratch directory. Any difference is either a fix
   that reached one copy only, or an argument for deleting one copy
+
+- D15 [proposed 2026-09-09, from reading `deckbuilding.rs` during D4] the deck
+  answer the schema cannot describe: `parse_deck_response` pushes `count`
+  copies of a name into a `Vec` before `validate_deck` ever sees it, taking
+  `u32::MAX` on overflow, and `validate_deck`'s 200-card hallucination guard
+  runs only over `lands`, never over the maindeck. The enum-constrained schema
+  keeps a well-behaved model away from this today, which is exactly why a
+  stub should go there instead. Point `CLAUDE_CODE_BIN` at maindeck counts of
+  1e6 and 4e9 and at land counts of 0, -1 and 1e12, and verify each is
+  refused as an invalid response — with a retry message a model could act on
+  — rather than allocated first. Check the same for a deck response whose
+  JSON is valid and whose keys are not the schema's
