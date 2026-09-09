@@ -5144,6 +5144,16 @@ impl CliPlayer {
         }
     }
 
+    /// Whether a set screen has exactly one answer: it demands a count, and
+    /// that count is every row it lists.
+    ///
+    /// Not the same as "one row". An "up to one" with a single option has
+    /// two answers — that row, or nothing — and marking none is a real cast
+    /// (CR 601.2c), so it must not be decided for the player.
+    fn set_is_forced(min: usize, max: usize, rows: usize) -> bool {
+        min == max && min == rows && rows > 0
+    }
+
     /// The heading at a target-set prompt.
     ///
     /// Every other marking screen is headed by a short upper-case line
@@ -5197,12 +5207,19 @@ impl CliPlayer {
     /// them is a menu. Returns the indices marked, or `None` when the player
     /// abandoned a choice that may be abandoned.
     fn pick_set(view: &GameView, pick: &SetPick) -> Option<Vec<usize>> {
-        let mut marked: Vec<bool> = vec![false; pick.rows.len()];
+        // A screen that demands every row it lists has one answer, and
+        // making the player type it out is busywork: Prey Upon with one
+        // creature a side asks two questions with one option each. Start
+        // them marked, so the screen still SHOWS what is about to be
+        // targeted (#254) and Enter agrees with it.
+        let forced = Self::set_is_forced(pick.min, pick.max, pick.rows.len());
+        let mut marked: Vec<bool> = vec![forced; pick.rows.len()];
         // Whether the player has touched the selection at all. Where an
         // empty answer is legal — Harvest Pyre exiling nothing, X=0 — the
         // idle key would otherwise COMMIT it, which is issue #262: the safe
         // key must not be an answer. Marking nothing on purpose is `n`.
-        let mut touched = false;
+        // A forced set is not that case: there is nothing else to say.
+        let mut touched = forced;
         let mut notice: Option<String> = None;
         let mut offset = 0usize;
         loop {
@@ -6907,6 +6924,23 @@ yourself at some considerable length";
         assert!(matches!(CliPlayer::parse_card_set_input("", 3, false), SetInput::Confirm));
         assert!(matches!(CliPlayer::parse_card_set_input("n", 3, false), SetInput::None),
             "and 'none' is a mark, not a confirm");
+    }
+
+    /// A screen with exactly one answer starts on it: Prey Upon with one
+    /// creature a side asks two questions of one option each, and typing
+    /// them out is busywork. The screen still shows what will be targeted
+    /// (#254) — it is Enter that agrees, not silence.
+    #[test]
+    fn a_set_with_one_answer_starts_marked() {
+        assert!(CliPlayer::set_is_forced(1, 1, 1), "one row, one required");
+        assert!(CliPlayer::set_is_forced(3, 3, 3), "Skaab Ruinator exiling its whole graveyard");
+        // A real choice is never pre-made.
+        assert!(!CliPlayer::set_is_forced(0, 1, 1),
+            "'up to one' with one option can still be answered with none");
+        assert!(!CliPlayer::set_is_forced(0, 2, 2), "nor can 'up to two'");
+        assert!(!CliPlayer::set_is_forced(1, 1, 3), "one of three is a choice");
+        assert!(!CliPlayer::set_is_forced(2, 2, 5), "two of five is a choice");
+        assert!(!CliPlayer::set_is_forced(0, 0, 0), "an empty screen decides nothing");
     }
 
     /// Issue #325: the ordering prompt reads one line — the indices in
