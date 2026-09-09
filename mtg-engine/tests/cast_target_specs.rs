@@ -34,6 +34,24 @@ fn spec_for(state: &GameState, reg: &CardRegistry, spell: ObjectId) -> CastTarge
         .target_spec.clone()
 }
 
+/// The target prompt the cast raises when submitted with nothing named.
+///
+/// A `ChosenAtCast` spec says the candidates are not in the spec; this is
+/// where they are instead, and it is what a client actually sees.
+#[track_caller]
+fn asked_for(state: &GameState, reg: &CardRegistry, spell: ObjectId)
+    -> (Vec<Target>, usize, usize, Vec<Target>)
+{
+    let asked = cast_onto_stack(state, reg, spell, vec![]);
+    match &asked.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+                options, min, max, fixed, .. }, .. }) =>
+            (options.clone(), *min, *max, fixed.clone()),
+        other => panic!("expected a target prompt for {spell:?}, got {other:?}"),
+    }
+}
+
 /// A spell with nothing to target says so, rather than offering an empty
 /// list of things to choose from — the two read the same to a client that
 /// only counts options, and only one of them can be cast.
@@ -59,10 +77,10 @@ fn an_up_to_two_spell_carries_its_ceiling_and_its_candidates() {
     let theirs = named_permanent(&mut state, &reg, "Ambush Viper", P1);
     let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
 
-    let CastTargetSpec::UpToTargets { max, options } = spec_for(&state, &reg, dread) else {
-        panic!("expected an UpToTargets spec, got {:?}", spec_for(&state, &reg, dread));
-    };
-    assert_eq!(max, 2);
+    assert!(matches!(spec_for(&state, &reg, dread), CastTargetSpec::ChosenAtCast),
+        "the cast asks for the slot, so the spec says so and carries no options");
+    let (options, min, max, _) = asked_for(&state, &reg, dread);
+    assert_eq!((min, max), (0, 2), "up to two, and none is a choice");
     assert_eq!(options.len(), 2, "both creatures are candidates: {options:?}");
     assert!(options.contains(&Target::Object(mine)) && options.contains(&Target::Object(theirs)),
         "either creature can be tapped: {options:?}");
@@ -75,26 +93,43 @@ fn an_up_to_two_spell_carries_its_ceiling_and_its_candidates() {
     assert_eq!(sets, vec![Vec::<Target>::new()], "one cast, targets unchosen: {sets:?}");
 }
 
-/// Two separate instances of the word "target" are two slots, each with its
-/// own candidates — and the second slot's list is the one that goes with the
-/// chosen first target, not a flat list of everything.
+/// Two separate instances of the word "target" are two slots, asked one at a
+/// time, each with its own candidates.
+///
+/// Enumerating the pairs is `|a| x |b|` rows — 256 for Into the Maw of Hell
+/// over eight lands and eight creatures a side — and the two questions are
+/// `|a| + |b|`. It cannot be one marking screen, because which target went
+/// in which slot is part of the answer.
 #[test]
-fn a_two_target_spell_pairs_each_first_choice_with_its_own_seconds() {
+fn a_two_target_spell_asks_for_one_slot_at_a_time() {
     let (mut state, reg) = base();
     let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let theirs = named_permanent(&mut state, &reg, "Ambush Viper", P1);
     let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
 
-    let CastTargetSpec::TwoTargets { first, second, second_min, second_max } =
-        spec_for(&state, &reg, prey)
-    else {
-        panic!("expected a TwoTargets spec, got {:?}", spec_for(&state, &reg, prey));
-    };
+    assert!(matches!(spec_for(&state, &reg, prey), CastTargetSpec::ChosenAtCast));
+
     // "Target creature you control fights target creature you don't control."
-    assert_eq!(first, vec![Target::Object(mine)]);
-    assert_eq!(second, vec![vec![Target::Object(theirs)]]);
-    assert_eq!(second.len(), first.len(), "the second lists are parallel to the first");
-    assert_eq!((second_min, second_max), (1, 1), "both slots are mandatory and singular");
+    let (slot1, min1, max1, fixed1) = asked_for(&state, &reg, prey);
+    assert_eq!((min1, max1, fixed1.len()), (1, 1, 0), "one target, nothing in front of it");
+    assert_eq!(slot1, vec![Target::Object(mine)], "the first slot is yours");
+
+    // Answering the first raises the second, which knows what came before.
+    let after = mtg_engine::engine::submit_action(
+        &cast_onto_stack(&state, &reg, prey, vec![]),
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTargetSet(
+                vec![Target::Object(mine)]) },
+        &reg);
+    let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+            options, min, max, fixed, .. }, .. }) = &after.awaiting_action else {
+        panic!("expected the second slot's prompt, got {:?}", after.awaiting_action);
+    };
+    assert_eq!((*min, *max), (1, 1), "the second slot is mandatory and singular");
+    assert_eq!(*options, vec![Target::Object(theirs)], "and it is theirs");
+    assert_eq!(*fixed, vec![Target::Object(mine)],
+        "the prompt carries what is already named, or the list has no context");
 }
 
 /// A "up to N" second slot is the one place a `TwoTargets` spell can be cast
@@ -191,17 +226,23 @@ fn a_modal_spell_offers_what_each_of_its_modes_can_name() {
 
     // "Return target creature card from your graveyard to your hand, or return
     // two target Zombie creature cards from your graveyard to your hand."
-    let CastTargetSpec::SingleTarget(options) = spec_for(&state, &reg, chant) else {
-        panic!("expected a SingleTarget spec, got {:?}", spec_for(&state, &reg, chant));
-    };
+    // One Zombie beside one non-Zombie: mode one can name either, mode two
+    // cannot be filled, and the count says so.
+    assert!(matches!(spec_for(&state, &reg, chant), CastTargetSpec::ChosenAtCast));
+    let (options, min, max, _) = asked_for(&state, &reg, chant);
     assert!(options.contains(&Target::Object(ghoul)) && options.contains(&Target::Object(bears)),
         "both creature cards are namable under mode one: {options:?}");
+    assert_eq!((min, max), (1, 1), "only one Zombie, so mode two is not on offer");
 
-    // And the flat list keeps the second mode, which the spec's flat union
-    // cannot express: the Zombie appears alone and in a pair.
-    let sets = offered_target_sets(&state, &reg, chant);
-    assert!(sets.contains(&vec![Target::Object(ghoul)]), "mode one on the Zombie: {sets:?}");
-    assert!(sets.contains(&vec![Target::Object(bears)]), "mode one on the Bears: {sets:?}");
+    // A second Zombie puts mode two back, and the ceiling is where it shows.
+    let second = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let (options, min, max, _) = asked_for(&state, &reg, chant);
+    assert_eq!((min, max), (1, 2), "one card or two: {options:?}");
+    assert!(options.contains(&Target::Object(second)));
+
+    // And one cast is offered, not one per mode per subset.
+    assert_eq!(offered_target_sets(&state, &reg, chant), vec![Vec::<Target>::new()]);
 }
 
 /// CR 601.2c: one instance of the word "target" cannot name the same thing
@@ -237,9 +278,12 @@ fn each_slot_of_a_two_target_spell_is_its_own_instance() {
     let theirs = named_permanent(&mut state, &reg, "Ambush Viper", P1);
     let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
 
-    // The one legal pair is offered once, and naming it is a cast.
-    assert_eq!(offered_target_sets(&state, &reg, prey),
-        vec![vec![Target::Object(mine), Target::Object(theirs)]]);
+    // One announcement, and the slots are asked one at a time: the first
+    // offers only yours, the second only theirs.
+    assert_eq!(offered_target_sets(&state, &reg, prey), vec![Vec::<Target>::new()]);
+    let (slot1, min1, max1, fixed1) = asked_for(&state, &reg, prey);
+    assert_eq!((min1, max1, fixed1.len()), (1, 1, 0), "one target, nothing in front");
+    assert_eq!(slot1, vec![Target::Object(mine)], "the first slot is yours");
     let after = mtg_engine::engine::submit_action(
         &state,
         &cast_action(prey, vec![Target::Object(mine), Target::Object(theirs)]),
@@ -263,9 +307,7 @@ fn up_to_n_offers_the_same_candidates_as_one() {
     let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
     let bolt = castable_spell(&mut state, &reg, "Geistflame", P0);
 
-    let CastTargetSpec::UpToTargets { options: up_to, .. } = spec_for(&state, &reg, dread) else {
-        panic!("Feeling of Dread is an up-to-two spell");
-    };
+    let (up_to, ..) = asked_for(&state, &reg, dread);
     let CastTargetSpec::SingleTarget(single) = spec_for(&state, &reg, bolt) else {
         panic!("Geistflame names one thing");
     };

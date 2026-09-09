@@ -666,38 +666,79 @@ fn woodland_sleuth_does_not_reach_into_an_opponents_graveyard() {
 // Ghoulcaller's Chant
 // -------------------------------------------------------------------------
 
-/// The offered target sets, split by arity: (mode-1 singles, mode-2 pairs).
-fn modes(
+/// What the Chant's one screen offers: (cards it lists, how many may be
+/// marked at most).
+///
+/// The two modes are one question — mode 1 takes a card, mode 2 takes two,
+/// and the count is what says which was meant — so the candidates are the
+/// union and the ceiling is where mode 2 shows up. `max == 1` means mode 2
+/// cannot be filled; there is no separate list of pairs to count any more.
+fn offer(
     state: &mtg_engine::state::GameState,
     reg: &mtg_engine::cards::CardRegistry,
     chant: ObjectId,
-) -> (Vec<Target>, Vec<Vec<Target>>) {
-    let sets = offered_target_sets(state, reg, chant);
-    let singles = sets.iter().filter(|t| t.len() == 1).map(|t| t[0].clone()).collect();
-    let pairs = sets.into_iter().filter(|t| t.len() == 2).collect();
-    (singles, pairs)
+) -> (Vec<Target>, usize) {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    if !can_cast(state, reg, chant) {
+        return (vec![], 0);
+    }
+    let asked = cast_onto_stack(state, reg, chant, vec![]);
+    match &asked.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTargetSet { options, max, .. }, .. }) =>
+            (options.clone(), *max),
+        other => panic!("expected the Chant's target screen, got {other:?}"),
+    }
 }
 
-/// Which cards each mode may name, for every shape of graveyard that matters.
+/// Answer that screen, and resolve.
+fn chant_naming(
+    state: &mtg_engine::state::GameState,
+    reg: &mtg_engine::cards::CardRegistry,
+    chant: ObjectId,
+    cards: &[ObjectId],
+) -> mtg_engine::state::GameState {
+    let asked = cast_onto_stack(state, reg, chant, vec![]);
+    let mut after = mtg_engine::engine::submit_action(&asked,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(
+            cards.iter().map(|c| Target::Object(*c)).collect()) }, reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut after, reg);
+    after
+}
+
+/// Which cards the Chant may name, for every shape of graveyard that matters,
+/// and which counts it will accept.
 ///
-/// The negative half of each row is as important as the positive: mode 2 needs
-/// *two* Zombies, so one Zombie beside a Bear offers no pair, and two Bears
-/// offer no pair either — an engine that ignored the Zombie restriction would
-/// pass a test that only looked at the all-Zombie case.
+/// The negative half of each row is as important as the positive: mode 2
+/// needs *two* Zombies, so one Zombie beside a Bear will not take two, and
+/// two Bears will not either — an engine that ignored the Zombie restriction
+/// would pass a test that only looked at the all-Zombie case.
+///
+/// The restriction is checked twice over: once as the ceiling the screen
+/// offers, and once by naming two non-Zombies anyway and finding the cast
+/// refused. The ceiling alone would not catch an engine that offered a
+/// sensible screen and then accepted anything, which is exactly what the
+/// union of both modes' candidates makes possible.
 #[test]
-fn each_mode_offers_exactly_the_cards_it_may_name() {
-    // (cards in your graveyard, cards in the opponent's, mode-1 count, mode-2 count)
+fn the_chant_names_the_cards_it_may_and_takes_the_counts_it_may() {
+    // (cards in your graveyard, cards in the opponent's, listed, max, why)
     const CASES: &[(&[&str], &[&str], usize, usize, &str)] = &[
-        (&["Grizzly Bears"], &[], 1, 0,
-         "one non-Zombie: mode 1 only"),
-        (&["Walking Corpse", "Diregraf Ghoul"], &[], 2, 1,
+        (&["Grizzly Bears"], &[], 1, 1,
+         "one non-Zombie: one card, and no room for two"),
+        (&["Walking Corpse", "Diregraf Ghoul"], &[], 2, 2,
          "two Zombies: either one alone, or both together"),
-        (&["Grizzly Bears", "Savannah Lions"], &[], 2, 0,
-         "two non-Zombies: no pair, because mode 2 names Zombies"),
-        (&["Walking Corpse", "Grizzly Bears"], &[], 2, 0,
-         "one Zombie and one not: still no pair"),
-        (&["Grizzly Bears", "Walking Corpse", "Diregraf Ghoul"], &[], 3, 1,
-         "three cards, two of them Zombies: three singles and the one pair"),
+        (&["Grizzly Bears", "Savannah Lions"], &[], 2, 1,
+         "two non-Zombies: still one, because mode two names Zombies"),
+        (&["Walking Corpse", "Grizzly Bears"], &[], 2, 1,
+         "one Zombie and one not: still one"),
+        (&["Grizzly Bears", "Walking Corpse", "Diregraf Ghoul"], &[], 3, 2,
+         "three cards, two of them Zombies: all three listed, two may be marked"),
+        // Two of each: the only shape where the screen takes two AND two
+        // non-Zombies are there to try it with. Without this row the refusal
+        // below is never reached — every other two-Zombie case has at most
+        // one other card.
+        (&["Grizzly Bears", "Savannah Lions", "Walking Corpse", "Diregraf Ghoul"], &[], 4, 2,
+         "two Zombies and two not: four listed, two markable, but not any two"),
         (&[], &["Grizzly Bears"], 0, 0,
          "'your graveyard' — an opponent's creature card is not a legal target"),
         // Mode 2's half of the same rule. The row above uses a non-Zombie, so
@@ -705,11 +746,16 @@ fn each_mode_offers_exactly_the_cards_it_may_name() {
         // opponent's *Zombie* separates "not yours" from "not a Zombie".
         (&[], &["Walking Corpse", "Diregraf Ghoul"], 0, 0,
          "two Zombies in the opponent's graveyard are still not yours"),
-        (&["Walking Corpse"], &["Diregraf Ghoul"], 1, 0,
-         "mode 2 cannot make up its pair from an opponent's Zombie"),
+        (&["Walking Corpse"], &["Diregraf Ghoul"], 1, 1,
+         "mode two cannot make up its pair from an opponent's Zombie"),
     ];
 
-    for &(mine, theirs, singles_expected, pairs_expected, why) in CASES {
+    // The refusal below is the point of the negative half, and it is only
+    // reachable on a board that takes two and holds two non-Zombies. Counted
+    // so a future edit to the table cannot quietly stop testing it.
+    let mut refusals_checked = 0;
+
+    for &(mine, theirs, listed, max_expected, why) in CASES {
         let reg = registry();
         let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -721,24 +767,67 @@ fn each_mode_offers_exactly_the_cards_it_may_name() {
         }
 
         let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-        let (singles, pairs) = modes(&state, &reg, chant);
+        let (options, max) = offer(&state, &reg, chant);
 
-        assert_eq!(singles.len(), singles_expected, "{why}: mode 1 count");
-        assert_eq!(pairs.len(), pairs_expected, "{why}: mode 2 count");
+        assert_eq!(options.len(), listed, "{why}: cards listed");
+        assert_eq!(max, max_expected, "{why}: most that may be marked");
 
-        // Every card offered is one of yours, and every one of yours is offered.
+        // Every card listed is one of yours, and every one of yours is listed.
         for id in &ids {
-            assert!(singles.contains(&Target::Object(*id)),
-                "{why}: every creature card in your graveyard is a mode-1 target");
+            assert!(options.contains(&Target::Object(*id)),
+                "{why}: every creature card in your graveyard is namable");
         }
-        for pair in &pairs {
-            for t in pair {
-                let Target::Object(id) = t else { panic!("{why}: mode 2 names cards") };
-                assert!(state.has_subtype(*id, "Zombie", &reg),
-                    "{why}: mode 2 names Zombies only");
+
+        // Where two may be marked, two non-Zombies still may not: the screen
+        // lists the union of both modes, so the rule has to hold at the answer.
+        if max == 2 {
+            let non_zombies: Vec<ObjectId> = ids.iter().copied()
+                .filter(|id| !state.has_subtype(*id, "Zombie", &reg))
+                .collect();
+            if non_zombies.len() >= 2 {
+                let after = chant_naming(&state, &reg, chant, &non_zombies[..2]);
+                assert_eq!(after.get_object(chant).expect("the spell").zone, Zone::Hand,
+                    "{why}: two non-Zombies is no mode of this card, so no cast happened");
+                // And the same two Zombies ARE taken, so the refusal above is
+                // the Zombie rule and not the screen refusing everything.
+                let zombies: Vec<ObjectId> = ids.iter().copied()
+                    .filter(|id| state.has_subtype(*id, "Zombie", &reg))
+                    .collect();
+                let ok = chant_naming(&state, &reg, chant, &zombies[..2]);
+                assert_eq!(ok.get_object(zombies[0]).unwrap().zone, Zone::Hand,
+                    "{why}: two Zombies is mode two and does happen");
+                refusals_checked += 1;
             }
         }
     }
+    assert!(refusals_checked > 0,
+        "no case in the table could try two non-Zombies, so the Zombie rule \
+         was only checked as a ceiling and never as an answer");
+}
+
+/// The count is the mode: one card is mode one, two Zombies is mode two, and
+/// the same screen answers both.
+#[test]
+fn the_chant_reads_its_mode_off_how_many_cards_were_named() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let zombie = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let other = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let bystander = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+
+    // Two Zombies: mode two, and only the two named come back.
+    let two = chant_naming(&state, &reg, chant, &[zombie, other]);
+    assert_eq!(two.get_object(zombie).unwrap().zone, Zone::Hand);
+    assert_eq!(two.get_object(other).unwrap().zone, Zone::Hand);
+    assert_eq!(two.get_object(bystander).unwrap().zone, Zone::Graveyard,
+        "mode two returns the two it named and nothing else");
+
+    // One card: mode one, and it need not be a Zombie.
+    let one = chant_naming(&state, &reg, chant, &[bystander]);
+    assert_eq!(one.get_object(bystander).unwrap().zone, Zone::Hand,
+        "mode one names any creature card in your graveyard");
+    assert_eq!(one.get_object(zombie).unwrap().zone, Zone::Graveyard);
 }
 
 /// Mode 1 resolving: the named card comes back.

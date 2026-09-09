@@ -784,37 +784,54 @@ fn the_two_targets_spec_narrows_the_second_slot_to_the_chosen_player() {
 /// A MANDATORY second slot with exactly one legal option is still a legal
 /// pairing — the first target is offered, not dropped.
 ///
-/// The guard that drops an unpairable first target is `options.len() <
-/// second_min`, and both an off-by-one and an equality mutation of it
-/// survived the suite (mutants shard 4): each would have skipped the
-/// one-option case, so Prey Upon with one creature a side offered nothing at
-/// all. The suite only ever built the "up to N" shape, whose `second_min` is
-/// 0, where every mutation of this comparison is invisible.
+/// The guard that drops an unpairable first target compares the second
+/// slot's option count against its floor, and both an off-by-one and an
+/// equality mutation of it survived the suite (mutants shard 4): each would
+/// have skipped the one-option case, so Prey Upon with one creature a side
+/// offered nothing at all. The suite only ever built the "up to N" shape,
+/// whose floor is 0, where every mutation of this comparison is invisible.
+///
+/// Both sides are pinned, because the guard is a threshold and only one of
+/// its neighbours is the interesting one: with a creature to fight the cast
+/// is offered, and with none it is not.
 #[test]
 fn a_mandatory_second_slot_with_one_option_is_still_offered() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mine = ready_creature(&mut state, P0, 3, 3);
-    let theirs = ready_creature(&mut state, P1, 2, 2);
 
     // Prey Upon: "Target creature you control fights target creature you
-    // don't control." Both slots are mandatory.
+    // don't control." Both slots are mandatory, and with nothing to fight
+    // the first target is no target at all.
     let prey = castable_spell(&mut state, &reg, "Prey Upon", P0);
-    let legal = mtg_engine::engine::legal_actions(&state, &reg);
-    let cs = legal.castable_spells.iter()
-        .find(|cs| cs.object_id == prey)
-        .expect("Prey Upon should be castable");
+    assert!(!can_cast(&state, &reg, prey),
+        "a creature you control with nothing to fight is not a cast");
 
-    let mtg_engine::actions::CastTargetSpec::TwoTargets { first, second, second_min, second_max } =
-        &cs.target_spec
-    else {
-        panic!("Prey Upon has a creature-then-creature target spec, got {:?}", cs.target_spec);
+    // One creature a side: exactly one legal pairing, and it is offered.
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    assert!(can_cast(&state, &reg, prey), "one each is a legal pairing");
+
+    let asked = cast_onto_stack(&state, &reg, prey, vec![]);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. })
+        = &asked.awaiting_action else {
+        panic!("expected the first slot's prompt, got {:?}", asked.awaiting_action);
     };
+    assert_eq!((*min, *max), (1, 1), "both slots are mandatory and singular");
+    assert_eq!(*options, vec![Target::Object(mine)],
+        "the one creature you control is offered, because it can be paired");
 
-    assert_eq!((*second_min, *second_max), (1, 1), "both slots are mandatory");
-    assert_eq!(first, &vec![Target::Object(mine)],
-        "the one creature you control is offered as the first target");
-    assert_eq!(second[0], vec![Target::Object(theirs)],
+    let after = mtg_engine::engine::submit_action(&asked,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(
+            vec![Target::Object(mine)]) }, &reg);
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { options, .. }, .. })
+        = &after.awaiting_action else {
+        panic!("expected the second slot's prompt, got {:?}", after.awaiting_action);
+    };
+    assert_eq!(*options, vec![Target::Object(theirs)],
         "with the one creature you don't control as its only pairing");
 }
 
