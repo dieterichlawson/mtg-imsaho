@@ -67,14 +67,26 @@ impl Player for RandomPlayer {
         }
 
         // An "up to N" target slot: no enumerated actions — the subsets are
-        // exponential in the board. Take the minimum, the same "minimal
-        // action, always valid" convention as the exile cost above.
+        // exponential in the board — so the count is rolled and the targets
+        // taken in order, no target twice (CR 601.2c).
+        //
+        // NOT the minimum, unlike the costs above. `min` is zero for every
+        // "up to N" slot in the pool, so taking it would mean this seat
+        // never casts Feeling of Dread at a creature, never taps anything
+        // with it, and never resolves the half of those cards that does
+        // something — and this seat is what the invariant fuzzer plays.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
-            options, min, ..
+            options, min, max, ..
         }) = legal.resolution_prompt.as_ref()
         {
             use mtg_engine::actions::ResolvedChoice;
-            let chosen: Vec<mtg_engine::actions::Target> = options.iter().take(*min).cloned().collect();
+            use rand::seq::SliceRandom;
+            let how_many = if max > min { self.rng.gen_range(*min..=*max) } else { *min };
+            // A random subset, not the first `how_many`: taking them in
+            // order would mean the last creature on a wide board is never
+            // targeted at all.
+            let chosen: Vec<mtg_engine::actions::Target> =
+                options.choose_multiple(&mut self.rng, how_many).cloned().collect();
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(chosen) };
         }
 
