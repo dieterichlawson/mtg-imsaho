@@ -733,6 +733,21 @@ impl ClaudeCodeDraftBackend {
     }
 
     fn call_once(&mut self, message: &str, schema: &serde_json::Value) -> Result<serde_json::Value, String> {
+        // The draft seat has its own request path — #404 is what happens
+        // when a fix to the game backend never reaches this copy — so the
+        // rule the game side asserts is asserted here too. A top-level
+        // property key the API refuses is a 400 before the model reads
+        // anything, and the seat cannot tell that apart from an answer it
+        // did not like (#398). The deck-build schema keys by card name and
+        // is safe only because it nests them under `maindeck`; nothing but
+        // this says so.
+        debug_assert!(
+            schema.get("properties").and_then(serde_json::Value::as_object)
+                .is_none_or(|p| p.keys().all(|k| mtg_player::llm::schema_key_is_legal(k))),
+            "a top-level draft schema key is one the API will refuse (#398): {:?}",
+            schema.get("properties").and_then(serde_json::Value::as_object)
+                .map(|p| p.keys().filter(|k| !mtg_player::llm::schema_key_is_legal(k))
+                    .cloned().collect::<Vec<_>>()));
         let mut cmd = Command::new(&self.binary);
         cmd.arg("-p")
             .args(["--output-format", "json"])
