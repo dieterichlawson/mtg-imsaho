@@ -3645,76 +3645,131 @@ impl CliPlayer {
         result
     }
 
+    /// One row of the inspector: a section heading, or a numbered permanent.
+    ///
+    /// The rows are built before they are drawn so the page can be measured
+    /// in the lines they take, the way the other viewers are. The number a
+    /// row carries is its index in `all_perms`, not its position on the page,
+    /// so it means the same thing whichever page is showing.
+    fn inspect_row(perm: &PermanentView, idx: usize) -> String {
+        let pt = match (perm.effective_power, perm.effective_toughness) {
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
+            _ => String::new(),
+        };
+        let flags = format!("{}{}",
+            if perm.tapped { " [T]" } else { "" },
+            if Self::is_summoning_sick(perm) { " [S]" } else { "" });
+        let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
+            let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                .copied().unwrap_or(0);
+            format!(" [{l} loyalty]")
+        } else { String::new() };
+        format!("  {idx:>2}: {}{}{}{}", perm.name, pt, loyalty, flags)
+    }
+
+    /// The permanents the inspector numbers, yours first: the order the
+    /// indices on its rows and the index its detail page takes both mean.
+    fn inspect_permanents(view: &GameView) -> Vec<&PermanentView> {
+        let mut perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller == view.you).collect();
+        perms.extend(view.battlefield.iter().filter(|p| p.controller != view.you));
+        perms
+    }
+
+    /// The inspector's rows: the two section headings and one row per
+    /// permanent, `(bold, text)`.
+    ///
+    /// Built as a list so the page can be measured in the lines they take.
+    /// The viewer used to print straight down with no clamp and no pager at
+    /// all, so once the board was taller than the pane the terminal threw
+    /// away the top — the title, the "Your permanents:" heading and your own
+    /// half of the board, since the opponent's rows are printed last (#364).
+    fn inspect_rows(view: &GameView) -> Vec<(bool, String)> {
+        let your_n = view.battlefield.iter().filter(|p| p.controller == view.you).count();
+        let perms = Self::inspect_permanents(view);
+        let mut rows: Vec<(bool, String)> = vec![(true, " Your permanents:".to_string())];
+        for (i, perm) in perms.iter().enumerate().take(your_n) {
+            rows.push((false, Self::inspect_row(perm, i)));
+        }
+        rows.push((true, String::new()));
+        rows.push((true, " Opponent's permanents:".to_string()));
+        for (i, perm) in perms.iter().enumerate().skip(your_n) {
+            rows.push((false, Self::inspect_row(perm, i)));
+        }
+        rows
+    }
+
     fn show_battlefield_inspector(view: &GameView) {
         // No registry lookup: everything this page shows about a permanent
         // comes from the view, which resolves the face that is up. Reading
         // the registry by `card_id` is what gave a transformed permanent its
         // front face's text and P/T (issue #240).
         let mut out = stdout();
+        let mut page = 0usize;
 
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-            Self::print_colored(&mut out, Color::Cyan, " INSPECT BATTLEFIELD");
+
+            let all_perms = Self::inspect_permanents(view);
+            let rows = Self::inspect_rows(view);
+
+            let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+            let (w, h) = (term_w as usize, term_h as usize);
+            let heights: Vec<usize> = rows.iter()
+                .map(|(_, t)| Self::wrapped_height(str_cols(t), w))
+                .collect();
+            let widest_heading = format!(
+                " INSPECT BATTLEFIELD (showing {n}-{n} of {n})", n = rows.len());
+            let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+                + 2
+                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
+            let avail = Self::viewer_avail(h, chrome);
+            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
+            page = start;
+            let end = start + shown;
+
+            let heading = if paged {
+                format!(" INSPECT BATTLEFIELD (showing {}-{} of {} rows)",
+                    start + 1, end, rows.len())
+            } else {
+                " INSPECT BATTLEFIELD".to_string()
+            };
+            Self::print_colored(&mut out, Color::Cyan, &heading);
             let _ = execute!(out, Print("\n"));
 
-            let your_perms: Vec<&PermanentView> = view.battlefield.iter()
-                .filter(|p| p.controller == view.you).collect();
-            let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
-                .filter(|p| p.controller != view.you).collect();
-
-            let _ = execute!(out, SetAttribute(Attribute::Bold),
-                Print(" Your permanents:\n"), SetAttribute(Attribute::Reset));
-            let mut idx = 0;
-            for perm in &your_perms {
-                let pt = match (perm.effective_power, perm.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => String::new(),
-                };
-                let flags = format!("{}{}",
-                    if perm.tapped { " [T]" } else { "" },
-                    if Self::is_summoning_sick(perm) { " [S]" } else { "" });
-                let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
-                    let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
-                        .copied().unwrap_or(0);
-                    format!(" [{l} loyalty]")
-                } else { String::new() };
-                let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(format!("  {idx:>2}")),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{}{}{}\n", perm.name, pt, loyalty, flags)));
-                idx += 1;
+            for (bold, text) in rows.iter().take(end).skip(start) {
+                if *bold {
+                    let _ = execute!(out, SetAttribute(Attribute::Bold),
+                        Print(format!("{text}\n")), SetAttribute(Attribute::Reset));
+                } else {
+                    // The index is bold, the rest is not, as before.
+                    let (idx, tail) = text.split_at(text.find(':').unwrap_or(0));
+                    let _ = execute!(out,
+                        SetAttribute(Attribute::Bold), Print(idx),
+                        SetAttribute(Attribute::Reset), Print(format!("{tail}\n")));
+                }
             }
 
-            let _ = execute!(out, Print("\n"));
-            let _ = execute!(out, SetAttribute(Attribute::Bold),
-                Print(" Opponent's permanents:\n"), SetAttribute(Attribute::Reset));
-            for perm in &opp_perms {
-                let pt = match (perm.effective_power, perm.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => String::new(),
-                };
-                let flags = format!("{}{}",
-                    if perm.tapped { " [T]" } else { "" },
-                    if Self::is_summoning_sick(perm) { " [S]" } else { "" });
-                let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
-                    let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
-                        .copied().unwrap_or(0);
-                    format!(" [{l} loyalty]")
-                } else { String::new() };
-                let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(format!("  {idx:>2}")),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{}{}{}\n", perm.name, pt, loyalty, flags)));
-                idx += 1;
-            }
-
-            let all_perms: Vec<&PermanentView> = your_perms.iter().chain(opp_perms.iter()).copied().collect();
-
-            let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
+            let footer = if paged {
+                format!("\n{DECK_PAGED_FOOTER}")
+            } else {
+                "\n  Enter number for details, or press enter to return: ".to_string()
+            };
+            let _ = execute!(out, Print(&footer));
             let _ = out.flush();
             let input = Self::read_line("");
 
             if input.is_empty() { return; }
+            match input.trim() {
+                "n" if end < rows.len() => { page = end; continue; }
+                "n" => continue,
+                "p" if page > 0 => {
+                    page = Self::prev_menu_offset_lines(&heights, avail, page, 0);
+                    continue;
+                }
+                "p" => continue,
+                _ => {}
+            }
 
             if let Ok(i) = input.parse::<usize>() {
                 if i < all_perms.len() {
@@ -8149,6 +8204,76 @@ yourself at some considerable length";
         assert_eq!(open, 0);
         // And an empty one does not panic.
         assert_eq!(CliPlayer::prev_menu_offset_lines(&flat(0), avail, 0, 0), 0);
+    }
+
+    /// Issue #364: the `i` inspector is a paged viewer like the other seven,
+    /// so a board taller than the pane clamps and says so instead of letting
+    /// the terminal throw away the top.
+    ///
+    /// The rows the terminal kept were the ones printed last — the
+    /// opponent's — so on the page whose whole purpose is inspecting the
+    /// board, your own half was the half that vanished.
+    #[test]
+    fn the_inspector_pages_its_board_and_keeps_its_indices() {
+        let mut v = view(Step::PrecombatMain, 45, true);
+        // Six of yours and five of the opponent's: 11 permanents, 14 rows.
+        for i in 0..6 {
+            v.battlefield.push(creature(100 + i, "Unruly Mob", 0));
+        }
+        for i in 0..5 {
+            v.battlefield.push(creature(200 + i, "Rolling Temblor", 1));
+        }
+        let perms = CliPlayer::inspect_permanents(&v);
+        assert_eq!(perms.len(), 11);
+        assert!(perms[..6].iter().all(|p| p.controller == PlayerId(0)), "yours first");
+        assert!(perms[6..].iter().all(|p| p.controller == PlayerId(1)));
+
+        let rows = CliPlayer::inspect_rows(&v);
+        assert_eq!(rows.len(), 14, "two headings, a blank, and 11 permanents");
+        assert_eq!(rows[0].1, " Your permanents:");
+        assert_eq!(rows[7].1, "", "a blank between the sections");
+        assert_eq!(rows[8].1, " Opponent's permanents:");
+        // Every permanent is numbered by its place in `inspect_permanents`,
+        // which is the index the detail page takes — so the number means the
+        // same thing whichever page is showing.
+        for (i, _) in perms.iter().enumerate() {
+            let want = format!("  {i:>2}: ");
+            assert!(rows.iter().any(|(_, t)| t.starts_with(&want)),
+                "permanent {i} is numbered {want:?}: {rows:?}");
+        }
+
+        // At 40x12 the board does not fit, so it pages rather than scrolling.
+        let heights: Vec<usize> = rows.iter()
+            .map(|(_, t)| CliPlayer::wrapped_height(str_cols(t), 40))
+            .collect();
+        let avail = CliPlayer::viewer_avail(12, 5);
+        let (start, shown, paged) = CliPlayer::menu_page_lines(&heights, avail, 0, 0);
+        assert!(paged, "14 rows do not fit {avail}");
+        assert_eq!(start, 0, "and it opens at the top, where your own half is");
+        assert!(heights[..shown].iter().sum::<usize>() <= avail);
+
+        // Paging forward reaches the last row, and back returns to the top:
+        // nothing is unreachable.
+        let mut offset = 0;
+        let mut guard = 0;
+        loop {
+            let (s, n, _) = CliPlayer::menu_page_lines(&heights, avail, offset, 0);
+            if s + n >= rows.len() { break; }
+            offset = s + n;
+            guard += 1;
+            assert!(guard < 20, "paging terminates");
+        }
+        assert_eq!(CliPlayer::prev_menu_offset_lines(&heights, avail, offset, 0), 0,
+            "p from the second page comes back to the top");
+
+        // A board that fits needs no pager at all.
+        let small = view(Step::PrecombatMain, 1, true);
+        let rows = CliPlayer::inspect_rows(&small);
+        let heights: Vec<usize> = rows.iter()
+            .map(|(_, t)| CliPlayer::wrapped_height(str_cols(t), 80))
+            .collect();
+        let (_, _, paged) = CliPlayer::menu_page_lines(&heights, CliPlayer::viewer_avail(24, 5), 0, 0);
+        assert!(!paged, "an empty board is three rows");
     }
 
     /// Issue #365: a viewer page is measured in the rows its entries take
