@@ -357,8 +357,18 @@ pub enum CastTargetSpec {
         second_min: usize,
         second_max: usize,
     },
-    /// Choose up to N targets from this list.
-    UpToTargets { max: usize, options: Vec<Target> },
+    /// The cast itself asks: submit it with no targets and answer the
+    /// `ChooseTargetSet` prompt it raises (CR 601.2c).
+    ///
+    /// This is every slot whose answer is not one target picked from one
+    /// list — an "up to N" set, a pair of single slots asked one at a time,
+    /// a modal whose modes differ only in how many targets they take. Each
+    /// was once enumerated as one cast per way of filling it, which is the
+    /// menu that grows as `C(n, k)`, `|a| x |b|`, or `n + C(n, 2)`.
+    ///
+    /// A client that builds its own `CastSpell` has nothing to choose here:
+    /// it submits the cast bare and waits to be asked.
+    ChosenAtCast,
 }
 
 impl std::fmt::Display for Action {

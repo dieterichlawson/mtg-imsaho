@@ -2402,32 +2402,25 @@ impl CliPlayer {
                 }
             }
             CastTargetSpec::TwoTargets { first, second, second_min, second_max } => {
-                let t1 = Self::prompt_target(view, first, &format!("{}: select first of two targets", spell.name))?;
-                let idx = first.iter().position(|t| *t == t1)?;
-                // The engine pre-narrowed each first choice's legal second-slot
-                // options (e.g. "cards from THEIR graveyard" — only the chosen
-                // player's cards).
-                let remaining = second[idx].clone();
-                if *second_max <= 1 {
-                    if remaining.is_empty() {
-                        return None;
-                    }
-                    let t2 = Self::prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
-                    vec![t1, t2]
-                } else {
-                    // A wide second slot is chosen on the marking screen the
-                    // cast raises, not one question per pick: this asked
-                    // "select target 1 of up to 3", then again, and again.
-                    let _ = (&remaining, second_min);
-                    vec![t1]
-                }
+                // The one pair left here is Memory's Journey: its card slot
+                // cannot be described until a player is named, so the player
+                // is chosen now and the cards on the marking screen the cast
+                // then raises. Two slots that can both be described up front
+                // are `ChosenAtCast` and never reach this arm.
+                let _ = (second, second_min, second_max);
+                vec![Self::prompt_target(view, first,
+                    &format!("{}: select first of two targets", spell.name))?]
             }
-            CastTargetSpec::UpToTargets { .. } => {
-                // Likewise: the cast is submitted with the slot empty and
-                // the engine asks for the whole set at once (CR 601.2c).
-                // Choosing zero is a real cast and is said on that screen by
-                // marking none — it is not this branch returning early,
-                // which is how it became a silent no-op in issue #49.
+            CastTargetSpec::ChosenAtCast => {
+                // The cast asks for these itself: submit it bare and answer
+                // the screen it raises (CR 601.2c). An "up to N" set, a pair
+                // of slots asked one at a time, a modal read back off how
+                // many were named — all of them.
+                //
+                // Choosing zero for an "up to N" is a real cast, and is said
+                // on that screen by marking none. It is not this branch
+                // returning early, which is how it became a silent no-op in
+                // issue #49.
                 Vec::new()
             }
         };
@@ -6807,9 +6800,10 @@ yourself at some considerable length";
             Target::Player(PlayerId(0)), Target::Player(PlayerId(1))]);
         assert!(CliPlayer::forced_cast_targets(&two).is_empty());
 
-        // The wide specs always prompt, however few options they hold.
-        let up_to = CastTargetSpec::UpToTargets { max: 2, options: vec![Target::Player(PlayerId(1))] };
-        assert!(CliPlayer::forced_cast_targets(&up_to).is_empty());
+        // A slot the cast asks for is never forced here: the screen it
+        // raises is where "one option" is settled, and marking none is a
+        // real answer that this must not pre-empt.
+        assert!(CliPlayer::forced_cast_targets(&CastTargetSpec::ChosenAtCast).is_empty());
 
         // Same rule on the cost half.
         assert_eq!(CliPlayer::forced_sacrifice(&[ObjectId(7)]), Some(ObjectId(7)));

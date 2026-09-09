@@ -31,6 +31,22 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         }
         let targets: &[Target] = &deduped;
 
+        // A slot that may be answered with nothing needs a marker to say it
+        // was asked, because "none" leaves the target count exactly where
+        // "not asked yet" does and the prompt would be raised for ever. The
+        // mid-flight stash is that marker — the same ambiguity
+        // `exile_count: Some(_)` settles for the exile cost below.
+        //
+        // A slot that demands at least one target needs no marker: answering
+        // it moves the count past where it started, so the position alone
+        // says which slot is next. That is what lets a two-slot cast be
+        // asked twice, once per slot, off one stash.
+        let resuming = state.pending_spell_cast.as_ref()
+            .is_some_and(|p| p.object_id == object_id);
+        let pending_slot = crate::engine::targeting::set_slot(
+            state, player, object_id, &target_req, targets, behavior, registry)
+            .filter(|s| !(resuming && s.min == 0) && targets.len() == s.fixed_len && s.max > 0);
+
         // CR 601.2c: the targets are chosen as the spell is cast, and they must
         // be legal ones. `legal_actions` only offers legal sets, but neither
         // client picks a whole offered action — both assemble their own from
@@ -38,9 +54,18 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // before any cost is paid and before the card moves, so the state is
         // untouched: an illegal choice means the cast did not happen, not that
         // it happened for nothing.
-        if !crate::engine::targeting::targets_are_legal(
-            state, &target_req, targets, player, object_id, behavior, registry)
-        {
+        //
+        // A cast that is about to stop and ask has only a prefix in hand, and
+        // a prefix is not a declaration: it is checked against the slots it
+        // fills, and comes back through this gate in full once answered.
+        let named_so_far_are_legal = if pending_slot.is_some() {
+            crate::engine::targeting::prefix_is_legal(
+                state, &target_req, targets, player, object_id, behavior, registry)
+        } else {
+            crate::engine::targeting::targets_are_legal(
+                state, &target_req, targets, player, object_id, behavior, registry)
+        };
+        if !named_so_far_are_legal {
             state.log(crate::state::LogLevel::Debug, format!(
                 "{}: cast refused, illegal targets {targets:?} (CR 601.2c)", data.name));
             return Applied::ReturnNow;
@@ -191,19 +216,9 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // alone for Memory's Journey's player-then-cards. A caller that
         // named them (a test, a replay, a resumed cast) has more than that
         // and goes straight through.
-        // A cast that is already mid-flight has been asked: its stash names
-        // it. Without this the answer "none" would be indistinguishable
-        // from "not asked yet" and the prompt would be raised again, for
-        // ever — which is the same ambiguity `exile_count: Some(_)` settles
-        // for the exile cost below.
-        let resuming = state.pending_spell_cast.as_ref()
-            .is_some_and(|p| p.object_id == object_id);
-        if let Some(slot) = (!resuming).then(|| {
-            crate::engine::targeting::set_slot(&state, player, object_id, &target_req, targets, behavior, registry)
-        }).flatten()
-        {
-            let crate::engine::targeting::SetSlot { options, min, max, fixed_len } = slot;
-            if targets.len() == fixed_len && max > 0 {
+        if let Some(slot) = pending_slot {
+            let crate::engine::targeting::SetSlot { options, min, max, fixed_len: _ } = slot;
+            {
                 let non_x_mana_cost = if has_x { cost.without_x() } else { cost.clone() };
                 state.pending_spell_cast = Some(crate::state::PendingSpellCast {
                     object_id,

@@ -677,7 +677,16 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     };
                     state.awaiting_action = None;
                     let mut after = crate::engine::submit_action_inner(state, &cast, registry);
-                    if after.pending_spell_cast.as_ref()
+                    // A cast with two slots asks twice, and the second
+                    // question arrives on the way out of the first: the
+                    // stash it just set is that question's, not this one's
+                    // leftovers, and clearing it would strand the cast
+                    // mid-flight with a prompt and nothing behind it.
+                    let asking_again = matches!(&after.awaiting_action,
+                        Some(crate::state::AwaitingAction::ResolutionChoice {
+                            choice: ResolutionChoiceKind::ChooseTargetSet { source_id, .. }, .. })
+                        if *source_id == pending.object_id);
+                    if !asking_again && after.pending_spell_cast.as_ref()
                         .is_some_and(|p| p.object_id == pending.object_id)
                     {
                         after.pending_spell_cast = None;
