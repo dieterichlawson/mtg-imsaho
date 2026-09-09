@@ -190,3 +190,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   refused as an invalid response — with a retry message a model could act on
   — rather than allocated first. Check the same for a deck response whose
   JSON is valid and whose keys are not the schema's
+
+- D16 [proposed 2026-09-09, from #403] one card, one name, all the way down:
+  `fallback_deck` emits its maindeck as the raw pool names, so a DFC reaches
+  the engine as `"Front // Back"` with no stub involved at all, and
+  `mtg-engine/src/invariants/objects.rs` explicitly tolerates that name cache.
+  D4 saw one seat told `1x Grizzled Outcasts // Krallenhorde Wantons` in its
+  decklist and `cleanup: Opp discarded Grizzled Outcasts // Krallenhorde
+  Wantons (#8)` in its log while every board and hand line said `Grizzled
+  Outcasts`. Force a fallback on a seat whose pool holds a DFC and read the
+  whole game as that seat sees it — decklist section, hand, board, event log,
+  every prompt that names a card, and the response schemas keyed by card name
+  (#398). Verify the seat is never shown, nor asked to answer with, two
+  different names for the same physical card
