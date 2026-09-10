@@ -853,7 +853,7 @@ impl AnthropicBackend {
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
                     eprintln!("{msg}");
-                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                     return "0".to_string();
                 }
                 Err(e) => {
@@ -862,12 +862,12 @@ impl AnthropicBackend {
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
                     eprintln!("{msg}");
-                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
         }
         let msg = format!("Anthropic game API exhausted all {MAX_ATTEMPTS} retries");
-        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
         eprintln!("{msg}");
         "0".to_string()
     }
@@ -1113,7 +1113,7 @@ impl GeminiBackend {
 
                         let msg = format!("Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
                         eprintln!("WARN: {msg}");
-                        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                         return serde_json::json!({});
                     }
 
@@ -1152,7 +1152,7 @@ impl GeminiBackend {
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
                     eprintln!("{msg}");
-                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                     return serde_json::json!({});
                 }
                 Err(e) => {
@@ -1161,13 +1161,13 @@ impl GeminiBackend {
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
                     eprintln!("{msg}");
-                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
         }
         let msg = format!("Gemini API exhausted all {MAX_ATTEMPTS} retries");
         eprintln!("WARN: {msg}");
-        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
         serde_json::json!({})
     }
 
@@ -1516,9 +1516,25 @@ impl LlmPlayer {
     /// for, and a game in which every single decision was made by the
     /// fallback looked, on screen, like a seat that had played normally
     /// (issue #211).
+    ///
+    /// **Every substitution goes through here.** It was wired to four of the
+    /// ten structured prompts, and the other six each put a legal NO-OP in
+    /// the seat's place — no targets marked, no attackers, no blockers,
+    /// everything in one pile, the order as listed, a cancelled concede.
+    /// That is exactly the answer a seat would give if it had decided to do
+    /// nothing, so the log and the tally both read it as a decision: four
+    /// mute target-set prompts in a row produced `CHOSE 0 target(s)`, no
+    /// `MALFORMED` line, and a run summary with no rejection suffix at all
+    /// (issue #399). A fallback nobody can count is a fallback nobody
+    /// knows happened.
     #[track_caller]
     fn log_rejected(&self, content: &str) {
-        self.log("MALFORMED", content);
+        // `LogLevel::Error` is documented as being for exactly this —
+        // "malformed LLM responses, API retries ..., fallback activations" —
+        // and this was written at Info, so `grep ERROR` over a game log
+        // found nothing even when a seat had been mute for eight minutes
+        // (#399).
+        self.log_at(crate::game_log::LogLevel::Error, "MALFORMED", content);
         record_llm_rejected(self.backend.model_name());
     }
 
@@ -2532,6 +2548,13 @@ impl LlmPlayer {
 
         // Parse response: collect IDs where the model chose true (pile 1)
         let mut pile_1_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        if !response["pile_1"].is_object() {
+            // Everything into pile 2 is a legal division, and it is also
+            // what an unanswered prompt produces (#399).
+            self.log_rejected(&format!(
+                "no usable 'pile_1' object ({}); putting all {} permanents in pile 2",
+                response["pile_1"], all_ids.len()));
+        }
         if let Some(pile_obj) = response["pile_1"].as_object() {
             for (i, label) in labels.iter().enumerate() {
                 if pile_obj.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false)
@@ -2578,10 +2601,17 @@ impl LlmPlayer {
             "required": ["thoughts", "order"]
         });
         let response = self.send_message_structured(&prompt, &schema);
-        let order = Self::parse_order_response(&response["order"], n).unwrap_or_else(|| {
-            self.log("FALLBACK", &format!("order response was not a permutation of 0..{n}: {}; keeping the listed order", response["order"]));
-            (0..n).collect()
-        });
+        let order = match Self::parse_order_response(&response["order"], n) {
+            Some(order) => order,
+            None => {
+                // Keeping the listed order is a legal answer, and it is what
+                // a seat that said nothing gets (#399).
+                self.log_rejected(&format!(
+                    "order response was not a permutation of 0..{n}: {}; keeping the listed order",
+                    response["order"]));
+                (0..n).collect()
+            }
+        };
         self.log("CHOSE", &format!("order: {order:?}"));
         Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order) }
     }
@@ -2661,6 +2691,7 @@ impl LlmPlayer {
         });
 
         let response = self.send_message_structured(&prompt, &schema);
+        let answered = response["indices"].is_array();
         let mut chosen: Vec<usize> = Vec::new();
         if let Some(arr) = response["indices"].as_array() {
             for v in arr {
@@ -2672,6 +2703,15 @@ impl LlmPlayer {
                     chosen.push(i);
                 }
             }
+        }
+        // An empty set is a real answer when none was required; it is a
+        // SUBSTITUTED one when the seat gave no usable array or too few
+        // indices, and the two used to be the same line in the log (#399).
+        if !answered || chosen.len() < min {
+            self.log_rejected(&format!(
+                "no usable 'indices' for {description} ({}); marking {} of {} \
+                 instead of the {min} asked for",
+                response["indices"], chosen.len(), labels.len()));
         }
         chosen
     }
@@ -3032,7 +3072,17 @@ impl LlmPlayer {
 
         let prompt = "You chose to CONCEDE the game. Are you sure? Confirm true to concede, false to cancel.".to_string();
         let response = self.send_message_structured(&prompt, &schema);
-        let confirmed = response["confirm"].as_bool().unwrap_or(false);
+        let confirmed = match response["confirm"].as_bool() {
+            Some(c) => c,
+            None => {
+                // Cancelling is what a seat that changed its mind answers,
+                // and it was also what a seat that said nothing got (#399).
+                self.log_rejected(&format!(
+                    "no usable 'confirm' bool ({}); cancelling the concede",
+                    response["confirm"]));
+                false
+            }
+        };
         if confirmed {
             self.log("CONCEDE-CHECK", "Concede confirmed");
         } else {
@@ -3718,6 +3768,13 @@ from your hand to put on the bottom of your library.\n\
 
                 let response = self.send_message_structured(&full_prompt, &schema);
 
+                // Attacking with nobody is a real decision, and it is also
+                // what a seat that gave no usable array gets (#399).
+                if !response["attacker_indices"].is_array() {
+                    self.log_rejected(&format!(
+                        "no usable 'attacker_indices' ({}); declaring no attackers",
+                        response["attacker_indices"]));
+                }
                 let mut indices: Vec<usize> = response["attacker_indices"]
                     .as_array()
                     .map(|arr| arr.iter()
@@ -3912,8 +3969,11 @@ from your hand to put on the bottom of your library.\n\
             retry_message = Some(errors.join("\n"));
         }
 
-        // Exhausted retries — return no blocks as safe fallback.
-        self.log("BLOCKER_VALIDATION", "exhausted retries, defaulting to no blocks");
+        // Exhausted retries — no blocks as a safe fallback, which is also a
+        // perfectly ordinary decision, so it is counted as the substitution
+        // it is (#399).
+        self.log_rejected(&format!(
+            "blocker assignments still invalid after {max_retries} attempts; declaring no blocks"));
         Action::DeclareBlockers { assignments: vec![] }
     }
 }

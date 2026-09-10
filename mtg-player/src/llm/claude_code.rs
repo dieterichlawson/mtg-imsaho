@@ -367,13 +367,13 @@ impl ClaudeCodeBackend {
                         attempt + 1, MAX_ATTEMPTS, started.elapsed().as_millis()
                     );
                     eprintln!("{msg}");
-                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
         }
         let msg = format!("claude -p exhausted all {MAX_ATTEMPTS} attempts");
         eprintln!("{msg}");
-        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
         None
     }
 
