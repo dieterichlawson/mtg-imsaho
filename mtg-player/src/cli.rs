@@ -369,6 +369,29 @@ fn quote_input(input: &str) -> String {
     format!("{}\u{2026}", clip_cols(&shown, MAX))
 }
 
+/// Blank `cols` display columns at (`col`, `row`), leaving the cursor where
+/// it started — the bounded form of `Clear(ClearType::UntilNewLine)`.
+///
+/// `UntilNewLine` erases from the cursor to the right edge of the TERMINAL.
+/// Every prompt in this file is drawn inside the middle panel, so every
+/// erase one of them does ran through the frame's own border and on across
+/// the CARDS pane beside it, blanking whichever line of card text shared
+/// the row — sometimes a card's name-and-cost line, so the entry below it
+/// showed as a bare type line with no name, and sometimes an oracle line,
+/// so Moonmist read as preventing ALL combat damage with its
+/// Werewolf/Wolf exception invisible at the moment the player was deciding
+/// (issue #355). It happened on every frame, at every prompt, before a key
+/// was pressed.
+///
+/// #53, #109 and #320 bounded what the prompts PRINT to the panel edge;
+/// this is the same collision on what they ERASE, and it is bounded the
+/// same way. Nothing in this file may reach past the panel in either
+/// direction, which `mtg-runner/tests/cli_pty.rs` holds it to.
+fn clear_cols(out: &mut impl Write, col: u16, row: u16, cols: usize) {
+    let _ = execute!(out, cursor::MoveTo(col, row), Print(" ".repeat(cols)),
+        cursor::MoveTo(col, row));
+}
+
 /// Repaint an input line from the buffer, clipped to `cap` display columns.
 ///
 /// The readers used to keep a parallel model of what was on screen and paint
@@ -381,7 +404,10 @@ fn quote_input(input: &str) -> String {
 /// drift from it.
 fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: usize) {
     let shown = clip_cols(&sanitize_for_display(buf), cap);
-    let _ = execute!(out, cursor::MoveTo(col, row), Clear(ClearType::UntilNewLine), Print(shown));
+    // `cap` is what this row is allowed to print; it is therefore also what
+    // it is allowed to erase (#355).
+    clear_cols(out, col, row, cap);
+    let _ = execute!(out, Print(shown));
     let _ = out.flush();
 }
 
@@ -1071,7 +1097,7 @@ impl CliPlayer {
     /// hand} 2/2" (issue #260).
     fn clear_mid_row(out: &mut io::Stdout, mid_col: u16, right_sep_col: u16,
                      has_right: bool, row: u16) {
-        let _ = execute!(out, cursor::MoveTo(mid_col, row), Clear(ClearType::UntilNewLine));
+        clear_cols(out, mid_col, row, usize::from(right_sep_col.saturating_sub(mid_col)));
         if has_right {
             let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
@@ -3266,6 +3292,14 @@ impl CliPlayer {
         Self::middle_panel_edge_at(Self::term_width())
     }
 
+    /// Blank one row of the middle panel from `col` to the panel's right
+    /// border, and no further. The bound every erase drawn inside the frame
+    /// has, for the same reason every print inside it has one (#355).
+    fn clear_panel_row(out: &mut impl Write, col: u16, row: u16) {
+        clear_cols(out, col, row,
+            Self::middle_panel_edge().saturating_sub(usize::from(col)));
+    }
+
     fn term_width() -> usize {
         terminal::size().unwrap_or((100, 30)).0 as usize
     }
@@ -3515,11 +3549,10 @@ impl CliPlayer {
                         "n" | "no" | "" => break false,
                         _ => {
                             let msg = format!("Please answer y or n. {}", prompt.trim_start());
-                            let clipped: String = msg.chars()
-                                .take((term_w as usize).saturating_sub(px as usize + 1))
-                                .collect();
-                            let _ = execute!(stdout(), cursor::MoveTo(px, py),
-                                Clear(ClearType::UntilNewLine), Print(clipped));
+                            let clipped = clip_cols(&msg,
+                                Self::middle_panel_edge().saturating_sub(usize::from(px)));
+                            Self::clear_panel_row(&mut stdout(), px, py);
+                            let _ = execute!(stdout(), Print(clipped));
                             let _ = stdout().flush();
                             buf.clear();
                         }
@@ -4608,7 +4641,7 @@ impl CliPlayer {
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1), Clear(ClearType::UntilNewLine));
+            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + 1);
             if let Some(msg) = msg {
                 let _ = execute!(stdout(), SetForegroundColor(Color::Red),
                     Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
@@ -4625,7 +4658,7 @@ impl CliPlayer {
             // Clear the row before re-prompting: a rejected entry's characters
             // otherwise stay on screen and visually merge with the next
             // attempt ("7" typed over stale "abc" reads as "7bc" — issue #35).
-            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r), Clear(ClearType::UntilNewLine));
+            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r);
             // The last refusal, held until this attempt is answered (#291).
             paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
@@ -4887,7 +4920,7 @@ impl CliPlayer {
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1), Clear(ClearType::UntilNewLine));
+            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + 1);
             if let Some(msg) = msg {
                 let _ = execute!(stdout(), SetForegroundColor(Color::Red),
                     Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
@@ -4903,7 +4936,7 @@ impl CliPlayer {
         loop {
             // Same stale-row clearing as the attack prompt (issue #35), and
             // the same held-until-answered notice row (issue #291).
-            let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r), Clear(ClearType::UntilNewLine));
+            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r);
             paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
                 "  Block (blocker:attacker / enter=none)> ", &|| { draw(); });
@@ -5074,8 +5107,8 @@ impl CliPlayer {
         let x: u32 = loop {
             // Clear the input row before each attempt (same as the combat
             // prompts), so a rejected entry doesn't merge with the next.
-            let _ = execute!(stdout(), cursor::MoveTo(col, r), Clear(ClearType::UntilNewLine));
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine));
+            Self::clear_panel_row(&mut stdout(), col, r);
+            Self::clear_panel_row(&mut stdout(), col, r + 1);
             if let Some(msg) = &notice {
                 let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
                     SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
@@ -5143,7 +5176,8 @@ impl CliPlayer {
             }
         }
         if remaining > 0 {
-            let _ = execute!(stdout(), cursor::MoveTo(col, r + 1), Clear(ClearType::UntilNewLine),
+            Self::clear_panel_row(&mut stdout(), col, r + 1);
+            let _ = execute!(stdout(),
                 Print(clip(&format!(
                     "  (could not allocate final {remaining} mana due to source quanta; X = {})",
                     x - remaining))));

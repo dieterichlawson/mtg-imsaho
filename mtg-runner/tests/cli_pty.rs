@@ -370,3 +370,60 @@ fn typing_a_word_containing_y_does_not_concede() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// Issue #355: the prompts erased to the right edge of the TERMINAL.
+///
+/// Every prompt this CLI reads is drawn inside the middle panel, and #53,
+/// #109 and #320 bounded what those prompts *print* to that panel's border.
+/// What they *erase* was never bounded: a dozen sites cleared with
+/// `Clear(ClearType::UntilNewLine)`, which runs from the cursor through the
+/// frame's border and on across the CARDS pane beside it. Whichever line of
+/// card text shared the row with the input line was blanked, on every
+/// frame, at every prompt, before a key was pressed — sometimes a card's
+/// name-and-cost line, so the entry below it rendered as a bare type line
+/// with no name at all, and sometimes an oracle line, so Moonmist read as
+/// preventing ALL combat damage with its Werewolf exception invisible.
+///
+/// `ESC [ K` is that erase and can only ever reach the terminal's edge, so
+/// its absence from the stream is the property, not a proxy for it: this
+/// CLI never erases past the panel it is drawing in. A bounded clear writes
+/// spaces over exactly the columns it owns instead.
+#[test]
+fn no_prompt_ever_erases_past_the_panel_it_is_drawn_in() {
+    let mut g = seeded_game();
+
+    // The opening frame alone reproduced it — the CARDS pane is populated
+    // from the opening hand and the mulligan prompt is drawn over it.
+    g.expect("Keep opening hand", T);
+    assert_no_line_erase(&g, "the opening mulligan frame");
+
+    // A rejected entry repaints the notice row and re-clears the input row
+    // (#35, #291), and each typed character repaints the input line (#281).
+    g.answer("zz\r");
+    g.expect("Invalid input", T);
+    g.answer("0\r");
+    g.expect("keeps (0 mulligans)", T);
+    g.expect("Pass priority", T);
+    g.send("12");
+    g.pump(Duration::from_millis(300));
+    g.answer("\r");
+    g.pump(Duration::from_millis(300));
+    assert_no_line_erase(&g, "the mulligan, notice and priority prompts");
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
+#[track_caller]
+fn assert_no_line_erase(g: &PtyGame, what: &str) {
+    // CSI K, in all the spellings crossterm could emit for "erase in line":
+    // a bare ESC [ K and its explicit parameter forms.
+    for seq in ["\x1b[K", "\x1b[0K", "\x1b[1K", "\x1b[2K"] {
+        assert!(
+            !g.seen.contains(seq),
+            "{what} emitted {seq:?}, an erase that runs to the terminal's \
+             right edge and through the CARDS pane (#355); clear the \
+             columns the panel owns instead"
+        );
+    }
+}
