@@ -34,11 +34,19 @@ struct PtyGame {
 
 impl PtyGame {
     fn spawn(args: &[&str]) -> PtyGame {
+        PtyGame::spawn_sized(150, 40, args)
+    }
+
+    /// A game in a terminal of a given size — the CLI's layout is
+    /// width-dependent (the right panel, and with it the card search, only
+    /// exists at 100 columns or more), so a test about a narrow terminal
+    /// has to ask for one.
+    fn spawn_sized(cols: u16, rows: u16, args: &[&str]) -> PtyGame {
         let mut master: libc::c_int = 0;
         let mut slave: libc::c_int = 0;
         let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
-        ws.ws_col = 150;
-        ws.ws_row = 40;
+        ws.ws_col = cols;
+        ws.ws_row = rows;
         let rc = unsafe {
             libc::openpty(
                 &mut master,
@@ -589,6 +597,40 @@ fn a_queued_y_cannot_answer_a_concede_dialog_that_was_never_drawn() {
     g.answer("n\r");
     g.expect("1: Play land", T);
     g.expect_absent("Game over", Duration::from_secs(1));
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
+/// Issue #366: `/` was the one key in this CLI that produced no reaction of
+/// any kind.
+///
+/// The card search box is part of the right panel, which only exists at 100
+/// columns or more. #107 stopped it entering an invisible modal mode on a
+/// narrower terminal — but the key was still intercepted, and the caller
+/// then repainted an identical frame. No box, no message, and not even the
+/// `Invalid input` every other unusable key gets. A silent re-render is
+/// indistinguishable from a hung game (#76); this was the last place that
+/// still was one.
+#[test]
+fn the_card_search_says_why_it_cannot_open_on_a_narrow_terminal() {
+    let mut g = PtyGame::spawn_sized(80, 24, &[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+    // At this width the hint line does not offer it, which #107 got right.
+    g.forget();
+    g.expect("[d=deck]", T);
+    g.expect_absent("[/=search]", Duration::from_millis(200));
+
+    // Pressing it anyway says why, instead of doing nothing at all.
+    g.answer("/");
+    g.expect("Card search needs a terminal at least 100 columns wide", T);
 
     g.send("\x03");
     assert_clean_exit(&mut g);

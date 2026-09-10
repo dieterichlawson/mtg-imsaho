@@ -588,8 +588,49 @@ const BLOCKERS_PAGE_KEYS: &str = "b = next page";
 const VIEWER_PAGED_FOOTER: &str = "  n=next page, p=previous, enter=return: ";
 const DECK_PAGED_FOOTER: &str = "  Enter number for details, n=next page, p=previous, enter=return: ";
 
-/// The pane keys the combat prompts advertise.
-const ATTACK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/p=page]";
+/// The side viewers every prompt's reader steps into, in the order a hint
+/// line lists them: the key, and what the hint calls it.
+///
+/// The hint line under a prompt is the only documentation these have, so
+/// what it lists and what the reader accepts have to be the same set. They
+/// were not: `menu_hints` was written before the inspector existed and
+/// never learned `i`, so the viewer that answers "what is actually on the
+/// battlefield, with counters and damage and combat role" was accepted and
+/// advertised nowhere at the priority menu, the mulligan prompt, the
+/// bottoming prompt, the cleanup discard, the trigger ordering and every
+/// target chooser — while the three combat prompts, which kept their own
+/// copies of the string, did advertise it. A player who never fought a
+/// combat never learned the key existed (issue #366).
+///
+/// One table, and `viewer_hints` renders it, so a viewer added to the
+/// reader cannot be missing from the line; `panel_keys_are_all_advertised`
+/// holds the two together.
+const VIEWERS: &[(char, &str)] = &[
+    ('d', "deck"),
+    ('l', "log"),
+    ('g', "gy"),
+    ('e', "exile"),
+    ('i', "inspect"),
+    ('s', "stack"),
+];
+
+/// The pane keys a prompt's reader accepts, as a string to test membership
+/// against.
+fn panel_keys() -> String {
+    VIEWERS.iter().map(|(k, _)| *k).collect()
+}
+
+/// `  [d=deck] [l=log] ... [s=stack] [m/p=page]` — the viewers, then the
+/// pager key this prompt uses (`p` everywhere but the blockers prompt,
+/// where `p` is already a pairing).
+fn viewer_hints(page_key: char) -> String {
+    let mut line = String::from("  ");
+    for (k, what) in VIEWERS {
+        line.push_str(&format!("[{k}={what}] "));
+    }
+    line.push_str(&format!("[m/{page_key}=page]"));
+    line
+}
 /// One line of input at a card-set prompt.
 #[derive(Debug)]
 enum SetInput {
@@ -628,7 +669,7 @@ struct SetPick {
 /// How to answer an ordering screen, and the panes it can step into.
 const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
 
-const BLOCK_HINTS: &str = "  [d=deck] [l=log] [g=gy] [e=exile] [i=inspect] [s=stack] [m/b=page]";
+
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct MenuPage {
@@ -1697,7 +1738,7 @@ impl CliPlayer {
             // the paging marker, whose height is the same whichever page it
             // ends up describing. Under them is the input row.
             let hints = Self::menu_hints(labels, has_right);
-            let hint_lines = Self::wrap_indented(hints, mid_w);
+            let hint_lines = Self::wrap_indented(&hints, mid_w);
             let marker_h = Self::marker_lines(
                 labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
             let avail = h.saturating_sub(row as usize + hint_lines.len() + 1);
@@ -2397,16 +2438,25 @@ impl CliPlayer {
     /// thing on screen saying what the numbered rows are for (issue #327).
     /// The search overlay changes what is in the CARDS gutter, not what the
     /// game is asking.
+    /// Open the card search, or say why it cannot open.
+    ///
+    /// Returns the notice the caller should show. The search box is part of
+    /// the right panel, which is only drawn at >= 100 columns: entering
+    /// search mode on a narrower terminal showed nothing at all and
+    /// silently swallowed every keystroke until an undiscoverable Esc/Enter
+    /// (issue #107). Refusing to enter it fixed the modal half of that and
+    /// left the other: the key was still intercepted, and the caller
+    /// repainted an identical frame, so `/` was the one key in this CLI
+    /// that produced no reaction of any kind — no box, no message, not even
+    /// the `Invalid input` every other unusable key gets. A silent
+    /// re-render is indistinguishable from a hung game (#76), which is the
+    /// rule this was the last violation of (issue #366).
     fn run_card_search(view: &GameView, actions: &[MenuLabel], message: Option<&str>,
-                       menu_offset: usize) {
-        // The search box is part of the right panel, which is only drawn at
-        // >= 100 columns. Entering search mode on a narrower terminal showed
-        // nothing at all and silently swallowed every keystroke until an
-        // undiscoverable Esc/Enter (issue #107) — refuse to enter it instead
-        // (the hint line stops advertising it at this width too).
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        if (term_w as usize) < 100 {
-            return;
+                       menu_offset: usize) -> Option<String> {
+        if !Self::card_search_fits() {
+            return Some(format!(
+                "Card search needs a terminal at least {} columns wide; this one is {}.",
+                Self::CARD_SEARCH_MIN_COLS, Self::term_width()));
         }
 
         tui_raw_on();
@@ -2467,6 +2517,7 @@ impl CliPlayer {
 
         let _ = execute!(stdout(), event::DisableBracketedPaste);
         tui_raw_off();
+        None
     }
 
     /// Interactive target selection for a castable spell.
@@ -2588,7 +2639,7 @@ impl CliPlayer {
         }
         // Panel keys before the numeric parse, as before.
         if let Some(c) = t.chars().next() {
-            if t.chars().count() == 1 && "lgedis/".contains(c) {
+            if t.chars().count() == 1 && (panel_keys().contains(c) || c == '/') {
                 return TargetInput::Panel(c);
             }
         }
@@ -2679,7 +2730,7 @@ impl CliPlayer {
                         'd' => Self::show_deck_browser(view),
                         'i' => Self::show_battlefield_inspector(view),
                         's' => Self::show_stack(view),
-                        _ => Self::run_card_search(view, &labels, Some(&title), menu_offset),
+                        _ => notice = Self::run_card_search(view, &labels, Some(&title), menu_offset),
                     }
                 }
                 // A silent re-render is indistinguishable from a hung game —
@@ -2918,24 +2969,25 @@ impl CliPlayer {
     /// row, the way the priority menu is recognised by its first — matched
     /// exactly, so the resolution menu's own "Cancel cast" row is not
     /// mistaken for one.
-    fn menu_hints(labels: &[MenuLabel], has_right: bool) -> &'static str {
+    fn menu_hints(labels: &[MenuLabel], has_right: bool) -> String {
         let has_pass = labels.first().is_some_and(|l| l.full() == "Pass priority");
         let is_chooser = labels.last().is_some_and(|l| l.full() == "Cancel the cast");
         // The `/` search lives in the right panel, which only exists at
         // >= 100 columns — advertising it below that put users into an
         // invisible modal mode that swallowed keystrokes (issue #107).
-        match (has_pass, is_chooser, has_right) {
-            (true, _, true) =>
-                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
-            (true, _, false) =>
-                "  [enter=pass] [f=auto-pass] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
-            (false, true, true) =>
-                "  [enter=cancel] [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
-            (false, true, false) =>
-                "  [enter=cancel] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
-            (false, false, true) => "  [/=search] [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
-            (false, false, false) => "  [d=deck] [l=log] [g=gy] [e=exile] [s=stack] [m/p=page]",
+        let mut line = String::from("  ");
+        if has_pass {
+            line.push_str("[enter=pass] [f=auto-pass] ");
+        } else if is_chooser {
+            line.push_str("[enter=cancel] ");
         }
+        if has_right {
+            line.push_str("[/=search] ");
+        }
+        // The viewers and the pager come from the one table, so this line
+        // and the combat prompts' cannot drift apart again (#366).
+        line.push_str(viewer_hints('p').trim_start());
+        line
     }
 
     /// The rows of a menu as they read, with any two that read the same
@@ -3318,6 +3370,15 @@ impl CliPlayer {
     /// border, and every character typed after it to erase the CARDS pane
     /// beside it (issue #320; #53 and #109 are the same overrun at the menu
     /// reader, which has had this bound for a while).
+    /// The card search lives in the right panel, which `render` only draws
+    /// at this width or more. One predicate, so what the hint line
+    /// advertises and what the key actually does cannot disagree (#366).
+    const CARD_SEARCH_MIN_COLS: usize = 100;
+
+    fn card_search_fits() -> bool {
+        Self::term_width() >= Self::CARD_SEARCH_MIN_COLS
+    }
+
     fn middle_panel_edge() -> usize {
         Self::middle_panel_edge_at(Self::term_width())
     }
@@ -4587,7 +4648,7 @@ impl CliPlayer {
             // Rows still owed below the list: the planeswalker block, the
             // hint line (which wraps, so its height is measured, not
             // assumed), the prompt row and the refusal row under it.
-            let hint_lines = Self::wrap_indented(ATTACK_HINTS, panel_w);
+            let hint_lines = Self::wrap_indented(&viewer_hints('p'), panel_w);
             let marker_h = Self::marker_lines(
                 eligible.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
             let reserved = 2 + hint_lines.len() + if defending_planeswalkers.is_empty() {
@@ -4858,7 +4919,7 @@ impl CliPlayer {
             // Rows below: the blockers header, the hint line (measured, since
             // it wraps), the prompt row and the refusal row under it. The two
             // lists split what is left.
-            let hint_lines = Self::wrap_indented(BLOCK_HINTS, panel_w);
+            let hint_lines = Self::wrap_indented(&viewer_hints('b'), panel_w);
             let atk_marker_h = Self::marker_lines(
                 attacker_ids.len().saturating_sub(1), ATTACKERS_PAGE_KEYS, panel_w);
             let blk_marker_h = Self::marker_lines(
@@ -6619,7 +6680,7 @@ impl Player for CliPlayer {
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {
-                Self::run_card_search(view, &display_labels, context.as_deref(), menu_offset);
+                notice = Self::run_card_search(view, &display_labels, context.as_deref(), menu_offset);
                 continue;
             }
             let input = input.unwrap();
@@ -7239,7 +7300,7 @@ yourself at some considerable length";
         // heading, one creature, the marker and the furniture below it —
         // hint lines, the prompt row and the refusal row under it.
         let panel = CliPlayer::middle_panel_width_at(70);
-        let hint_lines = CliPlayer::wrap_indented(ATTACK_HINTS, panel).len();
+        let hint_lines = CliPlayer::wrap_indented(&viewer_hints('p'), panel).len();
         let marker_h = CliPlayer::marker_lines(1, MENU_PAGE_KEYS, panel);
         let reserve = 1 + CliPlayer::list_floor(2) + marker_h + (2 + hint_lines);
         // The board on this screen runs to the foot of a 20-row pane.
@@ -7815,6 +7876,62 @@ yourself at some considerable length";
         for bad in ["x", "-1", "99", "0 1", "back", "escape"] {
             assert_eq!(CliPlayer::parse_target_input(bad, 3, rows), TargetInput::Invalid,
                 "{bad}");
+        }
+    }
+
+    /// Issue #366: the hint line under a prompt is the only documentation
+    /// the side viewers have, so what it lists and what the reader accepts
+    /// have to be the same set.
+    ///
+    /// They were not. `menu_hints` predates the inspector and never learned
+    /// `i`, while `choose_action` and `parse_target_input` both accept it —
+    /// so the viewer that answers "what is actually on the battlefield,
+    /// with counters and damage and combat role" was undiscoverable at the
+    /// priority menu, the mulligan prompt, the bottoming prompt, the
+    /// cleanup discard, the trigger ordering and every target chooser. The
+    /// three combat prompts kept their own copy of the string and did
+    /// advertise it, so a player who never fought a combat never learned
+    /// the key existed.
+    #[test]
+    fn every_pane_key_the_reader_accepts_is_advertised() {
+        let priority = vec![MenuLabel::plain("Pass priority"), MenuLabel::plain("Concede")];
+        let chooser = vec![
+            MenuLabel::plain("Ambush Viper 2/1 (opp)"),
+            MenuLabel::plain("Cancel the cast"),
+        ];
+        let mandatory = vec![MenuLabel::plain("Discard Forest")];
+
+        for labels in [&priority, &chooser, &mandatory] {
+            for has_right in [true, false] {
+                let hints = CliPlayer::menu_hints(labels, has_right);
+                for (k, what) in VIEWERS {
+                    assert!(hints.contains(&format!("[{k}={what}]")),
+                        "the reader steps into {what} on {k:?}; the line says {hints:?}");
+                }
+                // And the width-dependent one is advertised exactly when it
+                // can open (#107): the right panel is where the box lives.
+                assert_eq!(hints.contains("[/=search]"), has_right,
+                    "at has_right={has_right}: {hints:?}");
+            }
+        }
+
+        // The reader's side of the same set, at a target chooser.
+        for (k, _) in VIEWERS {
+            assert_eq!(
+                CliPlayer::parse_target_input(&k.to_string(), 3, ChooserRows::DoneThenCancel),
+                TargetInput::Panel(*k),
+                "the reader accepts every key the line advertises");
+        }
+
+        // The combat prompts advertise the same viewers, from the same
+        // table — they differ only in the pager key, because `p` at the
+        // blockers prompt is already a pairing.
+        for page_key in ['p', 'b'] {
+            let hints = viewer_hints(page_key);
+            for (k, what) in VIEWERS {
+                assert!(hints.contains(&format!("[{k}={what}]")), "{hints:?}");
+            }
+            assert!(hints.ends_with(&format!("[m/{page_key}=page]")), "{hints:?}");
         }
     }
 
