@@ -81,6 +81,68 @@ fn die(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// How many decisions in a row may leave the game exactly as they found it
+/// before the runner stops.
+///
+/// Nothing bounded the cast->cancel->recast cycle. A seat whose answer to an
+/// additional-cost prompt is unusable — a refusal, a schema the API rejects,
+/// a spent retry budget — has the empty set substituted for it; the engine
+/// rightly refuses 0 where 1 was required (CR 601.2c), cancels the cast and
+/// returns priority; and the same cast is offered again, taken again, and
+/// cancelled again. 2,180 cancelled casts in 60 seconds, stuck on turn 15,
+/// 81,815 log lines, and only the kill ended it. `max_actions` is 50,000,
+/// which for a `cc` seat is 50,000 `claude -p` subprocesses spent
+/// re-asking one question (issue #462).
+///
+/// This is the whole class — "a seat that answers the same unusable thing
+/// forever" — rather than that one prompt, which is why the bound is here
+/// and not in the harness or the engine: cancelling and re-offering is
+/// right, and a legitimate seat may re-announce a cast once its board
+/// changes.
+///
+/// Generous on purpose. Passing priority round the table leaves the state
+/// alone for a decision or two, and nothing legitimate holds every life
+/// total, zone count, mana pool, tap and damage mark still for a hundred
+/// decisions running.
+const STALLED_DECISIONS: u32 = 100;
+
+/// Everything one decision could move, as one number.
+///
+/// Two decisions with the same fingerprint changed nothing any player can
+/// see: same turn and step, same stack, same lives and libraries and hands
+/// and graveyards, same permanents in the same states, same floating mana.
+/// The priority holder is deliberately absent — the loop this catches hands
+/// priority back to the same seat every time, and a ping-pong that changed
+/// nothing else would be just as stuck.
+fn progress_fingerprint(state: &GameState) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    state.turn_number.hash(&mut h);
+    format!("{:?}", state.step).hash(&mut h);
+    state.stack.len().hash(&mut h);
+    for p in &state.players {
+        p.life.hash(&mut h);
+        p.land_plays_remaining.hash(&mut h);
+        p.lost.hash(&mut h);
+        p.library_order.len().hash(&mut h);
+        p.graveyard_order.len().hash(&mut h);
+        p.mana_pool.total().hash(&mut h);
+    }
+    // Sorted by id: `objects` is a map, and its iteration order is not the
+    // game's (see #402 for what reading a map's order as an order costs).
+    let mut objects: Vec<_> = state.objects.values().collect();
+    objects.sort_by_key(|o| o.id);
+    for o in &objects {
+        o.id.hash(&mut h);
+        format!("{:?}", o.zone).hash(&mut h);
+        o.controller.hash(&mut h);
+        o.tapped.hash(&mut h);
+        o.summoning_sick.hash(&mut h);
+        o.damage_marked.hash(&mut h);
+    }
+    h.finish()
+}
+
 /// Stream engine game-log entries `[from..]` to the `--log` file (a no-op
 /// when `--log` wasn't given — the global writer isn't initialized) and
 /// return the new high-water mark. This is what makes `--log` do what its
@@ -712,8 +774,36 @@ stops here — pass --save {path} to keep writing it");
         choose_action(player, &view, legal)
     };
 
+    // The progress watchdog (#462).
+    let mut last_fingerprint: Option<u64> = None;
+    let mut stalled: u32 = 0;
+
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
+
+        let fingerprint = progress_fingerprint(game_state);
+        if Some(fingerprint) == last_fingerprint {
+            stalled += 1;
+        } else {
+            last_fingerprint = Some(fingerprint);
+            stalled = 0;
+        }
+        if stalled >= STALLED_DECISIONS {
+            let seat = player_names_ref.get(acting_player.0 as usize)
+                .cloned()
+                .unwrap_or_else(|| format!("p{}", acting_player.0));
+            let asked = legal.context.clone().unwrap_or_else(|| {
+                if legal.combat_prompt.is_some() { "a combat prompt".into() }
+                else { "priority".into() }
+            });
+            let last = game_state.game_log.last().map(|e| e.message.clone()).unwrap_or_default();
+            die(&format!(
+                "the game stopped making progress: {STALLED_DECISIONS} decisions in a row \
+                 left it exactly as they found it. Seat {seat} (p{}) is being asked {asked} \
+                 at turn {} {:?}, and answering it the same unusable way every time. \
+                 Last game-log entry: {last}",
+                acting_player.0, game_state.turn_number, game_state.step));
+        }
 
         // Stream the engine's game log to --log as it grows, so the file
         // holds the full history the moment each decision is made — a game
