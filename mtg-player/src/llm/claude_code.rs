@@ -18,8 +18,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::mpsc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use super::{LlmBackend, GAME_RULES, THOUGHTS_IN_JSON_FORMAT};
 
@@ -100,6 +100,35 @@ fn kill_group(pgid: i32) {
 
 #[cfg(not(unix))]
 fn kill_group(_pgid: i32) {}
+
+/// Copy `r` into `buf` as the bytes arrive, on a thread of its own.
+///
+/// Bytes rather than a `String`, so a chunk boundary can never fall inside
+/// a multi-byte character; the reader turns the whole buffer into text when
+/// it looks at it. The thread is never joined: it ends when the pipe
+/// closes, which may be long after the call it belonged to is over, and
+/// waiting for that is the defect (#458, #459).
+fn pump_into(mut r: impl Read + Send + 'static, buf: Arc<Mutex<Vec<u8>>>) {
+    std::thread::spawn(move || {
+        let mut chunk = [0u8; 8192];
+        loop {
+            match r.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => match buf.lock() {
+                    Ok(mut b) => b.extend_from_slice(&chunk[..n]),
+                    Err(_) => break,
+                },
+            }
+        }
+    });
+}
+
+/// What has arrived on a pumped pipe so far, as text.
+fn snapshot(buf: &Arc<Mutex<Vec<u8>>>) -> String {
+    buf.lock()
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+        .unwrap_or_default()
+}
 
 /// Kill every in-flight `claude -p` group, then die of the signal we were
 /// sent. Async-signal-safe: `killpg`, `signal` and `raise` only.
@@ -386,8 +415,8 @@ impl ClaudeCodeBackend {
             let mut stdin = child.stdin.take().ok_or("no stdin")?;
             stdin.write_all(message.as_bytes()).map_err(|e| format!("write to claude stdin: {e}"))?;
         }
-        let mut stdout = child.stdout.take().ok_or("no stdout")?;
-        let mut stderr = child.stderr.take().ok_or("no stderr")?;
+        let stdout = child.stdout.take().ok_or("no stdout")?;
+        let stderr = child.stderr.take().ok_or("no stderr")?;
 
         // The group to signal. `setpgid` in `pre_exec` makes it the child's
         // own pid; if that call failed the child is still in ours, which
@@ -395,43 +424,85 @@ impl ClaudeCodeBackend {
         let pgid = i32::try_from(child.id()).unwrap_or(0);
         let group = LiveGroup::register(pgid);
 
-        // Read stdout on its own thread and wait on the *result*, not on
-        // EOF. Waiting on EOF is what made the timeout toothless: the pipe
-        // only closes when every process holding its write end is gone, so
-        // one surviving grandchild kept the game blocked forever, long past
-        // the timeout, with the killed child never even reaped (issue
-        // #203).
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let mut out = String::new();
-            let read = stdout.read_to_string(&mut out).map(|_| out);
-            let _ = tx.send(read);
-        });
-        let stderr_reader = std::thread::spawn(move || {
-            let mut s = String::new();
-            let _ = stderr.read_to_string(&mut s);
-            s
-        });
+        // Both pipes are pumped into buffers as the bytes arrive, so the
+        // call can look at what has been said so far without waiting for
+        // the pipe to CLOSE. A pipe closes only when every process holding
+        // its write end is gone, and the call used to end on that: the
+        // answer was complete in the buffer in milliseconds and the call
+        // sat there for as long as any stray grandchild lived, charging
+        // that lifetime to every decision of the game. When such a
+        // grandchild outlived the timeout the complete, valid answer was
+        // then thrown away, all three attempts burned the same way, and the
+        // seat played the whole game mute while answering correctly every
+        // time (issue #458). #203 fixed the unbounded wedge on stdout; this
+        // is the rest of its mechanism.
+        let out_buf = Arc::new(Mutex::new(Vec::new()));
+        let err_buf = Arc::new(Mutex::new(Vec::new()));
+        pump_into(stdout, Arc::clone(&out_buf));
+        // Never joined. stderr is diagnostic text, and its read had no
+        // deadline at all: a grandchild that detached from stdout with
+        // `>/dev/null` — the ordinary idiom for keeping a helper's chatter
+        // out of a captured stdout — but kept the inherited stderr parked
+        // the call in `join()` forever, holding an answer it had already
+        // read, with nothing logged and no retry (issue #459).
+        pump_into(stderr, Arc::clone(&err_buf));
 
         let timeout = call_timeout();
-        let Ok(read) = rx.recv_timeout(timeout) else {
-            // Take the whole group down, not just the process we spawned,
-            // then reap our own child — `wait` on it returns as soon as it
-            // dies, whatever its descendants are doing. The reader threads
-            // are left to end when the pipes finally close; the call is
-            // over either way, which is the point of the timeout.
-            kill_group(pgid);
-            drop(group);
-            let _ = child.wait();
-            return Err(format!("timed out after {}s", timeout.as_secs()));
-        };
-        let status = child.wait();
-        drop(group);
-        let err_text = stderr_reader.join().unwrap_or_default();
-        let out = read.map_err(|e| format!("read claude stdout: {e}"))?;
+        let deadline = Instant::now() + timeout;
+        // Once the child is gone, everything it wrote is already on the
+        // pipe; this is how long the pump is given to finish copying it
+        // across before the call gives up on it parsing.
+        const DRAIN_GRACE: Duration = Duration::from_millis(200);
+        const POLL: Duration = Duration::from_millis(2);
 
-        let status = status.map_err(|e| format!("wait: {e}"))?;
-        if !status.success() {
+        let mut exited: Option<std::process::ExitStatus> = None;
+        let mut exited_at: Option<Instant> = None;
+        let (out, status) = loop {
+            if exited.is_none() {
+                exited = child.try_wait().map_err(|e| format!("wait: {e}"))?;
+                if exited.is_some() {
+                    exited_at = Some(Instant::now());
+                }
+            }
+            let text = snapshot(&out_buf);
+            let answered = serde_json::from_str::<serde_json::Value>(text.trim())
+                .is_ok_and(|v| v.is_object());
+
+            // The call is over when the answer is, not when the last writer
+            // lets go of the pipe. The status is still read, because the CLI
+            // reports a refusal as a result object with a NON-ZERO exit.
+            if let Some(status) = exited {
+                if answered || exited_at.is_some_and(|t| t.elapsed() >= DRAIN_GRACE) {
+                    break (text, Some(status));
+                }
+            }
+            if Instant::now() >= deadline {
+                // Take the whole group down, not just the process we
+                // spawned, then reap our own child — `wait` on it returns
+                // as soon as it dies, whatever its descendants are doing.
+                kill_group(pgid);
+                let _ = child.wait();
+                // An answer already in hand is an answer: the timeout is
+                // there to stop the call waiting forever, not to discard
+                // what it is holding (#458).
+                if answered {
+                    break (text, exited);
+                }
+                return Err(format!("timed out after {}s", timeout.as_secs()));
+            }
+            std::thread::sleep(POLL);
+        };
+
+        // Nothing in this group is wanted once the call is over, and a stray
+        // that outlives it holds the pipes open (which keeps the pump
+        // threads alive) and, for a real seat, spends quota on a decision
+        // that has already been made (#206, #459).
+        kill_group(pgid);
+        drop(group);
+        let err_text = snapshot(&err_buf);
+
+        // A timed-out call that had its answer has no status to check.
+        if let Some(status) = status.filter(|s| !s.success()) {
             // The CLI reports refusals (a usage limit, a bad model name) as
             // a result object on stdout with a non-zero exit and an empty
             // stderr — surface whichever stream says why.
@@ -443,6 +514,7 @@ impl ClaudeCodeBackend {
             let snippet: String = reason.chars().take(300).collect();
             return Err(format!("exit {status}: {snippet}"));
         }
+
         serde_json::from_str(out.trim())
             .map_err(|e| format!("unparsable result JSON ({e}): {}", out.trim().chars().take(200).collect::<String>()))
     }

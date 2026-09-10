@@ -282,6 +282,99 @@ fn a_hung_call_times_out_even_when_a_grandchild_holds_stdout() {
     panic!("grandchild {pid} outlived the call: killing the direct child is not enough");
 }
 
+/// Issue #458: the call ended on EOF, not on the answer.
+///
+/// `read_to_string` returns when the pipe CLOSES, and a pipe closes only
+/// when every process holding its write end is gone. So any helper the
+/// wrapper leaves behind for a moment was charged to every decision of the
+/// game — 29 decisions behind a 3-second grandchild took 87 seconds
+/// instead of one — and a grandchild that outlived the timeout was worse
+/// than slow: the complete, valid answer was already in the buffer and was
+/// thrown away, all three attempts burned the same way, and the seat played
+/// the whole game mute while answering correctly every time.
+///
+/// Here the grandchild outlives the timeout by a wide margin, so a call
+/// that still waits on EOF cannot pass: it either returns the fallback or
+/// takes longer than the timeout to say so.
+#[test]
+fn a_call_ends_when_the_answer_does_not_when_the_pipe_closes() {
+    short_timeout(5);
+    let fake = Fake::new(
+        "stdout-holder",
+        &format!(
+            "{OK_BODY}\nsleep 60 & echo $! > \"$(dirname \"$LOG\")/grandchild.pid\"\nexit 0"
+        ),
+    );
+    let dir = fake.dir.clone();
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+
+    let started = std::time::Instant::now();
+    assert_eq!(p.backend_send_for_test("pick"), "3",
+        "the answer was on the pipe in milliseconds and is what the call returns");
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(5),
+        "the call waited {took:?} for a grandchild that has nothing to say;          it ends when the answer does");
+    assert_eq!(fake.calls().len(), 1, "answered first time: no retry, no fallback");
+
+    // And the stray does not outlive the call it was spawned during: it
+    // holds the pipes open and, for a real seat, spends quota on a decision
+    // that has already been made (#206).
+    let pid: i32 = std::fs::read_to_string(dir.join("grandchild.pid"))
+        .expect("the fake recorded its child").trim().parse().expect("a pid");
+    for _ in 0..50 {
+        if !pid_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("grandchild {pid} outlived the call it was spawned during");
+}
+
+/// Issue #459: the timeout guarded one pipe, and it was not this one.
+///
+/// `rx.recv_timeout` bounded stdout; `stderr_reader.join()` bounded
+/// nothing. A grandchild that detaches from stdout with `>/dev/null` — the
+/// ordinary idiom for keeping a helper's chatter out of a captured stdout —
+/// but keeps the inherited stderr let the answer arrive and then parked the
+/// call in `join()` forever, holding a correct answer it would never
+/// return, with no `API_ERROR`, no retry, no fallback and no exit. #458's
+/// fix does not cover it: the stdout read completes here, and the wedge is
+/// downstream of it.
+///
+/// Run on a thread so a regression is a failed assertion rather than a test
+/// that hangs.
+#[test]
+fn a_grandchild_holding_stderr_does_not_wedge_the_call() {
+    short_timeout(5);
+    let fake = Fake::new(
+        "stderr-holder",
+        &format!(
+            "{OK_BODY}\nsleep 60 >/dev/null & echo $! > \"$(dirname \"$LOG\")/grandchild.pid\"\nexit 0"
+        ),
+    );
+    let bin = fake.bin();
+    let dir = fake.dir.clone();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &bin);
+        let _ = tx.send(p.backend_send_for_test("pick"));
+    });
+    let answer = rx.recv_timeout(std::time::Duration::from_secs(20))
+        .expect("a call holding its answer must return it, not park on stderr");
+    assert_eq!(answer, "3");
+
+    let pid: i32 = std::fs::read_to_string(dir.join("grandchild.pid"))
+        .expect("the fake recorded its child").trim().parse().expect("a pid");
+    for _ in 0..50 {
+        if !pid_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("grandchild {pid} outlived the call it was spawned during");
+}
+
 /// Issue #206: `Drop` removes a seat's scratch directory, but nothing runs
 /// on a signal or a `kill -9`, so `/tmp/mtg-claude-code-*` accumulated. A
 /// new backend sweeps the directories of runs that are gone.
