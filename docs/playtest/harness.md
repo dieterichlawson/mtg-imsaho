@@ -113,6 +113,35 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   does with a refusal: an empty answer must be distinguishable from a
   chosen "none", or a seat that never got the question looks like a seat
   that passed
+  — **played 2026-09-10: the schema half is clean and the refusal half is
+  where everything is.** A `CLAUDE_CODE_BIN` stub that records every
+  `(prompt, schema)` pair harvested 4,311 structured requests over 38
+  games and reached 9 distinct top-level shapes with **zero** keys failing
+  the pattern; both request paths are literal-keyed (the draft's only
+  dynamic keys nest under `maindeck`). Six direct `claude -p --json-schema`
+  calls then settled the half no test can reach: every shape the harness
+  emits is accepted *and* answered — a 253-value integer enum (Nevermore
+  offers every implemented nonland card name, the largest enum in the
+  program), nested card-name keys with spaces and `#`, integers as string
+  enums, `"properties": {}` objects inside `required`,
+  `minItems`/`maxItems` on an enum array — while the control, those same
+  keys at the top level, still returns the #398 400 verbatim. What broke is
+  the third part: `send_with_schema` substitutes `{}`, and of the ten
+  callers only four (`pick_action_index`, the mulligan, `choose_card_set`,
+  `choose_x_funding`) log and count it. `mark_indices`, the blockers and
+  attackers prompts, `choose_pile_division`, `choose_ordering` and
+  `confirm_concede` write a line indistinguishable from a decision, or
+  nothing — measured at 4 mute target-set prompts with 0 `MALFORMED` lines
+  and a summary reporting 0 rejections (comment on #399). Note also that a
+  *successful* call with no parseable `structured_output` produces no
+  `API_ERROR` line either, so a remedy keyed on retry exhaustion misses a
+  refusal, a truncation and an answer to the wrong schema alike. Two
+  defects came out of it: #462 (nothing bounds the cast-cancel-recast cycle
+  the empty set produces) and #466 (the system prompt carries the
+  opponent's whole decklist). Worth knowing for next time: the rule's only
+  runtime enforcement is a `debug_assert!` compiled out of the release
+  binary, and `llm_request_shape.rs` asserts the predicate rather than the
+  schemas, so the harvest is the enforcement
 - H9 [proposed 2026-09-09, from V7/V42 and `format_action_prompt`] the
   prompt as a thing with a SIZE. The CLI wraps, pages and clips; the LLM
   prompt does none of that — `format_action_prompt` joins every legal
