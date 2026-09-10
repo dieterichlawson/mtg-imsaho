@@ -1,9 +1,6 @@
 use std::env;
-use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::process::Command;
 
 use reqwest::blocking::Client;
 
@@ -531,10 +528,9 @@ impl DraftBackend for AnthropicDraftBackend {
 
 }
 
-/// How long one draft decision may take before the `claude -p` subprocess is
-/// killed and the call retried. Print mode with thinking runs well past the
-/// API path's two minutes.
-const CLAUDE_CODE_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// The prefix this seat's scratch directory is named with. Not the one the
+/// game seat uses, which is why nothing ever swept these (#206, #404).
+const CLAUDE_CODE_WORKDIR_PREFIX: &str = "mtg-draft-claude-code-";
 /// How long a seat keeps retrying a failing `claude -p` before the draft
 /// gives up.
 ///
@@ -621,12 +617,7 @@ impl ClaudeCodeDraftBackend {
         guide: Option<&str>,
         card_reference: &str,
     ) -> Self {
-        let workdir = std::env::temp_dir().join(format!(
-            "mtg-draft-claude-code-{}-{}",
-            std::process::id(),
-            rand::random::<u32>()
-        ));
-        let _ = std::fs::create_dir_all(&workdir);
+        let workdir = mtg_player::llm::claude_code_prepare_seat(CLAUDE_CODE_WORKDIR_PREFIX);
         let label = match model {
             Some(m) => format!("claude-code:{m}"),
             None => "claude-code".to_string(),
@@ -767,78 +758,18 @@ impl ClaudeCodeDraftBackend {
         if let Some(m) = &self.model {
             cmd.args(["--model", m]);
         }
-        cmd.current_dir(&self.workdir)
-            // A Claude Code session marks its environment so nested
-            // interactive sessions are refused; a print-mode seat spawned
-            // from inside one is fine and must not inherit the mark.
-            .env_remove("CLAUDECODE")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = cmd.spawn().map_err(|e| format!("cannot run {}: {e}", self.binary))?;
-        {
-            let mut stdin = child.stdin.take().ok_or("no stdin")?;
-            stdin.write_all(message.as_bytes()).map_err(|e| format!("write to claude stdin: {e}"))?;
-        }
-        let mut stdout = child.stdout.take().ok_or("no stdout")?;
-        let mut stderr = child.stderr.take().ok_or("no stderr")?;
-
-        // Watchdog: kill the child if it outlives the call timeout. Reading
-        // stdout to EOF below then returns, and the wait sees the kill.
-        let child = Arc::new(Mutex::new(child));
-        let done = Arc::new(AtomicBool::new(false));
-        let timed_out = Arc::new(AtomicBool::new(false));
-        {
-            let child = Arc::clone(&child);
-            let done = Arc::clone(&done);
-            let timed_out = Arc::clone(&timed_out);
-            std::thread::spawn(move || {
-                let deadline = std::time::Instant::now() + CLAUDE_CODE_CALL_TIMEOUT;
-                while std::time::Instant::now() < deadline {
-                    if done.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                }
-                if !done.load(Ordering::SeqCst) {
-                    timed_out.store(true, Ordering::SeqCst);
-                    if let Ok(mut c) = child.lock() {
-                        let _ = c.kill();
-                    }
-                }
-            });
-        }
-        let stderr_reader = std::thread::spawn(move || {
-            let mut s = String::new();
-            let _ = stderr.read_to_string(&mut s);
-            s
-        });
-        let mut out = String::new();
-        let read = stdout.read_to_string(&mut out);
-        done.store(true, Ordering::SeqCst);
-        let status = child.lock().map_err(|_| "child lock poisoned".to_string())?.wait();
-        let err_text = stderr_reader.join().unwrap_or_default();
-        read.map_err(|e| format!("read claude stdout: {e}"))?;
-
-        if timed_out.load(Ordering::SeqCst) {
-            return Err(format!("timed out after {}s", CLAUDE_CODE_CALL_TIMEOUT.as_secs()));
-        }
-        let status = status.map_err(|e| format!("wait: {e}"))?;
-        if !status.success() {
-            // The CLI reports refusals (a usage limit, a bad model name) as a
-            // result object on stdout with a non-zero exit and an empty
-            // stderr — surface whichever stream says why.
-            let reason = if err_text.trim().is_empty() { out.trim() } else { err_text.trim() };
-            let reason = serde_json::from_str::<serde_json::Value>(reason)
-                .ok()
-                .and_then(|j| j["result"].as_str().map(std::string::ToString::to_string))
-                .unwrap_or_else(|| reason.to_string());
-            let snippet: String = reason.chars().take(300).collect();
-            return Err(format!("exit {status}: {snippet}"));
-        }
-        serde_json::from_str(out.trim())
-            .map_err(|e| format!("unparsable result JSON ({e}): {}", out.trim().chars().take(200).collect::<String>()))
+        cmd.current_dir(&self.workdir);
+        // One subprocess driver for both `claude -p` seats in this
+        // workspace. This was a copy of it, taken on 2026-09-04, and the
+        // fixes for #203 and #206 landed in the other crate a day later and
+        // never reached it: no process group, so the watchdog killed the
+        // wrapper and its own child kept holding stdout; a read that ended
+        // on EOF, so the call never returned; no signal handlers, so a
+        // SIGTERM orphaned every seat's subprocess to init; and no scratch
+        // sweep for this prefix. A hung wrapper stopped a draft mid-pick,
+        // silently, forever, with nothing on the terminal or in the log
+        // (issue #404).
+        mtg_player::llm::claude_code_run(&mut cmd, &self.binary, message)
     }
 
     /// The structured object of a result: the CLI's parsed

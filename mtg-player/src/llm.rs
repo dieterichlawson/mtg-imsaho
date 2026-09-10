@@ -15,6 +15,9 @@ use std::fmt::Write;
 mod claude_code;
 pub mod cost;
 pub use claude_code::{available as claude_code_available, binary as claude_code_binary, BINARY_ENV as CLAUDE_CODE_BINARY_ENV};
+// The one `claude -p` subprocess driver, for both seats in the workspace
+// (#404).
+pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};
 pub use cost::{cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
 
 

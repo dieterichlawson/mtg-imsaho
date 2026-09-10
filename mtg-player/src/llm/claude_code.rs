@@ -185,7 +185,8 @@ fn pid_is_alive(_pid: i32) -> bool {
     true
 }
 
-/// The prefix every seat's scratch directory is named with.
+/// The prefix the game seat's scratch directory is named with. The draft
+/// seat has its own, and passes it to [`prepare_seat`].
 const WORKDIR_PREFIX: &str = "mtg-claude-code-";
 
 /// Delete scratch directories left behind by runs that are no longer
@@ -197,20 +198,41 @@ const WORKDIR_PREFIX: &str = "mtg-claude-code-";
 /// gone belongs to a dead run and is ours to remove. A live pid — including
 /// an unrelated process that has since been given that number — is left
 /// alone.
-fn sweep_stale_workdirs() {
+fn sweep_stale_workdirs(prefix: &str) {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return;
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        let Some(rest) = name.strip_prefix(WORKDIR_PREFIX) else { continue };
+        let Some(rest) = name.strip_prefix(prefix) else { continue };
         let Some((pid, _nonce)) = rest.split_once('-') else { continue };
         let Ok(pid) = pid.parse::<i32>() else { continue };
         if !pid_is_alive(pid) {
             let _ = std::fs::remove_dir_all(entry.path());
         }
     }
+}
+
+/// Set up a `claude -p` seat: install the signal handlers, clear the
+/// scratch directories left by runs that are gone, and make this seat's
+/// own. Returns the workdir.
+///
+/// Takes the prefix because the two seats name theirs differently — the
+/// draft's `mtg-draft-claude-code-` was not the one the sweep looked for,
+/// so nothing ever cleaned them and a night of drafting left 25 behind
+/// (#206, #404).
+#[must_use]
+pub fn prepare_seat(prefix: &str) -> PathBuf {
+    install_signal_handlers();
+    sweep_stale_workdirs(prefix);
+    let workdir = std::env::temp_dir().join(format!(
+        "{prefix}{}-{}",
+        std::process::id(),
+        rand::random::<u32>()
+    ));
+    let _ = std::fs::create_dir_all(&workdir);
+    workdir
 }
 
 /// A registration in [`LIVE_GROUPS`], cleared when the call ends.
@@ -271,14 +293,7 @@ impl ClaudeCodeBackend {
     }
 
     pub(super) fn with_binary(binary: &str, model: Option<&str>) -> Self {
-        install_signal_handlers();
-        sweep_stale_workdirs();
-        let workdir = std::env::temp_dir().join(format!(
-            "{WORKDIR_PREFIX}{}-{}",
-            std::process::id(),
-            rand::random::<u32>()
-        ));
-        let _ = std::fs::create_dir_all(&workdir);
+        let workdir = prepare_seat(WORKDIR_PREFIX);
         let label = match model {
             Some(m) => format!("claude-code:{m}"),
             None => "claude-code".to_string(),
@@ -384,141 +399,165 @@ impl ClaudeCodeBackend {
         if let Some(s) = schema {
             cmd.args(["--json-schema", &s.to_string()]);
         }
-        cmd.current_dir(&self.workdir)
-            // A Claude Code session marks its environment so nested
-            // interactive sessions are refused; a print-mode seat spawned
-            // from inside one is fine and must not inherit the mark.
-            .env_remove("CLAUDECODE")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.current_dir(&self.workdir);
+        run_print_mode(&mut cmd, &self.binary, message)
+    }
+}
 
-        // Give the child its own process group, so the timeout and the
-        // signal handler can reach everything it spawns and not just the
-        // wrapper script we launched (issues #203, #206).
-        #[cfg(unix)]
-        unsafe {
-            use std::os::unix::process::CommandExt;
-            cmd.pre_exec(|| {
-                // setpgid(0, 0): the child becomes leader of a new group
-                // whose id is its own pid.
-                if libc::setpgid(0, 0) == 0 {
-                    Ok(())
-                } else {
-                    Err(std::io::Error::last_os_error())
-                }
-            });
-        }
+/// Everything the workspace's two `claude -p` seats do to a prepared
+/// command: give it its own process group, write `message` to its stdin,
+/// drive it under the call timeout, and return the CLI's result object.
+///
+/// Both seats go through this. The draft runner used to hold a copy of it,
+/// taken on 2026-09-04, so the fixes for #203 and #206 — the process group,
+/// the kill that reaches a wrapper's descendants, the signal handlers, the
+/// scratch sweep, the timeout override that makes the path testable in
+/// seconds — landed in one crate and never reached the other. A draft is 45
+/// picks per seat over an hour, and a hung wrapper stopped one mid-pick,
+/// silently, forever, with nothing on the terminal or in the log (issue
+/// #404). There is one copy now, and a fix to it is a fix to both.
+pub fn run_print_mode(
+    cmd: &mut Command,
+    binary: &str,
+    message: &str,
+) -> Result<serde_json::Value, String> {
+    install_signal_handlers();
+    cmd
+        // A Claude Code session marks its environment so nested
+        // interactive sessions are refused; a print-mode seat spawned
+        // from inside one is fine and must not inherit the mark.
+        .env_remove("CLAUDECODE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn().map_err(|e| format!("cannot run {}: {e}", self.binary))?;
-        {
-            let mut stdin = child.stdin.take().ok_or("no stdin")?;
-            stdin.write_all(message.as_bytes()).map_err(|e| format!("write to claude stdin: {e}"))?;
-        }
-        let stdout = child.stdout.take().ok_or("no stdout")?;
-        let stderr = child.stderr.take().ok_or("no stderr")?;
-
-        // The group to signal. `setpgid` in `pre_exec` makes it the child's
-        // own pid; if that call failed the child is still in ours, which
-        // `kill_group` refuses to signal.
-        let pgid = i32::try_from(child.id()).unwrap_or(0);
-        let group = LiveGroup::register(pgid);
-
-        // Both pipes are pumped into buffers as the bytes arrive, so the
-        // call can look at what has been said so far without waiting for
-        // the pipe to CLOSE. A pipe closes only when every process holding
-        // its write end is gone, and the call used to end on that: the
-        // answer was complete in the buffer in milliseconds and the call
-        // sat there for as long as any stray grandchild lived, charging
-        // that lifetime to every decision of the game. When such a
-        // grandchild outlived the timeout the complete, valid answer was
-        // then thrown away, all three attempts burned the same way, and the
-        // seat played the whole game mute while answering correctly every
-        // time (issue #458). #203 fixed the unbounded wedge on stdout; this
-        // is the rest of its mechanism.
-        let out_buf = Arc::new(Mutex::new(Vec::new()));
-        let err_buf = Arc::new(Mutex::new(Vec::new()));
-        pump_into(stdout, Arc::clone(&out_buf));
-        // Never joined. stderr is diagnostic text, and its read had no
-        // deadline at all: a grandchild that detached from stdout with
-        // `>/dev/null` — the ordinary idiom for keeping a helper's chatter
-        // out of a captured stdout — but kept the inherited stderr parked
-        // the call in `join()` forever, holding an answer it had already
-        // read, with nothing logged and no retry (issue #459).
-        pump_into(stderr, Arc::clone(&err_buf));
-
-        let timeout = call_timeout();
-        let deadline = Instant::now() + timeout;
-        // Once the child is gone, everything it wrote is already on the
-        // pipe; this is how long the pump is given to finish copying it
-        // across before the call gives up on it parsing.
-        const DRAIN_GRACE: Duration = Duration::from_millis(200);
-        const POLL: Duration = Duration::from_millis(2);
-
-        let mut exited: Option<std::process::ExitStatus> = None;
-        let mut exited_at: Option<Instant> = None;
-        let (out, status) = loop {
-            if exited.is_none() {
-                exited = child.try_wait().map_err(|e| format!("wait: {e}"))?;
-                if exited.is_some() {
-                    exited_at = Some(Instant::now());
-                }
+    // Give the child its own process group, so the timeout and the
+    // signal handler can reach everything it spawns and not just the
+    // wrapper script we launched (issues #203, #206).
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            // setpgid(0, 0): the child becomes leader of a new group
+            // whose id is its own pid.
+            if libc::setpgid(0, 0) == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
             }
-            let text = snapshot(&out_buf);
-            let answered = serde_json::from_str::<serde_json::Value>(text.trim())
-                .is_ok_and(|v| v.is_object());
-
-            // The call is over when the answer is, not when the last writer
-            // lets go of the pipe. The status is still read, because the CLI
-            // reports a refusal as a result object with a NON-ZERO exit.
-            if let Some(status) = exited {
-                if answered || exited_at.is_some_and(|t| t.elapsed() >= DRAIN_GRACE) {
-                    break (text, Some(status));
-                }
-            }
-            if Instant::now() >= deadline {
-                // Take the whole group down, not just the process we
-                // spawned, then reap our own child — `wait` on it returns
-                // as soon as it dies, whatever its descendants are doing.
-                kill_group(pgid);
-                let _ = child.wait();
-                // An answer already in hand is an answer: the timeout is
-                // there to stop the call waiting forever, not to discard
-                // what it is holding (#458).
-                if answered {
-                    break (text, exited);
-                }
-                return Err(format!("timed out after {}s", timeout.as_secs()));
-            }
-            std::thread::sleep(POLL);
-        };
-
-        // Nothing in this group is wanted once the call is over, and a stray
-        // that outlives it holds the pipes open (which keeps the pump
-        // threads alive) and, for a real seat, spends quota on a decision
-        // that has already been made (#206, #459).
-        kill_group(pgid);
-        drop(group);
-        let err_text = snapshot(&err_buf);
-
-        // A timed-out call that had its answer has no status to check.
-        if let Some(status) = status.filter(|s| !s.success()) {
-            // The CLI reports refusals (a usage limit, a bad model name) as
-            // a result object on stdout with a non-zero exit and an empty
-            // stderr — surface whichever stream says why.
-            let reason = if err_text.trim().is_empty() { out.trim() } else { err_text.trim() };
-            let reason = serde_json::from_str::<serde_json::Value>(reason)
-                .ok()
-                .and_then(|j| j["result"].as_str().map(str::to_string))
-                .unwrap_or_else(|| reason.to_string());
-            let snippet: String = reason.chars().take(300).collect();
-            return Err(format!("exit {status}: {snippet}"));
-        }
-
-        serde_json::from_str(out.trim())
-            .map_err(|e| format!("unparsable result JSON ({e}): {}", out.trim().chars().take(200).collect::<String>()))
+        });
     }
 
+    let mut child = cmd.spawn().map_err(|e| format!("cannot run {binary}: {e}"))?;
+    {
+    let mut stdin = child.stdin.take().ok_or("no stdin")?;
+    stdin.write_all(message.as_bytes()).map_err(|e| format!("write to claude stdin: {e}"))?;
+    }
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let stderr = child.stderr.take().ok_or("no stderr")?;
+
+    // The group to signal. `setpgid` in `pre_exec` makes it the child's
+    // own pid; if that call failed the child is still in ours, which
+    // `kill_group` refuses to signal.
+    let pgid = i32::try_from(child.id()).unwrap_or(0);
+    let group = LiveGroup::register(pgid);
+
+    // Both pipes are pumped into buffers as the bytes arrive, so the
+    // call can look at what has been said so far without waiting for
+    // the pipe to CLOSE. A pipe closes only when every process holding
+    // its write end is gone, and the call used to end on that: the
+    // answer was complete in the buffer in milliseconds and the call
+    // sat there for as long as any stray grandchild lived, charging
+    // that lifetime to every decision of the game. When such a
+    // grandchild outlived the timeout the complete, valid answer was
+    // then thrown away, all three attempts burned the same way, and the
+    // seat played the whole game mute while answering correctly every
+    // time (issue #458). #203 fixed the unbounded wedge on stdout; this
+    // is the rest of its mechanism.
+    let out_buf = Arc::new(Mutex::new(Vec::new()));
+    let err_buf = Arc::new(Mutex::new(Vec::new()));
+    pump_into(stdout, Arc::clone(&out_buf));
+    // Never joined. stderr is diagnostic text, and its read had no
+    // deadline at all: a grandchild that detached from stdout with
+    // `>/dev/null` — the ordinary idiom for keeping a helper's chatter
+    // out of a captured stdout — but kept the inherited stderr parked
+    // the call in `join()` forever, holding an answer it had already
+    // read, with nothing logged and no retry (issue #459).
+    pump_into(stderr, Arc::clone(&err_buf));
+
+    let timeout = call_timeout();
+    let deadline = Instant::now() + timeout;
+    // Once the child is gone, everything it wrote is already on the
+    // pipe; this is how long the pump is given to finish copying it
+    // across before the call gives up on it parsing.
+    const DRAIN_GRACE: Duration = Duration::from_millis(200);
+    const POLL: Duration = Duration::from_millis(2);
+
+    let mut exited: Option<std::process::ExitStatus> = None;
+    let mut exited_at: Option<Instant> = None;
+    let (out, status) = loop {
+        if exited.is_none() {
+            exited = child.try_wait().map_err(|e| format!("wait: {e}"))?;
+            if exited.is_some() {
+                exited_at = Some(Instant::now());
+            }
+        }
+        let text = snapshot(&out_buf);
+        let answered = serde_json::from_str::<serde_json::Value>(text.trim())
+            .is_ok_and(|v| v.is_object());
+
+        // The call is over when the answer is, not when the last writer
+        // lets go of the pipe. The status is still read, because the CLI
+        // reports a refusal as a result object with a NON-ZERO exit.
+        if let Some(status) = exited {
+            if answered || exited_at.is_some_and(|t| t.elapsed() >= DRAIN_GRACE) {
+                break (text, Some(status));
+            }
+        }
+        if Instant::now() >= deadline {
+            // Take the whole group down, not just the process we
+            // spawned, then reap our own child — `wait` on it returns
+            // as soon as it dies, whatever its descendants are doing.
+            kill_group(pgid);
+            let _ = child.wait();
+            // An answer already in hand is an answer: the timeout is
+            // there to stop the call waiting forever, not to discard
+            // what it is holding (#458).
+            if answered {
+                break (text, exited);
+            }
+            return Err(format!("timed out after {}s", timeout.as_secs()));
+        }
+        std::thread::sleep(POLL);
+    };
+
+    // Nothing in this group is wanted once the call is over, and a stray
+    // that outlives it holds the pipes open (which keeps the pump
+    // threads alive) and, for a real seat, spends quota on a decision
+    // that has already been made (#206, #459).
+    kill_group(pgid);
+    drop(group);
+    let err_text = snapshot(&err_buf);
+
+    // A timed-out call that had its answer has no status to check.
+    if let Some(status) = status.filter(|s| !s.success()) {
+        // The CLI reports refusals (a usage limit, a bad model name) as
+        // a result object on stdout with a non-zero exit and an empty
+        // stderr — surface whichever stream says why.
+        let reason = if err_text.trim().is_empty() { out.trim() } else { err_text.trim() };
+        let reason = serde_json::from_str::<serde_json::Value>(reason)
+            .ok()
+            .and_then(|j| j["result"].as_str().map(str::to_string))
+            .unwrap_or_else(|| reason.to_string());
+        let snippet: String = reason.chars().take(300).collect();
+        return Err(format!("exit {status}: {snippet}"));
+    }
+
+    serde_json::from_str(out.trim())
+        .map_err(|e| format!("unparsable result JSON ({e}): {}", out.trim().chars().take(200).collect::<String>()))
+    }
+
+impl ClaudeCodeBackend {
     /// The structured object of a result: the CLI's parsed
     /// `structured_output` when a schema was given, else the result text
     /// parsed as JSON.

@@ -375,6 +375,43 @@ fn a_grandchild_holding_stderr_does_not_wedge_the_call() {
     panic!("grandchild {pid} outlived the call it was spawned during");
 }
 
+/// Issue #404: the draft seat drives `claude -p` through this same
+/// function, so the timeout and the group kill are its timeout and its
+/// group kill — not something it has to be given a second copy of.
+///
+/// The draft backend was a copy taken before #203 and #206 were fixed, so a
+/// hung wrapper stopped a draft mid-pick, silently, forever. Exercised here
+/// through the public entry point rather than through the game seat's
+/// wrapper, because that is the door the draft comes in by.
+#[test]
+fn the_shared_driver_times_out_and_takes_the_whole_tree_with_it() {
+    short_timeout(2);
+    let fake = Fake::new(
+        "shared-driver",
+        "sleep 120 & echo $! > \"$(dirname \"$LOG\")/grandchild.pid\"; sleep 120",
+    );
+    let dir = fake.dir.clone();
+
+    let mut cmd = std::process::Command::new(fake.bin());
+    cmd.arg("-p").args(["--output-format", "json"]);
+    let started = std::time::Instant::now();
+    let err = mtg_player::llm::claude_code_run(&mut cmd, "claude", "pick")
+        .expect_err("a hung call gives up");
+    assert!(err.contains("timed out after 2s"), "got {err:?}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(30),
+        "and gives up at its deadline, not at EOF");
+
+    let pid: i32 = std::fs::read_to_string(dir.join("grandchild.pid"))
+        .expect("the fake recorded its child").trim().parse().expect("a pid");
+    for _ in 0..50 {
+        if !pid_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("grandchild {pid} outlived the call: killing the direct child is not enough");
+}
+
 /// Issue #206: `Drop` removes a seat's scratch directory, but nothing runs
 /// on a signal or a `kill -9`, so `/tmp/mtg-claude-code-*` accumulated. A
 /// new backend sweeps the directories of runs that are gone.
