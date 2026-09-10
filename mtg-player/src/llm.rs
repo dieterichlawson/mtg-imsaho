@@ -2088,7 +2088,19 @@ impl LlmPlayer {
         match action {
             Action::PassPriority => "Pass".into(),
             Action::PlayLand { object_id } => format!("Play {}", Self::obj_name(view, *object_id)),
-            Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
+            // Name the mana this entry makes. The engine offers one action
+            // per (object, ability_index), so dropping the description
+            // rendered a dual land's two abilities as byte-identical rows
+            // that are not the same action — and this seat is told by
+            // GAME_RULES to tap manually "to preserve a specific land",
+            // which is the one thing it could not then express. Same
+            // lookup the CLI has had since #118 (issue #460).
+            Action::ActivateManaAbility { object_id, ability_index } => {
+                match view.mana_ability_description(*object_id, *ability_index) {
+                    Some(d) => format!("Tap {}: {}", Self::obj_name(view, *object_id), d),
+                    None => format!("Tap {} for mana", Self::obj_name(view, *object_id)),
+                }
+            }
             Action::ActivateAbility { object_id, .. } => format!("Activate {}", Self::obj_name(view, *object_id)),
             Action::Concede => "Concede".into(),
             Action::DiscardCards { cards } => {
@@ -4394,6 +4406,50 @@ mod tests {
             full_log: vec![],
             revealed_names: HashMap::new(),
         }
+    }
+
+    /// Issue #460: the engine offers one action per (object, ability_index),
+    /// so a permanent with more than one mana ability produced rows that
+    /// were byte-identical and were not the same action — a dual land as
+    /// two, a filter land as six. 10 of the 19 actions in one measured
+    /// prompt were five identical `Tap <dual>` pairs, and the board line
+    /// gave no help either. This is #118 on the prompt, which is a
+    /// different surface from the screen: nothing in a CLI game can show
+    /// it.
+    #[test]
+    fn two_mana_abilities_on_one_land_are_two_different_rows() {
+        let you = PlayerId(0);
+        let mut land = perm(9, "Clifftop Retreat", 0, 0, you);
+        land.card_types = vec![CardType::Land];
+        land.power = None;
+        land.toughness = None;
+        land.effective_power = None;
+        land.effective_toughness = None;
+        land.mana_abilities = vec![(0, "Add {R}".into()), (1, "Add {W}".into())];
+        let mut view = empty_view();
+        view.battlefield.push(land);
+
+        let label = |i: usize| LlmPlayer::format_single_action(&view, &Action::ActivateManaAbility {
+            object_id: ObjectId(9),
+            ability_index: i,
+        });
+        assert_eq!(label(0), "Tap Clifftop Retreat: Add {R}");
+        assert_eq!(label(1), "Tap Clifftop Retreat: Add {W}");
+        assert_ne!(label(0), label(1),
+            "two actions that make different mana are two different rows");
+
+        // A permanent whose abilities the view did not describe still reads
+        // as a tap for mana rather than as a bare name.
+        let mut plain = perm(10, "Island", 0, 0, you);
+        plain.card_types = vec![CardType::Land];
+        plain.mana_abilities = vec![];
+        view.battlefield.push(plain);
+        assert_eq!(
+            LlmPlayer::format_single_action(&view, &Action::ActivateManaAbility {
+                object_id: ObjectId(10),
+                ability_index: 0,
+            }),
+            "Tap Island for mana");
     }
 
     fn perm(id: u64, name: &str, power: i32, toughness: i32, controller: PlayerId) -> PermanentView {

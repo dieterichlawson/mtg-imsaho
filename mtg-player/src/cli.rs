@@ -3228,12 +3228,7 @@ impl CliPlayer {
                 // Name the mana this entry makes: a dual land's two abilities
                 // rendered as byte-identical rows, a filter land's as six,
                 // with no way to choose a colour (issue #118).
-                let desc = view.battlefield.iter()
-                    .find(|p| p.object_id == *object_id)
-                    .and_then(|p| p.mana_abilities.iter()
-                        .find(|(i, _)| i == ability_index)
-                        .map(|(_, d)| d.clone()));
-                match desc {
+                match view.mana_ability_description(*object_id, *ability_index) {
                     Some(d) => format!("Tap {}: {}", Self::perm_name(view, *object_id), d),
                     None => format!("Tap {} for mana", Self::perm_name(view, *object_id)),
                 }

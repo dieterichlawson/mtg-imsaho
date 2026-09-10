@@ -292,12 +292,19 @@ fn a_save_file(tag: &str) -> std::path::PathBuf {
 
     // The save is rewritten after every action, so it appears almost at
     // once; poll rather than sleeping a fixed guess.
+    //
+    // Waited past the mulligan phase, not merely for the first complete
+    // file. A save taken mid-mulligan resumes into the rest of it, and a
+    // seat that mulligans then legitimately draws seven again after the
+    // resume — which is indistinguishable, in the log, from the replay
+    // `a_resume_does_not_replay_the_saved_history_into_the_log` is about.
+    // The turn banner is the phase boundary.
     let mut saved = None;
-    for _ in 0..200 {
+    for _ in 0..400 {
         if let Ok(contents) = std::fs::read_to_string(&path) {
             // Only a complete save is useful — the writer is atomic, so any
             // readable file is whole, but it must parse as a game.
-            if contents.contains("player_names") {
+            if contents.contains("player_names") && contents.contains("Turn 1 (p") {
                 saved = Some(contents);
                 break;
             }

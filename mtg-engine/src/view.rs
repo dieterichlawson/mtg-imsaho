@@ -156,6 +156,31 @@ pub struct PermanentView {
     pub named_card: Option<String>,
 }
 
+impl GameView {
+    /// What the `ability_index`th mana ability of `object_id` produces, as
+    /// the view already computed it: `"Add {R}"`.
+    ///
+    /// The engine offers one action per `(object, ability_index)`, so a
+    /// permanent with more than one mana ability produces several actions
+    /// that differ only in this string. A surface that drops it renders
+    /// them as byte-identical rows that are not the same action: a dual
+    /// land as two, a filter land as six, with no way to choose a colour.
+    /// The CLI was fixed for that (#118) and the LLM prompt was not, so a
+    /// seat told by its own rules text to "override the auto-tap to
+    /// preserve a specific land" was choosing between rows it could not
+    /// tell apart — 10 of 19 actions in one measured prompt were five
+    /// identical pairs (issue #460). One lookup, so a third surface cannot
+    /// miss it either.
+    #[must_use]
+    pub fn mana_ability_description(&self, object_id: ObjectId, ability_index: usize) -> Option<&str> {
+        self.battlefield.iter()
+            .find(|p| p.object_id == object_id)?
+            .mana_abilities.iter()
+            .find(|(i, _)| *i == ability_index)
+            .map(|(_, d)| d.as_str())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StackItemView {
     pub object_id: ObjectId,
