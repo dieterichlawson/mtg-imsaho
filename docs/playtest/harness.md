@@ -228,3 +228,44 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   maximum, which still sweeps X=0..9 across varying boards, so it is cleared
   on coverage; the residual is that for a *given* board the intermediate X
   is never chosen and the seat always empties its mana
+- H11 [proposed 2026-09-10, from #462] forward progress as a property.
+  Nothing in the engine, `mtg-player` or `mtg-runner` guarantees that a game
+  advances: #462 found the cast-cancel-recast cycle unbounded, 2,180
+  cancelled casts in 60 seconds, turn 15 forever, ended only by `timeout`.
+  Ask the same question of every prompt that can refuse a commitment.
+  Method: for each structured prompt kind, point `CLAUDE_CODE_BIN` at a seat
+  whose answer there is unusable *and stable* (a successful call with no
+  `structured_output` is the cheapest shape) while it answers everything
+  else legally, give the run a wall-clock budget, and record whether the game
+  ends. Candidates beyond the exile cost: a blocker assignment the engine
+  refuses for menace, an X funding of 0 on a spell needing X>=1, an ordering
+  that is not a permutation, a pile division the opponent then declines. A
+  prompt that can livelock is a class of game `--check-invariants` will never
+  fail on, so the only way to find it is to try to hang the program
+- H12 [proposed 2026-09-10, from #460 and #463] the action label and the
+  prompt body as a three-surface diff. `format_single_action` in
+  `mtg-player/src/llm.rs` and the `action_label` match in
+  `mtg-player/src/cli.rs:3107` render the same `Action` variants for two
+  different readers, and they have already drifted: the CLI names the mana
+  an ability produces (the #118 fix) and the LLM label is still
+  `Tap <name>`, so a dual land is two byte-identical rows and the seat
+  cannot choose a colour (#460). Walk the two tables variant by variant and
+  list every field one names that the other drops. Then do the same for the
+  prompt *body*: which callers build their message themselves instead of
+  through `build_prompt`? `choose_card_set` is one, and its discard arm is
+  the only decision in the game made with no board (#463). Each difference
+  is either a deliberate token saving or a decision the seat cannot make;
+  say which, and cite the CLI line that proves the data was available
+- H13 [proposed 2026-09-10, from H8's harvest] the prompt kinds nothing
+  reaches. `send_message_structured` has ten callers; 4,311 requests
+  harvested from 38 games over fourteen decks reached nine shapes and never
+  `choose_pile_division` — which is the one site
+  `mtg-player/tests/llm_request_shape.rs` singles out as safe *because* it
+  nests its card-name keys, and whose only runtime check is a
+  `debug_assert!` compiled out of the release binary. Build the board each
+  unreached prompt needs (Liliana of the Veil at −6 for the pile division,
+  then the opponent's `ChoosePile` answer) and put a seat through it for
+  real. Keep the instrument while you are there: a stub that records every
+  `(prompt, schema)` pair and validates the schema the way the API does
+  audits all ten at once for the cost of one game, and the harvest is
+  currently the only thing enforcing the #398 rule in a release build
