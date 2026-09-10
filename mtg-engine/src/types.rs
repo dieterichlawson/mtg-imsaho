@@ -444,6 +444,72 @@ pub enum Keyword {
     Indestructible,
 }
 
+impl Keyword {
+    /// Every keyword, so a sweep over them cannot silently miss one that was
+    /// added after it was written.
+    pub const ALL: [Keyword; 15] = [
+        Keyword::Flying,
+        Keyword::FirstStrike,
+        Keyword::DoubleStrike,
+        Keyword::Trample,
+        Keyword::Deathtouch,
+        Keyword::Lifelink,
+        Keyword::Vigilance,
+        Keyword::Flash,
+        Keyword::Reach,
+        Keyword::Haste,
+        Keyword::Defender,
+        Keyword::Hexproof,
+        Keyword::Intimidate,
+        Keyword::Menace,
+        Keyword::Indestructible,
+    ];
+
+    /// The word a card prints this keyword as, in the lowercase a rules-text
+    /// list uses ("first strike", "vigilance").
+    ///
+    /// There were five copies of this table — two panes of the CLI, the
+    /// `i` inspector, the LLM seat's prompt and a test's own — and the two
+    /// that did not have it Debug-formatted the variant instead, so a
+    /// battlefield row and a combat prompt spelled Elite Inquisitor's
+    /// `FirstStrike` as "firststrike" while the CARDS pane one column over
+    /// spelled the same keyword on the same creature "First strike"
+    /// (issue #363). `FirstStrike` and `DoubleStrike` are the only variants
+    /// whose Debug name is not already the printed word, which is why the
+    /// other thirteen hid it. The Debug name is a Rust identifier; it is
+    /// not a name anything shows a player.
+    ///
+    /// Lowercase because that is the form a card's oracle text prints, which
+    /// is what `every_declared_keyword_is_printed_on_the_card` checks these
+    /// against — Wizards' text, not another copy of this table.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Keyword::Flying => "flying",
+            Keyword::FirstStrike => "first strike",
+            Keyword::DoubleStrike => "double strike",
+            Keyword::Trample => "trample",
+            Keyword::Deathtouch => "deathtouch",
+            Keyword::Lifelink => "lifelink",
+            Keyword::Vigilance => "vigilance",
+            Keyword::Flash => "flash",
+            Keyword::Reach => "reach",
+            Keyword::Haste => "haste",
+            Keyword::Defender => "defender",
+            Keyword::Hexproof => "hexproof",
+            Keyword::Intimidate => "intimidate",
+            Keyword::Menace => "menace",
+            Keyword::Indestructible => "indestructible",
+        }
+    }
+}
+
+impl std::fmt::Display for Keyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 /// Describes which creatures a continuous effect applies to.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CreatureFilter {

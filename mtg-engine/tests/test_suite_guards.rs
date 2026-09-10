@@ -1657,3 +1657,58 @@ fn no_card_re_checks_the_battlefield_before_adding_counters() {
          that can fall out of step with it:\n  {}",
         offenders.join("\n  "));
 }
+
+/// One table says what a keyword is called, and it lives beside the enum.
+///
+/// There were five. Two panes of the CLI, the `i` inspector, the LLM seat's
+/// prompt and this suite each carried their own; and the copies that did not
+/// carry one Debug-formatted the variant instead, which spells
+/// `Keyword::FirstStrike` as "firststrike". So Elite Inquisitor's
+/// battlefield row and both combat prompts read
+/// `(firststrike, vigilance, ...)` while the CARDS pane one column over read
+/// `First strike, Vigilance` — the same keyword, on the same creature, on
+/// the same screen, spelled two ways, and one of them is not a Magic
+/// keyword and matches nothing a reader searches for (issue #363).
+///
+/// A second copy of the table IS the defect, so this is not a style rule:
+/// with one table the surfaces can only differ about the case, and
+/// `every_declared_keyword_is_printed_on_the_card` holds that one table to
+/// what the cards actually print.
+#[test]
+fn only_the_engine_names_a_keyword() {
+    // A name table is a match arm mapping a variant to a string literal.
+    // Matching on a keyword to decide something — which the engine does all
+    // over combat — is untouched.
+    // Built rather than written, so this line is not itself an arm the sweep
+    // below finds in its own source.
+    let needles = [format!("Keyword::{} =>", "Indestructible"),
+                   format!("Keyword::{} =>", "FirstStrike")];
+    let mut tables = Vec::new();
+    let mut files = Vec::new();
+    walk(&repo_root(), &mut files);
+    files.sort();
+    for path in &files {
+        let Ok(text) = fs::read_to_string(path) else { continue };
+        let rel = path.strip_prefix(repo_root()).unwrap_or(path)
+            .to_string_lossy().replace('\\', "/");
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("//") || l.starts_with("///") {
+                continue;
+            }
+            if needles.iter().any(|needle| l.contains(needle)) && l.contains('"') {
+                tables.push(format!("{rel}:{}: {l}", n + 1));
+            }
+        }
+    }
+    assert_eq!(tables.len(), 2,
+        "expected the one name table, in mtg-engine/src/types.rs beside the \
+         enum (two lines, one per needle); found {} arm(s) naming a keyword \
+         (#363):\n  {}",
+        tables.len(), tables.join("\n  "));
+    for t in &tables {
+        assert!(t.starts_with("mtg-engine/src/types.rs:"),
+            "a keyword is named by `Keyword::label` and nothing else; this is \
+             a second copy of that table (#363): {t}");
+    }
+}

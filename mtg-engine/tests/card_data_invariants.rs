@@ -16,7 +16,7 @@
 mod common;
 use common::*;
 use mtg_engine::cards::{CardData, CardRegistry};
-use mtg_engine::types::{CardType, Color, Keyword, Step, Supertype};
+use mtg_engine::types::{CardType, Color, Step, Supertype};
 use std::collections::HashSet;
 
 /// Every card in the registry, by name.
@@ -202,26 +202,6 @@ fn flashback_is_only_on_instants_and_sorceries_and_says_so() {
     assert_none(&offenders, "declare flashback inconsistently");
 }
 
-/// The word a keyword is printed as, for checking it against the oracle text.
-fn keyword_word(k: Keyword) -> &'static str {
-    match k {
-        Keyword::Flying => "flying",
-        Keyword::FirstStrike => "first strike",
-        Keyword::DoubleStrike => "double strike",
-        Keyword::Trample => "trample",
-        Keyword::Deathtouch => "deathtouch",
-        Keyword::Lifelink => "lifelink",
-        Keyword::Vigilance => "vigilance",
-        Keyword::Flash => "flash",
-        Keyword::Reach => "reach",
-        Keyword::Haste => "haste",
-        Keyword::Defender => "defender",
-        Keyword::Hexproof => "hexproof",
-        Keyword::Intimidate => "intimidate",
-        Keyword::Menace => "menace",
-        Keyword::Indestructible => "indestructible",
-    }
-}
 
 #[test]
 fn every_declared_keyword_is_printed_on_the_card() {
@@ -232,7 +212,7 @@ fn every_declared_keyword_is_printed_on_the_card() {
         let text = d.oracle_text.to_lowercase();
         for k in &d.keywords {
             declared += 1;
-            if !text.contains(keyword_word(*k)) {
+            if !text.contains(k.label()) {
                 offenders.push(format!("{}: declares {k:?}, which its text never prints", d.name));
             }
         }

@@ -3574,25 +3574,12 @@ from your hand to put on the bottom of your library.\n\
     }
 
     /// Format keyword abilities as a comma-separated lowercase string.
+    ///
+    /// The printed word comes from the engine, beside the enum: this was one
+    /// of five copies of that table, and the two that did not have it
+    /// Debug-formatted the variant instead (#363).
     fn format_keywords(keywords: &[mtg_engine::types::Keyword]) -> String {
-        use mtg_engine::types::Keyword;
-        keywords.iter().map(|kw| match kw {
-            Keyword::Flying => "flying",
-            Keyword::FirstStrike => "first strike",
-            Keyword::DoubleStrike => "double strike",
-            Keyword::Trample => "trample",
-            Keyword::Deathtouch => "deathtouch",
-            Keyword::Lifelink => "lifelink",
-            Keyword::Vigilance => "vigilance",
-            Keyword::Flash => "flash",
-            Keyword::Reach => "reach",
-            Keyword::Haste => "haste",
-            Keyword::Defender => "defender",
-            Keyword::Hexproof => "hexproof",
-            Keyword::Intimidate => "intimidate",
-            Keyword::Menace => "menace",
-            Keyword::Indestructible => "indestructible",
-        }).collect::<Vec<_>>().join(", ")
+        keywords.iter().map(|kw| kw.label()).collect::<Vec<_>>().join(", ")
     }
 
     fn is_legendary(p: &mtg_engine::view::PermanentView) -> bool {

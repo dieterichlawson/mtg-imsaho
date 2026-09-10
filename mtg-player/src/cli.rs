@@ -392,6 +392,26 @@ fn clear_cols(out: &mut impl Write, col: u16, row: u16, cols: usize) {
         cursor::MoveTo(col, row));
 }
 
+/// A keyword as the CARDS pane and the `i` inspector head their `Keywords:`
+/// line — the printed word (`Keyword::label`), sentence-cased.
+///
+/// The panes that print this line and the rows that print `(first strike,
+/// vigilance)` inline used to each carry their own idea of the spelling:
+/// two had a name table, two Debug-formatted the variant and lowercased it,
+/// and one Debug-formatted it and did not. So the battlefield row said
+/// "firststrike" while the CARDS pane one column over said "First strike",
+/// for the same keyword on the same creature on the same screen (#363).
+/// There is one table now, in the engine beside the enum; the only thing
+/// left to differ about is the case.
+fn keyword_title(k: mtg_engine::types::Keyword) -> String {
+    let word = k.label();
+    let mut c = word.chars();
+    match c.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
+
 /// Repaint an input line from the buffer, clipped to `cap` display columns.
 ///
 /// The readers used to keep a parallel model of what was on screen and paint
@@ -2042,7 +2062,7 @@ impl CliPlayer {
         if Self::is_legendary(c) {
             abilities.push("legendary".into());
         }
-        abilities.extend(c.keywords.iter().map(|k| format!("{k:?}").to_lowercase()));
+        abilities.extend(c.keywords.iter().map(|k| k.label().to_string()));
         abilities.extend(c.protections.iter().cloned());
         let kw = if abilities.is_empty() {
             String::new()
@@ -2269,23 +2289,8 @@ impl CliPlayer {
 
             // Keywords
             if !card.data.keywords.is_empty() {
-                let kw_str: Vec<&str> = card.data.keywords.iter().map(|k| match k {
-                    mtg_engine::types::Keyword::Flying => "Flying",
-                    mtg_engine::types::Keyword::FirstStrike => "First strike",
-                    mtg_engine::types::Keyword::DoubleStrike => "Double strike",
-                    mtg_engine::types::Keyword::Trample => "Trample",
-                    mtg_engine::types::Keyword::Deathtouch => "Deathtouch",
-                    mtg_engine::types::Keyword::Lifelink => "Lifelink",
-                    mtg_engine::types::Keyword::Vigilance => "Vigilance",
-                    mtg_engine::types::Keyword::Flash => "Flash",
-                    mtg_engine::types::Keyword::Reach => "Reach",
-                    mtg_engine::types::Keyword::Haste => "Haste",
-                    mtg_engine::types::Keyword::Defender => "Defender",
-                    mtg_engine::types::Keyword::Hexproof => "Hexproof",
-                    mtg_engine::types::Keyword::Intimidate => "Intimidate",
-                    mtg_engine::types::Keyword::Menace => "Menace",
-                    mtg_engine::types::Keyword::Indestructible => "Indestructible",
-                }).collect();
+                let kw_str: Vec<String> =
+                    card.data.keywords.iter().copied().map(keyword_title).collect();
                 let kw_line = kw_str.join(", ");
                 let truncated: String = kw_line.chars().take(content_w).collect();
                 let _ = execute!(out, cursor::MoveTo(right_col, row),
@@ -2743,7 +2748,7 @@ impl CliPlayer {
         let mut tail = String::new();
         if let Some(p) = perm {
             let mut abilities: Vec<String> = p.keywords.iter()
-                .map(|k| format!("{k:?}").to_lowercase())
+                .map(|k| k.label().to_string())
                 .collect();
             abilities.extend(p.protections.iter().cloned());
             if !abilities.is_empty() {
@@ -3827,9 +3832,8 @@ impl CliPlayer {
                     // a flying token rendered as a ground creature and a
                     // creature that had lost defender still read "Defender"
                     // (issues #243, #297).
-                    let mut abilities: Vec<String> = perm.keywords.iter()
-                        .map(|k| format!("{k:?}"))
-                        .collect();
+                    let mut abilities: Vec<String> =
+                        perm.keywords.iter().copied().map(keyword_title).collect();
                     abilities.extend(perm.protections.iter().cloned());
                     if !abilities.is_empty() {
                         let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
@@ -4376,23 +4380,8 @@ impl CliPlayer {
                         let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
                     }
                     if !data.keywords.is_empty() {
-                        let kws: Vec<&str> = data.keywords.iter().map(|k| match k {
-                            mtg_engine::types::Keyword::Flying => "Flying",
-                            mtg_engine::types::Keyword::FirstStrike => "First strike",
-                            mtg_engine::types::Keyword::DoubleStrike => "Double strike",
-                            mtg_engine::types::Keyword::Trample => "Trample",
-                            mtg_engine::types::Keyword::Deathtouch => "Deathtouch",
-                            mtg_engine::types::Keyword::Lifelink => "Lifelink",
-                            mtg_engine::types::Keyword::Vigilance => "Vigilance",
-                            mtg_engine::types::Keyword::Flash => "Flash",
-                            mtg_engine::types::Keyword::Reach => "Reach",
-                            mtg_engine::types::Keyword::Haste => "Haste",
-                            mtg_engine::types::Keyword::Defender => "Defender",
-                            mtg_engine::types::Keyword::Hexproof => "Hexproof",
-                            mtg_engine::types::Keyword::Intimidate => "Intimidate",
-                            mtg_engine::types::Keyword::Menace => "Menace",
-                            mtg_engine::types::Keyword::Indestructible => "Indestructible",
-                        }).collect();
+                        let kws: Vec<String> =
+                            data.keywords.iter().copied().map(keyword_title).collect();
                         let _ = execute!(out, SetForegroundColor(Color::Blue),
                             Print(format!("  Keywords: {}\n", kws.join(", "))), ResetColor);
                     }
