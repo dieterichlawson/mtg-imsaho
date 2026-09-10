@@ -90,6 +90,24 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   the watchdog's kill, in the hang case; confirm whether that is the general
   case — a well-behaved seat with one stray grandchild should not wedge a
   game, and the timeout should end the call whatever else holds the pipe
+  — **played 2026-09-10: the claim generalizes, and it is not about
+  hanging.** #203's kill works (the never-answering holder times out on
+  schedule, kills the group, logs `exhausted all 3 attempts`, plays on) and
+  #206's process/workdir leak is gone on every path but one. But the call
+  still completes on **EOF**: `call_once`'s comment says it waits on the
+  result, and the reader thread's `tx.send` happens only after
+  `read_to_string` returns. So a well-behaved seat — valid answer, exit 0 —
+  with one stray grandchild pays that grandchild's lifetime on *every*
+  decision (0.88s to 87.87s over 29 calls, with the `claude -p` child
+  already a zombie), and a grandchild outliving `CALL_TIMEOUT` makes the
+  harness throw away 29 complete correct answers and play the game mute
+  (#458). The timeout also guards stdout only: `stderr_reader.join()` has no
+  deadline, so a grandchild holding **stderr** reproduces #203 in full —
+  wedged with the answer already read, empty log, zero `API_ERROR` — and
+  `drop(group)` runs before that blocking join, so Ctrl-C orphans the tree
+  (#459). Next time, probe whichever pipe a fix does *not* cover, and
+  measure wall clock per decision rather than watching for a wedge: the
+  expensive failure here looked like a working game
 - H7 [proposed 2026-09-04, from #209] display-index vs legal-index audit:
   #209 found `pick_action_index` given an index into the *displayed* option
   list while testing its concede guard against `legal_actions`, so the guard
