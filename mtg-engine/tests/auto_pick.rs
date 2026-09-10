@@ -991,3 +991,96 @@ fn bug_brain_weevil_incomplete_discard() {
     assert_eq!(hand_after, 1,
         "Brain Weevil should force 2 discards. Hand: {hand_before} -> {hand_after} (expected 3 -> 1)");
 }
+
+/// Issue #362: two identical "you may" prompts, and nothing saying which
+/// permanent each one is about.
+///
+/// Thraben Sentry is "whenever another creature you control dies, you may
+/// transform this creature". Control two, lose a third, and both trigger.
+/// The CR 603.3b ordering menu identifies each source — and then the two
+/// yes/no choices it ordered came up worded identically, with no id
+/// anywhere on screen. That is not cosmetic: one Sentry may be a
+/// summoning-sick body just cast and the other an untapped vigilance
+/// blocker, and Thraben Militia has lost vigilance, so yes on one and no on
+/// the other are materially different plays. The only way to find out which
+/// prompt was which was to answer it and read the log.
+///
+/// The property is that the two decisions are told apart, not that a
+/// particular card says a particular sentence.
+#[test]
+fn two_prompts_from_two_same_named_permanents_say_which_is_which() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let first = named_permanent(&mut state, &registry, "Thraben Sentry", P0);
+    let second = named_permanent(&mut state, &registry, "Thraben Sentry", P0);
+    assert_ne!(first, second);
+    let victim = ready_creature(&mut state, P0, 1, 1);
+
+    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // The ordering menu comes first and already names both sources.
+    let ordering = engine::legal_actions(&state, &registry);
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTriggerOrder { options, .. }, ..
+        }) => {
+            assert_eq!(options.len(), 2);
+            assert_ne!(options[0], options[1],
+                "the ordering menu tells its two rows apart (#116)");
+        }
+        other => panic!("expected an ordering choice, got {other:?}"),
+    }
+    assert!(!ordering.context.as_deref().unwrap_or("").contains(" [source "),
+        "the ordering menu is about a SET of sources and tags them in its \
+         own rows; its header does not get a single-source tail");
+
+    // Answer it, and read the two decisions it ordered.
+    let mut state = engine::submit_action(&state, &ordering.actions[0], &registry);
+    let mut seen: Vec<String> = Vec::new();
+    for _ in 0..2 {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+        let legal = engine::legal_actions(&state, &registry);
+        assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::YesNo { .. }, .. })),
+            "expected a transform choice, got {:?}", state.awaiting_action);
+        let context = legal.context.clone().expect("a prompt has a context");
+        assert!(context.contains(&format!("#{}", first.0))
+                || context.contains(&format!("#{}", second.0)),
+            "the prompt names the permanent it will transform, got {context:?}");
+        seen.push(context);
+        // Decline, so the board does not change under the second prompt.
+        state = engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(false),
+            },
+            &registry,
+        );
+    }
+    assert_ne!(seen[0], seen[1],
+        "the two decisions are told apart; both read {:?}", seen[0]);
+}
+
+/// The tail is a property of the board, not of the card: one Thraben Sentry
+/// on the battlefield is unambiguous, and its prompt stays the plain
+/// sentence. Otherwise every "you may" in the game grows an object id.
+#[test]
+fn one_permanent_of_a_name_is_prompted_for_without_an_id() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let _sentry = named_permanent(&mut state, &registry, "Thraben Sentry", P0);
+    let victim = ready_creature(&mut state, P0, 1, 1);
+
+    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let context = legal.context.clone().expect("a prompt has a context");
+    assert!(context.contains("Thraben Sentry"), "got {context:?}");
+    assert!(!context.contains(" [source "),
+        "one of a name needs no id, got {context:?}");
+}

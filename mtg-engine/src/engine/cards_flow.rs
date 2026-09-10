@@ -9,6 +9,53 @@ use super::*;
 pub(crate) fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: ObjectId) -> String {
     state.obj_name(obj_id)
 }
+
+/// The tail that tells two same-named permanents apart in a prompt:
+/// ` [source 2/2, #42]`, the same tail the target pickers and the CR 603.3b
+/// trigger-ordering menu use.
+pub(crate) fn source_tag(state: &GameState, registry: &CardRegistry, id: ObjectId) -> String {
+    let pt = match (state.effective_power(id, registry), state.effective_toughness(id, registry)) {
+        (Some(p), Some(t)) => format!("{p}/{t}, "),
+        _ => String::new(),
+    };
+    format!(" [source {}#{}]", pt, id.0)
+}
+
+/// Is a prompt that names only `id`'s card unable to say WHICH permanent it
+/// is about — because `player` controls more than one permanent of that
+/// name?
+///
+/// Thraben Sentry is "whenever another creature you control dies, you may
+/// transform this creature". Control two, lose a third, and both trigger:
+/// the ordering menu identifies each source, and then the two yes/no
+/// choices it orders are byte-identical, with nothing on screen saying
+/// which Sentry each one will flip. That is not cosmetic — one Sentry may
+/// be a summoning-sick body just cast and the other an untapped vigilance
+/// blocker, and Thraben Militia has lost vigilance, so yes on one and no on
+/// the other are materially different plays (issue #362).
+pub(crate) fn source_needs_disambiguating(
+    state: &GameState,
+    registry: &CardRegistry,
+    player: PlayerId,
+    id: ObjectId,
+) -> bool {
+    // The name a card's own prose uses, not `obj_name` — `obj_name` always
+    // carries the object id, which is exactly why the log could say which
+    // Sentry transformed while the prompt could not. Read through `name_of`
+    // so a transformed permanent is compared by the face that is up
+    // (CR 712.4), not by the display cache.
+    if state.get_object(id).is_none() {
+        return false;
+    }
+    let name = state.name_of(id, registry);
+    state
+        .objects_in_zone(Zone::Battlefield, player)
+        .iter()
+        .map(|o| o.id)
+        .filter(|&other| state.name_of(other, registry) == name)
+        .count()
+        > 1
+}
 /// Draw N cards for a player. Logs a single summary entry.
 /// Draw `count` cards, returning how many were ACTUALLY drawn.
 ///

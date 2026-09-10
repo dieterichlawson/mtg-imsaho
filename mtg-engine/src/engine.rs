@@ -14,7 +14,7 @@
 
 mod actions;
 mod legal;
-mod cards_flow;
+pub(crate) mod cards_flow;
 mod costs;
 mod effects;
 mod mana_sources;

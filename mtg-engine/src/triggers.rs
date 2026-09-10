@@ -533,13 +533,9 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                     .collect();
                 for (k, &i) in indices.iter().enumerate() {
                     if repeated[k] {
-                        let src = queue[i].source.id;
-                        let pt = match (state.effective_power(src, registry),
-                                        state.effective_toughness(src, registry)) {
-                            (Some(p), Some(t)) => format!("{p}/{t}, "),
-                            _ => String::new(),
-                        };
-                        options[k] = format!("{} [source {}#{}]", options[k], pt, src.0);
+                        options[k] = format!("{}{}", options[k],
+                            crate::engine::cards_flow::source_tag(
+                                state, registry, queue[i].source.id));
                     }
                 }
                 let source = first.source.id;

@@ -369,6 +369,35 @@ pub(crate) fn legal_actions_while_awaiting(
                     )
                 }
             };
+            // CR 603.3b makes an ordering choice identify what is being
+            // ordered, and the trigger menu does. The decisions it orders
+            // did not: control two Thraben Sentries, lose a third creature,
+            // and the menu names both sources — and then puts up two
+            // byte-identical "Transform Thraben Sentry into Thraben
+            // Militia?" prompts with nothing saying which Sentry either one
+            // will flip. One may be a summoning-sick body just cast and the
+            // other an untapped vigilance blocker, and Thraben Militia has
+            // lost vigilance, so yes on one and no on the other are
+            // materially different plays; the only way to find out which
+            // was which was to answer and read the log (issue #362).
+            //
+            // A decision names the permanent it is about whenever the card's
+            // name alone cannot, which is a property of the board, not of
+            // the card — so every prompt raised from a permanent gets this,
+            // not the handful that have been noticed. The tail is the one
+            // the target pickers and the ordering menu already use.
+            //
+            // The ordering menu itself is excluded: it is about a SET of
+            // sources and tags them inside its own options.
+            let context = if matches!(choice, ResolutionChoiceKind::ChooseTriggerOrder { .. })
+                || !crate::engine::cards_flow::source_needs_disambiguating(
+                    state, registry, *player, *source)
+            {
+                context
+            } else {
+                format!("{context}{}",
+                    crate::engine::cards_flow::source_tag(state, registry, *source))
+            };
             LegalActions {
                 actions,
                 combat_prompt: None,
