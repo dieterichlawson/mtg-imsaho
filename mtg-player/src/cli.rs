@@ -808,6 +808,7 @@ fn str_cols(s: &str) -> usize {
 
 /// One line of a full-screen info view (`l`/`g`/`e`), carrying just enough
 /// styling for the shared pager to render it (issues #101/#102).
+#[derive(Debug)]
 enum InfoLine {
     Plain(String),
     Bold(String),
@@ -4109,26 +4110,67 @@ impl CliPlayer {
 
     /// Full-screen graveyards view, shared by the menu's `g` shortcut and
     /// the combat prompts (issue #120).
-    fn show_graveyards(view: &GameView) {
+    /// A card as the zone viewers list it: name, cost, and P/T if it has one.
+    fn zone_card_text(card: &mtg_engine::view::CardView) -> String {
+        let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+        let pt = match (card.power, card.toughness) {
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
+            _ => String::new(),
+        };
+        format!("{}{}{}", card.name, cost, pt)
+    }
+
+    /// Lay out a two-sided zone view: your side first, then the opponent's,
+    /// each headed with its name and count.
+    ///
+    /// Every pane in this program is anchored to the player looking at it —
+    /// the battlefield pane puts `▸ You:` at the bottom and `Opp:` at the
+    /// top, the inspector heads with "Your permanents:", `e` lists your
+    /// exile first. `g` was the exception: it walked `view.graveyards`,
+    /// which is built by iterating `state.players` and so is p0-first by
+    /// construction, and labelled each block after the fact. The same key
+    /// in the same game therefore put "your" graveyard at the top for p0
+    /// and at the bottom for p1 — and in a hotseat game the screen
+    /// alternates between the two seats every few keystrokes, so the two
+    /// layouts alternated with them, while the block a player read first
+    /// was whichever one happened to be on top (issue #367).
+    ///
+    /// One layout for both viewers, so the convention has one definition
+    /// and the next zone view cannot pick the other one.
+    fn two_sided_zone<C>(
+        zone: &str,
+        yours: &[C],
+        theirs: &[C],
+        row: impl Fn(&C) -> InfoLine,
+    ) -> Vec<InfoLine> {
         let mut lines: Vec<InfoLine> = Vec::new();
-        for (pid, cards) in &view.graveyards {
-            let who = if *pid == view.you { "Your" } else { "Opponent's" };
-            lines.push(InfoLine::Bold(format!(" {} graveyard ({}):", who, cards.len())));
+        for (who, cards) in [("Your", yours), ("Opponent's", theirs)] {
+            lines.push(InfoLine::Bold(format!(" {} {} ({}):", who, zone, cards.len())));
             if cards.is_empty() {
                 lines.push(InfoLine::Plain("   (empty)".into()));
             } else {
-                for card in cards {
-                    let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                    let pt = match (card.power, card.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    };
-                    lines.push(InfoLine::Mana(format!("{}{}{}", card.name, cost, pt)));
-                }
+                lines.extend(cards.iter().map(&row));
             }
             lines.push(InfoLine::Plain(String::new()));
         }
-        Self::show_paged_lines(" GRAVEYARDS", &lines, false);
+        lines
+    }
+
+    /// What `g` shows, apart from the painting — separated so the layout is
+    /// checkable without a terminal, the way `inspect_rows` is.
+    fn graveyard_lines(view: &GameView) -> Vec<InfoLine> {
+        let pile = |mine: bool| -> Vec<&mtg_engine::view::CardView> {
+            view.graveyards.iter()
+                .filter(|(pid, _)| (*pid == view.you) == mine)
+                .flat_map(|(_, cards)| cards.iter())
+                .collect()
+        };
+        Self::two_sided_zone("graveyard", &pile(true), &pile(false),
+            |card| InfoLine::Mana(Self::zone_card_text(card)))
+    }
+
+    fn show_graveyards(view: &GameView) {
+        Self::show_paged_lines(" GRAVEYARDS", &Self::graveyard_lines(view), false);
     }
 
     /// Full-screen exile view, shared like `show_graveyards` (issue #120).
@@ -4187,27 +4229,16 @@ impl CliPlayer {
         Self::show_paged_lines(" STACK", &lines, false);
     }
 
-    fn show_exile(view: &GameView) {
-        let mut lines: Vec<InfoLine> = Vec::new();
+    /// What `e` shows, apart from the painting.
+    fn exile_lines(view: &GameView) -> Vec<InfoLine> {
         let your_exile: Vec<_> = view.exile.iter().filter(|c| c.owner == view.you).collect();
         let opp_exile: Vec<_> = view.exile.iter().filter(|c| c.owner != view.you).collect();
-        for (who, cards) in [("Your", &your_exile), ("Opponent's", &opp_exile)] {
-            lines.push(InfoLine::Bold(format!(" {} exile ({}):", who, cards.len())));
-            if cards.is_empty() {
-                lines.push(InfoLine::Plain("   (empty)".into()));
-            } else {
-                for card in cards.iter() {
-                    let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                    let pt = match (card.power, card.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    };
-                    lines.push(InfoLine::Plain(format!("   {}{}{}", card.name, cost, pt)));
-                }
-            }
-            lines.push(InfoLine::Plain(String::new()));
-        }
-        Self::show_paged_lines(" EXILE", &lines, false);
+        Self::two_sided_zone("exile", &your_exile, &opp_exile,
+            |card| InfoLine::Plain(format!("   {}", Self::zone_card_text(card))))
+    }
+
+    fn show_exile(view: &GameView) {
+        Self::show_paged_lines(" EXILE", &Self::exile_lines(view), false);
     }
 
     fn show_log(log: &[String]) {
@@ -7964,6 +7995,86 @@ yourself at some considerable length";
             display_log: vec![],
             full_log: vec![],
             revealed_names: HashMap::new(),
+        }
+    }
+
+    fn graveyard_card(id: u64, name: &str, owner: u8) -> mtg_engine::view::CardView {
+        mtg_engine::view::CardView {
+            object_id: ObjectId(id),
+            card_id: mtg_engine::ids::CardId(u32::try_from(id).unwrap()),
+            name: name.to_string(),
+            cost: None,
+            supertypes: vec![],
+            card_types: vec![],
+            power: None,
+            toughness: None,
+            oracle_text: String::new(),
+            owner: PlayerId(owner),
+            flashback_cost: None,
+        }
+    }
+
+    /// The headings of a zone view, in the order they are laid out.
+    fn headings(lines: &[InfoLine]) -> Vec<String> {
+        lines.iter().filter_map(|l| match l {
+            InfoLine::Bold(t) => Some(t.clone()),
+            _ => None,
+        }).collect()
+    }
+
+    /// Issue #367: `g` walked `view.graveyards`, which is built by iterating
+    /// `state.players` and so is p0-first by construction, and labelled each
+    /// block after the fact — so the same key in the same game put "your"
+    /// graveyard at the top for p0 and at the bottom for p1, while `e` two
+    /// functions away always put yours first. Every other pane is anchored
+    /// to the player looking: `▸ You:` at the foot of the battlefield,
+    /// "Your permanents:" at the head of the inspector.
+    ///
+    /// Checked from the seat the view is p0-first for, which is the one that
+    /// used to read backwards.
+    #[test]
+    fn a_zone_viewer_puts_your_side_first_whichever_seat_is_looking() {
+        let mut v = view(Step::PrecombatMain, 1, true);
+        v.you = PlayerId(1);
+        // As the engine builds it: p0 first, whoever is looking.
+        v.graveyards = vec![
+            (PlayerId(0), vec![graveyard_card(1, "Dream Twist", 0)]),
+            (PlayerId(1), vec![graveyard_card(2, "Geistflame", 1)]),
+        ];
+        v.exile = vec![
+            graveyard_card(3, "Sever the Bloodline", 0),
+            graveyard_card(4, "Elder Cathar", 1),
+        ];
+
+        assert_eq!(headings(&CliPlayer::graveyard_lines(&v)),
+            vec![" Your graveyard (1):".to_string(), " Opponent's graveyard (1):".to_string()],
+            "the seat looking reads its own pile first, as it does in `e`");
+        assert_eq!(headings(&CliPlayer::exile_lines(&v)),
+            vec![" Your exile (1):".to_string(), " Opponent's exile (1):".to_string()]);
+
+        // And the card under each heading is that side's, not the other's:
+        // an order that is right by accident of labelling is not right.
+        let gy = CliPlayer::graveyard_lines(&v);
+        assert!(matches!(&gy[1], InfoLine::Mana(t) if t.starts_with("Geistflame")),
+            "your own card is under your own heading, got {:?}", &gy[1]);
+
+        // The other seat sees the mirror image of the same game.
+        v.you = PlayerId(0);
+        assert_eq!(headings(&CliPlayer::graveyard_lines(&v)),
+            vec![" Your graveyard (1):".to_string(), " Opponent's graveyard (1):".to_string()]);
+        let gy = CliPlayer::graveyard_lines(&v);
+        assert!(matches!(&gy[1], InfoLine::Mana(t) if t.starts_with("Dream Twist")),
+            "got {:?}", &gy[1]);
+    }
+
+    /// An empty side is still a headed block with a count, on both sides and
+    /// in both viewers — the shape the two used to build separately.
+    #[test]
+    fn a_zone_viewer_heads_an_empty_side_too() {
+        let v = view(Step::PrecombatMain, 1, true);
+        for lines in [CliPlayer::graveyard_lines(&v), CliPlayer::exile_lines(&v)] {
+            assert_eq!(headings(&lines).len(), 2);
+            assert!(matches!(&lines[1], InfoLine::Plain(t) if t.trim() == "(empty)"));
         }
     }
 
