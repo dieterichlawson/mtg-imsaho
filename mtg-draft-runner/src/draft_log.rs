@@ -114,7 +114,7 @@ impl DraftLogger {
     pub fn pack_contents(seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
         let mut content = String::new();
         for (i, card) in cards.iter().enumerate() {
-            let name = card.split(" // ").next().unwrap_or(card);
+            let name = mtg_draft::front_face(card);
             writeln!(content, "{i:2}. {name}").unwrap();
         }
         mtg_player::game_log::write(
@@ -135,7 +135,7 @@ impl DraftLogger {
         file: &str,
         line: u32,
     ) {
-        let chosen_name = chosen.split(" // ").next().unwrap_or(chosen);
+        let chosen_name = mtg_draft::front_face(chosen);
         // Order: prompt → response → pick summary. The seat tag lives in
         // each entry's label field; body lines are raw content with no
         // per-line prefix.
@@ -182,7 +182,7 @@ unusable response, substituted {substituted} (the first card)"),
     pub fn pool_summary(seat: usize, pool: &[String], file: &str, line: u32) {
         let mut content = String::new();
         for card in pool {
-            let name = card.split(" // ").next().unwrap_or(card);
+            let name = mtg_draft::front_face(card);
             writeln!(content, "- {name}").unwrap();
         }
         mtg_player::game_log::write(
@@ -234,7 +234,7 @@ unusable response, substituted {substituted} (the first card)"),
         if !sideboard.is_empty() {
             writeln!(content, "Sideboard ({} cards):", sideboard.len()).unwrap();
             for card in sideboard {
-                let name = card.split(" // ").next().unwrap_or(card);
+                let name = mtg_draft::front_face(card);
                 writeln!(content, "  {name}").unwrap();
             }
         }

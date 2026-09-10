@@ -182,6 +182,15 @@ pub fn fallback_deck(pool: &[String], registry: &CardRegistry) -> DraftDeck {
             sideboard.remove(pos);
         }
     }
+    // Front faces, like every deck that comes out of `validate_deck`: the
+    // fallback emitted pool names verbatim, so any fallback deck holding a
+    // DFC handed the engine, the game's system prompt and the event log a
+    // raw `"Front // Back"` that read as a different card from the board
+    // and hand lines beside it (#403). Its own sideboard subtraction was
+    // consistent, so it never double-counted — but it is the other producer
+    // of these strings, and one physical card has one name.
+    let maindeck: Vec<String> =
+        maindeck.iter().map(|c| crate::front_face(c).to_string()).collect();
 
     DraftDeck { maindeck, lands, sideboard }
 }
@@ -289,14 +298,14 @@ pub fn validate_deck<S: std::hash::BuildHasher>(
     // Count available copies in pool (DFC names use "Front // Back", match on front)
     let mut pool_counts: HashMap<&str, u32> = HashMap::new();
     for card in pool {
-        let name = card.split(" // ").next().unwrap_or(card);
+        let name = crate::front_face(card);
         *pool_counts.entry(name).or_insert(0) += 1;
     }
 
     // Check maindeck against pool (strip DFC back face names)
     let mut used_counts: HashMap<&str, u32> = HashMap::new();
     for card in maindeck {
-        let name = card.split(" // ").next().unwrap_or(card.as_str());
+        let name = crate::front_face(card);
         *used_counts.entry(name).or_insert(0) += 1;
 
         let available = pool_counts.get(name).copied().unwrap_or(0);
@@ -340,33 +349,75 @@ pub fn validate_deck<S: std::hash::BuildHasher>(
         ));
     }
 
-    // Compute sideboard (pool cards not in maindeck)
+    // The sideboard is the pool minus the maindeck, which is this function's
+    // whole contract — so both sides of the comparison are the card's front
+    // face, the way the two checks above already read them. Comparing the
+    // pool's front face against the RAW maindeck string meant a deck answer
+    // naming a DFC in full matched nothing here, so the card stayed in the
+    // remaining pool: the seat maindecked it AND sideboarded it, and 23 + 20
+    // came to 43 physical cards out of a 42-card pool (issue #403).
     let mut remaining_pool: Vec<String> = pool.to_vec();
     for card in maindeck {
-        if let Some(pos) = remaining_pool.iter().position(|c| {
-            let front = c.split(" // ").next().unwrap_or(c);
-            front == card
-        }) {
+        let wanted = crate::front_face(card);
+        if let Some(pos) = remaining_pool.iter()
+            .position(|c| crate::front_face(c) == wanted)
+        {
             remaining_pool.remove(pos);
         }
     }
 
+    // The maindeck is recorded by the name the pool knows the card by, so
+    // one physical card has one name everywhere downstream. A raw
+    // `"Front // Back"` reached the engine, the game's system prompt and the
+    // event log, and read as a different card from the board and hand lines
+    // beside it (#403).
     Ok(DraftDeck {
-        maindeck: maindeck.to_vec(),
+        maindeck: maindeck.iter().map(|c| crate::front_face(c).to_string()).collect(),
         lands: lands.iter().map(|(k, v)| (k.clone(), *v)).collect(),
         sideboard: remaining_pool,
     })
 }
 
 /// Convert a `DraftDeck` to a Decklist for the game engine.
+///
+/// The ORDER matters, and is the deck's own: `setup_game` walks these
+/// entries to create the objects, pushes them onto the library in this
+/// order, and only then shuffles. Same seed applied to a differently
+/// ordered list is a different library.
+///
+/// Both halves used to be handed over in `HashMap` iteration order, which
+/// Rust randomises, so `--seed 41` dealt a different opening hand every run
+/// while the draft phase in front of it was byte-identical — `play_match`'s
+/// comment that "a seeded run replays its games and not only its packs"
+/// (#212) was not true of the games. A tournament result could not be
+/// re-examined and a crash in the tournament phase could not be re-run
+/// (issue #402).
+///
+/// The maindeck keeps first-appearance order, which is the seat's own pick
+/// order, and the lands follow in WUBRG — the order the rest of this module
+/// enumerates colors in. Nothing here consults a hash map's iteration
+/// order.
 #[must_use]
 pub fn to_decklist(deck: &DraftDeck) -> Vec<(String, u32)> {
-    let mut counts: HashMap<String, u32> = HashMap::new();
+    let mut entries: Vec<(String, u32)> = Vec::new();
+    let mut counts: HashMap<&str, usize> = HashMap::new();
     for name in &deck.maindeck {
-        *counts.entry(name.clone()).or_insert(0) += 1;
+        match counts.get(name.as_str()) {
+            Some(&at) => entries[at].1 += 1,
+            None => {
+                counts.insert(name.as_str(), entries.len());
+                entries.push((name.clone(), 1));
+            }
+        }
     }
-    let mut entries: Vec<(String, u32)> = counts.into_iter().collect();
-    for (land_name, count) in &deck.lands {
+    // Basics in WUBRG, then anything else by name, so a land the pool
+    // acquires later still lands somewhere fixed.
+    let mut lands: Vec<(&String, &u32)> = deck.lands.iter().collect();
+    lands.sort_by_key(|(name, _)| {
+        let basic = BASIC_FOR_COLOR.iter().position(|(_, b)| b == name);
+        (basic.unwrap_or(BASIC_FOR_COLOR.len()), (*name).clone())
+    });
+    for (land_name, count) in lands {
         entries.push((land_name.clone(), *count));
     }
     entries
@@ -597,5 +648,104 @@ mod tests {
         assert!(entries.iter().any(|(n, c)| n == "Card A" && *c == 2));
         assert!(entries.iter().any(|(n, c)| n == "Card B" && *c == 1));
         assert!(entries.iter().any(|(n, c)| n == "Island" && *c == 9));
+    }
+}
+
+#[cfg(test)]
+mod handoff_tests {
+    use super::*;
+
+    fn deck(maindeck: &[&str], lands: &[(&str, u32)]) -> DraftDeck {
+        DraftDeck {
+            maindeck: maindeck.iter().map(|s| (*s).to_string()).collect(),
+            lands: lands.iter().map(|(n, c)| ((*n).to_string(), *c)).collect(),
+            sideboard: vec![],
+        }
+    }
+
+    /// Issue #402: `--seed 41` dealt a different opening hand every run.
+    ///
+    /// The seed reaches the shuffle, but the LIST being shuffled was built
+    /// in `HashMap` iteration order — and Rust gives each map its own
+    /// random ordering, so two equal decks in one process hand the engine
+    /// two different libraries. `setup_game` creates the objects in this
+    /// order, pushes them onto the library in this order and only then
+    /// shuffles, so the same permutation over a different list is a
+    /// different game. The draft phase in front of it was byte-identical.
+    ///
+    /// Building the same deck twice is the test: pre-fix the two maps
+    /// disagree, and no seed or subprocess is needed to see it.
+    #[test]
+    fn the_decklist_handed_to_the_engine_does_not_depend_on_a_hash_map() {
+        let cards = [
+            "Abbey Griffin", "Altar's Reap", "Armored Skaab", "Avacynian Priest",
+            "Bloodcrazed Neonate", "Curse of the Bloody Tome", "Darkthicket Wolf",
+            "Forbidden Alchemy", "Grave Bramble", "Grizzled Outcasts",
+            "Hysterical Blindness", "Lantern Spirit", "Moment of Heroism",
+            "Moan of the Unhallowed", "Armored Skaab",
+        ];
+        let lands = [("Island", 9), ("Swamp", 8), ("Plains", 1), ("Forest", 2)];
+
+        let first = to_decklist(&deck(&cards, &lands));
+        for _ in 0..16 {
+            assert_eq!(to_decklist(&deck(&cards, &lands)), first,
+                "two equal decks hand the engine the same list, in the same order");
+        }
+
+        // And that order is the deck's own: the maindeck in pick order with
+        // duplicates counted where the card first appears, then the lands in
+        // WUBRG.
+        let names: Vec<&str> = first.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(&names[..3], &["Abbey Griffin", "Altar's Reap", "Armored Skaab"]);
+        assert_eq!(&names[names.len() - 4..],
+            &["Plains", "Island", "Swamp", "Forest"],
+            "lands read WUBRG, whatever order the map holds them in");
+        assert_eq!(first.iter().find(|(n, _)| n == "Armored Skaab").unwrap().1, 2,
+            "a duplicate is counted, not repeated");
+        assert_eq!(first.iter().map(|(_, c)| *c).sum::<u32>(),
+            cards.len() as u32 + lands.iter().map(|(_, c)| c).sum::<u32>(),
+            "and nothing is lost or gained on the way");
+    }
+
+    /// Issue #403: a deck answer naming a DFC "Front // Back" put the same
+    /// physical card in the maindeck AND the sideboard.
+    ///
+    /// The pool census and the maindeck-vs-pool check both read the front
+    /// face; the sideboard computation compared the pool's front face
+    /// against the raw maindeck string, so the card was never removed from
+    /// the remaining pool. 23 maindeck + 20 sideboard = 43 cards out of a
+    /// 42-card pool, with one of them in two places at once.
+    #[test]
+    fn a_card_named_by_both_faces_is_still_one_physical_card() {
+        let pool: Vec<String> = [
+            "Grizzled Outcasts // Krallenhorde Wantons",
+            "Cloistered Youth // Unholy Fiend",
+            "Abbey Griffin", "Altar's Reap", "Armored Skaab",
+        ].iter().map(|s| (*s).to_string()).collect();
+
+        // The maindeck names one DFC in full and one by its front face:
+        // both are the same physical card as the pool entry.
+        let maindeck: Vec<String> = [
+            "Grizzled Outcasts // Krallenhorde Wantons",
+            "Cloistered Youth",
+            "Abbey Griffin",
+        ].iter().map(|s| (*s).to_string()).collect();
+        let lands: HashMap<String, u32> =
+            [("Island".to_string(), 20), ("Swamp".to_string(), 17)].into_iter().collect();
+
+        let built = validate_deck(&pool, &maindeck, &lands).expect("a legal deck");
+        assert_eq!(built.maindeck.len() + built.sideboard.len(), pool.len(),
+            "maindeck {:?} + sideboard {:?} is the pool, once over",
+            built.maindeck, built.sideboard);
+        assert!(!built.sideboard.iter().any(|c| crate::front_face(c) == "Grizzled Outcasts"),
+            "a maindecked card is not also in the sideboard: {:?}", built.sideboard);
+        assert!(!built.sideboard.iter().any(|c| crate::front_face(c) == "Cloistered Youth"),
+            "{:?}", built.sideboard);
+
+        // And the deck records one name per physical card, so the engine,
+        // the game's system prompt and the event log agree with the board.
+        assert!(built.maindeck.iter().all(|c| !c.contains(" // ")),
+            "the maindeck is recorded by front face: {:?}", built.maindeck);
+        assert!(built.maindeck.contains(&"Grizzled Outcasts".to_string()));
     }
 }

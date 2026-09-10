@@ -146,7 +146,7 @@ impl SetData {
             run.retain(|name| {
                 // DFC names in the set data use "Front // Back" format.
                 // The registry uses just the front face name.
-                let lookup_name = name.split(" // ").next().unwrap_or(name);
+                let lookup_name = crate::front_face(name);
                 if registry.get_id_by_name(lookup_name).is_some() {
                     true
                 } else {

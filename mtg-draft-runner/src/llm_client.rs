@@ -224,7 +224,7 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
     // Count copies of each card in the pool (DFC: use front face name)
     let mut pool_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for card in pool {
-        let name = card.split(" // ").next().unwrap_or(card).to_string();
+        let name = mtg_draft::front_face(card).to_string();
         *pool_counts.entry(name).or_insert(0) += 1;
     }
 
@@ -1109,13 +1109,13 @@ impl DraftLlmClient {
             pack_number, pick_index, available.len(), direction,
         );
         for (i, card) in available.iter().enumerate() {
-            let name = card.split(" // ").next().unwrap_or(card);
+            let name = mtg_draft::front_face(card);
             writeln!(prompt, "{i}: {name}").unwrap();
         }
         if pick_index == 1 && !pool.is_empty() {
             writeln!(prompt, "\nYour pool so far ({} cards):", pool.len()).unwrap();
             for card in pool {
-                let name = card.split(" // ").next().unwrap_or(card);
+                let name = mtg_draft::front_face(card);
                 writeln!(prompt, "- {name}").unwrap();
             }
         }

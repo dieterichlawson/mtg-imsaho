@@ -1087,7 +1087,7 @@ fn build_deck_prompt(pool: &[String]) -> String {
     // Count copies of each card
     let mut counts: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
     for card in pool {
-        let name = card.split(" // ").next().unwrap_or(card);
+        let name = mtg_draft::front_face(card);
         *counts.entry(name).or_insert(0) += 1;
     }
     let mut sorted: Vec<_> = counts.into_iter().collect();
