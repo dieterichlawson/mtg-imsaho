@@ -140,6 +140,43 @@ impl PtyGame {
         out
     }
 
+    /// `expect` without the assertion: did `needle` arrive inside
+    /// `timeout`? For a key that may legitimately have been dropped —
+    /// anything typed before a prompt's reader arms is discarded as
+    /// type-ahead (#71), and under a loaded machine that window is wider
+    /// than the pause `answer` takes.
+    fn expect_within(&mut self, needle: &str, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self.stripped().contains(needle) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            self.pump(Duration::from_millis(100));
+        }
+    }
+
+    /// Send `keys` until `needle` shows up, for a keystroke that has no
+    /// visible echo of its own to wait on.
+    #[track_caller]
+    fn answer_until(&mut self, keys: &str, needle: &str, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            self.answer(keys);
+            if self.expect_within(needle, Duration::from_secs(3)) {
+                return;
+            }
+            let text = self.stripped();
+            assert!(
+                Instant::now() < deadline,
+                "{keys:?} never produced {needle:?};\nlast 2000 visible chars:\n{}",
+                &text[text.len().saturating_sub(2000)..]
+            );
+        }
+    }
+
     /// Pump the master for up to `timeout`, returning as soon as the
     /// accumulated stream's visible text contains `needle`.
     fn expect(&mut self, needle: &str, timeout: Duration) {
@@ -624,13 +661,14 @@ fn the_card_search_says_why_it_cannot_open_on_a_narrow_terminal() {
     g.answer("0\r");
     g.expect("Pass priority", T);
     // At this width the hint line does not offer it, which #107 got right.
-    g.forget();
+    // Checked against the whole history rather than a fresh frame: the menu
+    // is already painted and nothing repaints it until a key is pressed, so
+    // forgetting first would wait for a frame that is not coming.
     g.expect("[d=deck]", T);
     g.expect_absent("[/=search]", Duration::from_millis(200));
 
     // Pressing it anyway says why, instead of doing nothing at all.
-    g.answer("/");
-    g.expect("Card search needs a terminal at least 100 columns wide", T);
+    g.answer_until("/", "Card search needs a terminal at least 100 columns wide", T);
 
     g.send("\x03");
     assert_clean_exit(&mut g);
@@ -677,6 +715,12 @@ fn the_inspector_names_a_permanents_color() {
     // Walking Corpse is {1}{B}: black, and the page says so.
     g.expect("Color: Black", T);
 
+    // Back out of the viewer before quitting: the exit path this asserts is
+    // the one at a menu, and each screen wants its own Enter.
+    g.forget();
+    g.answer_until("\r", "Enter number for details", T);
+    g.forget();
+    g.answer_until("\r", "Pass priority", T);
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
