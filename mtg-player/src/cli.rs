@@ -2325,8 +2325,20 @@ impl CliPlayer {
         for card in cards {
             if row >= max_row { break; }
 
-            // Name + cost
-            let cost_str = card.data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+            // Name + cost — or, for a face with no mana cost, the color
+            // indicator printed beside its type line in its place (CR
+            // 204.2). That is what the physical card does and why the
+            // indicator exists: a transformed Gatstaf Howler is green, and
+            // with neither a cost nor an indicator on screen its color was
+            // unobtainable — which is the whole of what intimidate asks
+            // (CR 702.13a, issue #357).
+            let cost_str = match card.data.cost.as_ref() {
+                Some(c) => format!(" {c}"),
+                None if !card.data.color_indicator.is_empty() =>
+                    format!(" ({})", mtg_engine::types::colors_line(&card.data.color_indicator)
+                        .to_lowercase()),
+                None => String::new(),
+            };
             let name_line = format!("{}{}", card.data.name, cost_str);
             let truncated: String = name_line.chars().take(content_w).collect();
             let _ = execute!(out, cursor::MoveTo(right_col, row), SetAttribute(Attribute::Bold));
@@ -3919,6 +3931,21 @@ impl CliPlayer {
                     let type_line = mtg_engine::types::type_line(
                         &perm.supertypes, &perm.card_types, &perm.subtypes);
                     let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
+
+                    // Color (CR 105.2). Intimidate (CR 702.13a) is decided
+                    // entirely by it and no pane printed it: for most
+                    // permanents a player could infer it from the mana cost
+                    // in the CARDS panel, and for a face with no mana cost —
+                    // a transformed DFC, whose color CR 204.2 states with an
+                    // indicator — from nothing at all. A defender facing a
+                    // Gatstaf Howler could only learn it was green by
+                    // reading back which of their own creatures the engine
+                    // had already allowed to block it (issue #357).
+                    // "Colorless" is printed as the answer it is, not left
+                    // blank: it is what makes a Galvanic Juggernaut
+                    // blockable by artifact creatures alone (CR 105.2c).
+                    let _ = execute!(out, Print(format!("  Color: {}\n",
+                        mtg_engine::types::colors_line(&perm.colors))));
 
 
                     // The permanent's live keywords and protections, which
@@ -8640,6 +8667,7 @@ yourself at some considerable length";
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
+            colors: vec![],
             subtypes: vec![],
             printed_power: None,
             printed_toughness: None,
@@ -8717,6 +8745,7 @@ yourself at some considerable length";
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
+            colors: vec![],
             subtypes: vec![],
             printed_power: None,
             printed_toughness: None,

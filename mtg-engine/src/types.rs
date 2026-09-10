@@ -11,6 +11,57 @@ pub enum Color {
     Green,
 }
 
+impl Color {
+    /// Every color, in WUBRG order — the order a card's characteristics are
+    /// printed and read in.
+    pub const ALL: [Color; 5] =
+        [Color::White, Color::Blue, Color::Black, Color::Red, Color::Green];
+
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Color::White => "White",
+            Color::Blue => "Blue",
+            Color::Black => "Black",
+            Color::Red => "Red",
+            Color::Green => "Green",
+        }
+    }
+}
+
+impl std::fmt::Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// A permanent's colors as a player reads them, in WUBRG order — or
+/// "Colorless", which is a real answer and not an absence (CR 105.2c: a
+/// colorless permanent shares a color with nothing, which is the whole of
+/// what intimidate asks).
+///
+/// No pane in the game printed a permanent's color at all, and intimidate
+/// (CR 702.13a) is decided entirely by it. For most permanents a player
+/// could infer it from the mana cost in the CARDS panel; for a face with no
+/// mana cost they could not infer it from anything, because CR 204.2 gives
+/// that face its color with an indicator instead. A defender facing a
+/// Gatstaf Howler had no way to learn it was green, and so no way to know
+/// that a Grizzly Bears could block it and a Doomed Traveler could not,
+/// other than by reading back the legal-blocker list the engine had already
+/// computed for them — the game handed them the answer and withheld the
+/// reason (issue #357).
+#[must_use]
+pub fn colors_line(colors: &[Color]) -> String {
+    if colors.is_empty() {
+        return "Colorless".to_string();
+    }
+    Color::ALL.iter()
+        .filter(|c| colors.contains(c))
+        .map(|c| c.label())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// What can exist in a mana pool. Includes colorless (not a color, but a mana type).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ManaType {

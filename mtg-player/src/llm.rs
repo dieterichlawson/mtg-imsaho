@@ -1958,6 +1958,13 @@ impl LlmPlayer {
             // carried it (issue #333).
             let mut words: Vec<String> = Vec::new();
             if Self::is_legendary(c) { words.push("legendary".into()); }
+            // Color (CR 105.2), which intimidate is decided entirely by
+            // (CR 702.13a) and which no seat was ever told — the CLI could
+            // not show it either, and for a face with no mana cost it was
+            // unobtainable from anything on screen (issue #357).
+            // "colorless" is stated, not left out: it is what makes a
+            // Galvanic Juggernaut blockable by artifact creatures alone.
+            words.push(Self::format_colors(&c.colors));
             let kw = Self::format_keywords(&c.keywords);
             if !kw.is_empty() { words.push(kw); }
             let kw_str = if words.is_empty() { String::new() } else { format!(" {}", words.join(", ")) };
@@ -3578,6 +3585,12 @@ from your hand to put on the bottom of your library.\n\
     /// The printed word comes from the engine, beside the enum: this was one
     /// of five copies of that table, and the two that did not have it
     /// Debug-formatted the variant instead (#363).
+    /// A permanent's colors in the lowercase the board text uses, from the
+    /// engine's one renderer.
+    fn format_colors(colors: &[mtg_engine::types::Color]) -> String {
+        mtg_engine::types::colors_line(colors).to_lowercase()
+    }
+
     fn format_keywords(keywords: &[mtg_engine::types::Keyword]) -> String {
         keywords.iter().map(|kw| kw.label()).collect::<Vec<_>>().join(", ")
     }
@@ -3593,6 +3606,9 @@ from your hand to put on the bottom of your library.\n\
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
             let power = p.effective_power.or(p.power).unwrap_or(0);
             let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
+            // Color is not repeated here: it is a characteristic, and the
+            // board section of the same prompt states every creature's
+            // (#357). The combat rows stay the shape they have.
             let kw = Self::format_keywords(&p.keywords);
             if kw.is_empty() {
                 format!("{} (#{}) {}/{}", p.name, id.0, power, toughness)
@@ -4336,6 +4352,7 @@ mod tests {
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
+            colors: vec![],
             subtypes: vec![],
             printed_power: None,
             printed_toughness: None,
@@ -4425,7 +4442,9 @@ this Aura deals 1 damage to that player.";
         let mut mikaeus = perm(24, "Mikaeus, the Lunarch", 1, 1, you);
         mikaeus.supertypes = vec![mtg_engine::types::Supertype::Legendary];
         mikaeus.keywords = vec![mtg_engine::types::Keyword::Flying];
-        let bears = perm(25, "Grizzly Bears", 2, 2, you);
+        mikaeus.colors = vec![mtg_engine::types::Color::White];
+        let mut bears = perm(25, "Grizzly Bears", 2, 2, you);
+        bears.colors = vec![mtg_engine::types::Color::Green];
         let mut grimoire = perm(26, "Grimoire of the Dead", 0, 0, you);
         grimoire.card_types = vec![CardType::Artifact];
         grimoire.power = None;
@@ -4438,7 +4457,7 @@ this Aura deals 1 damage to that player.";
         let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
         let line = |id: u64| output.lines().find(|l| l.contains(&format!("(#{id})")))
             .unwrap_or_else(|| panic!("#{id} on a line: {output}")).to_string();
-        assert!(line(24).contains("1/1 legendary, flying"), "{}", line(24));
+        assert!(line(24).contains("1/1 legendary, white, flying"), "{}", line(24));
         assert!(!line(25).contains("legendary"), "{}", line(25));
         assert!(line(26).contains("[legendary]"), "{}", line(26));
     }
@@ -4463,6 +4482,7 @@ this Aura deals 1 damage to that player.";
             attached_to: Some(ObjectId(attached_to)),
             attached_to_player: None,
             keywords: vec![],
+            colors: vec![],
             subtypes: vec![],
             printed_power: None,
             printed_toughness: None,

@@ -635,3 +635,48 @@ fn the_card_search_says_why_it_cannot_open_on_a_narrow_terminal() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// Issue #357: no pane in the game ever printed a permanent's color, and
+/// intimidate (CR 702.13a) is decided entirely by it.
+///
+/// The `i` inspector's detail page is where a player looks at one
+/// permanent's characteristics, and it listed type, keywords, P/T,
+/// controller, tapped and id — everything but the one that decides whether
+/// a creature may block. For a face with no mana cost, whose color CR 204.2
+/// states with an indicator instead, it was not merely unhighlighted but
+/// genuinely unobtainable: a defender facing a Gatstaf Howler could learn
+/// it was green only by reading back which of their own creatures the
+/// engine had already allowed to block it.
+#[test]
+fn the_inspector_names_a_permanents_color() {
+    let deck = swamps_and_zombies();
+    let deck = deck.to_str().expect("utf-8 temp path");
+    let mut g = PtyGame::spawn(&[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", deck, "--deck2", deck,
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("MAIN PHASE 1", T);
+    g.answer_option("Play land", T);
+    g.expect("Pass priority", T);
+    g.answer("f\r");
+    g.expect("Play land", T);
+    g.answer_option("Play land", T);
+    g.expect("Cast Walking Corpse", T);
+    g.answer_option("Cast Walking Corpse", T);
+    g.expect("Pass priority", T);
+
+    // Open the inspector on the 2/2 that is now on the battlefield.
+    g.forget();
+    g.answer("i\r");
+    g.expect("INSPECT BATTLEFIELD", T);
+    g.answer_option("Walking Corpse", T);
+    // Walking Corpse is {1}{B}: black, and the page says so.
+    g.expect("Color: Black", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}

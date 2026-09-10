@@ -1221,3 +1221,63 @@ fn a_fight_deals_no_damage_when_the_target_has_left_the_battlefield() {
     assert_eq!(state.get_object(fighter).unwrap().damage_marked, 0,
         "neither of them fights, so the survivor takes nothing back");
 }
+
+/// Issue #357: the engine knew the Howler was green and no seat could find
+/// out.
+///
+/// Intimidate (CR 702.13a) is decided entirely by color, and `GameView`
+/// carried no color at all. For most permanents a player could infer it
+/// from the mana cost the CARDS panel prints; for a face with no mana cost
+/// — whose color CR 204.2 states with an indicator instead — there was
+/// nothing on screen to infer it from. A defender facing a Gatstaf Howler
+/// could learn it was green only by reading back which of their own
+/// creatures the engine had already allowed to block it: the game handed
+/// them the answer and withheld the reason.
+///
+/// Checked from the DEFENDER's view, which is the seat that needs it.
+#[test]
+fn a_defenders_view_carries_the_colors_intimidate_is_decided_by() {
+    use mtg_engine::types::colors_line;
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let howler = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, howler, &reg);
+    assert_eq!(state.get_object(howler).unwrap().name, "Gatstaf Howler", "test setup");
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    // A colorless artifact creature: the other half of CR 105.2c, and the
+    // case where "colorless" has to be stated rather than left blank.
+    let juggernaut = named_permanent(&mut state, &reg, "Galvanic Juggernaut", P0);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let colors = |id| view.battlefield.iter()
+        .find(|p| p.object_id == id)
+        .unwrap_or_else(|| panic!("#{id:?} is on the defender's battlefield view"))
+        .colors.clone();
+
+    assert_eq!(colors(howler), vec![Color::Green],
+        "the back face's color comes from its indicator (CR 204.2), and the \
+         view is where a seat can read it");
+    assert_eq!(colors_line(&colors(howler)), "Green");
+    assert_eq!(colors(bears), vec![Color::Green]);
+    assert!(colors(juggernaut).is_empty());
+    assert_eq!(colors_line(&colors(juggernaut)), "Colorless",
+        "colorless is an answer, not an absence: it is what makes the \
+         Juggernaut blockable by artifact creatures alone (CR 105.2c)");
+
+    // And the view agrees with the rule it exists to explain.
+    assert!(mtg_engine::combat::can_block_attacker(&state, bears, howler, &reg));
+    assert_eq!(colors(bears).iter().any(|c| colors(howler).contains(c)), true,
+        "the view says why: they share a color");
+}
+
+/// `colors_line` reads WUBRG, the order a card's characteristics are
+/// printed in — not the order the colors happened to be collected.
+#[test]
+fn colors_read_in_wubrg_order() {
+    use mtg_engine::types::colors_line;
+    assert_eq!(colors_line(&[]), "Colorless");
+    assert_eq!(colors_line(&[Color::Green]), "Green");
+    assert_eq!(colors_line(&[Color::Blue, Color::White]), "White, Blue");
+    assert_eq!(colors_line(&[Color::Green, Color::Red, Color::Black]), "Black, Red, Green");
+}

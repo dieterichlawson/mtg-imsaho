@@ -98,6 +98,11 @@ pub struct PermanentView {
     /// two curses on opposite players rendered identically (issue #81).
     pub attached_to_player: Option<PlayerId>,
     pub keywords: Vec<Keyword>,
+    /// The permanent's colors (CR 105.2), read through `colors_of` so a face
+    /// with no mana cost is the color of its indicator (CR 204.2) and not
+    /// colorless. Nothing carried it, and intimidate (CR 702.13a) is decided
+    /// entirely by it (issue #357).
+    pub colors: Vec<crate::types::Color>,
     /// The permanent's live subtypes (CR 205.3): the active face's, plus
     /// anything an effect granted — Olivia Voldaren's "becomes a Vampire",
     /// Grimoire of the Dead's "Zombie". Every "as long as ... is a Human"
@@ -249,6 +254,7 @@ impl GameView {
                     card_types: face_data.as_ref()
                         .map_or_else(|| obj.card_types.clone(), |d| d.card_types.clone()),
 
+                    colors: state.colors_of(obj.id, registry),
                     controller: obj.controller,
                     owner: obj.owner,
                     tapped: obj.tapped,
