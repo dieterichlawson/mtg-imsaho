@@ -208,3 +208,23 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   a deck built for that prompt and count how often the effect actually
   DOES something in the `--log`. A seat that always answers the same way
   is a hole in the oracle whatever the tests say
+  — **played 2026-09-10: its own motivating bug is fixed and the identical
+  mistake was two blocks above it.** `ChooseTargetSet` rolls now and Feeling
+  of Dread genuinely names 0, 1 and 2 targets; `ChooseObjectSet`, pile
+  division, both combat prompts and the twelve enumerated prompts via the
+  generic uniform pick all roll too — six of nine arms cleared. But the
+  exile-cost arm takes `min`, which is 0 for Harvest Pyre, with a comment
+  that says so: 191 casts across 20 seeded games exiled nothing and dealt no
+  damage, one bucket in the whole distribution (#455). The generalisation
+  worth keeping is that **the constant need not be the minimum, and need not
+  be an answer at all**: "always keep" silences the entire London mulligan
+  (140 decisions, 140 keeps, 0 mulls, 0 bottom lines — #456), and a seat
+  that always answers with a *set* and never with `CancelCast` makes four
+  engine un-stash branches, each one a past bug fix (#123, #262, #290),
+  unreachable to the fuzzer forever (#457). So read a non-interactive seat
+  by asking not only "is this answer a no-op" but "**which kinds of answer
+  does this seat never give**" — a branch the fuzzer cannot reach is as
+  quiet as an effect that does nothing. `ChooseXFunding` answers with the
+  maximum, which still sweeps X=0..9 across varying boards, so it is cleared
+  on coverage; the residual is that for a *given* board the intermediate X
+  is never chosen and the seat always empties its mana
