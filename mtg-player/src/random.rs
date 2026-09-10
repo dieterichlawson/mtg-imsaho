@@ -11,6 +11,38 @@ pub struct RandomPlayer {
     rng: StdRng,
 }
 
+/// How often this seat backs out of a cast-time prompt instead of
+/// answering it.
+///
+/// Every one of the engine's four `CancelCast` un-stash arms — the fixes
+/// for #123, #262 and #290 — was unreachable to the fuzzer, because the
+/// only seat it plays always answered with a set or a funding response:
+/// 547 structured cast prompts in 70 seeded games, zero cancelled. Those
+/// arms are exactly where a spell or an activation gets stranded if the
+/// un-stash is wrong, which is the structural wrongness
+/// `--check-invariants` exists to catch (issue #457).
+///
+/// Small on purpose: a seat that cancels often stops casting X spells,
+/// which would trade this coverage for the coverage that already works.
+const CANCEL_CHANCE: f64 = 0.05;
+
+/// How often this seat mulligans a hand it is offered.
+///
+/// It never did. 140 mulligan decisions over 70 seeded games, 140 keeps —
+/// so `MulliganMull`, the whole `BottomAfterMulligan` half of the London
+/// mulligan, and every invariant written for that path had never been seen
+/// by a fuzz game (issue #456). The old comment called keeping a
+/// "deterministic mulligan policy", but a seeded roll is just as
+/// deterministic; what the constant bought was a stable opening hand, not
+/// reproducibility.
+const MULLIGAN_CHANCE: f64 = 0.25;
+
+/// The seat's own cap on mulligans. CR 103.4 has none — #63 is about
+/// exactly that — so the cap belongs here, where a pathological seed would
+/// otherwise mulligan a game away. Three is enough to reach the bottoming
+/// prompt, and to reach it with more than one card to bottom.
+const MAX_MULLIGANS: u32 = 3;
+
 impl RandomPlayer {
     #[must_use]
     pub fn new(name: &str) -> Self {
@@ -25,12 +57,25 @@ impl RandomPlayer {
     }
 }
 
+impl RandomPlayer {
+    /// Back out of the cast this prompt belongs to?
+    ///
+    /// Only ever asked at the three prompt kinds the engine accepts
+    /// `CancelCast` for — the two `ChooseXFunding` arms, `ChooseTargetSet`
+    /// and `ChooseExileFromGraveyard`. Anywhere else it is an answer of the
+    /// wrong shape, which the engine refuses while leaving the question
+    /// standing, and a seat that answered that way would spin (#457).
+    fn cancels_the_cast(&mut self) -> bool {
+        self.rng.gen_bool(CANCEL_CHANCE)
+    }
+}
+
 impl Player for RandomPlayer {
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn choose_action(&mut self, _view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+    fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
 
         // X-cost funding: no enumerated actions to pick from. Default to
@@ -42,6 +87,9 @@ impl Player for RandomPlayer {
         {
             use mtg_engine::actions::ResolvedChoice;
             use mtg_engine::funding::FundingResponse;
+            if self.cancels_the_cast() {
+                return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+            }
             let mut response = FundingResponse::default();
             for (mt, amt) in &options.pool {
                 if *amt > 0 {
@@ -54,15 +102,33 @@ impl Player for RandomPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
         }
 
-        // Exile-from-graveyard additional cost: pick the minimum size subset
-        // (which is 0 for Harvest Pyre, n for Stitched Drake / Skaab Ruinator).
-        // Matches the RandomPlayer convention of "minimal action, always valid."
+        // Exile-from-graveyard additional cost. The count is rolled across
+        // the whole range, not taken at the minimum.
+        //
+        // For a fixed-count cost — Stitched Drake, Makeshift Mauler, Corpse
+        // Lunge, Skaab Goliath, Skaab Ruinator — `min == max` and the roll
+        // is the forced answer either way. For `ExileXFromGraveyard` the
+        // count IS X, and `min` is zero: taking it meant this seat cast
+        // Harvest Pyre 191 times in 20 seeded games, exiled nothing every
+        // time, and dealt 0 damage every time, which CR 120.8 makes nothing
+        // at all. The one card in the pool with that cost had its whole
+        // "this spell does damage" half invisible to the fuzzer (#455).
+        //
+        // A random subset rather than the first `how_many`, for the reason
+        // the target set below gives: in order, the oldest cards in the
+        // graveyard are the only ones ever exiled.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
-            options, min, ..
+            options, min, max, ..
         }) = legal.resolution_prompt.as_ref()
         {
             use mtg_engine::actions::ResolvedChoice;
-            let chosen: Vec<mtg_engine::ids::ObjectId> = options.iter().take(*min).copied().collect();
+            use rand::seq::SliceRandom;
+            if self.cancels_the_cast() {
+                return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+            }
+            let how_many = if max > min { self.rng.gen_range(*min..=*max) } else { *min };
+            let chosen: Vec<mtg_engine::ids::ObjectId> =
+                options.choose_multiple(&mut self.rng, how_many).copied().collect();
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
         }
 
@@ -81,6 +147,9 @@ impl Player for RandomPlayer {
         {
             use mtg_engine::actions::ResolvedChoice;
             use rand::seq::SliceRandom;
+            if self.cancels_the_cast() {
+                return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+            }
             let how_many = if max > min { self.rng.gen_range(*min..=*max) } else { *min };
             // A random subset, not the first `how_many`: taking them in
             // order would mean the last creature on a wide board is never
@@ -125,20 +194,28 @@ impl Player for RandomPlayer {
         // A set of cards out of a list — the mulligan bottoming and the
         // cleanup discard. There are no enumerated actions to pick from:
         // the subsets are C(hand, n), which is a menu nobody can read and,
-        // for this player, a list to index into for no benefit. Take the
-        // first `min` in hand order, the same "minimal action, always
-        // valid" convention as the exile cost above, and the same
-        // deterministic opening hand as before: no mulligan RNG beyond the
-        // deal itself.
+        // for this player, a list to index into for no benefit. A random
+        // subset of the size asked for: the first `min` in hand order is
+        // the same card every time a hand has the same shape, so a
+        // bottoming or a discard never reaches past the front of the hand.
         if let Some(prompt) = legal.set_prompt.as_ref() {
+            use rand::seq::SliceRandom;
             let chosen: Vec<mtg_engine::ids::ObjectId> =
-                prompt.options.iter().take(prompt.min).copied().collect();
+                prompt.options.choose_multiple(&mut self.rng, prompt.min).copied().collect();
             return prompt.answer(chosen);
         }
 
-        // Deterministic mulligan policy: always keep the first hand, never
-        // mulligan.
+        // Mulligan: rolled, and capped by this seat rather than by the
+        // rules (CR 103.4 has no cap — issue #63 — so a pathological seed
+        // would otherwise mulligan a game away).
         if let Some(keep_idx) = legal_actions.iter().position(|a| matches!(a, Action::MulliganKeep)) {
+            let offered_mull = legal_actions.iter().any(|a| matches!(a, Action::MulliganMull));
+            if offered_mull
+                && view.your_mulligan_count < MAX_MULLIGANS
+                && self.rng.gen_bool(MULLIGAN_CHANCE)
+            {
+                return Action::MulliganMull;
+            }
             return legal_actions[keep_idx].clone();
         }
 
@@ -313,5 +390,268 @@ mod tests {
             attacked += attackers.len();
         }
         assert!(attacked > 0, "it still attacks (got {attacked})");
+    }
+}
+
+// ── The seat that answers with a constant (issues #455, #456, #457) ──────
+//
+// `CLAUDE.md`: "Never let a non-interactive seat answer with a constant
+// where the constant is a legal no-op. Roll it, or the fuzzer covers
+// nothing." Three arms of this seat broke it, and each one made a whole
+// class of engine code unreachable to the only seat the invariant fuzzer
+// plays. These are the guards that were missing.
+#[cfg(test)]
+mod rolls {
+    use super::*;
+    use mtg_engine::actions::{ResolvedChoice, SetPrompt, SetPromptKind};
+    use mtg_engine::engine::LegalActions;
+    use mtg_engine::ids::{ObjectId, PlayerId};
+    use mtg_engine::state::ResolutionChoiceKind;
+    use mtg_engine::types::{ManaPool, Step};
+    use std::collections::HashMap;
+
+    fn view() -> GameView {
+        GameView {
+            you: PlayerId(0),
+            your_hand: vec![],
+            your_life: 20,
+            your_mana_pool: ManaPool::new(),
+            your_library_size: 40,
+            your_library_cards: vec![],
+            your_mulligan_count: 0,
+            opponents: vec![],
+            battlefield: vec![],
+            graveyards: vec![],
+            stack: vec![],
+            exile: vec![],
+            first_strike_damage_step: false,
+            step: Step::PrecombatMain,
+            active_player: PlayerId(0),
+            priority_player: Some(PlayerId(0)),
+            turn_number: 1,
+            display_log: vec![],
+            full_log: vec![],
+            revealed_names: HashMap::new(),
+        }
+    }
+
+    fn prompted(kind: ResolutionChoiceKind) -> LegalActions {
+        LegalActions {
+            actions: vec![],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: Some(kind),
+            set_prompt: None,
+        }
+    }
+
+    fn ids(n: u64) -> Vec<ObjectId> {
+        (0..n).map(ObjectId).collect()
+    }
+
+    fn exile_prompt(min: usize, max: usize) -> LegalActions {
+        prompted(ResolutionChoiceKind::ChooseExileFromGraveyard {
+            description: "exile".into(),
+            options: ids(8),
+            min,
+            max,
+            source_id: ObjectId(99),
+        })
+    }
+
+    fn funding_prompt(is_ability: bool) -> LegalActions {
+        prompted(ResolutionChoiceKind::ChooseXFunding {
+            description: "X".into(),
+            options: mtg_engine::funding::FundingOptions {
+                pool: std::collections::BTreeMap::new(),
+                groups: vec![],
+                max_x: 0,
+                x_discount: 0,
+            },
+            source_id: ObjectId(99),
+            is_ability,
+        })
+    }
+
+    /// Answer `n` times and report what came back.
+    fn answers(legal: &LegalActions, n: usize) -> Vec<Action> {
+        let mut p = RandomPlayer::with_seed("r", 7);
+        let v = view();
+        (0..n).map(|_| p.choose_action(&v, legal)).collect()
+    }
+
+    fn cancels(legal: &LegalActions, n: usize) -> usize {
+        answers(legal, n).iter()
+            .filter(|a| matches!(a, Action::ResolveChoice { choice: ResolvedChoice::CancelCast }))
+            .count()
+    }
+
+    /// Issue #455: the count exiled for an `ExileXFromGraveyard` cost IS X,
+    /// and `min` is zero — so a seat that took the minimum cast Harvest
+    /// Pyre 191 times in 20 seeded games, exiled nothing every time, and
+    /// dealt zero damage every time. The whole "this spell does damage"
+    /// half of the one card in the pool with that cost was invisible.
+    #[test]
+    fn the_exile_cost_rolls_its_count_across_the_whole_range() {
+        let mut seen = std::collections::HashSet::new();
+        for a in answers(&exile_prompt(0, 5), 400) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(set) } = a {
+                assert!(set.len() <= 5, "never past max: {}", set.len());
+                let mut sorted = set.clone();
+                sorted.sort_unstable();
+                sorted.dedup();
+                assert_eq!(sorted.len(), set.len(), "no card exiled twice: {set:?}");
+                seen.insert(set.len());
+            }
+        }
+        for n in 0..=5 {
+            assert!(seen.contains(&n), "X={n} is reachable; saw {seen:?}");
+        }
+
+        // A fixed-count cost — Stitched Drake and the rest — has one legal
+        // answer and still gets it.
+        for a in answers(&exile_prompt(2, 2), 60) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(set) } = a {
+                assert_eq!(set.len(), 2);
+            }
+        }
+    }
+
+    /// And which cards, not only how many: taking them in graveyard order
+    /// means the oldest cards are the only ones ever exiled.
+    #[test]
+    fn the_exile_cost_reaches_every_card_in_the_graveyard() {
+        let mut seen = std::collections::HashSet::new();
+        for a in answers(&exile_prompt(1, 1), 400) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(set) } = a {
+                seen.extend(set);
+            }
+        }
+        assert_eq!(seen.len(), 8, "every card in the graveyard is reachable: {seen:?}");
+    }
+
+    /// Issue #457: every one of the engine's four `CancelCast` un-stash arms
+    /// — the fixes for #123, #262 and #290 — was unreachable, because this
+    /// seat always answered a cast-time prompt with an answer. 547
+    /// structured cast prompts in 70 seeded games, zero cancelled.
+    #[test]
+    fn a_cast_time_prompt_is_sometimes_declined() {
+        for (what, legal) in [
+            ("an X-cost spell (#123)", funding_prompt(false)),
+            ("an X-cost ability (#290)", funding_prompt(true)),
+            ("an exile cost (#262)", exile_prompt(0, 3)),
+            ("a target set", prompted(ResolutionChoiceKind::ChooseTargetSet {
+                description: "targets".into(),
+                options: vec![],
+                fixed: vec![],
+                min: 0,
+                max: 2,
+                source_id: ObjectId(99),
+            })),
+        ] {
+            let n = cancels(&legal, 400);
+            assert!(n > 0, "{what}: the seat never backs out");
+            assert!(n < 100, "{what}: and does not do it often enough to stop \
+                casting X spells altogether ({n} of 400)");
+        }
+    }
+
+    /// Cancel is only an answer to those three. Anywhere else the engine
+    /// refuses it and leaves the question standing, which would wedge a
+    /// random game into a loop — so the seat must never produce it there.
+    #[test]
+    fn nothing_else_is_ever_declined() {
+        let object_set = prompted(ResolutionChoiceKind::ChooseObjectSet {
+            description: "objects".into(),
+            options: ids(4),
+            min: 0,
+            max: 2,
+            effect: mtg_engine::state::PendingEffect::DealDamage {
+                amount: 1,
+                source_id: ObjectId(99),
+            },
+        });
+        let piles = prompted(ResolutionChoiceKind::DividePermanentsIntoPiles {
+            description: "piles".into(),
+            permanents: ids(4),
+            target_player: PlayerId(1),
+            source_id: ObjectId(99),
+        });
+        for (what, legal) in [("an object set", object_set), ("a pile split", piles)] {
+            assert_eq!(cancels(&legal, 400), 0,
+                "{what} does not accept CancelCast; answering it that way \
+                 leaves the question standing");
+        }
+    }
+
+    /// Issue #456: 140 mulligan decisions over 70 seeded games, 140 keeps.
+    /// `MulliganMull`, the whole `BottomAfterMulligan` half of the London
+    /// mulligan, and every invariant written for that path had never been
+    /// seen by a fuzz game.
+    #[test]
+    fn the_opening_hand_is_sometimes_mulliganed_and_the_seat_stops() {
+        let mull_or_keep = LegalActions {
+            actions: vec![Action::MulliganKeep, Action::MulliganMull],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+        let mut p = RandomPlayer::with_seed("r", 7);
+        let v = view();
+        let (mut kept, mut mulled) = (0, 0);
+        for _ in 0..400 {
+            match p.choose_action(&v, &mull_or_keep) {
+                Action::MulliganKeep => kept += 1,
+                Action::MulliganMull => mulled += 1,
+                other => panic!("a mulligan prompt is answered with one of the two: {other:?}"),
+            }
+        }
+        assert!(mulled > 0, "the seat mulligans");
+        assert!(kept > mulled, "and keeps more often than it does not: {kept}/{mulled}");
+
+        // Capped by the seat, because CR 103.4 caps nothing (#63): at the
+        // cap it always keeps, so a pathological seed cannot mulligan a
+        // game away.
+        let mut at_cap = v.clone();
+        at_cap.your_mulligan_count = MAX_MULLIGANS;
+        let mut p = RandomPlayer::with_seed("r", 7);
+        for _ in 0..200 {
+            assert!(matches!(p.choose_action(&at_cap, &mull_or_keep), Action::MulliganKeep),
+                "at {MAX_MULLIGANS} mulligans the seat keeps whatever it is dealt");
+        }
+    }
+
+    /// The bottoming and cleanup-discard answer reaches past the front of
+    /// the hand: the first `min` in hand order is the same card every time.
+    #[test]
+    fn a_card_set_is_marked_across_the_whole_hand() {
+        let legal = LegalActions {
+            actions: vec![],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: Some(SetPrompt {
+                kind: SetPromptKind::BottomAfterMulligan,
+                player: PlayerId(0),
+                options: ids(7),
+                min: 1,
+                max: 1,
+            }),
+        };
+        let mut seen = std::collections::HashSet::new();
+        for a in answers(&legal, 400) {
+            if let Action::BottomCards { cards } = a {
+                assert_eq!(cards.len(), 1, "exactly the count asked for");
+                seen.extend(cards);
+            }
+        }
+        assert_eq!(seen.len(), 7, "every card in hand can be bottomed: {seen:?}");
     }
 }
