@@ -170,6 +170,32 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   recap, and is the thing being decided still findable in it. A prompt a
   person would call unreadable is the model's whole input. File a gap when
   the decision is buried, not for length alone
+  — **played 2026-09-10: the decision is NOT buried, and the biggest
+  section is not one of the four named above.** The question is last and
+  clearly delimited in all 3,471 captured prompts (including a 442-line
+  one), and ability rows carry both `(#id)` and the ability text, so two
+  identical creatures are tellable apart. The dominant section is the
+  **system prompt, re-sent verbatim on every call** — 28k to 69k chars,
+  7k-17k tokens, 78-97% of all input characters in every run — so measure
+  that first. The actions line is linear at ~111 chars per row and uncapped:
+  570 chars at 10 actions, 5,450 at 60, 8,898 at 91, all on one unwrapped
+  line, because activated abilities are the one row class nothing collapses
+  (#461). Growth over one game was 5.0x chars and 4.1x lines from turn 3 to
+  turn 24, with graveyards ungrouped (one line per card, while the *board*
+  groups lands as `9x Island`) and `Recent events` neither capped nor a true
+  since-last-decision delta, because only `build_prompt` advances
+  `last_log_index` (#464 — 307 lines covering turns 1-98, 74% of one
+  prompt). And the two places information is actually *lost* were found by
+  looking for size and turned out to be the opposite: the mana-ability label
+  drops the colour, so a dual land is two byte-identical rows (#460, the
+  #118 fix never crossing to this surface), and the cleanup discard — the
+  *smallest* prompt in the game at 345 chars — is the only decision the seat
+  makes with no board, no life totals and no graveyard (#463). Method: a
+  stub answering with the schema maximum concedes on its first priority
+  window, since `Concede` is the highest `action` enum index, so wide boards
+  need a policy that reads the labels (prefer `Play`/`Cast`, never
+  `Concede`), an opponent that cannot interact (`60 Island`) and a
+  self-sustaining defender
 - H10 [proposed 2026-09-09, from the random seat's "up to N" answer] the
   seat that answers with a constant. Not the LLM seat: `mtg-player/src/random.rs`
   is what the invariant fuzzer plays, so a prompt it answers with a legal
