@@ -170,6 +170,27 @@ impl PtyGame {
         }
     }
 
+    /// Answer the numbered menu row whose label starts with `needle`, by its
+    /// index. A test that hardcodes indices stops testing what it meant to
+    /// the first time a row is added above the one it wanted.
+    fn answer_option(&mut self, needle: &str, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(idx) = menu_index(&self.stripped(), needle) {
+                self.answer(&format!("{idx}\r"));
+                self.forget();
+                return;
+            }
+            let text = self.stripped();
+            assert!(
+                Instant::now() < deadline,
+                "no menu row labelled {needle:?} appeared;\nlast 2000 visible chars:\n{}",
+                &text[text.len().saturating_sub(2000)..]
+            );
+            self.pump(Duration::from_millis(100));
+        }
+    }
+
     /// Forget everything read so far, so the next `expect` searches only
     /// what arrives from here on. Needed to assert that something is drawn
     /// *again* — `expect` searches the whole history, and a header that was
@@ -212,6 +233,29 @@ impl Drop for PtyGame {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// The index of the most recently drawn menu row whose label starts with
+/// `needle`, in a `  3: Cast Walking Corpse (tap 2x Swamp (your))` row.
+///
+/// The screen is painted with cursor moves rather than newlines, so the
+/// visible text is one long line and a row is found by its `N: label`, not
+/// by splitting.
+fn menu_index(text: &str, needle: &str) -> Option<usize> {
+    let tag = format!(": {needle}");
+    let bytes = text.as_bytes();
+    let mut found = text.rfind(&tag);
+    while let Some(i) = found {
+        let mut start = i;
+        while start > 0 && bytes[start - 1].is_ascii_digit() {
+            start -= 1;
+        }
+        if start < i {
+            return text[start..i].parse::<usize>().ok();
+        }
+        found = text[..i].rfind(&tag);
+    }
+    None
 }
 
 fn seeded_game() -> PtyGame {
@@ -426,4 +470,126 @@ fn assert_no_line_erase(g: &PtyGame, what: &str) {
              columns the panel owns instead"
         );
     }
+}
+
+/// A deck that reaches combat on a fixed line: nothing but Swamps and a
+/// two-mana 2/2, so the route to a declare-attackers prompt is the same
+/// every run and needs no card the seed has to cooperate about.
+fn swamps_and_zombies() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("mtg-cli-pty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("swamps-and-zombies.txt");
+    std::fs::write(&path, "30 Swamp\n30 Walking Corpse\n").expect("write deck");
+    path
+}
+
+/// Issue #360: a keystroke typed at a combat prompt was executed by the
+/// NEXT priority menu.
+///
+/// #71's rule is that a keystroke must never answer a prompt the player has
+/// not been shown, and `LAST_DECISION_IDENTITY` enforces it by draining
+/// type-ahead whenever the decision changes identity. Only the priority
+/// menu ever registered itself there, so the two combat prompts — and the
+/// specialised prompts reached by an early return out of `choose_action` —
+/// were invisible to it: the menu after combat compared itself against the
+/// menu *before* combat, saw no change and skipped the drain. In a hotseat
+/// game that combat prompt belongs to the other seat, so `0:0` ⏎ `4` ⏎ at
+/// p1's declare-blockers prompt opened p0's concede dialog.
+///
+/// Driven here in the same-seat direction, which needs one seat and reaches
+/// the same reader: `all` ⏎ `9` ⏎ in one burst at the declare-attackers
+/// prompt. `9` is off the end of the menu that follows, so if it survives
+/// the boundary it is refused *visibly* — which makes the leak assertable
+/// without taking an irreversible action to detect it.
+#[test]
+fn a_key_typed_at_a_combat_prompt_does_not_reach_the_next_menu() {
+    let deck = swamps_and_zombies();
+    let deck = deck.to_str().expect("utf-8 temp path");
+    let mut g = PtyGame::spawn(&[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", deck, "--deck2", deck,
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+
+    // Land, then auto-pass to our next turn; land and a 2/2, then auto-pass
+    // again; land, and pass into combat, which is where the 2/2 attacks.
+    g.expect("MAIN PHASE 1", T);
+    g.answer_option("Play land", T);
+    g.expect("Pass priority", T);
+    g.answer("f\r");
+
+    g.expect("Play land", T);
+    g.answer_option("Play land", T);
+    g.expect("Cast Walking Corpse", T);
+    g.answer_option("Cast Walking Corpse", T);
+    g.expect("Pass priority", T);
+    g.answer("f\r");
+
+    // The last hop is an explicit pass rather than another `f`: under
+    // auto-pass the menus after combat return without reading, and what the
+    // first menu that DOES read is handed is the whole point here.
+    g.expect("Play land", T);
+    g.answer_option("Play land", T);
+    g.expect("Pass priority", T);
+    g.answer_option("Pass priority", T);
+
+    g.expect("DECLARE ATTACKERS", T);
+    g.expect("Attack (numbers/all/none", T);
+    g.forget();
+
+    // One burst, no pause: the declaration and a key that belongs to nothing.
+    g.answer("all\r9\r");
+
+    // Then make one more decision of our own and wait for its answer. Keys
+    // are read in order, so once the confirmation this seat asked for is on
+    // screen, a `9` that survived the combat boundary has already been read
+    // and refused, and its refusal is already in the history behind it.
+    // That makes this an ordering rather than a race with a redraw.
+    g.expect("MAIN PHASE 2", T);
+    g.answer_option("Concede", T);
+    g.expect("Are you sure", T);
+    g.expect_absent("Invalid input", Duration::from_millis(200));
+
+    // And the seat is still playing: declining leaves the menu as it was.
+    g.answer("n\r");
+    g.expect("Pass priority", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
+/// Issue #361: the concede confirmation was the one reader in the file with
+/// no drain at all — neither `read_line_redrawing`'s unconditional one nor
+/// the identity check — so a `y` already queued when Concede was picked
+/// answered a dialog that was never drawn. `2` ⏎ `y` ⏎ in one burst ended
+/// the game with the "Are you sure?" row never on screen, which is the
+/// exact accident the confirmation exists to prevent (#42, #125, #127,
+/// #249).
+#[test]
+fn a_queued_y_cannot_answer_a_concede_dialog_that_was_never_drawn() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+    g.expect("2: Concede", T);
+
+    // One burst: the menu index and an answer to the question it raises,
+    // with no pause in between and nothing drawn between them.
+    g.answer("2\ry\r");
+
+    // The confirmation is asked, and is still waiting.
+    g.expect("Are you sure", T);
+    g.expect_absent("Game over", Duration::from_secs(2));
+
+    // And it still answers normally, to a key typed after it was seen.
+    g.answer("n\r");
+    g.expect("1: Play land", T);
+    g.expect_absent("Game over", Duration::from_secs(1));
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
 }

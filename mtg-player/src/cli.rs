@@ -10,7 +10,7 @@ use crossterm::{
 
 use mtg_engine::actions::{Action, CombatPrompt, Target};
 use mtg_engine::types::Step;
-use mtg_engine::ids::ObjectId;
+use mtg_engine::ids::{ObjectId, PlayerId};
 use mtg_engine::types::CardType;
 use mtg_engine::view::{GameView, PermanentView};
 
@@ -23,8 +23,66 @@ pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
 /// The (seat, prompt-kind) of the last decision that actually read input,
 /// shared across both hotseat CliPlayer instances — the terminal's event
 /// queue is process-global, so seat-crossing has to be tracked globally too.
-static LAST_DECISION_IDENTITY: std::sync::Mutex<Option<(String, String)>> =
+static LAST_DECISION_IDENTITY: std::sync::Mutex<Option<(PlayerId, String)>> =
     std::sync::Mutex::new(None);
+
+/// Drop whatever is already in the terminal's event queue.
+///
+/// The surviving bytes live in crossterm's parsed event queue, not the
+/// kernel tty buffer, so this reads events, and raw mode must be on for
+/// `poll` to see them.
+fn drain_type_ahead() {
+    let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
+    tui_raw_on();
+    while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+        let _ = event::read();
+    }
+    if !was_raw {
+        tui_raw_off();
+    }
+}
+
+/// `seat` is about to read input for a decision of kind `kind`. Pending
+/// type-ahead is dropped when that identity differs from the last decision
+/// that read — a different seat, or a different kind of prompt.
+///
+/// A keystroke must never answer a prompt the player has not been shown:
+/// ordinary type-ahead against one seat's main-phase menu survived the seat
+/// change and answered the other player's mandatory cleanup discard — and
+/// picked which creature an opponent sacrificed to Tribute to Hunger
+/// (issue #71).
+///
+/// **Every prompt that reads calls this before its first read**, and that is
+/// the whole of the contract: the record is of the last decision that
+/// actually read input, so a prompt that reads without calling leaves it a
+/// lie about a decision that has already happened. Only the priority menu
+/// called it, so the two combat prompts were invisible to it — and in a
+/// hotseat game a combat prompt belongs to the OTHER seat, so the priority
+/// menu after combat compared itself against the priority menu before it,
+/// saw no change, and skipped the drain: `0:0` ⏎ `4` ⏎ typed in one burst
+/// at p1's declare-blockers prompt spent the `4` on p0's main-phase menu
+/// and opened p0's concede dialog (issue #360). The specialised prompts
+/// reached by an early return out of `choose_action` — X funding, the
+/// marking screens, the ordering screens, the pile split, the library
+/// search — had the same hole.
+///
+/// Repeats of the SAME identity keep their type-ahead: spamming Enter
+/// through your own priority prompts still works.
+///
+/// Keyed on the seat rather than on its name: every prompt has the view and
+/// only some have the `CliPlayer`, and two seats may be given one name.
+fn begin_decision(seat: PlayerId, kind: &str) {
+    let id = (seat, kind.to_string());
+    let mut last = match LAST_DECISION_IDENTITY.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    if last.as_ref() == Some(&id) {
+        return;
+    }
+    *last = Some(id);
+    drain_type_ahead();
+}
 
 /// The terminal settings from before the TUI ever touched them, captured
 /// when the signal handlers are installed, for the handler to restore.
@@ -788,40 +846,6 @@ impl CliPlayer {
             pass_mode: None,
             card_filter: String::new(),
             pending_notice: None,
-        }
-    }
-
-    /// Drop pending type-ahead when the decision being prompted changes
-    /// identity — a different seat, or a different kind of prompt (the
-    /// action menu vs. a mandatory discard/sacrifice/bottoming menu, which
-    /// all share the same raw-mode reader). A keystroke must never answer a
-    /// prompt the player has not been shown: ordinary type-ahead against
-    /// one seat's main-phase menu survived the seat change and answered the
-    /// other player's mandatory cleanup discard — and picked which creature
-    /// an opponent sacrificed to Tribute to Hunger (issue #71).
-    ///
-    /// Repeats of the SAME identity keep their type-ahead: spamming Enter
-    /// through your own priority prompts still works. The surviving bytes
-    /// live in crossterm's parsed event queue, not the kernel tty buffer,
-    /// so the drain reads events, and raw mode must be on for `poll` to
-    /// see them.
-    fn drain_stale_input(&self, kind: &str) {
-        let id = (self.name.clone(), kind.to_string());
-        let mut last = match LAST_DECISION_IDENTITY.lock() {
-            Ok(g) => g,
-            Err(e) => e.into_inner(),
-        };
-        if last.as_ref() == Some(&id) {
-            return;
-        }
-        *last = Some(id);
-        let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
-        tui_raw_on();
-        while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
-            let _ = event::read();
-        }
-        if !was_raw {
-            tui_raw_off();
         }
     }
 
@@ -3444,9 +3468,7 @@ impl CliPlayer {
         // Pending type-ahead is dropped — the cooked read's mode switch did
         // this by accident, #71 does it on purpose: a keystroke must never
         // answer a prompt the player has not been shown.
-        while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
-            let _ = event::read();
-        }
+        drain_type_ahead();
         // The echo stops at the terminal's right edge minus one: an
         // unbounded echo let a 5000-character paste wrap across the whole
         // pane and scroll the frame away (issue #109; same cap idea as the
@@ -3516,6 +3538,16 @@ impl CliPlayer {
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
         tui_raw_on();
+        // A confirmation is by definition a question the player has not been
+        // shown yet, so it drains unconditionally rather than on a change of
+        // identity: this is the one reader in the file that had neither, so
+        // a `y` already queued when Concede was picked answered a dialog
+        // that was never drawn — `4` ⏎ `y` ⏎ in one burst ended the game
+        // with the "Are you sure?" row never on screen (issue #361). That is
+        // the accident the dialog exists to prevent, and the stronger form
+        // of #249's rule that the keystroke ending the game cannot be one
+        // the player has not finished choosing.
+        drain_type_ahead();
         // Line-buffered, like every other prompt in this program. Reading a
         // single key meant the first 'y' ANYWHERE in what the player was
         // typing ended the game: "maybe" conceded on its third character,
@@ -4493,6 +4525,7 @@ impl CliPlayer {
     }
 
     fn choose_attackers(view: &GameView, prompt: &CombatPrompt) -> Action {
+        begin_decision(view.you, "declare-attackers");
         let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player: defending,
                                             defending_planeswalkers } = prompt else {
             unreachable!()
@@ -4769,6 +4802,7 @@ impl CliPlayer {
     }
 
     fn choose_blockers(view: &GameView, prompt: &CombatPrompt) -> Action {
+        begin_decision(view.you, "declare-blockers");
         let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, legal_blocks, min_blockers } = prompt else {
             unreachable!()
         };
@@ -5037,6 +5071,7 @@ impl CliPlayer {
         description: &str,
         can_cancel: bool,
     ) -> Action {
+        begin_decision(view.you, "x-funding");
         use mtg_engine::actions::ResolvedChoice;
         use mtg_engine::funding::FundingResponse;
         use mtg_engine::types::ManaType;
@@ -5189,6 +5224,7 @@ impl CliPlayer {
         max: usize,
         description: &str,
     ) -> Action {
+        begin_decision(view.you, "target-set");
         use mtg_engine::actions::{ResolvedChoice, Target};
         let label = |t: &Target| match t {
             Target::Object(id) => Self::target_label(view, *id),
@@ -5243,6 +5279,7 @@ impl CliPlayer {
         permanents: &[mtg_engine::ids::ObjectId],
         description: &str,
     ) -> Action {
+        begin_decision(view.you, "pile-division");
         use mtg_engine::actions::ResolvedChoice;
         let rows: Vec<String> = permanents.iter().map(|id| Self::perm_name(view, *id)).collect();
         let (title, detail) = Self::rule_title(description, 60);
@@ -5307,6 +5344,7 @@ impl CliPlayer {
         max: usize,
         description: &str,
     ) -> Action {
+        begin_decision(view.you, "object-set");
         use mtg_engine::actions::ResolvedChoice;
         let pick = SetPick {
             title: Self::prompt_source_name(description),
@@ -5330,6 +5368,7 @@ impl CliPlayer {
         max: usize,
         description: &str,
     ) -> Action {
+        begin_decision(view.you, "exile-from-graveyard");
         use mtg_engine::actions::ResolvedChoice;
         let rows = Self::graveyard_card_rows(view, options);
         let (title, detail) = Self::rule_title(description, 60);
@@ -5361,6 +5400,7 @@ impl CliPlayer {
     /// order as listed. The body pages with `m`/`p` when it is taller than
     /// the terminal, and no row on it is ever clipped.
     fn prompt_ordering(view: &GameView, prompt: &OrderingPrompt) -> Action {
+        begin_decision(view.you, "ordering");
         let n = prompt.options.len();
         let rows = Self::ordering_rows(view, prompt);
         let mut notice: Option<String> = None;
@@ -5445,6 +5485,7 @@ impl CliPlayer {
     /// when the count is right: there is no way to answer this by accident,
     /// which at a mandatory irreversible choice is the point (#123, #262).
     fn prompt_card_set(view: &GameView, prompt: &mtg_engine::actions::SetPrompt, title: &str) -> Action {
+        begin_decision(view.you, "card-set");
         let rows: Vec<String> = prompt.options.iter()
             .map(|id| Self::hand_card_label(view, *id)).collect();
         let pick = SetPick {
@@ -5895,6 +5936,7 @@ impl CliPlayer {
     }
 
     fn library_search_ui(view: &GameView, actions: &[Action], title: &str, decline: Option<Action>) -> Action {
+        begin_decision(view.you, "library-search");
 
         use mtg_engine::actions::ResolvedChoice;
 
@@ -6514,7 +6556,7 @@ impl Player for CliPlayer {
         // without Pass is a mandatory choice (discard, sacrifice,
         // bottoming, search), keyed by its context string.
         let kind = if has_pass { "priority" } else { legal.context.as_deref().unwrap_or("") };
-        self.drain_stale_input(kind);
+        begin_decision(view.you, kind);
 
         let mut notice: Option<String> = self.pending_notice.take();
         let mut menu_offset = 0usize;
