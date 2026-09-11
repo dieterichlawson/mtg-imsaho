@@ -91,6 +91,11 @@ pub struct PermanentView {
     pub effective_power: Option<i32>,
     pub effective_toughness: Option<i32>,
     pub damage_marked: u32,
+    /// Regeneration shields waiting to be spent (CR 701.15a). Public
+    /// information that decides whether removal is worth casting and whether
+    /// an attack trades, and no surface could read it — the field existed on
+    /// the object and stopped there (issue #468).
+    pub regeneration_shields: u32,
     pub summoning_sick: bool,
     pub attached_to: Option<ObjectId>,
     /// The player this Aura enchants (Curses, CR 702.5c). A Curse's entire
@@ -288,6 +293,7 @@ impl GameView {
                     effective_power: state.effective_power(obj.id, registry),
                     effective_toughness: state.effective_toughness(obj.id, registry),
                     damage_marked: obj.damage_marked,
+                    regeneration_shields: obj.regeneration_shields,
                     summoning_sick: obj.summoning_sick,
                     attached_to: obj.attached_to,
                     attached_to_player: obj.attached_to_player,

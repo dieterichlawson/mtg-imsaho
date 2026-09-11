@@ -2823,9 +2823,20 @@ impl GameState {
         if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
-        if let Some(obj) = self.objects.get_mut(&id) {
-            obj.regeneration_shields += 1;
-        }
+        let Some(obj) = self.objects.get_mut(&id) else { return };
+        obj.regeneration_shields += 1;
+        let total = obj.regeneration_shields;
+        // A live shield is public information and it changes both players'
+        // decisions, but the log only ever mentioned one when it was *spent*
+        // ("X regenerated"). The ability resolving said "ability resolved",
+        // so the player who put the shield up could not confirm it took and
+        // the opponent could not find out at all (#468).
+        let name = self.obj_name(id);
+        self.log(LogLevel::Event, if total == 1 {
+            format!("{name} gets a regeneration shield")
+        } else {
+            format!("{name} gets a regeneration shield (now {total})")
+        });
     }
 
     /// Remove up to `count` counters of a type from a permanent.

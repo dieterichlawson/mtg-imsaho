@@ -2110,10 +2110,17 @@ impl CliPlayer {
         // a card named Spirit render identically, and the CARDS pane
         // (which excludes tokens) is the only thing that tells them
         // apart (issues #331, #334).
-        let flags = format!("{}{}{}{}{}",
+        // A live regeneration shield (CR 701.15a) is public information and
+        // it decides whether removal is worth casting and whether a block
+        // trades. The row carried every other mark and not this one, so the
+        // only trace of a shield was the line that spent it (issue #468).
+        // A second shield stacks, so the count is meaningful.
+        let regen = Self::regen_marker(c);
+        let flags = format!("{}{}{}{}{}{}",
             if c.is_token { " [tok]" } else { "" },
             if c.tapped { " [T]" } else { "" },
             if sick { " [S]" } else { "" },
+            regen,
             combat,
             dmg);
         // The permanent's live keywords and protections. A flying
@@ -3784,6 +3791,19 @@ impl CliPlayer {
         result
     }
 
+    /// The battlefield mark for a live regeneration shield: `" [R]"`, or
+    /// `" [Rx2]"` when more than one is waiting. Empty when there is none.
+    ///
+    /// One function, so the board row and the inspector row cannot drift
+    /// (issue #468).
+    fn regen_marker(perm: &PermanentView) -> String {
+        match perm.regeneration_shields {
+            0 => String::new(),
+            1 => " [R]".to_string(),
+            n => format!(" [Rx{n}]"),
+        }
+    }
+
     /// One row of the inspector: a section heading, or a numbered permanent.
     ///
     /// The rows are built before they are drawn so the page can be measured
@@ -3795,9 +3815,10 @@ impl CliPlayer {
             (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => String::new(),
         };
-        let flags = format!("{}{}",
+        let flags = format!("{}{}{}",
             if perm.tapped { " [T]" } else { "" },
-            if Self::is_summoning_sick(perm) { " [S]" } else { "" });
+            if Self::is_summoning_sick(perm) { " [S]" } else { "" },
+            Self::regen_marker(perm));
         let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
             let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
                 .copied().unwrap_or(0);
@@ -3989,6 +4010,12 @@ impl CliPlayer {
                     let controller = if perm.controller == view.you { "You" } else { "Opponent" };
                     let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
                     let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
+                    // The page that lists everything else about a permanent
+                    // was silent about a live shield (issue #468).
+                    if perm.regeneration_shields > 0 {
+                        let _ = execute!(out, Print(format!("  Regeneration shields: {}\n",
+                            perm.regeneration_shields)));
+                    }
                     if Self::is_summoning_sick(perm) {
                         let _ = execute!(out, Print("  Summoning sick: true\n".to_string()));
                     }
@@ -7651,6 +7678,34 @@ yourself at some considerable length";
         assert_eq!(second.prev_offset(), 0);
     }
 
+    /// Issue #468: a live regeneration shield (CR 701.15a) is public
+    /// information — it decides whether removal is worth casting and whether
+    /// a block trades — and nothing on the interactive surface read it. The
+    /// row carried `[T]`, `[S]`, `(2d)` and the aura list and not this, so
+    /// the only trace of a shield was the line that spent it.
+    #[test]
+    fn a_live_regeneration_shield_is_on_the_row_and_in_the_inspector() {
+        let mut corpse = creature(58, "Walking Corpse", 0);
+
+        let (_, _, flags) = CliPlayer::creature_row_parts(&corpse, None);
+        assert!(!flags.contains("[R"), "no shield, no mark; got {flags}");
+        assert!(!CliPlayer::inspect_row(&corpse, 7).contains("[R"));
+
+        corpse.regeneration_shields = 1;
+        let (_, _, flags) = CliPlayer::creature_row_parts(&corpse, None);
+        assert!(flags.contains(" [R]"), "got {flags}");
+        let row = CliPlayer::inspect_row(&corpse, 7);
+        assert!(row.contains(" [R]"), "the inspector says it too; got {row}");
+
+        // A second shield stacks (CR 701.15a is per-destruction), so the
+        // count is what a player needs, not the fact.
+        corpse.regeneration_shields = 2;
+        let (_, _, flags) = CliPlayer::creature_row_parts(&corpse, None);
+        assert!(flags.contains(" [Rx2]"), "got {flags}");
+        let row = CliPlayer::inspect_row(&corpse, 7);
+        assert!(row.contains(" [Rx2]"), "got {row}");
+    }
+
     /// Issue #333: nothing on the battlefield said a permanent was a
 
     /// legend, so the legend rule (CR 704.5j) fired with no warning. A
@@ -8658,6 +8713,7 @@ yourself at some considerable length";
             effective_power: None,
             effective_toughness: None,
             damage_marked: 0,
+            regeneration_shields: 0,
             summoning_sick: false,
             attached_to: None,
             attached_to_player: None,
@@ -8736,6 +8792,7 @@ yourself at some considerable length";
             effective_power: Some(2),
             effective_toughness: Some(2),
             damage_marked: 0,
+            regeneration_shields: 0,
             summoning_sick: false,
             attached_to: None,
             attached_to_player: None,

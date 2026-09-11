@@ -2151,6 +2151,15 @@ impl LlmPlayer {
             if c.tapped { flag_parts.push("T".into()); }
             if c.summoning_sick { flag_parts.push("S".into()); }
             if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
+            // A live regeneration shield (CR 701.15a), which decides whether
+            // removal is worth casting and whether an attack trades. The seat
+            // could not find it anywhere: not here, not in the log, which
+            // mentions a shield only when it is spent (issue #468).
+            match c.regeneration_shields {
+                0 => {}
+                1 => flag_parts.push("regen shield".into()),
+                n => flag_parts.push(format!("{n} regen shields")),
+            }
             if let Some(suffix) = Self::format_counters(&c.counters) {
                 flag_parts.push(suffix);
             }
@@ -5012,6 +5021,7 @@ mod tests {
             effective_power: Some(power),
             effective_toughness: Some(toughness),
             damage_marked: 0,
+            regeneration_shields: 0,
             summoning_sick: false,
             attached_to: None,
             attached_to_player: None,
@@ -5045,6 +5055,31 @@ mod tests {
         p.attached_to_player = Some(enchanted);
         p.oracle_text = oracle.into();
         p
+    }
+
+    /// Issue #468: the seat had no way at all to learn a regeneration shield
+    /// was up. Not from the board text, which carried every other flag, and
+    /// not from the log, which mentions a shield only when it is spent — so
+    /// a seat reading "creature, 3/3" was pricing removal against a creature
+    /// that survives it.
+    #[test]
+    fn a_live_regeneration_shield_is_in_the_board_text() {
+        let you = PlayerId(0);
+        let mut corpse = perm(58, "Walking Corpse", 3, 3, you);
+
+        let perms = vec![&corpse];
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        assert!(!output.contains("regen"), "no shield, nothing said: {output}");
+
+        corpse.regeneration_shields = 1;
+        let perms = vec![&corpse];
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        assert!(output.contains("regen shield"), "got {output}");
+
+        corpse.regeneration_shields = 2;
+        let perms = vec![&corpse];
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        assert!(output.contains("2 regen shields"), "a second shield stacks: {output}");
     }
 
     /// A Curse's whole identity is whom it enchants (CR 702.5c), and the
@@ -5142,6 +5177,7 @@ this Aura deals 1 damage to that player.";
             effective_power: None,
             effective_toughness: None,
             damage_marked: 0,
+            regeneration_shields: 0,
             summoning_sick: false,
             attached_to: Some(ObjectId(attached_to)),
             attached_to_player: None,

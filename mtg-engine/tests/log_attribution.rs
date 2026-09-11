@@ -800,3 +800,46 @@ fn every_destroying_card_writes_the_same_line_for_the_same_outcome() {
     // The ruling this card is asked about: the counter goes on anyway.
     assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1);
 }
+
+// ---------------------------------------------------------------------------
+// #468 — a regeneration shield is on the record while it is live
+// ---------------------------------------------------------------------------
+
+/// The log named a shield only when it was *spent* ("X regenerated"). The
+/// ability that put it up said "Walking Corpse ability resolved", so the
+/// player who paid for it could not confirm it took, and the opponent — and
+/// an LLM seat, whose account of the board is the prompt and the log — could
+/// not find out at all. A shield is public information (CR 701.15a).
+#[test]
+fn a_regeneration_shield_is_announced_when_it_goes_up() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+
+    state.add_regeneration_shield(corpse);
+    let lines = log_lines(&state);
+    assert_line(&lines, &format!("Walking Corpse (#{}) gets a regeneration shield", corpse.0));
+
+    // A second shield stacks, and the line carries the total so the reader
+    // does not have to count lines back.
+    state.add_regeneration_shield(corpse);
+    assert_line(&log_lines(&state), "gets a regeneration shield (now 2)");
+}
+
+/// A shield aimed at a permanent that has left the battlefield lands nowhere,
+/// and a line saying it landed would be a lie — the same rule the counter
+/// lines follow.
+#[test]
+fn a_regeneration_shield_that_lands_nowhere_is_not_logged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    state.move_object(corpse, Zone::Graveyard, &reg);
+
+    let before = log_lines(&state).len();
+    state.add_regeneration_shield(corpse);
+    let lines = log_lines(&state);
+    assert_eq!(lines.len(), before, "nothing happened, so nothing is said");
+    assert!(!lines.iter().any(|l| l.contains("regeneration shield")),
+        "log was {lines:#?}");
+}
