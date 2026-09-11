@@ -767,3 +767,29 @@ illegal or dubious resolutions do.
   * the target prompt only appears when there is a real choice. With one legal target
     the engine locks it in silently, which reads like an auto-choice if you are sending
     keystrokes blind — check the stack pane (`s`) before concluding you were not asked
+- L45 [tried 2026-09-11 → #467, #468] the destroy pipeline as a REPORTING contract, not
+  a rules one. `mtg-engine/src/destruction.rs` returns a `DestroyResult` (Died /
+  Regenerated / Indestructible / NotAPermanent) and `try_destroy_by` exists so that the
+  line naming the source is the true one. Audit every caller that writes its own
+  "X destroyed Y": Witchbane Orb and Paraselene branch on the result and are correct,
+  Divine Reckoning writes no line at all, the five converted cards (ghost_quarter,
+  creepy_doll, into_the_maw_of_hell, evil_twin, maw_of_the_mire) are correct — but the
+  shared `PendingEffect::Destroy | DestroyCreature` arm in `engine/effects.rs` throws the
+  result away and logs "destroyed" unconditionally (#467). Two cards route through it:
+  Slayer of the Wicked and Reaper from the Abyss. Both arms reproduce. The two cheapest
+  boards, and worth reusing for anything in this area: a Walking Corpse wearing Skeletal
+  Grimace ({B}: Regenerate) against Slayer of the Wicked reaches the regeneration arm on
+  4 lands; Manor Gargoyle ({5}, colourless so it fits any deck, indestructible as long as
+  it has defender) against Reaper from the Abyss reaches the indestructible arm, where
+  the false line is the log's ONLY statement about the event. The general move: find
+  every place a card announces an outcome it did not check, and the general shape of the
+  answer is a helper that takes the result. While you are there, a live regeneration
+  shield is rendered nowhere (#468) — `regeneration_shields` does not appear anywhere in
+  `mtg-player/`, so neither the battlefield line nor the `i` detail screen shows it
+- L44 [proposed 2026-09-08, from L42] audit the FIRST 603.4 check card by card, since no
+  implemented condition can go false between trigger and resolution. For each of Woodland
+  Sleuth, Hollowhenge Scavenger, Morkrut Banshee, Homicidal Brute (Civilized Scholar's
+  back face) and the 12 werewolf DFCs, read the .rs for a `should_trigger` gate, then
+  play the card with the condition false and confirm nothing appears on the stack (`s`)
+  and nothing appears in `--log`. Homicidal Brute's "if this creature didn't attack this
+  turn" is ungated as far as L42 could tell and was never played — start there
