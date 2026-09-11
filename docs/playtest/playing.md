@@ -818,3 +818,15 @@ illegal or dubious resolutions do.
   answer is a helper that takes the result. While you are there, a live regeneration
   shield is rendered nowhere (#468) — `regeneration_shields` does not appear anywhere in
   `mtg-player/`, so neither the battlefield line nor the `i` detail screen shows it
+- L46 [proposed 2026-09-11, from L44 and #469] the intervening "if" versus the
+  RESOLUTION impossibility. `helpers::werewolf_should_trigger` refuses the upkeep trigger
+  for a token copy on the grounds that a token cannot transform — which is CR 701.28c,
+  a fact about resolution, not part of the printed clause CR 603.4 tests. The engine
+  already disagrees with itself about it: `apply_transform` refuses tokens AND
+  single-faced clones, but the gate only knows about tokens, so an Evil Twin copying a
+  werewolf triggers and does nothing (correct) while a Cackling Counterpart token of the
+  same werewolf never triggers (#469). Sweep every other `should_trigger` in
+  `cards/isd/` for the same conflation: a gate may test the printed condition and
+  nothing else. Then go the other way and look for the mirror — a resolution handler
+  that silently does nothing where the ability should not have triggered at all, which
+  is the shape `reaper_from_the_abyss.rs`'s comment records having had
