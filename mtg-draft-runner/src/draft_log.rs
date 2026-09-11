@@ -24,6 +24,7 @@ impl DraftLogger {
         models: &[String],
         guide_paths: &[Option<String>],
         seed: u64,
+        resumed_from: Option<(&str, usize)>,
         file: &str,
         line: u32,
     ) {
@@ -47,6 +48,13 @@ impl DraftLogger {
         // The seed is what makes the run re-runnable, so it goes in the
         // header whether it was asked for or generated (issue #212).
         lines.push(format!("seed: {seed}"));
+        // A resumed run is a different run from the one its seed names: its
+        // first picks were replayed out of a file, not made here. The only
+        // notice used to be a stderr line `--quiet` suppressed, so a quiet
+        // resume left no trace in any file (issue #401).
+        if let Some((path, picks)) = resumed_from {
+            lines.push(format!("resumed from: {path} ({picks} picks replayed)"));
+        }
         let guides_used = guide_paths.iter().any(Option::is_some);
         if guides_used {
             let all_same_guide = guide_paths.iter().all(|g| g == &guide_paths[0]);
@@ -176,6 +184,41 @@ impl DraftLogger {
             &format!("[Seat {seat}] WARN Pack {pack} Pick {pick_index} | \
 unusable response, substituted {substituted} (the first card)"),
             response,
+        );
+    }
+
+    /// A pick replayed from a snapshot on `--resume`. No prompt was sent
+    /// and no response came back, so there is nothing to log but the pick
+    /// itself — and whether it was the runner's rather than the seat's,
+    /// which the snapshot records and the log has to repeat: a resumed run
+    /// used to hold pools of cards no line in its log said anyone picked,
+    /// and the runner's substitutions among them came back as a seat's
+    /// choices (issue #401). Same `PICK` / `WARN` labels as a live pick, so
+    /// a reader counting either sees the whole draft.
+    pub fn replayed_pick(
+        seat: usize,
+        pack: usize,
+        pick_index: usize,
+        available: usize,
+        chosen: &str,
+        substituted: bool,
+        file: &str,
+        line: u32,
+    ) {
+        let chosen_name = mtg_draft::front_face(chosen);
+        if substituted {
+            mtg_player::game_log::write(
+                file, line,
+                &format!("[Seat {seat}] WARN Pack {pack} Pick {pick_index} | \
+unusable response, substituted {chosen_name} (the first card) — replayed from the snapshot"),
+                "",
+            );
+        }
+        mtg_player::game_log::write(
+            file, line,
+            &format!("[Seat {seat}] PICK Pack {pack} Pick {pick_index} | Chose: {chosen_name} \
+(from {available} cards) — replayed from the snapshot, no prompt sent"),
+            "",
         );
     }
 
@@ -324,6 +367,10 @@ macro_rules! log_pack_contents {
 #[macro_export]
 macro_rules! log_draft_pick {
     ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::draft_pick($($args),+, file!(), line!()) }}
+}
+#[macro_export]
+macro_rules! log_replayed_pick {
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::replayed_pick($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_draft_warning {

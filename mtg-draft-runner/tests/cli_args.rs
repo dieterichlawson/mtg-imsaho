@@ -430,3 +430,132 @@ fn a_draft_resumes_from_its_snapshot_without_re_asking() {
     let _ = std::fs::remove_file(&stub);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A stub whose first `bad` calls answer with a pick index no pack has, so
+/// the runner substitutes card 0 for the seat, and whose later calls fail
+/// outright — the shape of a seat going wrong for a while and then dying,
+/// which is the run an operator actually resumes.
+#[cfg(unix)]
+fn failing_after_stub(name: &str, calls: &std::path::Path, bad: usize) -> std::path::PathBuf {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::temp_dir()
+        .join(format!("mtg-draft-fail-{name}-{}.sh", std::process::id()));
+    let mut f = std::fs::File::create(&path).expect("create stub");
+    // The seats call in parallel, so the count is taken under a lock.
+    write!(f, "#!/bin/sh\n\
+case \"$1\" in --version) echo '0.0.0 (stub)'; exit 0;; esac\n\
+cat > /dev/null\n\
+n=$(flock {calls}.lock sh -c 'echo x >> \"$0\"; wc -l < \"$0\"' {calls})\n\
+if [ \"$n\" -le {bad} ]; then\n\
+  echo '{{\"is_error\":false,\"result\":\"{{\\\\\"pick\\\\\": 9999}}\"}}'\n\
+  exit 0\n\
+fi\n\
+echo 'stub: simulated CLI failure' >&2\n\
+exit 7\n",
+        calls = calls.display()).expect("write stub");
+    drop(f);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    path
+}
+
+/// Issue #401: `--resume` restored the draft's position and erased its
+/// record. The replay branch skipped the pick log, the substituted-pick
+/// count and the snapshot, so a draft in which the runner had made every
+/// pick came back from a resume as a clean draft — no `WARN`, no `PICK`,
+/// no `Substituted Picks` section, no sign in the log that it was resumed,
+/// and a `--save` that wrote nothing when the whole snapshot was replayed.
+#[test]
+#[cfg(unix)]
+fn a_resumed_draft_records_the_picks_it_replays() {
+    let dir = std::env::temp_dir().join(format!("mtg-draft-replay-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create the temp dir");
+    let calls = dir.join("calls.txt");
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent().expect("package dir has a workspace parent");
+
+    let run = |stub: &std::path::Path, save: &str, resume: Option<&str>, log: &str| {
+        let mut args: Vec<String> = ["--model", "cc", "--players", "2", "--best-of", "1",
+                                     "--quiet", "--seed", "2002"]
+            .iter().map(|s| (*s).to_string()).collect();
+        args.extend(["--save".to_string(), dir.join(save).to_string_lossy().into_owned()]);
+        if let Some(r) = resume {
+            args.extend(["--resume".to_string(), dir.join(r).to_string_lossy().into_owned()]);
+        }
+        args.extend(["--log".to_string(), dir.join(log).to_string_lossy().into_owned()]);
+        runner().current_dir(workspace_root).args(&args)
+            .env("CLAUDE_CODE_BIN", stub)
+            .env("MTG_DRAFT_RETRY_BUDGET_SECS", "1")
+            .output().expect("failed to run the draft runner")
+    };
+    let count = |log: &str, needle: &str| {
+        std::fs::read_to_string(dir.join(log)).unwrap_or_default()
+            .lines().filter(|l| l.contains(needle)).count()
+    };
+    let picks_in = |save: &str| -> Vec<serde_json::Value> {
+        let text = std::fs::read_to_string(dir.join(save))
+            .unwrap_or_else(|e| panic!("{save} was written: {e}"));
+        serde_json::from_str::<serde_json::Value>(&text).expect("a valid snapshot")
+            ["picks"].as_array().expect("picks").clone()
+    };
+
+    // Run A: the seat's answers are unusable for twenty calls, then the CLI
+    // dies. Every pick in its snapshot is a substitution.
+    let failing = failing_after_stub("replay", &calls, 20);
+    let out = run(&failing, "a.save", None, "a.log");
+    assert!(!out.status.success(), "run A dies when its seat does:\n{}", stderr(&out));
+    let a_picks = picks_in("a.save");
+    let replayed = a_picks.len();
+    assert!(replayed >= 2 && replayed % 2 == 0,
+        "a whole round or more was snapshotted before the seat died: {replayed} picks");
+    assert!(a_picks.iter().all(|p| p["substituted"] == serde_json::Value::Bool(true)),
+        "the snapshot records that the runner made every one of these picks: {a_picks:?}");
+    assert_eq!(count("a.log", "WARN Pack"), replayed, "run A warned on each substitution");
+
+    // Run B: resume that snapshot with a seat that answers.
+    let healthy = counting_stub("replay-healthy", &calls);
+    let out = run(&healthy, "b.save", Some("a.save"), "b.log");
+    assert!(out.status.success(), "run B finishes:\n{}", stderr(&out));
+    let err = stderr(&out);
+    let b_picks = picks_in("b.save");
+    let total = b_picks.len();
+    assert!(total > replayed, "run B drafted the rest: {total} picks");
+    assert_eq!(b_picks[..replayed].iter().map(|p| &p["card"]).collect::<Vec<_>>(),
+        a_picks.iter().map(|p| &p["card"]).collect::<Vec<_>>(),
+        "the replayed picks lead the resumed snapshot");
+
+    let header_line = format!("resumed from: {} ({replayed} picks replayed)",
+        dir.join("a.save").display());
+    assert_eq!(count("b.log", &header_line), 1,
+        "the log header says the run was resumed, and from what:\n{}",
+        std::fs::read_to_string(dir.join("b.log")).unwrap_or_default().lines().take(20)
+            .collect::<Vec<_>>().join("\n"));
+    assert_eq!(count("b.log", "PICK Pack"), total,
+        "every pick in the pools has a PICK line, replayed ones included");
+    assert_eq!(count("b.log", "replayed from the snapshot, no prompt sent"), replayed,
+        "the replayed picks say they were replayed");
+    assert_eq!(count("b.log", "WARN Pack"), replayed,
+        "a pick the runner made stays the runner's pick after a resume");
+    assert_eq!(count("b.log", "--- Pack 1 ---"), 1, "the pack heading is written once");
+    assert!(err.contains("=== Substituted Picks ==="),
+        "the summary reports the replayed substitutions:\n{err}");
+    assert!(err.contains(&format!("{replayed} pick(s) were made by the runner")),
+        "the summary counts every replayed substitution:\n{err}");
+
+    // Run C: resume a complete snapshot. Nothing is asked, and `--save`
+    // still writes the whole draft.
+    let out = run(&healthy, "c.save", Some("b.save"), "c.log");
+    assert!(out.status.success(), "run C finishes:\n{}", stderr(&out));
+    assert_eq!(picks_in("c.save"), b_picks,
+        "a resume of a whole draft given --save writes the whole draft");
+    assert_eq!(count("c.log", "PICK Pack"), total);
+    assert_eq!(count("c.log", "PROMPT Pack"), 0, "no pick was re-asked");
+    assert_eq!(count("c.log", &format!("({total} picks replayed)")), 1);
+    assert!(stderr(&out).contains(&format!("{replayed} pick(s) were made by the runner")),
+        "the substitutions survive a second resume:\n{}", stderr(&out));
+
+    let _ = std::fs::remove_file(&failing);
+    let _ = std::fs::remove_file(&healthy);
+    let _ = std::fs::remove_dir_all(&dir);
+}

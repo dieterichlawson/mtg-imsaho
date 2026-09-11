@@ -145,6 +145,13 @@ struct PickRecord {
     pick: usize,
     seat: usize,
     card: String,
+    /// The runner made this pick because the seat's answer was unusable.
+    /// A resumed run has to carry that forward: a snapshot of a seat that
+    /// never chose a card must not replay into a clean draft (issue #401).
+    /// Snapshots written before the field existed read as not substituted,
+    /// which is the most a replay can say about them.
+    #[serde(default)]
+    substituted: bool,
 }
 
 /// A draft in progress: enough to deal the same packs again and replay every
@@ -454,8 +461,11 @@ fn main() {
 
     // Create streaming log file
     let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
+    let resumed_from = resumed.as_ref().map(|save| {
+        (args.resume.as_deref().unwrap_or_default(), save.picks.len())
+    });
     log_header!(log, &set_data.set_name, args.players, args.best_of,
-        args.models.as_slice(), args.guide_paths.as_slice(), args.seed);
+        args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from);
 
     if !args.quiet {
         eprintln!(
@@ -559,17 +569,31 @@ fn main() {
             let from_save: Vec<&PickRecord> = replaying.iter()
                 .filter(|p| p.round == round + 1 && p.pick == pick_num + 1)
                 .collect();
+            if pick_num == 0 {
+                log_subsection!(log, &format!("Pack {}", round + 1));
+            }
             if from_save.len() == args.players {
+                // Replayed, not re-asked — but written down all the same. The
+                // log is the run's record, and a resumed run's pools held
+                // cards no line in it said anyone picked; and a pick the
+                // runner made for a seat is still the runner's pick after a
+                // resume (issue #401).
                 for seat in 0..args.players {
                     let Some(rec) = from_save.iter().find(|p| p.seat == seat) else { continue };
+                    let available = draft.current_pack_for(seat).len();
                     crate::llm_client::DraftLlmClient::record_pick(&rec.card);
                     draft.make_pick(seat, &rec.card).unwrap_or_else(|e| {
                         die(&format!("draft save replays an impossible pick \
 (seat {seat}, pack {}, pick {}, {}): {e}", round + 1, pick_num + 1, rec.card));
                     });
+                    if rec.substituted {
+                        substituted_picks[seat] += 1;
+                    }
+                    log_replayed_pick!(log, seat, round + 1, pick_num + 1, available, &rec.card, rec.substituted);
                     recorded.push((*rec).clone());
                 }
                 draft.rotate_packs();
+                write_snapshot(&recorded);
                 continue;
             }
 
@@ -632,13 +656,11 @@ fn main() {
                 });
 
             // Apply picks sequentially (mutates draft state) and log
-            if pick_num == 0 {
-                log_subsection!(log, &format!("Pack {}", round + 1));
-            }
             for (seat, pick, prompt, response) in pick_results {
                 let available = draft.current_pack_for(seat).to_vec();
 
-                if pick.was_substituted() {
+                let substituted = pick.was_substituted();
+                if substituted {
                     // A seat whose answers never parse is a failed seat, and
                     // the run has to be able to say so: without this, 42
                     // unusable answers read exactly like 42 deliberate picks
@@ -664,6 +686,7 @@ substituting {} (the first card). Response: {}",
                     pick: pick_num + 1,
                     seat,
                     card: chosen,
+                    substituted,
                 });
             }
 
@@ -1367,5 +1390,17 @@ mod pick_parsing_tests {
             // The draft still gets a card to continue with.
             assert_eq!(got.card(), "Hysterical Blindness");
         }
+    }
+
+    /// A snapshot written before picks recorded who made them still loads,
+    /// and reads as a seat's picks — the most a replay can say about it.
+    #[test]
+    fn a_snapshot_without_the_substituted_field_still_loads() {
+        let save: super::DraftSave = serde_json::from_str(
+            r#"{"seed":1,"set":"isd","players":2,
+                "picks":[{"round":1,"pick":1,"seat":0,"card":"Silverchase Fox"}]}"#,
+        ).expect("an older snapshot is still a snapshot");
+        assert_eq!(save.picks.len(), 1);
+        assert!(!save.picks[0].substituted);
     }
 }
