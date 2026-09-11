@@ -256,7 +256,7 @@ Each prompt you receive has these sections, in this order:
 
 ```
 Recent events:
-p0 drew a card
+You drew a card
 ```
 
 **Player status**:
@@ -3166,6 +3166,13 @@ impl Player for LlmPlayer {
         }
 
         let legal_actions = &legal.actions;
+        // The engine labels the other seat `p1`, and the context line is the
+        // one line of the prompt that used to pass that through: every log
+        // entry is rewritten to you/opp, and the line that names the decision
+        // — `[RESPOND TO p1's ...]` — was not, so the prompt used a vocabulary
+        // its own system prompt says it never uses (issue #465).
+        let context: Option<String> = legal.context.as_deref()
+            .map(|c| Self::generic_player_rewrite(c, view.you));
 
         // X-cost funding: structured-prompt choice that can't be pre-enumerated.
         // The engine surfaces the `FundingOptions` via `resolution_prompt`; we
@@ -3233,7 +3240,7 @@ impl Player for LlmPlayer {
         }) = legal.resolution_prompt.as_ref()
         {
             let permanents = permanents.clone();
-            return self.choose_pile_division(view, &permanents, legal.context.as_deref());
+            return self.choose_pile_division(view, &permanents, context.as_deref());
         }
 
         // An ordering is one decision (issue #325): the seat lists every
@@ -3357,7 +3364,7 @@ impl Player for LlmPlayer {
             }
         }
 
-        let action_prompt = Self::format_action_prompt(legal.context.as_deref(), &display_labels);
+        let action_prompt = Self::format_action_prompt(context.as_deref(), &display_labels);
         let prompt = self.build_prompt(view, &action_prompt);
 
         if display_labels.len() != legal_actions.len() {
@@ -4271,6 +4278,49 @@ mod tests {
             serde_json::json!({"confirm": true}),
         ]);
         assert!(matches!(player.choose_action(&view, &legal), Action::Concede));
+    }
+
+    /// Issue #465: the context line named the opponent by the engine's seat
+    /// label — `[RESPOND TO p1's Lightning Bolt]` — while every other line
+    /// of the same prompt, and GAME_RULES' own example, says `opp's`. The
+    /// seat is never told which seat number it is.
+    #[test]
+    fn the_context_line_names_the_opponent_as_opp() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let mut legal = collapsing_priority_offer();
+        legal.context = Some("RESPOND TO p1's Lightning Bolt".to_string());
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 0})]);
+        let _ = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        assert!(
+            asked[0].contains("[RESPOND TO opp's Lightning Bolt]"),
+            "the context line reads like the rest of the prompt:\n{}", asked[0]
+        );
+        assert!(
+            !asked[0].split_whitespace().any(|w| w.trim_matches(|c: char| !c.is_alphanumeric()) == "p1"),
+            "no raw seat label reaches the prompt:\n{}", asked[0]
+        );
+
+        // And your own spell is still yours.
+        legal.context = Some("RESPOND TO your Lightning Bolt".to_string());
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 0})]);
+        let _ = player.choose_action(&view, &legal);
+        assert!(prompts.borrow()[0].contains("[RESPOND TO your Lightning Bolt]"));
+    }
+
+    /// The recap example in GAME_RULES uses the vocabulary the recap uses.
+    #[test]
+    fn game_rules_recap_example_is_rewritten_like_the_recap() {
+        let entry = LlmPlayer::rewrite_log_entry("p0 drew a card", mtg_engine::ids::PlayerId(0));
+        assert_eq!(entry, "You drew a card");
+        assert!(
+            GAME_RULES.contains("Recent events:\nYou drew a card"),
+            "the documented recap example is what the seat is sent"
+        );
+        assert!(!GAME_RULES.contains("p0 drew a card"), "no stale seat label in the example");
     }
 
     /// A cast option names its tap plan, never a target — targets come from
