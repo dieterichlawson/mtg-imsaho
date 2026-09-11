@@ -828,11 +828,20 @@ pub fn werewolf_should_trigger(
     registry: &CardRegistry,
 ) -> bool {
     if *kind == TriggerKind::Upkeep {
-        // A token copy of a werewolf cannot transform, so its transform
-        // ability has nothing to do and should not reach the stack at all.
-        if state.get_object(self_id).is_some_and(|o| o.is_token) {
-            return false;
-        }
+        // CR 603.4: the only thing that can stop an intervening-"if" ability
+        // from triggering is the clause's own condition — here "if no spells
+        // were cast last turn" / "if a player cast two or more spells last
+        // turn". Nothing else belongs in this gate.
+        //
+        // That a token copy cannot transform (CR 111.7, CR 701.28c) is a fact
+        // about *resolution*, and `apply_transform` already refuses it there.
+        // Refusing a second time here kept the trigger off the stack
+        // altogether, so a token copy of a werewolf never announced itself and
+        // the opponent never got the priority window CR 603.3b gives them —
+        // while a non-token single-faced clone of the same werewolf (Evil
+        // Twin), which `apply_transform` refuses for the same reason, did
+        // trigger correctly. The two permanents differed in nothing the gate
+        // claimed to care about (issue #469).
         return behavior.should_transform(state, self_id, registry);
     }
     true

@@ -1281,3 +1281,78 @@ fn colors_read_in_wubrg_order() {
     assert_eq!(colors_line(&[Color::Blue, Color::White]), "White, Blue");
     assert_eq!(colors_line(&[Color::Green, Color::Red, Color::Black]), "Black, Red, Green");
 }
+
+/// Issue #469, CR 603.4: an ability with an intervening-"if" clause fails to
+/// trigger only when *the clause's condition* is false. The werewolf clause is
+/// "if no spells were cast last turn" / "if a player cast two or more spells
+/// last turn", and nothing else belongs in the gate.
+///
+/// `werewolf_should_trigger` also refused a token, on the grounds that a token
+/// copy cannot transform. That is true (CR 111.7, CR 701.28c) and it is a fact
+/// about *resolution*, which `apply_transform` enforces where it belongs — so
+/// the refusal here only cost the trigger its stack entry and the opponent the
+/// priority window CR 603.3b gives them.
+///
+/// The inconsistency that gives it away is below: Evil Twin copying a werewolf
+/// is a non-token that equally cannot transform, and it triggers correctly.
+#[test]
+fn a_token_copy_of_a_werewolf_still_triggers_at_upkeep() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, shepherd, &reg);
+    assert_eq!(state.get_object(shepherd).unwrap().name, "Gatstaf Howler", "test setup");
+
+    // Cackling Counterpart's token: a copy of the face that is up (CR 707.8a).
+    let token = state.create_token_copy(shepherd, P0, &reg);
+    assert!(state.get_object(token).unwrap().is_token, "test setup");
+    assert_eq!(state.get_object(token).unwrap().name, "Gatstaf Howler", "test setup");
+
+    // The back face's printed condition, true for both permanents alike.
+    state.num_spells_cast_last_turn.insert(P1, 2);
+
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    let announced: Vec<&str> = state.game_log.iter()
+        .map(|e| e.message.as_str())
+        .filter(|m| m.contains("upkeep trigger") && m.contains("goes on the stack"))
+        .collect();
+    assert_eq!(announced.len(), 2,
+        "both werewolves' abilities trigger; the log announced {announced:#?}");
+    assert!(announced.iter().any(|m| m.contains(&format!("(#{})", token.0))),
+        "including the token's; the log announced {announced:#?}");
+
+    // And the resolution half is unchanged: the card flips back, the token
+    // cannot transform and stays as it is.
+    assert!(!state.get_object(shepherd).unwrap().is_transformed,
+        "the double-faced card transforms back");
+    assert!(state.get_object(token).unwrap().is_transformed,
+        "a token copy cannot transform (CR 111.7) — its ability did nothing, \
+         which is not the same as never triggering");
+}
+
+/// The other half of the inconsistency, pinned so the gate cannot grow back
+/// in either direction: Evil Twin copying a werewolf is a non-token whose
+/// *card* is single-faced, so it cannot transform either (CR 701.28c) and
+/// `apply_transform` refuses it. It triggers, exactly as the token now does.
+#[test]
+fn a_non_token_clone_of_a_werewolf_triggers_and_does_not_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let shepherd = named_permanent(&mut state, &reg, "Gatstaf Shepherd", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, shepherd, &reg);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(shepherd));
+    assert!(!state.get_object(twin).unwrap().is_token, "test setup");
+
+    state.num_spells_cast_last_turn.insert(P1, 2);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+
+    let announced = state.game_log.iter()
+        .filter(|e| e.message.contains("upkeep trigger") && e.message.contains("goes on the stack"))
+        .count();
+    assert_eq!(announced, 2, "the clone's ability triggers like the card's");
+    assert!(state.get_object(twin).unwrap().is_transformed,
+        "and does nothing on resolution: the card under it has no other face");
+}
