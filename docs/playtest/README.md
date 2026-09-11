@@ -67,8 +67,8 @@ what the night is worth:
   seat answers with a constant, which is how a whole class of resolution
   stops being fuzzed without any test failing.
 
-File them as separate issues against the right target — the pipeline's
-glossary is in `docs/plans/bug-pipeline.md` — but find them in one sitting.
+File them as separate issues against the right target — see the glossary
+under "Filing" below — but find them in one sitting.
 
 ## What a guide is, and isn't
 
@@ -131,13 +131,23 @@ nights that ended in "no card in either deck can do this".
 
 ## Filing
 
-You are a finder in the bug pipeline (`docs/plans/bug-pipeline.md`): you
-file issues, you never fix. One issue per distinct defect, labels
-`bug` + `phase:playtest`, title `[playtest] <short symptom>`, body with:
+You are a finder: you file issues, you never fix. Three words that are
+easy to confuse, fixed here, and used in every issue's **Target** line:
+
+- **the engine** — the rules (`mtg-engine`).
+- **the machine** — the binaries as programs: the CLI/TUI, flags, files,
+  signals, save/resume, pack generation (`mtg-runner`, `mtg-draft-runner`,
+  `mtg-player`'s interactive surface).
+- **the harness** — the LLM interface: the prompts, the response schema and
+  the conversation an LLM seat plays a game through (`mtg-player/src/llm.rs`
+  and its backends). Documented in `docs/llm-harness.md`.
+
+One issue per distinct defect, labels `bug` + `phase:playtest`, title
+`[playtest] <short symptom>`, body with:
 
 - **Found-by** — this crew, the date, the subject and the idea id (or a
   sentence describing the probe, if you invented it).
-- **Target** — engine, machine or harness, per the pipeline's glossary.
+- **Target** — engine, machine or harness, per the glossary above.
 - **Repro** — exact commands. A fresh reader with no context must be able
   to run them.
 - **Evidence** — verbatim captures, log excerpts, exit codes, and the CR
@@ -148,6 +158,17 @@ file issues, you never fix. One issue per distinct defect, labels
 Search open issues for the same symptom first and comment there rather
 than duplicating. UX judgments are worth filing; label the severity
 honestly.
+
+You are one of three finders, and the labels tell them apart: the
+`nightly-fuzz` workflow files `phase:fuzz` issues, one per failing seed
+(`[fuzz] <pair> seed <N>: <violation>`, which doubles as its dedupe key);
+the `weekly-mutants` workflow files `phase:mutants` issues for survivors
+beyond `reports/mutants-accepted.txt`; you file `phase:playtest`. Every
+issue also carries `bug`. One fixer — the "Daily bug fixer" routine —
+works every open `phase:*` issue oldest-first: reproduce, root-cause, fix
+the mechanism (never a per-card special case), regression test, merge to
+master, close citing the commit. Its **Repro** section is what the fixer
+starts from, which is why it has to be runnable by a fresh reader.
 
 ## Afterwards
 

@@ -8,7 +8,8 @@
 #
 # Color semantics: GREEN means the instrument ran — missed mutants are
 # findings, not failures (survivors beyond reports/mutants-accepted.txt are
-# filed as a phase:mutants GitHub issue per docs/plans/bug-pipeline.md, and
+# filed as a phase:mutants GitHub issue per the Filing section of
+# docs/playtest/README.md, and
 # every shard publishes its outcome lists as artifacts). Timed-out mutants
 # are livelocks the suite effectively caught by hanging them — also not
 # failures. A shard goes RED only when cargo-mutants itself cannot run

@@ -6,7 +6,8 @@
 #
 # Color semantics: GREEN means the instrument ran — findings, if any, were
 # filed as GitHub issues (one per failing seed, labeled phase:fuzz, deduped
-# on pair+seed, capped per shard, per docs/plans/bug-pipeline.md) with the
+# on pair+seed, capped per shard, per the Filing section of
+# docs/playtest/README.md) with the
 # failure logs uploaded as artifacts and counts in the step summary. RED
 # means the instrument itself broke (build failure, script error) and
 # nothing meaningful ran.
@@ -88,7 +89,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # One issue per failing seed (docs/plans/bug-pipeline.md). The
+          # One issue per failing seed (docs/playtest/README.md, Filing). The
           # pair+seed in the title is the dedupe key; cap at 5 per shard so
           # a systemic breakage doesn't flood the tracker.
           filed=0
