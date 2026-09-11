@@ -467,3 +467,27 @@ whether it told the truth.
   run the command that distinguishes them. A flag that is accepted and then
   silently ignored, or documented as ignored and then used, is a broken
   promise and worth filing
+
+- V43 [proposed 2026-09-11, from a 2026-09-11 L44 probe that could not be
+  reproduced] does a viewer ever paint in raw mode? One probe that night
+  reported every row of `s`, `g` and `l` cascading right — each line starting
+  at the column where the previous one ended, the LF-without-CR signature, with
+  `(empty)` landing at column 9 = `len(" STACK")` + the row's own indent. The
+  lead could not reproduce it at 200 or 100 columns, from the action menu, the
+  post-mulligan bottoming screen or the target menu, on any of `s` `g` `e` `l`
+  `i`. Both halves are worth believing: the cascade was measured, and the code
+  makes it possible — `show_paged_lines` (`mtg-player/src/cli.rs:4117`) writes
+  every row as `Print(format!("{s}\n"))`, a bare LF, which only renders as a
+  newline because the tty's cooked line discipline is what turns it into CRLF.
+  So the question is which prompt hands a viewer a terminal that is still raw.
+  `read_line_with_search_redrawing` and friends call `tui_raw_off()` before
+  returning, but the confirmation reader at `cli.rs:3670` deliberately does not
+  (`if !was_raw { tui_raw_off(); }`), and `run_card_search` holds raw mode
+  across its whole loop. Sweep every prompt that advertises a viewer key,
+  opening each of the five viewers from each, and diff the `capture-pane`
+  against a known-good one; then decide whether the fix is `\r\n` at the source
+  (the one place in the file that already does this, `cli.rs:6177`, renders
+  correctly every time) or an assertion that raw mode is off when a viewer
+  paints. Two things travel with it: `show_paged_lines`'s page arithmetic calls
+  `wrapped_height` assuming each row starts at column 0, so a cascading page
+  under-counts and overflows the screen, and the heading is printed the same way
