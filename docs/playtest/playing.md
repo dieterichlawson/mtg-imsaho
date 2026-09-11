@@ -767,6 +767,38 @@ illegal or dubious resolutions do.
   * the target prompt only appears when there is a real choice. With one legal target
     the engine locks it in silently, which reads like an auto-choice if you are sending
     keystrokes blind — check the stack pane (`s`) before concluding you were not asked
+- L44 [tried 2026-09-11 → #469; the audit is DONE, don't redo it] the FIRST 603.4 check,
+  card by card. The premise it shipped with is stale: Homicidal Brute has had a
+  `should_trigger` gate for a while, and all twelve werewolf DFCs route through one
+  shared `helpers::werewolf_should_trigger`, so "find the ungated card" finds nothing.
+  What the night verified at runtime, in three games under `--check-invariants`:
+  * Homicidal Brute in SIX configurations, all correct. Attacked this turn → nothing on
+    the stack, nothing in the log, no transform back (turns 7, 11, 15, 16 of one game).
+    Did not attack → the trigger fires, taps and flips it back, with a real priority
+    window. Attacked on a PREVIOUS turn → the trigger still fires, because
+    `attacked_this_turn` is `attacked_on_turn == Some(turn_number)` (`state.rs:3139`)
+    rather than a flag someone has to clear. "Your end step" is the CONTROLLER's
+    (CR 603.2) — a Brute held through the opponent's end step produces nothing. A Brute
+    stolen by Traitorous Blood after attacking triggers for the THIEF on the thief's end
+    step, and a Brute stolen and then attacked with produces nothing — the stamp is on
+    the object, not the original controller. The front face declares no trigger at all.
+  * all three morbid ETBs with the condition false — Woodland Sleuth, Morkrut Banshee,
+    Hollowhenge Scavenger — log only their resolve line, show an empty stack, and (the
+    Banshee) offer NO target prompt, which is the 603.4-vs-603.3c distinction the card's
+    doc comment argues for. The other morbid cards need no gate: Somberwald Spider and
+    Festerhide Boar are replacement effects, Skirsdag High Priest is an activation
+    restriction, Caravan Vigil and Brimstone Volley are spell effects.
+  * both werewolf faces in both directions, including the one-spell limbo where neither
+    face wants the turn (sum == 0 false, any >= 2 false → nothing triggers), and 603.3b
+    ordering when two back-face werewolves trigger together.
+  The one defect is #469, and it is not a missing gate but a gate testing the wrong
+  thing. Three configurations are UNREACHABLE in this pool and should not be chased
+  again: a Brute attacked and stolen in the SAME turn (Traitorous Blood is a sorcery),
+  attacking as the Scholar and then transforming (the `{T}` ability cannot be activated
+  after the Scholar taps to attack — only transform-then-attack is buildable, which is
+  what the unit test covers), and a Brute removed from combat after attacking (nothing
+  in ISD removes an attacker without moving it to another zone; tapping an attacker does
+  not remove it from combat, CR 506.4)
 - L45 [tried 2026-09-11 → #467, #468] the destroy pipeline as a REPORTING contract, not
   a rules one. `mtg-engine/src/destruction.rs` returns a `DestroyResult` (Died /
   Regenerated / Indestructible / NotAPermanent) and `try_destroy_by` exists so that the
@@ -786,10 +818,3 @@ illegal or dubious resolutions do.
   answer is a helper that takes the result. While you are there, a live regeneration
   shield is rendered nowhere (#468) — `regeneration_shields` does not appear anywhere in
   `mtg-player/`, so neither the battlefield line nor the `i` detail screen shows it
-- L44 [proposed 2026-09-08, from L42] audit the FIRST 603.4 check card by card, since no
-  implemented condition can go false between trigger and resolution. For each of Woodland
-  Sleuth, Hollowhenge Scavenger, Morkrut Banshee, Homicidal Brute (Civilized Scholar's
-  back face) and the 12 werewolf DFCs, read the .rs for a `should_trigger` gate, then
-  play the card with the condition false and confirm nothing appears on the stack (`s`)
-  and nothing appears in `--log`. Homicidal Brute's "if this creature didn't attack this
-  turn" is ungated as far as L42 could tell and was never played — start there
