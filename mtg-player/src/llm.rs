@@ -3592,14 +3592,23 @@ from your hand to put on the bottom of your library.\n\
                 Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text)
             }
             SetPromptKind::DiscardToHandSize => {
+                // Through `build_prompt` like every other in-game decision:
+                // this was the one prompt built from a format string alone,
+                // so the seat chose what to throw away from eight card names
+                // and nothing else — no turn, no life totals, no board, no
+                // graveyard, when three of the eight cards' castability or
+                // size was a function of the graveyard (issue #463). Going
+                // through `build_prompt` also consumes the log, so the recap
+                // stays a delta across a run of cleanup discards (#464).
                 let plural = if n == 1 { "" } else { "s" };
-                format!(
+                let action_text = format!(
                     "[DISCARD {n} CARD{}]\n\
                      Cleanup: your hand is over seven cards. Discard {n} card{plural} (CR 514.1).\n\
                      \n\
                      Your hand:\n\
                      {hand_text}",
-                    if n == 1 { "" } else { "S" })
+                    if n == 1 { "" } else { "S" });
+                self.build_prompt(view, &action_text)
             }
         };
 
@@ -4309,6 +4318,46 @@ mod tests {
         let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 0})]);
         let _ = player.choose_action(&view, &legal);
         assert!(prompts.borrow()[0].contains("[RESPOND TO your Lightning Bolt]"));
+    }
+
+    /// Issue #463: the cleanup discard was the only in-game decision built
+    /// without `build_prompt` — 345 characters of card names, with no turn,
+    /// life totals, board or graveyard — and, because it bypassed the
+    /// builder, it never consumed the log either.
+    #[test]
+    fn the_cleanup_discard_prompt_carries_the_game_state() {
+        let (state, registry) = view_for_contract_test();
+        let mut view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        view.step = Step::Cleanup;
+        view.turn_number = 18;
+        view.display_log.push("p1 cast Ghoulraiser (#35)".to_string());
+        let hand: Vec<ObjectId> = view.your_hand.iter().map(|c| c.object_id).collect();
+        assert!(!hand.is_empty(), "the opening hand was drawn");
+        let prompt = mtg_engine::actions::SetPrompt {
+            kind: mtg_engine::actions::SetPromptKind::DiscardToHandSize,
+            player: view.you,
+            options: hand.clone(),
+            min: 1,
+            max: 1,
+        };
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"card_indices": [0]})]);
+        let chosen = player.choose_card_set(&view, &prompt);
+        assert!(matches!(chosen, Action::DiscardCards { ref cards } if cards == &hand[..1]));
+
+        let asked = prompts.borrow();
+        let sent = &asked[0];
+        assert!(sent.starts_with("Turn 18 - Cleanup (your turn)\n"),
+            "the discard leads with the turn header like every other decision:\n{sent}");
+        for section in ["Recent events:\n", "Opp cast Ghoulraiser (#35)\n", "You: 20hp", "Opp: 20hp", "Hand:\n  "] {
+            assert!(sent.contains(section), "the discard prompt carries {section:?}:\n{sent}");
+        }
+        let context = sent.find("[DISCARD 1 CARD]").expect("the context line is there");
+        assert!(sent[context..].contains("Your hand:\n  0: "),
+            "the numbered hand the answer indexes follows the context line:\n{sent}");
+        assert!(sent.find("You: 20hp").unwrap() < context, "state first, then the question");
+        assert_eq!(player.last_log_index, view.display_log.len(),
+            "answering the discard consumes the log, so the next recap is a delta");
     }
 
     /// The recap example in GAME_RULES uses the vocabulary the recap uses.
