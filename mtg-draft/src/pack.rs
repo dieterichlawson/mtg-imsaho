@@ -88,7 +88,17 @@ impl CollationState {
             rare_sheet1_cursor: rng.gen_range(0..121),
             rare_sheet2_cursor: rng.gen_range(0..121),
             dfc_cursor: rng.gen_range(0..121),
-            pack_index: 0,
+            // The index's parity decides a pack's C1/C2 type and rare sheet,
+            // and a box always started at 0. A run of an odd number of packs
+            // then holds one more even-index pack than odd — ceil(3n/2) of
+            // 3n for an odd pod — so a `--players 3` pod opened 55.6% C1
+            // packs and drew 55.6% of its rares from sheet 1, where every
+            // ISD mythic lives (issue #400). The box shuffle (#202) only
+            // decides which seat gets the surplus pack. Starting at either
+            // parity with equal chance makes the surplus fall on either
+            // sheet equally, so the documented 50/50 holds in expectation
+            // for every pod size, as it already did for even ones.
+            pack_index: rng.gen_range(0..2),
         }
     }
 }
@@ -755,6 +765,53 @@ mod tests {
                 from_1[seat] > 0 && from_2[seat] > 0,
                 "seat {seat}: {} C1-only and {} C2-only commons\nC1: {from_1:?}\nC2: {from_2:?}",
                 from_1[seat], from_2[seat]
+            );
+        }
+    }
+
+    /// Issue #400: the box started at `pack_index` 0, so an odd pod's odd
+    /// number of packs held one more even-index (C1, rare sheet 1) pack
+    /// than odd — 55.6% of a three-seat pod's packs were C1, and its mythic
+    /// rate ran 14% against the documented 12.4%. Over many boxes the C1
+    /// share must be the documented half for an odd pod as for an even one.
+    #[test]
+    fn an_odd_pod_opens_half_c1_packs_across_boxes() {
+        let sheets = load_sheets();
+        let c2: std::collections::HashSet<&String> = sheets.common_c2.iter().collect();
+        let c1_only: std::collections::HashSet<&String> =
+            sheets.common_c1.iter().filter(|c| !c2.contains(c)).collect();
+        // A C1 pack draws five C1-run commons and a foil displaces at most
+        // one, so a pack with any C1-only common is a C1 pack and a pack
+        // with none is a C2 pack.
+        assert!(c1_only.len() >= 10, "the C1 run has cards the C2 run lacks");
+
+        let mut rng = seeded_rng(400);
+        let mut starts = [0usize; 2];
+        for _ in 0..200 {
+            let state = CollationState::new_random(&mut rng);
+            assert!(state.pack_index < 2, "a box starts at one parity or the other");
+            starts[state.pack_index] += 1;
+        }
+        assert!(starts[0] > 0 && starts[1] > 0, "both starting parities occur: {starts:?}");
+
+        for pod in [3usize, 5, 7] {
+            let (mut c1_packs, mut packs) = (0usize, 0usize);
+            for _ in 0..1_000 {
+                for seat_packs in generate_draft_packs(&sheets, pod, &mut rng) {
+                    for pack in seat_packs {
+                        packs += 1;
+                        if pack.commons.iter().any(|c| c1_only.contains(c)) {
+                            c1_packs += 1;
+                        }
+                    }
+                }
+            }
+            let share = c1_packs as f64 / packs as f64;
+            let locked = (pod * 3).div_ceil(2) as f64 / (pod * 3) as f64;
+            assert!(
+                (share - 0.5).abs() < 0.015,
+                "pod {pod}: {share:.4} of packs are C1 type; the collation doc says 0.5, \
+                 and a box that always starts at index 0 gives {locked:.4}"
             );
         }
     }
