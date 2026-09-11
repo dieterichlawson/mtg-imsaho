@@ -10,28 +10,13 @@
 /results.json
 # Nightly playtest run output (logs + --save snapshots): transient repro
 # evidence for the night's issue filing, deleted once the report is
-# written. Never committed — see docs/plans/playtest-missions.md.
+# written. Never committed — see docs/playtest/README.md.
 /logs/playtest/
-# Audit-calibration run state: the seeded-bug answer key and score sheets
-# (see docs/plans/audit-calibration.md). Regenerated per run.
-/audits/calibration/
 # cargo-mutants run output; survivors worth keeping get summarized into
 # reports/, the raw outcomes live in the weekly-mutants CI artifacts.
 mutants.out/
 mutants.out.old/
 /reports/coverage/
-# Agent-produced staging markdown is ephemeral transport; validate
-# scripts expect a clean worktree and ignore this directory.
-/pipeline/staging/
-# Raw agent event logs (written by run_agent_in); cleaned up on
-# merge/abandon. Kept on disk for post-mortem during a run.
-/pipeline/logs/
-/new_pipeline/staging/
-/new_pipeline/logs/
-# Per-worktree cargo config written by `worktree.ensure` (holds a
-# dummy ANTHROPIC_API_KEY so tests that .expect() it don't panic
-# when running under the pipeline's scrubbed env).
-.cargo/
 # Claude Code: commit commands/skills and project settings, ignore local/personal files
 .claude/settings.local.json
 .claude/worktrees/

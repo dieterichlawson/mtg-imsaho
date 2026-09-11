@@ -73,15 +73,13 @@ have been broken repeatedly (#318, #350, #351, #352, #364, #365, #366):
 
 Keep the repo root tidy. When creating a new file, place it in the correct directory instead of at the root:
 
-- `prompts/` — one-off or reusable prompt scaffolds (`*_PROMPT.md`) handed to agents.
-- `docs/plans/` — planning documents, experiment designs, card-set plans, exemplar lists.
-- `docs/` — longer-form design/reference docs that are neither plans nor reports.
-- `reports/` — bug reports, verification reports, and any generated analysis intended to be read later.
-- `audits/` — the running audit pipeline (`AUDIT_BUGS.md`, `AUDIT_PROGRESS.md`, agent runs, classification).
+- `docs/plans/` — planning documents, experiment designs, card-set plans.
+- `docs/` — longer-form design/reference docs that are neither plans nor reports; `docs/playtest/` is the nightly playtest crew's manual and idea lists.
+- `reports/` — the playtest ledger and nightly reports (`reports/playtests/`), the mutation-testing record and its accepted and backlog lists, and any generated analysis intended to be read later.
 - `logs/` — any run output that should be kept. Prefer a dated subdirectory (e.g. `logs/overnight-smoketest/`).
 - `scripts/` — shell/python helpers invoked by humans or cron.
 
-Files that legitimately live at the root: `Cargo.toml`, `Cargo.lock`, `CLAUDE.md`, `AGENT_COORD.md`, `TODO.md`, `.gitignore`, top-level crate directories, and the existing `data/` and `decks/` fixtures.
+Files that legitimately live at the root: `Cargo.toml`, `Cargo.lock`, `CLAUDE.md`, `.gitignore`, top-level crate directories, and the existing `data/` and `decks/` fixtures.
 
 ## Run output and logs
 
