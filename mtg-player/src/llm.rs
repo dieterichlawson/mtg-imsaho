@@ -314,13 +314,20 @@ Hand:
 - `[OPPONENT'S TURN: <step>]` — it's the opponent's turn and you have priority. You can cast instants and activate abilities.
 - `[RESPOND TO <controller>'s <spell>]` — something is on the stack waiting to resolve. You can pass to let it resolve, or respond with an instant/ability (e.g. Counterspell).
 
-**Action list** (last): an `Available actions:` header, then the numbered options on one line, comma-separated:
+**Action list** (last): an `Available actions:` header, then the numbered options, one per line:
 ```
 [MAIN PHASE 1]
 Available actions:
-0: Pass, 1: Tap Forest, 2: Play Forest, 3: Cast Kalonian Tusker (tap 2x Forest), 4: Concede
+0: Pass
+1: Tap Forest
+2: Play Forest
+3: Cast Kalonian Tusker (tap 2x Forest)
+4: Concede
 ```
-Pick one by its index. A cast option names the spell and its tap plan, not its target: when a spell needs a target you pick the action first and a follow-up prompt (`<card name>: select a target:`) lists the legal targets.
+Pick one by its index. A cast option names the spell and its tap plan, not its target: when a spell needs a target you pick the action first and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, with an index per copy — pick the index of the copy you mean; the board lists each copy's counters and status by its `#id`:
+```
+5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
+```
 
 ## Key rules
 
@@ -1233,6 +1240,18 @@ enum Provider {
     ClaudeCode,
 }
 
+/// One line of the action list an LLM seat is offered. Every line takes
+/// one display index per option it holds, in order.
+enum ActionRow {
+    /// A single option, `i: label`.
+    One(String),
+    /// Copies of one permanent that offer the same ability with the same
+    /// tap plan, one index each: `i-j: label — one per copy: i=#a, …, j=#b`.
+    /// The copies are told apart by their `#id`, which the board section
+    /// carries beside each copy's counters and status.
+    Copies { label: String, ids: Vec<ObjectId> },
+}
+
 pub struct LlmPlayer {
     name: String,
     /// Index into the game log — tracks which log entries have been sent.
@@ -1719,21 +1738,46 @@ impl LlmPlayer {
     }
 
     /// The context marker and numbered option list that close every
-    /// action prompt.
+    /// action prompt: one option per line, and copies of one permanent
+    /// offering the same ability on one line with an index per copy.
+    ///
+    /// It used to be one comma-joined line with no cap and no grouping, and
+    /// activated abilities were the one row class nothing collapsed: 79
+    /// copies of a creature with one ability were 79 rows differing only in
+    /// their `(#id)`, 8,898 characters on one unwrapped line, with the one
+    /// row the seat wanted 7,900 characters in (issue #461).
     ///
     /// GAME_RULES quotes this shape back to the model, and
     /// `game_rules_shows_the_action_list_it_actually_sends` builds the
-    /// documented example through this function, so the two cannot drift
+    /// documented examples through this function, so the two cannot drift
     /// (issue #201).
-    fn format_action_prompt(context: Option<&str>, labels: &[String]) -> String {
-        let actions_str: String = labels.iter().enumerate()
-            .map(|(i, label)| format!("{i}: {label}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+    fn format_action_prompt(context: Option<&str>, rows: &[ActionRow]) -> String {
+        let mut lines: Vec<String> = Vec::with_capacity(rows.len());
+        let mut index = 0usize;
+        for row in rows {
+            match row {
+                ActionRow::One(label) => {
+                    lines.push(format!("{index}: {label}"));
+                    index += 1;
+                }
+                ActionRow::Copies { label, ids } => {
+                    let first = index;
+                    let last = index + ids.len() - 1;
+                    let per_copy: Vec<String> = ids.iter().enumerate()
+                        .map(|(k, id)| format!("{}=#{}", first + k, id.0))
+                        .collect();
+                    lines.push(format!(
+                        "{first}-{last}: {label} — one per copy: {}",
+                        per_copy.join(", ")
+                    ));
+                    index = last + 1;
+                }
+            }
+        }
         let context_line = context
             .map(|c| format!("[{c}]\n"))
             .unwrap_or_default();
-        format!("{context_line}Available actions:\n{actions_str}\n")
+        format!("{context_line}Available actions:\n{}\n", lines.join("\n"))
     }
 
     fn format_turn_header(view: &GameView, header_override: Option<&str>) -> String {
@@ -3190,10 +3234,19 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        #[derive(Clone, Copy)]
         enum DisplayEntry {
             Direct(usize),   // index into legal_actions
             Cast(usize),     // index into legal.castable_spells
             Ability(usize),  // index into legal.activatable_abilities
+        }
+        /// What a display entry is shown as, before copies are grouped.
+        enum Seed {
+            One(String),
+            /// An activated ability of a permanent, keyed by everything but
+            /// which copy: the label without the `(#id)`, so copies of one
+            /// card offering the same ability the same way share a row.
+            AbilityCopy { key: String, label: String, id: ObjectId },
         }
 
         let legal_actions = &legal.actions;
@@ -3311,8 +3364,7 @@ impl Player for LlmPlayer {
 
         // Build collapsed display: non-CastSpell/ActivateAbility actions + one per
         // castable spell + one per activatable ability.
-        let mut display_labels = Vec::new();
-        let mut display_entries: Vec<DisplayEntry> = Vec::new();
+        let mut seeds: Vec<(DisplayEntry, Seed)> = Vec::new();
         // Keyed by (object, alternative cost) — one row per way to cast
         // (issue #128), matching the CLI.
         let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
@@ -3364,8 +3416,7 @@ impl Player for LlmPlayer {
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }
                             seen_cast_labels.push(label.clone());
-                            display_labels.push(label);
-                            display_entries.push(DisplayEntry::Cast(cs_idx));
+                            seeds.push((DisplayEntry::Cast(cs_idx), Seed::One(label)));
                         }
                     }
                 }
@@ -3378,30 +3429,73 @@ impl Player for LlmPlayer {
                             seen_ability_keys.push(key);
                             let ab = &legal.activatable_abilities[ab_idx];
                             let tap_str = Self::format_tap_plan(view, &ab.tap_plan);
-                            let label = if tap_str.is_empty() {
-                                format!("Activate {} ({})", ab.name, ab.description)
+                            let tail = if tap_str.is_empty() {
+                                format!(" ({})", ab.description)
                             } else {
-                                format!("Activate {} ({}) (tap {})", ab.name, ab.description, tap_str)
+                                format!(" ({}) (tap {})", ab.description, tap_str)
                             };
-                            display_labels.push(label);
-                            display_entries.push(DisplayEntry::Ability(ab_idx));
+                            // The engine names the permanent `Name (#id)`;
+                            // the row shared by its copies names the card.
+                            let id_suffix = format!(" (#{})", ab.object_id.0);
+                            let card = ab.name.strip_suffix(id_suffix.as_str()).unwrap_or(&ab.name);
+                            seeds.push((DisplayEntry::Ability(ab_idx), Seed::AbilityCopy {
+                                key: format!("Activate {card}{tail}"),
+                                label: format!("Activate {}{tail}", ab.name),
+                                id: ab.object_id,
+                            }));
                         }
                     }
                 }
                 _ => {
-                    display_labels.push(Self::format_single_action(view, action));
-                    display_entries.push(DisplayEntry::Direct(i));
+                    seeds.push((DisplayEntry::Direct(i), Seed::One(Self::format_single_action(view, action))));
                 }
             }
         }
 
-        let action_prompt = Self::format_action_prompt(context.as_deref(), &display_labels);
+        // Copies of one permanent offering the same ability the same way
+        // are one row with an index per copy (issue #461). A group's
+        // members are made contiguous so its indices are a range; the
+        // entries are reordered with the rows, so an index still names the
+        // option it was shown as.
+        let mut rows: Vec<ActionRow> = Vec::new();
+        let mut display_entries: Vec<DisplayEntry> = Vec::new();
+        let mut grouped: Vec<&str> = Vec::new();
+        for (entry, seed) in &seeds {
+            match seed {
+                Seed::One(label) => {
+                    rows.push(ActionRow::One(label.clone()));
+                    display_entries.push(*entry);
+                }
+                Seed::AbilityCopy { key, label, .. } => {
+                    if grouped.contains(&key.as_str()) { continue; }
+                    let members: Vec<(DisplayEntry, ObjectId)> = seeds.iter()
+                        .filter_map(|(e, s)| match s {
+                            Seed::AbilityCopy { key: k, id, .. } if k == key => Some((*e, *id)),
+                            _ => None,
+                        })
+                        .collect();
+                    if members.len() == 1 {
+                        rows.push(ActionRow::One(label.clone()));
+                        display_entries.push(*entry);
+                    } else {
+                        grouped.push(key);
+                        rows.push(ActionRow::Copies {
+                            label: key.clone(),
+                            ids: members.iter().map(|(_, id)| *id).collect(),
+                        });
+                        display_entries.extend(members.iter().map(|(e, _)| *e));
+                    }
+                }
+            }
+        }
+
+        let action_prompt = Self::format_action_prompt(context.as_deref(), &rows);
         let prompt = self.build_prompt(view, &action_prompt);
 
-        if display_labels.len() != legal_actions.len() {
-            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_labels.len()));
+        if display_entries.len() != legal_actions.len() {
+            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_entries.len()));
         }
-        let idx = self.pick_action_index(&prompt, display_labels.len());
+        let idx = self.pick_action_index(&prompt, display_entries.len());
 
         if idx >= display_entries.len() {
             return Action::PassPriority;
@@ -4098,17 +4192,32 @@ mod tests {
     /// The action list in GAME_RULES is the one `choose_action` builds.
     #[test]
     fn game_rules_shows_the_action_list_it_actually_sends() {
-        let labels: Vec<String> = [
+        let labels: Vec<ActionRow> = [
             "Pass", "Tap Forest", "Play Forest",
             "Cast Kalonian Tusker (tap 2x Forest)", "Concede",
         ]
         .iter()
-        .map(|s| (*s).to_string())
+        .map(|s| ActionRow::One((*s).to_string()))
         .collect();
         let actual = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels);
         assert!(
             GAME_RULES.contains(actual.trim_end()),
             "GAME_RULES must quote the action list the harness sends. It sends:\n{actual}"
+        );
+
+        // And the row copies of one permanent share (issue #461): five
+        // single rows first, so the copies' indices start at 5 as documented.
+        let mut rows = labels;
+        rows.push(ActionRow::Copies {
+            label: "Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island)".to_string(),
+            ids: vec![ObjectId(43), ObjectId(45), ObjectId(46)],
+        });
+        let with_copies = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &rows);
+        let copies_line = with_copies.lines().last().expect("the copies row is last");
+        assert!(copies_line.starts_with("5-7: "), "{with_copies}");
+        assert!(
+            GAME_RULES.contains(copies_line),
+            "GAME_RULES must quote the shared row the harness sends. It sends:\n{copies_line}"
         );
     }
 
@@ -4299,7 +4408,7 @@ mod tests {
             "the concede confirmation must be asked. Prompts: {asked:#?}"
         );
         assert!(
-            asked[0].contains("0: Pass, 1: Cast Geistflame, 2: Concede"),
+            asked[0].contains("0: Pass\n1: Cast Geistflame\n2: Concede"),
             "the display list really did collapse 4 actions to 3 options:\n{}", asked[0]
         );
         assert!(asked[1].contains("CONCEDE"), "the second prompt is the confirmation: {}", asked[1]);
@@ -4317,6 +4426,91 @@ mod tests {
             serde_json::json!({"action": 2}),
             serde_json::json!({"confirm": true}),
         ]);
+        assert!(matches!(player.choose_action(&view, &legal), Action::Concede));
+    }
+
+    /// A priority offer over three copies of one creature with one
+    /// activated ability, another permanent with its own, Pass and Concede.
+    /// The copies are not adjacent in the engine's order.
+    fn copies_priority_offer() -> mtg_engine::engine::LegalActions {
+        use mtg_engine::actions::{ActivatableAbility, ActivatableAbilityOption};
+        let activate = |id: u64| Action::ActivateAbility {
+            object_id: ObjectId(id),
+            ability_index: 0,
+            targets: Vec::new(),
+            tap_plan: Vec::new(),
+            sacrifice: None,
+            x_value: None,
+            source_card_id: None,
+        };
+        let ability = |id: u64, name: &str, desc: &str| ActivatableAbility {
+            object_id: ObjectId(id),
+            ability_index: 0,
+            source_card_id: None,
+            name: format!("{name} (#{id})"),
+            description: desc.to_string(),
+            target_options: Vec::new(),
+            tap_plan: Vec::new(),
+            option_combos: vec![ActivatableAbilityOption { targets: Vec::new(), sacrifice: None }],
+        };
+        let hatch = "{1}{U}: Put a hatchling counter. At 5, transform.";
+        mtg_engine::engine::LegalActions {
+            actions: vec![
+                Action::PassPriority,
+                activate(43),
+                activate(50),
+                activate(45),
+                activate(46),
+                Action::Concede,
+            ],
+            combat_prompt: None,
+            castable_spells: Vec::new(),
+            activatable_abilities: vec![
+                ability(43, "Ludevic's Test Subject", hatch),
+                ability(45, "Ludevic's Test Subject", hatch),
+                ability(46, "Ludevic's Test Subject", hatch),
+                ability(50, "Civilized Scholar", "{T}: Draw a card, then discard a card."),
+            ],
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: None,
+            set_prompt: None,
+        }
+    }
+
+    /// Issue #461: N copies of one permanent with one activated ability
+    /// were N rows differing only in their `(#id)`, comma-joined onto one
+    /// unwrapped line with everything else. Copies share a row with an index
+    /// per copy, every option is on its own line, and an index still names
+    /// the copy it was shown as.
+    #[test]
+    fn copies_of_one_ability_share_a_row_and_each_index_names_its_copy() {
+        let view = empty_view();
+        let legal = copies_priority_offer();
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 2})]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        let list = &asked[0][asked[0].find("Available actions:\n").expect("the list")..];
+        assert_eq!(
+            list,
+            "Available actions:\n\
+             0: Pass\n\
+             1-3: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) — one per copy: 1=#43, 2=#45, 3=#46\n\
+             4: Activate Civilized Scholar (#50) ({T}: Draw a card, then discard a card.)\n\
+             5: Concede\n",
+            "one row per line, copies grouped with the lone ability and Concede outside the group:\n{}", asked[0]
+        );
+        assert!(
+            matches!(chosen, Action::ActivateAbility { object_id: ObjectId(45), .. }),
+            "index 2 is the second copy, #45, not the engine's third action: {chosen:?}"
+        );
+
+        // The indices past the group still land on what they were shown as.
+        let (mut player, _) = scripted_player(vec![serde_json::json!({"action": 4})]);
+        let chosen = player.choose_action(&view, &legal);
+        assert!(matches!(chosen, Action::ActivateAbility { object_id: ObjectId(50), .. }), "{chosen:?}");
+        let (mut player, _) = scripted_player(vec![serde_json::json!({"action": 5}), serde_json::json!({"confirm": true})]);
         assert!(matches!(player.choose_action(&view, &legal), Action::Concede));
     }
 
