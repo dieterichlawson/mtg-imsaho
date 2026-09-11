@@ -6,7 +6,6 @@
 # workflow compares against, not run output.
 !/reports/mutants-accepted.txt
 !/reports/mutants-backlog.txt
-!/reports/mutants-rerun-2026-09-08.txt
 *.log
 /results.json
 # Nightly playtest run output (logs + --save snapshots): transient repro
