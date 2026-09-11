@@ -41,24 +41,58 @@ fn on_battlefield(state: &GameState, id: ObjectId) -> bool {
 /// Called by destroy spells (Doom Blade, etc.) and by SBAs for lethal damage / deathtouch.
 /// NOT called for 0-toughness deaths (rule 704.5f) — those are not destruction.
 pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
+    let result = decide_destroy(state, id, registry);
+    apply_destroy(state, id, result, registry);
+    result
+}
+
+/// What destroying this permanent would do, decided against the state as it
+/// stands and before anything moves.
+///
+/// Deciding is separate from applying for two reasons, and both have callers:
+/// a simultaneous destruction has to decide for every permanent against the
+/// same battlefield (CR 700.2c, see `try_destroy_all`), and a caller that
+/// names itself in the log has to know the outcome *before* the outcome is
+/// written, so the line that names the cause comes before the line that
+/// records the consequence (`try_destroy_by`, and `sacrifice_by` for the same
+/// reason).
+fn decide_destroy(state: &GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
     if !on_battlefield(state, id) {
-        return DestroyResult::NotAPermanent;
+        // CR 701.7a destroys permanents.
+        DestroyResult::NotAPermanent
+    } else if state.has_keyword(id, Keyword::Indestructible, registry) {
+        // Indestructible prevents destruction (CR 701.7b).
+        DestroyResult::Indestructible
+    } else if state.get_object(id).is_some_and(|o| o.regeneration_shields > 0) {
+        // Regeneration replaces destruction (CR 701.15a).
+        DestroyResult::Regenerated
+    } else {
+        DestroyResult::Died
     }
-    // Indestructible prevents destruction.
-    if state.has_keyword(id, Keyword::Indestructible, registry) {
-        return DestroyResult::Indestructible;
-    }
+}
 
-    // Regeneration replaces destruction.
-    let shields = state.get_object(id).map_or(0, |o| o.regeneration_shields);
-    if shields > 0 {
-        regenerate(state, id);
-        return DestroyResult::Regenerated;
+/// Carry out a decision from [`decide_destroy`]. Indestructible and
+/// `NotAPermanent` are no-ops by definition: nothing about the game changed.
+fn apply_destroy(state: &mut GameState, id: ObjectId, result: DestroyResult, registry: &CardRegistry) {
+    match result {
+        DestroyResult::Died => destroy(state, id, Some(registry)),
+        DestroyResult::Regenerated => regenerate(state, id),
+        DestroyResult::Indestructible | DestroyResult::NotAPermanent => {}
     }
+}
 
-    // Actually destroy.
-    destroy(state, id, Some(registry));
-    DestroyResult::Died
+/// The one line that says what a named source did to a named permanent.
+///
+/// Every caller that announces its own destruction writes this line, so there
+/// is one wording and one place the four outcomes are spelled out. Three
+/// copies of this `match` had drifted apart before it existed.
+pub fn destroy_line(source: &str, name: &str, result: DestroyResult) -> String {
+    match result {
+        DestroyResult::Died => format!("{source} destroyed {name}"),
+        DestroyResult::Regenerated => format!("{source} could not destroy {name} — it regenerated"),
+        DestroyResult::Indestructible => format!("{source} could not destroy {name} — it is indestructible"),
+        DestroyResult::NotAPermanent => format!("{source} found nothing to destroy — {name} is no longer on the battlefield"),
+    }
 }
 
 /// `try_destroy`, with one accurate line in the log naming what tried.
@@ -79,14 +113,9 @@ pub fn try_destroy_by(
     registry: &CardRegistry,
 ) -> DestroyResult {
     let name = state.obj_name(id);
-    let result = try_destroy(state, id, registry);
-    let line = match result {
-        DestroyResult::Died => format!("{source} destroyed {name}"),
-        DestroyResult::Regenerated => format!("{source} could not destroy {name} — it regenerated"),
-        DestroyResult::Indestructible => format!("{source} could not destroy {name} — it is indestructible"),
-        DestroyResult::NotAPermanent => format!("{source} found nothing to destroy — {name} is no longer on the battlefield"),
-    };
-    state.log(crate::state::LogLevel::Event, line);
+    let result = decide_destroy(state, id, registry);
+    state.log(LogLevel::Event, destroy_line(source, &name, result));
+    apply_destroy(state, id, result, registry);
     result
 }
 
@@ -112,20 +141,21 @@ pub fn try_destroy_all(
     // Phase 1 — decide. Nothing has moved yet, so every check sees the same
     // battlefield.
     let decisions: Vec<(ObjectId, DestroyResult)> = ids.iter()
-        .map(|&id| {
-            let result = if !on_battlefield(state, id) {
-                DestroyResult::NotAPermanent
-            } else if state.has_keyword(id, Keyword::Indestructible, registry) {
-                DestroyResult::Indestructible
-            } else if state.get_object(id).is_some_and(|o| o.regeneration_shields > 0) {
-                DestroyResult::Regenerated
-            } else {
-                DestroyResult::Died
-            };
-            (id, result)
-        })
+        .map(|&id| (id, decide_destroy(state, id, registry)))
         .collect();
 
+    apply_destroy_all(state, &decisions, registry)
+}
+
+/// Phases 2 and 3 of [`try_destroy_all`]: capture every death event against
+/// the undisturbed state, then move everything. Split out so a caller that
+/// announces itself can write its lines between the decision and the
+/// application without the decision going stale.
+fn apply_destroy_all(
+    state: &mut GameState,
+    decisions: &[(ObjectId, DestroyResult)],
+    registry: &CardRegistry,
+) -> Vec<(ObjectId, DestroyResult)> {
     // Phase 2 — capture the death events, still against that same state, so a
     // creature whose toughness depends on the others (Splinterfright counting
     // creature cards in the graveyard) is remembered as it was.
@@ -135,7 +165,7 @@ pub fn try_destroy_all(
         .collect();
 
     // Phase 3 — apply.
-    for &(id, result) in &decisions {
+    for &(id, result) in decisions {
         if result == DestroyResult::Regenerated {
             regenerate(state, id);
         }
@@ -148,7 +178,7 @@ pub fn try_destroy_all(
         state.move_object(id, Zone::Graveyard, registry);
     }
 
-    decisions
+    decisions.to_vec()
 }
 
 /// Destroy a permanent, bypassing regeneration ("can't be regenerated").

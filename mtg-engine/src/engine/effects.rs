@@ -155,9 +155,10 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 crate::damage::DamageKind::NonCombat, registry);
         }
         (Target::Object(id), PendingEffect::Destroy { source_name } | PendingEffect::DestroyCreature { source_name }) => {
-            let name = state.obj_name(*id);
-            crate::destruction::try_destroy(state, *id, registry);
-            state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
+            // `try_destroy_by`, not `try_destroy` plus a line of our own: the
+            // result is the whole news. A regenerated or indestructible
+            // permanent survives, and the line has to say so (#467).
+            crate::destruction::try_destroy_by(state, *id, source_name, registry);
         }
         (Target::Object(id), PendingEffect::DebuffUntilEOT { power, toughness, source_name }) => {
             let name = state.obj_name(*id);

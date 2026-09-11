@@ -685,3 +685,92 @@ fn a_loyalty_ability_logs_the_loyalty_change_with_the_total() {
     }, &reg);
     assert_line(&log_lines(&minus), &format!("Liliana of the Veil (#{}) loses 2 loyalty counters (now 1)", liliana.0));
 }
+
+// ---------------------------------------------------------------------------
+// #467 — a destroy reports what happened, and names the cause before it
+// ---------------------------------------------------------------------------
+
+/// Cast Slayer of the Wicked and answer its ETB trigger by choosing `victim`.
+///
+/// Slayer is one of the two cards whose destruction runs through the shared
+/// `PendingEffect::Destroy` handler, which is where the false line was
+/// written; Reaper from the Abyss is the other.
+fn slayer_destroys(state: &GameState, reg: &mtg_engine::cards::CardRegistry,
+                   victim: mtg_engine::ids::ObjectId) -> GameState {
+    let mut state = state.clone();
+    let slayer = castable_spell(&mut state, reg, "Slayer of the Wicked", P0);
+    let mut state = cast_and_resolve(&state, reg, slayer, vec![]);
+    mtg_engine::triggers::process_triggers(&mut state, reg);
+    assert!(state.awaiting_action.is_some(), "Slayer should ask what to destroy");
+    mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
+        },
+        reg,
+    )
+}
+
+/// A regenerated permanent is still on the battlefield (CR 701.15a), and the
+/// shared destroy handler announced it destroyed anyway — the log contradicted
+/// the line above it and the board in front of the player.
+#[test]
+fn a_destroy_a_regeneration_shield_answered_is_not_reported_as_a_kill() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    state.get_object_mut(corpse).unwrap().regeneration_shields = 1;
+
+    let after = slayer_destroys(&state, &reg, corpse);
+
+    assert_eq!(after.get_object(corpse).unwrap().zone, Zone::Battlefield,
+        "regeneration replaces the destruction");
+    let lines = log_lines(&after);
+    assert_line(&lines, "Slayer of the Wicked could not destroy Walking Corpse");
+    assert_line(&lines, "it regenerated");
+    assert!(!lines.iter().any(|l| l.contains("Slayer of the Wicked destroyed")),
+        "nothing was destroyed, so no line may say it was; log was {lines:#?}");
+}
+
+/// The same for indestructible (CR 701.7b), which is the worse of the two:
+/// nothing else in the log contradicts the false line, so it is the reader's
+/// only account of the event.
+#[test]
+fn a_destroy_an_indestructible_creature_shrugged_off_is_not_reported_as_a_kill() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    grant_keyword(&mut state, corpse, Keyword::Indestructible);
+
+    let after = slayer_destroys(&state, &reg, corpse);
+
+    assert_eq!(after.get_object(corpse).unwrap().zone, Zone::Battlefield,
+        "indestructible prevents the destruction");
+    let lines = log_lines(&after);
+    assert_line(&lines, "Slayer of the Wicked could not destroy Walking Corpse");
+    assert_line(&lines, "it is indestructible");
+    assert!(!lines.iter().any(|l| l.contains("Slayer of the Wicked destroyed")),
+        "nothing was destroyed, so no line may say it was; log was {lines:#?}");
+}
+
+/// And when the creature really does die, the line that names the cause comes
+/// before the line that records the consequence — the log read
+/// "Walking Corpse died" and only then "Slayer of the Wicked destroyed Walking
+/// Corpse". `sacrifice_by` was fixed for the same reason (#263).
+#[test]
+fn a_destroy_names_its_cause_before_the_death_it_caused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+
+    let after = slayer_destroys(&state, &reg, corpse);
+
+    assert_eq!(after.get_object(corpse).unwrap().zone, Zone::Graveyard);
+    let lines = log_lines(&after);
+    let cause = index_of(&lines, "Slayer of the Wicked destroyed Walking Corpse")
+        .unwrap_or_else(|| panic!("expected the destroy line; log was {lines:#?}"));
+    let died = index_of(&lines, &format!("Walking Corpse (#{}) died", corpse.0))
+        .unwrap_or_else(|| panic!("expected the death line; log was {lines:#?}"));
+    assert!(cause < died,
+        "the cause is announced before the consequence; log was {lines:#?}");
+}
