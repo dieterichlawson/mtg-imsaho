@@ -252,7 +252,7 @@ Each prompt you receive has these sections, in this order:
 
 **Header line** (top): `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
 
-**Recent events** (only if anything happened since your last decision): a delta log of game events — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's.
+**Recent events** (only if anything happened since the last prompt that showed you the board): a delta log of game events — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line saying how many and through which turn, e.g. `… 227 earlier entries omitted, through turn 94 …`, and the board sections below are always current.
 
 ```
 Recent events:
@@ -2468,6 +2468,17 @@ impl LlmPlayer {
         self.build_prompt_with_header(view, action_prompt, None)
     }
 
+    /// The most log entries one recap carries. Nothing bounded the block,
+    /// and it is largest exactly when the most has happened: one prompt
+    /// carried 307 entries covering turns 1-98, three quarters of its
+    /// length (issue #464). The oldest are dropped, with a marker saying so.
+    const MAX_RECENT_EVENTS: usize = 80;
+
+    /// The turn number a `── Turn N (...) ──` log banner announces.
+    fn turn_banner_number(entry: &str) -> Option<&str> {
+        entry.strip_prefix("── Turn ")?.split_once(' ').map(|(n, _)| n)
+    }
+
     fn build_prompt_with_header(
         &mut self,
         view: &GameView,
@@ -2478,11 +2489,15 @@ impl LlmPlayer {
         // "passes priority" and "Step: Draw" entries that add no information.
         // Rewrite each new entry so player references read "you"/"opp"
         // instead of the engine-global `p0`/`p1` labels.
-        let new_logs: Vec<String> = view.display_log.iter()
-            .skip(self.last_log_index)
+        let pending: &[String] = view.display_log
+            .get(self.last_log_index..)
+            .unwrap_or_default();
+        self.last_log_index = view.display_log.len();
+        let omitted = pending.len().saturating_sub(Self::MAX_RECENT_EVENTS);
+        let (elided, shown) = pending.split_at(omitted);
+        let new_logs: Vec<String> = shown.iter()
             .map(|e| Self::rewrite_log_entry(e, view.you))
             .collect();
-        self.last_log_index = view.display_log.len();
 
         let mut prompt = String::new();
         // Turn/phase header comes first so the model immediately knows
@@ -2492,6 +2507,13 @@ impl LlmPlayer {
 
         if !new_logs.is_empty() {
             prompt.push_str("Recent events:\n");
+            if omitted > 0 {
+                // The marker names the turn the dropped stretch reached, so
+                // a reader knows what the kept entries are the tail of.
+                let through = elided.iter().rev().find_map(|e| Self::turn_banner_number(e));
+                prompt.push_str(&Self::omitted_events_marker(omitted, through));
+                prompt.push('\n');
+            }
             for entry in &new_logs {
                 prompt.push_str(entry);
                 prompt.push('\n');
@@ -2504,6 +2526,15 @@ impl LlmPlayer {
 
         prompt.push_str(action_prompt);
         prompt
+    }
+
+    /// The line that opens a capped recap. GAME_RULES quotes this shape,
+    /// and a test builds the documented example through it.
+    fn omitted_events_marker(omitted: usize, through_turn: Option<&str>) -> String {
+        match through_turn {
+            Some(t) => format!("… {omitted} earlier entries omitted, through turn {t} …"),
+            None => format!("… {omitted} earlier entries omitted …"),
+        }
     }
 
     /// Divide permanents into two piles via per-permanent boolean choices.
@@ -4358,6 +4389,62 @@ mod tests {
         assert!(sent.find("You: 20hp").unwrap() < context, "state first, then the question");
         assert_eq!(player.last_log_index, view.display_log.len(),
             "answering the discard consumes the log, so the next recap is a delta");
+    }
+
+    /// Issue #464: nothing capped the recap, so a quiet stretch made it the
+    /// largest thing in the prompt — 307 entries, 74% of one prompt — with
+    /// nothing saying what it covered. The newest entries are kept and the
+    /// block says how many older ones it dropped and through which turn.
+    #[test]
+    fn a_long_recap_keeps_the_newest_entries_and_says_what_it_dropped() {
+        let (state, registry) = view_for_contract_test();
+        let mut view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        view.display_log.clear();
+        for turn in 1..=100u32 {
+            let who = if turn % 2 == 1 { "p1" } else { "p0" };
+            view.display_log.push(format!("── Turn {turn} ({who}) ──"));
+            view.display_log.push(format!("{who} drew a card"));
+            view.display_log.push(format!("{who} played Forest (#{turn})"));
+        }
+        let total = view.display_log.len();
+        let cap = LlmPlayer::MAX_RECENT_EVENTS;
+        assert!(total > cap);
+
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        let start = prompt.find("Recent events:\n").expect("a recap") + "Recent events:\n".len();
+        let block = &prompt[start..prompt[start..].find("\n\n").expect("the block ends") + start];
+        let lines: Vec<&str> = block.lines().collect();
+
+        // The kept entries are the tail of the log: the newest `cap`. The
+        // omitted stretch is 300 - 80 = 220 entries, three per turn, so it
+        // ends just after turn 74's banner and the marker says so.
+        let omitted = total - cap;
+        assert_eq!(lines[0], format!("… {omitted} earlier entries omitted, through turn 74 …"),
+            "the marker says how much was dropped and how far it reached:\n{block}");
+        assert_eq!(lines.len(), cap + 1, "the cap plus the marker:\n{block}");
+        assert_eq!(lines[lines.len() - 1], "You played Forest (#100)", "the newest entry is last");
+        assert_eq!(lines[1], "You drew a card", "and the kept stretch starts where the dropped one ended");
+        assert_eq!(player.last_log_index, total, "the whole log counts as shown, dropped entries included");
+
+        // GAME_RULES documents the cap and the marker it produces.
+        assert!(GAME_RULES.contains(&format!("most recent {cap} entries")),
+            "GAME_RULES states the cap the harness applies");
+        assert!(GAME_RULES.contains(&LlmPlayer::omitted_events_marker(227, Some("94"))),
+            "GAME_RULES quotes the marker shape the harness sends");
+    }
+
+    /// A recap that fits carries no marker and every entry.
+    #[test]
+    fn a_short_recap_is_whole_and_unmarked() {
+        let (state, registry) = view_for_contract_test();
+        let mut view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        view.display_log = vec!["── Turn 3 (p0) ──".to_string(), "p0 drew a card".to_string()];
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        assert!(prompt.contains("Recent events:\n── Turn 3 (your turn) ──\nYou drew a card\n\n"),
+            "{prompt}");
+        assert!(!prompt.contains("omitted"), "{prompt}");
     }
 
     /// The recap example in GAME_RULES uses the vocabulary the recap uses.
