@@ -742,21 +742,28 @@ illegal or dubious resolutions do.
   Shepherd's OWN trigger flipped it forward and let the trigger flip it back (603.4 +
   712.8, via `resolving_trigger_from_back_face`). Also confirmed each-upkeep scope and
   603.3b ordering
-- L43 [proposed 2026-09-08, from L42 and CR 608.2b] the intervening "if" that is still
-  true when the target has gone. L42 established both 603.4 checks but never reached the
-  interaction with 608.2b. Reaper from the Abyss is the only implemented card with an
-  intervening "if" AND a target: get morbid on (Altar's Reap sacrificing your own
-  creature), have TWO non-Demon creatures and 2 spare mana at the end step, let the
-  trigger choose one, then remove that target in response (a second Altar's Reap, Victim
-  of Night). The condition is still true, so the ability must be removed for having no
-  legal target — verify the log says THAT and not "morbid was false", and that no
-  creature is destroyed. Then do it with Morkrut Banshee's ETB. Budget 8 lands: 17 Swamp
-  / 8 Morkrut Banshee / 4 Reaper / 4 Altar's Reap / 4 Typhoid Rats / 3 Victim of Night
-  gets there by turn 13 on --seed 5150
-- L44 [proposed 2026-09-08, from L42] audit the FIRST 603.4 check card by card, since no
-  implemented condition can go false between trigger and resolution. For each of Woodland
-  Sleuth, Hollowhenge Scavenger, Morkrut Banshee, Homicidal Brute (Civilized Scholar's
-  back face) and the 12 werewolf DFCs, read the .rs for a `should_trigger` gate, then
-  play the card with the condition false and confirm nothing appears on the stack (`s`)
-  and nothing appears in `--log`. Homicidal Brute's "if this creature didn't attack this
-  turn" is ungated as far as L42 could tell and was never played — start there
+- L43 [tried 2026-09-11 → no bug; every check held] the intervening "if" that is still
+  true when the target has gone. Both cards were reached and both are CORRECT. Reaper
+  from the Abyss: morbid on (Altar's Reap sacrificing your own creature, or any combat
+  death), the end-step trigger targeting your own Typhoid Rats, that Rats sacrificed to
+  a second Altar's Reap in response → `Reaper from the Abyss (#21)'s end step trigger
+  (if morbid, destroy target non-Demon creature) fizzled (all targets illegal)`, and the
+  opponent's creature untouched. Morkrut Banshee's ETB: same shape, with the Banshee
+  chosen as its own target and then killed by Victim of Night in response → `fizzled
+  (all targets illegal)`, and no creature took -4/-4. Neither log line mentions morbid,
+  which is what the probe was for. Three facts this night established that shape any
+  repeat:
+  * the THIRD state is reachable and is distinguishable from both others. Morbid TRUE
+    with no non-Demon creature anywhere (two Reapers out, sacrifice one, opponent's board
+    empty) logs `Trigger removed: no legal targets (Reaper from the Abyss (#21)'s end
+    step trigger ...)`; morbid FALSE logs NOTHING AT ALL. Four end steps with the Reaper
+    out and morbid false produced zero trigger lines, so the 603.4 gate and the 608.2b
+    fizzle cannot be confused in the log — which is exactly the regression the comment in
+    `reaper_from_the_abyss.rs` was written against.
+  * the pairing in the old budget does not work. Victim of Night is "non-Vampire,
+    non-Werewolf, non-Zombie", so it cannot remove any target on a Zombie deck's board —
+    the response has to be Altar's Reap sacrificing your OWN creature, or the target has
+    to be something of yours. Give the Reaper seat its own non-Demon bodies.
+  * the target prompt only appears when there is a real choice. With one legal target
+    the engine locks it in silently, which reads like an auto-choice if you are sending
+    keystrokes blind — check the stack pane (`s`) before concluding you were not asked
