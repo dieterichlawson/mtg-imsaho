@@ -91,6 +91,22 @@ registry. The checked-in decks live in `decks/` (`gw-humans.txt`,
   --deck1 decks/gw-humans.txt --deck2 decks/coverage/ub-coverage.txt
 ```
 
+## What a seat is told about cards
+
+The system prompt describes the seat's own decklist in full — cost, type
+line, P/T and rules text for every card, both faces of a double-faced
+card. In `mtg-runner` that is all it carries: the opponent's decklist is
+hidden information, and a seat handed both lists knew from turn 1 what it
+was playing against and, the list being exhaustive, what it was not
+(issue #466). In `mtg-draft-runner` the system prompt also carries a
+`## Card reference` for the whole set, which is public in a draft.
+
+Everything else a seat learns about cards, it learns as they come into
+view: each decision prompt carries an `Opp's cards in view:` section with
+the rules text of every card on the battlefield, on the stack, in a
+graveyard, in exile or revealed that is not in the seat's own deck. It is
+re-sent on every prompt while the card is in view and absent otherwise.
+
 ## `--log`: what is recorded and how to read it
 
 `--log <path>` writes the run log. Despite the word "Append" in the usage

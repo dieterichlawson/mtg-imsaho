@@ -75,10 +75,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   confirm or clear: exile is a count with no contents; land lines carry a
   name and tapped state but no rules text, so a utility land's activated
   ability is invisible; creature lines carry keywords but no rules text,
-  and the "Card reference" block covers only the seat's own decklist, so
-  an opponent's creature may have no text anywhere in the prompt; nothing
-  states what mana is actually available. File a gap when it would change
-  a decision, not for every omission
+  and the system prompt's "Card reference" covers only the seat's own
+  decklist (since #466 — it was the union of both decks, which leaked the
+  opponent's list), so an opponent's card has text only through the
+  per-decision `Opp's cards in view:` section, which lists cards on the
+  battlefield, the stack, in graveyards, in exile and revealed — check a
+  card that matters and is in none of those; nothing states what mana is
+  actually available. File a gap when it would change a decision, not for
+  every omission
 - H4 recap fidelity across resume: `--save` and `--resume` a game with a
   `cc` seat and check the conversation the resumed seat is handed
   describes the same game it left — recap contents, turn count, nothing

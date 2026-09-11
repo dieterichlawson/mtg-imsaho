@@ -634,13 +634,17 @@ stops here — pass --save {path} to keep writing it");
         (load_deck(deck1_spec, &registry).entries,
          load_deck(deck2_spec, &registry).entries)
     };
-    // Build a card reference from all cards in both decks
-    let card_reference = build_card_reference(&deck1_entries, &deck2_entries, &registry);
+    // No card reference beyond the seat's own decklist, which the system
+    // prompt describes in full. The reference used to be the union of both
+    // decks, so each seat was handed the other's decklist on turn 1 — the
+    // card identities, and by omission the cards the opponent did not have
+    // (issue #466). What the opponent's cards do is told to the seat as they
+    // come into view, in the decision prompt.
     if let PlayerKind::Llm(ref mut llm) = p1 {
-        llm.init_conversation(&deck1_entries, &card_reference, &registry, MatchFormat::SingleGame);
+        llm.init_conversation(&deck1_entries, "", &registry, MatchFormat::SingleGame);
     }
     if let PlayerKind::Llm(ref mut llm) = p2 {
-        llm.init_conversation(&deck2_entries, &card_reference, &registry, MatchFormat::SingleGame);
+        llm.init_conversation(&deck2_entries, "", &registry, MatchFormat::SingleGame);
     }
 
     // If resuming, feed the existing game log to LLM players so they
@@ -1230,43 +1234,6 @@ fn decklist_from_state(
         *counts.entry(data.name.clone()).or_default() += 1;
     }
     counts.into_iter().collect()
-}
-
-fn build_card_reference(
-    deck1: &[(String, u32)],
-    deck2: &[(String, u32)],
-    registry: &CardRegistry,
-) -> String {
-    use mtg_engine::types::CardType;
-    let mut names: Vec<String> = deck1.iter().chain(deck2.iter()).map(|(n, _)| n.clone()).collect();
-    names.sort();
-    names.dedup();
-    let mut s = String::new();
-    for name in &names {
-        // A double-faced card contributes both faces, each under its own
-        // name: the back face is what a transform decision is about, and
-        // what the board line reads after the permanent flips (issue #205).
-        for (face_name, data) in mtg_player::llm::card_faces(name, registry) {
-            let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-            let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                CardType::Creature => "Creature", CardType::Instant => "Instant",
-                CardType::Sorcery => "Sorcery", CardType::Enchantment => "Enchantment",
-                CardType::Artifact => "Artifact", CardType::Land => "Land",
-                CardType::Planeswalker => "Planeswalker",
-            }).collect();
-            let subtypes = if data.subtypes.is_empty() { String::new() }
-                else { format!(" — {}", data.subtypes.join(" ")) };
-            let pt = match (data.power, data.toughness) {
-                (Some(p), Some(t)) => format!(" {p}/{t}"),
-                _ => String::new(),
-            };
-            writeln!(s, "{}{} | {}{}{}", face_name, cost, types.join(" "), subtypes, pt).unwrap();
-            if !data.oracle_text.is_empty() {
-                writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
-            }
-        }
-    }
-    s
 }
 
 fn load_deck(spec: &str, registry: &CardRegistry) -> Decklist {

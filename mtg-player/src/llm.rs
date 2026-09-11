@@ -191,6 +191,39 @@ pub fn card_faces(
     faces
 }
 
+/// One card's line in a card reference: name, cost, type line and P/T,
+/// then its rules text indented under it. Both faces of a double-faced
+/// card are listed, each under its own name: the back face is what a
+/// transform decision is about, and what the board line reads after the
+/// permanent flips (issue #205).
+#[must_use]
+pub fn card_reference_entry(name: &str, registry: &mtg_engine::cards::CardRegistry) -> String {
+    let mut s = String::new();
+    for (face_name, data) in card_faces(name, registry) {
+        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+        let type_line = mtg_engine::types::type_line(&data.supertypes, &data.card_types, &data.subtypes);
+        let pt = match (data.power, data.toughness) {
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
+            _ => String::new(),
+        };
+        writeln!(s, "{face_name}{cost} | {type_line}{pt}").unwrap();
+        if !data.oracle_text.is_empty() {
+            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
+        }
+    }
+    s
+}
+
+/// A card reference for `names`, sorted and deduplicated, one
+/// [`card_reference_entry`] each.
+#[must_use]
+pub fn build_card_reference(names: &[String], registry: &mtg_engine::cards::CardRegistry) -> String {
+    let mut names: Vec<&String> = names.iter().collect();
+    names.sort();
+    names.dedup();
+    names.iter().map(|n| card_reference_entry(n, registry)).collect()
+}
+
 /// The match a seat is playing, as far as the seat needs to know.
 ///
 /// This used to be a paragraph of the fixed `GAME_RULES` const reading
@@ -304,6 +337,14 @@ Hand:
 **Graveyards** (only if non-empty): a `Your graveyard:` / `Opp graveyard:` header with one indented card per line.
 
 **Flashback available** (only if relevant): cards in your graveyard you can cast for their flashback cost, one indented line each.
+
+**Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per card name (basic lands excepted), in the same shape as the card reference:
+```
+Opp's cards in view:
+Delver of Secrets {U} | Creature — Human Wizard 1/1
+  At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
+```
+This is how you learn what your opponent's cards do: you are told about a card when it comes into view, never before.
 
 **Context line**: a `[CONTEXT]` marker showing the current game state:
 - `[MAIN PHASE 1]` / `[MAIN PHASE 2]` — your main phases. Cast sorceries, creatures, enchantments, artifacts here. Also play lands here.
@@ -1256,6 +1297,14 @@ pub struct LlmPlayer {
     name: String,
     /// Index into the game log — tracks which log entries have been sent.
     last_log_index: usize,
+    /// Every card name (both faces) in this seat's own decklist, which the
+    /// system prompt describes in full. Any other name that comes into
+    /// view gets its rules text in the decision prompt instead.
+    own_card_names: std::collections::HashSet<String>,
+    /// The reference entry for every card name the registry knows, both
+    /// faces, so a card that comes into view can be described without
+    /// the registry in hand.
+    card_texts: HashMap<String, String>,
     /// Provider-specific API backend.
     backend: Box<dyn LlmBackend>,
     provider: Provider,
@@ -1269,6 +1318,8 @@ impl LlmPlayer {
         Self {
             name: name.to_string(),
             last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
             backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
             provider: Provider::Anthropic,
             guide: None,
@@ -1285,6 +1336,8 @@ impl LlmPlayer {
         Self {
             name: name.to_string(),
             last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
             backend: Box::new(InertBackend::default()),
             provider: Provider::Anthropic,
             guide: None,
@@ -1296,6 +1349,8 @@ impl LlmPlayer {
         Self {
             name: name.to_string(),
             last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
             backend: Box::new(GeminiBackend::new("gemini-2.5-flash")),
             provider: Provider::Gemini,
             guide: None,
@@ -1311,6 +1366,8 @@ impl LlmPlayer {
         Self {
             name: name.to_string(),
             last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
             backend: Box::new(claude_code::ClaudeCodeBackend::new(None)),
             provider: Provider::ClaudeCode,
             guide: None,
@@ -1324,6 +1381,8 @@ impl LlmPlayer {
         Self {
             name: name.to_string(),
             last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
             backend: Box::new(claude_code::ClaudeCodeBackend::with_binary(binary, None)),
             provider: Provider::ClaudeCode,
             guide: None,
@@ -1367,6 +1426,14 @@ impl LlmPlayer {
 
     /// Initialize the conversation with your decklist and a card reference.
     /// Call this once before the game starts.
+    ///
+    /// The card reference is whatever the run has decided is public: the
+    /// whole set in a draft, nothing in a fixed-deck game, where the
+    /// decklist section already describes every card the seat owns. It must
+    /// not be the other deck — a seat that is handed the opponent's
+    /// decklist knows on turn 1 what it is playing against, and what it is
+    /// not (issue #466). Cards the seat has not been told about are
+    /// described as they come into view, in the decision prompt.
     pub fn init_conversation(
         &mut self,
         your_deck: &[(String, u32)],
@@ -1384,11 +1451,56 @@ impl LlmPlayer {
         }
         deck_info.push_str("\n\n## Your decklist\n\n");
         deck_info.push_str(&Self::format_decklist(your_deck, registry));
-        deck_info.push_str("\n\n## Card reference\n\n");
-        deck_info.push_str(card_reference);
+        if !card_reference.is_empty() {
+            deck_info.push_str("\n\n## Card reference\n\n");
+            deck_info.push_str(card_reference);
+        }
         self.backend.init(&deck_info);
         self.last_log_index = 0;
+        self.own_card_names = your_deck.iter()
+            .flat_map(|(name, _)| card_faces(name, registry))
+            .map(|(face_name, _)| face_name)
+            .collect();
+        // Basic lands are left out: what a Swamp does is not news, and
+        // the opponent's basics are in view from turn 1.
+        self.card_texts = registry.all_names().iter()
+            .flat_map(|name| card_faces(name, registry))
+            .filter(|(_, data)| !data.supertypes.contains(&mtg_engine::types::Supertype::Basic))
+            .map(|(face_name, _)| {
+                let entry = card_reference_entry(&face_name, registry);
+                (face_name, entry)
+            })
+            .collect();
         self.log("SYSTEM", self.backend.system_prompt());
+    }
+
+    /// The rules text of every card in view that is not from this seat's
+    /// own deck — on the battlefield, on the stack, in a graveyard, in
+    /// exile, or revealed — one entry per name, basic lands excepted, so the
+    /// seat can read what its opponent's cards do without having been handed
+    /// the opponent's decklist (issue #466). Empty when there is nothing to
+    /// describe.
+    fn format_cards_in_view(&self, view: &GameView) -> String {
+        let mut names: Vec<&str> = Vec::new();
+        names.extend(view.battlefield.iter().map(|p| p.name.as_str()));
+        names.extend(view.stack.iter().map(|s| s.name.as_str()));
+        names.extend(view.graveyards.iter().flat_map(|(_, cards)| cards.iter().map(|c| c.name.as_str())));
+        names.extend(view.exile.iter().map(|c| c.name.as_str()));
+        names.extend(view.revealed_names.values().map(String::as_str));
+        names.sort_unstable();
+        names.dedup();
+
+        let mut s = String::new();
+        for name in names {
+            if self.own_card_names.contains(name) { continue; }
+            if let Some(entry) = self.card_texts.get(name) {
+                if s.is_empty() {
+                    s.push_str("Opp's cards in view:\n");
+                }
+                s.push_str(entry);
+            }
+        }
+        s
     }
 
     /// Resume conversation from an existing game state.
@@ -2566,6 +2678,7 @@ impl LlmPlayer {
         }
 
         prompt.push_str(&Self::format_state_body(view));
+        prompt.push_str(&self.format_cards_in_view(view));
         prompt.push('\n');
 
         prompt.push_str(action_prompt);
@@ -4379,6 +4492,8 @@ mod tests {
         let player = LlmPlayer {
             name: "t".to_string(),
             last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
             backend: Box::new(ScriptedBackend { answers, prompts: std::rc::Rc::clone(&prompts) }),
             provider: Provider::Anthropic,
             guide: None,
@@ -4512,6 +4627,56 @@ mod tests {
         assert!(matches!(chosen, Action::ActivateAbility { object_id: ObjectId(50), .. }), "{chosen:?}");
         let (mut player, _) = scripted_player(vec![serde_json::json!({"action": 5}), serde_json::json!({"confirm": true})]);
         assert!(matches!(player.choose_action(&view, &legal), Action::Concede));
+    }
+
+    /// Issue #466: the system prompt's card reference was the union of both
+    /// decklists, so a seat knew on turn 1 every card its opponent's deck
+    /// held — and, the list being exhaustive, every card it did not. The
+    /// seat is told about a card when it comes into view, in the decision
+    /// prompt, and about nothing before.
+    #[test]
+    fn a_card_in_view_from_outside_your_deck_gets_its_text_in_the_prompt() {
+        let registry = CardRegistry::with_all_cards();
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let own = vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)];
+        player.init_conversation(&own, "", &registry, MatchFormat::SingleGame);
+
+        let system = player.system_prompt_for_test();
+        assert!(!system.contains("## Card reference"),
+            "with no public reference, the system prompt has no reference section:\n{system}");
+        assert!(!system.contains("Dissipate") && !system.contains("Grimgrin"),
+            "nothing about a card the seat has not seen");
+
+        let (you, opp) = (PlayerId(0), PlayerId(1));
+        let mut view = empty_view();
+        view.battlefield.push(perm(7, "Delver of Secrets", 1, 1, opp));
+        view.battlefield.push(perm(8, "Grizzly Bears", 2, 2, opp));
+        view.battlefield.push(perm(9, "Grizzly Bears", 2, 2, you));
+        view.revealed_names.insert(ObjectId(30), "Dissipate".to_string());
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+
+        let section = prompt.find("Opp's cards in view:\n").expect("the section is there");
+        let body = &prompt[section..prompt.find("[MAIN PHASE 1]").expect("then the question")];
+        assert!(body.contains("Delver of Secrets {U} | Creature — Human Wizard 1/1\n  At the beginning of your upkeep"),
+            "the opponent's creature is described:\n{body}");
+        assert!(body.contains("Dissipate {1}{U}{U} | Instant\n  Counter target spell."),
+            "a revealed card is described:\n{body}");
+        assert!(!body.contains("Grizzly Bears {1}{G}"),
+            "a card from your own deck is not repeated, whoever controls it:\n{body}");
+        assert!(prompt.find("Opp board:").unwrap() < section && section < prompt.find("[MAIN PHASE 1]").unwrap(),
+            "the section sits between the board and the question:\n{prompt}");
+
+        // GAME_RULES documents the section in the shape the harness sends.
+        let delver = card_reference_entry("Delver of Secrets", &registry);
+        let front = delver.lines().take(2).collect::<Vec<_>>().join("\n");
+        assert!(GAME_RULES.contains(&format!("Opp's cards in view:\n{front}")),
+            "the documented example is built by the same formatter:\n{front}");
+
+        // Nothing in view from outside the deck: no section at all.
+        let mut view = empty_view();
+        view.battlefield.push(perm(9, "Grizzly Bears", 2, 2, you));
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        assert!(!prompt.contains("Opp's cards in view"), "{prompt}");
     }
 
     /// Issue #465: the context line named the opponent by the engine's seat
