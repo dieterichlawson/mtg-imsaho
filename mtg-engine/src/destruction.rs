@@ -119,6 +119,27 @@ pub fn try_destroy_by(
     result
 }
 
+/// `try_destroy_all`, with one accurate line per permanent naming what tried.
+///
+/// The simultaneous counterpart of [`try_destroy_by`], and the same contract:
+/// the cause is announced before the consequence, and a permanent that
+/// survived is not reported destroyed.
+pub fn try_destroy_all_by(
+    state: &mut GameState,
+    ids: &[ObjectId],
+    source: &str,
+    registry: &CardRegistry,
+) -> Vec<(ObjectId, DestroyResult)> {
+    let names: Vec<String> = ids.iter().map(|&id| state.obj_name(id)).collect();
+    let decisions: Vec<(ObjectId, DestroyResult)> = ids.iter()
+        .map(|&id| (id, decide_destroy(state, id, registry)))
+        .collect();
+    for (name, &(_, result)) in names.iter().zip(&decisions) {
+        state.log(LogLevel::Event, destroy_line(source, name, result));
+    }
+    apply_destroy_all(state, &decisions, registry)
+}
+
 /// Destroy several permanents simultaneously (CR 700.2c, CR 701.7b).
 ///
 /// "Destroy all creatures" is one event, not a sequence of them, and the

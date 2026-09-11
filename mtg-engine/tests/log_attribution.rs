@@ -774,3 +774,29 @@ fn a_destroy_names_its_cause_before_the_death_it_caused() {
     assert!(cause < died,
         "the cause is announced before the consequence; log was {lines:#?}");
 }
+
+/// Grimgrin, Corpse-Born and Witchbane Orb each kept their own `match` over
+/// `DestroyResult`, with their own wording for the same four outcomes. They
+/// now write the shared line, so there is one phrasing for a reader — and one
+/// place to get it wrong.
+#[test]
+fn every_destroying_card_writes_the_same_line_for_the_same_outcome() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let survivor = named_permanent(&mut state, &reg, "Walking Corpse", P1);
+    grant_keyword(&mut state, survivor, Keyword::Indestructible);
+
+    attacks_unblocked(&mut state, grimgrin, P1);
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(grimgrin, P1)],
+    });
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(survivor).unwrap().zone, Zone::Battlefield);
+    let lines = log_lines(&state);
+    assert_line(&lines, "Grimgrin, Corpse-Born could not destroy Walking Corpse");
+    assert_line(&lines, "it is indestructible");
+    // The ruling this card is asked about: the counter goes on anyway.
+    assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1);
+}

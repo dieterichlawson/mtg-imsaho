@@ -144,24 +144,14 @@ impl CardBehavior for GrimgrinCorpseBorn {
     /// card's wording, not a general rule.
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        let name = state.obj_name(*id);
         // The ruling this card is most often asked about: "if the targeted
         // creature isn't destroyed (perhaps because it regenerated or has
         // indestructible), you'll still put a +1/+1 counter on Grimgrin". So the
         // counter is unconditional — but the log must not claim a destruction
         // that did not happen, or a player reading it back cannot tell the two
-        // cases apart.
-        let outcome = crate::destruction::try_destroy(state, *id, registry);
-        state.log(crate::state::LogLevel::Event, match outcome {
-            crate::destruction::DestroyResult::Died =>
-                format!("Grimgrin, Corpse-Born destroyed {name}"),
-            crate::destruction::DestroyResult::Indestructible =>
-                format!("Grimgrin, Corpse-Born could not destroy {name} (indestructible)"),
-            crate::destruction::DestroyResult::Regenerated =>
-                format!("Grimgrin, Corpse-Born destroyed {name}, but it regenerated"),
-            crate::destruction::DestroyResult::NotAPermanent =>
-                format!("Grimgrin, Corpse-Born found {name} already gone"),
-        });
+        // cases apart. `try_destroy_by` is that line, in the one wording every
+        // destroying card uses.
+        crate::destruction::try_destroy_by(state, *id, "Grimgrin, Corpse-Born", registry);
         state.add_counters(source_id, crate::types::CounterType::PlusOnePlusOne, 1);
         state.log(crate::state::LogLevel::Event,
             "Grimgrin, Corpse-Born: +1/+1 counter from attack trigger".into());

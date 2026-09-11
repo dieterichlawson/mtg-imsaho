@@ -47,26 +47,8 @@ impl CardBehavior for WitchbaneOrb {
             .collect();
 
         // "Destroy all Curses attached to you" — one event (CR 700.2c), so
-        // `try_destroy_all` rather than a loop.
-        let names: Vec<String> = curses.iter()
-            .map(|&id| state.obj_name(id))
-            .collect();
-        let results = crate::destruction::try_destroy_all(state, &curses, registry);
-        // Say what actually happened to each. A Curse could be indestructible
-        // or regenerate; the log used to announce every one of them destroyed
-        // regardless.
-        for (name, (_, result)) in names.into_iter().zip(results) {
-            let line = match result {
-                crate::destruction::DestroyResult::Died =>
-                    format!("Witchbane Orb destroyed {name}"),
-                crate::destruction::DestroyResult::Regenerated =>
-                    format!("Witchbane Orb could not destroy {name} — it regenerated"),
-                crate::destruction::DestroyResult::Indestructible =>
-                    format!("Witchbane Orb could not destroy {name} — it is indestructible"),
-                crate::destruction::DestroyResult::NotAPermanent =>
-                    format!("Witchbane Orb found {name} already gone"),
-            };
-            state.log(crate::state::LogLevel::Event, line);
-        }
+        // `try_destroy_all_by` rather than a loop. It says what actually
+        // happened to each: a Curse could be indestructible or regenerate.
+        crate::destruction::try_destroy_all_by(state, &curses, "Witchbane Orb", registry);
     }
 }
