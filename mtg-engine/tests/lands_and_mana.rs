@@ -445,3 +445,33 @@ fn floating_mana_is_not_double_counted_across_pips() {
     assert!(!legal.castable_spells.iter().any(|c| c.name == "Chapel Geist"),
         "one floating {{W}} and no lands cannot pay {{1}}{{W}}{{W}}");
 }
+
+/// CR 305.1: a land play plays a LAND. The offer is deduplicated by card so
+/// three Forests in hand are one row, and that dedup is the other half of a
+/// condition whose first half decides what may be played at all — a spell in
+/// hand is not a land, however few of its kind have been seen.
+///
+/// Offering one would be an illegal play on the menu, and taking it puts a
+/// creature onto the battlefield for free.
+#[test]
+fn only_lands_are_offered_as_land_plays() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let forest = spell_in_hand(&mut state, &reg, "Forest", P0);
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let volley = spell_in_hand(&mut state, &reg, "Brimstone Volley", P0);
+    state.priority_player = Some(P0);
+
+    let offered: Vec<mtg_engine::ids::ObjectId> = engine::legal_actions(&state, &reg).actions
+        .iter()
+        .filter_map(|a| match a {
+            Action::PlayLand { object_id } => Some(*object_id),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(offered, vec![forest],
+        "the Forest is a land play; the creature and the instant are not");
+    assert!(!offered.contains(&bears) && !offered.contains(&volley));
+}

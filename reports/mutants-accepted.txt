@@ -531,3 +531,32 @@ mtg-engine/src/types.rs: replace || with && in plural_of
 # and `a_transformed_cards_trigger_carries_its_own_faces_text`. A DFC with an
 # attack trigger on its back face would make this live.
 mtg-engine/src/triggers.rs: replace == with != in trigger_description
+
+# ── 2026-09-12 run, shard 9 (issue #478) ─────────────────────────
+# `activate_ability`'s copy-grantor branch is the backward-compatible chained
+# lookup, reached only when the action carries no `source_card_id` --
+# `legal_actions` always sets it for an ability a copy effect granted, so no
+# offered action gets there. The `g != card_id` guard inside it is against
+# `copy_grantor` being the printed card of a plain enters-as-copy (issue
+# #93), where the second filter (`grants_abilities_to_copies`) would refuse
+# it anyway. The real dispatch path is covered end to end by
+# `activating_evil_twins_granted_ability_destroys_the_creature_it_names`.
+mtg-engine/src/engine/actions/abilities.rs: replace != with == in activate_ability
+# `CastPayment::alternative` is read in exactly one place -- `annotation()` --
+# behind `if self.is_flashback { .. } else if let Some(alt) = self.alternative`.
+# A flashback cast prints "flashback" whatever the field holds, so filling it
+# in on a flashback cast changes no output.
+mtg-engine/src/engine/actions/cast.rs: replace match guard !is_flashback with true in cast_spell
+# The same field on the X-funding path: `(Some(c), false)` is an alternative
+# cost that is not flashback, on a spell with X. Rooftop Storm is the pool's
+# only alternative cost and it names Zombie creature spells; no Zombie in the
+# set has X, and Devil's Play's flashback takes the `is_flashback` branch of
+# the annotation regardless. Nothing reaches the arm.
+mtg-engine/src/engine/actions/choices.rs: delete match arm (Some(c), false) in resolve_choice
+# Two `funded + options.x_discount` in `resolve_choice`; the SPELL one is
+# killed by `a_reduction_with_no_generic_to_take_comes_off_the_announced_x`.
+# The survivor is the ABILITY one, where `x_discount` is always 0: a cost
+# reduction only matches creature SPELLS (`costs::spell_matches` requires
+# CardType::Creature), and the only X abilities in the pool are Kessig Wolf
+# Run's and Mikaeus's. `funded + 0` and `funded - 0` are the same number.
+mtg-engine/src/engine/actions/choices.rs: replace + with - in resolve_choice

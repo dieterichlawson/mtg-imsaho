@@ -311,6 +311,41 @@ fn evil_twin_keeps_its_granted_ability_after_copying() {
          looking abilities up from the new card_id must not lose it");
 }
 
+/// And activating it does what the granted ability says.
+///
+/// Offering the ability and dispatching it are two lookups. The permanent's
+/// `card_id` is the COPIED card now, so the ability has to be dispatched to
+/// the card whose copy effect granted it (CR 706.2) — `copy_grantor`, which
+/// for a plain enters-as-a-copy is just the printed card remembered for the
+/// zone-change revert, and only for a card that grants abilities to its
+/// copies is it the dispatch target. Sending the activation to the copied
+/// card instead resolves a Grizzly Bears' abilities, which are none: the
+/// mana is spent, the permanent taps, and nothing happens.
+#[test]
+fn activating_evil_twins_granted_ability_destroys_the_creature_it_names() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(twin, Zone::Battlefield, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    let mut state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
+    }, &reg);
+    assert_eq!(state.name_of(twin, &reg), "Grizzly Bears", "test precondition");
+
+    state.get_object_mut(twin).unwrap().summoning_sick = false;
+    add_mana(&mut state, P0, &[(ManaType::Blue, 1), (ManaType::Black, 1)]);
+
+    let after = activate_offered(&state, &reg, twin, Some(Target::Object(victim)));
+
+    assert_eq!(after.get_object(victim).map(|o| o.zone), Some(Zone::Graveyard),
+        "the creature with the same name is destroyed");
+    assert_eq!(after.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield),
+        "and the Twin, which shares that name, is not: the ability targets");
+}
+
 /// CR 614.12b: "enter as a copy" is a replacement effect, so the permanent is
 /// already the copy when it arrives — and until the choice is answered it has
 /// not arrived at all. Evil Twin's printed body is 0/0, which SBA 704.5f

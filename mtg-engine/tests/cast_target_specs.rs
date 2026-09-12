@@ -346,3 +346,38 @@ fn a_modal_spells_chosen_mode_is_read_back_off_its_targets() {
     assert_eq!(mode_for(vec![Target::Object(a), Target::Object(b)]), Some(1),
         "two Zombie cards is the second — and only the second can hold both");
 }
+
+/// The prompt says how many targets the answer may name, and "two" and "up
+/// to two" are different questions.
+///
+/// This description is the only place a player — or a model, for which the
+/// prompt text is the entire question — is told which one this is. A prompt
+/// that says "choose 2 targets" for a slot that would accept one is a
+/// question nobody can answer correctly on purpose.
+#[test]
+fn a_target_set_prompt_says_whether_the_count_is_a_choice() {
+    let (mut state, reg) = base();
+    named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+
+    // One Zombie: mode two cannot be filled, so the count is forced.
+    let asked = cast_onto_stack(&state, &reg, chant, vec![]);
+    let described = |s: &GameState| match &s.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+                description, .. }, .. }) => description.clone(),
+        other => panic!("expected a target prompt, got {other:?}"),
+    };
+    let one = described(&asked);
+    assert!(one.contains("choose 1 target"),
+        "a forced count is stated as the number it is: {one:?}");
+    assert!(!one.contains("up to"), "and not as a choice: {one:?}");
+    assert!(!one.contains("targets"), "one target, singular: {one:?}");
+
+    // A second Zombie puts mode two back, and the count becomes a choice.
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let two = described(&cast_onto_stack(&state, &reg, chant, vec![]));
+    assert!(two.contains("up to 2 targets"),
+        "a count the player picks is stated as a ceiling, plural: {two:?}");
+}

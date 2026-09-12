@@ -873,3 +873,35 @@ run against the test that claims it. Two claims did not survive that check
 and were rewritten: the funding one (above), and a first version of the
 battlefield-leave log test that asserted the wrong four words and let the
 `&&` mutant through by logging "died" instead.
+
+### Shard 9 (issue #478): six survivors, two kills and four reasoned accepts
+
+- `legal/abilities.rs: replace && with || in loyalty` is not about loyalty at
+  all — the land-play offer lives at the end of that function, and the `&&`
+  joins "this card is a land" to the dedup that shows one row for three
+  Forests. With `||`, every card in hand is offered as a land play: an
+  illegal play on the menu, and taking it puts a creature onto the
+  battlefield for free. `only_lands_are_offered_as_land_plays`.
+- `cast.rs: replace == with != in cast_spell` is two sites, both inside the
+  description of the target-set prompt: `min == max` decides "choose 2
+  targets" against "choose up to 2 targets", and `max == 1` the plural. The
+  code's own comment says why that matters — the prompt is the only place the
+  player is told which question this is — and for a model the prompt text IS
+  the question. `a_target_set_prompt_says_whether_the_count_is_a_choice`
+  uses Ghoulcaller's Chant, whose count is forced at one Zombie in the
+  graveyard and a choice at two.
+
+The four accepted are in `reports/mutants-accepted.txt` with their reasons:
+a backward-compatible dispatch branch no offered action reaches (with the
+real path now covered end to end), a field whose only reader ignores it on
+the branch in question, an arm needing an X spell with a non-flashback
+alternative cost — the pool has none — and an `x_discount` that is always
+zero on the ability path, because a cost reduction in this set only matches
+creature spells.
+
+Three of the six were identified only by applying candidate mutations by
+hand and watching which test fell over: the normalized names (`replace ==
+with != in cast_spell`, `replace + with - in resolve_choice`, `replace && with
+|| in loyalty`) each matched several sites, and in every case the site the
+name suggested first was already covered and the real survivor was somewhere
+else in the function.
