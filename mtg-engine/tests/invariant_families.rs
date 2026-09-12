@@ -4911,6 +4911,32 @@ fn an_activation_in_progress_is_described_consistently_by_its_stash() {
         options.pool.clear();
     }
     flags_core(&s, &reg, "with nothing to fund");
+
+    // CR 601.2b before 601.2h: nothing is paid while the prompt is up, so
+    // the pool it offers is mana the player really floats — no more, and no
+    // less either. Offering more is the violation; offering exactly what is
+    // floating is the ordinary prompt and must stay quiet.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) = &mut s.awaiting_action {
+        options.pool.insert(ManaType::Red, 4);
+    }
+    flags_core(&s, &reg, "offers 4 Red");
+
+    let mut s = state.clone();
+    let floating = s.get_player(P0).mana_pool.mana.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) = &mut s.awaiting_action {
+        options.pool = floating;
+    }
+    quiet_core_about(&s, &reg, "floats");
+
+    // CR 602.2b: the source is still there to pay the costs it has not paid.
+    // Sent to the graveyard mid-prompt, it cannot, and the checker is what
+    // would see it (issue #290).
+    let mut s = state.clone();
+    s.move_object(wolf_run, Zone::Graveyard, &reg);
+    flags_core(&s, &reg, "which has left the battlefield unpaid");
 }
 
 /// CR 608.2m/602.2a: the resolution bookkeeping names things that are there

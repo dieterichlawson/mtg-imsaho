@@ -432,6 +432,37 @@ fn a_target_prompt_offers_what_its_effect_can_act_on() {
         vec![Target::Object(land)]));
     flags(&s, &reg, "which is no battlefield creature or planeswalker");
 
+    // CR 614.12b: "enter as a copy of any creature on the battlefield" is a
+    // choice among creatures that are there. It is the one prompt in this
+    // family whose effect names the entering permanent rather than a source,
+    // and it is read by the same rule as the rest.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::EnterAsCopy { object: mine },
+        vec![Target::Object(land)]));
+    flags(&s, &reg, "enter-as-copy prompt offers");
+    flags(&s, &reg, "which is no creature");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::EnterAsCopy { object: mine },
+        vec![Target::Object(buried)]));
+    flags(&s, &reg, "enter-as-copy prompt offers");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::EnterAsCopy { object: mine },
+        vec![Target::Object(theirs)]));
+    quiet_about(&s, &reg, "enter-as-copy prompt offers");
+
+    // CR 608.2: and like every other prompt, the object it names is the
+    // object the prompt is from — the entering permanent, here.
+    let mut s = state.clone();
+    s.awaiting_action = Some(prompt(
+        PendingEffect::EnterAsCopy { object: theirs },
+        vec![Target::Object(theirs)]));
+    flags(&s, &reg, "carries a choice for #");
+
     // The two effects that debuff or forbid a block act on creatures on the
     // battlefield the same way destroy does, and are read the same way.
     for (what, effect) in [
@@ -1073,4 +1104,171 @@ fn a_token_attacks_prompt_is_about_a_token_in_combat() {
     let mut s = state.clone();
     s.awaiting_action = Some(prompt(token, vec![], vec![Target::Object(source)]));
     flags(&s, &reg, "which is no opponent or opposing planeswalker (CR 508.4b)");
+}
+
+/// CR 616.1: the damage-effect prompt is the affected player's choice among
+/// two or more effects that apply to one event still waiting to be dealt.
+///
+/// Nothing else in the suite corrupts this clause, and it guards the one
+/// prompt that stands between a queued damage event and its being dealt: a
+/// blinded clause here is a game that can sit on an unanswerable question,
+/// or deal damage through effects that were never applicable, with the
+/// nightly reporting nothing (issue #323).
+#[test]
+fn a_damage_effect_prompt_is_the_affected_players_choice_among_applicable_effects() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+    state.get_object_mut(flail).unwrap().attached_to = Some(corpse);
+    for _ in 0..10 {
+        let id = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Library, None, None);
+        state.get_player_mut(P1).library_order.push(id);
+    }
+    attacks_unblocked(&mut state, corpse, P1);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { .. }, .. })),
+        "precondition: the defender is asked, got {:?}", state.awaiting_action);
+    quiet_about(&state, &reg, "damage-effect prompt");
+
+    // One option per effect, and a choice only where there is something to
+    // choose between.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { options, .. }, .. }) = &mut s.awaiting_action {
+        options.pop();
+    }
+    flags(&s, &reg, "with 1 options for 2 effects");
+
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { options, effects, .. }, .. }) = &mut s.awaiting_action {
+        options.truncate(1);
+        effects.truncate(1);
+    }
+    flags(&s, &reg, "with 1 options for 1 effects");
+
+    // The same effect twice is not two choices.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { effects, .. }, .. }) = &mut s.awaiting_action {
+        effects[1] = effects[0].clone();
+    }
+    flags(&s, &reg, "twice");
+
+    // The chooser is the damaged player, and the prompt is sourced at the
+    // permanent dealing the damage.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice { player, .. }) = &mut s.awaiting_action {
+        *player = P0;
+    }
+    flags(&s, &reg, "not the affected player");
+
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice { source, .. }) = &mut s.awaiting_action {
+        *source = flail;
+    }
+    flags(&s, &reg, "for damage from #");
+
+    // The event the prompt describes is the one at the front of the queue.
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { amount, .. }, .. }) = &mut s.awaiting_action {
+        *amount += 1;
+    }
+    flags(&s, &reg, "but the queue's next event is");
+
+    // A prompt with no event behind it is a prompt about nothing.
+    let mut s = state.clone();
+    for p in &mut s.pending_damage {
+        p.settled = true;
+    }
+    flags(&s, &reg, "with no damage waiting to be dealt");
+
+    // And every effect offered is one that applies to the event (CR 616.1).
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { effects, .. }, .. }) = &mut s.awaiting_action {
+        effects[1] = mtg_engine::damage::DamageEffect::Double { by: ObjectId(4242) };
+    }
+    flags(&s, &reg, "which does not apply to the event");
+}
+
+/// CR 601.2c: the options for an "up to N" slot are targets the spell could
+/// legally have chosen, offered once each, and the slot never asks for more
+/// than it holds.
+///
+/// The set prompts are the newer half of the prompt vocabulary — they are
+/// what replaced one cast per subset — and they repeat the checks the single
+/// target prompt makes. Repeated checks are checks of their own: this clause
+/// is the only thing watching a slot whose bounds nothing can satisfy, which
+/// stalls the spell rather than resolving it.
+#[test]
+fn a_target_set_prompt_offers_real_things_within_bounds_it_can_meet() {
+    let (mut state, reg) = base();
+    let mine = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let ghost = PlayerId(u8::try_from(state.players.len()).unwrap());
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    let asked = cast_onto_stack(&state, &reg, dread, vec![]);
+    assert!(matches!(&asked.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseTargetSet { .. }, .. })),
+        "precondition: an up-to-two slot asks, got {:?}", asked.awaiting_action);
+    quiet_about(&asked, &reg, "target-set prompt");
+    let _ = (mine, theirs);
+
+    let with = |f: &dyn Fn(&mut Vec<Target>, &mut usize, &mut usize)| {
+        let mut s = asked.clone();
+        if let Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, .. }, .. }) = &mut s.awaiting_action {
+            f(options, min, max);
+        }
+        s
+    };
+
+    flags(&with(&|o, _, _| o.push(Target::Object(ObjectId(4242)))), &reg, "offers missing #4242");
+    flags(&with(&|o, _, _| o.push(Target::Player(ghost))), &reg, "offers p2 who is not a player");
+    flags(&with(&|o, _, _| o.push(Target::Illegal)), &reg, "offers an Illegal target");
+    flags(&with(&|o, _, _| { let first = o[0].clone(); o.push(first); }), &reg, "twice");
+    // Bounds that cannot both be met, and a ceiling past what is on offer.
+    flags(&with(&|_, min, max| { *min = 2; *max = 1; }), &reg, "asks for 2-1 targets");
+    flags(&with(&|o, _, max| { *max = o.len() + 1; }), &reg, "of 2 options");
+    // A player among the options is not a missing one, and the bounds it
+    // really has are not a violation.
+    quiet_about(&with(&|_, _, _| {}), &reg, "who is not a player");
+}
+
+/// The same clause for the object-set prompt — Curse of Oblivion's "exile two
+/// cards from your graveyard", where the chooser picks a set of objects
+/// rather than targets.
+#[test]
+fn an_object_set_prompt_offers_real_objects_within_bounds_it_can_meet() {
+    let reg = registry();
+    // The Curse triggers on the cursed player's upkeep.
+    let mut state = game_at_step(Step::Upkeep, P1);
+    attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
+    for _ in 0..4 {
+        state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
+    }
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+    assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseObjectSet { .. }, .. })),
+        "precondition: the cursed player is asked, got {:?}", state.awaiting_action);
+    quiet_about(&state, &reg, "object-set prompt");
+
+    let with = |f: &dyn Fn(&mut Vec<ObjectId>, &mut usize, &mut usize)| {
+        let mut s = state.clone();
+        if let Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseObjectSet { options, min, max, .. }, .. }) = &mut s.awaiting_action {
+            f(options, min, max);
+        }
+        s
+    };
+
+    flags(&with(&|o, _, _| o.push(ObjectId(4242))), &reg, "offers missing #4242");
+    flags(&with(&|o, _, _| { let first = o[0]; o.push(first); }), &reg, "twice");
+    flags(&with(&|_, min, max| { *min = 3; *max = 2; }), &reg, "asks for 3-2 objects");
+    flags(&with(&|o, _, max| { *max = o.len() + 1; }), &reg, "of 4 options");
 }

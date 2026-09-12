@@ -905,3 +905,48 @@ with != in cast_spell`, `replace + with - in resolve_choice`, `replace && with
 || in loyalty`) each matched several sites, and in every case the site the
 name suggested first was already covered and the real survivor was somewhere
 else in the function.
+
+### Shard 7 (issue #479): fifteen survivors in the oracle itself
+
+Three in `invariants/stack.rs` and twelve in `invariants/prompts.rs`, all in
+the two functions that check what a prompt says. Fourteen killed, one
+accepted.
+
+The three in `stack.rs` are the X-funding prompt for an ABILITY, whose clause
+had a self-test for the stash links but not for its own arithmetic: the pool
+it offers is mana the player really floats (`live < n` — `<=` and `==` both
+make an ordinary prompt a violation, which is why the killing case is the
+CLEAN one), and the source is still on the battlefield to pay the costs it
+has not paid yet (issue #290). Added to
+`an_activation_in_progress_is_described_consistently_by_its_stash`.
+
+The twelve in `prompts.rs` are three clauses of `check_choice` that nothing
+corrupted:
+
+- **the damage-effect prompt** (CR 616.1) — no self-test at all, though it is
+  the prompt standing between a queued damage event and its being dealt.
+  `a_damage_effect_prompt_is_the_affected_players_choice_among_applicable_effects`
+  builds the real Inquisitor's Flail / Undead Alchemist board from issue #323
+  and corrupts eight things about it: the option/effect counts, the chooser,
+  the source, a duplicated effect, the queue's event, and an effect that does
+  not apply. Eight mutations, one test, all eight dead.
+- **the target-set and object-set prompts**, which repeat the checks the
+  single-target prompt makes and had none of their own. A repeated check is a
+  check: this is the only clause watching a slot whose bounds nothing can
+  satisfy, which stalls the spell rather than resolving it.
+- **the enter-as-copy prompt**, the one whose effect names the entering
+  permanent rather than a source, in both the clause that reads the source
+  ids and the one that decides what the options must be.
+
+The accepted one is the target-set clause's "is this player a player?" guard
+in the `true` direction: no set prompt in the pool ever offers a player, so
+the guard and a constant `true` cannot be told apart there. The `false`
+direction dies to the missing-object case beside it, and the single-target
+copy of the same clause dies both ways.
+
+A caveat for the next sweep: the normalized names strip line:col, and several
+of these matched half a dozen sites in one 400-line function. Each was found
+by applying candidate mutations by hand until a test fell over, so "killed"
+here means the site I found and verified — if another site under the same
+name is still alive, the weekly run will re-file it, and that is the right
+outcome rather than a claim this file is finished.

@@ -560,3 +560,16 @@ mtg-engine/src/engine/actions/choices.rs: delete match arm (Some(c), false) in r
 # CardType::Creature), and the only X abilities in the pool are Kessig Wolf
 # Run's and Mikaeus's. `funded + 0` and `funded - 0` are the same number.
 mtg-engine/src/engine/actions/choices.rs: replace + with - in resolve_choice
+
+# ── 2026-09-12 run, shard 7 (issue #479) ─────────────────────────
+# `check_choice`'s target-set clause checks each option the same way the
+# single-target clause above it does, and one of those checks -- "is this
+# player a player?" -- is defensive there: no set prompt in this pool offers
+# a Target::Player. The set prompts are Feeling of Dread, Travel Preparations
+# and Nightbird's Clutches ("up to two target creatures"), Ghoulcaller's
+# Chant's modal set (graveyard cards) and Memory's Journey's card slot. With
+# no player ever on the screen, `!player_ok(..) => flag` and
+# `true => flag` cannot be told apart. The `false` direction of the same
+# guard IS killed, by the missing-object case beside it, and the
+# single-target copy of the clause is killed both ways.
+mtg-engine/src/invariants/prompts.rs: replace match guard !player_ok(state, *p) with true in check_choice
