@@ -5703,9 +5703,10 @@ impl CliPlayer {
     /// cards, so that is what the screen does — every card in hand, its
     /// mark, and a number to toggle it.
     ///
-    /// The screen takes the whole terminal, so the board, the stack, the
-    /// graveyards, exile, the log and the deck are one key away and the
-    /// prompt is redrawn when the pane closes. Enter confirms, and only
+    /// The prompt is asked in the frame's prompt pane like every other
+    /// question, with the board, the stack, the log and the CARDS pane on
+    /// screen around it, and the graveyards, exile and the deck a pane key
+    /// away, the prompt redrawn when the pane closes. Enter confirms, and only
     /// when the count is right: there is no way to answer this by accident,
     /// which at a mandatory irreversible choice is the point (#123, #262).
     fn prompt_card_set(view: &GameView, prompt: &mtg_engine::actions::SetPrompt, title: &str) -> Action {
@@ -5829,8 +5830,8 @@ impl CliPlayer {
         let mut notice: Option<String> = None;
         let mut offset = 0usize;
         loop {
-            let page = Self::draw_set_screen(pick, &marked, notice.take().as_deref(), offset);
-            let redraw = || { Self::draw_set_screen(pick, &marked, None, offset); };
+            let page = Self::draw_set_screen(view, pick, &marked, notice.take().as_deref(), offset);
+            let redraw = || { Self::draw_set_screen(view, pick, &marked, None, offset); };
             let input = Self::read_line_redrawing("  Mark> ", &redraw);
             match Self::parse_card_set_input(&input, pick.rows.len(), pick.cancel.is_some()) {
                 SetInput::Toggle(ks) => {
@@ -5863,8 +5864,9 @@ impl CliPlayer {
                     'l' => Self::show_log(&view.display_log),
                     _ => Self::show_deck_browser(view),
                 },
-                SetInput::NextPage => offset = page.next_offset(),
-                SetInput::PrevPage => offset = page.prev_offset(),
+                SetInput::NextPage => offset = Self::next_menu_offset(page.offset, page.shown, pick.rows.len()),
+                SetInput::PrevPage => offset = Self::prev_menu_offset_lines(
+                    &page.heights, page.avail, page.offset, page.marker_h),
                 SetInput::Invalid(why) => notice = Some(why),
             }
         }
@@ -5883,76 +5885,100 @@ impl CliPlayer {
         }
     }
 
-    /// Draw the whole set-picking screen and return the page that was drawn.
-    fn draw_set_screen(pick: &SetPick, marked: &[bool], notice: Option<&str>,
-                       offset: usize) -> BodyPage {
-        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
-        let w = term_w as usize;
-        let h = term_h as usize;
-        let text_w = w.saturating_sub(2);
+    /// Draw the set prompt in the frame's prompt pane and return the page
+    /// of rows it drew.
+    ///
+    /// Under the board and beside the stack, the log and the CARDS pane,
+    /// where every other question is asked. It used to take the whole
+    /// terminal: the board, the stack and the card text a player marks
+    /// cards AGAINST were a pane key away instead of on screen, and the
+    /// bottoming after a mulligan — the first thing a new player sees —
+    /// looked nothing like the game around it. The rows page like the
+    /// action menu, measured in the lines they take once wrapped (#318),
+    /// and the board above gives up the rows the prompt needs (#352).
+    fn draw_set_screen(view: &GameView, pick: &SetPick, marked: &[bool], notice: Option<&str>,
+                       offset: usize) -> MenuPage {
+        let panel_w = Self::middle_panel_width_at(Self::term_width());
+        let col = Self::middle_panel_col();
         let chosen = marked.iter().filter(|m| **m).count();
-
-        let mut header: Vec<(Style, String)> = Vec::new();
-        header.push((Style::Title, format!(" {}", pick.title)));
-        for l in Self::word_wrap(&pick.question, text_w) { header.push((Style::Plain, format!(" {l}"))); }
         let of = if pick.min == pick.max { pick.min } else { pick.max };
-        header.push((Style::Bold, format!(" {chosen} of {of} marked")));
-        header.push((Style::Plain, String::new()));
 
-        let body: Vec<(Style, String)> = pick.rows.iter().enumerate()
-            .flat_map(|(i, r)| {
-                let mark = if marked.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
-                Self::wrap_indented(&format!(" {mark} {i}: {r}"), text_w)
-                    .into_iter().map(|l| (Style::Row, l)).collect::<Vec<_>>()
-            })
-            .collect();
-
-        let mut footer: Vec<(Style, String)> = Vec::new();
+        // What the pane says above the rows: the question and the count.
+        let mut header: Vec<(bool, String)> = Self::wrap_indented(&format!("  {}", pick.question), panel_w)
+            .into_iter().map(|l| (false, l)).collect();
+        header.push((true, format!("  {chosen} of {of} marked")));
+        // And below them: how to answer, then the input row.
         let how_to = match pick.cancel {
             Some(label) => format!("{SET_HOW_TO} [c={label}]"),
             None => SET_HOW_TO.to_string(),
         };
-        for line in Self::wrap_indented(&how_to, text_w) { footer.push((Style::Dim, line)); }
-        // The notice row and the input row are always reserved.
-        let reserved = header.len() + footer.len() + 2;
-        let avail = h.saturating_sub(reserved).max(1);
-        let page = BodyPage::new(body.len(), avail, offset);
+        let hint_lines = Self::wrap_indented(&how_to, panel_w);
+        let marker_h = Self::marker_lines(pick.rows.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
+        let reserved = hint_lines.len() + 1;
 
+        // The frame, with the rule and any refusal under it, reserving the
+        // header, at least one row, the marker and the furniture below.
+        Self::render_paged_noticed(view, None, Some(&pick.title), notice, &view.display_log, "", None, 0,
+            header.len() + Self::list_floor(pick.rows.len()) + marker_h + reserved);
         let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-        let mut row: u16 = 0;
-        let put = |out: &mut io::Stdout, row: &mut u16, style: Style, text: &str| {
-            let _ = execute!(out, cursor::MoveTo(0, *row));
-            match style {
-                Style::Title => Self::print_colored(out, Color::Cyan, text),
-                Style::Bold => { let _ = execute!(out, SetAttribute(Attribute::Bold), Print(text), SetAttribute(Attribute::Reset)); }
-                Style::Dim => { let _ = execute!(out, SetAttribute(Attribute::Dim), Print(text), SetAttribute(Attribute::Reset)); }
-                Style::Row => {
-                    // The mark and the index in bold, the rest through the
-                    // mana colourer.
-                    let split = text.find(": ").map_or(text.len(), |p| p + 2);
-                    let _ = execute!(out, SetAttribute(Attribute::Bold), Print(&text[..split]), SetAttribute(Attribute::Reset));
-                    Self::print_with_mana(out, &text[split..], None);
-                }
-                Style::Plain => Self::print_with_mana(out, text, None),
+        let mut r = cursor::position().unwrap_or((0, 20)).1;
+        let h = terminal::size().map_or(30, |(_, h)| h as usize);
+        Self::clear_mid_from(&mut out, r);
+        for (bold, line) in &header {
+            let _ = execute!(out, cursor::MoveTo(col, r));
+            if *bold {
+                let _ = execute!(out, SetAttribute(Attribute::Bold), Print(line), SetAttribute(Attribute::Reset));
+            } else {
+                Self::print_with_mana(&mut out, line, None);
             }
-            *row += 1;
-        };
-        for (s, l) in &header { put(&mut out, &mut row, *s, l); }
-        for (s, l) in &body[page.start..page.end] { put(&mut out, &mut row, *s, l); }
-        if page.paged {
-            put(&mut out, &mut row, Style::Dim, &format!(
-                " … showing lines {}-{} of {} — m/p = next/prev page", page.start + 1, page.end, body.len()));
+            r += 1;
         }
-        for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
-        if let Some(msg) = notice {
-            let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
-                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+
+        // The rows: "  [x] 3: Forest", wrapped under a hanging indent so
+        // the text of every row and every continuation line starts in the
+        // same column.
+        let avail = h.saturating_sub(r as usize + reserved).max(Self::list_floor(pick.rows.len()));
+        let idx_w = pick.rows.len().saturating_sub(1).to_string().chars().count();
+        let plen = 8 + idx_w; // "  [x] " + index + ": "
+        let rows: Vec<Vec<String>> = pick.rows.iter()
+            .map(|row| Self::wrap_row(row, panel_w.saturating_sub(plen).max(10)))
+            .collect();
+        let heights: Vec<usize> = rows.iter().map(|l| l.len().max(1)).collect();
+        let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, offset, marker_h);
+        let indent = " ".repeat(plen);
+        'rows: for (i, lines) in rows.iter().enumerate().skip(offset).take(shown) {
+            let mark = if marked.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
+            for (k, line) in lines.iter().enumerate() {
+                if r as usize >= h { break 'rows; }
+                let _ = execute!(out, cursor::MoveTo(col, r));
+                if k == 0 {
+                    let _ = execute!(out, SetAttribute(Attribute::Bold),
+                        Print(format!("  {mark} {i:>idx_w$}")), SetAttribute(Attribute::Reset), Print(": "));
+                } else {
+                    let _ = execute!(out, Print(&indent));
+                }
+                Self::print_action_label(&mut out, line);
+                r += 1;
+            }
         }
-        row += 1;
-        let _ = execute!(out, cursor::MoveTo(0, row));
+        if paged {
+            let marker = Self::page_marker(offset, shown, pick.rows.len() - 1, MENU_PAGE_KEYS);
+            for line in Self::wrap_indented(&marker, panel_w) {
+                if r as usize >= h { break; }
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
+                r += 1;
+            }
+        }
+        for line in &hint_lines {
+            if r as usize >= h { break; }
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+            r += 1;
+        }
+        let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
-        page
+        MenuPage { offset, shown, avail, marker_h, heights }
     }
 
     /// One line of input at a card-set prompt, read.
