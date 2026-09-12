@@ -40,6 +40,15 @@ Error: --p1 cc needs the Claude Code CLI: `claude` is not runnable (set CLAUDE_C
 the seat runs `claude` from `PATH`. Setting it to a stub script is how the
 tests exercise the seat without spending anything.
 
+A `claude-code` seat runs the CLI *without* `ANTHROPIC_API_KEY` or
+`ANTHROPIC_AUTH_TOKEN`, even when the shell has them exported for a `claude`
+seat. The CLI gives such a key precedence over its claude.ai login, which
+would quietly turn the seat into a metered one — and when the key cannot serve
+the request, into one that fails every decision with `claude.ai connectors are
+disabled because ANTHROPIC_API_KEY or another auth source is set`. A CLI that
+has no login and can only run on a key gets it back with
+`MTG_CLAUDE_CODE_INHERIT_AUTH=1`; that seat is then billed to the key.
+
 Default models when the spec names none: `claude` → `claude-sonnet-4-6`,
 `gemini` → `gemini-2.5-flash`, `claude-code` → whatever the CLI defaults to
 (no `--model` is passed).

@@ -441,3 +441,30 @@ fn a_new_backend_sweeps_scratch_directories_of_dead_runs() {
     assert!(live.exists(), "a live run's scratch directory is left alone");
     let _ = std::fs::remove_dir_all(&live);
 }
+
+/// The seat's contract is that the CLI's login pays for it, but the CLI
+/// gives an exported `ANTHROPIC_API_KEY` precedence over that login. A key
+/// left in the shell for the metered `claude` seat therefore made every
+/// decision of a `claude-code` game fail — "connectors are disabled because
+/// ANTHROPIC_API_KEY or another auth source is set", exit 1, three times —
+/// or, when the key did serve, quietly billed the game to it. The child
+/// must not see any API-side auth source.
+#[test]
+fn a_claude_code_seat_does_not_inherit_api_auth_from_the_caller() {
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-left-in-the-shell");
+    std::env::set_var("ANTHROPIC_AUTH_TOKEN", "left-in-the-shell-too");
+    let fake = Fake::new(
+        "no-api-auth",
+        &format!(
+            "echo \"KEY=${{ANTHROPIC_API_KEY-unset}} TOKEN=${{ANTHROPIC_AUTH_TOKEN-unset}}\" >> \"$LOG\"\n{OK_BODY}"
+        ),
+    );
+    let mut cmd = std::process::Command::new(fake.bin());
+    cmd.arg("-p").args(["--output-format", "json"]);
+    mtg_player::llm::claude_code_run(&mut cmd, "claude", "pick").expect("the call succeeds");
+    assert!(
+        fake.log().contains("KEY=unset TOKEN=unset"),
+        "the child saw an API auth source the login should have paid instead of:\n{}",
+        fake.log()
+    );
+}

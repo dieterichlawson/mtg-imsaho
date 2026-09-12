@@ -7,7 +7,10 @@
 //! conversation kept in a Claude Code session (`--session-id` on the first
 //! call, `--resume` after that) so the CLI's own prompt caching applies.
 //! Whatever the CLI is logged into pays for it: for a subscription login
-//! that is plan quota, not an API bill.
+//! that is plan quota, not an API bill. The CLI gives an exported
+//! `ANTHROPIC_API_KEY` precedence over that login, so the subprocess runs
+//! without the caller's API-side auth ([`API_AUTH_VARS`]) unless
+//! [`INHERIT_AUTH_ENV`] asks for it.
 //!
 //! The CLI runs with every tool disabled (`--tools ""`), so the model can
 //! only answer the prompt — exactly like the API backend. Structured output
@@ -44,6 +47,20 @@ fn call_timeout() -> Duration {
 }
 
 const MAX_ATTEMPTS: u32 = 3;
+
+/// Environment variables the Claude Code CLI treats as an API-side auth
+/// source that overrides its claude.ai login. Removed from a seat's child
+/// environment unless [`INHERIT_AUTH_ENV`] is set.
+pub const API_AUTH_VARS: &[&str] = &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+
+/// Set to `1` to let a `claude -p` seat inherit [`API_AUTH_VARS`] from the
+/// caller's environment — for a CLI with no claude.ai login, where the key
+/// is the only way it can run at all. Then the seat is a metered one.
+pub const INHERIT_AUTH_ENV: &str = "MTG_CLAUDE_CODE_INHERIT_AUTH";
+
+fn inherit_auth() -> bool {
+    std::env::var(INHERIT_AUTH_ENV).is_ok_and(|v| v == "1")
+}
 
 /// The binary this process would run for a Claude Code seat.
 #[must_use]
@@ -433,6 +450,19 @@ pub fn run_print_mode(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The seat's contract is that the CLI's own login pays for it. An
+    // exported `ANTHROPIC_API_KEY` in the caller's shell — there for the
+    // metered `claude` seat, or just left over — takes precedence over that
+    // login inside the CLI, which silently turns this seat into a metered
+    // one and, when the key cannot serve the request, into a seat that
+    // fails every decision with only a connectors warning on stderr. Strip
+    // every API-side auth source so the child sees the login and nothing
+    // else. `INHERIT_AUTH_ENV` keeps them, for a CLI that has no login.
+    if !inherit_auth() {
+        for var in API_AUTH_VARS {
+            cmd.env_remove(var);
+        }
+    }
 
     // Give the child its own process group, so the timeout and the
     // signal handler can reach everything it spawns and not just the
