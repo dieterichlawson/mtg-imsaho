@@ -468,3 +468,25 @@ fn a_claude_code_seat_does_not_inherit_api_auth_from_the_caller() {
         fake.log()
     );
 }
+
+/// A refusal comes back as a result object on stdout with a non-zero
+/// exit, and the CLI may put a warning on stderr at the same time. The
+/// report used to show stderr INSTEAD of stdout whenever stderr had
+/// anything in it, so three attempts logged only "connectors are
+/// disabled because ANTHROPIC_API_KEY ... is set" and never the refusal
+/// that actually ended the call.
+#[test]
+fn a_refusal_is_reported_even_when_stderr_carries_a_warning() {
+    let fake = Fake::new(
+        "refusal-and-warning",
+        r#"echo "warning: connectors are disabled because an auth source is set" >&2
+printf '{"type":"result","subtype":"error","is_error":true,"result":"Invalid API key · Fix external API key","session_id":"s","usage":{}}\n'
+exit 1"#,
+    );
+    let mut cmd = std::process::Command::new(fake.bin());
+    cmd.arg("-p").args(["--output-format", "json"]);
+    let err = mtg_player::llm::claude_code_run(&mut cmd, "claude", "pick")
+        .expect_err("a non-zero exit is an error");
+    assert!(err.contains("Invalid API key"), "the refusal on stdout is the reason: {err:?}");
+    assert!(err.contains("connectors are disabled"), "and the warning still shows: {err:?}");
+}

@@ -574,21 +574,34 @@ pub fn run_print_mode(
 
     // A timed-out call that had its answer has no status to check.
     if let Some(status) = status.filter(|s| !s.success()) {
-        // The CLI reports refusals (a usage limit, a bad model name) as
-        // a result object on stdout with a non-zero exit and an empty
-        // stderr — surface whichever stream says why.
-        let reason = if err_text.trim().is_empty() { out.trim() } else { err_text.trim() };
-        let reason = serde_json::from_str::<serde_json::Value>(reason)
-            .ok()
-            .and_then(|j| j["result"].as_str().map(str::to_string))
-            .unwrap_or_else(|| reason.to_string());
-        let snippet: String = reason.chars().take(300).collect();
-        return Err(format!("exit {status}: {snippet}"));
+        return Err(format!("exit {status}: {}", failure_reason(&out, &err_text)));
     }
 
     serde_json::from_str(out.trim())
         .map_err(|e| format!("unparsable result JSON ({e}): {}", out.trim().chars().take(200).collect::<String>()))
     }
+
+/// Why a non-zero exit happened, from whatever the CLI said about it.
+///
+/// The CLI reports a refusal (a usage limit, a bad model name, a key that
+/// cannot serve the request) as a result object on stdout, and puts
+/// warnings on stderr. Both are shown when both are there: the reporter
+/// used to take stderr INSTEAD of stdout whenever stderr had anything in
+/// it, so a `claude.ai connectors are disabled` warning stood in for the
+/// refusal behind it and the log never said what actually failed.
+fn failure_reason(out: &str, err: &str) -> String {
+    let result = serde_json::from_str::<serde_json::Value>(out.trim())
+        .ok()
+        .and_then(|j| j["result"].as_str().map(str::to_string))
+        .unwrap_or_else(|| out.trim().to_string());
+    let clip = |s: &str| s.chars().take(300).collect::<String>();
+    match (result.trim().is_empty(), err.trim().is_empty()) {
+        (false, false) => format!("{}; stderr: {}", clip(result.trim()), clip(err.trim())),
+        (false, true) => clip(result.trim()),
+        (true, false) => clip(err.trim()),
+        (true, true) => "no output".to_string(),
+    }
+}
 
 impl ClaudeCodeBackend {
     /// The structured object of a result: the CLI's parsed
