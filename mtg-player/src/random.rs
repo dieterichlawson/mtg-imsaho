@@ -234,8 +234,73 @@ impl Player for RandomPlayer {
         if candidates.len() == 1 {
             return legal_actions[candidates[0]].clone();
         }
-        let pick = self.rng.gen_range(0..candidates.len());
-        legal_actions[candidates[pick]].clone()
+
+        // Roll the DECISION, then roll the way of taking it.
+        //
+        // `legal.actions` is a list of encodings, not of decisions: the
+        // engine emits one `ActivateAbility` per (target, sacrifice) pair and
+        // one `CastSpell` per way of filling a spell's slots, so a choice
+        // with a product behind it occupies `|a| x |b|` entries while passing
+        // priority occupies one. Drawing uniformly over that list is drawing
+        // over encodings — with one Demonmail Hauberk and eight creatures,
+        // 64 of the 65 non-concede entries are the one equip ability, and
+        // this seat equipped 98.5% of the time: 126 equip activations against
+        // 63 creature casts in one seeded game, and no other ability
+        // activated at all across five (#472).
+        //
+        // That is not a seat playing badly, which would be fine; it is a seat
+        // whose priority distribution is dominated by whichever permanent has
+        // the largest encoding, so combat, casting and every other ability go
+        // unreached whenever a sac outlet is on the battlefield — and this
+        // seat is the one the invariant fuzzer plays.
+        //
+        // Grouping first and rolling inside the group is the same thing as
+        // rolling the target and the sacrifice independently, because the
+        // engine enumerates the full product: every pair is present exactly
+        // once, so a uniform draw within the group is a uniform draw over
+        // each slot.
+        let mut groups: Vec<(Decision, Vec<usize>)> = Vec::new();
+        for &i in &candidates {
+            let key = Decision::of(&legal_actions[i], i);
+            match groups.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, members)) => members.push(i),
+                None => groups.push((key, vec![i])),
+            }
+        }
+        let group = if groups.len() == 1 { 0 } else { self.rng.gen_range(0..groups.len()) };
+        let members = &groups[group].1;
+        let pick = if members.len() == 1 { 0 } else { self.rng.gen_range(0..members.len()) };
+        legal_actions[members[pick]].clone()
+    }
+}
+
+/// What an enumerated action is a way of DOING, with the player's slot
+/// choices taken back out.
+///
+/// Two entries that name the same ability of the same permanent, or the same
+/// spell cast the same way, are one decision offered several ways — that is
+/// what the engine's `activatable_abilities` and `castable_spells` say, and
+/// what the LLM seat collapses on before it asks the slots. Everything else
+/// is its own decision, keyed by where it sits in the list so that two
+/// genuinely different actions never merge.
+#[derive(PartialEq, Eq)]
+enum Decision {
+    Ability(mtg_engine::ids::ObjectId, usize, Option<mtg_engine::ids::CardId>),
+    /// Whether an alternative cost is being used is part of the decision: a
+    /// spell castable both normally and via Rooftop Storm is two choices.
+    Cast(mtg_engine::ids::ObjectId, bool),
+    Itself(usize),
+}
+
+impl Decision {
+    fn of(action: &Action, index: usize) -> Self {
+        match action {
+            Action::ActivateAbility { object_id, ability_index, source_card_id, .. } =>
+                Decision::Ability(*object_id, *ability_index, *source_card_id),
+            Action::CastSpell { object_id, alternative_cost, .. } =>
+                Decision::Cast(*object_id, alternative_cost.is_some()),
+            _ => Decision::Itself(index),
+        }
     }
 }
 
@@ -653,5 +718,158 @@ mod rolls {
             }
         }
         assert_eq!(seen.len(), 7, "every card in hand can be bottomed: {seen:?}");
+    }
+}
+
+#[cfg(test)]
+mod decisions {
+    use super::*;
+    use mtg_engine::actions::Target;
+    use mtg_engine::engine::LegalActions;
+    use mtg_engine::ids::{ObjectId, PlayerId};
+    use mtg_engine::types::{ManaPool, Step};
+    use std::collections::{HashMap, HashSet};
+
+    fn view() -> GameView {
+        GameView {
+            you: PlayerId(0),
+            your_hand: vec![],
+            your_life: 20,
+            your_mana_pool: ManaPool::new(),
+            your_library_size: 40,
+            your_library_cards: vec![],
+            your_mulligan_count: 0,
+            opponents: vec![],
+            battlefield: vec![],
+            graveyards: vec![],
+            stack: vec![],
+            exile: vec![],
+            first_strike_damage_step: false,
+            step: Step::PrecombatMain,
+            active_player: PlayerId(0),
+            priority_player: Some(PlayerId(0)),
+            turn_number: 1,
+            display_log: vec![],
+            full_log: vec![],
+            revealed_names: HashMap::new(),
+        }
+    }
+
+    /// A Demonmail Hauberk and `n` creatures, exactly as `legal_actions`
+    /// enumerates it: one `ActivateAbility` per (target, sacrifice) pair,
+    /// plus passing priority and conceding.
+    fn hauberk_board(n: u64) -> LegalActions {
+        let mut actions = vec![Action::PassPriority];
+        for target in 0..n {
+            for sac in 0..n {
+                actions.push(Action::ActivateAbility {
+                    object_id: ObjectId(100),
+                    ability_index: 0,
+                    targets: vec![Target::Object(ObjectId(target))],
+                    tap_plan: vec![],
+                    sacrifice: Some(ObjectId(sac)),
+                    x_value: None,
+                    source_card_id: None,
+                });
+            }
+        }
+        actions.push(Action::Concede);
+        LegalActions {
+            actions,
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: None,
+        }
+    }
+
+    /// #472: this seat drew uniformly over `legal.actions`, which is a draw
+    /// over ENCODINGS. One equip ability with a chooseable sacrifice held 64
+    /// of the 65 non-concede entries on an eight-creature board, so the seat
+    /// equipped 98.5% of the time and the fuzzer stopped reaching combat,
+    /// casting and every other ability whenever a sac outlet was out.
+    ///
+    /// Passing priority and activating the one ability are two decisions, so
+    /// each is about half the draws — not 1 in 65.
+    #[test]
+    fn one_ability_with_a_product_behind_it_does_not_crowd_out_passing() {
+        let mut player = RandomPlayer::with_seed("r", 7);
+        let legal = hauberk_board(8);
+        let v = view();
+
+        let mut passes = 0;
+        const DRAWS: usize = 2000;
+        for _ in 0..DRAWS {
+            if matches!(player.choose_action(&v, &legal), Action::PassPriority) {
+                passes += 1;
+            }
+        }
+        let share = passes as f64 / DRAWS as f64;
+        assert!((0.40..=0.60).contains(&share),
+            "passing is one of two decisions, so about half the draws, not {share:.3} \
+             (uniform over the 65 encodings would be 0.015)");
+    }
+
+    /// The other half of the same property: collapsing must not cost the
+    /// fuzzer coverage INSIDE the ability. Every target and every sacrifice
+    /// is still reachable, because the roll within a decision is uniform
+    /// over the ways of taking it.
+    #[test]
+    fn every_target_and_every_sacrifice_is_still_rolled() {
+        let mut player = RandomPlayer::with_seed("r", 11);
+        let legal = hauberk_board(5);
+        let v = view();
+
+        let mut targets: HashSet<u64> = HashSet::new();
+        let mut sacrifices: HashSet<u64> = HashSet::new();
+        for _ in 0..2000 {
+            if let Action::ActivateAbility { targets: t, sacrifice, .. } =
+                player.choose_action(&v, &legal)
+            {
+                if let Some(Target::Object(id)) = t.first() { targets.insert(id.0); }
+                if let Some(id) = sacrifice { sacrifices.insert(id.0); }
+            }
+        }
+        assert_eq!(targets.len(), 5, "every creature can be equipped: {targets:?}");
+        assert_eq!(sacrifices.len(), 5, "and every creature can be the one sacrificed: {sacrifices:?}");
+    }
+
+    /// Two abilities on one permanent, or one ability on two permanents, are
+    /// two decisions — the collapse is by ability, never by kind of action.
+    #[test]
+    fn two_abilities_are_two_decisions_even_on_one_permanent() {
+        let mut player = RandomPlayer::with_seed("r", 3);
+        let ability = |object: u64, index: usize| Action::ActivateAbility {
+            object_id: ObjectId(object),
+            ability_index: index,
+            targets: vec![],
+            tap_plan: vec![],
+            sacrifice: None,
+            x_value: None,
+            source_card_id: None,
+        };
+        let legal = LegalActions {
+            actions: vec![Action::PassPriority, ability(1, 0), ability(1, 1), ability(2, 0)],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+        let v = view();
+
+        let mut seen: HashSet<(u64, usize)> = HashSet::new();
+        for _ in 0..500 {
+            if let Action::ActivateAbility { object_id, ability_index, .. } =
+                player.choose_action(&v, &legal)
+            {
+                seen.insert((object_id.0, ability_index));
+            }
+        }
+        assert_eq!(seen.len(), 3,
+            "three abilities, three decisions, all reachable: {seen:?}");
     }
 }
