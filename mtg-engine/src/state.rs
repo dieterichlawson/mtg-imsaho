@@ -1831,7 +1831,7 @@ impl GameState {
     /// Visit every continuous effect that applies to `id` and satisfies
     /// `want`, from every source on the battlefield.
     ///
-    /// The one walk. `has_effect`, `count_effect` and the P/T accumulation are
+    /// The one walk. `has_effect` and the P/T accumulation are
     /// all this function; before, each was its own loop over `self.objects`,
     /// as were the two that handled conditional effects, and the caller had to
     /// dig the `EffectScope` out of the variant itself and hand it back — the
@@ -1892,19 +1892,6 @@ impl GameState {
         let mut found = false;
         self.walk_effects(id, want, registry, &mut |_, _| { found = true; false });
         found
-    }
-
-    /// How many sources apply a matching continuous effect to `id`.
-    #[must_use]
-    pub fn count_effect(
-        &self,
-        id: ObjectId,
-        want: &dyn Fn(&crate::types::ContinuousEffect) -> bool,
-        registry: &crate::cards::CardRegistry,
-    ) -> u32 {
-        let mut count = 0;
-        self.walk_effects(id, want, registry, &mut |_, _| { count += 1; true });
-        count
     }
 
     /// Continuous effects provided by permanents `player` controls, with
