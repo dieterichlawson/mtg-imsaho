@@ -388,3 +388,46 @@ fn a_permanent_that_arrives_tapped_is_not_tapped_by_anything() {
     assert!(!state.events.iter().any(|e| matches!(e, GameEvent::Tapped { .. })),
         "but nothing tapped it");
 }
+
+/// A reported board: Plains, Forest, Gavony Township and an untapped
+/// Avacyn's Pilgrim, at upkeep, with a Mayor of Avabruck just transformed.
+/// The three sources besides the Township make three mana, the Township's
+/// own {C} cannot pay the {T} it is already paying (CR 602.2h), and
+/// {2}{G}{W} is four — so the ability is not offered, in any creation
+/// order, at upkeep or main, with the werewolf on either face. A creature
+/// mana source is the one shape the land-only rows above do not cover.
+#[test]
+fn a_creature_mana_source_does_not_close_a_township_gap_either() {
+    let reg = registry();
+    let names = ["Gavony Township", "Plains", "Forest", "Avacyn's Pilgrim"];
+    let perms: Vec<Vec<usize>> = {
+        fn permute(v: &mut Vec<usize>, k: usize, out: &mut Vec<Vec<usize>>) {
+            if k == v.len() { out.push(v.clone()); return; }
+            for i in k..v.len() { v.swap(k, i); permute(v, k + 1, out); v.swap(k, i); }
+        }
+        let mut out = Vec::new(); permute(&mut vec![0, 1, 2, 3], 0, &mut out); out
+    };
+    for step in [Step::Upkeep, Step::PrecombatMain] {
+        for perm in &perms {
+            for transformed in [false, true] {
+                let mut state = game_at_step(step, P0);
+                state.turn_number = 11;
+                let mut township = None;
+                for &k in perm {
+                    let id = named_permanent(&mut state, &reg, names[k], P0);
+                    if k == 0 { township = Some(id); }
+                }
+                named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+                named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+                named_permanent(&mut state, &reg, "Intangible Virtue", P0);
+                let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+                if transformed {
+                    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+                    assert!(state.obj_name(mayor).starts_with("Howlpack Alpha"));
+                }
+                assert!(!offers_ability_of(&state, &reg, township.unwrap()),
+                    "{step:?} {perm:?} transformed={transformed}: three other sources cannot pay {{2}}{{G}}{{W}}");
+            }
+        }
+    }
+}
