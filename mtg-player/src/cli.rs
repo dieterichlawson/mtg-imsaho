@@ -2808,6 +2808,17 @@ impl CliPlayer {
     // ── Action formatting ──────────────────────────────────────────
 
     /// Format a tap plan as a compact string like "2x Plains, Hinterland Harbor".
+    /// " (tap Forest, 2x Plains)", or nothing for a plan that taps nothing.
+    ///
+    /// A cast row has always said what it taps, and an ability row never
+    /// did, though the engine puts the plan on the offer for exactly that
+    /// (issue: a Gavony Township offered on a board that could not pay for
+    /// it was indistinguishable from one that could).
+    fn tap_suffix(view: &GameView, tap_plan: &[(ObjectId, usize)]) -> String {
+        let tap_str = Self::format_tap_plan(view, tap_plan);
+        if tap_str.is_empty() { String::new() } else { format!(" (tap {tap_str})") }
+    }
+
     fn format_tap_plan(view: &GameView, tap_plan: &[(ObjectId, usize)]) -> String {
         if tap_plan.is_empty() { return String::new(); }
         let mut name_counts: Vec<(String, usize)> = Vec::new();
@@ -3254,8 +3265,7 @@ impl CliPlayer {
                 // kills. It used to spell the targets its own way and never
                 // mention the sacrifice at all (#254).
                 let name = Self::perm_name(view, *object_id);
-                let tap_str = Self::format_tap_plan(view, tap_plan);
-                let tap_suffix = if tap_str.is_empty() { String::new() } else { format!(" (tap {tap_str})") };
+                let tap_suffix = Self::tap_suffix(view, tap_plan);
                 format!("Cast {name}{tap_suffix}{}{}",
                     Self::targets_suffix(view, targets),
                     Self::sacrifice_suffix(view, *sacrifice))
@@ -3269,8 +3279,9 @@ impl CliPlayer {
                     None => format!("Tap {} for mana", Self::perm_name(view, *object_id)),
                 }
             }
-            Action::ActivateAbility { object_id, targets, .. } =>
-                format!("Activate ability: {}{}", Self::perm_name(view, *object_id),
+            Action::ActivateAbility { object_id, targets, tap_plan, .. } =>
+                format!("Activate ability: {}{}{}", Self::perm_name(view, *object_id),
+                    Self::tap_suffix(view, tap_plan),
                     Self::targets_suffix(view, targets)),
             Action::DeclareAttackers { attackers, planeswalker_attacks } => {
                 if attackers.is_empty() && planeswalker_attacks.is_empty() { "Don't attack".into() }
@@ -6485,7 +6496,7 @@ impl CliPlayer {
                 // and the player could not tell a 2-mana ability from a
                 // 5-mana one (#61). The engine already collapses the metadata
                 // into activatable_abilities, description included.
-                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, sacrifice, .. } => {
+                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, sacrifice, tap_plan, .. } => {
                     let desc = legal.activatable_abilities.iter()
                         .find(|ab| ab.object_id == *object_id
                             && ab.ability_index == *ability_index
@@ -6522,7 +6533,8 @@ impl CliPlayer {
                     if let Some(sac) = sacrifice { ids.push(sac.0); }
                     let label = match desc {
                         Some(d) => MenuLabel {
-                            text: format!("{}: {d}{}{sac_suffix}", Self::perm_name(view, *object_id),
+                            text: format!("{}: {d}{}{}{sac_suffix}", Self::perm_name(view, *object_id),
+                                Self::tap_suffix(view, tap_plan),
                                 Self::targets_suffix(view, targets)),
                             ids,
                         },
