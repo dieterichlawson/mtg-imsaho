@@ -1368,3 +1368,37 @@ fn an_ordered_group_survives_a_target_prompt_in_the_middle() {
     }).collect();
     assert_eq!(on_stack, vec![mob_a, thrower, mob_b], "bottom to top, as ordered");
 }
+
+/// A transformed permanent's trigger carries ITS OWN face's text.
+///
+/// Cloistered Youth's upkeep trigger is printed on the front; the "lose 1
+/// life" end-step trigger belongs to Unholy Fiend on the back, and the front
+/// has nothing of that kind — so its description can only come from the
+/// back-face lookup. That lookup picks the ability out of the face's list by
+/// kind, exactly as the front-face one does; matching on anything else hands
+/// the player the other ability's text, or — on a face with one trigger —
+/// none at all, leaving a stack entry nothing on screen identifies.
+#[test]
+fn a_transformed_cards_trigger_carries_its_own_faces_text() {
+    let reg = registry();
+    let mut state = game_at_step(Step::EndStep, P0);
+
+    let youth = named_permanent(&mut state, &reg, "Cloistered Youth", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, youth, &reg);
+    assert_eq!(state.name_of(youth, &reg), "Unholy Fiend", "test precondition");
+
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    let collected: Vec<String> = state.pending_trigger_pushes_ap.iter()
+        .chain(&state.pending_trigger_pushes_nap)
+        .chain(&state.pending_triggers)
+        .chain(state.stack.iter().filter_map(mtg_engine::state::StackEntry::as_trigger))
+        .map(|t| t.source.description.clone())
+        .collect();
+
+    assert!(collected.iter().any(|d| d.contains("lose 1 life")),
+        "the back face's end-step trigger carries the back face's text, got {collected:?}");
+}

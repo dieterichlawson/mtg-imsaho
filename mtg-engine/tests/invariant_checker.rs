@@ -601,6 +601,27 @@ fn incoherent_prompts_and_stashes_are_flagged() {
     });
     assert_flags(&state, &reg, "nothing to choose");
 
+    // The same clause, for the damage-effect order prompt (CR 616.1). Each
+    // kind of choice is its own arm, so each needs its own state: a blinded
+    // arm leaves the fuzzer reporting nothing while a game sits on a prompt
+    // that cannot be answered.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut state, P0, 1, 1);
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player: P0,
+        source: src,
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseDamageEffect {
+            description: "which applies first".into(),
+            effects: vec![],
+            options: vec![],
+            source: src,
+            target: mtg_engine::events::DamageTarget::Player(P0),
+            amount: 2,
+            kind: mtg_engine::damage::DamageKind::NonCombat,
+        },
+    });
+    assert_flags(&state, &reg, "nothing to choose");
+
     // Spell funding prompt with no stashed cast.
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let src = ready_creature(&mut state, P0, 1, 1);

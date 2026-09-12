@@ -537,3 +537,29 @@ fn the_view_carries_supertypes_in_every_zone_and_for_a_copy() {
         .expect("in the graveyard");
     assert_eq!(gy_card.supertypes, vec![Supertype::Legendary]);
 }
+
+/// `star_pt` says the card PRINTS `*/*` — that its power and toughness come
+/// from a characteristic-defining ability rather than from a printed number
+/// (CR 208.2). The seats render the printed line from it, and a card that
+/// claims it wrongly is shown with no size at all where its own 2/2 should
+/// be (issue #267 is the same line read the other way round).
+///
+/// Four cards in the pool print `*/*`; every other card prints a number, and
+/// the default has to be the number.
+#[test]
+fn only_a_card_whose_pt_is_a_cda_is_marked_as_printing_star_pt() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let land = named_permanent(&mut state, &reg, "Forest", P0);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let marked = |id| view.battlefield.iter().find(|p| p.object_id == id).unwrap().star_pt;
+
+    assert!(marked(wurm),
+        "Boneyard Wurm's P/T is \"equal to the number of creature cards in your graveyard\"");
+    assert!(!marked(bears), "a 2/2 prints a 2 and a 2");
+    assert!(!marked(land), "and a land prints no P/T at all");
+}
