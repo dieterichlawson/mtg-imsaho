@@ -412,8 +412,7 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   all, so a Forbidden Alchemy choice is made with no board, no graveyard and no log on
   screen
 
-- V42 [proposed 2026-09-09, from #318, #398 and
-  `mtg-engine/tests/prompt_shapes.rs`] how big can a question get? A prompt
+- V42 [tried 2026-09-12 → #471, #472] how big can a question get? A prompt
   that offers one row per way of answering it grows as `C(n,k)`, `|a| x |b|`
   or `n + C(n,2)`, and every such prompt in the pool has now been converted
   to a marking screen or a slot-at-a-time ask — mulligan bottoming, cleanup
@@ -432,6 +431,50 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   the same sitting: `format_action_prompt` joins every action into one
   comma-separated line with no cap, so a blowup that a person can page past
   is a prompt a model cannot read at all
+
+  **Answered 2026-09-12: the `CastSpell` half held; the blowup that is left is
+  in the `ActivateAbility` COST, which is the half `prompt_shapes.rs`
+  structurally cannot see.** Read `prompt_shapes.rs`, then `build_action_menu`
+  and `render_paged` in `cli.rs`, `choose_action` + `choose_ability_targets` +
+  `format_action_prompt` in `llm.rs`, and `legal/abilities.rs`,
+  `legal/casting.rs` and `targeting.rs` in the engine. The conversion held with
+  room to spare: a sweep of every card in the pool on one wide board (8
+  creatures, 8 lands and 16 graveyard cards a side) tops out at 32 cast actions
+  (Purify the Grave, one per graveyard card), and the CLI collapses all of them
+  through `legal.castable_spells` to ONE row — Into the Maw of Hell over 16
+  lands and 16 creatures, Ghoulcaller's Chant over a 12-Zombie graveyard, Prey
+  Upon at 8v8, Harvest Pyre over a 40-card graveyard and Curse of Oblivion are
+  each a single row, and `pick_set`, `prompt_ordering` and the blocker prompt
+  are all one row per object. What breaks is an activated ability with both a
+  target and a chooseable sacrifice: it is enumerated one action per
+  (target, sacrifice) and `build_action_menu` pushes a row for every one, so
+  Demonmail Hauberk is 25 menu rows at five creatures (verified on screen), 50
+  with a second copy, 144 at twelve, 6402 at four Hauberks and forty creatures,
+  and Skirsdag Cultist is 171 at eight creatures a side (#471). Exactly two
+  abilities in the pool have that shape and both blow up; everything else tracks
+  objects. The night's surprise is the DIRECTION — the idea expected the LLM
+  side to be worse, and it is the best of the three: `format_action_prompt` is
+  newline-joined, not comma-joined, and `choose_action` dedupes
+  `ActivateAbility` by (object, ability index), logging
+  `COLLAPSED 173 actions → 3 options` before asking target and sacrifice a slot
+  at a time, so the CLI is the only readable surface carrying the product. The
+  third surface is worse again: `random.rs` draws uniformly over
+  `legal.actions`, so 64 of 65 non-concede slots are one equip and the fuzzer
+  takes it 98.5% of the time, crowding combat and casting out of the
+  distribution (#472) — the #455/#456/#457 family inverted, a uniform draw over
+  ENCODINGS rather than over decisions. Two measuring tools worth reusing: a
+  throwaway `mtg-engine/tests` probe counting `legal_actions` by variant (the
+  CLI's `ActivateAbility` row count IS the engine's action count, so it is
+  exact), and a throwaway `mtg-player/tests` probe running
+  `LlmPlayer::for_prompt_tests` over a hand-built board and reading the prompt
+  back out of `game_log` — no live model needed, so the LLM side of any prompt
+  question is measurable without a metered seat. Unreached: resolution prompts
+  that ask N times in a row (Brain Weevil's two discards, `library_search_ui`
+  twice) were read, not played; `prompt_pile_division` at a wide board; the
+  `pick_set` marking screen at N=40 on a real screen (V37 covered its pagers,
+  not its size); `mtg-draft-runner`'s own prompt sizes; and whether the
+  6402-row menu is still index-accurate at its last entry, which is V26's
+  question asked at V42's scale.
 
 **The Operator** neither plays to win nor tries to break anything: runs
 the binary the way an operator would and checks it kept its promises.
