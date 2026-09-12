@@ -16,6 +16,67 @@ use mtg_engine::view::{GameView, PermanentView};
 
 use crate::Player;
 
+/// A writer that ends every line it forwards with CRLF, whatever the
+/// terminal is doing.
+///
+/// The full-screen viewers paint by printing a row and letting the newline
+/// both end it and return the cursor to column 0. That second half is not
+/// the newline's: it is the tty's `OPOST`/`ONLCR` expanding LF into CRLF,
+/// and nothing in this program guarantees that flag is on. Handed a
+/// terminal that is already raw, crossterm's `disable_raw_mode` restores
+/// the termios it snapshotted at its first `enable_raw_mode` — which is the
+/// raw one — so cooked output never comes back and every viewer row started
+/// at the column the last one ended, walking the page diagonally off the
+/// screen (#470).
+///
+/// Writing CRLF at the source is correct on both terminals, since `ONLCR`
+/// leaves an existing `\r` alone. This translates it so a painter can keep
+/// writing `\n`: the guarantee then belongs to the painting rather than to
+/// every one of its several dozen `Print` sites, which is how six screens
+/// came to disagree with the three in the same file that get it right
+/// (`render_paged`, `draw_ordering_screen`, `draw_set_screen` position with
+/// `MoveTo`; `library_search_ui` and the two line readers write `\r\n`).
+struct CrlfWriter<W: Write> {
+    inner: W,
+    /// Whether the last byte forwarded was a `\r`, so a `\n` opening the
+    /// next write is not given a second one.
+    after_cr: bool,
+}
+
+impl<W: Write> CrlfWriter<W> {
+    fn new(inner: W) -> Self {
+        Self { inner, after_cr: false }
+    }
+}
+
+impl<W: Write> Write for CrlfWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut start = 0;
+        for (i, &b) in buf.iter().enumerate() {
+            if b != b'\n' {
+                continue;
+            }
+            let already_cr = if i == 0 { self.after_cr } else { buf[i - 1] == b'\r' };
+            self.inner.write_all(&buf[start..i])?;
+            if !already_cr {
+                self.inner.write_all(b"\r")?;
+            }
+            self.inner.write_all(b"\n")?;
+            start = i + 1;
+        }
+        self.inner.write_all(&buf[start..])?;
+        if let Some(&last) = buf.last() {
+            self.after_cr = last == b'\r';
+        }
+        // The caller's bytes were all consumed, however many went out.
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// Global flag: set to true when the user requests a hot reload (rr).
 pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -1080,7 +1141,7 @@ impl CliPlayer {
     /// Print a string to `out`, coloring mana symbols like {R}, {W}, etc.
     /// with colored backgrounds and black text.
     /// Non-mana text is printed with `default_color` (or reset if None).
-    fn print_with_mana(out: &mut io::Stdout, text: &str, default_color: Option<Color>) {
+    fn print_with_mana(out: &mut impl Write, text: &str, default_color: Option<Color>) {
         let mut chars = text.chars().peekable();
         let mut buf = String::new();
 
@@ -3942,6 +4003,190 @@ impl CliPlayer {
         rows
     }
 
+    /// Paint one page of the battlefield inspector: heading, a blank row, the
+    /// permanent rows, then the footer. Wraps its own writer for the same
+    /// reason `paint_paged_page` does (#470).
+    fn paint_inspect_page(out: &mut impl Write, heading: &str, rows: &[(bool, String)], footer: &str) {
+        let out = &mut CrlfWriter::new(out);
+        Self::print_colored(out, Color::Cyan, heading);
+        let _ = execute!(out, Print("\n"));
+
+        for (bold, text) in rows {
+            if *bold {
+                let _ = execute!(out, SetAttribute(Attribute::Bold),
+                    Print(format!("{text}\n")), SetAttribute(Attribute::Reset));
+            } else {
+                // The index is bold, the rest is not, as before.
+                let (idx, tail) = text.split_at(text.find(':').unwrap_or(0));
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold), Print(idx),
+                    SetAttribute(Attribute::Reset), Print(format!("{tail}\n")));
+            }
+        }
+
+        let _ = execute!(out, Print(footer));
+    }
+
+    /// Paint the inspector's detail page for one permanent. Wraps its own
+    /// writer for the same reason `paint_paged_page` does (#470).
+    fn paint_permanent_detail(out: &mut impl Write, view: &GameView, perm: &PermanentView) {
+        let out = &mut CrlfWriter::new(out);
+        Self::print_colored(out, Color::Cyan, &format!(" {}", perm.name));
+
+        // CR 205.1: the type line is supertypes, types AND
+        // subtypes, and the subtypes are the live ones — the
+        // printed ones plus anything an effect granted. Every "as
+        // long as ... is a Human" card in the set turns on a fact
+        // this page used to refuse to state (issue #297), and
+        // "Legendary" — the word that arms the legend rule — was
+        // printed nowhere in the game (issue #333).
+        let type_line = mtg_engine::types::type_line(
+            &perm.supertypes, &perm.card_types, &perm.subtypes);
+        let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
+
+        // Color (CR 105.2). Intimidate (CR 702.13a) is decided
+        // entirely by it and no pane printed it: for most
+        // permanents a player could infer it from the mana cost
+        // in the CARDS panel, and for a face with no mana cost —
+        // a transformed DFC, whose color CR 204.2 states with an
+        // indicator — from nothing at all. A defender facing a
+        // Gatstaf Howler could only learn it was green by
+        // reading back which of their own creatures the engine
+        // had already allowed to block it (issue #357).
+        // "Colorless" is printed as the answer it is, not left
+        // blank: it is what makes a Galvanic Juggernaut
+        // blockable by artifact creatures alone (CR 105.2c).
+        let _ = execute!(out, Print(format!("  Color: {}\n",
+            mtg_engine::types::colors_line(&perm.colors))));
+
+
+        // The permanent's live keywords and protections, which
+        // the view has always computed and no pane ever printed:
+        // a flying token rendered as a ground creature and a
+        // creature that had lost defender still read "Defender"
+        // (issues #243, #297).
+        let mut abilities: Vec<String> =
+            perm.keywords.iter().copied().map(keyword_title).collect();
+        abilities.extend(perm.protections.iter().cloned());
+        if !abilities.is_empty() {
+            let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
+        }
+
+        // What the card says, from the face that is up. This
+        // used to print the object's own fields, which are the
+        // FRONT face's for a transformed DFC (issue #240), the
+        // `Some(0)` sentinel for a `*/*` creature (#267), and —
+        // before Tree of Redemption's exchange became a layer-7b
+        // effect — whatever an effect had written over them
+        // (#302). "Printed", because that is the question this
+        // line answers; everything else is on the next one.
+        if perm.star_pt {
+            let _ = execute!(out, Print("  Printed P/T: */*\n".to_string()));
+        } else if let (Some(p), Some(t)) = (perm.printed_power, perm.printed_toughness) {
+            let _ = execute!(out, Print(format!("  Printed P/T: {p}/{t}\n")));
+        }
+        if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
+            let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
+        }
+        if perm.damage_marked > 0 {
+            let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
+        }
+        if perm.card_types.contains(&CardType::Planeswalker) {
+            let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                .copied().unwrap_or(0);
+            let _ = execute!(out, Print(format!("  Loyalty: {l}\n")));
+        }
+        // Counters are public information (CR 122.3) and this
+        // page is where a player checks them (issue #82).
+        let counters = Self::counters_suffix(&perm.counters);
+        if !counters.is_empty() {
+            let _ = execute!(out, Print(format!("  Counters:{counters}\n")));
+        }
+
+        let controller = if perm.controller == view.you { "You" } else { "Opponent" };
+        let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
+        let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
+        // The page that lists everything else about a permanent
+        // was silent about a live shield (issue #468).
+        if perm.regeneration_shields > 0 {
+            let _ = execute!(out, Print(format!("  Regeneration shields: {}\n",
+                perm.regeneration_shields)));
+        }
+        if Self::is_summoning_sick(perm) {
+            let _ = execute!(out, Print("  Summoning sick: true\n".to_string()));
+        }
+        let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
+
+        // Combat role (CR 506.3a, 509.1a). The page used to say
+        // only "Tapped: true", which is what a creature tapped
+        // for mana says too (issue #245).
+        let named = |id: mtg_engine::ids::ObjectId| -> String {
+            view.battlefield.iter().find(|p| p.object_id == id)
+                .map_or_else(|| format!("#{}", id.0), |p| format!("{} (#{})", p.name, id.0))
+        };
+        match &perm.attacking {
+            Some(mtg_engine::view::AttackTarget::Player(p)) => {
+                let who = if *p == view.you { "you" } else { "your opponent" };
+                let _ = execute!(out, Print(format!("  Attacking: {who}\n")));
+            }
+            Some(mtg_engine::view::AttackTarget::Planeswalker(w)) => {
+                let _ = execute!(out, Print(format!("  Attacking: {}\n", named(*w))));
+            }
+            None => {}
+        }
+        if !perm.blocking.is_empty() {
+            let names: Vec<String> = perm.blocking.iter().map(|&a| named(a)).collect();
+            let _ = execute!(out, Print(format!("  Blocking: {}\n", names.join(", "))));
+        }
+        if !perm.blocked_by.is_empty() {
+            let names: Vec<String> = perm.blocked_by.iter().map(|&b| named(b)).collect();
+            let _ = execute!(out, Print(format!("  Blocked by: {}\n", names.join(", "))));
+        }
+
+        // Attachments, by what they are: an Aura enchants
+        // (CR 303.4), an Equipment equips (CR 301.5c) — the one
+        // label for both called a Pike an enchantment (#83).
+        let (auras, equipment): (Vec<&PermanentView>, Vec<&PermanentView>) =
+            view.battlefield.iter()
+                .filter(|p| p.attached_to == Some(perm.object_id))
+                .partition(|p| p.card_types.contains(&CardType::Enchantment));
+        if !auras.is_empty() {
+            let names: Vec<&str> = auras.iter().map(|a| a.name.as_str()).collect();
+            let _ = execute!(out, Print(format!("  Enchanted by: {}\n", names.join(", "))));
+        }
+        if !equipment.is_empty() {
+            let names: Vec<&str> = equipment.iter().map(|a| a.name.as_str()).collect();
+            let _ = execute!(out, Print(format!("  Equipped with: {}\n", names.join(", "))));
+        }
+
+        if let Some(att) = perm.attached_to {
+            let att_name = view.battlefield.iter()
+                .find(|p| p.object_id == att)
+                .map_or("?", |p| p.name.as_str());
+            let _ = execute!(out, Print(format!("  Attached to: {att_name}\n")));
+        }
+        // A Curse names its player (CR 702.5c) — issue #81.
+        if let Some(p) = perm.attached_to_player {
+            let who = if p == view.you { "You" } else { "Opponent" };
+            let _ = execute!(out, Print(format!("  Enchanting: {who}\n")));
+        }
+
+        // Show the oracle text of the face that is up. Looking
+        // it up by `card_id` gave the FRONT card's text, so a
+        // transformed Cloistered Youth was headed "Unholy Fiend"
+        // and then described as a Cloistered Youth — while the
+        // engine fired the back face's ability (issue #240). The
+        // view already resolves the active face.
+        if !perm.oracle_text.is_empty() {
+            let _ = execute!(out, Print("\n"),
+                SetForegroundColor(Color::Yellow),
+                Print(format!("  {}\n", perm.oracle_text)),
+                ResetColor);
+        }
+
+        let _ = execute!(out, Print("\n  Press enter to return to list..."));
+    }
+
     fn show_battlefield_inspector(view: &GameView) {
         // No registry lookup: everything this page shows about a permanent
         // comes from the view, which resolves the face that is up. Reading
@@ -3977,28 +4222,12 @@ impl CliPlayer {
             } else {
                 " INSPECT BATTLEFIELD".to_string()
             };
-            Self::print_colored(&mut out, Color::Cyan, &heading);
-            let _ = execute!(out, Print("\n"));
-
-            for (bold, text) in rows.iter().take(end).skip(start) {
-                if *bold {
-                    let _ = execute!(out, SetAttribute(Attribute::Bold),
-                        Print(format!("{text}\n")), SetAttribute(Attribute::Reset));
-                } else {
-                    // The index is bold, the rest is not, as before.
-                    let (idx, tail) = text.split_at(text.find(':').unwrap_or(0));
-                    let _ = execute!(out,
-                        SetAttribute(Attribute::Bold), Print(idx),
-                        SetAttribute(Attribute::Reset), Print(format!("{tail}\n")));
-                }
-            }
-
             let footer = if paged {
                 format!("\n{DECK_PAGED_FOOTER}")
             } else {
                 "\n  Enter number for details, or press enter to return: ".to_string()
             };
-            let _ = execute!(out, Print(&footer));
+            Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
             let input = Self::read_line("");
 
@@ -4018,160 +4247,7 @@ impl CliPlayer {
                 if i < all_perms.len() {
                     let perm = all_perms[i];
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-                    Self::print_colored(&mut out, Color::Cyan, &format!(" {}", perm.name));
-
-                    // CR 205.1: the type line is supertypes, types AND
-                    // subtypes, and the subtypes are the live ones — the
-                    // printed ones plus anything an effect granted. Every "as
-                    // long as ... is a Human" card in the set turns on a fact
-                    // this page used to refuse to state (issue #297), and
-                    // "Legendary" — the word that arms the legend rule — was
-                    // printed nowhere in the game (issue #333).
-                    let type_line = mtg_engine::types::type_line(
-                        &perm.supertypes, &perm.card_types, &perm.subtypes);
-                    let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
-
-                    // Color (CR 105.2). Intimidate (CR 702.13a) is decided
-                    // entirely by it and no pane printed it: for most
-                    // permanents a player could infer it from the mana cost
-                    // in the CARDS panel, and for a face with no mana cost —
-                    // a transformed DFC, whose color CR 204.2 states with an
-                    // indicator — from nothing at all. A defender facing a
-                    // Gatstaf Howler could only learn it was green by
-                    // reading back which of their own creatures the engine
-                    // had already allowed to block it (issue #357).
-                    // "Colorless" is printed as the answer it is, not left
-                    // blank: it is what makes a Galvanic Juggernaut
-                    // blockable by artifact creatures alone (CR 105.2c).
-                    let _ = execute!(out, Print(format!("  Color: {}\n",
-                        mtg_engine::types::colors_line(&perm.colors))));
-
-
-                    // The permanent's live keywords and protections, which
-                    // the view has always computed and no pane ever printed:
-                    // a flying token rendered as a ground creature and a
-                    // creature that had lost defender still read "Defender"
-                    // (issues #243, #297).
-                    let mut abilities: Vec<String> =
-                        perm.keywords.iter().copied().map(keyword_title).collect();
-                    abilities.extend(perm.protections.iter().cloned());
-                    if !abilities.is_empty() {
-                        let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
-                    }
-
-                    // What the card says, from the face that is up. This
-                    // used to print the object's own fields, which are the
-                    // FRONT face's for a transformed DFC (issue #240), the
-                    // `Some(0)` sentinel for a `*/*` creature (#267), and —
-                    // before Tree of Redemption's exchange became a layer-7b
-                    // effect — whatever an effect had written over them
-                    // (#302). "Printed", because that is the question this
-                    // line answers; everything else is on the next one.
-                    if perm.star_pt {
-                        let _ = execute!(out, Print("  Printed P/T: */*\n".to_string()));
-                    } else if let (Some(p), Some(t)) = (perm.printed_power, perm.printed_toughness) {
-                        let _ = execute!(out, Print(format!("  Printed P/T: {p}/{t}\n")));
-                    }
-                    if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
-                        let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
-                    }
-                    if perm.damage_marked > 0 {
-                        let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
-                    }
-                    if perm.card_types.contains(&CardType::Planeswalker) {
-                        let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
-                            .copied().unwrap_or(0);
-                        let _ = execute!(out, Print(format!("  Loyalty: {l}\n")));
-                    }
-                    // Counters are public information (CR 122.3) and this
-                    // page is where a player checks them (issue #82).
-                    let counters = Self::counters_suffix(&perm.counters);
-                    if !counters.is_empty() {
-                        let _ = execute!(out, Print(format!("  Counters:{counters}\n")));
-                    }
-
-                    let controller = if perm.controller == view.you { "You" } else { "Opponent" };
-                    let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
-                    let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
-                    // The page that lists everything else about a permanent
-                    // was silent about a live shield (issue #468).
-                    if perm.regeneration_shields > 0 {
-                        let _ = execute!(out, Print(format!("  Regeneration shields: {}\n",
-                            perm.regeneration_shields)));
-                    }
-                    if Self::is_summoning_sick(perm) {
-                        let _ = execute!(out, Print("  Summoning sick: true\n".to_string()));
-                    }
-                    let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
-
-                    // Combat role (CR 506.3a, 509.1a). The page used to say
-                    // only "Tapped: true", which is what a creature tapped
-                    // for mana says too (issue #245).
-                    let named = |id: mtg_engine::ids::ObjectId| -> String {
-                        view.battlefield.iter().find(|p| p.object_id == id)
-                            .map_or_else(|| format!("#{}", id.0), |p| format!("{} (#{})", p.name, id.0))
-                    };
-                    match &perm.attacking {
-                        Some(mtg_engine::view::AttackTarget::Player(p)) => {
-                            let who = if *p == view.you { "you" } else { "your opponent" };
-                            let _ = execute!(out, Print(format!("  Attacking: {who}\n")));
-                        }
-                        Some(mtg_engine::view::AttackTarget::Planeswalker(w)) => {
-                            let _ = execute!(out, Print(format!("  Attacking: {}\n", named(*w))));
-                        }
-                        None => {}
-                    }
-                    if !perm.blocking.is_empty() {
-                        let names: Vec<String> = perm.blocking.iter().map(|&a| named(a)).collect();
-                        let _ = execute!(out, Print(format!("  Blocking: {}\n", names.join(", "))));
-                    }
-                    if !perm.blocked_by.is_empty() {
-                        let names: Vec<String> = perm.blocked_by.iter().map(|&b| named(b)).collect();
-                        let _ = execute!(out, Print(format!("  Blocked by: {}\n", names.join(", "))));
-                    }
-
-                    // Attachments, by what they are: an Aura enchants
-                    // (CR 303.4), an Equipment equips (CR 301.5c) — the one
-                    // label for both called a Pike an enchantment (#83).
-                    let (auras, equipment): (Vec<&PermanentView>, Vec<&PermanentView>) =
-                        view.battlefield.iter()
-                            .filter(|p| p.attached_to == Some(perm.object_id))
-                            .partition(|p| p.card_types.contains(&CardType::Enchantment));
-                    if !auras.is_empty() {
-                        let names: Vec<&str> = auras.iter().map(|a| a.name.as_str()).collect();
-                        let _ = execute!(out, Print(format!("  Enchanted by: {}\n", names.join(", "))));
-                    }
-                    if !equipment.is_empty() {
-                        let names: Vec<&str> = equipment.iter().map(|a| a.name.as_str()).collect();
-                        let _ = execute!(out, Print(format!("  Equipped with: {}\n", names.join(", "))));
-                    }
-
-                    if let Some(att) = perm.attached_to {
-                        let att_name = view.battlefield.iter()
-                            .find(|p| p.object_id == att)
-                            .map_or("?", |p| p.name.as_str());
-                        let _ = execute!(out, Print(format!("  Attached to: {att_name}\n")));
-                    }
-                    // A Curse names its player (CR 702.5c) — issue #81.
-                    if let Some(p) = perm.attached_to_player {
-                        let who = if p == view.you { "You" } else { "Opponent" };
-                        let _ = execute!(out, Print(format!("  Enchanting: {who}\n")));
-                    }
-
-                    // Show the oracle text of the face that is up. Looking
-                    // it up by `card_id` gave the FRONT card's text, so a
-                    // transformed Cloistered Youth was headed "Unholy Fiend"
-                    // and then described as a Cloistered Youth — while the
-                    // engine fired the back face's ability (issue #240). The
-                    // view already resolves the active face.
-                    if !perm.oracle_text.is_empty() {
-                        let _ = execute!(out, Print("\n"),
-                            SetForegroundColor(Color::Yellow),
-                            Print(format!("  {}\n", perm.oracle_text)),
-                            ResetColor);
-                    }
-
-                    let _ = execute!(out, Print("\n  Press enter to return to list..."));
+                    Self::paint_permanent_detail(&mut out, view, perm);
                     let _ = out.flush();
                     let _ = Self::read_line("");
                 }
@@ -4224,6 +4300,40 @@ impl CliPlayer {
     /// opened showing three lines and 39 blank rows, and the taller the
     /// terminal the worse the remainder (#354). The list views open at the
     /// top.
+    /// Paint one page of a `show_paged_lines` viewer: heading, a blank row,
+    /// the entries, then the footer.
+    ///
+    /// Split out of the loop so the bytes a page puts on the terminal can be
+    /// painted into a buffer and checked. It wraps the writer itself rather
+    /// than taking a wrapped one, so the CRLF guarantee (#470) belongs to the
+    /// painting and not to a caller that has to remember it.
+    fn paint_paged_page(out: &mut impl Write, heading: &str, lines: &[InfoLine], footer: &str) {
+        let out = &mut CrlfWriter::new(out);
+        Self::print_colored(out, Color::Cyan, heading);
+        let _ = execute!(out, Print("\n"));
+        for line in lines {
+            match line {
+                InfoLine::Plain(s) => {
+                    let _ = execute!(out, Print(format!("{s}\n")));
+                }
+                InfoLine::Bold(s) => {
+                    let _ = execute!(out, SetAttribute(Attribute::Bold),
+                        Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
+                }
+                InfoLine::Dim(s) => {
+                    let _ = execute!(out, SetAttribute(Attribute::Dim),
+                        Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
+                }
+                InfoLine::Mana(s) => {
+                    let _ = execute!(out, Print("   "));
+                    Self::print_with_mana(out, s, None);
+                    let _ = execute!(out, Print("\n"));
+                }
+            }
+        }
+        let _ = execute!(out, Print(footer));
+    }
+
     fn show_paged_lines(title: &str, lines: &[InfoLine], start_at_end: bool) {
         let mut out = stdout();
         let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
@@ -4259,34 +4369,12 @@ impl CliPlayer {
             } else {
                 title.to_string()
             };
-            Self::print_colored(&mut out, Color::Cyan, &heading);
-            let _ = execute!(out, Print("\n"));
-            for line in &lines[start..end] {
-                match line {
-                    InfoLine::Plain(s) => {
-                        let _ = execute!(out, Print(format!("{s}\n")));
-                    }
-                    InfoLine::Bold(s) => {
-                        let _ = execute!(out, SetAttribute(Attribute::Bold),
-                            Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
-                    }
-                    InfoLine::Dim(s) => {
-                        let _ = execute!(out, SetAttribute(Attribute::Dim),
-                            Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
-                    }
-                    InfoLine::Mana(s) => {
-                        let _ = execute!(out, Print("   "));
-                        Self::print_with_mana(&mut out, s, None);
-                        let _ = execute!(out, Print("\n"));
-                    }
-                }
-            }
             let footer = if paged {
                 VIEWER_PAGED_FOOTER
             } else {
                 "  Press enter to return..."
             };
-            let _ = execute!(out, Print(footer));
+            Self::paint_paged_page(&mut out, &heading, &lines[start..end], footer);
             let _ = out.flush();
             match Self::read_line("").trim() {
                 "n" if end < lines.len() => offset = end,
@@ -4445,6 +4533,57 @@ impl CliPlayer {
         Self::show_paged_lines(" GAME LOG", &lines, true);
     }
 
+    /// Paint one page of the deck browser: heading, a blank row, the deck
+    /// rows, then the footer. Wraps its own writer for the same reason
+    /// `paint_paged_page` does (#470).
+    fn paint_deck_page(out: &mut impl Write, heading: &str, rows: &[(String, String)], footer: &str) {
+        let out = &mut CrlfWriter::new(out);
+        Self::print_colored(out, Color::Cyan, heading);
+        let _ = execute!(out, Print("\n"));
+
+        for (idx, tail) in rows {
+            let _ = execute!(out,
+                SetAttribute(Attribute::Bold), Print(idx),
+                SetAttribute(Attribute::Reset),
+                Print(format!("{tail}\n")));
+        }
+
+        let _ = execute!(out, Print(footer));
+    }
+
+    /// Paint the deck browser's detail page for one card. Wraps its own
+    /// writer for the same reason `paint_paged_page` does (#470).
+    fn paint_card_detail(out: &mut impl Write, data: &mtg_engine::cards::CardData) {
+        let out = &mut CrlfWriter::new(out);
+        Self::print_colored(out, Color::Cyan, &format!(" {}", data.name));
+        let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
+        let _ = execute!(out, Print(format!("  Mana cost: {cost}\n")));
+        // The whole type line as the card prints it (CR 205.1):
+        // supertypes first (issue #333), then types, then the
+        // subtypes — which used to be a separate row.
+        let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
+            &data.supertypes, &data.card_types, &data.subtypes))));
+
+        if let (Some(p), Some(t)) = (data.power, data.toughness) {
+            let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
+        }
+        if !data.keywords.is_empty() {
+            let kws: Vec<String> =
+                data.keywords.iter().copied().map(keyword_title).collect();
+            let _ = execute!(out, SetForegroundColor(Color::Blue),
+                Print(format!("  Keywords: {}\n", kws.join(", "))), ResetColor);
+        }
+        if !data.oracle_text.is_empty() {
+            let _ = execute!(out, SetForegroundColor(Color::Yellow),
+                Print(format!("\n  {}\n", data.oracle_text)), ResetColor);
+        }
+        if let Some(fb) = &data.flashback_cost {
+            let _ = execute!(out, SetForegroundColor(Color::Cyan),
+                Print(format!("  Flashback: {fb}\n")), ResetColor);
+        }
+        let _ = execute!(out, Print("\n  Press enter to return to list..."));
+    }
+
     fn show_deck_browser(view: &GameView) {
         let registry = mtg_engine::cards::CardRegistry::with_all_cards();
         let mut out = stdout();
@@ -4584,22 +4723,12 @@ impl CliPlayer {
             } else {
                 format!(" YOUR DECK ({total_cards} cards)")
             };
-            Self::print_colored(&mut out, Color::Cyan, &heading);
-            let _ = execute!(out, Print("\n"));
-
-            for (idx, tail) in rows.iter().take(end).skip(start) {
-                let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(idx),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!("{tail}\n")));
-            }
-
             let footer = if paged {
                 format!("\n{DECK_PAGED_FOOTER}")
             } else {
                 "\n  Enter number for details, or press enter to return: ".to_string()
             };
-            let _ = execute!(out, Print(&footer));
+            Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
             let input = Self::read_line("");
 
@@ -4623,33 +4752,7 @@ impl CliPlayer {
                 if idx < deck_cards.len() {
                     let data = deck_cards[idx];
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-                    Self::print_colored(&mut out, Color::Cyan, &format!(" {}", data.name));
-                    let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
-                    let _ = execute!(out, Print(format!("  Mana cost: {cost}\n")));
-                    // The whole type line as the card prints it (CR 205.1):
-                    // supertypes first (issue #333), then types, then the
-                    // subtypes — which used to be a separate row.
-                    let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
-                        &data.supertypes, &data.card_types, &data.subtypes))));
-
-                    if let (Some(p), Some(t)) = (data.power, data.toughness) {
-                        let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
-                    }
-                    if !data.keywords.is_empty() {
-                        let kws: Vec<String> =
-                            data.keywords.iter().copied().map(keyword_title).collect();
-                        let _ = execute!(out, SetForegroundColor(Color::Blue),
-                            Print(format!("  Keywords: {}\n", kws.join(", "))), ResetColor);
-                    }
-                    if !data.oracle_text.is_empty() {
-                        let _ = execute!(out, SetForegroundColor(Color::Yellow),
-                            Print(format!("\n  {}\n", data.oracle_text)), ResetColor);
-                    }
-                    if let Some(fb) = &data.flashback_cost {
-                        let _ = execute!(out, SetForegroundColor(Color::Cyan),
-                            Print(format!("  Flashback: {fb}\n")), ResetColor);
-                    }
-                    let _ = execute!(out, Print("\n  Press enter to return to list..."));
+                    Self::paint_card_detail(&mut out, data);
                     let _ = out.flush();
                     let _ = Self::read_line("");
                 }
@@ -9124,6 +9227,141 @@ yourself at some considerable length";
         let v = view(Step::PostcombatMain, 6, true);
         let l = pass_concede_plus(vec![Action::PlayLand { object_id: ObjectId(3) }]);
         assert_eq!(CliPlayer::should_break_pass(&v, &l, &mode), Some(BreakReason::LandPlay));
+    }
+
+    // ── #470: what a viewer row ends with ─────────────────────────
+
+    /// Every byte position holding an LF that no CR precedes.
+    ///
+    /// A terminal with `OPOST`/`ONLCR` off — which is any terminal handed to
+    /// the program already in raw mode, since crossterm's `disable_raw_mode`
+    /// restores the termios it first snapshotted and that one is raw — moves
+    /// the cursor DOWN on an LF and does not return it to column 0. So a
+    /// page printed with bare LFs paints each row at the column the last one
+    /// ended, walks diagonally off the right edge, and scrolls its own
+    /// heading away (#470). A plain buffer is exactly that terminal: what is
+    /// not in the bytes does not happen.
+    fn bare_lfs(bytes: &[u8]) -> Vec<usize> {
+        bytes.iter().enumerate()
+            .filter(|&(i, &b)| b == b'\n' && (i == 0 || bytes[i - 1] != b'\r'))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn assert_crlf(what: &str, bytes: &[u8]) {
+        let bad = bare_lfs(bytes);
+        assert!(bad.is_empty(),
+            "{what}: {} row(s) end with a bare LF, at byte offsets {bad:?} of\n{}",
+            bad.len(), String::from_utf8_lossy(bytes));
+    }
+
+    #[test]
+    fn the_paged_viewers_end_every_row_with_crlf() {
+        let lines = vec![
+            InfoLine::Plain("p0 drew a card".to_string()),
+            InfoLine::Bold(" Your graveyard (2):".to_string()),
+            InfoLine::Dim("  (empty)".to_string()),
+            InfoLine::Mana("Brimstone Volley {1}{R}{R}".to_string()),
+        ];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_paged_page(
+            &mut buf, " GAME LOG (showing 1-4 of 4)", &lines, VIEWER_PAGED_FOOTER);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        // The page really was painted — a test that asserts about nothing
+        // passes on an empty buffer.
+        assert!(text.contains("GAME LOG (showing 1-4 of 4)"), "heading missing from {text}");
+        assert!(text.contains("p0 drew a card"), "entries missing from {text}");
+        assert!(text.contains(VIEWER_PAGED_FOOTER), "footer missing from {text}");
+        assert_crlf("show_paged_lines", &buf);
+    }
+
+    #[test]
+    fn the_battlefield_inspector_ends_every_row_with_crlf() {
+        let rows = vec![
+            (true, " Your permanents:".to_string()),
+            (false, "  0: Doomed Traveler 1/1".to_string()),
+            (true, " Opponent's permanents:".to_string()),
+            (false, "  1: Elite Inquisitor 2/2".to_string()),
+        ];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_inspect_page(
+            &mut buf, " INSPECT BATTLEFIELD", &rows, &format!("\n{DECK_PAGED_FOOTER}"));
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("INSPECT BATTLEFIELD"), "heading missing from {text}");
+        assert!(text.contains("Elite Inquisitor 2/2"), "rows missing from {text}");
+        assert_crlf("show_battlefield_inspector page", &buf);
+    }
+
+    #[test]
+    fn the_inspector_detail_page_ends_every_row_with_crlf() {
+        let mut v = view(Step::PrecombatMain, 4, true);
+        let mut perm = creature(7, "Bloodcrazed Neonate", 0);
+        perm.oracle_text = "Bloodcrazed Neonate attacks each combat if able.".to_string();
+        perm.counters.insert(mtg_engine::types::CounterType::PlusOnePlusOne, 2);
+        perm.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(1)));
+        perm.tapped = true;
+        perm.regeneration_shields = 1;
+        v.battlefield = vec![perm.clone()];
+
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Bloodcrazed Neonate"), "name missing from {text}");
+        assert!(text.contains("Counters:"), "counters missing from {text}");
+        assert!(text.contains("attacks each combat"), "oracle text missing from {text}");
+        assert_crlf("show_battlefield_inspector detail", &buf);
+    }
+
+    #[test]
+    fn the_deck_browser_ends_every_row_with_crlf() {
+        let rows = vec![
+            ("  0:".to_string(), " 10x Doomed Traveler {W} 1/1 (3hand, 7lib)".to_string()),
+            ("  1:".to_string(), " 20x Plains (4hand, 16lib)".to_string()),
+        ];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_deck_page(
+            &mut buf, " YOUR DECK (40 cards)", &rows, &format!("\n{DECK_PAGED_FOOTER}"));
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("YOUR DECK (40 cards)"), "heading missing from {text}");
+        assert!(text.contains("Doomed Traveler"), "rows missing from {text}");
+        assert_crlf("show_deck_browser page", &buf);
+
+        // The card detail page behind a number, whose oracle text and
+        // flashback rows are printed the same way.
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let id = registry.get_id_by_name("Brimstone Volley").expect("card in the pool");
+        let data = registry.card_data(id).expect("card data");
+        let mut detail: Vec<u8> = Vec::new();
+        CliPlayer::paint_card_detail(&mut detail, &data);
+        let text = String::from_utf8_lossy(&detail).to_string();
+        assert!(text.contains("Brimstone Volley"), "name missing from {text}");
+        assert_crlf("show_deck_browser detail", &detail);
+    }
+
+    #[test]
+    fn the_crlf_writer_adds_one_carriage_return_and_only_one() {
+        fn through(chunks: &[&str]) -> String {
+            let mut sink: Vec<u8> = Vec::new();
+            {
+                let mut w = CrlfWriter::new(&mut sink);
+                for c in chunks {
+                    w.write_all(c.as_bytes()).unwrap();
+                }
+            }
+            String::from_utf8(sink).unwrap()
+        }
+        assert_eq!(through(&["a\nb\n"]), "a\r\nb\r\n");
+        // A row that already carries its own CR is left alone, so this is
+        // safe to put under the screens that write "\r\n" themselves.
+        assert_eq!(through(&["a\r\nb\r\n"]), "a\r\nb\r\n");
+        assert_eq!(through(&["\n\n"]), "\r\n\r\n");
+        // A CRLF split across two writes is still one CR: `execute!` emits a
+        // row in several calls, so the state has to carry across them.
+        assert_eq!(through(&["a\r", "\nb"]), "a\r\nb");
+        assert_eq!(through(&["a", "\nb"]), "a\r\nb");
+        // An empty write does not forget what the last byte was.
+        assert_eq!(through(&["a\r", "", "\nb"]), "a\r\nb");
+        assert_eq!(through(&["no newline at all"]), "no newline at all");
     }
 }
 
