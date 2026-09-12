@@ -468,8 +468,7 @@ whether it told the truth.
   silently ignored, or documented as ignored and then used, is a broken
   promise and worth filing
 
-- V43 [proposed 2026-09-11, from a 2026-09-11 L44 probe that could not be
-  reproduced] does a viewer ever paint in raw mode? One probe that night
+- V43 [tried 2026-09-12 → #470] does a viewer ever paint in raw mode? One probe that night
   reported every row of `s`, `g` and `l` cascading right — each line starting
   at the column where the previous one ended, the LF-without-CR signature, with
   `(empty)` landing at column 9 = `len(" STACK")` + the row's own indent. The
@@ -491,3 +490,37 @@ whether it told the truth.
   paints. Two things travel with it: `show_paged_lines`'s page arithmetic calls
   `wrapped_height` assuming each row starts at column 0, so a cascading page
   under-counts and overflows the screen, and the heading is printed the same way
+
+  **Answered 2026-09-12: no prompt in this program does — the terminal the
+  program is HANDED does.** Read every reader before playing:
+  `read_line` → `read_line_redrawing` (`tui_raw_on` at `cli.rs:3623`,
+  `tui_raw_off` at `3680`), `read_line_with_search_redrawing` (`3775`/`3873`),
+  `run_card_search` (`2553`/`2610`) and `library_search_ui` (`6270`, which
+  binds no viewer key) are all raw-balanced, and the one asymmetric function,
+  `confirm_yn` (`3698`), is reached from a single call site where raw is
+  already off. Then the sweep: all six viewers from seven prompt kinds — the
+  mulligan decision, the `pick_set` bottom-N marking screen, the target
+  chooser, the priority menu, declare attackers, declare blockers and the
+  trigger-ordering screen — 42 opens, none cascading; `C-z`/`fg` clean too.
+  What DOES reproduce it, on demand, is `OPOST` already being off when the
+  process starts (`stty raw -echo` in front of the binary is the shortest
+  form): crossterm's `disable_raw_mode` restores the termios it snapshotted at
+  the FIRST `enable_raw_mode`, so if that snapshot was already raw, cooked
+  mode never comes back for the life of the process and every viewer paints
+  with a bare LF (#470). The cascade is confined to the six viewers, and the
+  contrast is the useful part — `render_paged`, `draw_ordering_screen` and
+  `draw_set_screen` `MoveTo(0, row)` each row and are perfect on the same
+  terminal, while `library_search_ui` and both line readers write `"\n\r"` /
+  `"\r\n"` explicitly. Three idioms for ending a row, one of them
+  terminal-dependent, and it is the oldest. The companion prediction held too:
+  under the cascade `show_paged_lines`'s `wrapped_height` under-counts, the
+  page overflows and the `(showing X-Y of Z)` heading scrolls away. Two things
+  cleared on the way past: #365's pager is exact at 120x45, 100x30, 80x24,
+  70x20, 45x18, 30x12, 24x10 and 20x8 (wrapped heading and footer both
+  counted, `p` reaches entry 1, `n` reaches the last entry), and the program
+  does not create the precondition for itself — `opost` is restored after
+  SIGKILL, SIGTERM, SIGHUP and Ctrl-C in a pane running an interactive shell.
+  Unreached: `prompt_exile_from_graveyard` and `library_search_ui` as
+  viewer-hosts (V41's gap, still open — the exile cost needs a graveyard these
+  games never built), and whether a minimum-geometry refusal would beat a
+  cascading viewer the way #352 asked of the combat prompts.
