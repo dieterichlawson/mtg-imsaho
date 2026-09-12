@@ -1121,32 +1121,61 @@ impl CliPlayer {
 
     /// Print an action label, coloring mana symbols and basic land names.
     fn print_action_label(out: &mut io::Stdout, label: &str) {
+        for (text, land) in Self::land_segments(label) {
+            match land.and_then(Self::mana_bg_color) {
+                Some(bg) => {
+                    let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
+                        Print(text), SetAttribute(Attribute::Reset));
+                }
+                None => Self::print_with_mana(out, &text, None),
+            }
+        }
+    }
+
+    /// Split a label into runs, each basic land name on its own with the
+    /// mana symbol of its color; everything else carries `None`.
+    ///
+    /// EVERY basic land in the label, not the first one: "Cast Mayor of
+    /// Avabruck (tap Forest, Plains)" used to color the Plains and leave the
+    /// Forest plain, because the search stopped at the first name that
+    /// matched in Plains-Island-Swamp-Mountain-Forest order. A name counts
+    /// only as a whole word, so a card whose name contains one is not
+    /// half-painted.
+    fn land_segments(label: &str) -> Vec<(String, Option<char>)> {
         const BASIC_LANDS: &[(&str, char)] = &[
             ("Plains", 'W'), ("Island", 'U'), ("Swamp", 'B'),
             ("Mountain", 'R'), ("Forest", 'G'),
         ];
-        // Check if any basic land name appears in the label.
-        let mut colored = false;
-        for &(land_name, mana_ch) in BASIC_LANDS {
-            if let Some(pos) = label.find(land_name) {
-                // Print prefix with mana coloring
-                let prefix = &label[..pos];
-                Self::print_with_mana(out, prefix, None);
-                // Print land name with background
-                if let Some(bg) = Self::mana_bg_color(mana_ch) {
-                    let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
-                        Print(land_name), SetAttribute(Attribute::Reset));
+        let is_word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        let mut segments: Vec<(String, Option<char>)> = Vec::new();
+        let mut rest = label;
+        while !rest.is_empty() {
+            // The earliest whole-word basic land name in what is left.
+            let next = BASIC_LANDS.iter()
+                .filter_map(|&(name, sym)| {
+                    rest.match_indices(name)
+                        .find(|&(pos, _)| {
+                            !is_word(rest[..pos].chars().next_back())
+                                && !is_word(rest[pos + name.len()..].chars().next())
+                        })
+                        .map(|(pos, _)| (pos, name, sym))
+                })
+                .min_by_key(|&(pos, _, _)| pos);
+            match next {
+                Some((pos, name, sym)) => {
+                    if pos > 0 {
+                        segments.push((rest[..pos].to_string(), None));
+                    }
+                    segments.push((name.to_string(), Some(sym)));
+                    rest = &rest[pos + name.len()..];
                 }
-                // Print suffix with mana coloring
-                let suffix = &label[pos + land_name.len()..];
-                Self::print_with_mana(out, suffix, None);
-                colored = true;
-                break;
+                None => {
+                    segments.push((rest.to_string(), None));
+                    rest = "";
+                }
             }
         }
-        if !colored {
-            Self::print_with_mana(out, label, None);
-        }
+        segments
     }
 
     // ── Rendering ──────────────────────────────────────────────────
@@ -9014,5 +9043,51 @@ yourself at some considerable length";
         let v = view(Step::PostcombatMain, 6, true);
         let l = pass_concede_plus(vec![Action::PlayLand { object_id: ObjectId(3) }]);
         assert_eq!(CliPlayer::should_break_pass(&v, &l, &mode), Some(BreakReason::LandPlay));
+    }
+}
+
+#[cfg(test)]
+mod land_color_tests {
+    use super::CliPlayer;
+
+    fn colored(label: &str) -> Vec<(String, char)> {
+        CliPlayer::land_segments(label).into_iter()
+            .filter_map(|(t, c)| c.map(|c| (t, c)))
+            .collect()
+    }
+
+    /// Every basic land in a row is painted, not the first in
+    /// Plains-Island-Swamp-Mountain-Forest order: "tap Forest, Plains" lost
+    /// its Forest.
+    #[test]
+    fn every_basic_land_in_a_label_is_colored() {
+        assert_eq!(colored("Cast Mayor of Avabruck (tap Forest, Plains)"),
+            vec![("Forest".into(), 'G'), ("Plains".into(), 'W')]);
+        assert_eq!(colored("Cast Skaab Ruinator (tap Island, Swamp, Island)"),
+            vec![("Island".into(), 'U'), ("Swamp".into(), 'B'), ("Island".into(), 'U')]);
+        assert_eq!(colored("Bottom Forest, Island, Swamp"),
+            vec![("Forest".into(), 'G'), ("Island".into(), 'U'), ("Swamp".into(), 'B')]);
+    }
+
+    /// The runs between the names are kept whole and in order, so the
+    /// printed row reads exactly as the label.
+    #[test]
+    fn the_segments_reassemble_the_label() {
+        for label in ["Cast Mayor of Avabruck (tap Forest, Plains)", "Pass priority",
+                      "Tap Mountain for mana", "Forest", "Play Plains"] {
+            let joined: String = CliPlayer::land_segments(label).into_iter().map(|(t, _)| t).collect();
+            assert_eq!(joined, label);
+        }
+        assert_eq!(CliPlayer::land_segments("Pass priority"),
+            vec![("Pass priority".to_string(), None)]);
+    }
+
+    /// A land name inside another word is not a land.
+    #[test]
+    fn a_land_name_counts_only_as_a_whole_word() {
+        assert!(colored("Cast Forestborn Wanderer").is_empty());
+        assert!(colored("Cast Islandfall").is_empty());
+        assert_eq!(colored("Cast Mountain's Wrath (tap Mountain)"),
+            vec![("Mountain".into(), 'R'), ("Mountain".into(), 'R')]);
     }
 }
