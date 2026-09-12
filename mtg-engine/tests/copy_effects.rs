@@ -471,3 +471,71 @@ fn a_copy_derives_the_copied_cards_colors_from_its_cost() {
     assert_eq!(colors, &vec![Color::Black],
         "the copy's color comes from the copied card's {{1}}{{B}} cost");
 }
+
+// ── A token copy is a permanent entering the battlefield ─────────
+
+/// CR 614.1c and CR 707.2: a token created as a copy of a card still ENTERS
+/// the battlefield, so a replacement effect that applies as it enters applies
+/// to it — and may make it a copy of something else. Essence of the Wild,
+/// "creatures you control enter the battlefield as copies of Essence of the
+/// Wild", is that effect, and its answer is the one that has to survive.
+///
+/// The seed that found this (#473) ran Back from the Brink under a stolen
+/// Essence of the Wild: the token was built as a Village Ironsmith, the
+/// entering replacement made it an Essence of the Wild, and the creation then
+/// stamped the exiled card's id back over the top. What was left named one
+/// card in its cache and another on its face — the CR 707.8 invariant the
+/// fuzzer trips — and carried the abilities the rules had just replaced away.
+#[test]
+fn a_token_copy_entering_under_essence_of_the_wild_is_an_essence_of_the_wild() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // The card Back from the Brink exiles, in the graveyard as it was there.
+    let ironsmith = named_card_in_graveyard(&mut state, &reg, "Village Ironsmith", P0);
+    named_permanent(&mut state, &reg, "Essence of the Wild", P0);
+
+    let token = state.create_token_copy(ironsmith, P0, &reg);
+    state.trigger_event_index = state.events.len();
+
+    assert_eq!(state.name_of(token, &reg), "Essence of the Wild",
+        "the entering replacement decides what the token is");
+    assert_eq!(state.get_object(token).unwrap().name, "Essence of the Wild",
+        "and the name cache says the same thing the face does (CR 707.8)");
+    assert_eq!(
+        (state.effective_power(token, &reg), state.effective_toughness(token, &reg)),
+        (Some(6), Some(6)),
+        "an Essence of the Wild is a 6/6, not a 1/1 Village Ironsmith");
+    assert_eq!(
+        state.get_object(token).unwrap().card_id,
+        reg.get_id_by_name("Essence of the Wild").unwrap(),
+        "the card id is what every ability, trigger and replacement lookup \
+         reads, so it is what makes the object a copy");
+    // The fuzzer's own oracle, which is how this was found. (The rest of
+    // `check_core` is not asserted here: a card put into a graveyard by hand
+    // on turn 1 trips unrelated clauses about how it got there.)
+    let violations = mtg_engine::invariants::check_core(&state, &reg);
+    assert!(!violations.iter().any(|v| v.contains("name cache")),
+        "the CR 707.8 name-cache clause must not fire: {violations:?}");
+}
+
+/// The other half of the same mechanism: with nothing replacing the entry, a
+/// token copy is still a copy of the card it was made from — face, legend
+/// flag and all. Handing the copied card in at creation rather than stamping
+/// it afterwards must not lose it.
+#[test]
+fn a_token_copy_of_a_legendary_card_keeps_its_face_and_its_legend_flag() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let token = state.create_token_copy(grimgrin, P0, &reg);
+
+    assert_eq!(state.name_of(token, &reg), "Grimgrin, Corpse-Born");
+    assert_eq!(
+        state.get_object(token).unwrap().card_id,
+        reg.get_id_by_name("Grimgrin, Corpse-Born").unwrap(),
+        "the copy carries the copied card");
+    assert!(state.get_object(token).unwrap().is_legendary,
+        "legendary is copiable (CR 707.2), and the legend rule reads this flag");
+}

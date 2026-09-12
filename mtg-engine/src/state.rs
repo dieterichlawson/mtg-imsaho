@@ -750,6 +750,34 @@ impl GameState {
         subtypes: Vec<String>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
+        self.create_tokens_inner(count, name, owner, power, toughness,
+            colors, card_types, keywords, subtypes, None, registry)
+    }
+
+    /// The same, for a token that copies a card (`create_token_copy`) and so
+    /// enters already carrying that card's face.
+    ///
+    /// The face has to be on the object BEFORE it enters the battlefield: a
+    /// replacement effect that applies as it enters — Essence of the Wild's
+    /// "creatures you control enter the battlefield as copies of Essence of
+    /// the Wild" — reads and rewrites exactly these fields, and anything
+    /// written afterwards overwrites the rules' answer with the pre-entry one
+    /// (#473).
+    #[allow(clippy::too_many_arguments)]
+    fn create_tokens_inner(
+        &mut self,
+        count: u32,
+        name: &str,
+        owner: PlayerId,
+        power: i32,
+        toughness: i32,
+        colors: Vec<crate::types::Color>,
+        card_types: Vec<crate::types::CardType>,
+        keywords: Vec<crate::types::Keyword>,
+        subtypes: Vec<String>,
+        face: Option<TokenCopyFace>,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<ObjectId> {
         if count == 0 {
             return Vec::new();
         }
@@ -784,13 +812,14 @@ impl GameState {
         // Create extra doubled copies first (cloning inputs).
         for _ in 0..extra_copies {
             let id = self.create_token_internal(name, owner, power, toughness,
-                colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
+                colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(),
+                face, registry);
             all_ids.push(id);
         }
         // Create the final token, consuming the inputs.
         let described = format!("{power}/{toughness} {name}");
         let id = self.create_token_internal(name, owner, power, toughness,
-            colors, card_types, keywords, subtypes, registry);
+            colors, card_types, keywords, subtypes, face, registry);
         all_ids.push(id);
 
         // The count a player reads is the count that entered, and it is
@@ -808,6 +837,7 @@ impl GameState {
     }
 
     /// Internal token creation without Parallel Lives doubling.
+    #[allow(clippy::too_many_arguments)]
     fn create_token_internal(
         &mut self,
         name: &str,
@@ -818,6 +848,7 @@ impl GameState {
         card_types: Vec<crate::types::CardType>,
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
+        face: Option<TokenCopyFace>,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let id = self.next_id();
@@ -827,7 +858,11 @@ impl GameState {
         let subtypes_printed = subtypes.clone();
         let obj = GameObject {
             id,
-            card_id: CardId(0), // sentinel for tokens
+            // A token of no card is `CardId(0)`; a token copy carries the
+            // copied card from the moment it is built, so the abilities,
+            // triggers and replacement lookups that run as it enters find the
+            // card it is a copy of (#473).
+            card_id: face.map_or(CardId(0), |f| f.card_id),
             name: name.to_string(),
             owner,
             controller: owner,
@@ -850,7 +885,7 @@ impl GameState {
             zone_change_count: 0,
             copy_grantor: None,
             is_token: true,
-            is_legendary: false,
+            is_legendary: face.is_some_and(|f| f.is_legendary),
             cast_with_flashback: false,
             cast_from_zone: None,
             instance_oracle_text: None,
@@ -858,7 +893,9 @@ impl GameState {
             card_state: std::collections::BTreeMap::new(),
             counters: std::collections::BTreeMap::new(),
             regeneration_shields: 0,
-            is_transformed: false,
+            // CR 707.8a: a copy of a permanent with its back face up shows
+            // that face too, and the flag is what makes every accessor agree.
+            is_transformed: face.is_some_and(|f| f.is_transformed),
             x_value: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
             chosen_mode: None,
@@ -929,7 +966,21 @@ impl GameState {
         let card_types = self.printed_card_types_of(source_id, registry);
         let subtypes = self.printed_subtypes_of(source_id, registry);
 
-        let all_ids = self.create_token_with_subtypes(
+        // The copied card travels WITH the creation, so every token (the
+        // Parallel Lives extras included) is built carrying it: same
+        // `CardBehavior`, same legend-rule flag, same face up.
+        //
+        // This used to be a fix-up loop after the tokens had already entered
+        // the battlefield, which is one step too late. A replacement effect
+        // applying as a token enters may make it a copy of something else —
+        // Essence of the Wild — and `become_copy_of` records that by writing
+        // `card_id`, `name` and the printed characteristics. Stamping the
+        // exiled card's id over the top afterwards left an object whose name
+        // cache and whose face named different cards, which is the invariant
+        // violation in #473, and whose abilities were the ones the rules had
+        // just replaced away.
+        let all_ids = self.create_tokens_inner(
+            1,
             &name,
             owner,
             power.unwrap_or(0),
@@ -938,17 +989,9 @@ impl GameState {
             card_types,
             keywords,
             subtypes.clone(),
+            Some(TokenCopyFace { card_id, is_legendary, is_transformed: source_transformed }),
             registry,
         );
-        // Copy the card_id and is_legendary so ALL tokens (including Parallel Lives extras)
-        // get the same CardBehavior and are correctly flagged for the legend rule.
-        for &token_id in &all_ids {
-            if let Some(obj) = self.get_object_mut(token_id) {
-                obj.card_id = card_id;
-                obj.is_legendary = is_legendary;
-                obj.is_transformed = source_transformed;
-            }
-        }
         all_ids.into_iter().next().unwrap_or(ObjectId(0))
     }
 
@@ -3612,6 +3655,21 @@ pub struct TokenFace {
     pub keywords: Vec<crate::types::Keyword>,
     pub card_types: Vec<crate::types::CardType>,
     pub subtypes: Vec<String>,
+}
+
+/// The card a token copy is built from (CR 707.2), carried into creation.
+///
+/// A token created as a copy is not a token of no card: it has the copied
+/// card's `CardId`, and with it that card's abilities, triggers and
+/// replacement effects, plus the legend-rule flag and the face that is up.
+/// Those have to be on the object before it enters the battlefield, because
+/// what applies as it enters may make it a copy of something else and write
+/// the same fields (#473).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TokenCopyFace {
+    pub card_id: CardId,
+    pub is_legendary: bool,
+    pub is_transformed: bool,
 }
 
 /// Whether a permanent that chooses what to enter as has been asked yet, and
