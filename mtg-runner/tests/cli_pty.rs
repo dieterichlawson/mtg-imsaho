@@ -172,7 +172,7 @@ impl PtyGame {
             assert!(
                 Instant::now() < deadline,
                 "{keys:?} never produced {needle:?};\nlast 2000 visible chars:\n{}",
-                &text[text.len().saturating_sub(2000)..]
+                tail(&text)
             );
         }
     }
@@ -189,7 +189,7 @@ impl PtyGame {
             assert!(
                 Instant::now() < deadline,
                 "timed out waiting for {needle:?};\nlast 2000 visible chars:\n{}",
-                &text[text.len().saturating_sub(2000)..]
+                tail(&text)
             );
             self.pump(Duration::from_millis(100));
         }
@@ -230,7 +230,7 @@ impl PtyGame {
             assert!(
                 Instant::now() < deadline,
                 "no menu row labelled {needle:?} appeared;\nlast 2000 visible chars:\n{}",
-                &text[text.len().saturating_sub(2000)..]
+                tail(&text)
             );
             self.pump(Duration::from_millis(100));
         }
@@ -255,7 +255,7 @@ impl PtyGame {
         assert!(
             !text.contains(needle),
             "{needle:?} appeared but must not have;\nlast 2000 visible chars:\n{}",
-            &text[text.len().saturating_sub(2000)..]
+            tail(&text)
         );
     }
 
@@ -278,6 +278,16 @@ impl Drop for PtyGame {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// The last ~2000 visible characters of a stream, for a failure message.
+///
+/// By characters, not bytes: the frame is drawn in box-drawing glyphs, and a
+/// byte slice that landed inside one panicked in the assertion message and
+/// hid which expectation had actually timed out.
+fn tail(text: &str) -> &str {
+    let start = text.char_indices().rev().nth(2000).map_or(0, |(i, _)| i);
+    &text[start..]
 }
 
 /// The index of the most recently drawn menu row whose label starts with
