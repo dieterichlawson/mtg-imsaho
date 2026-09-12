@@ -180,7 +180,7 @@ fn pid_is_alive(pid: i32) -> bool {
     // errno is read through std: `libc::__errno_location` is glibc's name
     // for it and does not exist on macOS, where it is `__error`.
     (unsafe { libc::kill(pid, 0) } == 0
-                || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM))
+        || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM))
 }
 
 #[cfg(not(unix))]
