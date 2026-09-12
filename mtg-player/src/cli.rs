@@ -380,6 +380,12 @@ enum ChooserRows {
     DoneThenCancel,
 }
 
+/// The last row of a target chooser: the way out, named after what it
+/// abandons. A cast and an activation are the two things a chooser is ever
+/// opened for, and the hint line recognises a chooser by this row.
+const CANCEL_CAST: &str = "Cancel the cast";
+const CANCEL_ACTIVATION: &str = "Cancel the activation";
+
 /// What a line typed at a target chooser means.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum TargetInput {
@@ -868,6 +874,8 @@ enum DisplayEntry {
     Direct(usize),
     /// Index into `LegalActions::castable_spells`.
     Cast(usize),
+    /// Index into `LegalActions::activatable_abilities`.
+    Ability(usize),
 }
 
 /// One row of a menu: its text, and the objects that make it the choice it
@@ -2691,7 +2699,7 @@ impl CliPlayer {
                 let forced = Self::forced_cast_targets(&spell.target_spec);
                 if forced.is_empty() {
                     vec![Self::prompt_target(view, options,
-                        &format!("{}: select a target", spell.name))?]
+                        &format!("{}: select a target", spell.name), CANCEL_CAST)?]
                 } else {
                     forced
                 }
@@ -2704,7 +2712,7 @@ impl CliPlayer {
                 // are `ChosenAtCast` and never reach this arm.
                 let _ = (second, second_min, second_max);
                 vec![Self::prompt_target(view, first,
-                    &format!("{}: select first of two targets", spell.name))?]
+                    &format!("{}: select first of two targets", spell.name), CANCEL_CAST)?]
             }
             CastTargetSpec::ChosenAtCast => {
                 // The cast asks for these itself: submit it bare and answer
@@ -2729,7 +2737,7 @@ impl CliPlayer {
             None => {
                 let target = Self::prompt_target(view,
                     &spell.sacrifice_options.iter().map(|&id| mtg_engine::actions::Target::Object(id)).collect::<Vec<_>>(),
-                    &format!("{}: choose a creature to sacrifice", spell.name))?;
+                    &format!("{}: choose a creature to sacrifice", spell.name), CANCEL_CAST)?;
                 match target {
                     mtg_engine::actions::Target::Object(id) => Some(id),
                     mtg_engine::actions::Target::Player(_) => None,
@@ -2748,6 +2756,140 @@ impl CliPlayer {
             // the normal cost for an alternative-cost entry (issue #128).
             alternative_cost: spell.alternative_cost.clone(),
             tap_plan: spell.tap_plan.clone(),
+        })
+    }
+
+    /// The distinct target sets and distinct sacrifices an ability offers.
+    ///
+    /// `option_combos` is the PRODUCT of the two slots — one entry per
+    /// (target, sacrifice) pair — and every surface that asks a person or a
+    /// model has to take it apart again into the two questions it was built
+    /// from. One entry in a list is a forced choice (CR 601.2c and 601.2h:
+    /// one legal option is no choice at all), which the row names rather than
+    /// offering a one-option screen.
+    fn ability_slots(ab: &mtg_engine::actions::ActivatableAbility)
+        -> (Vec<Vec<Target>>, Vec<Option<ObjectId>>)
+    {
+        let mut targets: Vec<Vec<Target>> = Vec::new();
+        let mut sacrifices: Vec<Option<ObjectId>> = Vec::new();
+        for opt in &ab.option_combos {
+            if !targets.contains(&opt.targets) { targets.push(opt.targets.clone()); }
+            if !sacrifices.contains(&opt.sacrifice) { sacrifices.push(opt.sacrifice); }
+        }
+        (targets, sacrifices)
+    }
+
+    /// The menu row for one activated ability.
+    ///
+    /// It carries what activating will do WITHOUT asking again — the same
+    /// rule `cast_row_label` follows. A forced target and a forced sacrifice
+    /// are named, because a single keypress then commits them; a slot with a
+    /// choice left in it is not named here, it is asked for on its own
+    /// screen.
+    fn ability_row_label(view: &GameView, ab: &mtg_engine::actions::ActivatableAbility) -> MenuLabel {
+        let (targets, sacrifices) = Self::ability_slots(ab);
+        // The row's identity is the source plus whatever it already commits
+        // to — two Wooden Stakes, or one Stake against two identical tokens,
+        // collide on the SOURCE as readily as on the target (issue #257).
+        let mut ids = vec![ab.object_id.0];
+        let target_suffix = match targets.as_slice() {
+            [only] => {
+                ids.extend(only.iter().filter_map(|t| match t {
+                    Target::Object(id) => Some(id.0),
+                    _ => None,
+                }));
+                Self::targets_suffix(view, only)
+            }
+            _ => String::new(),
+        };
+        // A sacrifice cost with a choice in it (CR 601.2h) is part of what
+        // this entry does: Grimgrin's two "Sacrifice another creature"
+        // entries differed only in which creature died, with nothing on
+        // screen saying so (issue #80). Sacrificing THIS permanent is
+        // already in the description, so only name a different one (#141).
+        let sac_suffix = match sacrifices.as_slice() {
+            [Some(sac)] => {
+                ids.push(sac.0);
+                if *sac == ab.object_id {
+                    ", sacrificing itself".to_string()
+                } else {
+                    Self::sacrifice_suffix(view, Some(*sac))
+                }
+            }
+            _ => String::new(),
+        };
+        let name = Self::perm_name(view, ab.object_id);
+        let text = if ab.description.is_empty() {
+            // The ability's own text is what tells a 2-mana ability from a
+            // 5-mana one on the same permanent (#61); without it, say at
+            // least which permanent is being activated.
+            format!("Activate ability: {name}{}{target_suffix}{sac_suffix}",
+                Self::tap_suffix(view, &ab.tap_plan))
+        } else {
+            format!("{name}: {}{}{target_suffix}{sac_suffix}", ab.description,
+                Self::tap_suffix(view, &ab.tap_plan))
+        };
+        MenuLabel { text, ids }
+    }
+
+    /// Ask an activated ability's slots one at a time and build the
+    /// activation. `None` abandons it with nothing spent.
+    ///
+    /// One screen per slot, so the rows track the objects on the board: a
+    /// target chooser of `n` rows and a sacrifice chooser of `n` rows, where
+    /// listing the combinations was `n x n` (#471).
+    fn choose_ability_options(view: &GameView, ab: &mtg_engine::actions::ActivatableAbility)
+        -> Option<Action>
+    {
+        let (targets, _) = Self::ability_slots(ab);
+        let chosen_targets = match targets.len() {
+            // An untargeted ability, or one the engine offered no combos for.
+            0 => Vec::new(),
+            1 => targets[0].clone(),
+            _ => {
+                // An ability fills one target slot (`generate_ability_targets`
+                // produces one target per action), so the screen is one row
+                // per candidate.
+                let options: Vec<Target> =
+                    targets.iter().filter_map(|t| t.first().cloned()).collect();
+                let picked = Self::prompt_target(view, &options,
+                    &format!("{}: select a target", ab.name), CANCEL_ACTIVATION)?;
+                targets.into_iter().find(|t| t.first() == Some(&picked))?
+            }
+        };
+
+        // Only the sacrifices legal alongside the target that was chosen:
+        // the two slots are not independent in general, and the product the
+        // engine built is where that dependence is recorded.
+        let mut sacrifices: Vec<Option<ObjectId>> = Vec::new();
+        for opt in ab.option_combos.iter().filter(|o| o.targets == chosen_targets) {
+            if !sacrifices.contains(&opt.sacrifice) { sacrifices.push(opt.sacrifice); }
+        }
+        let chosen_sacrifice = match sacrifices.as_slice() {
+            [] => None,
+            [only] => *only,
+            _ => {
+                let options: Vec<Target> = sacrifices.iter().flatten()
+                    .map(|&id| Target::Object(id)).collect();
+                match Self::prompt_target(view, &options,
+                    &format!("{}: choose a creature to sacrifice", ab.name), CANCEL_ACTIVATION)?
+                {
+                    Target::Object(id) => Some(id),
+                    Target::Player(_) | Target::Illegal => None,
+                }
+            }
+        };
+
+        Some(Action::ActivateAbility {
+            object_id: ab.object_id,
+            ability_index: ab.ability_index,
+            targets: chosen_targets,
+            tap_plan: ab.tap_plan.clone(),
+            sacrifice: chosen_sacrifice,
+            // X is asked for by the ChooseXValue prompt the activation
+            // raises, not enumerated here.
+            x_value: None,
+            source_card_id: ab.source_card_id,
         })
     }
 
@@ -2826,15 +2968,15 @@ impl CliPlayer {
     /// Every chooser ends in a Cancel row. Making that unconditional here is
     /// what stops the next one being written without an exit — the "up to N"
     /// second slot of a two-target spell had none at all (issue #288).
-    fn chooser_labels(view: &GameView, options: &[mtg_engine::actions::Target], rows: ChooserRows)
-        -> Vec<MenuLabel>
+    fn chooser_labels(view: &GameView, options: &[mtg_engine::actions::Target], rows: ChooserRows,
+        cancel: &str) -> Vec<MenuLabel>
     {
         let mut labels = Self::target_menu_labels(view, options);
         match rows {
-            ChooserRows::CancelOnly => labels.push(MenuLabel::plain("Cancel the cast")),
+            ChooserRows::CancelOnly => labels.push(MenuLabel::plain(cancel)),
             ChooserRows::DoneThenCancel => {
                 labels.push(MenuLabel::plain("Done (cast with targets chosen so far)"));
-                labels.push(MenuLabel::plain("Cancel the cast"));
+                labels.push(MenuLabel::plain(cancel));
             }
         }
         labels
@@ -2846,8 +2988,9 @@ impl CliPlayer {
         options: &[mtg_engine::actions::Target],
         label: &str,
         rows: ChooserRows,
+        cancel: &str,
     ) -> UpToPick {
-        let labels = Self::chooser_labels(view, options, rows);
+        let labels = Self::chooser_labels(view, options, rows, cancel);
         let mut notice: Option<String> = None;
         // A chooser longer than the pane pages like the priority menu does.
         // It drew the "m = next page" marker and had no offset to advance,
@@ -2898,10 +3041,10 @@ impl CliPlayer {
 
     /// Prompt the user to pick one target from a list. `None` abandons the
     /// cast with nothing spent.
-    fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str)
-        -> Option<mtg_engine::actions::Target>
+    fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str,
+        cancel: &str) -> Option<mtg_engine::actions::Target>
     {
-        match Self::run_target_chooser(view, options, label, ChooserRows::CancelOnly) {
+        match Self::run_target_chooser(view, options, label, ChooserRows::CancelOnly, cancel) {
             UpToPick::Pick(t) => Some(t),
             // `Done` is not offered by this chooser.
             UpToPick::Done | UpToPick::Cancel => None,
@@ -3134,7 +3277,8 @@ impl CliPlayer {
     /// mistaken for one.
     fn menu_hints(labels: &[MenuLabel], has_right: bool) -> String {
         let has_pass = labels.first().is_some_and(|l| l.full() == "Pass priority");
-        let is_chooser = labels.last().is_some_and(|l| l.full() == "Cancel the cast");
+        let is_chooser = labels.last()
+            .is_some_and(|l| l.full() == CANCEL_CAST || l.full() == CANCEL_ACTIVATION);
         // The `/` search lives in the right panel, which only exists at
         // >= 100 columns — advertising it below that put users into an
         // invisible modal mode that swallowed keystrokes (issue #107).
@@ -6627,6 +6771,12 @@ impl CliPlayer {
         // its mana cost" is TWO menu rows — collapsing on the object alone
         // dropped the CR 601.2b choice (issue #128).
         let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
+        // Keyed the way an ability is identified: the permanent, which of its
+        // abilities, and — for an ability an Aura granted — whose ability it
+        // is. Two abilities on one permanent stay two rows (#61), and two
+        // copies of one equipment stay two rows (#257).
+        let mut seen_abilities: Vec<(mtg_engine::ids::ObjectId, usize, Option<mtg_engine::ids::CardId>)>
+            = Vec::new();
 
         // Ordering: non-tap actions, cast spells, tap actions, concede last.
         let mut deferred_taps: Vec<(usize, MenuLabel)> = Vec::new();
@@ -6668,56 +6818,41 @@ impl CliPlayer {
                 // and the player could not tell a 2-mana ability from a
                 // 5-mana one (#61). The engine already collapses the metadata
                 // into activatable_abilities, description included.
-                Action::ActivateAbility { object_id, ability_index, source_card_id, targets, sacrifice, tap_plan, .. } => {
-                    let desc = legal.activatable_abilities.iter()
-                        .find(|ab| ab.object_id == *object_id
-                            && ab.ability_index == *ability_index
-                            && ab.source_card_id == *source_card_id)
-                        .map(|ab| ab.description.clone())
-                        .filter(|d| !d.is_empty());
-                    // A sacrifice cost with a choice in it (CR 601.2h) is
-                    // part of what this entry does: Grimgrin's two
-                    // "Sacrifice another creature" entries differed only in
-                    // which creature died, with nothing on screen saying so
-                    // (issue #80). Sacrificing THIS permanent is already in
-                    // the description, so only name a different one.
-                    let sac_suffix = match sacrifice {
-                        Some(sac) if sac != object_id =>
-                            Self::sacrifice_suffix(view, Some(*sac)),
-                        // A choose-a-creature cost picking the source itself:
-                        // this entry rendered with no creature named at all,
-                        // while its siblings said whom they sacrifice (#141).
-                        // (A SacrificeThis cost carries no choice and no
-                        // sacrifice id, so it never reaches this arm.)
-                        Some(_) => ", sacrificing itself".to_string(),
-                        None => String::new(),
-                    };
-                    // The row's identity is (source, targets, sacrifice) —
-                    // two Wooden Stakes, or one Stake offered against two
-                    // identical tokens, collide on the SOURCE as readily as
-                    // on the target, and only the target half was ever
-                    // disambiguated (issue #257).
-                    let mut ids = vec![object_id.0];
-                    ids.extend(targets.iter().filter_map(|t| match t {
-                        Target::Object(id) => Some(id.0),
-                        _ => None,
-                    }));
-                    if let Some(sac) = sacrifice { ids.push(sac.0); }
-                    let label = match desc {
-                        Some(d) => MenuLabel {
-                            text: format!("{}: {d}{}{}{sac_suffix}", Self::perm_name(view, *object_id),
-                                Self::tap_suffix(view, tap_plan),
-                                Self::targets_suffix(view, targets)),
-                            ids,
-                        },
-                        None => MenuLabel {
-                            text: format!("{}{sac_suffix}", Self::format_action(view, action)),
-                            ids,
-                        },
-                    };
-
-                    display.push(DisplayEntry::Direct(i));
-                    display_labels.push(label);
+                Action::ActivateAbility { object_id, ability_index, source_card_id, .. } => {
+                    // One row per ABILITY, not per way of filling its slots.
+                    //
+                    // The engine enumerates one `ActivateAbility` per
+                    // (target, sacrifice) pair, so an ability that both
+                    // targets and has a chooseable sacrifice cost takes
+                    // `|targets| x |sacrifices|` rows: 25 at five creatures,
+                    // 171 for Skirsdag Cultist at eight a side, 6400 at forty
+                    // (#471). No question may grow faster than the board —
+                    // that menu is unreadable, and it pushed "Play land" from
+                    // row 1 to row 26 and three pages down.
+                    //
+                    // The slots are asked one at a time instead, off
+                    // `activatable_abilities`: the engine already publishes
+                    // that collapsed view with `option_combos` on it, and the
+                    // LLM seat has always answered through it.
+                    let key = (*object_id, *ability_index, *source_card_id);
+                    if seen_abilities.contains(&key) { continue; }
+                    let found = legal.activatable_abilities.iter().position(|ab|
+                        (ab.object_id, ab.ability_index, ab.source_card_id) == key);
+                    seen_abilities.push(key);
+                    match found {
+                        Some(ab_idx) => {
+                            display.push(DisplayEntry::Ability(ab_idx));
+                            display_labels.push(
+                                Self::ability_row_label(view, &legal.activatable_abilities[ab_idx]));
+                        }
+                        // No collapsed entry to ask from. The enumerated
+                        // action still goes on the menu: an ability with no
+                        // row is an ability the player cannot use at all.
+                        None => {
+                            display.push(DisplayEntry::Direct(i));
+                            display_labels.push(MenuLabel::plain(Self::format_action(view, action)));
+                        }
+                    }
                 }
                 // Choose-cards-from-hand menus: two Forests are
                 // interchangeable, so options whose labels render identically
@@ -7089,6 +7224,13 @@ impl Player for CliPlayer {
                                 return action;
                             }
                             // User cancelled target selection — re-render
+                        }
+                        DisplayEntry::Ability(ab_idx) => {
+                            let ab = &legal.activatable_abilities[*ab_idx];
+                            if let Some(action) = Self::choose_ability_options(view, ab) {
+                                return action;
+                            }
+                            // Cancelled at a slot — re-render, nothing spent.
                         }
                     }
                     continue;
@@ -9362,6 +9504,161 @@ yourself at some considerable length";
         // An empty write does not forget what the last byte was.
         assert_eq!(through(&["a\r", "", "\nb"]), "a\r\nb");
         assert_eq!(through(&["no newline at all"]), "no newline at all");
+    }
+
+    // ── #471: a menu row is an ability, not a way of filling it ──────
+
+    /// The engine's enumeration for one equip-and-sacrifice ability on a
+    /// board of `n` creatures: one action per (target, sacrifice) pair, plus
+    /// the collapsed `ActivatableAbility` it also publishes.
+    fn hauberk_legal(n: u64) -> LegalActions {
+        let hauberk = ObjectId(100);
+        let mut actions = vec![Action::PassPriority];
+        let mut combos = Vec::new();
+        for target in 0..n {
+            for sac in 0..n {
+                actions.push(Action::ActivateAbility {
+                    object_id: hauberk,
+                    ability_index: 0,
+                    targets: vec![Target::Object(ObjectId(target))],
+                    tap_plan: vec![],
+                    sacrifice: Some(ObjectId(sac)),
+                    x_value: None,
+                    source_card_id: None,
+                });
+                combos.push(mtg_engine::actions::ActivatableAbilityOption {
+                    targets: vec![Target::Object(ObjectId(target))],
+                    sacrifice: Some(ObjectId(sac)),
+                });
+            }
+        }
+        actions.push(Action::Concede);
+        let mut legal = legal(actions);
+        legal.activatable_abilities = vec![mtg_engine::actions::ActivatableAbility {
+            object_id: hauberk,
+            ability_index: 0,
+            source_card_id: None,
+            name: "Demonmail Hauberk".to_string(),
+            description: "Equip—Sacrifice a creature".to_string(),
+            target_options: (0..n).map(|t| Target::Object(ObjectId(t))).collect(),
+            tap_plan: vec![],
+            option_combos: combos,
+        }];
+        legal
+    }
+
+    /// Issue #471: no question grows faster than the board. The engine
+    /// enumerates one `ActivateAbility` per (target, sacrifice) pair, and the
+    /// menu used to push a row for each: 25 rows at five creatures, 171 for
+    /// Skirsdag Cultist at eight a side, 6400 at forty — three pages of one
+    /// ability, with "Play land" beneath them.
+    ///
+    /// One ability is one row whatever the board is. The slots are asked for
+    /// afterwards, one screen each, which is `n + n` rows rather than `n x n`.
+    #[test]
+    fn one_ability_is_one_menu_row_however_wide_the_board() {
+        let v = view(Step::PrecombatMain, 8, true);
+        for n in [2_u64, 5, 8, 12, 40] {
+            let legal = hauberk_legal(n);
+            let (display, labels) = CliPlayer::build_action_menu(&v, &legal);
+            assert_eq!(display.len(), 3,
+                "pass, the equip ability, concede — and nothing else at {n} creatures, \
+                 got {:#?}", labels.iter().map(MenuLabel::full).collect::<Vec<_>>());
+            assert!(display.iter().any(|e| matches!(e, DisplayEntry::Ability(_))),
+                "the ability row asks its slots rather than naming a pair");
+            let equip = labels.iter().map(MenuLabel::full)
+                .find(|l| l.contains("Equip"))
+                .expect("the equip ability is on the menu");
+            assert!(!equip.contains("targeting"),
+                "a target that is still a choice is not named on the row: {equip}");
+            assert!(!equip.contains("sacrificing"),
+                "nor is a sacrifice that is still a choice: {equip}");
+        }
+    }
+
+    /// CR 601.2c and 601.2h: one legal option is no choice at all, so the row
+    /// takes it — and therefore has to SAY so, or a single keypress commits a
+    /// target and a sacrifice the player was never shown (the rule #254
+    /// settled for casts).
+    #[test]
+    fn an_ability_with_nothing_left_to_choose_names_what_it_will_do() {
+        let v = view(Step::PrecombatMain, 8, true);
+        let legal = hauberk_legal(1);
+        let (_, labels) = CliPlayer::build_action_menu(&v, &legal);
+        let equip = labels.iter().map(MenuLabel::full)
+            .find(|l| l.contains("Equip")).expect("the equip ability is on the menu");
+        assert!(equip.contains("targeting"), "the forced target is named: {equip}");
+        assert!(equip.contains("sacrificing"), "and the forced sacrifice: {equip}");
+    }
+
+    /// Issue #61: two abilities on one permanent are two decisions, and the
+    /// collapse is by ability — never by permanent, and never by kind of
+    /// action.
+    #[test]
+    fn two_abilities_on_one_permanent_stay_two_rows() {
+        let v = view(Step::PrecombatMain, 8, true);
+        let mut legal = hauberk_legal(3);
+        let second = mtg_engine::actions::ActivatableAbility {
+            object_id: ObjectId(100),
+            ability_index: 1,
+            source_card_id: None,
+            name: "Demonmail Hauberk".to_string(),
+            description: "Equip {4}".to_string(),
+            target_options: vec![Target::Object(ObjectId(0))],
+            tap_plan: vec![],
+            option_combos: vec![mtg_engine::actions::ActivatableAbilityOption {
+                targets: vec![Target::Object(ObjectId(0))],
+                sacrifice: None,
+            }],
+        };
+        legal.actions.push(Action::ActivateAbility {
+            object_id: ObjectId(100),
+            ability_index: 1,
+            targets: vec![Target::Object(ObjectId(0))],
+            tap_plan: vec![],
+            sacrifice: None,
+            x_value: None,
+            source_card_id: None,
+        });
+        legal.activatable_abilities.push(second);
+
+        let (display, labels) = CliPlayer::build_action_menu(&v, &legal);
+        let rows: Vec<String> = labels.iter().map(MenuLabel::full).collect();
+        assert_eq!(display.len(), 4, "pass, two abilities, concede: {rows:#?}");
+        assert!(rows.iter().any(|l| l.contains("Equip—Sacrifice a creature")), "{rows:#?}");
+        assert!(rows.iter().any(|l| l.contains("Equip {4}")), "{rows:#?}");
+    }
+
+    /// An enumerated activation the engine published no collapsed entry for
+    /// still reaches the menu: a row that is not there is an ability the
+    /// player cannot use at all.
+    #[test]
+    fn an_ability_with_no_collapsed_entry_still_gets_a_row() {
+        let v = view(Step::PrecombatMain, 8, true);
+        let mut legal = hauberk_legal(2);
+        legal.activatable_abilities.clear();
+        let (display, labels) = CliPlayer::build_action_menu(&v, &legal);
+        assert!(display.iter().any(|e| matches!(e, DisplayEntry::Direct(_))),
+            "the enumerated action is offered directly: {:#?}",
+            labels.iter().map(MenuLabel::full).collect::<Vec<_>>());
+        assert!(labels.iter().any(|l| l.full().contains("Activate ability")),
+            "{:#?}", labels.iter().map(MenuLabel::full).collect::<Vec<_>>());
+    }
+
+    /// A chooser's way out names what it abandons: an ability's target and
+    /// sacrifice screens are not a cast, and used to offer "Cancel the cast"
+    /// on both. The hint line recognises either wording — it is how the one
+    /// key that backs out is advertised at all (#288).
+    #[test]
+    fn a_chooser_names_what_its_cancel_row_abandons() {
+        let v = view(Step::PrecombatMain, 1, true);
+        let options = vec![Target::Object(ObjectId(1))];
+        for cancel in [CANCEL_CAST, CANCEL_ACTIVATION] {
+            let labels = CliPlayer::chooser_labels(&v, &options, ChooserRows::CancelOnly, cancel);
+            assert_eq!(labels.last().unwrap().full(), cancel);
+            assert!(CliPlayer::menu_hints(&labels, true).contains("[enter=cancel]"),
+                "a chooser ending {cancel:?} is still a chooser");
+        }
     }
 }
 
