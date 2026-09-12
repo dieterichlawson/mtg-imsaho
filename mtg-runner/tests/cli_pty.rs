@@ -734,3 +734,46 @@ fn the_inspector_names_a_permanents_color() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+fn forests_and_mayors() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("mtg-cli-pty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("forests-and-mayors.txt");
+    std::fs::write(&path, "30 Forest\n30 Mayor of Avabruck\n").expect("write deck");
+    path
+}
+
+/// The CARDS pane prints both faces of a double-faced card. A Mayor of
+/// Avabruck in hand used to be described as a Mayor and nothing else; the
+/// player deciding whether to cast a spell this turn needs to read what it
+/// becomes on a quiet one, and `/howlpack` has to find it.
+#[test]
+fn the_cards_pane_prints_the_back_face_of_a_dfc() {
+    let deck = forests_and_mayors();
+    let deck = deck.to_str().expect("utf-8 temp path");
+    let mut g = PtyGame::spawn(&[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", deck, "--deck2", deck,
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("MAIN PHASE 1", T);
+    // The hand is Forests and Mayors, so the pane's first entry is the
+    // Mayor: its own face, then the back under a "// " heading, with the
+    // back's color indicator standing in for the mana cost it has none of.
+    g.expect("Mayor of Avabruck {1}{G}", T);
+    g.expect("// Howlpack Alpha (green)", T);
+    g.expect("Creature — Werewolf 3/3", T);
+
+    // The search matches the back face's name too.
+    g.forget();
+    g.answer("/");
+    g.send("howlpack");
+    g.expect("// Howlpack Alpha", T);
+
+    g.send("\x1b");
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
