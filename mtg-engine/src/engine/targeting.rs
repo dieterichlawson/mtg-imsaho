@@ -1036,3 +1036,67 @@ pub(crate) fn generate_ability_targets(
     let Some(target_req) = &ab.target_requirement else { return vec![]; };
     valid_targets_for_req(state, controller, source_id, target_req, behavior, registry)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::actions::Target;
+    use crate::ids::ObjectId;
+
+    fn ids(combo: &[Target]) -> Vec<u64> {
+        combo.iter().map(|t| match t {
+            Target::Object(o) => o.0,
+            _ => unreachable!("the fixtures here are all objects"),
+        }).collect()
+    }
+
+    fn choose(n: usize, k: usize) -> usize {
+        if k > n { return 0 }
+        (0..k).fold(1, |acc, i| acc * (n - i) / (i + 1))
+    }
+
+    /// The contract of `target_combinations`, not its recursion: it is every
+    /// way of filling a `k`-target slot out of `targets`, each way once, each
+    /// in the order the candidates were offered in.
+    ///
+    /// A second slot that takes k targets is enumerated through this, so a
+    /// break here is a cast the player is never offered (a combination
+    /// missing), a cast that names the same permanent twice (CR 601.2c
+    /// forbids it), or a cast announced with the wrong number of targets.
+    /// One property over the output rather than an assertion per line of the
+    /// recursion: the shape of the algorithm is free to change, the set of
+    /// answers is not.
+    #[test]
+    fn combinations_are_every_way_of_filling_the_slot_and_each_way_once() {
+        for n in 0..=5_usize {
+            let targets: Vec<Target> =
+                (0..n as u64).map(|i| Target::Object(ObjectId(i))).collect();
+            for k in 0..=n + 1 {
+                let combos = target_combinations(&targets, k);
+
+                assert_eq!(combos.len(), choose(n, k),
+                    "n={n} k={k}: there are C(n,k) ways to fill the slot, got {combos:?}");
+
+                for combo in &combos {
+                    let picked = ids(combo);
+                    assert_eq!(picked.len(), k,
+                        "n={n} k={k}: a way of filling a {k}-target slot names {k} targets");
+                    assert!(picked.windows(2).all(|w| w[0] < w[1]),
+                        "n={n} k={k}: in the offered order and never the same target twice, \
+                         got {picked:?}");
+                    assert!(picked.iter().all(|&i| i < n as u64),
+                        "n={n} k={k}: every target named was on offer, got {picked:?}");
+                }
+
+                let mut seen: Vec<Vec<u64>> = combos.iter().map(|c| ids(c)).collect();
+                seen.sort_unstable();
+                seen.dedup();
+                assert_eq!(seen.len(), combos.len(),
+                    "n={n} k={k}: no way of filling the slot is offered twice");
+            }
+        }
+        // The empty slot is one way of filling it — with nothing — and that
+        // is what ends the recursion.
+        assert_eq!(target_combinations(&[], 0).len(), 1);
+    }
+}
