@@ -258,7 +258,8 @@ fn sweep_stale_hot_reload_saves() {
         // other groups, so only a positive pid asks about one process.
         // ESRCH means gone; EPERM means alive and someone else's.
         let alive = pid > 0
-            && unsafe { libc::kill(pid, 0) == 0 || *libc::__errno_location() == libc::EPERM };
+            && (unsafe { libc::kill(pid, 0) } == 0
+                || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM));
         if !alive {
             let _ = fs::remove_file(entry.path());
         }
