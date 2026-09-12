@@ -732,3 +732,144 @@ and dropped it. It is re-tested here — `a_prompts_options_are_ones_its_effect_
 kills it — and recorded as `pass4-caught` in the raw log. Mentioned because
 the arithmetic in the re-run should close, and until this was chased it was
 off by one.
+
+## The 2026-09-12 run: 35 survivors across four shards
+
+Issues #474 (3), #475 (15), #476 (14) and #477 (3), worked one at a time
+against the source rather than sorted by shape. The split: **20 killed, 11
+accepted, 3 deleted with the code they were reporting on, 1 to the backlog.**
+
+### Deleted: two functions nothing called
+
+`cards/helpers.rs::creature_choices_except` and `state.rs::count_effect` had
+no callers anywhere in the workspace — not in the engine, not in a card, not
+in a test. Their survivors (`replace != with ==`, `replace += with *=`,
+`replace += with -=`) were reporting on code that cannot run. Deleting takes
+the mutant, the drift risk and the reader's confusion in one move.
+
+`creature_choices_except` is the more interesting of the two: its doc comment
+explains a live rule — CR 115.1, that Evil Twin's "a copy of any creature" is
+a choice and not a target, so hexproof does not hide a creature from it — and
+that rule is enforced where the choice is actually made. This was the second
+copy of it.
+
+### One property for nine survivors in `target_combinations`
+
+Eight of shard 4's fifteen sat inside the same eight-line function: both
+comparisons, every `+`, every `-`. The guide's answer is one property over
+the output, and the output's contract is short — it is every way of filling a
+k-target slot, each way once, in the order the candidates were offered:
+
+- `combos.len() == C(n, k)`;
+- each combo names k targets, all of them on offer;
+- strictly increasing ids: the offered order, and never the same permanent
+  twice (CR 601.2c);
+- no combination offered twice.
+
+`combinations_are_every_way_of_filling_the_slot_and_each_way_once` sweeps
+n in 0..=5, k in 0..=n+1, and kills all eight — plus a ninth (`k - 1` to
+`k + 1`) that was not on the list. It says nothing about the recursion, so
+rewriting the function iteratively stays free.
+
+### The rest of shard 4 is the modal path, and it is arid
+
+The other six are `modal_set`, `fixed_arity` (both deleted arms),
+`build_cast_target_spec`'s ModalChoice arm and `same_requirement`. The pool
+has exactly one modal card — Ghoulcaller's Chant, modes of arity 1 and 2 —
+and four `TwoTargets` cards whose two slots always differ (Prey Upon, Lost in
+the Mist, Into the Maw of Hell, Memory's Journey). Every one of the six was
+checked against those: each is either equivalent on [1, 2] or reached only
+by a card the set does not contain. Reasons are in
+`reports/mutants-accepted.txt`, written against the source rather than the
+shape. A second modal card, or a card with two identical target slots, makes
+all six live again.
+
+### Shard 0: control effects had a real hole in it
+
+Four kills here are rules, not bookkeeping.
+
+- **`derived_controller`'s match guard.** Deleting "this effect is about that
+  object" makes one Traitorous Blood hand over every permanent on the board.
+  `a_steal_moves_the_creature_it_names_and_no_other`.
+- **`next_control_timestamp` (three mutants).** CR 613.7a: the latest
+  timestamp wins. With a constant, `max_by_key` falls back to iteration
+  order, and `derived_controller` walks the durable effects before the
+  temporary ones — so the answer is wrong exactly when a durable effect is
+  created while an earlier temporary one is still live. That is a real board:
+  p0 borrows a Vampire with Traitorous Blood, its owner's Olivia takes it
+  back, and `gain_control_while_source_controlled` re-derives layer 2 on the
+  spot. `the_later_control_effect_wins_over_a_live_earlier_one`.
+- **`gain_control_while_source_controlled`'s retain.** Re-activating replaces
+  its own effect on that permanent; matching the other half drops the *other*
+  source's. Two Olivias, one a side, on the same Vampire:
+  `a_second_sources_steal_does_not_erase_the_first_ones`.
+- **`protections_of`'s until-end-of-turn guard.** Spare from Evil writes one
+  effect per creature it protected; reading the ones that do NOT name a
+  creature hands the protection to everything else on the board — including
+  the creatures the spell was cast against.
+  `spare_from_evil_does_not_protect_the_creatures_it_was_cast_against`.
+
+Two more in that shard are the log, and the log is what a resumed seat and an
+LLM recap read (the `log_attribution.rs` argument): the "X returns to pN"
+line when a control effect stops holding, and the one line that says a
+permanent left the battlefield at all. `move_object_inner`'s `&&` turns the
+second into a death notice for every milled card;
+`only_a_permanent_leaving_the_battlefield_is_reported_as_leaving` and
+`a_permanent_returning_to_its_owner_says_so_in_the_log` pin both.
+
+### Shard 1, and a survivor that was not where it looked
+
+`funding.rs: delete ! in build_options` reads like the summoning-sickness
+clause — and that clause was already covered
+(`a_summoning_sick_dork_cannot_fund_x_but_a_ready_one_can` kills it). The
+line the normalization was pointing at is the colour dedup a few lines
+further down: without it, a funding group reports no colours at all, which is
+what the seat picking a plan reads to know what the mana will be.
+`a_funding_group_lists_every_colour_its_sources_make`. A test written for the
+first reading would have been a duplicate that killed nothing — the check
+that caught it was hand-applying the mutation and watching which test fell
+over.
+
+`mana.rs: replace += with *= in generic_payment_order` is issue #252 exactly:
+with the reserve's needs zeroed, the `{1}` of a Shimmering Grotto activation
+is paid with the White the spell still needs and the cast is refused with the
+mana for it sitting in the pool. It is a contract — a plan the engine offered
+is one the payment can execute — so it is tested as one, on the pool alone.
+
+### Shard 3
+
+`invariants/mod.rs: delete match arm K::ChooseDamageEffect` is an oracle
+clause, the highest-value kind in this repo: blinded, a game sitting on a
+CR 616.1 damage-order prompt with nothing to choose is a stuck game the
+nightly reports as clean. Added to `incoherent_prompts_and_stashes_are_flagged`.
+
+`prints_star_pt -> true` marks every card as printing `*/*`, so the seats
+render no size for a creature whose size is printed (the other half of
+issue #267). Four cards in the set really do print it; the default has to be
+the number.
+
+`trigger_description`'s `==` is accepted: the mutation is on the BACK-face
+lookup, reached only for a transformed permanent whose front face lacks the
+trigger kind, and the only callers of that function are the four combat
+collectors — no DFC in the pool has a combat trigger on either face. The
+visible-face lookup that the step and zone collectors use is separately
+covered, now on both faces
+(`a_transformed_cards_trigger_carries_its_own_faces_text`).
+
+### The one left on the backlog
+
+`move_object_inner`'s "a tracked mid-resolution spell that left the stack is
+no longer the resolving spell". Every other `!=` in that function is killed;
+this one needs a paused resolution whose object leaves the stack AND another
+prompt still open at the next decision point, because
+`finish_spell_resolution_if_idle` takes the tracker as soon as nothing is
+pending and so hides a tracker the move failed to clear. It is an oracle gap
+— the checker is what notices a `resolving_spell` pointing at a battlefield
+permanent — and the fixture is worth building; it is not built here.
+
+**Ceremony**: every kill above was watched failing under its own mutation,
+applied by hand to the source and then restored — 22 mutations applied, each
+run against the test that claims it. Two claims did not survive that check
+and were rewritten: the funding one (above), and a first version of the
+battlefield-leave log test that asserted the wrong four words and let the
+`&&` mutant through by logging "died" instead.

@@ -41,3 +41,14 @@ mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
 # moved to reports/mutants-accepted.txt as unreachable on any state this
 # engine can produce. reports/mutation-testing.md, "The third round: the
 # backlog, worked", has the account.
+
+# `move_object_inner`'s "a tracked mid-resolution spell that left the stack is
+# no longer the resolving spell" clause (`to != Zone::Stack`). Reaching it
+# needs a state the fixtures do not build yet: a spell whose resolution is
+# PAUSED on a choice, whose object then leaves the stack, AND another prompt
+# open at the next decision point — because `finish_spell_resolution_if_idle`
+# takes the tracker as soon as nothing is pending, which hides a tracker the
+# move failed to clear. Left set, it is the invariant checker that sees it
+# ("resolving_spell #N is in Battlefield"), so this is an oracle gap rather
+# than a rules one. The other seven `!=` in the same function are killed.
+mtg-engine/src/state.rs: replace != with == in GameState::move_object_inner

@@ -470,3 +470,64 @@ mtg-engine/src/invariants/transition.rs: replace || with && in life_and_loss
 mtg-engine/src/invariants/transition.rs: replace > with < in life_and_loss
 mtg-engine/src/invariants/events.rs: replace && with || in damage
 mtg-engine/src/invariants/stack.rs: delete ! in check_core
+
+# ── 2026-09-12 run (issues #474-#477) ────────────────────────────
+# The modal path, with one modal card in the pool. Ghoulcaller's Chant's two
+# modes take 1 and 2 targets, so `modal_set` answers the same either way:
+# for [1, 2] both `distinct.len() != arities.len()` and `*distinct.last() < 2`
+# are false, and so are `> 2` and the `&&` of the two. A second modal card
+# whose modes had equal arity would tell them apart; there is none.
+mtg-engine/src/engine/targeting.rs: replace < with > in modal_set
+mtg-engine/src/engine/targeting.rs: replace || with && in modal_set
+# `fixed_arity` is called only on a ModalChoice's modes (from `modal_set`)
+# and recursively on a TwoTargets' halves. The Chant's modes are
+# `GraveyardCreature` and `TwoTargets(Zombie, Zombie)` — neither is `None`,
+# `UpToTargets` or a nested `ModalChoice`, so neither arm is reached on any
+# card in the set. Defensive, and the `_ => Some(1)` fallback they guard is
+# exercised by every mode there is.
+mtg-engine/src/engine/targeting.rs: delete match arm R::None in fixed_arity
+mtg-engine/src/engine/targeting.rs: delete match arm R::UpToTargets(..) | R::ModalChoice(..) in fixed_arity
+# `build_cast_target_spec`'s ModalChoice arm is reached only when `modal_set`
+# returns None for a modal card, which for the Chant means no Zombie in the
+# graveyard at all — and then there is no cast to describe. One Zombie is a
+# set slot of min 1 max 1; two or more is 1..2.
+mtg-engine/src/engine/targeting.rs: delete match arm TargetRequirement::ModalChoice(ref modes) in build_cast_target_spec
+# `same_requirement` decides whether a TwoTargets' two slots are a set (and
+# so deduped). All four TwoTargets cards in the pool have DIFFERENT slots --
+# Prey Upon, Lost in the Mist, Into the Maw of Hell, Memory's Journey -- so
+# the answer is false at every reachable call, and inverting it only runs
+# `dedup_by_target_set` over pairs whose sorted keys are already distinct.
+# The one same-slot requirement in the set, the Chant's
+# TwoTargets(Zombie, Zombie), is inside a ModalChoice and goes through the
+# modal set instead. A card with two identical slots would make this live.
+mtg-engine/src/engine/targeting.rs: replace == with != in same_requirement
+# `become_copy_of`'s legendary is `src.is_legendary || <the face says
+# Legendary>`, and `GameState::is_legendary` -- which the legend rule reads
+# -- consults the face itself. For every source in the set the two halves
+# give the rule the same answer; the `||` matters only for a legendary token
+# with no face (`card_id(0)`), which no effect in this pool creates.
+mtg-engine/src/state.rs: replace || with && in GameState::become_copy_of
+# The `(Some(p), Some(t))` arm builds the " (6/6)" suffix of the "enters as a
+# copy of" log line. Wording.
+mtg-engine/src/state.rs: delete match arm (Some(p), Some(t)) in GameState::become_copy_of
+# `protections_of`'s `ContinuousEffect::ProtectionFrom` arm: no card in the
+# pool has protection-from-a-filter as a CONTINUOUS effect. It exists only as
+# `TemporaryEffect::GrantProtection` (Spare from Evil), read by the separate
+# until-end-of-turn loop below it, and the subtype arm (Elite Inquisitor,
+# Grave Bramble) is the one the set exercises.
+mtg-engine/src/state.rs: delete match arm ContinuousEffect::ProtectionFrom{filter, ..} in GameState::protections_of
+# `plural_of` is English pluralisation for protection wording -- "protection
+# from Werewolves". No rule reads it, and the arm the mutation disables
+# (s/x/z/ch/sh endings) is reached by no subtype in the pool: the protections
+# in the set name Humans, Vampires, Werewolves and Zombies.
+mtg-engine/src/types.rs: replace || with && in plural_of
+# `trigger_description`'s back-face fallback is reached only when the FRONT
+# face has no trigger of the kind being looked up and the permanent is
+# transformed. Its only callers are the four combat collectors in
+# `triggers/collect/combat.rs` (Attacks, AnyCreatureAttacks, Blocks,
+# BecomesBlocked), and no double-faced card in the pool has a combat trigger
+# on either face -- every other collector uses the visible-face lookup, whose
+# own `==` is killed by `a_collected_trigger_carries_its_own_abilitys_text`
+# and `a_transformed_cards_trigger_carries_its_own_faces_text`. A DFC with an
+# attack trigger on its back face would make this live.
+mtg-engine/src/triggers.rs: replace == with != in trigger_description
