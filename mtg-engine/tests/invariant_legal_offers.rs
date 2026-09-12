@@ -1480,3 +1480,33 @@ fn a_cast_with_a_slot_still_to_ask_is_announced_with_no_targets() {
     l.actions.push(cast_action(chant, vec![Target::Object(z1), Target::Object(z2), Target::Object(z3)]));
     flags(&state, P0, &l, &reg, "offers 3 targets");
 }
+
+/// CR 602.2h: an ability is offered with a tap plan that, with the pool,
+/// pays its cost. `tap_plan_ok` says the plan taps real sources; this says
+/// the plan is enough — an ability a mana short is not an offer.
+#[test]
+fn an_offered_ability_is_funded_by_its_tap_plan() {
+    let (mut state, reg) = base();
+    let township = named_permanent(&mut state, &reg, "Gavony Township", P0);
+    for basic in ["Forest", "Plains", "Plains", "Plains"] {
+        named_permanent(&mut state, &reg, basic, P0);
+    }
+    let legal = wrong_legal(&state, &reg);
+    assert!(legal.actions.iter().any(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == township)),
+        "test precondition: four other lands pay {{2}}{{G}}{{W}}");
+    quiet_about(&state, P0, &legal, &reg, "cannot pay it");
+
+    // The same offer one source short.
+    let mut short = legal.clone();
+    for a in &mut short.actions {
+        if let Action::ActivateAbility { object_id, tap_plan, .. } = a {
+            if *object_id == township { tap_plan.pop(); }
+        }
+    }
+    flags(&state, P0, &short, &reg, "cannot pay it");
+
+    // Mana already floating counts toward the cost.
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 1)]);
+    quiet_about(&state, P0, &short, &reg, "cannot pay it");
+}

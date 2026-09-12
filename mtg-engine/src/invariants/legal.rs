@@ -48,6 +48,7 @@ pub fn check_legal(state: &GameState, acting: PlayerId, legal: &LegalActions, re
             Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, x_value, source_card_id } => {
                 activate(state, acting, *object_id, *ability_index, targets, *sacrifice, *source_card_id, sorcery, stony, registry, &mut v);
                 tap_plan_ok(state, acting, tap_plan, Some(*object_id), stony, registry, &mut v);
+                ability_cost_funded(state, acting, *object_id, *ability_index, *source_card_id, tap_plan, registry, &mut v);
                 if x_value.is_some() {
                     v.push(format!("ability offer for #{} announces X before funding", object_id.0));
                 }
@@ -363,6 +364,45 @@ fn cast(state: &GameState, acting: PlayerId, id: ObjectId, targets: &[Target], s
                 v.push(format!("{what} targets #{} in the stack zone that is on no stack entry", tid.0));
             }
         }
+    }
+}
+
+/// CR 602.2h: an offered ability is one the player can pay for — the pool
+/// plus what its tap plan produces covers its mana cost.
+///
+/// `tap_plan_ok` says the plan taps real sources; this says the plan is
+/// enough. Without it an ability could be offered a mana short and nothing
+/// would notice until a player pressed the number (a Gavony Township with
+/// three other sources for its {2}{G}{W}). An X cost is checked without its
+/// X, which is funded after the announcement.
+#[allow(clippy::too_many_arguments)]
+fn ability_cost_funded(state: &GameState, acting: PlayerId, id: ObjectId, index: usize,
+                       source_card: Option<crate::ids::CardId>, plan: &[(ObjectId, usize)],
+                       registry: &CardRegistry, v: &mut Violations) {
+    let Some(obj) = state.get_object(id) else { return };
+    let def_card = source_card.unwrap_or(obj.card_id);
+    let Some(def) = registry.get(def_card)
+        .and_then(|b| b.activated_abilities(state, id, registry).into_iter().find(|d| d.ability_index == index))
+    else { return };
+    let mut pool = state.get_player(acting).mana_pool.clone();
+    // What the plan makes, and what its cost-bearing entries (filters) ask
+    // for on top of the ability's own cost.
+    let mut symbols = def.cost.without_x().symbols;
+    for (src, idx) in plan {
+        let Some(ma) = crate::engine::available_mana_abilities(state, *src, registry)
+            .into_iter().find(|m| m.ability_index == *idx)
+        else { continue };
+        for (mt, n) in &ma.produced {
+            pool.add(*mt, *n);
+        }
+        symbols.extend(ma.cost.symbols.iter().cloned());
+    }
+    let needed = crate::types::ManaCost::new(symbols);
+    if !crate::mana::can_pay(&pool, &needed) {
+        v.push(format!(
+            "ActivateAbility #{}/{} costs {} but the pool plus its tap plan ({}) cannot pay it (CR 602.2h)",
+            id.0, index, def.cost,
+            plan.iter().map(|(s, i)| format!("#{}/{i}", s.0)).collect::<Vec<_>>().join(", ")));
     }
 }
 
