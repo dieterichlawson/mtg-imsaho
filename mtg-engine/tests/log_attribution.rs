@@ -843,3 +843,77 @@ fn a_regeneration_shield_that_lands_nowhere_is_not_logged() {
     assert!(!lines.iter().any(|l| l.contains("regeneration shield")),
         "log was {lines:#?}");
 }
+
+/// Leaving the battlefield is reported, and only leaving the battlefield is.
+///
+/// The line is written from "it was on the battlefield and it is going
+/// somewhere else" (CR 700.4: only a creature *dies*), and it is one of half
+/// a dozen routes off the battlefield that all come through here — which is
+/// why the reader of a log, or an LLM seat reading the recap, can tell a
+/// permanent left at all (issue #358). Both halves of that condition carry
+/// weight: a card that never was on the battlefield has not left it, and a
+/// permanent moving onto the battlefield has not either.
+#[test]
+fn only_a_permanent_leaving_the_battlefield_is_reported_as_leaving() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Onto the battlefield: an entry is not a departure.
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    assert!(log_lines(&state).iter().all(|l| !l.contains("died")
+        && !l.contains("left the battlefield")
+        && !l.contains("was put into its owner's graveyard")),
+        "entering is not leaving: {:?}", log_lines(&state));
+
+    // Library to graveyard: milled, never on the battlefield. None of the
+    // four things this line can say may be said about it — least of all
+    // "died", which is what a creature card in a graveyard would look like
+    // to a condition that forgot to ask where it came from.
+    let milled = state.create_object(
+        reg.get_id_by_name("Grizzly Bears").unwrap(), P0, Zone::Library, None, None);
+    state.move_object(milled, Zone::Graveyard, &reg);
+    for said in ["died", "was put into its owner's graveyard", "was exiled",
+                 "left the battlefield"] {
+        assert!(log_lines(&state).iter().all(|l| !l.contains(said)),
+            "a card milled out of the library never left the battlefield, \
+             but the log says {said:?}: {:?}", log_lines(&state));
+    }
+
+    // Battlefield to graveyard: a creature dies, and the log says so.
+    state.move_object(bear, Zone::Graveyard, &reg);
+    assert_line(&log_lines(&state), "died");
+
+    // Battlefield to exile: not a death, and said differently (CR 700.4).
+    let other = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.move_object(other, Zone::Exile, &reg);
+    assert_line(&log_lines(&state), "was exiled");
+}
+
+/// A permanent going back to its owner when a control effect ends says so,
+/// and says whose it is now.
+///
+/// Half a dozen routes end a control effect (CR 611.2b) and they all come
+/// through `expire_control_effects`; the line it writes is the only place a
+/// log reader learns the board changed hands back. It is written when the
+/// controller actually changes, which is the condition worth keeping: the
+/// same expiry on a permanent that stays put must not claim a move.
+#[test]
+fn a_permanent_returning_to_its_owner_says_so_in_the_log() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let vampire = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0, "test precondition");
+
+    // Olivia dies; her "for as long as you control" effect stops holding.
+    state.move_object(olivia, Zone::Graveyard, &reg);
+    state.expire_control_effects();
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1, "test precondition");
+
+    let lines = log_lines(&state);
+    assert!(lines.iter().any(|l| l.contains("returns to p1")),
+        "the return is reported, and to whom: {lines:?}");
+}

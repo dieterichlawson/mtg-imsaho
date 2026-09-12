@@ -323,3 +323,100 @@ fn a_borrowed_creature_with_no_durable_effect_still_goes_home() {
     advance_to_cleanup(&mut state, &reg);
     assert_eq!(state.get_object(vampire).unwrap().controller, P1);
 }
+
+/// A steal moves the permanent it names and nothing else.
+///
+/// `derived_controller` walks every "until end of turn" effect in the game
+/// looking for the ones that apply to an object, and the clause saying "this
+/// effect is about that object" is the whole of what keeps one Traitorous
+/// Blood on one creature. Without it, one steal hands the board over.
+#[test]
+fn a_steal_moves_the_creature_it_names_and_no_other() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let stolen = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+    let bystander = named_permanent(&mut state, &reg, "Markov Patrician", P1);
+    let mine = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(stolen)]);
+
+    assert_eq!(state.derived_controller(stolen), Some(P0), "the named creature changed hands");
+    assert_eq!(state.derived_controller(bystander), Some(P1),
+        "the opponent's other creature was not named by the steal");
+    assert_eq!(state.get_object(bystander).unwrap().controller, P1,
+        "and the board agrees");
+    assert_eq!(state.derived_controller(mine), Some(P0),
+        "nor does a steal say anything about the caster's own permanents");
+}
+
+/// CR 613.7a: when two control-changing effects apply to one permanent, the
+/// one with the later timestamp wins — not the one that happens to be looked
+/// at last.
+///
+/// The case that tells them apart has to be a durable effect created AFTER a
+/// live temporary one, and the two naming different players: p0 borrows a
+/// Vampire with Traitorous Blood, and its owner's Olivia takes it back while
+/// the loan is still on. `gain_control_while_source_controlled` re-derives
+/// layer 2 the moment it adds its effect, and timestamps are the only thing
+/// that says Olivia's is the later word.
+#[test]
+fn the_later_control_effect_wins_over_a_live_earlier_one() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P1);
+    let vampire = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+    assert!(state.has_subtype(vampire, "Vampire", &reg), "test precondition");
+
+    // p0 borrows it until end of turn.
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let mut state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(vampire)]);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0, "test precondition");
+
+    // Its owner's Olivia takes it back while the loan is still in force.
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.derived_controller(vampire), Some(P1),
+        "Olivia's effect is the later one, so it is the one in force (CR 613.7a)");
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1,
+        "and the permanent is where the later effect says");
+}
+
+/// Re-activating a "for as long as" steal replaces ITS OWN effect on that
+/// permanent — not the effects other sources have on it.
+///
+/// Two Olivias, one a side, pointed at the same Vampire: each records an
+/// effect of its own, and when the later one stops holding (CR 611.2b) the
+/// earlier is still there to catch the permanent. A retain that dropped the
+/// other source's effect instead would send it home to its owner and lose
+/// the first steal, with nothing on the board to say why.
+#[test]
+fn a_second_sources_steal_does_not_erase_the_first_ones() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let theirs = named_permanent(&mut state, &reg, "Olivia Voldaren", P1);
+    let vampire = named_permanent(&mut state, &reg, "Vampire Interloper", P1);
+
+    // p0 takes it, then p1 takes it back.
+    activate_via_hooks(&mut state, &reg, mine, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0, "test precondition");
+
+    activate_via_hooks(&mut state, &reg, theirs, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1, "test precondition");
+
+    assert!(state.control_effects.iter().any(|e| e.object == vampire && e.source == mine),
+        "the first steal is still recorded: {:?}", state.control_effects);
+
+    // p1's Olivia dies: their effect stops holding, p0's does not.
+    state.move_object(theirs, Zone::Graveyard, &reg);
+    state.expire_control_effects();
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0,
+        "the earlier steal is still in force, so the Vampire is p0's again (CR 613.7a)");
+}

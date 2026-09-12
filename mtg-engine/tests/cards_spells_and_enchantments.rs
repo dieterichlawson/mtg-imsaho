@@ -448,6 +448,41 @@ fn spare_from_evil_grants_protection() {
         "the same card on its back face is a non-Human creature");
 }
 
+/// "**Creatures you control** gain protection" — the opponent's creatures do
+/// not, and the effect is written down once per creature that got it. Reading
+/// that pool for a creature has to match the effects that name IT; matching
+/// the others instead hands the protection to everything on the board,
+/// including the creatures the spell was cast against.
+#[test]
+fn spare_from_evil_does_not_protect_the_creatures_it_was_cast_against() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let mine = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(mine).unwrap().subtypes = vec!["Human".into()];
+    // Two of theirs, so "every other creature" and "one other creature" are
+    // not the same board.
+    let theirs = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(theirs).unwrap().subtypes = vec!["Zombie".into()];
+    let also_theirs = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(also_theirs).unwrap().subtypes = vec!["Vampire".into()];
+
+    let spell = castable_spell(&mut state, &reg, "Spare from Evil", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    assert!(!state.protections_of(mine, &reg).is_empty(),
+        "the caster's own creature gained it");
+    assert!(state.protections_of(theirs, &reg).is_empty(),
+        "the opponent's creature did not: {:?}", state.protections_of(theirs, &reg));
+    assert!(state.protections_of(also_theirs, &reg).is_empty(),
+        "nor their second one: {:?}", state.protections_of(also_theirs, &reg));
+    // What that protection is for: their non-Human cannot block the Human.
+    assert!(!mtg_engine::combat::can_block_attacker(&state, theirs, mine, &reg));
+    // And theirs has none, so the Human can block it back.
+    assert!(mtg_engine::combat::can_block_attacker(&state, mine, theirs, &reg),
+        "a creature that gained nothing is blockable by a non-Human like anything else");
+}
+
 /// "protection from non-Human **creatures**" — the creature half of that is not
 /// decoration. Written as a bare "isn't a Human" filter it also matched every
 /// instant, sorcery, artifact and land, so a burn spell could not touch the
