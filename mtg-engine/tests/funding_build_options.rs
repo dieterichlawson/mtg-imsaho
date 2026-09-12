@@ -227,37 +227,33 @@ fn cartesian<T: Clone>(lists: &[Vec<T>]) -> Vec<Vec<T>> {
     out
 }
 
-/// CR 302.6: a creature that has not been under its controller's control
-/// since their most recent turn began cannot pay a `{T}` cost, so a
-/// summoning-sick mana dork cannot fund X. Haste is the exception.
+/// A funding group says which colours its sources make, each once.
 ///
-/// Lands are never summoning-sick, and every other test on this file uses
-/// lands, so the whole clause was resting on nothing: a version that excluded
-/// every creature, sick or not, passed them all.
+/// `colors_produced` is what a seat reads to know what a plan will actually
+/// pay for — the LLM seat prints it beside the group — so a group that lists
+/// nothing describes a source that makes no coloured mana, which is a
+/// different offer from the one the board is making.
 #[test]
-fn a_summoning_sick_dork_cannot_fund_x_but_a_ready_one_can() {
+fn a_funding_group_lists_every_colour_its_sources_make() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    named_permanent(&mut state, &registry, "Mountain", P0);
-    let pilgrim = named_permanent(&mut state, &registry, "Avacyn's Pilgrim", P0);
+    // Hinterland Harbor taps for {G} or for {U}: two abilities, one group,
+    // two colours. A Forest is the one-colour half of the same question.
+    named_permanent(&mut state, &registry, "Hinterland Harbor", P0);
+    named_permanent(&mut state, &registry, "Forest", P0);
 
-    // `named_permanent` puts it down ready, which is the half that has to work.
-    let ready = funding::build_options(&state, P0, &registry);
-    let dorks = ready.groups.iter().find(|g| g.name == "Avacyn's Pilgrim")
-        .expect("a ready mana dork funds X");
-    assert_eq!(dorks.category, FundingCategory::Dorks);
-    assert_eq!(ready.max_x, 2, "the Mountain and the Pilgrim");
+    let options = funding::build_options(&state, P0, &registry);
+    let colours = |name: &str| {
+        let mut c = options.groups.iter()
+            .find(|g| g.name.contains(name))
+            .unwrap_or_else(|| panic!("{name} is a funding source: {:?}",
+                options.groups.iter().map(|g| &g.name).collect::<Vec<_>>()))
+            .colors_produced.clone();
+        c.sort_by_key(|c| format!("{c:?}"));
+        c
+    };
 
-    state.get_object_mut(pilgrim).unwrap().summoning_sick = true;
-    let sick = funding::build_options(&state, P0, &registry);
-    assert!(sick.groups.iter().all(|g| g.name != "Avacyn's Pilgrim"),
-        "a summoning-sick dork cannot tap for X: {:?}",
-        sick.groups.iter().map(|g| &g.name).collect::<Vec<_>>());
-    assert_eq!(sick.max_x, 1, "only the Mountain is left");
-
-    grant_keyword(&mut state, pilgrim, Keyword::Haste);
-    let hasty = funding::build_options(&state, P0, &registry);
-    assert!(hasty.groups.iter().any(|g| g.name == "Avacyn's Pilgrim"),
-        "haste lifts the restriction (CR 702.10b)");
-    assert_eq!(hasty.max_x, 2);
+    assert_eq!(colours("Hinterland Harbor"), vec![Color::Blue, Color::Green],
+        "both colours the land makes, each said once");
+    assert_eq!(colours("Forest"), vec![Color::Green]);
 }

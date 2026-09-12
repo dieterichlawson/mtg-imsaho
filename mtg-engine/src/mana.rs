@@ -559,6 +559,32 @@ mod tests {
 
     // ---- auto_pay tests ----
 
+    /// Issue #252: `auto_pay_reserving` spends the mana the REST of the cost
+    /// still needs last, so a plan the engine offered can actually be paid.
+    ///
+    /// A tap plan for `{W}{W}` that taps Plains and Forest and then activates
+    /// Shimmering Grotto's `{1}, {T}: Add {W}`: the `{1}` is paid out of a
+    /// pool holding the White the spell still needs and a spare Green. Paid
+    /// in the fixed order it takes the White, and the cast is refused with
+    /// the mana for it sitting in the pool.
+    #[test]
+    fn a_generic_cost_is_paid_from_what_the_rest_of_the_cost_does_not_need() {
+        let mut pool = ManaPool::new();
+        pool.add(ManaType::White, 1);
+        pool.add(ManaType::Green, 1);
+        let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let reserve = ManaCost::new(vec![
+            ManaSymbol::Colored(Color::White),
+            ManaSymbol::Colored(Color::White),
+        ]);
+
+        auto_pay_reserving(&mut pool, &one, &reserve).expect("the {1} is payable");
+
+        assert_eq!(pool.get(ManaType::White), 1,
+            "the White the rest of the cost needs is still there");
+        assert_eq!(pool.get(ManaType::Green), 0, "the spare Green paid the generic");
+    }
+
     #[test]
     fn pay_simple_colored() {
         let mut pool = ManaPool::new();
