@@ -777,3 +777,32 @@ fn the_cards_pane_prints_the_back_face_of_a_dfc() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// A set prompt is asked in the frame's prompt pane, not on a screen of its
+/// own: the bottoming after a mulligan draws its checklist under the board,
+/// with the BATTLEFIELD and CARDS panes painted in the same frame, and is
+/// answered by marking and confirming.
+#[test]
+fn the_set_prompt_is_asked_inside_the_frame() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    g.answer_option("Mulligan", T);
+    g.expect("mulligans taken: 1", T);
+    // `answer_option` forgets the stream once it has answered, so everything
+    // matched from here on is the bottoming prompt's own paint.
+    g.answer_option("Keep opening hand", T);
+    g.expect("BOTTOM 1 CARD AFTER MULLIGAN", T);
+    g.expect("[ ] 0:", T);
+    g.expect("Mark>", T);
+    g.expect("─── BATTLEFIELD", T);
+    g.expect("─── CARDS", T);
+
+    g.answer("0\r");
+    g.expect("1 of 1 marked", T);
+    g.answer("\r");
+    g.expect("MAIN PHASE 1", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
