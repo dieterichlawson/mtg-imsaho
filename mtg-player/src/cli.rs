@@ -865,6 +865,12 @@ enum InfoLine {
 struct CardRef {
     data: mtg_engine::cards::CardData,
     star_pt: bool,
+    /// The face a double-faced card is NOT showing, printed under the one
+    /// it is. A Mayor of Avabruck in hand is also a Howlpack Alpha waiting
+    /// for a quiet turn, and a player deciding whether to cast a spell this
+    /// turn needs to read what it becomes; the panel used to say nothing
+    /// about the other face of any DFC.
+    other_face: Option<mtg_engine::cards::CardData>,
 }
 
 pub struct CliPlayer {
@@ -2223,13 +2229,27 @@ impl CliPlayer {
         // front (issue #238).
         let mut entries: Vec<(mtg_engine::ids::CardId, bool)> = Vec::new();
 
+        // A double-faced card is listed once, under whichever face was
+        // met first: both faces print with every entry, so a Mayor in hand
+        // and a transformed Howlpack Alpha on the battlefield are the same
+        // panel entry, not two entries each showing both faces.
+        fn listed_dfc(
+            registry: &mtg_engine::cards::CardRegistry,
+            entries: &[(mtg_engine::ids::CardId, bool)],
+            card_id: mtg_engine::ids::CardId,
+        ) -> bool {
+            entries.iter().any(|(id, _)| *id == card_id)
+                && registry.get(card_id).is_some_and(|b| b.back_face_data().is_some())
+        }
+
         fn add(
+            registry: &mtg_engine::cards::CardRegistry,
             seen: &mut Vec<String>,
             entries: &mut Vec<(mtg_engine::ids::CardId, bool)>,
             name: &str,
             card_id: mtg_engine::ids::CardId,
         ) {
-            if !seen.iter().any(|n| n == name) {
+            if !seen.iter().any(|n| n == name) && !listed_dfc(registry, entries, card_id) {
                 seen.push(name.to_string());
                 entries.push((card_id, false));
             }
@@ -2237,11 +2257,11 @@ impl CliPlayer {
 
         // Priority 1: cards in your hand
         for c in &view.your_hand {
-            add(&mut seen, &mut entries, &c.name, c.card_id);
+            add(registry, &mut seen, &mut entries, &c.name, c.card_id);
         }
         // Priority 2: cards on the stack
         for s in &view.stack {
-            add(&mut seen, &mut entries, &s.name, s.card_id);
+            add(registry, &mut seen, &mut entries, &s.name, s.card_id);
         }
         // Priority 3 and 4: the battlefield, opponent's first (skip basic
         // lands). A permanent showing its back face is described by that
@@ -2258,7 +2278,7 @@ impl CliPlayer {
             {
                 return;
             }
-            if seen.contains(&p.name) { return; }
+            if seen.contains(&p.name) || listed_dfc(registry, entries, p.card_id) { return; }
             seen.push(p.name.clone());
             // The view already resolved the active face's name, so a name
             // that differs from the printed one is a permanent showing its
@@ -2277,7 +2297,7 @@ impl CliPlayer {
             if *pid == view.you {
                 for c in cards {
                     if c.flashback_cost.is_some() {
-                        add(&mut seen, &mut entries, &c.name, c.card_id);
+                        add(registry, &mut seen, &mut entries, &c.name, c.card_id);
                     }
                 }
             }
@@ -2291,12 +2311,12 @@ impl CliPlayer {
         // card happened to have the highest object id (issue #222).
         for (_, cards) in &view.graveyards {
             for c in cards.iter().rev() {
-                add(&mut seen, &mut entries, &c.name, c.card_id);
+                add(registry, &mut seen, &mut entries, &c.name, c.card_id);
             }
         }
         // Priority 7: exile (cards that were exiled)
         for c in &view.exile {
-            add(&mut seen, &mut entries, &c.name, c.card_id);
+            add(registry, &mut seen, &mut entries, &c.name, c.card_id);
         }
 
         // Look up the face's CardData, filter out basic lands, apply text
@@ -2305,17 +2325,22 @@ impl CliPlayer {
         let filter_lower = filter.to_lowercase();
         entries.iter()
             .filter_map(|(id, showing_back)| {
-                let data = if *showing_back {
-                    registry.get(*id).and_then(mtg_engine::cards::CardBehavior::back_face_data)
+                let behavior = registry.get(*id)?;
+                let front = behavior.card_data();
+                let back = behavior.back_face_data();
+                let (data, other_face) = if *showing_back {
+                    (back?, Some(front))
                 } else {
-                    registry.card_data(*id)
-                }?;
-                let star_pt = registry.get(*id)
-                    .is_some_and(mtg_engine::cards::CardBehavior::prints_star_pt);
-                Some(CardRef { data, star_pt })
+                    (front, back)
+                };
+                let star_pt = behavior.prints_star_pt();
+                Some(CardRef { data, star_pt, other_face })
             })
             .filter(|c| !c.data.supertypes.contains(&mtg_engine::types::Supertype::Basic))
-            .filter(|c| filter.is_empty() || c.data.name.to_lowercase().contains(&filter_lower))
+            // `/howlpack` finds the Mayor: the panel prints that face too.
+            .filter(|c| filter.is_empty()
+                || c.data.name.to_lowercase().contains(&filter_lower)
+                || c.other_face.as_ref().is_some_and(|f| f.name.to_lowercase().contains(&filter_lower)))
             .collect()
     }
 
@@ -2360,85 +2385,14 @@ impl CliPlayer {
 
         for card in cards {
             if row >= max_row { break; }
-
-            // Name + cost — or, for a face with no mana cost, the color
-            // indicator printed beside its type line in its place (CR
-            // 204.2). That is what the physical card does and why the
-            // indicator exists: a transformed Gatstaf Howler is green, and
-            // with neither a cost nor an indicator on screen its color was
-            // unobtainable — which is the whole of what intimidate asks
-            // (CR 702.13a, issue #357).
-            let cost_str = match card.data.cost.as_ref() {
-                Some(c) => format!(" {c}"),
-                None if !card.data.color_indicator.is_empty() =>
-                    format!(" ({})", mtg_engine::types::colors_line(&card.data.color_indicator)
-                        .to_lowercase()),
-                None => String::new(),
-            };
-            let name_line = format!("{}{}", card.data.name, cost_str);
-            let truncated: String = name_line.chars().take(content_w).collect();
-            let _ = execute!(out, cursor::MoveTo(right_col, row), SetAttribute(Attribute::Bold));
-            Self::print_with_mana(out, &truncated, None);
-            let _ = execute!(out, SetAttribute(Attribute::Reset));
-            row += 1;
-            if row >= max_row { break; }
-
-            // Type line + P/T, supertypes first (CR 205.4a, issue #333).
-            let pt = if card.star_pt {
-                " */*".to_string()
-            } else {
-                match (card.data.power, card.data.toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => String::new(),
-                }
-            };
-            let type_line = format!("{}{}", mtg_engine::types::type_line(
-                &card.data.supertypes, &card.data.card_types, &card.data.subtypes), pt);
-
-            let truncated: String = type_line.chars().take(content_w).collect();
-            let _ = execute!(out, cursor::MoveTo(right_col, row),
-                SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
-            row += 1;
-            if row >= max_row { break; }
-
-            // Keywords
-            if !card.data.keywords.is_empty() {
-                let kw_str: Vec<String> =
-                    card.data.keywords.iter().copied().map(keyword_title).collect();
-                let kw_line = kw_str.join(", ");
-                let truncated: String = kw_line.chars().take(content_w).collect();
-                let _ = execute!(out, cursor::MoveTo(right_col, row),
-                    SetForegroundColor(Color::Blue), Print(&truncated), ResetColor);
-                row += 1;
-                if row >= max_row { break; }
-            }
-
-            // Oracle text (word-wrapped), minus the lines the panel already
-            // prints for itself above and below.
-            if !card.data.oracle_text.is_empty() {
-                let kept = Self::card_panel_oracle_lines(
-                    &card.data.oracle_text, card.data.flashback_cost.is_some());
-                let text = kept.join("\n");
-                if !text.trim().is_empty() {
-                    let wrapped = Self::wrap_text(text.trim(), content_w);
-                    for line in wrapped {
-                        if row >= max_row { break; }
-                        let _ = execute!(out, cursor::MoveTo(right_col, row));
-                        Self::print_with_mana(out, &line, None);
-                        row += 1;
-                    }
-                }
-            }
-
-            // Flashback cost
-            if let Some(fb) = &card.data.flashback_cost {
-                if row < max_row {
-                    let fb_line = format!("Flashback {fb}");
-                    let truncated: String = fb_line.chars().take(content_w).collect();
-                    let _ = execute!(out, cursor::MoveTo(right_col, row));
-                    Self::print_with_mana(out, &truncated, Some(Color::Cyan));
-                    row += 1;
-                }
+            if !Self::render_card_face(out, right_col, &mut row, max_row, content_w,
+                &card.data, card.star_pt, "") { break; }
+            // The other face of a double-faced card, headed the way a
+            // card's two faces are written: "Mayor of Avabruck // Howlpack
+            // Alpha".
+            if let Some(other) = &card.other_face {
+                if !Self::render_card_face(out, right_col, &mut row, max_row, content_w,
+                    other, false, "// ") { break; }
             }
 
             // Subtle dot separator between cards
@@ -2451,6 +2405,95 @@ impl CliPlayer {
         }
 
         // (search box is at top, no footer needed)
+    }
+
+    /// One face of a card in the CARDS panel, from `row` down: name and
+    /// cost, type line, keywords, oracle text, flashback. Returns false
+    /// once the panel is out of rows.
+    #[allow(clippy::too_many_arguments)]
+    fn render_card_face(out: &mut io::Stdout, right_col: u16, row: &mut u16, max_row: u16,
+                        content_w: usize, data: &mtg_engine::cards::CardData, star_pt: bool,
+                        prefix: &str) -> bool {
+        // Name + cost — or, for a face with no mana cost, the color
+        // indicator printed beside its type line in its place (CR
+        // 204.2). That is what the physical card does and why the
+        // indicator exists: a transformed Gatstaf Howler is green, and
+        // with neither a cost nor an indicator on screen its color was
+        // unobtainable — which is the whole of what intimidate asks
+        // (CR 702.13a, issue #357).
+        let cost_str = match data.cost.as_ref() {
+            Some(c) => format!(" {c}"),
+            None if !data.color_indicator.is_empty() =>
+                format!(" ({})", mtg_engine::types::colors_line(&data.color_indicator)
+                    .to_lowercase()),
+            None => String::new(),
+        };
+        let name_line = format!("{prefix}{}{}", data.name, cost_str);
+        let truncated: String = name_line.chars().take(content_w).collect();
+        let _ = execute!(out, cursor::MoveTo(right_col, *row), SetAttribute(Attribute::Bold));
+        Self::print_with_mana(out, &truncated, None);
+        let _ = execute!(out, SetAttribute(Attribute::Reset));
+        *row += 1;
+        if *row >= max_row { return false; }
+
+        // Type line + P/T, supertypes first (CR 205.4a, issue #333).
+        let pt = if star_pt {
+            " */*".to_string()
+        } else {
+            match (data.power, data.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            }
+        };
+        let type_line = format!("{}{}", mtg_engine::types::type_line(
+            &data.supertypes, &data.card_types, &data.subtypes), pt);
+
+        let truncated: String = type_line.chars().take(content_w).collect();
+        let _ = execute!(out, cursor::MoveTo(right_col, *row),
+            SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
+        *row += 1;
+        if *row >= max_row { return false; }
+
+        // Keywords
+        if !data.keywords.is_empty() {
+            let kw_str: Vec<String> =
+                data.keywords.iter().copied().map(keyword_title).collect();
+            let kw_line = kw_str.join(", ");
+            let truncated: String = kw_line.chars().take(content_w).collect();
+            let _ = execute!(out, cursor::MoveTo(right_col, *row),
+                SetForegroundColor(Color::Blue), Print(&truncated), ResetColor);
+            *row += 1;
+            if *row >= max_row { return false; }
+        }
+
+        // Oracle text (word-wrapped), minus the lines the panel already
+        // prints for itself above and below.
+        if !data.oracle_text.is_empty() {
+            let kept = Self::card_panel_oracle_lines(
+                &data.oracle_text, data.flashback_cost.is_some());
+            let text = kept.join("\n");
+            if !text.trim().is_empty() {
+                let wrapped = Self::wrap_text(text.trim(), content_w);
+                for line in wrapped {
+                    if *row >= max_row { return false; }
+                    let _ = execute!(out, cursor::MoveTo(right_col, *row));
+                    Self::print_with_mana(out, &line, None);
+                    *row += 1;
+                }
+            }
+        }
+
+        // Flashback cost
+        if let Some(fb) = &data.flashback_cost {
+            if *row < max_row {
+                let fb_line = format!("Flashback {fb}");
+                let truncated: String = fb_line.chars().take(content_w).collect();
+                let _ = execute!(out, cursor::MoveTo(right_col, *row));
+                Self::print_with_mana(out, &truncated, Some(Color::Cyan));
+                *row += 1;
+            }
+        }
+        true
     }
 
     /// Simple word-wrap for oracle text.
