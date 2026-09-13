@@ -8,6 +8,16 @@ pub struct TournamentConfig {
     pub best_of: usize,
 }
 
+/// Game wins that decide a match of `best_of` games: more than half of them.
+///
+/// A match also ends once `best_of` games have been played, drawn games
+/// included (MTR 6.5), so this target is not always reached — a match that
+/// runs out of games with the wins level is a drawn match.
+#[must_use]
+pub fn wins_needed(best_of: usize) -> usize {
+    best_of / 2 + 1
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MatchResult {
     pub player_a: usize,
@@ -274,7 +284,7 @@ impl Tournament {
                 // Counted separately as well, so the standings can say which
                 // wins were played and which were awarded.
                 self.standings[a].match_wins += 1;
-                self.standings[a].game_wins += self.config.best_of / 2 + 1;
+                self.standings[a].game_wins += wins_needed(self.config.best_of);
                 self.standings[a].byes += 1;
             }
         }

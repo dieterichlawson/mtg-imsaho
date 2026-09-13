@@ -259,10 +259,14 @@ game 2. The starting player is randomised (a fair coin flip); the mulligan promp
 tells you which you are.\n",
             ),
             Self::BestOf(n) => {
-                let last = n.min(3);
+                // The last game is game n, not game 3: a seat told its match
+                // ends at game 3 when it does not plays the end of a longer
+                // match wrong, and one told there is a game 3 in a
+                // best-of-two is told about a game that will not happen
+                // (#484).
                 writeln!(s, "Matches are best-of-{n}. The starting player for each game is chosen as follows:\n\
 - **Game 1**: randomised (fair coin flip).\n\
-- **Games 2 to {last}**: the loser of the previous game chooses who goes first. In this \
+- **Games 2 to {n}**: the loser of the previous game chooses who goes first. In this \
 tournament, the loser ALWAYS elects to play first — going on the draw is effectively \
 never correct in Limited, so there is no decision to make. You will simply find \
 yourself on the play or draw at the start of each game; the mulligan prompt will tell \

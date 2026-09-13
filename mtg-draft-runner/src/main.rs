@@ -6,7 +6,7 @@ use mtg_draft::deckbuilding;
 use mtg_draft::draft::DraftState;
 use mtg_draft::pack::{generate_draft_packs, SheetData};
 use mtg_draft::set_data::SetData;
-use mtg_draft::tournament::{GameOutcome, MatchResult, Standing, Tournament, TournamentConfig, BYE};
+use mtg_draft::tournament::{self, GameOutcome, MatchResult, Standing, Tournament, TournamentConfig, BYE};
 
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
@@ -1143,6 +1143,19 @@ fn build_deck_prompt(pool: &[String]) -> String {
 
 // ─── Tournament Game Execution ───────────────────────────────────────
 
+/// Whether a match of `best_of` games is decided, given what has been played.
+///
+/// Two ways a match ends, and the loop used to know only the first (#484):
+/// somebody has won more than half the games, or `best_of` games have been
+/// played. A drawn game wins nothing but is still a game played — MTR 6.5
+/// ends a best-of-three after three games however they went — so without the
+/// second clause a match with draws in it has no bound on its length, and an
+/// even `--best-of` plays one game more than it says.
+fn match_is_over(best_of: usize, games_played: usize, wins_a: usize, wins_b: usize) -> bool {
+    let needed = tournament::wins_needed(best_of);
+    wins_a >= needed || wins_b >= needed || games_played >= best_of
+}
+
 fn play_match(
     a: &PlayerSpec<'_>,
     b: &PlayerSpec<'_>,
@@ -1152,7 +1165,6 @@ fn play_match(
     card_reference: &str,
     seed: u64,
 ) -> MatchResult {
-    let wins_needed = best_of / 2 + 1;
     let mut wins_a = 0;
     let mut wins_b = 0;
     let mut games = Vec::new();
@@ -1182,7 +1194,7 @@ fn play_match(
     let mut starter = mtg_engine::ids::PlayerId(
         if rand::Rng::gen_bool(&mut match_rng, 0.5) { 1 } else { 0 });
 
-    while wins_a < wins_needed && wins_b < wins_needed {
+    while !match_is_over(best_of, games.len(), wins_a, wins_b) {
         let outcome = play_game(
             seat_a,
             seat_b,
@@ -1361,6 +1373,42 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
         p = p.with_guide(g.to_string());
     }
     p
+}
+
+#[cfg(test)]
+mod match_length_tests {
+    use super::match_is_over;
+
+    /// #484: `--best-of 2` played three games, because only a win target
+    /// ended the match and two wins are needed to take a two-game match.
+    #[test]
+    fn an_even_best_of_stops_at_the_games_it_names() {
+        assert!(!match_is_over(2, 0, 0, 0));
+        assert!(!match_is_over(2, 1, 1, 0));
+        // 1-1 after both games: the match is over and drawn, not extended.
+        assert!(match_is_over(2, 2, 1, 1));
+        // Winning both still ends it at two.
+        assert!(match_is_over(2, 2, 2, 0));
+    }
+
+    /// A drawn game wins nothing but is still a game played, so a match with
+    /// draws in it is bounded (MTR 6.5) instead of running forever.
+    #[test]
+    fn drawn_games_still_count_toward_the_match_length() {
+        // best-of-three, two draws and a win: 1-0 with three games played.
+        assert!(!match_is_over(3, 1, 0, 0));
+        assert!(!match_is_over(3, 2, 0, 0));
+        assert!(match_is_over(3, 3, 1, 0));
+        // And a best-of-three that draws every game ends drawn.
+        assert!(match_is_over(3, 3, 0, 0));
+    }
+
+    #[test]
+    fn a_decided_match_does_not_play_its_dead_game() {
+        assert!(match_is_over(3, 2, 2, 0));
+        assert!(!match_is_over(3, 2, 1, 1));
+        assert!(match_is_over(1, 1, 1, 0));
+    }
 }
 
 #[cfg(test)]
