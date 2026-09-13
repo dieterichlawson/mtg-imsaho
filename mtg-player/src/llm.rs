@@ -96,10 +96,49 @@ fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache
     entry.cache_create += cache_create;
 }
 
+/// The suffix a usage line carries when some of its calls came back with an
+/// answer the harness could not use.
+///
+/// Both runners print it, from here: a call count alone reads as a healthy
+/// seat even when the harness chose every move itself (#211), and the draft
+/// runner's summary, which kept its own copy of the usage struct, dropped
+/// the counter one line before it would have printed this (#489).
+#[must_use]
+pub fn rejected_note(rejected: u64) -> String {
+    if rejected == 0 {
+        String::new()
+    } else {
+        format!(", {rejected} answer{} rejected → fallback", if rejected == 1 { "" } else { "s" })
+    }
+}
+
 /// A call whose answer was unusable. See `LlmModelUsage::rejected`.
-fn record_llm_rejected(model: &str) {
+fn record_llm_rejected(model: &str, seat: &str) {
     let mut map = LLM_MODEL_USAGE.lock().unwrap();
     map.entry(model.to_string()).or_default().rejected += 1;
+    drop(map);
+    *REJECTED_BY_SEAT.lock().unwrap().entry(seat.to_string()).or_default() += 1;
+}
+
+/// Rejected answers by seat as well as by model.
+///
+/// A tournament's seats are all the same model — every `cc` seat is logged
+/// as `claude-code` — so a per-model tally can say that answers were
+/// rejected but not whose, while the draft phase names the seat for a
+/// substituted pick or deck (#195, #200). This is the game phase's version
+/// of that (issue #489).
+static REJECTED_BY_SEAT: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// How many answers each seat gave that the harness could not use.
+#[must_use]
+pub fn get_rejected_by_seat() -> HashMap<String, u64> {
+    REJECTED_BY_SEAT
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(seat, n)| (seat.clone(), *n))
+        .collect()
 }
 
 fn record_anthropic_llm_usage(model: &str, json: &serde_json::Value) {
@@ -1680,7 +1719,7 @@ impl LlmPlayer {
         // found nothing even when a seat had been mute for eight minutes
         // (#399).
         self.log_at(crate::game_log::LogLevel::Error, "MALFORMED", content);
-        record_llm_rejected(self.backend.model_name());
+        record_llm_rejected(self.backend.model_name(), self.name());
     }
 
     #[track_caller]
@@ -2867,6 +2906,35 @@ impl LlmPlayer {
     ///
     /// `choose_card_set` already answered this with an index array; this is
     /// the same answer for every other "mark some of these".
+    /// The `Options:` block of a "mark some of these" prompt.
+    ///
+    /// The numbering happens here and only here. A caller that numbers its
+    /// own labels gets it twice — `0: 0: Abbey Griffin` on every target
+    /// prompt, in the one prompt whose unusable answers are the most
+    /// expensive (issue #490).
+    fn numbered_listing(labels: &[String]) -> String {
+        let mut listing = String::new();
+        for (i, label) in labels.iter().enumerate() {
+            writeln!(listing, "{i}: {label}").unwrap();
+        }
+        listing
+    }
+
+    /// One label per target: what the thing is called, and nothing else.
+    fn target_labels(view: &GameView, options: &[mtg_engine::actions::Target]) -> Vec<String> {
+        use mtg_engine::actions::Target;
+        options
+            .iter()
+            .map(|t| match t {
+                Target::Object(id) => Self::obj_name(view, *id),
+                Target::Player(pid) => {
+                    if *pid == view.you { "You".to_string() } else { "Opponent".to_string() }
+                }
+                Target::Illegal => "(illegal)".to_string(),
+            })
+            .collect()
+    }
+
     fn mark_indices(
         &mut self,
         view: &GameView,
@@ -2877,10 +2945,7 @@ impl LlmPlayer {
         instruction: &str,
         noun: &str,
     ) -> Vec<usize> {
-        let mut listing = String::new();
-        for (i, label) in labels.iter().enumerate() {
-            writeln!(listing, "{i}: {label}").unwrap();
-        }
+        let listing = Self::numbered_listing(labels);
         let count_note = if min == max {
             format!("Pick exactly {min} {noun}{}.", if min == 1 { "" } else { "s" })
         } else {
@@ -2948,12 +3013,9 @@ impl LlmPlayer {
     /// the count must match exactly — the engine validates and cancels
     /// the cast if it doesn't.
     ///
-    /// Schema is one boolean per card, keyed by disambiguated name —
-    /// same shape as `choose_pile_division`. Boolean schemas avoid the
-    /// provider-specific `minItems`/`maxItems`/`uniqueItems` constraints
-    /// that are patchy across Anthropic and Gemini.
-    /// Pick the targets for an "up to N" slot (CR 601.2c): one boolean per
-    /// candidate, the same shape as the exile-cost choice below.
+    /// Pick the targets for an "up to N" slot (CR 601.2c). The answer is an
+    /// index array under one fixed key — see `mark_indices`, which also
+    /// numbers the list.
     fn choose_target_set(
         &mut self,
         view: &GameView,
@@ -2967,16 +3029,12 @@ impl LlmPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(vec![]) };
         }
 
-        // One label per option, made unique so two identical cards are two
-        // distinct schema keys.
-        let labels: Vec<String> = options.iter().enumerate().map(|(i, t)| {
-            let name = match t {
-                Target::Object(id) => Self::obj_name(view, *id),
-                Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
-                Target::Illegal => "(illegal)".into(),
-            };
-            format!("{i}: {name}")
-        }).collect();
+        // No index prefix on the label: it used to *be* the schema key,
+        // where two copies of one card needed distinguishing, and the schema
+        // is an index array now — so `mark_indices`, which numbers the list
+        // itself, printed `0: 0: Abbey Griffin` on every target prompt
+        // (issue #490).
+        let labels = Self::target_labels(view, options);
         let picked = self.mark_indices(
             view, &labels, min, max, description,
             "Name the targets you want; leaving a slot empty is allowed where the count says so.",
@@ -4303,6 +4361,47 @@ mod tests {
         };
         let state = setup_game(&config, &registry);
         (state, registry)
+    }
+
+    /// #490: the target-set prompt numbered every option twice —
+    /// `0: 0: Abbey Griffin` — because the labels still carried the index
+    /// prefix they needed back when a label was a schema key, and
+    /// `mark_indices` numbers the list itself.
+    #[test]
+    fn a_marked_list_is_numbered_once() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let opponent = mtg_engine::ids::PlayerId(1);
+        let a_card = state
+            .objects
+            .values()
+            .find(|o| o.owner == view.you)
+            .map(|o| o.id)
+            .expect("the game has objects");
+
+        let options = vec![
+            mtg_engine::actions::Target::Player(view.you),
+            mtg_engine::actions::Target::Player(opponent),
+            mtg_engine::actions::Target::Object(a_card),
+        ];
+        let labels = LlmPlayer::target_labels(&view, &options);
+        assert_eq!(labels[0], "You");
+        assert_eq!(labels[1], "Opponent");
+
+        let listing = LlmPlayer::numbered_listing(&labels);
+        let mut lines = listing.lines();
+        assert_eq!(lines.next(), Some("0: You"));
+        assert_eq!(lines.next(), Some("1: Opponent"));
+        for line in listing.lines() {
+            let (index, rest) = line.split_once(": ").expect("every row is numbered");
+            assert!(index.chars().all(|c| c.is_ascii_digit()), "{line}");
+            assert!(
+                !rest.split_once(": ").is_some_and(|(second, _)| {
+                    !second.is_empty() && second.chars().all(|c| c.is_ascii_digit())
+                }),
+                "row numbered twice: {line}"
+            );
+        }
     }
 
     /// Every step name the header can print is in the documented list.
