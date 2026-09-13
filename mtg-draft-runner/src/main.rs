@@ -6,7 +6,7 @@ use mtg_draft::deckbuilding;
 use mtg_draft::draft::DraftState;
 use mtg_draft::pack::{generate_draft_packs, SheetData};
 use mtg_draft::set_data::SetData;
-use mtg_draft::tournament::{GameOutcome, MatchResult, Tournament, TournamentConfig};
+use mtg_draft::tournament::{GameOutcome, MatchResult, Standing, Tournament, TournamentConfig, BYE};
 
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
@@ -21,6 +21,31 @@ use std::fmt::Write;
 
 mod draft_log;
 mod llm_client;
+
+/// One row of the final standings, written once and printed by both surfaces
+/// that show them — stderr and the log's FINAL STANDINGS block.
+///
+/// The row carries the seat's full match record and marks the wins that were
+/// byes rather than matches played. Without the marker a seat that sat out a
+/// round reads exactly like a seat that beat somebody, and the block does not
+/// reconcile against the matches above it (issue #486, the shape of #195 and
+/// #200).
+pub(crate) fn standings_row(rank: usize, s: &Standing) -> String {
+    let draws = if s.match_draws > 0 {
+        format!("-{}", s.match_draws)
+    } else {
+        String::new()
+    };
+    let byes = match s.byes {
+        0 => String::new(),
+        1 => " [1 bye]".to_string(),
+        n => format!(" [{n} byes]"),
+    };
+    format!(
+        "{}. Seat {} — {}-{}{draws} ({} game wins){byes}",
+        rank, s.seat, s.match_wins, s.match_losses, s.game_wins,
+    )
+}
 
 /// Per-seat configuration used by [`play_match`].
 struct PlayerSpec<'a> {
@@ -796,11 +821,11 @@ substituting {} (the first card). Response: {}",
         // Separate byes from real matches
         let real_matches: Vec<(usize, usize)> = pairings
             .iter()
-            .filter(|&&(_, b)| b != usize::MAX)
+            .filter(|&&(_, b)| b != BYE)
             .copied()
             .collect();
 
-        for &(a, _) in pairings.iter().filter(|&&(_, b)| b == usize::MAX) {
+        for &(a, _) in pairings.iter().filter(|&&(_, b)| b == BYE) {
             if !args.quiet {
                 eprintln!("  Seat {a} gets a bye");
             }
@@ -858,7 +883,7 @@ substituting {} (the first card). Response: {}",
 
         // Log byes
         for &(a, b) in &pairings {
-            if b == usize::MAX {
+            if b == BYE {
                 log_bye!(log, round_num, a);
             }
         }
@@ -901,22 +926,12 @@ substituting {} (the first card). Response: {}",
     // ── Phase 5: Output ──
     log_section!(log, "FINAL STANDINGS");
     let sorted = tournament.sorted_standings();
-    let standings_data: Vec<(usize, usize, usize, usize)> = sorted
-        .iter()
-        .map(|s| (s.seat, s.match_wins, s.match_losses, s.game_wins))
-        .collect();
-    log_standings!(log, &standings_data);
+    log_standings!(log, &sorted);
 
     if !args.quiet {
         eprintln!("\nFinal Standings:");
         for (rank, s) in sorted.iter().enumerate() {
-            eprintln!(
-                "  {}. Seat {} — {} match wins, {} game wins",
-                rank + 1,
-                s.seat,
-                s.match_wins,
-                s.game_wins
-            );
+            eprintln!("  {}", standings_row(rank + 1, s));
         }
     }
 
@@ -1346,6 +1361,43 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
         p = p.with_guide(g.to_string());
     }
     p
+}
+
+#[cfg(test)]
+mod standings_row_tests {
+    use super::{standings_row, Standing};
+
+    fn standing(seat: usize, match_wins: usize, match_losses: usize, game_wins: usize, byes: usize) -> Standing {
+        Standing {
+            seat,
+            match_wins,
+            match_losses,
+            match_draws: 0,
+            game_wins,
+            game_losses: 0,
+            byes,
+        }
+    }
+
+    /// #486: seat 0 went 1-1 in matches it played; seat 1 lost its only match
+    /// and was given a bye. Both are "1-1" in the counters, so the row has to
+    /// say which win was awarded — otherwise the seat that lost to seat 0
+    /// prints identically to seat 0.
+    #[test]
+    fn a_bye_is_not_printed_as_a_won_match() {
+        let played = standings_row(2, &standing(0, 1, 1, 1, 0));
+        let byed = standings_row(3, &standing(1, 1, 1, 1, 1));
+
+        assert_eq!(played, "2. Seat 0 — 1-1 (1 game wins)");
+        assert_eq!(byed, "3. Seat 1 — 1-1 (1 game wins) [1 bye]");
+    }
+
+    #[test]
+    fn several_byes_and_draws_are_both_reported() {
+        let mut s = standing(4, 2, 1, 2, 2);
+        s.match_draws = 1;
+        assert_eq!(standings_row(1, &s), "1. Seat 4 — 2-1-1 (2 game wins) [2 byes]");
+    }
 }
 
 #[cfg(test)]

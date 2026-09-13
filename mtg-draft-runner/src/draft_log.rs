@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::fmt::Write;
 
+use mtg_draft::tournament::Standing;
+
 /// A streaming log writer that writes through the global `game_log`.
 /// Thread-safe because `game_log` uses a single Mutex internally.
 ///
@@ -331,12 +333,10 @@ the runner substituted a deck — this seat's deck and results are not a built o
         );
     }
 
-    pub fn standings(standings: &[(usize, usize, usize, usize)], file: &str, line: u32) {
+    pub fn standings(standings: &[Standing], file: &str, line: u32) {
         let mut content = String::new();
-        for (rank, &(seat, match_wins, match_losses, game_wins)) in standings.iter().enumerate() {
-            writeln!(content, "{}. Seat {} — {}-{} ({} game wins)",
-                rank + 1, seat, match_wins, match_losses, game_wins
-            ).unwrap();
+        for (rank, s) in standings.iter().enumerate() {
+            writeln!(content, "{}", crate::standings_row(rank + 1, s)).unwrap();
         }
         mtg_player::game_log::write(file, line, "FINAL STANDINGS", &content);
     }
