@@ -3,6 +3,28 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// The rarity printed on a card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Rarity {
+    Common,
+    Uncommon,
+    Rare,
+    Mythic,
+}
+
+impl Rarity {
+    /// The word a card's rarity is shown as.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Common => "common",
+            Self::Uncommon => "uncommon",
+            Self::Rare => "rare",
+            Self::Mythic => "mythic",
+        }
+    }
+}
+
 /// Top-level set data loaded from a JSON file (e.g., data/sets/isd.json).
 #[derive(Debug, Deserialize)]
 pub struct SetData {
@@ -122,6 +144,72 @@ impl SetData {
         Ok(sheet)
     }
 
+    /// Every card's rarity, recovered from the print sheets it appears on.
+    ///
+    /// The runs are named by rarity, which settles the common and uncommon
+    /// sheets outright. A sheet that mixes rarities — the rare sheet, which
+    /// carries mythics, and the double-faced sheet, which carries all four —
+    /// separates them by how many slots a card holds: the rarer a card is,
+    /// the fewer copies of it the sheet has. So within such a sheet the
+    /// distinct copy-counts, most copies first, are common, uncommon, rare,
+    /// mythic, and a sheet with fewer distinct counts is read from the
+    /// common end (ISD's rare sheet has two, 4 copies and 2; its DFC sheet
+    /// has four, 11 / 6 / 2 / 1).
+    ///
+    /// Cards whose run name names no rarity at all are left out.
+    #[must_use]
+    pub fn rarities(&self) -> HashMap<String, Rarity> {
+        let mut rarities = HashMap::new();
+
+        for (run_name, run) in &self.runs {
+            let fixed = if run_name.starts_with("uncommon") {
+                Some(Rarity::Uncommon)
+            } else if run_name.starts_with("common") {
+                Some(Rarity::Common)
+            } else {
+                None
+            };
+            if let Some(rarity) = fixed {
+                for card in run {
+                    rarities.insert(card.clone(), rarity);
+                }
+            }
+        }
+
+        for prefix in ["rare", "dfc"] {
+            let mut copies: HashMap<&str, usize> = HashMap::new();
+            for (run_name, run) in &self.runs {
+                if !run_name.starts_with(prefix) {
+                    continue;
+                }
+                for card in run {
+                    *copies.entry(card.as_str()).or_default() += 1;
+                }
+            }
+            if copies.is_empty() {
+                continue;
+            }
+
+            // The sheet's distinct copy-counts, most copies first: common,
+            // then uncommon, then rare, then mythic.
+            let mut counts: Vec<usize> = copies.values().copied().collect();
+            counts.sort_unstable_by(|a, b| b.cmp(a));
+            counts.dedup();
+            let ladder = [Rarity::Common, Rarity::Uncommon, Rarity::Rare, Rarity::Mythic];
+            // A sheet carrying only the top rarities starts further down the
+            // ladder: the rare sheet's two counts are rare and mythic, not
+            // common and uncommon.
+            let start = if prefix == "rare" { 2 } else { 0 };
+            for (card, count) in copies {
+                let step = counts.iter().position(|c| *c == count).unwrap_or(0);
+                let rarity = ladder[(start + step).min(ladder.len() - 1)];
+                rarities.insert(card.to_string(), rarity);
+            }
+        }
+
+        rarities
+    }
+
     /// Return all unique card names across all runs.
     #[must_use]
     pub fn all_card_names(&self) -> Vec<String> {
@@ -193,6 +281,43 @@ mod tests {
         assert_eq!(data.runs["rare_b"].len(), 55);
         assert_eq!(data.runs["rare_c"].len(), 66);
         assert_eq!(data.runs["rare_d"].len(), 66);
+    }
+
+    /// The rarity a pack line shows comes from the print sheets, so it has to
+    /// agree with what is printed on the real cards — including on the
+    /// double-faced sheet, which carries all four rarities and names none of
+    /// them (issue #483).
+    #[test]
+    fn rarities_match_the_printed_cards() {
+        let data = SetData::load(&isd_path()).expect("Failed to load ISD set data");
+        let rarities = data.rarities();
+        let rarity = |name: &str| {
+            *rarities
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} has no rarity"))
+        };
+
+        assert_eq!(rarity("Moon Heron"), Rarity::Common);
+        assert_eq!(rarity("Abbey Griffin"), Rarity::Common);
+        assert_eq!(rarity("Skaab Goliath"), Rarity::Uncommon);
+        assert_eq!(rarity("Burning Vengeance"), Rarity::Uncommon);
+        assert_eq!(rarity("Snapcaster Mage"), Rarity::Rare);
+        assert_eq!(rarity("Geist-Honored Monk"), Rarity::Rare);
+        // A mythic holds half a rare's slots on the sheet.
+        assert_eq!(rarity("Liliana of the Veil"), Rarity::Mythic);
+        assert_eq!(rarity("Geist of Saint Traft"), Rarity::Mythic);
+
+        // The double-faced sheet: one card of each rarity it carries.
+        assert_eq!(rarity("Delver of Secrets // Insectile Aberration"), Rarity::Common);
+        assert_eq!(rarity("Village Ironsmith // Ironfang"), Rarity::Common);
+        assert_eq!(rarity("Gatstaf Shepherd // Gatstaf Howler"), Rarity::Uncommon);
+        assert_eq!(rarity("Bloodline Keeper // Lord of Lineage"), Rarity::Rare);
+        assert_eq!(rarity("Garruk Relentless // Garruk, the Veil-Cursed"), Rarity::Mythic);
+
+        // Every card in the set has one.
+        for name in data.all_card_names() {
+            assert!(rarities.contains_key(&name), "{name} has no rarity");
+        }
     }
 
     #[test]

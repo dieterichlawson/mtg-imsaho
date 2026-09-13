@@ -1,7 +1,7 @@
 //! Sequential collation pack generator for ISD booster packs.
 //! See docs/isd-booster-collation.md for full details on the simulation model.
 
-use crate::set_data::SetData;
+use crate::set_data::{Rarity, SetData};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde::Serialize;
@@ -151,62 +151,30 @@ impl SheetData {
         let c2w = &data.collation.common_pack_variants.c2_variant_weights;
         let uw = &data.collation.uncommon_variants;
 
-        // Build foil pools by examining which cards appear on which runs.
-        // Commons: common_a, common_b, common_c1, common_c2 (deduped)
-        // Uncommons: uncommon_a, uncommon_b (deduped)
-        // Rares/Mythics: from rare sheets. Mythics appear 2x on sheet, rares appear 4x.
-        // We identify mythics by having exactly 2 copies in the rare_a run.
+        // Foil pools are the set's cards grouped by rarity, minus the
+        // double-faced ones (a foil DFC displaces the DFC slot, not a
+        // common). The rarities come from `SetData::rarities`, which reads
+        // the same print sheets this used to walk itself.
         let rare_sheet1 = data.rare_sheet_1()?;
         let rare_sheet2 = data.rare_sheet_2()?;
+        let dfc_sheet = data.dfc_sheet()?;
+        let dfc_names: std::collections::HashSet<&String> = dfc_sheet.iter().collect();
 
-        let mut common_set = std::collections::HashSet::new();
-        for run_name in ["common_a", "common_b", "common_c1", "common_c2"] {
-            for card in data.run(run_name)? {
-                common_set.insert(card.clone());
+        let mut foil_pool_commons = Vec::new();
+        let mut foil_pool_uncommons = Vec::new();
+        let mut foil_pool_rares = Vec::new();
+        let mut foil_pool_mythics = Vec::new();
+        for (card, rarity) in data.rarities() {
+            if dfc_names.contains(&card) {
+                continue;
+            }
+            match rarity {
+                Rarity::Common => foil_pool_commons.push(card),
+                Rarity::Uncommon => foil_pool_uncommons.push(card),
+                Rarity::Rare => foil_pool_rares.push(card),
+                Rarity::Mythic => foil_pool_mythics.push(card),
             }
         }
-
-        let mut uncommon_set = std::collections::HashSet::new();
-        for run_name in ["uncommon_a", "uncommon_b"] {
-            for card in data.run(run_name)? {
-                uncommon_set.insert(card.clone());
-            }
-        }
-
-        // Identify mythics vs rares from the A rare run.
-        // Mythics appear 2x in A run (55 slots), rares appear 4x.
-        let rare_a = data.run("rare_a")?;
-        let mut rare_a_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-        for card in rare_a {
-            *rare_a_counts.entry(card.as_str()).or_default() += 1;
-        }
-
-        let mut mythic_set = std::collections::HashSet::new();
-        let mut rare_set = std::collections::HashSet::new();
-
-        // Cards in A run with 2 copies are mythics
-        for (card, count) in &rare_a_counts {
-            if *count == 2 {
-                mythic_set.insert(card.to_string());
-            } else {
-                rare_set.insert(card.to_string());
-            }
-        }
-
-        // All other cards on rare sheets are rares
-        let all_rare_sheets = [&rare_sheet1, &rare_sheet2];
-        for sheet in &all_rare_sheets {
-            for card in *sheet {
-                if !mythic_set.contains(card) {
-                    rare_set.insert(card.clone());
-                }
-            }
-        }
-
-        let mut foil_pool_commons: Vec<String> = common_set.into_iter().collect();
-        let mut foil_pool_uncommons: Vec<String> = uncommon_set.into_iter().collect();
-        let mut foil_pool_rares: Vec<String> = rare_set.into_iter().collect();
-        let mut foil_pool_mythics: Vec<String> = mythic_set.into_iter().collect();
         foil_pool_commons.sort();
         foil_pool_uncommons.sort();
         foil_pool_rares.sort();
@@ -229,7 +197,7 @@ impl SheetData {
             uncommon_b: data.run("uncommon_b")?.to_vec(),
             rare_sheet1,
             rare_sheet2,
-            dfc_sheet: data.dfc_sheet()?,
+            dfc_sheet,
             foil_pool_commons,
             foil_pool_uncommons,
             foil_pool_rares,
