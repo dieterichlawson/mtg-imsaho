@@ -234,3 +234,19 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   cards keyed as 45 schema properties is a large object for a model to fill
   in correctly, and a wrong count there is a deck that fails legality rather
   than a deck that plays badly
+
+- D19 [proposed 2026-09-13, from #484 and the D8 night] the drawn game, which no
+  probe has ever reached: `play_match`'s `while wins_a < wins_needed && wins_b <
+  wins_needed` counts wins, never games, so a draw is a free extra game and MTR
+  §6.5's three-game cap does not exist. D8 could not force one — the engine's
+  only draw is `sba.rs`'s "zero players alive", a simultaneous loss. Set one up
+  deliberately: find or write the pair of ISD decks that can kill both players in
+  one SBA check (symmetric damage, or a mutual empty-library draw), confirm it
+  draws under `mtg-runner` first, then feed the same decks to the tournament with
+  a `CLAUDE_CODE_BIN` stub that steers toward it, at `--best-of 3`. Verify the
+  match stops after three games played and is recorded as a draw —
+  `MatchResult::winner()` returning `None`, `Standing::match_draws` incremented
+  for both seats, `(Draw)` in the MATCH log line, and the draw visible in the
+  standings — rather than a fourth game. Then ask the same question of
+  `--best-of 2` and `--best-of 5`, where `best_of / 2 + 1` and `MatchFormat`'s
+  `n.min(3)` already disagree about how long a match is
