@@ -333,6 +333,27 @@ the runner substituted a deck — this seat's deck and results are not a built o
         );
     }
 
+    /// A game the progress watchdog forfeited. Logged where the match is
+    /// logged, because the standings count it as a loss and nothing else in
+    /// the run would say it was not played out (#488).
+    pub fn stalled_game(
+        seat_a: usize,
+        seat_b: usize,
+        stalled: usize,
+        turn: u32,
+        step: &str,
+        detail: &str,
+        file: &str,
+        line: u32,
+    ) {
+        mtg_player::game_log::write(
+            file, line,
+            &format!("STALLED (Seat {seat_a} vs Seat {seat_b}) — Seat {stalled} stopped making \
+progress at turn {turn} {step}; the game is forfeit"),
+            detail,
+        );
+    }
+
     pub fn standings(standings: &[Standing], file: &str, line: u32) {
         let mut content = String::new();
         for (rank, s) in standings.iter().enumerate() {

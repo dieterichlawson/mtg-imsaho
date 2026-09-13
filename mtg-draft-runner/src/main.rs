@@ -929,8 +929,16 @@ substituting {} (the first card). Response: {}",
             }
 
             if !args.quiet {
+                // A forfeited game is a game nobody played; the score line
+                // is where a reader is looking when it happens (#488).
+                let forfeits = result.games.iter().filter(|g| g.stalled_seat.is_some()).count();
+                let forfeited = match forfeits {
+                    0 => String::new(),
+                    1 => " [1 game forfeited: a seat stalled]".to_string(),
+                    n => format!(" [{n} games forfeited: a seat stalled]"),
+                };
                 eprintln!(
-                    "  Seat {} vs Seat {}: {}-{} (winner: Seat {})",
+                    "  Seat {} vs Seat {}: {}-{} (winner: Seat {}){forfeited}",
                     result.player_a,
                     result.player_b,
                     result.wins_a,
@@ -983,6 +991,26 @@ substituting {} (the first card). Response: {}",
 this seat's deck, so its results are not a built deck's", deck_results[*seat].retries);
         }
         eprintln!("  (grep the log for FALLBACK to see each one)");
+    }
+
+    // A game the watchdog forfeited is counted as a loss in the standings
+    // and was never played out, so the run has to say so next to them —
+    // the same rule as a substituted deck or pick (#195, #200, #488).
+    let mut stalled_games = vec![0usize; args.players];
+    for game in tournament.rounds.iter().flat_map(|r| r.results.iter()).flat_map(|m| m.games.iter()) {
+        if let Some(seat) = game.stalled_seat {
+            stalled_games[seat] += 1;
+        }
+    }
+    if stalled_games.iter().any(|n| *n > 0) {
+        eprintln!("\n=== Forfeited Games ===");
+        for (seat, n) in stalled_games.iter().enumerate() {
+            if *n > 0 {
+                eprintln!("    Seat {seat}: {n} game(s) forfeited — this seat stopped making \
+progress (the same unusable answer over and over), so the game was awarded to its opponent");
+            }
+        }
+        eprintln!("  (grep the log for STALLED to see each one)");
     }
 
     let substituted_total: usize = substituted_picks.iter().sum();
@@ -1294,6 +1322,15 @@ fn play_game(
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;
 
+    // The progress watchdog `mtg-runner` has had since #462. This loop is
+    // the other copy, and it had only the 50,000-action cap — which for a
+    // pod of `cc` seats is 50,000 `claude -p` subprocesses spent re-asking
+    // one question, and then a silent concede. A stalled game here forfeits
+    // for the seat that is stuck and says so everywhere the game is
+    // reported, rather than killing the tournament around it (#488).
+    let mut watchdog = mtg_player::watchdog::ProgressWatchdog::new();
+    let mut stalled_seat: Option<usize> = None;
+
     let mut game_callback =
         |game_state: &GameState,
          acting_player: PlayerId,
@@ -1301,7 +1338,25 @@ fn play_game(
          -> mtg_engine::actions::Action {
             action_count += 1;
 
-            if action_count >= max_actions {
+            let stalled = watchdog.observe(game_state);
+            if stalled && stalled_seat.is_none() {
+                let seat = if acting_player == PlayerId(0) { seat_a } else { seat_b };
+                stalled_seat = Some(seat);
+                let report = mtg_player::watchdog::stall_report(
+                    game_state, acting_player, legal, &seat.to_string(),
+                );
+                eprintln!("\nWARN: {report} The game is forfeit to seat {}.",
+                    if acting_player == PlayerId(0) { seat_b } else { seat_a });
+                draft_log::DraftLogger::stalled_game(
+                    seat_a, seat_b, seat,
+                    game_state.turn_number,
+                    &format!("{:?}", game_state.step),
+                    &report,
+                    file!(), line!(),
+                );
+            }
+
+            if stalled || action_count >= max_actions {
                 if let Some(concede_idx) = legal
                     .actions
                     .iter()
@@ -1354,6 +1409,7 @@ fn play_game(
         winner,
         turns: state.turn_number,
         game_log,
+        stalled_seat,
     }
 }
 

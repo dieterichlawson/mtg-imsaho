@@ -3,6 +3,7 @@ pub mod cli;
 pub mod llm;
 pub mod scripted;
 pub mod game_log;
+pub mod watchdog;
 
 use mtg_engine::view::GameView;
 use mtg_engine::actions::Action;
