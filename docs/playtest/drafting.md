@@ -136,7 +136,21 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   it: enumerate the prompt kinds a limited deck reaches, reach each one on
   a `cc` seat, and treat any decision the seat cannot answer as the bug —
   a drafted deck the seat cannot pilot makes the whole tournament result
-  meaningless
+  meaningless.
+  **Run 2026-09-13, and three of the nine shapes are still unreached on a real
+  seat.** A 2-seat ISD pod reaches nine request shapes (`pick`,
+  `maindeck`+`lands`, `action`, `confirm`, `mull`, `indices`, `card_indices`,
+  `order`, and the per-blocker assignment object); one real 14-turn game reached
+  six of them and answered all six. The three left over are the board-dependent
+  ones — `confirm` (the concede check), `card_indices` (the cleanup discard,
+  which is also the smallest prompt in the game, #463) and `order` (trigger
+  ordering, CR 603.3b). Reaching them on a real seat is not a matter of playing
+  longer: it wants a pod whose *pools* force them, so pick the seeds by drafting
+  under a `CLAUDE_CODE_BIN` stub first and grepping the captures for the shape,
+  then re-run those seeds with `--model cc`. The two watchdog defects the night
+  did find (#488, #489) mean a seat that cannot answer one of these three spins
+  silently rather than reporting, so an unreached shape is exactly where the
+  cost lands
 
 - D12 [proposed 2026-09-09, from #402] seeded-run identity beyond the packs:
   the draft half of a `--seed` run reproduces exactly and the tournament half
