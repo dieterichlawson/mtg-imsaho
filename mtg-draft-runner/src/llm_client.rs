@@ -13,13 +13,22 @@ use std::fmt::Write;
 
 use crate::card_lines::CardLines;
 
-#[derive(Default, Debug)]
+// Derived, not written out field by field: a hand-copied `Clone` and a
+// hand-copied conversion are how `rejected` went missing from this summary
+// in the first place (#489).
+#[derive(Default, Debug, Clone)]
 pub struct ModelUsage {
     pub input: u64,
     pub output: u64,
     pub cache_read: u64,
     pub cache_create: u64,
     pub calls: u64,
+    /// Calls that came back but whose answer the harness could not use. A
+    /// rejected answer is a *successful* call, so without this the summary
+    /// reads as a healthy seat even when the harness chose every move
+    /// itself — the game phase's counter used to be dropped one line before
+    /// it would have been printed (issue #489, the shape of #211/#399).
+    pub rejected: u64,
 }
 
 static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
@@ -65,19 +74,13 @@ pub fn get_model_usage() -> HashMap<String, ModelUsage> {
     MODEL_USAGE.lock().unwrap().clone()
 }
 
-impl Clone for ModelUsage {
-    fn clone(&self) -> Self {
-        Self { input: self.input, output: self.output, cache_read: self.cache_read, cache_create: self.cache_create, calls: self.calls }
-    }
-}
-
 /// Known model pricing ($/`MTok`). (input, output, `cache_read`, `cache_write`)
 /// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08)
 
-/// This crate's usage record as the shared cost model reads it — the token
-/// counters, kept once per crate. Anything the shared struct carries that
-/// this crate does not track (the game harness's `rejected` answer count)
-/// defaults; costing reads none of it.
+/// This crate's usage record as the shared cost model reads it. Costing
+/// reads the token counters only, but every field this struct has is
+/// carried across, because the one that was not is the one that went
+/// missing (#489).
 fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
     mtg_player::llm::LlmModelUsage {
         input: u.input,
@@ -85,7 +88,7 @@ fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
         cache_read: u.cache_read,
         cache_create: u.cache_create,
         calls: u.calls,
-        ..Default::default()
+        rejected: u.rejected,
     }
 }
 
@@ -113,28 +116,22 @@ pub fn print_usage_summary(total_games: usize) {
 
     // Game phase cost
     let game_usage: HashMap<String, ModelUsage> = game_usage.iter().map(|(m, u)| (m.clone(), ModelUsage {
-        calls: u.calls, input: u.input, output: u.output, cache_read: u.cache_read, cache_create: u.cache_create,
+        calls: u.calls, input: u.input, output: u.output, cache_read: u.cache_read,
+        cache_create: u.cache_create, rejected: u.rejected,
     })).collect();
     let game_cost = phase_cost(&game_usage);
     let game_calls: u64 = game_usage.values().map(|u| u.calls).sum();
 
     // Combined per-model
     let mut combined: HashMap<String, ModelUsage> = HashMap::new();
-    for (model, u) in &draft_usage {
+    for (model, u) in draft_usage.iter().chain(game_usage.iter()) {
         let entry = combined.entry(model.clone()).or_default();
         entry.calls += u.calls;
         entry.input += u.input;
         entry.output += u.output;
         entry.cache_read += u.cache_read;
         entry.cache_create += u.cache_create;
-    }
-    for (model, u) in &game_usage {
-        let entry = combined.entry(model.clone()).or_default();
-        entry.calls += u.calls;
-        entry.input += u.input;
-        entry.output += u.output;
-        entry.cache_read += u.cache_read;
-        entry.cache_create += u.cache_create;
+        entry.rejected += u.rejected;
     }
 
     // Build summary string for both stderr and log file
@@ -157,11 +154,33 @@ pub fn print_usage_summary(total_games: usize) {
 
     for (model, u) in &models {
         let cost = usage_cost(u, model);
-        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = {cost}",
+        // The same sentence `mtg-runner` prints, from the same function: a
+        // call count alone reads as a healthy seat even when every answer
+        // was thrown away (#489).
+        let rejected = mtg_player::llm::rejected_note(u.rejected);
+        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = {cost}{rejected}",
             model, u.calls, u.input, u.output, u.cache_read
         ).unwrap();
     }
     writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
+
+    // Whose answers those were. Every `cc` seat shares one model label, so
+    // the per-model line above can say that answers were rejected and not
+    // by whom — while the draft phase names the seat for a substituted pick
+    // or deck. This is the same statement for the tournament (#489).
+    let mut by_seat: Vec<(String, u64)> = mtg_player::llm::get_rejected_by_seat()
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .collect();
+    if !by_seat.is_empty() {
+        by_seat.sort();
+        summary.push_str("\n  Answers the harness could not use, by seat:\n");
+        for (seat, n) in &by_seat {
+            writeln!(summary, "    {seat}: {n} answer{} rejected — the harness chose for it, \
+so this seat's games are not wholly its own", if *n == 1 { "" } else { "s" }).unwrap();
+        }
+        summary.push_str("  (grep the log for MALFORMED to see each one)\n");
+    }
 
     // Write to stderr
     eprint!("\n{summary}");
@@ -1134,6 +1153,49 @@ after your pick this pack passes {direction} to seat {next_seat}.\n\nAvailable (
     /// The full system prompt this client will send to the model.
     pub fn system_prompt(&self) -> &str {
         self.backend.system_prompt()
+    }
+}
+
+#[cfg(test)]
+mod usage_summary_tests {
+    use super::{as_llm_usage, ModelUsage};
+
+    /// #489: the tournament's usage was copied into this crate's struct
+    /// field by field, `rejected` was not in the list, and a run with 14
+    /// unusable game answers printed a summary with no rejection in it.
+    #[test]
+    fn every_counter_survives_the_round_trip() {
+        let usage = ModelUsage {
+            input: 11,
+            output: 22,
+            cache_read: 33,
+            cache_create: 44,
+            calls: 55,
+            rejected: 66,
+        };
+        let shared = as_llm_usage(&usage);
+
+        assert_eq!(shared.input, 11);
+        assert_eq!(shared.output, 22);
+        assert_eq!(shared.cache_read, 33);
+        assert_eq!(shared.cache_create, 44);
+        assert_eq!(shared.calls, 55);
+        assert_eq!(shared.rejected, 66, "a rejected answer is what the summary exists to say");
+
+        // And a clone keeps them all — the hand-written `Clone` that dropped
+        // fields silently is how one went missing (#489).
+        let copy = usage.clone();
+        assert_eq!(copy.rejected, usage.rejected);
+        assert_eq!(copy.calls, usage.calls);
+    }
+
+    /// The line a reader sees, shared with `mtg-runner` so the two runners
+    /// cannot say it differently — or, as here, one of them not at all.
+    #[test]
+    fn the_rejection_suffix_reads_the_same_in_both_runners() {
+        assert_eq!(mtg_player::llm::rejected_note(0), "");
+        assert_eq!(mtg_player::llm::rejected_note(1), ", 1 answer rejected → fallback");
+        assert_eq!(mtg_player::llm::rejected_note(14), ", 14 answers rejected → fallback");
     }
 }
 

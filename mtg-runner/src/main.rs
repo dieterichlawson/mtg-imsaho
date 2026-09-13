@@ -998,13 +998,9 @@ use --save if you need a resumable file.");
             // A rejected answer is a call that succeeded, so the call count
             // alone reads as a healthy seat even when the harness chose every
             // move itself. Say so here, where a reader who never passes --log
-            // will see it (issue #211).
-            let rejected = if stats.rejected == 0 {
-                String::new()
-            } else {
-                format!(", {} answer{} rejected → fallback",
-                    stats.rejected, if stats.rejected == 1 { "" } else { "s" })
-            };
+            // will see it (issue #211). The sentence lives in `mtg_player`
+            // because the draft runner prints it too (issue #489).
+            let rejected = mtg_player::llm::rejected_note(stats.rejected);
             writeln!(usage_lines,
                 "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create{}",
                 model, stats.calls, stats.input, stats.output,
