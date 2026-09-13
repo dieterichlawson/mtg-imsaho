@@ -191,6 +191,22 @@ pub fn card_faces(
     faces
 }
 
+/// One card face on one line: name, cost, type line and size.
+///
+/// The heading of its card reference entry, and the whole of its line
+/// wherever a list has to stay one row per card — a draft pack, a drafted
+/// pool — so that the two surfaces describe a card the same way.
+#[must_use]
+pub fn card_headline(face_name: &str, data: &mtg_engine::cards::CardData) -> String {
+    let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+    let type_line = mtg_engine::types::type_line(&data.supertypes, &data.card_types, &data.subtypes);
+    let pt = match (data.power, data.toughness) {
+        (Some(p), Some(t)) => format!(" {p}/{t}"),
+        _ => String::new(),
+    };
+    format!("{face_name}{cost} | {type_line}{pt}")
+}
+
 /// One card's line in a card reference: name, cost, type line and P/T,
 /// then its rules text indented under it. Both faces of a double-faced
 /// card are listed, each under its own name: the back face is what a
@@ -200,13 +216,7 @@ pub fn card_faces(
 pub fn card_reference_entry(name: &str, registry: &mtg_engine::cards::CardRegistry) -> String {
     let mut s = String::new();
     for (face_name, data) in card_faces(name, registry) {
-        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-        let type_line = mtg_engine::types::type_line(&data.supertypes, &data.card_types, &data.subtypes);
-        let pt = match (data.power, data.toughness) {
-            (Some(p), Some(t)) => format!(" {p}/{t}"),
-            _ => String::new(),
-        };
-        writeln!(s, "{face_name}{cost} | {type_line}{pt}").unwrap();
+        writeln!(s, "{}", card_headline(&face_name, &data)).unwrap();
         if !data.oracle_text.is_empty() {
             writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
         }
