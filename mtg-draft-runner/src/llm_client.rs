@@ -4,13 +4,14 @@ use std::process::Command;
 
 use reqwest::blocking::Client;
 
-use mtg_draft::draft::DraftPick;
 use mtg_player::llm::Cost;
 
 /// Per-model token usage tracking. Thread-safe via Mutex.
 use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write;
+
+use crate::card_lines::CardLines;
 
 #[derive(Default, Debug)]
 pub struct ModelUsage {
@@ -229,6 +230,14 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
     let mut sorted_cards: Vec<_> = pool_counts.into_iter().collect();
     sorted_cards.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, count) in sorted_cards {
+        // A drafted basic land used to be a key in `maindeck` AND in
+        // `lands`, with nothing saying which one a Plains belonged in:
+        // filling both is schema-legal and silently builds a 41-card deck
+        // with an extra land (issue #487). Basics are unlimited and live in
+        // `lands`, drafted or not.
+        if mtg_draft::deckbuilding::BASIC_LANDS.contains(&name.as_str()) {
+            continue;
+        }
         let valid_counts: Vec<serde_json::Value> = (0..=count)
             .map(|i| serde_json::json!(i))
             .collect();
@@ -249,7 +258,7 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
             "maindeck": {
                 "type": "object",
                 "properties": maindeck_props,
-                "description": "How many copies of each card to include in the maindeck (0 to skip)"
+                "description": "How many copies of each drafted card to include in the maindeck (0 to skip). Basic lands are not listed here — they go in `lands`."
             },
             "lands": {
                 "type": "object",
@@ -260,7 +269,7 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
                     "Mountain": basic_land_count.clone(),
                     "Forest":   basic_land_count.clone()
                 },
-                "description": "Number of each basic land to include (typically 16-18 total for a 40-card deck)"
+                "description": "Number of each basic land to add, drafted or not (typically 16-18 of them in a 40-card deck)"
             }
         },
         "required": ["thoughts", "maindeck", "lands"]
@@ -308,68 +317,107 @@ fn sanitize_schema_for_anthropic(value: &serde_json::Value) -> serde_json::Value
 /// tell the model to reason elsewhere and not emit the key.
 const STRUCTURED_RESPONSE_FORMAT: &str = "\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.";
 
+/// What a drafting seat is and is not told about the table it is at.
+///
+/// The pod is 2..=8 seats, and the rules text used to describe an 8-pod
+/// whatever the pod actually was — the same bytes at `--players 2`, where
+/// "passing left" and "passing right" are the same neighbour, a pack wheels
+/// after one other pick rather than seven, and "read the signals" is advice
+/// about inferring seven drafters' colours from one opponent's single pick
+/// (issue #485). Nothing said which seat the reader was either (#115's shape,
+/// fixed for the CLI and never asked of the draft).
+#[derive(Debug, Clone, Copy)]
+pub struct Table {
+    pub seat: usize,
+    pub pod_size: usize,
+    pub pack_size: usize,
+}
+
+impl Table {
+    /// The seat this one passes a pack to in `pack_number`, and the word for
+    /// that direction.
+    #[must_use]
+    fn passes_to(self, pack_number: usize) -> (&'static str, usize) {
+        // Packs 1 and 3 pass left (seat N -> N+1), pack 2 right — the same
+        // rotation `DraftState::rotate_packs` performs.
+        if pack_number % 2 == 1 {
+            ("LEFT", (self.seat + 1) % self.pod_size.max(1))
+        } else {
+            ("RIGHT", (self.seat + self.pod_size.saturating_sub(1)) % self.pod_size.max(1))
+        }
+    }
+
+    /// How the table reads from this seat: who else is here, when a pack
+    /// comes back, and what can be read off it when it does.
+    fn description(self) -> String {
+        let Table { seat, pod_size, pack_size } = self;
+        let others = pod_size.saturating_sub(1);
+        let mut s = format!(
+            "\n## Your seat\n\
+             - You are seat {seat} of a {pod_size}-seat pod, drafting against {others} other seat(s)\n\
+             - Every seat picks at the same time, and you are never shown another seat's pick\n"
+        );
+        if pod_size == 2 {
+            s.push_str(
+                "- With one opponent, \"passing left\" and \"passing right\" are the same neighbour: the two packs shuttle between you, so the pack you pass comes back to you two picks later with exactly one card gone — and that card is your opponent's pick. You can read their pool exactly rather than guessing at signals\n",
+            );
+        } else {
+            let _ = write!(
+                s,
+                "- A pack you pass comes back to you {pod_size} picks later, with the {others} cards the other seats took gone. Which cards those are is the signal: if strong cards of a colour keep coming back, nobody upstream is taking them and that colour is open\n"
+            );
+        }
+        let _ = write!(
+            s,
+            "\n## How drafting works\n\
+             - You'll open 3 packs of {pack_size} cards each and make {} picks in all\n\
+             - For each pack, pick one card; the rest passes to the next seat\n\
+             - Pack 1 passes left, Pack 2 passes right, Pack 3 passes left\n\
+             - After drafting, you'll build a 40-card deck from your picks plus basic lands\n",
+            3 * pack_size,
+        );
+        s
+    }
+}
+
 /// Shared draft rules (used by all backends).
-fn build_draft_rules(set_name: &str, guide: Option<&str>, card_reference: &str) -> String {
+fn build_draft_rules(
+    set_name: &str,
+    guide: Option<&str>,
+    card_reference: &str,
+    table: Table,
+) -> String {
     let guide_section = guide
         .map(|g| format!("\n## Draft Guide\n\n{g}\n"))
         .unwrap_or_default();
     format!(
         r#"You are drafting Magic: The Gathering cards from {set_name}.
-{guide_section}
-## How drafting works
-- You'll open 3 packs of ~14 cards each
-- For each pack, pick one card, then the remaining cards pass to the next player
-- Pack 1 passes left, Pack 2 passes right, Pack 3 passes left
-- After drafting, you'll build a 40-card deck from your picks plus basic lands
-
+{guide_section}{table_section}
 ## How to pick
 - Build toward 2 colors (sometimes splashing a 3rd)
 - Value bombs (powerful rares), removal, evasion (flying), then curve fillers
-- Read signals: if strong cards of a color keep coming, that color is open
-- Cards with "//" are double-faced cards; evaluate the front face for drafting
+- Every card is listed as `name cost | type line size`, and a card in a pack ends with its rarity in brackets — `[common]`, `[uncommon]`, `[rare]`, `[mythic]`
+- Cards with "//" are double-faced cards; both faces are on the line, and you evaluate the front face for casting
+- Your pool is restated at every pick, with its colour counts and its curve
 
 ## Card reference
 
 {card_reference}"#,
+        table_section = table.description(),
     )
 }
 
-/// Build a card reference string with oracle text for all cards in the set.
+/// A card reference for the whole set: every card's name, cost, type line,
+/// size and rules text, both faces of a double-faced card included.
+///
+/// This is `mtg_player`'s reference, not a second one — the draft used to
+/// keep its own copy, which had already drifted (it dropped supertypes, so
+/// a legendary creature's type line read "Creature").
 pub fn build_card_reference(
     card_names: &[String],
     registry: &mtg_engine::cards::CardRegistry,
 ) -> String {
-    use mtg_engine::types::CardType;
-
-    let mut s = String::new();
-    for name in card_names {
-        // Both faces of a double-faced card, each under its own name: a
-        // drafter picking Ludevic's Test Subject is picking the 13/13 on
-        // its back (issue #205).
-        for (face_name, data) in mtg_player::llm::card_faces(name, registry) {
-            let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-            let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                CardType::Creature => "Creature",
-                CardType::Instant => "Instant",
-                CardType::Sorcery => "Sorcery",
-                CardType::Enchantment => "Enchantment",
-                CardType::Artifact => "Artifact",
-                CardType::Land => "Land",
-                CardType::Planeswalker => "Planeswalker",
-            }).collect();
-            let subtypes = if data.subtypes.is_empty() { String::new() }
-                else { format!(" — {}", data.subtypes.join(" ")) };
-            let pt = match (data.power, data.toughness) {
-                (Some(p), Some(t)) => format!(" {p}/{t}"),
-                _ => String::new(),
-            };
-            writeln!(s, "{}{} | {}{}{}", face_name, cost, types.join(" "), subtypes, pt).unwrap();
-            if !data.oracle_text.is_empty() {
-                writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
-            }
-        }
-    }
-    s
+    mtg_player::llm::build_card_reference(card_names, registry)
 }
 
 /// Anthropic draft backend.
@@ -382,11 +430,11 @@ struct AnthropicDraftBackend {
 }
 
 impl AnthropicDraftBackend {
-    fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
+    fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str, table: Table) -> Self {
         let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
         let system_prompt = format!(
             "{}{STRUCTURED_RESPONSE_FORMAT}",
-            build_draft_rules(set_name, guide, card_reference)
+            build_draft_rules(set_name, guide, card_reference, table)
         );
         Self {
             client: Client::new(),
@@ -606,8 +654,8 @@ struct ClaudeCodeDraftBackend {
 }
 
 impl ClaudeCodeDraftBackend {
-    fn new(model: Option<&str>, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
-        Self::with_binary(&mtg_player::llm::claude_code_binary(), model, set_name, guide, card_reference)
+    fn new(model: Option<&str>, set_name: &str, guide: Option<&str>, card_reference: &str, table: Table) -> Self {
+        Self::with_binary(&mtg_player::llm::claude_code_binary(), model, set_name, guide, card_reference, table)
     }
 
     fn with_binary(
@@ -616,6 +664,7 @@ impl ClaudeCodeDraftBackend {
         set_name: &str,
         guide: Option<&str>,
         card_reference: &str,
+        table: Table,
     ) -> Self {
         let workdir = mtg_player::llm::claude_code_prepare_seat(CLAUDE_CODE_WORKDIR_PREFIX);
         let label = match model {
@@ -628,7 +677,7 @@ impl ClaudeCodeDraftBackend {
             label,
             system_prompt: format!(
                 "{}{STRUCTURED_RESPONSE_FORMAT}",
-                build_draft_rules(set_name, guide, card_reference)
+                build_draft_rules(set_name, guide, card_reference, table)
             ),
             session_id: None,
             workdir,
@@ -820,11 +869,11 @@ struct GeminiDraftBackend {
 }
 
 impl GeminiDraftBackend {
-    fn new(model: &str, set_name: &str, guide: Option<&str>, draft_thinking: Option<String>, card_reference: &str) -> Self {
+    fn new(model: &str, set_name: &str, guide: Option<&str>, draft_thinking: Option<String>, card_reference: &str, table: Table) -> Self {
         let api_key = env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
         let system_prompt = format!(
             "{}\n\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Use the \"thoughts\" field for a concise but complete summary of your reasoning.",
-            build_draft_rules(set_name, guide, card_reference)
+            build_draft_rules(set_name, guide, card_reference, table)
         );
         Self {
             client: Client::new(),
@@ -990,7 +1039,13 @@ pub struct DraftLlmClient {
 impl DraftLlmClient {
     /// Create a new `DraftLlmClient`.
     /// Model spec format: "`provider:model:draft_thinking:game_thinking`"
-    pub fn new(model_spec: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
+    pub fn new(
+        model_spec: &str,
+        set_name: &str,
+        guide: Option<&str>,
+        card_reference: &str,
+        table: Table,
+    ) -> Self {
         let parts: Vec<&str> = model_spec.split(':').collect();
         let provider_name = parts[0];
         let model_override = parts.get(1).copied();
@@ -1001,7 +1056,7 @@ impl DraftLlmClient {
             "gemini" => {
                 let model = model_override.unwrap_or("gemini-2.5-flash");
                 let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
-                Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference))
+                Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference, table))
             }
             // The whole point of this seat is that the draft does not bill an
             // API. Falling through to Anthropic here ran the picks and the
@@ -1009,11 +1064,11 @@ impl DraftLlmClient {
             // subscription, and passed a CLI alias like "opus" to the
             // Messages API as if it were a model id.
             "claude-code" | "cc" => Box::new(ClaudeCodeDraftBackend::new(
-                model_override, set_name, guide, card_reference,
+                model_override, set_name, guide, card_reference, table,
             )),
             "claude" => {
                 let model = model_override.unwrap_or("claude-sonnet-4-6");
-                Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference))
+                Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference, table))
             }
             // An unrecognized provider used to default to Anthropic, which
             // spent real money drafting with a model nobody asked for. Refuse
@@ -1027,43 +1082,47 @@ impl DraftLlmClient {
     }
 
     /// Build the prompt for a draft pick.
+    ///
+    /// Self-sufficient, because nothing else is guaranteed to carry the
+    /// state: the pool used to be restated at exactly 2 of a seat's 42 picks
+    /// (pack 2 pick 1 and pack 3 pick 1), with the conversation the seat's
+    /// `claude -p` session holds as the only other channel — and a `--resume`
+    /// starts a *fresh* session, so a resumed seat drafted nine consecutive
+    /// picks knowing nothing about the cards it already owned (issue #481).
+    /// Every pick now carries the pack, the pool, the pool's shape and the
+    /// seat's place at the table, the way the game harness restates the whole
+    /// position on every call.
     pub fn build_pick_prompt(
+        table: Table,
         pack_number: usize,
         pick_index: usize,
         available: &[String],
         pool: &[String],
-        _history: &[DraftPick],
+        cards: &CardLines,
     ) -> String {
-        let direction = if pack_number % 2 == 1 { "LEFT" } else { "RIGHT" };
+        let (direction, next_seat) = table.passes_to(pack_number);
         let mut prompt = format!(
-            "Pack {}, Pick {} ({} cards). Passing {}.\n\nAvailable:\n",
-            pack_number, pick_index, available.len(), direction,
+            "Pack {pack_number} of 3, Pick {pick_index} of {}. You are seat {} of {}; \
+after your pick this pack passes {direction} to seat {next_seat}.\n\nAvailable ({} cards):\n",
+            table.pack_size, table.seat, table.pod_size, available.len(),
         );
         for (i, card) in available.iter().enumerate() {
-            let name = mtg_draft::front_face(card);
-            writeln!(prompt, "{i}: {name}").unwrap();
+            writeln!(prompt, "{i}: {}", cards.pack_line(card)).unwrap();
         }
-        if pick_index == 1 && !pool.is_empty() {
-            writeln!(prompt, "\nYour pool so far ({} cards):", pool.len()).unwrap();
-            for card in pool {
-                let name = mtg_draft::front_face(card);
-                writeln!(prompt, "- {name}").unwrap();
-            }
+        if pool.is_empty() {
+            prompt.push_str("\nYour pool is empty — this is your first pick.\n");
+        } else {
+            writeln!(prompt, "\nYour pool ({} cards):", pool.len()).unwrap();
+            prompt.push_str(&cards.pool_listing(pool));
         }
         prompt
     }
 
-    /// Whether this client's backend expects thoughts in the JSON payload.
-    /// Exposed so the caller (`main.rs::build_deck_prompt`) can render the
-    /// deck-building response-format hint with or without the thoughts
-    /// prefix.
     /// Send a pick message with the pack size, so the backend can build
     /// an enum-constrained pick schema for structured decoding.
     pub fn send_pick_message(&mut self, user_message: &str, num_cards: usize) -> String {
         self.backend.send_pick(user_message, num_cards)
     }
-
-    pub fn record_pick(_chosen: &str) {}
 
     /// Send a deck-building message with the player's full card pool, so
     /// the backend can build an enum-constrained `maindeck` schema that
@@ -1075,6 +1134,136 @@ impl DraftLlmClient {
     /// The full system prompt this client will send to the model.
     pub fn system_prompt(&self) -> &str {
         self.backend.system_prompt()
+    }
+}
+
+#[cfg(test)]
+mod draft_prompt_tests {
+    use super::{build_draft_rules, deck_schema_for, DraftLlmClient, Table};
+    use crate::card_lines::CardLines;
+
+    fn cards() -> CardLines {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/sets/isd.json"
+        )))
+        .expect("ISD set data");
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry)
+    }
+
+    fn table(seat: usize, pod_size: usize) -> Table {
+        Table { seat, pod_size, pack_size: 14 }
+    }
+
+    /// #481: the pool was restated at exactly 2 of a seat's 42 picks, and a
+    /// resumed seat — whose `claude -p` session is new, so the conversation
+    /// carries nothing — drafted nine picks knowing nothing of its pool.
+    #[test]
+    fn every_pick_restates_the_pool() {
+        let cards = cards();
+        let pool = vec![
+            "Moon Heron".to_string(),
+            "Chapel Geist".to_string(),
+            "Moon Heron".to_string(),
+        ];
+        let available = vec!["Ambush Viper".to_string(), "Abbey Griffin".to_string()];
+
+        // Pack 2 pick 7 — a pick that used to carry the pack and nothing else.
+        let prompt = DraftLlmClient::build_pick_prompt(
+            table(1, 4), 2, 7, &available, &pool, &cards,
+        );
+        assert!(prompt.contains("Your pool (3 cards):"), "{prompt}");
+        assert!(prompt.contains("2x Moon Heron {3}{U}"), "{prompt}");
+        assert!(prompt.contains("1x Chapel Geist"), "{prompt}");
+        // And the shape it would otherwise have to count by hand.
+        assert!(prompt.contains("Colors"), "{prompt}");
+        assert!(prompt.contains("Curve"), "{prompt}");
+
+        // The first pick of all says so rather than showing an empty list.
+        let first = DraftLlmClient::build_pick_prompt(
+            table(1, 4), 1, 1, &available, &[], &cards,
+        );
+        assert!(first.contains("Your pool is empty"), "{first}");
+    }
+
+    /// #483: the pack was a list of bare names, with the cost, colour, type,
+    /// size and rarity the pick is made on nowhere on the line.
+    #[test]
+    fn a_pack_lists_what_each_card_is() {
+        let cards = cards();
+        let available = vec!["Moon Heron".to_string(), "Snapcaster Mage".to_string()];
+        let prompt = DraftLlmClient::build_pick_prompt(
+            table(0, 8), 1, 1, &available, &[], &cards,
+        );
+
+        assert!(prompt.contains("0: Moon Heron {3}{U} | Creature — Spirit Bird 3/2 [common]"), "{prompt}");
+        assert!(prompt.contains("1: Snapcaster Mage {1}{U} | Creature — Human Wizard 2/1 [rare]"), "{prompt}");
+    }
+
+    /// #485: a seat was never told the pod size or which seat it was, and
+    /// the rules described an 8-pod at every pod size.
+    #[test]
+    fn the_prompt_describes_the_pod_the_seat_is_actually_in() {
+        let cards = cards();
+        let available = vec!["Moon Heron".to_string()];
+
+        let heads_up = DraftLlmClient::build_pick_prompt(
+            table(0, 2), 1, 1, &available, &[], &cards,
+        );
+        assert!(heads_up.contains("You are seat 0 of 2"), "{heads_up}");
+        // Pack 1 passes left; in a 2-pod that is the other seat.
+        assert!(heads_up.contains("passes LEFT to seat 1"), "{heads_up}");
+
+        // Pack 2 passes the other way, which in a bigger pod is a different
+        // neighbour.
+        let pod8 = DraftLlmClient::build_pick_prompt(
+            table(3, 8), 2, 1, &available, &[], &cards,
+        );
+        assert!(pod8.contains("You are seat 3 of 8"), "{pod8}");
+        assert!(pod8.contains("passes RIGHT to seat 2"), "{pod8}");
+        let pod8_pack1 = DraftLlmClient::build_pick_prompt(
+            table(3, 8), 1, 1, &available, &[], &cards,
+        );
+        assert!(pod8_pack1.contains("passes LEFT to seat 4"), "{pod8_pack1}");
+        // Seat 0 passing right wraps to the far end of the pod.
+        let wraps = DraftLlmClient::build_pick_prompt(
+            table(0, 8), 2, 1, &available, &[], &cards,
+        );
+        assert!(wraps.contains("passes RIGHT to seat 7"), "{wraps}");
+    }
+
+    /// The rules a seat is given are about its own table: the two pod sizes
+    /// used to produce byte-identical text.
+    #[test]
+    fn the_rules_differ_by_pod_size() {
+        let two = build_draft_rules("Innistrad", None, "", table(0, 2));
+        let eight = build_draft_rules("Innistrad", None, "", table(0, 8));
+        assert_ne!(two, eight);
+
+        assert!(two.contains("seat 0 of a 2-seat pod"), "{two}");
+        assert!(two.contains("same \nneighbour") || two.contains("same neighbour"), "{two}");
+        assert!(eight.contains("comes back to you 8 picks later"), "{eight}");
+        assert!(eight.contains("7 \ncards the other seats took") || eight.contains("7 cards the other seats took"), "{eight}");
+        // Both state the pack size and the total number of picks.
+        assert!(two.contains("3 packs of 14 cards each and make 42 picks"), "{two}");
+    }
+
+    /// #487: a drafted basic land was a key in `maindeck` and in `lands`,
+    /// and filling both builds a 41-card deck with a land nobody asked for.
+    #[test]
+    fn a_drafted_basic_land_is_keyed_only_under_lands() {
+        let pool = vec![
+            "Plains".to_string(),
+            "Moon Heron".to_string(),
+            "Moon Heron".to_string(),
+        ];
+        let schema = deck_schema_for(&pool);
+        let maindeck = schema["properties"]["maindeck"]["properties"].as_object().unwrap();
+
+        assert!(!maindeck.contains_key("Plains"), "{maindeck:?}");
+        assert!(maindeck.contains_key("Moon Heron"), "{maindeck:?}");
+        assert!(schema["properties"]["lands"]["properties"]["Plains"].is_object());
     }
 }
 
@@ -1162,6 +1351,7 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
             "Innistrad",
             None,
             "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+            super::Table { seat: 0, pod_size: 2, pack_size: 14 },
         )
     }
 

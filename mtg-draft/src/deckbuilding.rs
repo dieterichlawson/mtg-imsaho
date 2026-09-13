@@ -18,7 +18,8 @@ impl DraftDeck {
     }
 }
 
-const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"];
+/// The lands a limited deck may add in any number, drafted or not.
+pub const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"];
 
 /// The basic land that produces each color, in WUBRG order.
 const BASIC_FOR_COLOR: [(Color, &str); 5] = [

@@ -17,8 +17,8 @@ use mtg_engine::view::GameView;
 use mtg_player::llm::LlmPlayer;
 use mtg_player::llm::MatchFormat;
 use mtg_player::Player;
-use std::fmt::Write;
 
+mod card_lines;
 mod draft_log;
 mod llm_client;
 
@@ -56,7 +56,9 @@ struct PlayerSpec<'a> {
 }
 
 /// (seat, pack, pool, picks) for a single player at a single pick step.
-type PickInput = (usize, Vec<String>, Vec<String>, Vec<mtg_draft::draft::DraftPick>);
+/// What one seat needs for one pick: its seat number, the pack in front
+/// of it, and the pool it has drafted so far.
+type PickInput = (usize, Vec<String>, Vec<String>);
 
 // ─── CLI Argument Parsing ────────────────────────────────────────────
 
@@ -525,6 +527,15 @@ fn main() {
     let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
 
     // Create LLM clients for each drafter (each may use a different model)
+    // What a seat has to know about the table it is at, which used to be an
+    // 8-pod description whatever the pod was (issue #485).
+    let pack_size = packs.first().and_then(|seat_packs| seat_packs.first())
+        .map_or(0, |pack| pack.all_cards().len());
+    let table_for = |seat: usize| llm_client::Table {
+        seat,
+        pod_size: args.players,
+        pack_size,
+    };
     let mut clients: Vec<llm_client::DraftLlmClient> = (0..args.players)
         .map(|seat| {
             llm_client::DraftLlmClient::new(
@@ -532,9 +543,18 @@ fn main() {
                 &set_data.set_name,
                 args.guides[seat].as_deref(),
                 &card_reference,
+                table_for(seat),
             )
         })
         .collect();
+
+    // Every card as a drafter sees it: cost, colour, type, size and rarity,
+    // so a pack listing is something a pick can be made from (issue #483).
+    let card_lines = card_lines::CardLines::new(
+        &set_data.all_card_names(),
+        &set_data.rarities(),
+        &registry,
+    );
 
     // Log every seat's system prompt, not seat 0's as a stand-in for the pod:
     // `--guide-N` and `--model-N` make them differ by construction, and a
@@ -606,7 +626,6 @@ fn main() {
                 for seat in 0..args.players {
                     let Some(rec) = from_save.iter().find(|p| p.seat == seat) else { continue };
                     let available = draft.current_pack_for(seat).len();
-                    crate::llm_client::DraftLlmClient::record_pick(&rec.card);
                     draft.make_pick(seat, &rec.card).unwrap_or_else(|e| {
                         die(&format!("draft save replays an impossible pick \
 (seat {seat}, pack {}, pick {}, {}): {e}", round + 1, pick_num + 1, rec.card));
@@ -634,7 +653,6 @@ fn main() {
                             seat,
                             draft.current_pack_for(seat).to_vec(),
                             draft.players[seat].pool.clone(),
-                            draft.players[seat].picks.clone(),
                         )
                     })
                     .collect();
@@ -642,22 +660,23 @@ fn main() {
             // All players pick in parallel
             let pick_results: Vec<(usize, Pick, String, String)> =
                 std::thread::scope(|s| {
+                    let card_lines = &card_lines;
                     let handles: Vec<_> = pick_inputs
                         .iter()
                         .zip(clients.iter_mut())
-                        .map(|((seat, available, pool, history), client)| {
+                        .map(|((seat, available, pool), client)| {
                             let seat = *seat;
                             s.spawn(move || {
                                 let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
+                                    table_for(seat),
                                     round + 1,
                                     pick_num + 1,
                                     available,
                                     pool,
-                                    history,
+                                    card_lines,
                                 );
                                 let response = client.send_pick_message(&prompt, available.len());
                                 let chosen = parse_pick_response(&response, available);
-                                crate::llm_client::DraftLlmClient::record_pick(chosen.card());
                                 (seat, chosen, prompt, response)
                             })
                         })
@@ -750,12 +769,13 @@ substituting {} (the first card). Response: {}",
     let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
         let log_ref = &log;
         let registry_ref = &registry;
+        let card_lines_ref = &card_lines;
         let handles: Vec<_> = clients
             .iter_mut()
             .zip(pools.iter())
             .enumerate()
             .map(|(seat, (client, pool))| s.spawn(move || {
-                let result = build_deck_with_llm(client, pool, registry_ref);
+                let result = build_deck_with_llm(client, pool, registry_ref, card_lines_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
                     .iter()
@@ -1067,8 +1087,9 @@ fn build_deck_with_llm(
     client: &mut llm_client::DraftLlmClient,
     pool: &[String],
     registry: &CardRegistry,
+    cards: &card_lines::CardLines,
 ) -> DeckBuildResult {
-    let prompt = build_deck_prompt(pool);
+    let prompt = build_deck_prompt(pool, cards);
     let mut last_error = String::new();
     let mut attempts: Vec<DeckAttempt> = Vec::new();
     let max_retries = 10;
@@ -1121,23 +1142,31 @@ fn build_deck_with_llm(
     }
 }
 
-fn build_deck_prompt(pool: &[String]) -> String {
-    // Count copies of each card
-    let mut counts: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
-    for card in pool {
-        let name = mtg_draft::front_face(card);
-        *counts.entry(name).or_insert(0) += 1;
-    }
-    let mut sorted: Vec<_> = counts.into_iter().collect();
-    sorted.sort_by(|a, b| a.0.cmp(b.0));
-
-    let mut prompt = String::from(
-        "Draft complete! Build a 40-card limited deck from your drafted pool.\n\n\
-         Your pool:\n",
+/// The one message that decides a seat's whole deck.
+///
+/// It used to be a sentence and a list of names and counts: no colour, no
+/// cost, no type — the two things a limited deck is built on — no land
+/// target, no statement of the answer's shape, and no mention of the
+/// sideboard it was silently creating. The only land guidance a seat ever
+/// got was a `description` string inside the JSON schema (issue #487).
+fn build_deck_prompt(pool: &[String], cards: &card_lines::CardLines) -> String {
+    let mut prompt = format!(
+        "Draft complete! Build your deck out of the {} cards you drafted.\n\n\
+         Your pool ({} cards):\n",
+        pool.len(),
+        pool.len(),
     );
-    for (name, count) in &sorted {
-        writeln!(prompt, "{count}x {name}").unwrap();
-    }
+    prompt.push_str(&cards.pool_listing(pool));
+    prompt.push_str(
+        "\n## Building it\n\
+         - A deck is at least 40 cards (CR 100.2b); a smaller one is rejected and you are asked again\n\
+         - The usual limited build is 17 basic lands and 23 spells from the pool\n\
+         - Two colors is the normal build, a third only as a splash you can reliably cast\n\
+         - Everything you leave out is your sideboard. It is recorded with your deck, but nothing is sideboarded between games of a match, so a card you leave out is a card you will not play\n\
+         \n## Your answer\n\
+         - `maindeck` maps each drafted card you are playing to how many copies (0, or leave it out, to cut it)\n\
+         - `lands` maps each basic land to how many to add. Basic lands are not drafted and are not limited: they go here, and only here, even if you drafted one\n",
+    );
     prompt
 }
 
@@ -1373,6 +1402,47 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
         p = p.with_guide(g.to_string());
     }
     p
+}
+
+#[cfg(test)]
+mod deck_prompt_tests {
+    use super::{build_deck_prompt, card_lines::CardLines, CardRegistry};
+
+    /// #487: the whole prompt used to be one sentence and a `Nx Name` list —
+    /// no colour or cost to build on, no land target, no statement of the
+    /// answer's shape, and no mention of the sideboard it creates.
+    #[test]
+    fn the_deck_prompt_says_what_it_is_asking_for() {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/sets/isd.json"
+        )))
+        .expect("ISD set data");
+        let registry = CardRegistry::with_all_cards();
+        let cards = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+
+        let pool = vec![
+            "Moon Heron".to_string(),
+            "Moon Heron".to_string(),
+            "Chapel Geist".to_string(),
+            "Plains".to_string(),
+        ];
+        let prompt = build_deck_prompt(&pool, &cards);
+
+        // The pool, with what each card costs and is.
+        assert!(prompt.contains("2x Moon Heron {3}{U} | Creature — Spirit Bird 3/2"), "{prompt}");
+        assert!(prompt.contains("Colors"), "{prompt}");
+        assert!(prompt.contains("Curve"), "{prompt}");
+        // The deck it is asking for.
+        assert!(prompt.contains("40 cards"), "{prompt}");
+        assert!(prompt.contains("17 basic lands and 23 spells"), "{prompt}");
+        // The answer's shape, and where a drafted basic land goes.
+        assert!(prompt.contains("`maindeck`"), "{prompt}");
+        assert!(prompt.contains("`lands`"), "{prompt}");
+        assert!(prompt.contains("even if you drafted one"), "{prompt}");
+        // The sideboard it is silently creating.
+        assert!(prompt.contains("sideboard"), "{prompt}");
+    }
 }
 
 #[cfg(test)]
