@@ -250,3 +250,22 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   standings — rather than a fourth game. Then ask the same question of
   `--best-of 2` and `--best-of 5`, where `best_of / 2 + 1` and `MatchFormat`'s
   `n.min(3)` already disagree about how long a match is
+
+- D20 [proposed 2026-09-13, from #485 and #481] does the prompt change when the
+  draft does: the runner varies the draft by `--players` (2..8), `--set`,
+  `--guide-N` and `--resume`, and #485 found the `## How drafting works` section
+  byte-identical at `--players 2` and `--players 8` while describing an 8-pod,
+  while #481 found a `--resume`d seat opening a fresh `claude -p` session
+  mid-pack-round with no pool in the prompt and no session behind it. Set up a
+  `CLAUDE_CODE_BIN` stub that writes argv + stdin + schema to one file per call,
+  and run the same `--seed` at every `--players` from 2 to 8, with and without
+  `--guide`, and once from a mid-pack-round snapshot (take a `--save`, truncate
+  its `picks` array in place, `--resume` it). Diff the system prompt and the
+  per-pick prompts across the runs. Verify that every structural difference the
+  runner actually implements is visible somewhere in what the seat is told — the
+  pod size and the seat's own index, how many picks until a pack wheels and how
+  depleted it will be, which seat's guide is in force — and that anything the
+  seat is relied on to remember rather than be told (its pool, its picks so far)
+  is either restated in the prompt or provably still in that seat's session. A
+  configuration the runner supports and the prompt does not mention is a seat
+  reasoning about a different draft than the one it is in
