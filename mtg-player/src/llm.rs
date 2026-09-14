@@ -530,7 +530,12 @@ Hand:
 
 [MAIN PHASE 1]
 Available actions:
-0: Pass, 1: Tap Forest, 2: Tap Forest, 3: Play Forest, 4: Cast Kalonian Tusker (tap 2x Forest), 5: Concede
+0: Pass
+1: Tap Forest
+2: Tap Forest
+3: Play Forest
+4: Cast Kalonian Tusker (tap 2x Forest)
+5: Concede
 ```
 **Pick 4** — auto-tap handles mana, just cast directly. Don't bother with Tap Forest manually.
 
@@ -550,7 +555,11 @@ Hand:
 
 [UPKEEP]
 Available actions:
-0: Pass, 1: Tap Forest, 2: Tap Forest, 3: Tap Forest, 4: Concede
+0: Pass
+1: Tap Forest
+2: Tap Forest
+3: Tap Forest
+4: Concede
 ```
 **Pick 0** — no instants you want to cast right now. Tapping a Forest in Upkeep just wastes it (mana pool empties when Upkeep ends).
 
@@ -575,7 +584,10 @@ Hand:
 
 [AFTER ATTACKERS DECLARED]
 Available actions:
-0: Pass, 1: Tap Forest, 2: Cast Giant Growth (tap Forest), 3: Concede
+0: Pass
+1: Tap Forest
+2: Cast Giant Growth (tap Forest)
+3: Concede
 ```
 **Pick 2** — cast Giant Growth on your attacking Bears (the follow-up target prompt asks which creature). After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
 
@@ -612,7 +624,11 @@ Hand:
 
 [AFTER BLOCKERS DECLARED]
 Available actions:
-0: Pass, 1: Tap Forest, 2: Tap Mountain, 3: Cast Brimstone Volley (tap Mountain, 2x Forest), 4: Concede
+0: Pass
+1: Tap Forest
+2: Tap Mountain
+3: Cast Brimstone Volley (tap Mountain, 2x Forest)
+4: Concede
 ```
 
 **Pick 0** — pass first. Combat damage will resolve: Elder of Laurels (2 power) trades with Ghoulraiser (2 toughness), Villagers of Estwald (2 power) trades with Rakish Heir (2 toughness), Tormented Pariah (3 power) gets through unblocked → opp goes from 7 to 4. Several creatures die in combat → morbid is active. THEN, after combat damage, cast Brimstone Volley and pick the opponent at the target prompt for 5 (morbid). 4 → -1 = lethal.
@@ -642,7 +658,12 @@ Hand:
 
 [RESPOND TO opp's Lightning Bolt]
 Available actions:
-0: Pass, 1: Tap Island, 2: Tap Island, 3: Tap Island, 4: Cast Counterspell (tap 2x Island), 5: Concede
+0: Pass
+1: Tap Island
+2: Tap Island
+3: Tap Island
+4: Cast Counterspell (tap 2x Island)
+5: Concede
 ```
 **Pick 4** — counter the Bolt to save your 3/3. The Tusker would die to 3 damage.
 
@@ -5701,7 +5722,49 @@ this Aura deals 1 damage to that player.";
         assert_carries_the_board(&recorded[0], "the ability-target prompt");
         assert_carries_the_board(&recorded[1], "the ability-sacrifice prompt");
     }
-    // ── GAME_RULES against the formatters it documents (#492) ───────────
+    // ── GAME_RULES against the formatters it documents (#492, #493) ──────
+
+    /// #493: the spec section was updated to the one-row-per-line action
+    /// list and the five worked examples below it were not, so the one
+    /// section a seat parses on every decision was demonstrated five times
+    /// in a shape the program had stopped emitting. Checked as a property
+    /// of the const rather than five string comparisons, so a sixth
+    /// example cannot be added in the old shape either.
+    #[test]
+    fn game_rules_shows_every_action_list_one_row_per_line() {
+        let mut blocks = 0;
+        let mut lines = GAME_RULES.lines().peekable();
+        while let Some(line) = lines.next() {
+            if line.trim_end() != "Available actions:" {
+                continue;
+            }
+            blocks += 1;
+            // Rows run until the fence or a blank line ends the block.
+            while let Some(row) = lines.peek() {
+                if row.trim().is_empty() || row.starts_with("```") {
+                    break;
+                }
+                let row = lines.next().expect("peeked");
+                let (index, rest) = row.split_once(": ").unwrap_or_else(||
+                    panic!("every quoted action row is `N: label`, got {row:?}"));
+                assert!(
+                    index.split('-').all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())),
+                    "an action row is numbered `N:` or `N-M:`, got {row:?}"
+                );
+                // A second `N: ` on the same row is the comma-joined list
+                // `format_action_prompt` has not emitted since #201.
+                for (i, _) in rest.match_indices(": ") {
+                    let before = rest[..i].rsplit(' ').next().unwrap_or("");
+                    assert!(
+                        before.is_empty() || !before.chars().all(|c| c.is_ascii_digit()),
+                        "GAME_RULES quotes a comma-joined action list; the harness \
+                         sends one row per line: {row:?}"
+                    );
+                }
+            }
+        }
+        assert!(blocks >= 6, "the spec section and five worked examples: {blocks}");
+    }
 
     /// #492: GAME_RULES told every seat, on every call, that the
     /// exile-from-graveyard prompt answers "with a boolean per card". It
