@@ -2809,7 +2809,13 @@ impl LlmPlayer {
     /// Divide permanents into two piles via per-permanent boolean choices.
     /// Used for effects like Liliana of the Veil -6 where a player divides
     /// permanents and the opponent chooses which pile to sacrifice.
-    fn choose_pile_division(&mut self, view: &GameView, permanents: &[mtg_engine::ids::ObjectId], context: Option<&str>) -> Action {
+    fn choose_pile_division(
+        &mut self,
+        view: &GameView,
+        permanents: &[mtg_engine::ids::ObjectId],
+        description: &str,
+        target_player: mtg_engine::ids::PlayerId,
+    ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
         let all_ids: Vec<mtg_engine::ids::ObjectId> = permanents.to_vec();
@@ -2818,7 +2824,7 @@ impl LlmPlayer {
         }
 
         // Build prompt with permanent names
-        let context_desc = context.unwrap_or("Divide permanents into two piles");
+        let context_desc = Self::generic_player_rewrite(description, view.you);
         let mut perm_list = String::new();
         let labels = Self::format_combat_creature_list(view, &all_ids);
         for (i, label) in labels.iter().enumerate() {
@@ -2826,8 +2832,23 @@ impl LlmPlayer {
             let _ = i; // labels are pre-disambiguated
         }
 
+        // The one fact that decides the answer: who picks the pile that
+        // dies. Dividing the opponent's board you want both piles equally
+        // painful, because they take the cheaper one; dividing your own you
+        // want one pile empty, and you sacrifice that one. The prompt used
+        // to say neither whose permanents these were nor that anything was
+        // sacrificed — `legal.context` is only "<source>: divide into
+        // piles" — so a seat had to supply the card from memory and split
+        // 12/12 down the middle (#495).
+        let who_sacrifices = if target_player == view.you {
+            "You then choose one of the two piles and sacrifice every permanent in it."
+        } else {
+            "Your opponent then chooses one of the two piles and sacrifices every permanent in it."
+        };
+
         let action_text = format!(
-            "{context_desc}\nFor each permanent, set true to put it in pile 1 or false for pile 2.\n\n\
+            "{context_desc}\n{who_sacrifices}\n\
+             For each permanent, set true to put it in pile 1 or false for pile 2.\n\n\
              Permanents:\n{perm_list}"
         );
         let prompt = self.build_prompt(view, &action_text);
@@ -3595,11 +3616,12 @@ impl Player for LlmPlayer {
         // the engine no longer enumerates the 2^N subsets (issue #142).
         // Present per-permanent boolean choices and build the subset directly.
         if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
-            permanents, ..
+            permanents, description, target_player, ..
         }) = legal.resolution_prompt.as_ref()
         {
-            let permanents = permanents.clone();
-            return self.choose_pile_division(view, &permanents, context.as_deref());
+            let (permanents, description, target_player) =
+                (permanents.clone(), description.clone(), *target_player);
+            return self.choose_pile_division(view, &permanents, &description, target_player);
         }
 
         // An ordering is one decision (issue #325): the seat lists every
@@ -4084,16 +4106,27 @@ from your hand to put on the bottom of your library.\n\
     fn format_combat_creature(view: &GameView, id: ObjectId) -> String {
 
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
-            let power = p.effective_power.or(p.power).unwrap_or(0);
-            let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
+            // A non-creature has no power or toughness, and printing it
+            // `0/0` is a claim about the permanent, not a missing value:
+            // handed a board of lands to divide, a seat read the rows back
+            // as "all 24 Swamps are functionally identical (0/0, no other
+            // stats matter)" (#495). Only the combat prompts this was
+            // written for pass creatures, and their rows are unchanged.
+            let pt = if p.card_types.contains(&mtg_engine::types::CardType::Creature) {
+                let power = p.effective_power.or(p.power).unwrap_or(0);
+                let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
+                format!(" {power}/{toughness}")
+            } else {
+                String::new()
+            };
             // Color is not repeated here: it is a characteristic, and the
             // board section of the same prompt states every creature's
             // (#357). The combat rows stay the shape they have.
             let kw = Self::format_keywords(&p.keywords);
             if kw.is_empty() {
-                format!("{} (#{}) {}/{}", p.name, id.0, power, toughness)
+                format!("{} (#{}){}", p.name, id.0, pt)
             } else {
-                format!("{} (#{}) {}/{} {}", p.name, id.0, power, toughness, kw)
+                format!("{} (#{}){} {}", p.name, id.0, pt, kw)
             }
         } else {
             format!("{} (#{})", Self::obj_name(view, id), id.0)
@@ -5197,6 +5230,72 @@ mod tests {
                 ability_index: 0,
             }),
             "Tap Island for mana");
+    }
+
+    /// Issue #495: the pile-division prompt dropped the two facts that
+    /// decide the answer. It passed `legal.context` — "<source>: divide
+    /// into piles" — instead of the engine's `description`, which names
+    /// whose board is being divided, and it never said that the target
+    /// player then sacrifices a pile. Dividing the opponent's board you
+    /// want both piles equally painful; dividing your own you want one
+    /// pile empty and sacrifice that one. A seat handed the old prompt
+    /// had to supply Liliana's rules text from memory and split 12/12.
+    ///
+    /// Same twenty lines: every non-creature read `Name (#id) 0/0`,
+    /// because the rows came from the combat formatter. Liliana's −6
+    /// divides ALL permanents.
+    #[test]
+    fn the_pile_division_prompt_says_whose_board_and_who_sacrifices() {
+        let you = PlayerId(0);
+        let opponent = PlayerId(1);
+        let mut swamp = perm(9, "Swamp", 0, 0, you);
+        swamp.card_types = vec![CardType::Land];
+        swamp.power = None;
+        swamp.toughness = None;
+        swamp.effective_power = None;
+        swamp.effective_toughness = None;
+        let bear = perm(10, "Grizzly Bears", 2, 2, you);
+        let view = {
+            let mut v = empty_view();
+            v.battlefield.push(swamp);
+            v.battlefield.push(bear);
+            v
+        };
+        let ids = [ObjectId(9), ObjectId(10)];
+        let description = "Liliana of the Veil -6: divide p1's permanents into two piles";
+
+        let ask = |target: PlayerId| {
+            let (mut player, prompts) = recording_player();
+            player.choose_pile_division(&view, &ids, description, target);
+            let recorded = prompts.borrow()[0].clone();
+            recorded
+        };
+
+        // Whose permanents these are, in the seat's own vocabulary.
+        let dividing_theirs = ask(opponent);
+        assert!(dividing_theirs.contains("divide opp's permanents"),
+            "the engine's description reaches the seat, p-rewritten (#465):\n{dividing_theirs}");
+        assert!(!dividing_theirs.contains("p1"),
+            "no engine-global player labels:\n{dividing_theirs}");
+
+        // And that a pile is sacrificed, by whom.
+        let dividing_mine = ask(you);
+        for prompt in [&dividing_theirs, &dividing_mine] {
+            assert!(prompt.contains("sacrifice"),
+                "the prompt says a pile is sacrificed:\n{prompt}");
+        }
+        assert!(dividing_mine.contains("You then choose"),
+            "dividing your own board, you pick the pile that dies:\n{dividing_mine}");
+        assert!(dividing_theirs.contains("Your opponent then chooses"),
+            "dividing theirs, they pick:\n{dividing_theirs}");
+        assert_ne!(dividing_mine, dividing_theirs,
+            "the two cases ask for opposite answers, so they cannot read alike");
+
+        // The land is not a 0/0; the creature still has its P/T.
+        let rows: Vec<&str> = dividing_mine.lines()
+            .filter(|l| l.starts_with("- ")).collect();
+        assert_eq!(rows, vec!["- Swamp (#9)", "- Grizzly Bears (#10) 2/2"],
+            "a permanent with no P/T does not print one:\n{dividing_mine}");
     }
 
     /// Issue #494: `format_single_action` had no arm for
