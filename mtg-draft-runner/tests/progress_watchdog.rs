@@ -83,53 +83,82 @@ fn a_tournament_game_that_stops_moving_is_forfeited_and_said_so() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let bin = empty_arrays_seat(&dir);
-    let log = dir.join("loop.log");
-    let errfile = dir.join("stderr.txt");
 
-    // Seed 101 drafts a deck that reaches a min-1 target slot with the board
-    // frozen — the position the runner used to spin on forever.
-    let started = std::time::Instant::now();
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
-        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "101", "-q"])
-        .args(["--log", log.to_str().unwrap()])
-        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
-        .env("CLAUDE_CODE_BIN", &bin)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::fs::File::create(&errfile).unwrap())
-        .spawn()
-        .expect("the runner runs");
+    // Whether a seeded run REACHES the stall -- a min-1 slot answered with
+    // `[]` while the board is frozen -- depends on which deck the draft
+    // builds and which actions the seat takes, and the seat takes them by
+    // hashing the prompt it was handed. So a pure wording change anywhere
+    // in `mtg-player`'s prompts re-rolls the whole game: seed 101 stalled
+    // when this was written and plays out cleanly since #491 widened four
+    // prompts. Pinning one seed therefore pins the wrong thing -- it fails
+    // when a prompt is reworded and says "the game loop is unbounded
+    // again", which is not what happened.
+    //
+    // So: walk a few seeds and assert the watchdog's behaviour on the
+    // first one that stalls. About a quarter of seeds do. Losing ALL of
+    // them is still a failure, because then the fixture no longer
+    // exercises what it is for and a human has to find a seed that does.
+    const SEEDS: [&str; 5] = ["107", "108", "101", "102", "103"];
+    let mut played_out: Vec<&str> = Vec::new();
 
-    // The run has to come back on its own. Given a deadline of our own, so a
-    // regression is a failed assertion rather than a suite that hangs —
-    // which is exactly what this defect does to an operator.
-    let deadline = started + std::time::Duration::from_secs(240);
-    let status = loop {
-        match child.try_wait().expect("wait") {
-            Some(status) => break status,
-            None if std::time::Instant::now() > deadline => {
-                let _ = child.kill();
-                panic!(
-                    "the tournament did not finish in 240s: the game loop is unbounded again \
-                     (stderr: {})",
-                    std::fs::read_to_string(&errfile).unwrap_or_default()
-                );
+    for seed in SEEDS {
+        let log = dir.join(format!("loop-{seed}.log"));
+        let errfile = dir.join(format!("stderr-{seed}.txt"));
+        let started = std::time::Instant::now();
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+            .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", seed, "-q"])
+            .args(["--log", log.to_str().unwrap()])
+            .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+            .env("CLAUDE_CODE_BIN", &bin)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::fs::File::create(&errfile).unwrap())
+            .spawn()
+            .expect("the runner runs");
+
+        // The run has to come back on its own. Given a deadline of our own,
+        // so a regression is a failed assertion rather than a suite that
+        // hangs — which is exactly what this defect does to an operator.
+        let deadline = started + std::time::Duration::from_secs(240);
+        let status = loop {
+            match child.try_wait().expect("wait") {
+                Some(status) => break status,
+                None if std::time::Instant::now() > deadline => {
+                    let _ = child.kill();
+                    panic!(
+                        "seed {seed}: the tournament did not finish in 240s: the game loop \
+                         is unbounded again (stderr: {})",
+                        std::fs::read_to_string(&errfile).unwrap_or_default()
+                    );
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(200)),
             }
-            None => std::thread::sleep(std::time::Duration::from_millis(200)),
+        };
+
+        assert!(status.success(), "seed {seed}: the run should finish, not fail: {status}");
+
+        let stderr = std::fs::read_to_string(&errfile).unwrap_or_default();
+        if !stderr.contains("stopped making progress") {
+            played_out.push(seed);
+            continue;
         }
-    };
 
-    assert!(status.success(), "the run should finish, not fail: {status}");
+        // Silence is the other half of the defect: the operator saw an
+        // empty stderr for the whole episode.
+        assert!(stderr.contains("forfeit"), "seed {seed} stderr: {stderr}");
+        assert!(stderr.contains("=== Forfeited Games ==="), "seed {seed} stderr: {stderr}");
 
-    // Silence is the other half of the defect: the operator saw an empty
-    // stderr for the whole episode.
-    let stderr = std::fs::read_to_string(&errfile).unwrap_or_default();
-    assert!(stderr.contains("stopped making progress"), "stderr: {stderr}");
-    assert!(stderr.contains("forfeit"), "stderr: {stderr}");
-    assert!(stderr.contains("=== Forfeited Games ==="), "stderr: {stderr}");
+        // And the run's record says which game was not played out.
+        let logged = std::fs::read_to_string(&log).unwrap_or_default();
+        assert!(logged.contains("STALLED"),
+            "seed {seed}: the log should carry the forfeited game");
 
-    // And the run's record says which game was not played out.
-    let logged = std::fs::read_to_string(&log).unwrap_or_default();
-    assert!(logged.contains("STALLED"), "the log should carry the forfeited game");
+        let _ = std::fs::remove_dir_all(&dir);
+        return;
+    }
 
-    let _ = std::fs::remove_dir_all(&dir);
+    panic!(
+        "none of {SEEDS:?} reached a stall (all played out: {played_out:?}), so this test \
+         no longer exercises the watchdog at all. Find a seed whose tournament stalls with \
+         the empty-arrays seat and put it at the front of SEEDS."
+    );
 }
