@@ -119,6 +119,43 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   every call site (`mtg-player/src/llm.rs` lines 1889/2014/2045/2077 pass
   `&[]`) against its own display list, and force a collapsed list at each —
   any other guard or lookup keyed off the wrong list is the same bug
+  — **played 2026-09-14: every index in the program is faithful, and the bug
+  is one level up — the prompt those indices are chosen from.** All five
+  `pick_action_index` call sites consume the list they displayed, and the
+  collapse is provably index-faithful: over 11 stubbed games (1,038 structured
+  requests, 9 top-level shapes, 0 illegal schema keys) **145 of 145**
+  activations named the copy its row promised, including 32 that landed inside
+  an `ActionRow::Copies` range and 32 at its *far* end — a stub that picks the
+  highest index of the best-ranked row is how you exercise that, since the
+  obvious "lowest index" policy only ever tests member 0. #209's guard is
+  intact too: with the display list collapsed, 68 of 68 priority menus asked
+  `confirm_concede`, 68 cancels produced `PassPriority`, and the game ended by
+  decking on turn 68 with zero concessions. The other index-vs-list suspects
+  all cleared by construction and are not worth re-walking — `choose_card_set`
+  displays `view.your_hand` and indexes `prompt.options`, but both are
+  `state.objects_in_zone(Zone::Hand, player)` in that order; the attackers and
+  blockers prompts build their enums and apply their answers to the same
+  `eligible`/`attackers` slices; `choose_x_funding`'s card-name keys are bucket
+  keys and so unique by construction, and nested; and the engine already
+  excludes a spell from its own target list (`targeting.rs:685`,
+  `filter(|&id| id != spell_id)`).
+  What the audit actually found is that four prompts still build their message
+  with a bare `format!` and never reach `build_prompt`, so #463's "this was the
+  one prompt built from a format string alone" is false:
+  `prompt_target_selection`, both sacrifice prompts and the ability-target
+  prompt are 59 of 417 requests, the smallest is **48 characters**
+  (`Geistflame: select a target:` / `0: opponent, 1: you` — a damage spell
+  aimed at a player with neither life total present, and the seat pointed it at
+  itself 8 times to 5), and the CLI renders the whole board at the same decision
+  *because* #122 established a human needs it (#491). The method that found it:
+  diff `GAME_RULES` against the schemas actually emitted rather than reading
+  either alone. That also turned up the system prompt telling every seat the
+  exile-from-graveyard prompt answers with "a boolean per card" when the schema
+  is an `indices` array — `mark_indices`' own doc comment says the opposite of
+  the const, three functions away (#492) — and five worked examples still
+  showing the comma-joined action list (#493). Nothing checks that const
+  against its own formatters; `omitted_events_marker` (`llm.rs:2755`) is the one
+  place that does
 - H8 [proposed 2026-09-09, from #398] the response schema is checked by the
   API before the model ever sees it: top-level property keys must match
   `^[a-zA-Z0-9_.-]{1,64}$`, and a key that fails is a 400 — no tokens, no
