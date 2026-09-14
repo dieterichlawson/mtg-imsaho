@@ -765,8 +765,19 @@ stops here — pass --save {path} to keep writing it");
                 Some(_) => {}
             }
 
+            // The contract the engine's two `offers_nothing()` guards
+            // keep, not a stuck-game detector. It used to read "the game
+            // is stuck", which no callback can ever see: the mulligan loop
+            // and the game loop both short-circuit `offers_nothing()`
+            // before every callback and the third call site synthesises a
+            // two-action menu, so the one line in the program that would
+            // say a game was stuck was in the one place that cannot
+            // (issue #498). A stuck game is now detected where it can
+            // happen -- in the loop that would spin -- and ends as a draw
+            // under CR 104.4b. This says the guards still hold.
             if legal.offers_nothing() {
-                extra.push("no legal actions and no prompt: the game is stuck".to_string());
+                extra.push("a decision was requested with no legal actions and no prompt: \
+                            the engine's offers_nothing() guards did not hold".to_string());
             }
 
             // Serialization round-trip: --save/--resume depend on a state

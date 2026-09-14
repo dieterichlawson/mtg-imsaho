@@ -62,7 +62,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | graveyard order (CR 404.2) | `graveyard_order.rs` |
 | zones and object identity (CR 400.7) | `zones_and_state.rs`, `zone_change_resets_object.rs`, `until_eot_object_identity.rs`, `token_is_not_a_card.rs` |
 | control and duration | `control_change.rs`, `control_durations.rs`, `enters_under_control.rs` |
-| turn structure and priority | `turn_structure.rs`, `priority.rs`, `apnap.rs` |
+| turn structure and priority | `turn_structure.rs`, `priority.rs`, `apnap.rs`, `no_empty_decisions.rs` |
 | starting the game (CR 103) | `mulligan.rs`, `match_play_draw.rs` |
 | choices the engine must not make for a player | `auto_pick.rs`, `sacrifice_choice.rs` |
 | what the player is shown | `harness_display.rs`, `protection_wording.rs` |

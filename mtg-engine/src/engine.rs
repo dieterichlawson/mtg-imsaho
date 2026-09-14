@@ -1120,7 +1120,14 @@ fn run_mulligan_phase_inner<F>(
         let legal = legal_actions(state, registry);
         if legal.offers_nothing() {
             // Safety: if somehow no action is legal (e.g. zero cards to
-            // bottom), just clear and continue.
+            // bottom), just clear and continue. Said out loud, because
+            // clearing `awaiting_action` papers over whatever state got
+            // here and the next reader deserves to know it happened
+            // (issue #498).
+            state.log(LogLevel::Info, format!(
+                "mulligan: p{} was offered no action and no prompt; clearing the \
+                 pending decision and advancing the mulligan phase",
+                acting_player.0));
             state.awaiting_action = None;
             advance_mulligan_phase(state, registry);
             continue;
@@ -1152,8 +1159,16 @@ fn run_game_loop_inner<F>(
 {
     const MAX_AUTO_PASSES: u32 = 100;
 
+    /// How many rounds in a row the loop will take the "nothing is on
+    /// offer" branch before calling the game stuck. That branch never
+    /// reaches the callback, so it is the one the program's other bounds
+    /// -- `max_actions` and the progress watchdog, both counted in
+    /// DECISIONS -- cannot see (issue #498).
+    const MAX_EMPTY_OFFERS: u32 = 100;
+
     let num_players = u32::try_from(state.players.len()).unwrap_or(u32::MAX);
     let mut auto_pass_count = 0u32;
+    let mut empty_offers = 0u32;
 
     // Opening-hand mulligan phase. When present, drive it first; it will
     // clear itself by setting awaiting_action = None and draining the
@@ -1274,9 +1289,31 @@ fn run_game_loop_inner<F>(
         // (found by seeded fuzzing: Corpse Lunge's exile cost, ug vs wb
         // coverage decks, seed 550).
         if legal.offers_nothing() {
+            // This branch does not call the callback, so nothing here
+            // increments an action count, observes a decision for the
+            // progress watchdog (#462, #488) or writes a log line: it is
+            // the one place the loop could spin at 100% CPU with an empty
+            // stderr and an unchanging log, with every bound added since
+            // #462 bypassed. Counted and reported, the way the auto-pass
+            // branch below is (issue #498).
+            //
+            // `legal_actions` returns a prompt for every `AwaitingAction`
+            // variant, so this is believed unreachable today and the count
+            // is defence, not a live bound.
+            empty_offers += 1;
+            if empty_offers > MAX_EMPTY_OFFERS {
+                state.log(LogLevel::Milestone, format!(
+                    "the game is stuck: {MAX_EMPTY_OFFERS} rounds in a row offered p{} no \
+                     action and no prompt at turn {} {:?}, and advancing the game did not \
+                     change that. The game is a draw (CR 104.4b).",
+                    acting_player.0, state.turn_number, state.step));
+                state.result = Some(crate::state::GameResult::Draw);
+                break;
+            }
             advance_or_resolve(state, registry);
             continue;
         }
+        empty_offers = 0;
 
         // Auto-declare zero attackers when there are no eligible creatures.
         if let Some(crate::actions::CombatPrompt::ChooseAttackers {
