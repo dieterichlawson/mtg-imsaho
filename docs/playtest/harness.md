@@ -349,3 +349,43 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `(prompt, schema)` pair and validates the schema the way the API does
   audits all ten at once for the cost of one game, and the harvest is
   currently the only thing enforcing the #398 rule in a release build
+  — **played 2026-09-14: the tenth caller exists, its schema is sound, and the
+  prompt wrapped around it is not.** `choose_pile_division` needs
+  `4 Liliana of the Veil / 56 Swamp` vs `60 Island` and a stub policy that
+  *wants* the ultimate — cast at 3 loyalty, `+1` three times, `-6` around turn
+  19 — and it was then reached three times a game in a release build, along with
+  `confirm_concede`, which no label-reading policy will ever reach because every
+  seat is written to avoid `Concede`. That is all ten callers plus both draft
+  schemas, 2,609 requests over eleven games and a draft, and the audit is
+  **clean**: 0 illegal top-level keys, 0 empty enums, 0 `maxItems: 0`, 0
+  `minItems > maxItems`, 0 `required` field missing from `properties`, 0 of 26
+  `mark_indices` count-notes disagreeing with their `minItems`/`maxItems`, 0 of
+  13 X-funding prompts disagreeing with their own stated X range, and 0 index
+  enums naming a row the prompt body does not print. One direct
+  `claude -p --json-schema` call with the real 24-key harvested pile schema came
+  back with a complete answer, so the nested keys (spaces, `#`, and now `/` from
+  the `0/0` suffix) are accepted *and* answerable. H13 was also right that the
+  release binary checks nothing: `Cargo.toml` has no `[profile.release]`, so both
+  `debug_assert!`s are compiled out and the harvest is the whole enforcement.
+  The opponent's side of a pile division is not a structured prompt at all —
+  `ChoosePile` is two enumerated `ChosenIndex` rows through `pick_action_index`.
+  What the night found is one layer out. `format_single_action` has no
+  `ActivateLoyaltyAbility` arm, so the row falls through to
+  `other => format!("{other}")` and the engine's `Display`:
+  `Activate loyalty ability 2 on obj#1`, the only `Display`-produced label of
+  367 shapes harvested, with no name, no loyalty cost, no effect text, and the
+  `targets` dropped — which makes "-6 at the opponent" and "-6 at yourself"
+  byte-identical (33 of the harvest's 35 duplicated-row prompts; #494, the #61
+  fix not crossing exactly as #118 did not in #460). The seat took the
+  self-targeting copy, divided its own 24 Swamps and sacrificed all of them —
+  and the prompt it got there said only "set true for pile 1, false for pile 2",
+  naming neither whose permanents these were nor that the *target* player
+  chooses a pile to sacrifice, which is the fact that inverts the answer, while
+  every land read `0/0` (#495). The generalisation worth keeping: **a shape
+  nothing reaches is worth building, but the audit that pays for itself is the
+  one on the prompt, not the schema** — and the cheapest instrument for it is a
+  record of the action-list labels, since a duplicated row and a `Display`-shaped
+  label are both greppable in one pass. 16 of 17 `ResolutionChoiceKind` variants
+  were raised (Nevermore's `ChooseCardName` took its own
+  `4 Nevermore / 56 Plains` deck and is 253 numbered rows against a 253-value
+  enum); `ChooseDamageEffect` is the one nothing reaches now, and is H16
