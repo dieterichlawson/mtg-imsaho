@@ -26,6 +26,28 @@ pub struct RandomPlayer {
 /// which would trade this coverage for the coverage that already works.
 const CANCEL_CHANCE: f64 = 0.05;
 
+/// How often an eligible creature blocks at all.
+const BLOCK_CHANCE: f64 = 0.5;
+
+/// How often this seat puts two or more blockers on one attacker, when it
+/// has that many that legally can.
+///
+/// Without this a gang block — and the CR 509.2 damage-ordering prompt
+/// that only a gang block raises, and the legal side of CR 509.1b — is
+/// reached by coincidence or not at all. See the comment at the
+/// declaration.
+const GANG_BLOCK_CHANCE: f64 = 0.25;
+
+/// How often this seat names a block the rules refuse anyway.
+///
+/// Kept, and rolled rather than stumbled into: the engine drops such a
+/// pair with an audit line, and those two drop paths (#40, #72) are the
+/// engine's own code, which only this seat fuzzes. 11 of 255 declarations
+/// in 40 seeded games used to reach them by accident (issue #497); over
+/// the same 40 this reaches them 4 times on purpose, while the other
+/// declarations now stand as the seat chose them.
+const ILLEGAL_BLOCK_CHANCE: f64 = 0.15;
+
 /// How often this seat mulligans a hand it is offered.
 ///
 /// It never did. 140 mulligan decisions over 70 seeded games, 140 keeps —
@@ -338,17 +360,88 @@ impl RandomPlayer {
                 }
                 Action::DeclareAttackers { attackers, planeswalker_attacks }
             }
-            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, .. } => {
+            CombatPrompt::ChooseBlockers {
+                eligible_blockers, attackers, legal_blocks, min_blockers,
+            } => {
                 if attackers.is_empty() {
                     return Action::DeclareBlockers { assignments: vec![] };
                 }
-                // Each eligible blocker has a 50% chance of blocking a random attacker.
-                let mut assignments = Vec::new();
-                for &blocker in eligible_blockers {
-                    if rng.gen_bool(0.5) {
-                        let attacker = attackers[rng.gen_range(0..attackers.len())];
-                        assignments.push((blocker, attacker));
+                let mut assignments: Vec<(mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId)> =
+                    Vec::new();
+                let mut unused: Vec<mtg_engine::ids::ObjectId> = eligible_blockers.clone();
+
+                // Gang up on an attacker on purpose.
+                //
+                // Two blockers landing on one attacker used to need two
+                // independent uniform picks to coincide, so a gang block
+                // was reached by luck or not at all — 7 of 57 non-empty
+                // declarations in 40 seeded games, and those same 7 were
+                // every `ChooseDamageAssignmentOrder` prompt in the sample
+                // (CR 509.2, issue #497). The legal side of CR 509.1b
+                // needs it too: declaring 2+ on a menace attacker and
+                // having the block STAND is the case the accidental
+                // version never produced, while it kept producing the
+                // under-minimum one.
+                //
+                // Walked in `attackers` order, not the map's: a HashMap's
+                // iteration order is not stable, and a seeded game has to
+                // replay the same way every time.
+                for &attacker in attackers {
+                    if !rng.gen_bool(GANG_BLOCK_CHANCE) {
+                        continue;
                     }
+                    // Enough to satisfy the requirement where there is one,
+                    // and two where there is not — either way a gang.
+                    let want = min_blockers.get(&attacker).copied().unwrap_or(1).max(2) as usize;
+                    let able: Vec<mtg_engine::ids::ObjectId> = unused.iter().copied()
+                        .filter(|b| legal_blocks.get(b).is_some_and(|l| l.contains(&attacker)))
+                        .take(want)
+                        .collect();
+                    if able.len() < want {
+                        continue;
+                    }
+                    for b in able {
+                        assignments.push((b, attacker));
+                        unused.retain(|&u| u != b);
+                    }
+                }
+
+                // Each remaining blocker has a 50% chance of blocking, and
+                // picks from the attackers it CAN block. `legal_blocks` was
+                // destructured away, so the seat routinely named a block the
+                // rules refuse — a ground creature "blocking" a flyer — and
+                // the engine dropped the pair: the declaration was silently
+                // thinner than the decision, and `--check-invariants`, which
+                // sees the state after the drop, is consistent either way.
+                for &blocker in &unused {
+                    if !rng.gen_bool(BLOCK_CHANCE) {
+                        continue;
+                    }
+                    let legal: Vec<mtg_engine::ids::ObjectId> = legal_blocks.get(&blocker)
+                        .map(|l| l.iter().copied().filter(|a| attackers.contains(a)).collect())
+                        .unwrap_or_default();
+                    // Still name a refused block sometimes, deliberately:
+                    // the engine's two drop paths are its own code (#40,
+                    // #72) and this seat is the only thing that fuzzes
+                    // them. Rolled rather than stumbled into, and rolled
+                    // over the attackers this blocker CANNOT block, so the
+                    // roll produces a refusal instead of usually landing on
+                    // a legal attacker anyway. A blocker with nothing legal
+                    // to block declines, rather than picking from the whole
+                    // attacker list, which is a guaranteed refusal every
+                    // single time — that fallback was the old behaviour and
+                    // most of the 11 accidental refusals in 40 games.
+                    let refused: Vec<mtg_engine::ids::ObjectId> = attackers.iter().copied()
+                        .filter(|a| !legal.contains(a))
+                        .collect();
+                    let pool = if !refused.is_empty() && rng.gen_bool(ILLEGAL_BLOCK_CHANCE) {
+                        &refused
+                    } else if legal.is_empty() {
+                        continue;
+                    } else {
+                        &legal
+                    };
+                    assignments.push((blocker, pool[rng.gen_range(0..pool.len())]));
                 }
                 Action::DeclareBlockers { assignments }
             }
@@ -368,6 +461,74 @@ mod tests {
             defending_player: PlayerId(1),
             defending_planeswalkers: walkers.iter().map(|&i| ObjectId(i)).collect(),
         }
+    }
+
+    fn blockers_prompt() -> CombatPrompt {
+        // Attacker 1 is the menace one; blockers 12 and 13 cannot block
+        // attacker 2 at all (say it flies).
+        use std::collections::HashMap;
+        CombatPrompt::ChooseBlockers {
+            eligible_blockers: vec![ObjectId(10), ObjectId(11), ObjectId(12), ObjectId(13)],
+            attackers: vec![ObjectId(1), ObjectId(2)],
+            legal_blocks: HashMap::from([
+                (ObjectId(10), vec![ObjectId(1), ObjectId(2)]),
+                (ObjectId(11), vec![ObjectId(1), ObjectId(2)]),
+                (ObjectId(12), vec![ObjectId(1)]),
+                (ObjectId(13), vec![ObjectId(1)]),
+            ]),
+            min_blockers: HashMap::from([(ObjectId(1), 2)]),
+        }
+    }
+
+    /// Issue #497: the seat destructured `legal_blocks` and `min_blockers`
+    /// away, so it named blocks the rules refuse (11 of 255 declarations in
+    /// 40 seeded games, which the engine then dropped — the declaration
+    /// silently thinner than the decision, with `--check-invariants` seeing
+    /// only the state after the drop), and it could never satisfy a menace
+    /// minimum on purpose. Two blockers landed on one attacker only when
+    /// two independent uniform picks coincided, so the LEGAL side of CR
+    /// 509.1b, and the CR 509.2 ordering prompt that only a gang block
+    /// raises, rode entirely on coincidence.
+    #[test]
+    fn a_random_seat_reads_legal_blocks_and_can_satisfy_a_minimum() {
+        let prompt = blockers_prompt();
+        let mut legal_gangs = 0;
+        let mut refused_pairs = 0;
+        let mut legal_pairs = 0;
+        let mut illegal_pairs = 0;
+
+        for seed in 0..200 {
+            let mut player = RandomPlayer::with_seed("r", seed);
+            let Action::DeclareBlockers { assignments } = player.choose_combat(&prompt) else {
+                panic!("a blockers prompt is answered with a declaration");
+            };
+            let on_menace = assignments.iter().filter(|(_, a)| *a == ObjectId(1)).count();
+            if on_menace >= 2 {
+                legal_gangs += 1;
+            }
+            let mut seen: Vec<ObjectId> = Vec::new();
+            for &(blocker, attacker) in &assignments {
+                // CR 509.1b: one attacker per blocker, and only blockers
+                // and attackers the prompt offered.
+                assert!(!seen.contains(&blocker), "{blocker:?} blocks twice: {assignments:?}");
+                seen.push(blocker);
+                assert!([10, 11, 12, 13].contains(&blocker.0), "{blocker:?} was offered");
+                assert!([1, 2].contains(&attacker.0), "{attacker:?} was offered");
+                let can = matches!(blocker.0, 10 | 11) || attacker == ObjectId(1);
+                if can { legal_pairs += 1; } else { illegal_pairs += 1; refused_pairs += 1; }
+            }
+        }
+
+        assert!(legal_gangs > 0,
+            "the seat can satisfy a menace minimum on purpose (never did in 200 declarations)");
+        assert!(refused_pairs > 0,
+            "and still names a refused block sometimes, so the engine's drop path \
+             (#40, #72) stays fuzzed");
+        // The refusals are the exception now, not the rule: they used to be
+        // whatever a uniform pick over every attacker happened to produce.
+        assert!(illegal_pairs * 4 < legal_pairs,
+            "most declared blocks are ones the rules allow: {illegal_pairs} refused \
+             vs {legal_pairs} legal");
     }
 
     /// A random seat must be able to send an attacker at a planeswalker.
