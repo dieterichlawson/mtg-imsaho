@@ -15,6 +15,11 @@ use mtg_engine::types::*;
 /// Play out `turns` worth of priority with both seats passing, counting how
 /// many times each seat was actually asked. Any non-pass prompt (a combat
 /// declaration, a mandatory choice) is answered in the least eventful way.
+///
+/// The count is only worth something if the game lasts: a `game_at_step`
+/// board has empty libraries, so the first draw step ends it, and a "stops
+/// per turn" claim measured on it has seen one priority window. Callers
+/// stock the libraries with [`nothing_to_do`] first.
 fn count_prompts(state: &mut GameState, registry: &mtg_engine::cards::CardRegistry, stop_turn: u32) -> usize {
     let mut prompts = 0;
     mtg_engine::engine::run_game_loop(state, registry, |gs, _player, legal| {
@@ -46,11 +51,13 @@ fn an_unequippable_equipment_is_not_a_meaningful_action() {
 
     let mut without = game_at_step(Step::Upkeep, P0);
     for _ in 0..2 { named_permanent(&mut without, &reg, "Plains", P0); }
+    nothing_to_do(&mut without, &reg);
     let baseline = count_prompts(&mut without, &reg, 4);
 
     let mut with = game_at_step(Step::Upkeep, P0);
     for _ in 0..2 { named_permanent(&mut with, &reg, "Plains", P0); }
     named_permanent(&mut with, &reg, "Blazing Torch", P0);
+    nothing_to_do(&mut with, &reg);
     let with_equipment = count_prompts(&mut with, &reg, 4);
 
     assert_eq!(with_equipment, baseline,
@@ -106,14 +113,30 @@ fn a_mana_ability_with_a_side_effect_is_a_meaningful_action() {
 }
 
 /// A plain tap-for-mana still is not: a player holding nothing castable is not
-/// stopped just because they control a Plains.
+/// stopped just because they control a Plains — not once, at any window of
+/// any turn. This used to allow "at most 4 stops" on a board whose libraries
+/// were empty, so the game ended at its first draw step having opened one
+/// window, and a gate that stopped the seat at every window it ever opened
+/// scored 1.
 #[test]
 fn a_bare_mana_ability_is_still_not_a_meaningful_action() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     for _ in 0..2 { named_permanent(&mut state, &reg, "Plains", P0); }
+    nothing_to_do(&mut state, &reg);
 
     let stops = count_prompts(&mut state, &reg, 3);
-    assert!(stops <= 4,
-        "an empty board with two lands should pass through its steps, got {stops} stops");
+    assert_eq!(stops, 0,
+        "a board with two lands and nothing to spend them on passes through every window");
+    // Never asked, so never told to concede: the game ran on to its own end.
+    assert!(state.turn_number > 3, "the count covered a whole game, not turn {}", state.turn_number);
+}
+
+/// Give both seats draws that change nothing: a green creature, which the
+/// seat with two Plains cannot cast and the seat with no lands cannot either,
+/// so the draw step neither ends the game nor adds a legal play.
+fn nothing_to_do(state: &mut GameState, registry: &mtg_engine::cards::CardRegistry) {
+    for p in [P0, P1] {
+        stock_library_with(state, registry, p, "Grizzly Bears", 8);
+    }
 }

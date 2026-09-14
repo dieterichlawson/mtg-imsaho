@@ -820,7 +820,16 @@ pub fn advance_to_next_turn(state: &mut GameState, registry: &CardRegistry) {
 /// Use this for tests that just need cards to be there; when the identity of
 /// the card matters, build it yourself.
 pub fn stock_library(state: &mut GameState, registry: &CardRegistry, player: PlayerId, n: usize) -> Vec<ObjectId> {
-    let card_id = registry.get_id_by_name("Forest").expect("Forest is in the registry");
+    stock_library_with(state, registry, player, "Forest", n)
+}
+
+/// [`stock_library`] with a card of your choosing — for a test that needs the
+/// draws to be something in particular, such as a card the player cannot
+/// play, so that drawing it changes nothing about what they may do.
+pub fn stock_library_with(
+    state: &mut GameState, registry: &CardRegistry, player: PlayerId, name: &str, n: usize,
+) -> Vec<ObjectId> {
+    let card_id = registry.get_id_by_name(name).unwrap_or_else(|| panic!("{name} is in the registry"));
     let ids: Vec<ObjectId> = (0..n)
         .map(|_| state.create_object(card_id, player, Zone::Library, None, None))
         .collect();
