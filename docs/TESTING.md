@@ -41,6 +41,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | CR 400.7 zone-change memory and copy identity | `zone_change_memory.rs` |
 | the legend rule (CR 704.5j) | `legend_rule.rs` |
 | a save is a reproducible artifact (byte-identical for one state) | `save_reproducibility.rs` |
+| a save is resumed, not replayed: the game continues as the uninterrupted one would, and turn 1 starts once | `resume_game_loop.rs` |
 | destruction only reaches permanents (CR 701.7a) | `destroy_targets_permanents.rs` |
 | an ability's controller and requirement are fixed at activation (CR 602.2a, 601.2c) | `activation_controller.rs` |
 | fizzling | `fizzle.rs` |
