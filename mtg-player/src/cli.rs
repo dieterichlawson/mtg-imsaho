@@ -3564,13 +3564,9 @@ impl CliPlayer {
             Action::ActivateLoyaltyAbility { object_id, ability_index, targets } => {
                 // Name the ability, not its index: "loyalty ability 1" told
                 // the player nothing, and two abilities rendered identically
-                // apart from that number (#61).
-                let desc = view.battlefield.iter()
-                    .find(|p| p.object_id == *object_id)
-                    .and_then(|p| p.loyalty_abilities.iter()
-                        .find(|(i, _)| i == ability_index)
-                        .map(|(_, d)| d.clone()));
-                match desc {
+                // apart from that number (#61). The lookup lives on the view
+                // so the LLM seat's table cannot drift from this one (#494).
+                match view.loyalty_ability_description(*object_id, *ability_index) {
                     Some(d) => format!("{}: {}{}", Self::perm_name(view, *object_id),
                         d, Self::targets_suffix(view, targets)),
                     None => format!("Activate loyalty ability {} on {}{}", ability_index,

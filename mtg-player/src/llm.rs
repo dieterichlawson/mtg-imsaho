@@ -2331,6 +2331,15 @@ impl LlmPlayer {
         if bits.is_empty() { None } else { Some(bits.join(",")) }
     }
 
+    /// ` targeting X, Y` — what an action row says it is aimed at, or
+    /// nothing when the action has no targets.
+    fn targets_suffix(view: &GameView, targets: &[mtg_engine::actions::Target]) -> String {
+        if targets.is_empty() {
+            return String::new();
+        }
+        format!(" targeting {}", Self::target_labels(view, targets).join(", "))
+    }
+
     /// Format a single non-CastSpell action for the collapsed display.
     fn format_single_action(view: &GameView, action: &Action) -> String {
         match action {
@@ -2350,6 +2359,23 @@ impl LlmPlayer {
                 }
             }
             Action::ActivateAbility { object_id, .. } => format!("Activate {}", Self::obj_name(view, *object_id)),
+            // Name the ability and say what it is aimed at, not just the
+            // index. There was no arm here at all, so the row fell through
+            // to the engine's `Display` — `Activate loyalty ability 2 on
+            // obj#1` — which says neither what the ability costs in loyalty
+            // nor what it does, and, because the engine enumerates one
+            // action per target, made "-6 targeting you" and "-6 targeting
+            // the opponent" byte-identical rows. A loyalty ability cannot
+            // be taken back or retried that turn (CR 606.3). Same lookup
+            // the CLI has had since #61 (issue #494).
+            Action::ActivateLoyaltyAbility { object_id, ability_index, targets } => {
+                let name = Self::obj_name(view, *object_id);
+                let suffix = Self::targets_suffix(view, targets);
+                match view.loyalty_ability_description(*object_id, *ability_index) {
+                    Some(d) => format!("{name}: {d}{suffix}"),
+                    None => format!("Activate loyalty ability {ability_index} on {name}{suffix}"),
+                }
+            }
             Action::Concede => "Concede".into(),
             Action::DiscardCards { cards } => {
                 let names: Vec<String> = cards.iter().map(|id| Self::obj_name(view, *id)).collect();
@@ -5171,6 +5197,71 @@ mod tests {
                 ability_index: 0,
             }),
             "Tap Island for mana");
+    }
+
+    /// Issue #494: `format_single_action` had no arm for
+    /// `ActivateLoyaltyAbility`, so the row fell through to the engine's
+    /// `Display` — `Activate loyalty ability 2 on obj#1` — the only label
+    /// shape in a whole night's harvest that did. It named neither the
+    /// planeswalker, nor what the ability costs or does, nor its target;
+    /// and since the engine enumerates one action per target, Liliana's −6
+    /// aimed at the seat and the same −6 aimed at its opponent were two
+    /// byte-identical rows. The seat took the wrong one and sacrificed its
+    /// own board. This is #61 on the prompt, which the CLI fixed and the
+    /// LLM table never heard about.
+    #[test]
+    fn a_loyalty_ability_row_names_the_ability_and_its_target() {
+        let you = PlayerId(0);
+        let opponent = PlayerId(1);
+        let mut lili = perm(1, "Liliana of the Veil", 0, 0, you);
+        lili.card_types = vec![CardType::Planeswalker];
+        lili.power = None;
+        lili.toughness = None;
+        lili.effective_power = None;
+        lili.effective_toughness = None;
+        lili.loyalty_abilities = vec![
+            (0, "+1: Each player discards a card.".into()),
+            (1, "−2: Target player sacrifices a creature.".into()),
+            (2, "−6: Separate all permanents target player controls into two piles.".into()),
+        ];
+        let mut view = empty_view();
+        view.battlefield.push(lili);
+
+        let label = |index: usize, targets: Vec<mtg_engine::actions::Target>| {
+            LlmPlayer::format_single_action(&view, &Action::ActivateLoyaltyAbility {
+                object_id: ObjectId(1),
+                ability_index: index,
+                targets,
+            })
+        };
+
+        // The ability is named, not numbered.
+        let plus_one = label(0, vec![]);
+        assert!(plus_one.contains("Liliana of the Veil") && plus_one.contains("+1: Each player discards"),
+            "the row names the permanent and the ability: {plus_one}");
+        assert!(!plus_one.contains("loyalty ability 0"),
+            "the index is not what the row says: {plus_one}");
+
+        // The two −6s differ, because the target is the whole decision.
+        let at_you = label(2, vec![mtg_engine::actions::Target::Player(you)]);
+        let at_opp = label(2, vec![mtg_engine::actions::Target::Player(opponent)]);
+        assert_ne!(at_you, at_opp,
+            "one action per target: two targets are two rows, not one row twice");
+        assert!(at_you.contains("You") && at_opp.contains("Opponent"),
+            "each row says who it is aimed at: {at_you:?} / {at_opp:?}");
+
+        // A permanent the view did not describe still reads as an action.
+        let mut plain = perm(2, "Garruk Relentless", 0, 0, you);
+        plain.card_types = vec![CardType::Planeswalker];
+        plain.loyalty_abilities = vec![];
+        view.battlefield.push(plain);
+        assert!(
+            LlmPlayer::format_single_action(&view, &Action::ActivateLoyaltyAbility {
+                object_id: ObjectId(2),
+                ability_index: 1,
+                targets: vec![],
+            }).contains("Garruk Relentless"),
+            "the fallback still names the permanent");
     }
 
     fn perm(id: u64, name: &str, power: i32, toughness: i32, controller: PlayerId) -> PermanentView {

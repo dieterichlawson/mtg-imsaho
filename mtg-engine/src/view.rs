@@ -184,6 +184,23 @@ impl GameView {
             .find(|(i, _)| *i == ability_index)
             .map(|(_, d)| d.as_str())
     }
+
+    /// The text of one loyalty ability, by the index the action carries.
+    ///
+    /// Both seats' action tables name the ability through this rather than
+    /// printing the index: `+1: Each player discards a card` and `-6:
+    /// Separate all permanents target player controls into two piles` are
+    /// otherwise two rows differing only in a number nothing on the screen
+    /// explains, and a loyalty ability cannot be taken back or retried that
+    /// turn (CR 606.3). The CLI has named them since #61; the LLM seat had
+    /// its own table with no arm for the variant at all (#494).
+    pub fn loyalty_ability_description(&self, object_id: ObjectId, ability_index: usize) -> Option<&str> {
+        self.battlefield.iter()
+            .find(|p| p.object_id == object_id)?
+            .loyalty_abilities.iter()
+            .find(|(i, _)| *i == ability_index)
+            .map(|(_, d)| d.as_str())
+    }
 }
 
 #[derive(Debug, Clone)]
