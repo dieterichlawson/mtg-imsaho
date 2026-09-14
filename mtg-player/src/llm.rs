@@ -429,7 +429,16 @@ Pick one by its index. A cast option names the spell and its tap plan, not its t
 - **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
 - **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine pays only the non-X portion of the cost via auto-tap, (2) a structured follow-up prompt asks you to fund X explicitly. The funding prompt has four buckets: `floating` (drain by color from your pool), `lands`, `rocks`, and `dorks` (tap specific named groups). Each value is a mana amount, not a source count. For 1-mana sources (basic lands, most dorks) pick any integer from 0 to the available count. For multi-mana sources (Sol Ring `{C}{C}`) pick a multiple of the per-tap output (0, 2, 4, ...). X is the sum of everything you allocate. Per CR 601.2b, X is announced as part of casting — so the spell only formally "becomes cast" (and SpellCast triggers fire) AFTER you submit a funding choice. Variable-output or cost-bearing sources (pain lands, Cabal Coffers) aren't shown — tap those manually before casting so their mana floats in the pool.
 - **Spells with sacrifice costs**: Spells that require sacrificing a creature as an additional cost (Altar's Reap, Infernal Plunge) prompt you to choose which creature to sacrifice after you select targets. If you only control one creature, it's auto-selected. The sacrifice happens at cast time (before the spell goes on the stack), so the creature is gone even if the spell gets countered.
-- **Spells with exile-from-graveyard costs**: Spells that require exiling cards from your graveyard as an additional cost (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath) use the same two-step pattern as X-cost: (1) you pick "Cast [spell]" — one entry per target, no expanded subset list, (2) a structured follow-up prompt lists every eligible graveyard card with a boolean per card; set true to exile it, false to keep. For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subset is legal. For fixed-count cards (Stitched Drake: exile exactly 1 creature; Skaab Ruinator: exactly 3) you MUST pick the exact count or the cast is cancelled (spell stays in hand, no mana paid). Per CR 601.2h → 601.2i the spell only formally "becomes cast" after the prompt resolves — so SpellCast triggers fire after exile, not before. Corpse Lunge stores the highest effective power among exiled creatures as the damage it deals.
+- **Spells with exile-from-graveyard costs**: Spells that require exiling cards from your graveyard as an additional cost (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath) use the same two-step pattern as X-cost: (1) you pick "Cast [spell]" — one entry per target, no expanded subset list, (2) a structured follow-up prompt numbers every eligible graveyard card and asks which positions to exile, as an array of indices under the key `indices` — an empty array exiles nothing. The prompt looks like this, with the numbered options last:
+```
+Harvest Pyre: choose 0-1 cards to exile from your graveyard (each exiled card adds to the spell's X)
+
+Pick anywhere from 0 to 1 cards. Name the cards to exile.
+
+Options:
+0: Reckless Waif (#44)
+```
+For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subset is legal. For fixed-count cards (Stitched Drake: exile exactly 1 creature; Skaab Ruinator: exactly 3) you MUST pick the exact count or the cast is cancelled (spell stays in hand, no mana paid). Per CR 601.2h → 601.2i the spell only formally "becomes cast" after the prompt resolves — so SpellCast triggers fire after exile, not before. Corpse Lunge stores the highest effective power among exiled creatures as the damage it deals.
 - **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) do NOT auto-tap. You must tap lands manually first to float the mana, then activate on the next priority pass. This prevents the engine from accidentally tapping a creature mana source and then sacrificing that same creature. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) DO auto-tap — the sacrifice target is fixed, so there's no ambiguity. If a "sac a creature" ability you want isn't appearing in the action list and the only thing missing is mana, tap a land and try again.
 - **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
 - **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
@@ -2929,6 +2938,30 @@ impl LlmPlayer {
             .collect()
     }
 
+    /// How many to pick, in words. Also the `indices` description in the
+    /// schema, so the prompt and the schema cannot say different numbers.
+    fn marked_count_note(min: usize, max: usize, noun: &str) -> String {
+        if min == max {
+            format!("Pick exactly {min} {noun}{}.", if min == 1 { "" } else { "s" })
+        } else {
+            format!("Pick anywhere from {min} to {max} {noun}s.")
+        }
+    }
+
+    /// The body of a "choose some of these" prompt. GAME_RULES quotes this
+    /// shape and a test builds the documented example through it, because
+    /// the const said this prompt answered with a boolean per card long
+    /// after it became an index array (#492).
+    fn marked_list_body(
+        labels: &[String],
+        description: &str,
+        count_note: &str,
+        instruction: &str,
+    ) -> String {
+        let listing = Self::numbered_listing(labels);
+        format!("{description}\n\n{count_note} {instruction}\n\nOptions:\n{listing}")
+    }
+
     fn mark_indices(
         &mut self,
         view: &GameView,
@@ -2939,15 +2972,8 @@ impl LlmPlayer {
         instruction: &str,
         noun: &str,
     ) -> Vec<usize> {
-        let listing = Self::numbered_listing(labels);
-        let count_note = if min == max {
-            format!("Pick exactly {min} {noun}{}.", if min == 1 { "" } else { "s" })
-        } else {
-            format!("Pick anywhere from {min} to {max} {noun}s.")
-        };
-        let action_text = format!(
-            "{description}\n\n{count_note} {instruction}\n\nOptions:\n{listing}"
-        );
+        let count_note = Self::marked_count_note(min, max, noun);
+        let action_text = Self::marked_list_body(labels, description, &count_note, instruction);
         let prompt = self.build_prompt(view, &action_text);
 
         let valid: Vec<usize> = (0..labels.len()).collect();
@@ -3049,11 +3075,14 @@ impl LlmPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(chosen) }
     }
 
-    /// Mark a subset of objects: one boolean per card, which is the shape
-    /// every "choose some of these" question takes for this seat.
+    /// Mark a subset of objects: an index array under one fixed key, which
+    /// is the shape every "choose some of these" question takes for this
+    /// seat (`mark_indices`, #398).
     ///
-    /// `verb` is what a `true` means — "exile this card", "choose this card"
-    /// — and goes in both the instruction and each field's description.
+    /// `verb` is what picking an index does — "exile", "choose" — and
+    /// completes the instruction line "Name the cards to {verb}.", so it is
+    /// a bare verb phrase and not a whole clause: "exile this card" made
+    /// that read "Name the cards to exile this card." (#492).
     fn choose_object_subset(
         &mut self,
         view: &GameView,
@@ -3086,7 +3115,7 @@ impl LlmPlayer {
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
         let chosen = self.choose_object_subset(
-            view, options, min, max, description, "exile this card");
+            view, options, min, max, description, "exile");
 
         // For fixed-count costs, the engine validates and cancels on
         // mismatch. We log here so the diagnostic trail is clear.
@@ -3118,7 +3147,7 @@ impl LlmPlayer {
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
         let mut chosen = self.choose_object_subset(
-            view, options, min, max, description, "choose this card");
+            view, options, min, max, description, "choose");
         chosen.truncate(max);
         if chosen.len() < min {
             self.log("VALIDATION", &format!(
@@ -3466,7 +3495,7 @@ impl Player for LlmPlayer {
             return self.choose_x_funding(view, options, *source_id, *is_ability, description);
         }
 
-        // An "up to N" target slot: boolean-per-target, the same shape as
+        // An "up to N" target slot: an index array, the same shape as
         // the exile cost below. The engine stopped enumerating one cast per
         // subset (issue #360), which for Memory's Journey over a
         // fifteen-card graveyard was about 1,150 rows of menu.
@@ -3480,7 +3509,7 @@ impl Player for LlmPlayer {
         }
 
         // A set of objects chosen while an effect resolves: the same
-        // boolean-per-card shape. Curse of Oblivion used to ask twice.
+        // index-array shape. Curse of Oblivion used to ask twice.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
             options, min, max, description, ..
         }) = legal.resolution_prompt.as_ref()
@@ -3490,10 +3519,11 @@ impl Player for LlmPlayer {
             return self.choose_object_set(view, &options, min, max, &description);
         }
 
-        // Exile-from-graveyard additional cost: boolean-per-card choice.
+        // Exile-from-graveyard additional cost: which cards to exile.
         // The engine surfaces eligible graveyard cards via `resolution_prompt`;
-        // we build a boolean-per-card schema (see `choose_pile_division` for
-        // the template) and parse the response.
+        // the answer is an index array under `indices` (`mark_indices`), not
+        // a boolean per card -- a card name is not a legal top-level schema
+        // key (#398).
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
             options, min, max, description, ..
         }) = legal.resolution_prompt.as_ref()
@@ -5670,5 +5700,43 @@ this Aura deals 1 damage to that player.";
         assert_eq!(recorded.len(), 2, "one prompt per dimension:\n{recorded:#?}");
         assert_carries_the_board(&recorded[0], "the ability-target prompt");
         assert_carries_the_board(&recorded[1], "the ability-sacrifice prompt");
+    }
+    // ── GAME_RULES against the formatters it documents (#492) ───────────
+
+    /// #492: GAME_RULES told every seat, on every call, that the
+    /// exile-from-graveyard prompt answers "with a boolean per card". It
+    /// answers with an index array, and has since a card name stopped being
+    /// a legal top-level schema key (#398) — so the standing instruction
+    /// described a response the API would refuse, for the prompt whose
+    /// unusable answers cancel a cast. The documented example is built
+    /// through the formatter that sends it.
+    #[test]
+    fn game_rules_shows_the_marked_subset_prompt_it_actually_sends() {
+        let labels = vec!["Reckless Waif (#44)".to_string()];
+        let body = LlmPlayer::marked_list_body(
+            &labels,
+            "Harvest Pyre: choose 0-1 cards to exile from your graveyard \
+             (each exiled card adds to the spell's X)",
+            &LlmPlayer::marked_count_note(0, 1, "card"),
+            "Name the cards to exile.",
+        );
+        assert!(
+            GAME_RULES.contains(body.trim_end()),
+            "GAME_RULES must quote the marked-subset prompt the harness sends. \
+             It sends:\n{body}"
+        );
+
+        // And it must not promise the shape that prompt stopped using. The
+        // pile division is the one place a boolean per permanent is still
+        // what the schema asks for.
+        for (n, line) in GAME_RULES.lines().enumerate() {
+            if line.contains("boolean") {
+                assert!(
+                    line.contains("pile"),
+                    "GAME_RULES line {n} promises booleans for a prompt that \
+                     answers with indices: {line:?}"
+                );
+            }
+        }
     }
 }
