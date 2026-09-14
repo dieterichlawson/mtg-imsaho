@@ -2464,7 +2464,7 @@ impl LlmPlayer {
                     spell.name,
                     labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
                 );
-                let idx = self.pick_action_index(&prompt, spell.sacrifice_options.len());
+                let idx = self.pick_action_index(view, &prompt, spell.sacrifice_options.len());
                 Some(spell.sacrifice_options[idx.min(spell.sacrifice_options.len() - 1)])
             }
         };
@@ -2533,7 +2533,7 @@ impl LlmPlayer {
                 ab.description,
                 labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
             );
-            let idx = self.pick_action_index(&prompt, unique_target_sets.len());
+            let idx = self.pick_action_index(view, &prompt, unique_target_sets.len());
             unique_target_sets[idx.min(unique_target_sets.len() - 1)].clone()
         };
 
@@ -2564,7 +2564,7 @@ impl LlmPlayer {
                 ab.name,
                 labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
             );
-            let idx = self.pick_action_index(&prompt, unique_valid_sacs.len());
+            let idx = self.pick_action_index(view, &prompt, unique_valid_sacs.len());
             unique_valid_sacs[idx.min(unique_valid_sacs.len() - 1)]
         };
 
@@ -2582,21 +2582,15 @@ impl LlmPlayer {
     /// Make a second API call to select one target from a list.
     fn prompt_target_selection(&mut self, view: &GameView, spell_name: &str, options: &[mtg_engine::actions::Target]) -> mtg_engine::actions::Target {
         assert!(!options.is_empty(), "prompt_target_selection called with no options for {spell_name}");
-        let target_list: String = options.iter().enumerate()
-            .map(|(i, t)| {
-                let desc = match t {
-                    mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
-                    mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
-                    mtg_engine::actions::Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-                };
-                format!("{i}: {desc}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+        // One row per line, through the same two helpers the marked-set
+        // prompts use — this had its own copy of the labelling, which put
+        // every option on one comma-joined line and named the players in a
+        // different case from every other prompt.
+        let target_list = Self::numbered_listing(&Self::target_labels(view, options));
         let prompt = format!(
             "{spell_name}:\n{target_list}",
         );
-        let idx = self.pick_action_index(&prompt, options.len());
+        let idx = self.pick_action_index(view, &prompt, options.len());
         options[idx.min(options.len() - 1)].clone()
     }
 
@@ -3397,7 +3391,8 @@ impl LlmPlayer {
     /// only if the response is somehow missing the field entirely.
     /// If the chosen action is Concede, runs the confirmation dialog
     /// before returning.
-    /// Ask for one index into a list of options the caller has shown.
+    /// Ask for one index into a list of options the caller has shown,
+    /// against the same board every other in-game decision is made against.
     ///
     /// The returned index belongs to whatever list the prompt displayed —
     /// this function has no idea what the options mean. It used to also
@@ -3407,10 +3402,19 @@ impl LlmPlayer {
     /// index, `actions.get(idx)` was some unrelated action, and the
     /// confirmation silently did not happen (issue #209). The guard now
     /// lives with the caller that knows which action an index means.
-    fn pick_action_index(&mut self, prompt: &str, max: usize) -> usize {
+    fn pick_action_index(&mut self, view: &GameView, action_text: &str, max: usize) -> usize {
         assert!(max > 0, "pick_action_index requires at least one option");
+        // The state body is built HERE rather than by the caller, so that no
+        // caller can ask for an index without it. Four of the five callers
+        // used to hand over a bare `format!` string: the seat chose a target
+        // from 48 characters with no turn, no life totals, no boards and no
+        // stack, which is what #463 fixed for the cleanup discard and #491
+        // found still true of "select a target", the two sacrifice prompts
+        // and the ability-target prompt. The CLI renders the whole board at
+        // all four (`run_target_chooser`, #122).
+        let prompt = self.build_prompt(view, action_text);
         let schema = Self::enum_action_schema(max, "action", "Index of the chosen action");
-        let response = self.send_message_structured(prompt, &schema);
+        let response = self.send_message_structured(&prompt, &schema);
         let idx = response["action"].as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX))
             .filter(|n| *n < max)
             .unwrap_or_else(|| {
@@ -3684,12 +3688,11 @@ impl Player for LlmPlayer {
         }
 
         let action_prompt = Self::format_action_prompt(context.as_deref(), &rows);
-        let prompt = self.build_prompt(view, &action_prompt);
 
         if display_entries.len() != legal_actions.len() {
             self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_entries.len()));
         }
-        let idx = self.pick_action_index(&prompt, display_entries.len());
+        let idx = self.pick_action_index(view, &action_prompt, display_entries.len());
 
         if idx >= display_entries.len() {
             return Action::PassPriority;
@@ -5549,4 +5552,123 @@ this Aura deals 1 damage to that player.";
         );
     }
 
+    // ── Every index prompt carries the board (issue #491) ────────────────
+
+    /// A backend that keeps every prompt it is handed, so a test can read
+    /// what the seat would really have been asked.
+    struct RecordingBackend {
+        prompts: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        system_prompt: String,
+    }
+
+    impl LlmBackend for RecordingBackend {
+        fn send(&mut self, message: &str) -> String {
+            self.prompts.borrow_mut().push(message.to_string());
+            String::new()
+        }
+        fn send_with_schema(&mut self, message: &str, _schema: &serde_json::Value) -> serde_json::Value {
+            self.prompts.borrow_mut().push(message.to_string());
+            serde_json::json!({"thoughts": "t", "action": 0})
+        }
+        fn init(&mut self, deck_info: &str) {
+            self.system_prompt = deck_info.to_string();
+        }
+        fn resume(&mut self, _recap: &str) {}
+        fn system_prompt(&self) -> &str { &self.system_prompt }
+        fn model_name(&self) -> &str { "recording" }
+    }
+
+    fn recording_player() -> (LlmPlayer, std::rc::Rc<std::cell::RefCell<Vec<String>>>) {
+        let prompts = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut player = LlmPlayer::for_prompt_tests("test");
+        player.backend = Box::new(RecordingBackend {
+            prompts: std::rc::Rc::clone(&prompts),
+            system_prompt: String::new(),
+        });
+        (player, prompts)
+    }
+
+    /// What every decision is entitled to: the turn, the step, and both
+    /// life totals. `build_prompt` is the only thing that supplies them.
+    fn assert_carries_the_board(prompt: &str, what: &str) {
+        assert!(prompt.starts_with("Turn "),
+            "{what} must open with the turn/step header, got:\n{prompt}");
+        assert!(prompt.contains("hp,") && prompt.contains("Opp: "),
+            "{what} must carry both life totals, got:\n{prompt}");
+    }
+
+    /// #491: four prompt kinds built their message with a bare `format!`
+    /// and handed it straight to `pick_action_index`, so the seat chose a
+    /// target from as little as 48 characters — no turn, no life totals,
+    /// no boards, no stack — while the CLI renders the whole board screen
+    /// at the identical question (#122). The state body is built inside
+    /// `pick_action_index` now, so a caller cannot ask for an index
+    /// without it; these drive all four of the prompts that used to skip
+    /// it and read what the backend was really sent.
+    #[test]
+    fn every_index_prompt_carries_the_board() {
+        use mtg_engine::actions::{
+            ActivatableAbility, ActivatableAbilityOption, CastTargetSpec, CastableSpell, Target,
+        };
+
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let opponent = mtg_engine::ids::PlayerId(1);
+        let mine: Vec<ObjectId> = state.objects.values()
+            .filter(|o| o.owner == view.you)
+            .map(|o| o.id)
+            .take(2)
+            .collect();
+        assert_eq!(mine.len(), 2, "the fixture has objects to sacrifice");
+
+        // "<card>: select a target" — the 48-character prompt.
+        let (mut player, prompts) = recording_player();
+        player.prompt_target_selection(
+            &view,
+            "Geistflame: select a target",
+            &[Target::Player(view.you), Target::Player(opponent)],
+        );
+        assert_carries_the_board(&prompts.borrow()[0], "the target-selection prompt");
+        // And its options are one per line, not one comma-joined row.
+        assert!(prompts.borrow()[0].contains("0: You\n1: Opponent"),
+            "one target per line:\n{}", prompts.borrow()[0]);
+
+        // "<card>: choose a creature to sacrifice as additional cost".
+        let (mut player, prompts) = recording_player();
+        player.choose_cast_targets(&view, &CastableSpell {
+            object_id: mine[0],
+            name: "Altar's Reap".into(),
+            is_flashback: false,
+            from_graveyard: false,
+            target_spec: CastTargetSpec::NoTargets,
+            tap_plan: vec![],
+            exile_x_from_gy_max: None,
+            sacrifice_options: mine.clone(),
+            additional_cost_label: Some("sacrifice a creature".into()),
+            alternative_cost: None,
+        }, &[]);
+        assert_carries_the_board(&prompts.borrow()[0], "the cast-sacrifice prompt");
+
+        // "<card>: choose a target for <ability>", then
+        // "<card>: choose a creature to sacrifice" — both from one call.
+        let (mut player, prompts) = recording_player();
+        player.choose_ability_targets(&view, &ActivatableAbility {
+            object_id: mine[0],
+            ability_index: 0,
+            source_card_id: None,
+            name: "Demonmail Hauberk (#42)".into(),
+            description: "Equip—Sacrifice a creature".into(),
+            target_options: vec![],
+            tap_plan: vec![],
+            option_combos: vec![
+                ActivatableAbilityOption { targets: vec![Target::Player(view.you)], sacrifice: Some(mine[0]) },
+                ActivatableAbilityOption { targets: vec![Target::Player(view.you)], sacrifice: Some(mine[1]) },
+                ActivatableAbilityOption { targets: vec![Target::Player(opponent)], sacrifice: Some(mine[0]) },
+            ],
+        }, &[]);
+        let recorded = prompts.borrow();
+        assert_eq!(recorded.len(), 2, "one prompt per dimension:\n{recorded:#?}");
+        assert_carries_the_board(&recorded[0], "the ability-target prompt");
+        assert_carries_the_board(&recorded[1], "the ability-sacrifice prompt");
+    }
 }
