@@ -425,3 +425,19 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   (`engine/legal/awaiting.rs:298-307`), so its forfeit and its action cap both
   depend on a flat action that is not there — `mtg-runner` returns
   `AbandonGame` unconditionally and does not
+- H16 [proposed 2026-09-14, from H13's variant sweep] the seventeenth prompt.
+  `ChooseDamageEffect` (CR 616.1) is the one `ResolutionChoiceKind` of seventeen
+  that 6,150 harvested structured requests over twenty-two games and a draft
+  never raised: it needs two replacement or prevention effects applying to one
+  damage event with the order changing the outcome, and no deck pair in `decks/`
+  puts two on the board at once. Build it — a one-off deck with Inquisitor's
+  Flail (`DamageEffect::Double`) on an attacker whose damage is also being
+  prevented (Ghostly Possession on either end for `PreventAll`, or Unbreathing
+  Horde as the blocker for `PreventAndRemoveCounter`; the variants are at
+  `mtg-engine/src/damage.rs:74`) — and read the two `ChosenIndex` rows the LLM
+  seat is handed against the CLI's screen and the random seat's uniform pick.
+  Verify three things: that each row says what that effect WOULD do rather than
+  naming the permanent, that the re-raise after the first answer is not the same
+  row again (#323 says the remaining effects are asked about only while the
+  order still matters), and that the effect the seat picked is the one applied.
+  A prompt no game has ever raised is a prompt no night has ever read
