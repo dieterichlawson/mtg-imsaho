@@ -22,19 +22,12 @@
 # Rebuilt 2026-09-07 from a 226-mutant scoped sweep over the twelve engine
 # files this list named. 158 caught, 67 missed; the missed were triaged under
 # docs/mutation-testing-guide.md into tests, deletions, and accepted-with-a-
-# reason. What is left below is what that sweep still reports and nobody has
-# judged yet.
-mtg-engine/src/engine.rs: replace && with || in run_game_loop_inner
-mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
-#
-# What these two are: the "fresh first turn" detection at the top of
-# `run_game_loop_inner` — `is_first_turn && turn_number == 1 && step == Untap
-# && priority_player.is_none() && awaiting_action.is_none()` — which decides
-# whether to emit turn 1's `TurnStarted` and `StepStarted`. Loosening it makes
-# a RESUMED game emit them a second time, and with them a second upkeep. The
-# test wants a game resumed from a save at turn 1 untap driven through the
-# real loop, which nothing does yet.
-
+# reason. The two that sweep left here — `run_game_loop_inner`'s "fresh
+# first turn" detection at the top of the loop — were worked on 2026-09-14:
+# tests/resume_game_loop.rs resumes a game from a save at each of its
+# decisions and kills every mutant of the detection but one, which is on
+# the accepted list with its reason. reports/mutation-testing.md, "The
+# backlog's turn-1 detection", has the account.
 
 # The 2026-09-08 re-run's backlog is empty. All 68 entries were worked:
 # 60 got a test that kills them, and 8 were re-read against the source and

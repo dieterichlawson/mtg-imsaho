@@ -573,3 +573,15 @@ mtg-engine/src/engine/actions/choices.rs: replace + with - in resolve_choice
 # guard IS killed, by the missing-object case beside it, and the
 # single-target copy of the clause is killed both ways.
 mtg-engine/src/invariants/prompts.rs: replace match guard !player_ok(state, *p) with true in check_choice
+
+# `run_game_loop_inner`'s "fresh first turn" detection is five clauses, and
+# tests/resume_game_loop.rs kills every mutation of it but this one — the
+# `&&` before `priority_player.is_none()`, whose `||` form differs from the
+# original only on a state where nobody is acting that is not the start of
+# turn 1. No door into the loop produces one: a fresh game enters at turn 1's
+# untap, a resumed one at the decision its save was written before, where
+# someone is acting, and the loop makes such states for itself only between
+# steps, where it never hands them out. Defensive-only; the other `&&` sites
+# in the function are killed by the suite (see reports/mutation-testing.md,
+# 2026-09-14, which also fixed the auto-pass gate test that let one survive).
+mtg-engine/src/engine.rs: replace && with || in run_game_loop_inner

@@ -950,3 +950,85 @@ by applying candidate mutations by hand until a test fell over, so "killed"
 here means the site I found and verified — if another site under the same
 name is still alive, the weekly run will re-file it, and that is the right
 outcome rather than a claim this file is finished.
+
+## The backlog's turn-1 detection — 2026-09-14
+
+The 2026-09-07 sweep left two lines on `reports/mutants-backlog.txt` for the
+"fresh first turn" detection at the top of `run_game_loop_inner`:
+
+```rust
+if state.is_first_turn
+    && state.turn_number == 1
+    && state.step == Step::Untap
+    && state.priority_player.is_none()
+    && state.awaiting_action.is_none()
+```
+
+which decides whether the loop announces turn 1 (`TurnStarted`, then
+`StepStarted { Untap }`) and performs its untap. The note said the test
+wanted a game resumed from a save and driven through the real loop, which
+nothing did. Now `tests/resume_game_loop.rs` does: an eight-Forest-a-side
+game that plays itself out in three land drops is run to the end, the state
+the seat was shown at every decision is kept — the save the runner would
+have written there, opening hands included — and each one is loaded back
+through the save format and resumed. The property is that the resumed game
+sees the same decisions from there on, in the same states (compared as
+JSON, top-level field by field), and ends the same way. It is checked both
+as a seat is shown the game and as the checker is (`observe_every_submit`),
+where every pass is a decision and a save can fall between any two steps.
+A second test pins the announcement itself: exactly one `TurnStarted` for
+turn 1 in the whole game, in the first decision after the opening hands,
+with no `StepStarted` before it and the untap step right after — seen in
+checker mode, since a seat shown only its own decisions has the loop pass
+for it through the upkeep, and each pass clears the event buffer.
+
+`cargo mutants` over the twelve `&&`/`==` mutations in the function, with
+only the new file as the test, then with the whole engine suite:
+
+- **Caught by the new test (5):** the first, second and fourth `&&` of the
+  detection and both its `==`. Flipping either `==` leaves a fresh game
+  with no turn-1 announcement at all — the loop's fallback advances from
+  untap as if the turn had started, so the game is otherwise fine, which is
+  why nothing noticed. The fourth `&&` (`... || awaiting_action.is_none()`)
+  is the resume bug the backlog described: a save at turn 1's main phase
+  comes back with a second `TurnStarted`, a second `StepStarted`, and a
+  `Step:` log line the uninterrupted game never wrote.
+- **Accepted (1):** the third `&&`, `((first && turn 1 && untap) ||
+  priority.is_none()) && awaiting.is_none()`. It differs from the original
+  only on a state where nobody is acting that is not the start of turn 1,
+  and no door into the loop produces one: a fresh game enters at turn 1's
+  untap, a resumed one at the decision its save was written before, where
+  someone is acting (`mtg-runner` saves before each decision and nowhere
+  else). The loop makes such states for itself between steps — after a
+  discard, after the last pass of a step — and never hands them out. A test
+  would have to build the state by hand and then choose which of two
+  behaviours to pin on it (skip to the next step, or give priority in this
+  one), neither of which the engine defines. On the accepted list with the
+  reason; the normalized name covers every `&&` in the function, which is
+  why the next item was checked.
+- **Caught by the suite, not by the new test (5):** the other `&&`/`==`
+  sites in the loop body — the advance-when-nobody-acts test, both `&&` of
+  the auto-declare gate, the meaningful-action filter, and the `==` beside
+  the `&&` below.
+- **Missed by the suite (1), now fixed:** the `&&` in
+  `is_bare_mana_ability`'s side-effect check. Its `||` form makes every
+  mana ability a reason to stop the seat, and
+  `auto_pass_gate::a_bare_mana_ability_is_still_not_a_meaningful_action`
+  let it through with "at most 4 stops" — measured on a `game_at_step`
+  board whose libraries are empty, so the game ended at its first draw step
+  having opened one priority window, and the mutant scored 1. The two gate
+  counts now run over libraries stocked with a creature neither seat can
+  cast, and the bare-mana claim is the one its doc comment always made:
+  zero stops, over a game that ran past turn 3 (the turn the counting seat
+  concedes at, had it ever been asked). Under the mutant it is asked 16
+  times.
+
+**Ceremony**: the accepted mutant and the gate mutant were each applied by
+hand and run against the test that claims them — the gate one before the
+fix (4 passed, the probe printed `stops=1`) and after (fails on the count,
+`left: 16, right: 0`); the detection's five kills are cargo-mutants'
+`caught.txt` for the new test alone.
+
+The `move_object_inner` entry from 2026-09-12 stays on the backlog: it
+still wants a paused resolution whose object leaves the stack with another
+prompt open at the next decision, and that fixture is not built here either.
