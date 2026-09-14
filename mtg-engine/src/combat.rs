@@ -52,6 +52,32 @@ pub fn declare_attackers(
 }
 
 
+/// Split (blocker, attacker) pairs into the blocks that stand and the blocks
+/// CR 509.1b refuses because too few creatures blocked an attacker that
+/// can't be blocked by fewer than N of them.
+///
+/// `min_for` gives one attacker's minimum — `minimum_blockers` against live
+/// state here in the engine, the `min_blockers` map the prompt carries for a
+/// player implementation.
+///
+/// The rule lives in one place because the two copies disagreed: handed the
+/// same answer, the engine keeps every legal block and drops only the
+/// under-minimum pairs, while the LLM seat's own validator discarded the
+/// WHOLE declaration and declared no blocks, leaving the seat strictly worse
+/// off for having answered (issue #496).
+pub fn partition_under_minimum_blocks<F: Fn(ObjectId) -> u32>(
+    assignments: &[(ObjectId, ObjectId)],
+    min_for: F,
+) -> (Vec<(ObjectId, ObjectId)>, Vec<(ObjectId, ObjectId)>) {
+    let mut counts: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
+    for &(_, attacker) in assignments {
+        *counts.entry(attacker).or_insert(0) += 1;
+    }
+    assignments.iter().copied().partition(|&(_, attacker)| {
+        counts.get(&attacker).copied().unwrap_or(0) >= min_for(attacker) as usize
+    })
+}
+
 /// Set up blockers. Validates assignments.
 pub fn declare_blockers(
     state: &mut GameState,
@@ -132,11 +158,8 @@ pub fn declare_blockers_with_registry(
     // "declared no blockers" with no trace, and the defender ate 10 damage
     // without ever learning why (issue #72). The prompt's `min_blockers`
     // is the up-front source of truth; this line is the audit trail.
-    let (valid, dropped): (Vec<_>, Vec<_>) = valid.into_iter()
-        .partition(|&(_, attacker)| {
-            let min = minimum_blockers(state, attacker, registry);
-            blocker_counts.get(&attacker).copied().unwrap_or(0) >= min as usize
-        });
+    let (valid, dropped) = partition_under_minimum_blocks(
+        &valid, |attacker| minimum_blockers(state, attacker, registry));
     for (blocker, attacker) in dropped {
         let min = minimum_blockers(state, attacker, registry);
         state.log(crate::state::LogLevel::Info, format!(

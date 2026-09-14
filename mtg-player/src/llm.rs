@@ -4394,10 +4394,31 @@ from your hand to put on the bottom of your library.\n\
 
         let base_prompt = self.build_prompt(view, &combat_text);
 
-        // Retry loop with validation.
-        let max_retries = 20;
+        // One corrective re-ask, and then the answer is repaired rather
+        // than thrown away.
+        //
+        // This used to re-send the same prompt with the same schema twenty
+        // times. Every attempt is a whole prompt (a real game's system
+        // prompt is 28k-69k characters, re-sent verbatim, #464) and a new
+        // turn on the same `--resume` session, so one declare-blockers
+        // decision cost up to 20 billed calls and, at `CALL_TIMEOUT` x
+        // `MAX_ATTEMPTS` apiece, hours of wall clock -- while both of the
+        // program's other bounds, `max_actions` and the progress watchdog,
+        // count DECISIONS and see all of it as one. Measured: 80 of one
+        // game's 98 calls, and 85% of its prompt bytes, were retries of
+        // four decisions (#496).
+        //
+        // And it could not converge. The constraint is a joint one over
+        // several blockers -- "two or more on this attacker, or none" --
+        // which a per-blocker `enum` cannot express, so attempt 20's schema
+        // still offers the illegal value and is byte-identical to attempt
+        // 1's. What the retry adds over the first answer is the error
+        // message in the prompt; a seat that will act on that acts on it
+        // once.
+        const MAX_RETRIES: usize = 1;
         let mut retry_message: Option<String> = None;
-        for attempt in 0..max_retries {
+        let mut last_assignments: Vec<(ObjectId, ObjectId)> = Vec::new();
+        for attempt in 0..=MAX_RETRIES {
             let prompt = if let Some(ref msg) = retry_message {
                 format!("{base_prompt}\n\nPREVIOUS RESPONSE WAS INVALID:\n{msg}\nPlease try again.")
             } else {
@@ -4427,14 +4448,23 @@ from your hand to put on the bottom of your library.\n\
 
             self.log("BLOCKER_VALIDATION", &format!("attempt {} errors: {:?}", attempt + 1, errors));
             retry_message = Some(errors.join("\n"));
+            last_assignments = assignments;
         }
 
-        // Exhausted retries — no blocks as a safe fallback, which is also a
-        // perfectly ordinary decision, so it is counted as the substitution
-        // it is (#399).
+        // Keep every block the rules allow and drop only the pairs CR
+        // 509.1b refuses -- which is what the engine does when handed the
+        // identical answer (#72), through the same partition. Declaring no
+        // blocks at all discarded the legal blocks too, so a seat that
+        // named four good blocks and one bad one ended up strictly worse
+        // off for having answered than if it had said nothing.
+        let (kept, dropped) = mtg_engine::combat::partition_under_minimum_blocks(
+            &last_assignments,
+            |attacker| min_blockers.get(&attacker).copied().unwrap_or(0));
         self.log_rejected(&format!(
-            "blocker assignments still invalid after {max_retries} attempts; declaring no blocks"));
-        Action::DeclareBlockers { assignments: vec![] }
+            "blocker assignments still invalid after {} attempts; keeping {} legal \
+             block(s) and dropping {} under-minimum one(s), as the engine would",
+            MAX_RETRIES + 1, kept.len(), dropped.len()));
+        Action::DeclareBlockers { assignments: kept }
     }
 }
 
@@ -5232,6 +5262,73 @@ mod tests {
             "Tap Island for mana");
     }
 
+    /// Issue #496: one declare-blockers decision cost up to 20 model calls
+    /// and then threw the whole answer away. The schema cannot express the
+    /// constraint -- "two or more on this attacker, or none" is joint over
+    /// several blockers, and each blocker's `enum` is built independently --
+    /// so attempt 20 was byte-identical to attempt 1 and a deterministic
+    /// seat repeated itself by construction: 80 of one game's 98 calls, and
+    /// 85% of its prompt bytes, were retries of four decisions, while both
+    /// of the program's bounds count decisions and saw one. Then the
+    /// fallback declared NO blocks, discarding the legal blocks in the same
+    /// answer -- which the engine, handed the identical declaration, keeps.
+    #[test]
+    fn an_unusable_blocker_answer_is_repaired_once_not_re_asked_twenty_times() {
+        let you = PlayerId(0);
+        let menace = perm(20, "Terror of Kruin Pass", 3, 3, PlayerId(1));
+        let plain = perm(21, "Goblin Piker", 2, 1, PlayerId(1));
+        let mut view = empty_view();
+        view.battlefield.push(menace);
+        view.battlefield.push(plain);
+        for id in [30u64, 31, 32] {
+            view.battlefield.push(perm(id, "Darkthicket Wolf", 2, 2, you));
+        }
+
+        let attackers = [ObjectId(20), ObjectId(21)];
+        let blockers = [ObjectId(30), ObjectId(31), ObjectId(32)];
+        let legal_blocks: HashMap<ObjectId, Vec<ObjectId>> = blockers.iter()
+            .map(|&b| (b, attackers.to_vec()))
+            .collect();
+        // Only the menace attacker has a minimum, and it is 2.
+        let min_blockers: HashMap<ObjectId, u32> = HashMap::from([(ObjectId(20), 2)]);
+
+        // One blocker on the menace attacker (illegal on its own), one good
+        // block on the other attacker, one declining.
+        let (mut player, prompts) = recording_player_answering(serde_json::json!({
+            "thoughts": "t", "0": 0, "1": 1, "2": -1,
+        }));
+        let action = player.choose_blockers_structured(
+            &view, &blockers, &attackers, &legal_blocks, &min_blockers);
+
+        // Asked once, corrected once, and then no more: the schema is
+        // identical every time, so further re-asks buy nothing.
+        assert_eq!(prompts.borrow().len(), 2,
+            "one corrective re-ask, not twenty: {} calls", prompts.borrow().len());
+
+        // And the legal block survives. Declaring nothing at all left the
+        // seat worse off for having answered than for saying nothing.
+        let Action::DeclareBlockers { assignments } = action else {
+            panic!("a blocker decision declares blockers");
+        };
+        assert_eq!(assignments, vec![(ObjectId(31), ObjectId(21))],
+            "the under-minimum pair is dropped and the legal block kept, \
+             which is what the engine does with the same answer (#72)");
+    }
+
+    /// The repair is the engine's rule, not a second copy of it: two
+    /// blockers on a menace attacker is a legal declaration and must
+    /// survive untouched.
+    #[test]
+    fn a_gang_block_that_meets_the_minimum_is_not_repaired_away() {
+        let kept = mtg_engine::combat::partition_under_minimum_blocks(
+            &[(ObjectId(30), ObjectId(20)), (ObjectId(31), ObjectId(20)),
+              (ObjectId(32), ObjectId(21))],
+            |attacker| if attacker == ObjectId(20) { 2 } else { 1 },
+        );
+        assert_eq!(kept.0.len(), 3, "every pair stands: {kept:?}");
+        assert!(kept.1.is_empty(), "nothing dropped: {kept:?}");
+    }
+
     /// Issue #495: the pile-division prompt dropped the two facts that
     /// decide the answer. It passed `legal.context` — "<source>: divide
     /// into piles" — instead of the engine's `description`, which names
@@ -5799,6 +5896,7 @@ this Aura deals 1 damage to that player.";
     /// what the seat would really have been asked.
     struct RecordingBackend {
         prompts: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        reply: serde_json::Value,
         system_prompt: String,
     }
 
@@ -5809,7 +5907,7 @@ this Aura deals 1 damage to that player.";
         }
         fn send_with_schema(&mut self, message: &str, _schema: &serde_json::Value) -> serde_json::Value {
             self.prompts.borrow_mut().push(message.to_string());
-            serde_json::json!({"thoughts": "t", "action": 0})
+            self.reply.clone()
         }
         fn init(&mut self, deck_info: &str) {
             self.system_prompt = deck_info.to_string();
@@ -5819,11 +5917,20 @@ this Aura deals 1 damage to that player.";
         fn model_name(&self) -> &str { "recording" }
     }
 
+    /// A seat that answers every index prompt with 0, and keeps the prompts.
     fn recording_player() -> (LlmPlayer, std::rc::Rc<std::cell::RefCell<Vec<String>>>) {
+        recording_player_answering(serde_json::json!({"thoughts": "t", "action": 0}))
+    }
+
+    /// A seat that answers every prompt with `reply`, whatever it is asked.
+    fn recording_player_answering(
+        reply: serde_json::Value,
+    ) -> (LlmPlayer, std::rc::Rc<std::cell::RefCell<Vec<String>>>) {
         let prompts = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let mut player = LlmPlayer::for_prompt_tests("test");
         player.backend = Box::new(RecordingBackend {
             prompts: std::rc::Rc::clone(&prompts),
+            reply,
             system_prompt: String::new(),
         });
         (player, prompts)
