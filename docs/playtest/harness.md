@@ -389,3 +389,20 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   were raised (Nevermore's `ChooseCardName` took its own
   `4 Nevermore / 56 Plains` deck and is 253 numbered rows against a 253-value
   enum); `ChooseDamageEffect` is the one nothing reaches now, and is H16
+- H14 [proposed 2026-09-14, from #496 and H11's measurements] the budget for
+  ONE decision. Both bounds on a game are counted in decisions — the progress
+  watchdog's `STALLED_DECISIONS` and `mtg-runner`'s `max_actions` — and a single
+  decision can hold a loop inside it: `choose_blockers_structured`'s
+  `max_retries = 20`, each retry a full `send_message_structured`, each of those
+  up to `MAX_ATTEMPTS = 3` subprocesses bounded only by `CALL_TIMEOUT` (300s).
+  That is 60 launches and about five hours on one prompt, and the watchdog
+  observes it once, on a game that is not stalled. Method: walk every loop in
+  `mtg-player/src/llm.rs` that can re-ask the *same* decision — the blocker
+  validator, `call_once`'s retries, and anything a fix adds — and for each build
+  a board that makes it run to exhaustion, then measure calls, prompt bytes and
+  seconds per decision (a `sleep` in the `CLAUDE_CODE_BIN` stub turns the shape
+  into a number). Then ask the question that produced it: which prompts have a
+  client-side validator that can reject an answer the SCHEMA still permits?
+  Every one of those is a retry loop waiting for a deterministic seat, and the
+  fix is usually to narrow the answer rather than to ask again — the engine's own
+  `declare_blockers_with_registry` drops the offending pairs and keeps the rest
