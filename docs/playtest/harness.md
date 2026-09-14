@@ -283,6 +283,45 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   that is not a permutation, a pile division the opponent then declines. A
   prompt that can livelock is a class of game `--check-invariants` will never
   fail on, so the only way to find it is to try to hang the program
+  — **played 2026-09-14: the game always ends; the DECISION is what nothing
+  bounds.** Nine prompt kinds muted one at a time (a successful call with no
+  `structured_output`) over ~490 games: every arm exited cleanly, none hit its
+  wall-clock budget. Eight of the ten callers substitute something legal and
+  cheap — no attackers, no blocks, keep, the first `min` cards, the listed
+  order, X=0, all in pile 2, index 0 — so the engine is never asked to refuse;
+  `choose_object_set` fills its own shortfall from the options, which matters
+  because `ChooseObjectSet` is the one refusal the engine answers by *re-asking*
+  rather than by cancelling a cast; and #462's residue, the `mark_indices`
+  shortfall, now trips the watchdog at 100 identical decisions and dies with a
+  report naming the seat and the question (ur/bg seed 11, exit 1, 4.7s, turn
+  24). Two candidates the idea named are vacuous: pile division was never
+  reached at all (confirming H13), and no card in the pool demands X >= 1.
+  What broke is the axis nobody was counting. `choose_blockers_structured`
+  validates a menace-illegal block client-side and re-sends the same prompt with
+  the same schema — which still offers the illegal index — twenty times, then
+  declares no blocks and throws away the legal blocks
+  `mtg-engine/src/combat.rs:135-147` would have kept from the identical answer
+  (#496: 80 of one game's 98 calls, 85% of its prompt bytes, 72% of its wall
+  clock, and up to 60 subprocesses and ~5h at the 300s default — all inside ONE
+  watchdog observation, on a game that is not stalled).
+  Know the watchdog's shape before designing an arm. `progress_fingerprint`
+  (`mtg-player/src/watchdog.rs`) is board-only — no counters, no attachments, no
+  mana colour, no combat assignments, and not `awaiting_action` itself, which is
+  exactly why a cast-cancel cycle reads as identical — and it keeps only the
+  *previous* value and resets `stalled` on any change, so any cycle of period
+  >= 2 is invisible to it by construction. The prompt that would exploit that is
+  the mulligan, whose every refusal reshuffles and redraws seven; it is bounded
+  today by `mulligan_is_dominated` in one seat rather than by the runner. Two
+  more things a future probe should not have to rediscover: the menace loop is
+  reachable only through Terror of Kruin Pass, so the board needs a turn in
+  which neither player casts a spell (give both decks four castable spells and
+  56 cards they cannot pay for), and `--check-invariants`' only "the game is
+  stuck" line can never execute — `engine.rs:1121/1276` short-circuit
+  `offers_nothing()` before every callback, and the branch they take instead
+  calls no callback, counts no action and logs nothing (#498). The third surface
+  came free: the fuzzer's seat ignores `legal_blocks` and `min_blockers`
+  outright, so 11 of 255 declarations were blocks the engine silently dropped
+  and a menace minimum is never satisfied on purpose (#497)
 - H12 [proposed 2026-09-10, from #460 and #463] the action label and the
   prompt body as a three-surface diff. `format_single_action` in
   `mtg-player/src/llm.rs` and the `action_label` match in
