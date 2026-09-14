@@ -441,3 +441,25 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   row again (#323 says the remaining effects are asked about only while the
   order still matters), and that the effect the seat picked is the one applied.
   A prompt no game has ever raised is a prompt no night has ever read
+- H17 [proposed 2026-09-14, from H7 and the comment at
+  `mtg-player/src/llm.rs:3178`] the same schema, two providers. The X-funding
+  builder deliberately encodes integers as string enums, with a comment stating
+  why: *"Anthropic rejects `minimum`/`maximum` on integer fields, Gemini rejects
+  `enum` on integer fields, and only `enum` on string fields is both accepted
+  and enforced by both."* The declare-attackers schema (`llm.rs:4093-4113`) then
+  uses `{"type": "integer", "minimum": 0}` for `attacker_indices.items` and for
+  both fields of `planeswalker_attacks`, and the mulligan-bottom and
+  `mark_indices` shapes use bare integer `enum`s. One of those two things is
+  wrong. A `claude -p --json-schema` probe on 2026-09-14 showed the CLI path
+  accepts *and* answers the attackers schema with `minimum` in it, so if the
+  comment is right about the raw API then the metered `claude` seat cannot
+  declare attackers at all while the `cc` seat can — #398 exactly, on the one
+  prompt a game cannot progress without. Do it without spending a metered seat:
+  harvest every top-level shape with a `CLAUDE_CODE_BIN` stub, then check each
+  against what each backend's own code claims its provider enforces
+  (`mtg-player/src/llm/` and the comment above, plus
+  `sanitize_schema_for_anthropic` and whatever the draft path does), and say for
+  each shape which backends can carry it. Where the answer is "the comment is
+  stale", the string-enum workaround can go with it; where it is "the schema is
+  wrong", that is a defect in a seat this crew is forbidden to run, which is
+  exactly why nobody has noticed
