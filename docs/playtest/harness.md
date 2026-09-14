@@ -406,3 +406,22 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   Every one of those is a retry loop waiting for a deterministic seat, and the
   fix is usually to narrow the answer rather than to ask again — the engine's own
   `declare_blockers_with_registry` drops the offending pairs and keeps the rest
+- H15 [proposed 2026-09-14, from H11's mulligan arm] the refusals the watchdog
+  can never see. `progress_fingerprint` catches a livelock only while the board
+  stands still, so a prompt whose unusable answer CHANGES the state is invisible
+  to it by construction — and it keeps only the previous fingerprint, resetting
+  on any change, so a cycle of period >= 2 is invisible too. The mulligan is the
+  archetype: CR 103.4 caps nothing, `legal/awaiting.rs` offers the mull
+  unconditionally at every count, and each one shuffles and redraws seven, so a
+  seat answering "mull" forever resets the fingerprint every decision and would
+  run to the 50,000-action cap. It is bounded today by `mulligan_is_dominated`
+  in `mtg-player/src/llm.rs` — a policy floor in ONE seat, and the comment
+  beside it says so. Method: list every prompt a seat can refuse where the
+  refusal mutates state, and for each check whether a floor exists in all four
+  answering surfaces (`llm.rs`, `random.rs`, `cli.rs`, and
+  `mtg-draft-runner`'s loop). Then check the remedy rather than assuming it: the
+  draft runner forfeits a stalled game by returning `Concede`, and
+  `legal.actions` is `vec![]` for all four structured prompts
+  (`engine/legal/awaiting.rs:298-307`), so its forfeit and its action cap both
+  depend on a flat action that is not there — `mtg-runner` returns
+  `AbandonGame` unconditionally and does not
