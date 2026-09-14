@@ -336,6 +336,17 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   the only decision in the game made with no board (#463). Each difference
   is either a deliberate token saving or a decision the seat cannot make;
   say which, and cite the CLI line that proves the data was available
+  — **wrinkle added 2026-09-14, from #494**: the sharper question is not which
+  fields one table names that the other drops, but which `Action` variants have
+  no arm in `format_single_action` *at all* and land in
+  `other => format!("{other}")`. `ActivateLoyaltyAbility` was one — the only
+  `Display`-produced label of 367 shapes in a 2,609-request harvest — and the
+  tell is that the engine's `Display` drops its `targets`, so two different
+  actions become one row and a self-targeting ultimate is indistinguishable from
+  one aimed at the opponent. Enumerate the variants `choose_action` can put in a
+  row, find the ones with no arm, and for each ask whether the variant carries a
+  field (`targets`, `sacrifice`, `x_value`) that the row then cannot express. A
+  duplicated row in a harvest is the cheapest way to spot it
 - H13 [proposed 2026-09-10, from H8's harvest] the prompt kinds nothing
   reaches. `send_message_structured` has ten callers; 4,311 requests
   harvested from 38 games over fourteen decks reached nine shapes and never
