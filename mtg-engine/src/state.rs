@@ -3228,6 +3228,31 @@ impl GameState {
         self.has_subtype(id, "Equipment", registry)
     }
 
+    /// Stop `id` being attached to whatever it is attached to, and say so.
+    /// Returns the permanent it came off, or `None` if it was attached to
+    /// nothing.
+    ///
+    /// Two events in the rules, one thing happening to the object: CR 704.5n
+    /// unattaches an Equipment whose creature has left the battlefield and
+    /// leaves it on the battlefield, and CR 702.6c moves an Equipment off one
+    /// creature when an equip ability attaches it to another. Neither is a
+    /// zone change, so neither rides on `move_object`, which is how the Aura
+    /// half of this got its line (#358) and the Equipment half did not
+    /// (#502) — a reader saw a creature die, saw a line for the Aura, and
+    /// nothing at all for the Equipment whose `+2/+0` had just stopped
+    /// applying. CR 704.5n was the only state-based action in `sba.rs` that
+    /// changed the game state and wrote nothing.
+    pub fn unattach(&mut self, id: ObjectId) -> Option<ObjectId> {
+        let host = self.get_object(id)?.attached_to?;
+        let name = self.obj_name(id);
+        let host_name = self.obj_name(host);
+        if let Some(obj) = self.get_object_mut(id) {
+            obj.attached_to = None;
+        }
+        self.log(LogLevel::Event, format!("{name} became unattached from {host_name}"));
+        Some(host)
+    }
+
     /// CR 109.1: a "card" is a physical game object. A token is not one, so
     /// any effect whose text says "card" must exclude tokens.
     ///

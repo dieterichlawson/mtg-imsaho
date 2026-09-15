@@ -203,9 +203,12 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             .map(|o| o.id)
             .collect();
         for id in detach_equipment {
-            if let Some(obj) = state.get_object_mut(id) {
-                obj.attached_to = None;
-            }
+            // CR 704.5n: it becomes unattached and remains on the
+            // battlefield. Through `unattach`, which is where the line
+            // saying so lives — this used to clear the field and write
+            // nothing, the only state-based action here that changed the
+            // game state silently (issue #502).
+            state.unattach(id);
             took_action = true;
         }
 

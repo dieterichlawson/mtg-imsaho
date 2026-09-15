@@ -917,3 +917,62 @@ fn a_permanent_returning_to_its_owner_says_so_in_the_log() {
     assert!(lines.iter().any(|l| l.contains("returns to p1")),
         "the return is reported, and to whom: {lines:?}");
 }
+
+// ---------------------------------------------------------------------------
+// #502 — an Equipment that stops being attached says what it came off
+// ---------------------------------------------------------------------------
+
+/// CR 704.5n: when the equipped creature leaves the battlefield the
+/// Equipment becomes unattached and stays where it is. Not a zone change, so
+/// it cannot ride on `move_object` — which is how the Aura next door got its
+/// line (#358) and this branch did not. A reader saw the creature die, saw a
+/// line for the Aura, and nothing for the Equipment whose static ability had
+/// just stopped applying.
+#[test]
+fn an_equipment_unattached_by_a_state_based_action_says_what_it_came_off() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let traveler = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+    state.get_object_mut(dagger).unwrap().attached_to = Some(traveler);
+
+    state.move_object(traveler, Zone::Graveyard, &reg);
+    state.game_log.clear();
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+
+    assert!(log_lines(&state).iter().any(|l|
+        l.starts_with("Silver-Inlaid Dagger (#")
+            && l.contains("became unattached from Doomed Traveler (#")),
+        "the line names both ends, with ids: {:?}", log_lines(&state));
+    assert!(state.get_object(dagger).unwrap().attached_to.is_none());
+    assert_eq!(state.get_object(dagger).unwrap().zone, Zone::Battlefield,
+        "CR 704.5n leaves it on the battlefield — the Aura rule is the one \
+         that moves a permanent");
+}
+
+/// CR 702.6c: an equip ability attaching an Equipment to a second creature
+/// moves it off the first. The same "stop being attached" event, so the same
+/// line — this path was silent about what it came off too.
+#[test]
+fn an_equipment_moved_by_an_equip_ability_says_what_it_came_off() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let first = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
+    let second = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+
+    assert!(mtg_engine::cards::helpers::resolve_equip(
+        &mut state, dagger, &[Target::Object(first)], &reg));
+    assert!(log_lines(&state).iter().all(|l| !l.contains("became unattached")),
+        "it was attached to nothing, so nothing came off: {:?}", log_lines(&state));
+
+    state.game_log.clear();
+    assert!(mtg_engine::cards::helpers::resolve_equip(
+        &mut state, dagger, &[Target::Object(second)], &reg));
+
+    assert!(log_lines(&state).iter().any(|l|
+        l.starts_with("Silver-Inlaid Dagger (#")
+            && l.contains("became unattached from Doomed Traveler (#")),
+        "the line names both ends, with ids: {:?}", log_lines(&state));
+    assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(second));
+}

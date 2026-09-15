@@ -70,6 +70,10 @@ pub fn resolve_equip(
     if state.is_creature(equipment_id, registry) {
         return false;
     }
+    // CR 702.6c: attaching it to a second creature moves it off the first.
+    // The same "stop being attached" event CR 704.5n produces, so it goes
+    // through the same helper and gets the same line (issue #502).
+    state.unattach(equipment_id);
     if let Some(obj) = state.get_object_mut(equipment_id) {
         obj.attached_to = Some(*creature_id);
     }
