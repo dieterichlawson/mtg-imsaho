@@ -139,6 +139,18 @@ pub struct PermanentView {
     /// cannot ride in `keywords`, and a timed one (Spare from Evil) is
     /// invisible without it (issue #243).
     pub protections: Vec<String>,
+    /// What this permanent may not do, or must: "can't attack", "can't be
+    /// blocked except by two or more creatures", "attacks each combat if
+    /// able", described.
+    ///
+    /// The sibling of `protections`, missing for the same reason and with
+    /// the same consequence. A Bonds of Faith on a non-Human removes the
+    /// creature from the legal attacker and blocker sets, which is correct
+    /// (CR 508.1a, 509.1b) and is why nothing reports it: with no eligible
+    /// attackers the declare-attackers prompt is skipped entirely, so a 2/2
+    /// with no marks on it silently stops being able to attack and the
+    /// inspector agrees it is fine (issue #504).
+    pub restrictions: Vec<String>,
     /// Oracle text of the card (from the registry). Used by display code to
     /// surface short effect summaries for attached auras/equipment.
     pub oracle_text: String,
@@ -348,6 +360,7 @@ impl GameView {
                         .and_then(|c| c.blocker_assignments.get(&obj.id).cloned())
                         .unwrap_or_default(),
                     protections: state.protections_of(obj.id, registry),
+                    restrictions: state.restrictions_of(obj.id, registry),
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),

@@ -563,3 +563,82 @@ fn only_a_card_whose_pt_is_a_cda_is_marked_as_printing_star_pt() {
     assert!(!marked(bears), "a 2/2 prints a 2 and a 2");
     assert!(!marked(land), "and a land prints no P/T at all");
 }
+
+/// What a permanent may not do is a live characteristic and no surface
+/// carried it.
+///
+/// `PermanentView` had `keywords` and `protections` — both added because the
+/// same information being absent was filed as a bug (#243, #297) — and no
+/// field for the continuous effects that restrict what a permanent may do.
+/// A Bonds of Faith on a non-Human is the sharpest case: the layer-7c bonus
+/// correctly does not apply, the creature is correctly *absent* from the
+/// legal attacker set rather than offered and rejected (CR 508.1a, 509.1b),
+/// and with no eligible attackers the declare-attackers prompt is skipped
+/// entirely — so a 2/2 with no marks on it silently stops being able to
+/// attack and every pane agrees it is fine (issue #504).
+#[test]
+fn the_view_says_what_a_permanent_may_not_do() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // Spectral Rider is a Spirit Knight — not a Human, which is the whole
+    // point of the card's "Otherwise".
+    let rider = named_permanent(&mut state, &reg, "Spectral Rider", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+
+    let seen = |state: &GameState, id: ObjectId| -> Vec<String> {
+        mtg_engine::view::GameView::for_player(state, P0, &reg)
+            .battlefield.iter().find(|p| p.object_id == id)
+            .expect("on the battlefield").restrictions.clone()
+    };
+    assert!(seen(&state, rider).is_empty(), "nothing on it yet");
+
+    let bonds = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
+    let state = cast_and_resolve(&state, &reg, bonds, vec![Target::Object(rider)]);
+
+    assert_eq!(seen(&state, rider), vec!["can't attack", "can't block"],
+        "the 'Otherwise' half, which is the only thing that changed about it");
+    assert_eq!(state.effective_power(rider, &reg), Some(2),
+        "and the +2/+2 correctly does not apply (CR 613.1h), which is why \
+         the P/T says nothing either");
+    assert!(seen(&state, pilgrim).is_empty(), "the Aura is on one creature");
+
+    // A second Aura saying the same thing is not a second restriction. The
+    // list is built by walking every permanent, so repeats interleave rather
+    // than adjoin and `Vec::dedup` does not see them: six Bonds of Faith on
+    // one creature printed "can't attack, can't block" six times over.
+    let mut state = state;
+    let second = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
+    let state = cast_and_resolve(&state, &reg, second, vec![Target::Object(rider)]);
+    assert_eq!(seen(&state, rider), vec!["can't attack", "can't block"],
+        "two Auras, one answer");
+
+    // The same Aura on a Human restricts nothing — the condition is live, so
+    // the field has to be too.
+    let mut state = state;
+    let bonds2 = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
+    let state = cast_and_resolve(&state, &reg, bonds2, vec![Target::Object(pilgrim)]);
+    assert!(seen(&state, pilgrim).is_empty(),
+        "a Human gets the bonus, not the restriction");
+    assert_eq!(state.effective_power(pilgrim, &reg), Some(3));
+}
+
+/// The timed half, which has no permanent on the battlefield to hint at it:
+/// a "target creature can't block this turn" leaves the defender no `[Aura]`
+/// tag and no line anywhere, so it is strictly more invisible than the
+/// static case.
+#[test]
+fn the_view_says_a_creature_cannot_block_this_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = ready_creature(&mut state, P1, 2, 2);
+
+    let restrictions = |state: &GameState| -> Vec<String> {
+        state.restrictions_of(bear, &reg)
+    };
+    assert!(restrictions(&state).is_empty());
+
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::CantBlock { target: bear });
+
+    assert_eq!(restrictions(&state), vec!["can't block this turn"]);
+}

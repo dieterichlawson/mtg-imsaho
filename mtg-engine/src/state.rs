@@ -2275,6 +2275,26 @@ impl GameState {
         false
     }
 
+    /// Drop repeats from a described-effect list, keeping the first of each.
+    ///
+    /// `Vec::dedup` only removes *consecutive* equals, and these lists are
+    /// built by walking every permanent on the battlefield, so two sources
+    /// of the same effect interleave rather than adjoin: six Bonds of Faith
+    /// on one creature produced "can't attack, can't block" six times over,
+    /// which on the `i` page overflowed the line and on a model seat's board
+    /// would be a token flood.
+    fn dedup_described(mut described: Vec<String>) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
+        described.retain(|d| {
+            if seen.contains(d) {
+                return false;
+            }
+            seen.push(d.clone());
+            true
+        });
+        described
+    }
+
     /// Every protection in force on `id`, described (CR 702.16).
     ///
     /// Protection is not a `Keyword` — it lives in `ContinuousEffect` and
@@ -2313,8 +2333,72 @@ impl GameState {
                 }
             }
         }
-        out.dedup();
-        out
+        Self::dedup_described(out)
+    }
+
+    /// Every continuous effect in force on `id` that restricts or compels
+    /// what it may do, described.
+    ///
+    /// The sibling of [`protections_of`](Self::protections_of), and for the
+    /// same reason: these live in `ContinuousEffect` and `TemporaryEffect`
+    /// with a scope attached, so no pane could render them even in
+    /// principle, while the engine acts on them in combat every turn. A
+    /// Bonds of Faith on a non-Human deletes the creature from the legal
+    /// attacker and blocker sets — correctly, CR 508.1a/509.1b — and the
+    /// declare-attackers prompt is then skipped with no eligible attackers,
+    /// so a 2/2 with no marks on it silently stopped being able to attack
+    /// and every surface agreed it was fine (issue #504).
+    ///
+    /// Restrictions only. The P/T and keyword effects a permanent carries
+    /// are already visible as its effective P/T and its keyword list; what
+    /// is here is what nothing else answers.
+    #[must_use]
+    pub fn restrictions_of(
+        &self,
+        id: ObjectId,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<String> {
+        use crate::types::ContinuousEffect as CE;
+        let mut out: Vec<String> = Vec::new();
+        self.walk_effects(
+            id,
+            &|e| matches!(e,
+                CE::PreventAttack { .. } | CE::PreventBlock { .. } | CE::CantBeBlocked { .. }
+                | CE::CanOnlyBeBlockedBy { .. } | CE::MinimumBlockers { .. }
+                | CE::PreventCombatDamage { .. } | CE::PreventUntap { .. }
+                | CE::ForceAttack { .. }),
+            registry,
+            &mut |e, _src| {
+                match e {
+                    CE::PreventAttack { .. } => out.push("can't attack".into()),
+                    CE::PreventBlock { .. } => out.push("can't block".into()),
+                    CE::CantBeBlocked { .. } => out.push("can't be blocked".into()),
+                    CE::CanOnlyBeBlockedBy { allowed_blockers, .. } => out.push(
+                        format!("can't be blocked except by {}", allowed_blockers.describe())),
+                    CE::MinimumBlockers { count, .. } => out.push(
+                        format!("can't be blocked except by {count} or more creatures")),
+                    CE::PreventCombatDamage { .. } => out.push(
+                        "all combat damage it would deal or be dealt is prevented".into()),
+                    CE::PreventUntap { .. } => out.push(
+                        "doesn't untap during its controller's untap step".into()),
+                    CE::ForceAttack { .. } => out.push("attacks each combat if able".into()),
+                    _ => {}
+                }
+                true
+            },
+        );
+        // The timed half, which has no permanent on the battlefield to hint
+        // at it — a Nightbird's Clutches on a defender leaves no aura tag and
+        // no line anywhere, so it is strictly more invisible than the static
+        // case (issue #504).
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::CantBlock { target } = effect {
+                if *target == id {
+                    out.push("can't block this turn".into());
+                }
+            }
+        }
+        Self::dedup_described(out)
     }
 
     /// Check if a creature has protection from a given source.
