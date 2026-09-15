@@ -1570,3 +1570,137 @@ fn delver_offers_no_reveal_when_the_library_is_empty() {
         "no card to look at, so no reveal choice");
     assert!(!state.get_object(delver).unwrap().is_transformed);
 }
+
+// -------------------------------------------------------------------------
+// A transform that cannot happen says so (issue #500)
+// -------------------------------------------------------------------------
+//
+// `apply_transform` refuses a token copy (CR 111.7), a single-faced clone
+// (CR 701.28c) and a permanent that has left the battlefield (CR 400.7), and
+// it used to refuse all three by returning before its log line. The trigger
+// announced itself on the stack, took a full priority round, and resolved
+// writing nothing — so "nothing happened" and "never resolved" read
+// identically, on the one surface an LLM seat has.
+
+fn refusal_lines(state: &GameState) -> Vec<String> {
+    state.game_log.iter()
+        .filter(|e| e.message.contains("does not transform"))
+        .map(|e| e.message.clone())
+        .collect()
+}
+
+/// CR 111.7, and the arm that costs the player ten mana: a token copy of
+/// Ludevic's Test Subject takes the counters (that instruction is not
+/// refused) and then does not transform. The counter removal logs; the
+/// refusal has to as well, or the two halves of one printed sentence are
+/// reported to different standards.
+#[test]
+fn a_token_copy_says_why_its_transform_did_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
+    let token = state.create_token_copy(subject, P0, &reg);
+    state.get_object_mut(token).unwrap().summoning_sick = false;
+
+    for _ in 0..5 {
+        activate_via_hooks(&mut state, &reg, token, 0, &[]);
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    }
+
+    assert!(!state.get_object(token).unwrap().is_transformed,
+        "a token copy of a double-faced card cannot transform (CR 111.7)");
+    assert_eq!(counters_of(&state, token, CounterType::Hatchling), 0,
+        "the counters still came off — only the transform is refused");
+    let refusals = refusal_lines(&state);
+    assert_eq!(refusals.len(), 1, "one line for the one refusal: {refusals:?}");
+    assert!(refusals[0].contains("token copy") && refusals[0].contains("CR 111.7"),
+        "{refusals:?}");
+    assert_eq!(state.get_object(subject).unwrap().is_transformed, false,
+        "and the real card, never activated, is untouched");
+}
+
+/// CR 701.28c: an Evil Twin entering as a copy of a werewolf shows the
+/// werewolf's face, but the card under it has one face, so it cannot
+/// transform. Indistinguishable from the real card on every surface, which
+/// is the reason the line matters.
+#[test]
+fn a_single_faced_clone_says_why_its_transform_did_not_happen() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(waif));
+
+    let result = helpers::apply_transform(&mut state, twin, &reg);
+
+    assert_eq!(result, helpers::TransformResult::SingleFaced);
+    assert!(!state.get_object(twin).unwrap().is_transformed);
+    let refusals = refusal_lines(&state);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert!(refusals[0].contains("only one face") && refusals[0].contains("CR 701.28c"),
+        "{refusals:?}");
+}
+
+/// CR 400.7: the ability still resolves when its source has gone (CR
+/// 113.7a), and there is nothing to transform. That is an outcome too, and
+/// the one most easily mistaken for a trigger that never resolved.
+#[test]
+fn a_transform_with_nothing_left_to_transform_says_so() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    state.move_object(waif, Zone::Graveyard, &reg);
+
+    let result = helpers::apply_transform(&mut state, waif, &reg);
+
+    assert_eq!(result, helpers::TransformResult::NotAPermanent);
+    let refusals = refusal_lines(&state);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert!(refusals[0].contains("no longer on the battlefield"), "{refusals:?}");
+}
+
+/// CR 603.4: the werewolf's intervening "if" is checked again on
+/// resolution, and a false answer removes the ability from the stack doing
+/// nothing. The fourth silent ending, and the one a player watching the
+/// stack is most likely to be surprised by.
+#[test]
+fn a_werewolf_whose_condition_lapsed_says_so_on_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    let card_id = state.get_object(waif).unwrap().card_id;
+    let behavior = reg.get(card_id).expect("Reckless Waif is registered");
+    // A spell was cast last turn, so "no spells were cast last turn" is
+    // false by the time the trigger resolves.
+    state.num_spells_cast_last_turn.insert(P0, 1);
+
+    helpers::werewolf_on_upkeep(behavior, &mut state, waif, &reg);
+
+    assert!(!state.get_object(waif).unwrap().is_transformed);
+    let refusals = refusal_lines(&state);
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert!(refusals[0].contains("CR 603.4"), "{refusals:?}");
+}
+
+/// The one card that asks many permanents keeps its own accounting: "transform
+/// all Humans" sweeps up every single-faced Human on the battlefield, and a
+/// refusal line for each would bury the line that says what the spell did.
+#[test]
+fn moonmist_does_not_write_a_refusal_for_every_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+
+    let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let state = cast_and_resolve(&state, &reg, moonmist, vec![]);
+
+    assert!(refusal_lines(&state).is_empty(),
+        "the single-faced Humans are asked and refused in silence: {:?}",
+        refusal_lines(&state));
+    assert!(state.get_object(waif).unwrap().is_transformed,
+        "test precondition: the werewolf is a Human that really does flip");
+    assert!(state.game_log.iter().any(|e| e.message.contains("Moonmist transformed 1 Human")),
+        "the spell's own line is the account: {:?}",
+        state.game_log.iter().map(|e| e.message.clone()).collect::<Vec<_>>());
+}

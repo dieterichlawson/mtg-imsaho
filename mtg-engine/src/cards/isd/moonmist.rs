@@ -51,13 +51,18 @@ impl CardBehavior for Moonmist {
         // permanent (Olivia Voldaren's "Vampire", Grimoire of the Dead's types,
         // any until-end-of-turn keyword) and pinned its P/T against later
         // effects. It also skipped the CR 111.7 refusal for token copies.
-        // Counted after the fact, because asking is not transforming: a
-        // single-faced Human is asked and refused.
+        // Counted from what each ask came back with, because asking is not
+        // transforming: a single-faced Human is asked and refused. This used
+        // to read `is_transformed` either side of the call and compare, which
+        // is the same question the helper now answers directly.
+        //
+        // Quietly, and this is the one card that wants it that way: "transform
+        // all Humans" sweeps up every single-faced Human on the battlefield,
+        // and a refusal line for each of them would bury the one line that
+        // says what the spell did (issue #500).
         let mut count = 0;
         for hid in humans {
-            let before = state.get_object(hid).map(|o| o.is_transformed);
-            crate::cards::helpers::apply_transform(state, hid, registry);
-            if before != state.get_object(hid).map(|o| o.is_transformed) {
+            if crate::cards::helpers::transform_quietly(state, hid, registry).transformed() {
                 count += 1;
             }
         }

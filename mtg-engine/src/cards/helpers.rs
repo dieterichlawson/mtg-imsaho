@@ -581,7 +581,89 @@ pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
 // Generic transform logic for double-faced cards.
 // ═══════════════════════════════════════════════════════════════════
 
-/// Transform a double-faced permanent.
+/// What came of asking a permanent to transform.
+///
+/// Three of the four are refusals, and they are different refusals: a token
+/// copy of a double-faced card, a single-faced card wearing a double-faced
+/// creature's face, and nothing there to transform at all. A caller that
+/// cannot tell them apart cannot say which happened, and neither can a
+/// reader of the log (issue #500).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransformResult {
+    /// The permanent flipped; it is now showing its other face.
+    Transformed,
+    /// CR 111.7: a token that is a copy of a double-faced card is not itself
+    /// a double-faced card, so it cannot transform.
+    Token,
+    /// CR 701.28c: the card under the permanent has no other face. A
+    /// single-faced clone (Evil Twin) copying a werewolf, or any of the
+    /// single-faced Humans "transform all Humans" sweeps up.
+    SingleFaced,
+    /// CR 400.7: there is nothing on the battlefield to transform. The
+    /// ability still resolves (CR 113.7a); it just has no permanent.
+    NotAPermanent,
+}
+
+impl TransformResult {
+    /// Whether the permanent actually flipped.
+    #[must_use]
+    pub fn transformed(self) -> bool {
+        matches!(self, Self::Transformed)
+    }
+}
+
+/// The one line that says what came of a transform.
+///
+/// The same shape as `destruction::destroy_line`, for the same reason: every
+/// caller that announces a transform writes this line, so there is one
+/// wording and one place the four outcomes are spelled out. `new_name` is
+/// read only by the `Transformed` arm.
+#[must_use]
+pub fn transform_line(name: &str, result: TransformResult, new_name: &str) -> String {
+    match result {
+        TransformResult::Transformed => format!("{name} transforms into {new_name}"),
+        TransformResult::Token =>
+            format!("{name} does not transform — a token copy of a double-faced card is not itself double-faced (CR 111.7)"),
+        TransformResult::SingleFaced =>
+            format!("{name} does not transform — the card under it has only one face (CR 701.28c)"),
+        TransformResult::NotAPermanent =>
+            format!("{name} does not transform — it is no longer on the battlefield (CR 400.7)"),
+    }
+}
+
+/// Transform a double-faced permanent, and say in the log what came of it.
+///
+/// This is what an ability whose job is to transform one permanent wants:
+/// the refusals are outcomes of that ability, not silences. A transform
+/// trigger used to announce itself on the stack, take a full priority round,
+/// and then resolve with no line at all — leaving "nothing happened" and
+/// "never resolved" written identically (issue #500). Use
+/// [`transform_quietly`] where many permanents are asked and most are
+/// expected to refuse.
+///
+/// The line belongs here, with the flip, and not in each card. Nineteen
+/// cards used to write their own around this call, which meant they
+/// announced a transform on the paths this function refuses one — a token
+/// copy of a double-faced card logged "Reckless Waif transforms into
+/// Merciless Predator" and then stayed a Waif. Several also hardcoded both
+/// face names, and one ("Transforms into Stalking Vampire") named neither
+/// the permanent nor its controller. Removing those lines left the refusals
+/// with nothing at all, which is what this fixes.
+///
+/// The flip itself is [`transform_quietly`]'s.
+pub fn apply_transform(
+    state: &mut GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+) -> TransformResult {
+    let old_name = state.obj_name(object_id);
+    let result = transform_quietly(state, object_id, registry);
+    let new_name = state.obj_name(object_id);
+    state.log(crate::state::LogLevel::Event, transform_line(&old_name, result, &new_name));
+    result
+}
+
+/// Transform a double-faced permanent, logging only when it flips.
 ///
 /// This flips `is_transformed` and nothing else that matters: every
 /// characteristics accessor resolves through `GameState::face_data`, which
@@ -593,18 +675,27 @@ pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
 /// It used to copy the new face's name, keywords and subtypes onto the object,
 /// which made those fields a second source of truth that a card hand-rolling
 /// its own transform could leave stale. There is nothing left to leave stale.
-pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+///
+/// The quiet half exists for "transform all Humans", which asks every Human
+/// on the battlefield and expects most of them to refuse. Anything asking
+/// about one named permanent wants [`apply_transform`] instead.
+pub fn transform_quietly(
+    state: &mut GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+) -> TransformResult {
     let card_id = match state.get_object(object_id) {
         // A token copy of a double-faced card has only the copied face — it is
         // not itself a double-faced card, so it cannot transform (CR 111.7,
         // and the Back from the Brink ruling says so explicitly). A token
         // stamped with a DFC's `card_id` would otherwise pick up that card's
         // upkeep trigger and flip.
-        Some(o) if o.zone == Zone::Battlefield && !o.is_token => (o.card_id, o.is_transformed, o.copy_grantor),
-        _ => return,
+        Some(o) if o.zone == Zone::Battlefield && o.is_token => return TransformResult::Token,
+        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.is_transformed, o.copy_grantor),
+        _ => return TransformResult::NotAPermanent,
     };
     let (card_id, was_transformed, copy_grantor) = (card_id.0, card_id.1, card_id.2);
-    let Some(behavior) = registry.get(card_id) else { return; };
+    let Some(behavior) = registry.get(card_id) else { return TransformResult::SingleFaced; };
 
     // CR 701.28c: it is the *card* that has to be double-faced. A single-faced
     // clone (Evil Twin) copying a werewolf shows the werewolf's face, but the
@@ -612,7 +703,7 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
     // transform.
     let printed = copy_grantor.unwrap_or(card_id);
     if registry.get(printed).is_none_or(|b| b.back_face_data().is_none()) {
-        return;
+        return TransformResult::SingleFaced;
     }
 
     // CR 701.28c: only a double-faced permanent can transform. Without this,
@@ -625,7 +716,7 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
     // holds every card Scryfall gives a back face to declaring one, Garruk
     // Relentless included.
     if behavior.back_face_data().is_none() {
-        return;
+        return TransformResult::SingleFaced;
     }
 
     // Refresh the display cache with the face now showing.
@@ -635,23 +726,13 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
         behavior.back_face_data().map(|back| back.name)
     };
 
-    let old_name = state.obj_name(object_id);
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;
         if let Some(name) = new_name {
             obj.name = name;
         }
     }
-    // The log belongs here, with the flip, and not in each card. Nineteen
-    // cards used to write their own line around this call, which meant they
-    // announced a transform on the paths where this function refuses one — a
-    // token copy of a double-faced card logged "Reckless Waif transforms into
-    // Merciless Predator" and then stayed a Waif. Several also hardcoded both
-    // face names, and one ("Transforms into Stalking Vampire") named neither
-    // the permanent nor its controller.
-    let new_name = state.obj_name(object_id);
-    state.log(crate::state::LogLevel::Event,
-        format!("{old_name} transforms into {new_name}"));
+    TransformResult::Transformed
 }
 
 /// The werewolf upkeep trigger: "At the beginning of each upkeep, if <no
@@ -672,11 +753,23 @@ pub fn werewolf_on_upkeep(
     self_id: ObjectId,
     registry: &CardRegistry,
 ) {
-    if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
+    if !still_on_battlefield(state, self_id) {
+        let name = state.obj_name(self_id);
+        state.log(crate::state::LogLevel::Event,
+            transform_line(&name, TransformResult::NotAPermanent, ""));
         return;
     }
     if behavior.should_transform(state, self_id, registry) {
         apply_transform(state, self_id, registry);
+    } else {
+        // CR 603.4: the intervening "if" is checked again as the ability
+        // resolves, and a false answer removes it from the stack doing
+        // nothing. That is the fourth way one of these triggers can end, and
+        // it used to end the same way the other three did — in silence, which
+        // is also what an unresolved trigger looks like (issue #500).
+        let name = state.obj_name(self_id);
+        state.log(crate::state::LogLevel::Event, format!(
+            "{name} does not transform — its condition is no longer true (CR 603.4)"));
     }
 }
 
