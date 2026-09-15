@@ -52,25 +52,32 @@ impl CardBehavior for GutterGrime {
         // Put a slime counter on Gutter Grime.
         state.add_counters(self_id, CounterType::Slime, 1);
         let slime_count = state.get_counter_count(self_id, CounterType::Slime);
-        // Create the Ooze token with base 0/0 and dynamic P/T linked to this Gutter Grime.
-        let token_ids = state.create_token_with_subtypes(
-            "", controller, 0, 0,
+        // The Ooze's P/T is its own ability's answer, not a number this card
+        // knows (CR 604.3). Ruling: "each Ooze token remembers which one
+        // created it" — so the link is to *this* Gutter Grime, not to the
+        // card, and it travels with the creation rather than being stamped on
+        // afterwards: the token had already entered, and had already been
+        // announced as a "0/0 Ooze token", by the time the loop that used to
+        // be here ran (issue #505).
+        state.create_token_with_defined_pt(
+            self_id,
+            "", controller,
             vec![Color::Green],
             vec![CardType::Creature],
             vec![],
             vec!["Ooze".into()],
             registry,
         );
-        // Ruling: "each Ooze token remembers which one created it" — so the
-        // link is to *this* Gutter Grime, not to the card.
-        for token_id in token_ids {
-            if let Some(token) = state.get_object_mut(token_id) {
-                token.card_state.insert(crate::cards::PT_DEFINED_BY.into(), self_id);
-            }
-        }
         state.log(crate::state::LogLevel::Event,
             format!("Gutter Grime: added slime counter (now {slime_count}); \
 its Ooze's power and toughness are that count"));
+    }
+
+    /// The token's own card text, which it has no face to print — the
+    /// sentence beside the numbers below, so the two cannot drift.
+    fn token_pt_text(&self) -> Option<String> {
+        Some("This token's power and toughness are each equal to the number of \
+slime counters on Gutter Grime.".into())
     }
 
     fn token_dynamic_pt(&self, state: &GameState, source_id: ObjectId, _token_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {

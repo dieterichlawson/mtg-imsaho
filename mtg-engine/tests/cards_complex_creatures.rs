@@ -545,6 +545,77 @@ fn gutter_grime_creates_ooze_on_creature_death() {
         "under the Gutter Grime's controller");
 }
 
+/// CR 604.3: the slime counter is on before the token is made, so the Ooze
+/// is a 1/1 from the instant it exists and is never a 0/0 at any point a
+/// player or a rule can observe. The creation line was built from the 0/0
+/// the card passes as a placeholder for "ask the token's own ability" — the
+/// same shape #329 fixed for the *count* in that line, with the size half
+/// still claimed rather than derived (issue #505).
+#[test]
+fn the_ooze_is_announced_at_the_size_its_own_ability_gives_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    let dead = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(dead, Zone::Graveyard, &reg);
+    let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
+    state.game_log.clear();
+
+    behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &[], &reg);
+
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(lines.iter().any(|l| l.contains("created 1 1/1 Ooze token")),
+        "the size that entered, not the placeholder: {lines:?}");
+    assert!(!lines.iter().any(|l| l.contains("0/0 Ooze")), "{lines:?}");
+
+    let ooze = find_token_named(&state, "Ooze").expect("the token is there");
+    assert_eq!(state.effective_power(ooze, &reg), Some(1), "and it really is one");
+
+    // A second death, and the line moves with the slime count.
+    let second = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(second, Zone::Graveyard, &reg);
+    state.game_log.clear();
+    behavior.on_any_creature_dies(&mut state, grime, second, P0, &[], 2, false, &[], &reg);
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(lines.iter().any(|l| l.contains("created 1 2/2 Ooze token")), "{lines:?}");
+}
+
+/// The other half: a token has no card face, so the `i` screen had no
+/// `Printed P/T` line and no ability text for the Ooze at all — nothing on
+/// any pane said where its size came from or that it would move when the
+/// slime count did. #267 fixed this for *cards* with a `*/*` printed P/T
+/// through `prints_star_pt`; a token has no registry behaviour to ask.
+#[test]
+fn the_ooze_carries_its_own_pt_defining_ability_into_the_view() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    let dead = ready_creature(&mut state, P0, 2, 2);
+    state.move_object(dead, Zone::Graveyard, &reg);
+    let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
+    behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &[], &reg);
+    let ooze = find_token_named(&state, "Ooze").expect("the token is there");
+    let spirit = state.create_token_with_subtypes(
+        "", P0, 1, 1, vec![Color::White], vec![CardType::Creature],
+        vec![Keyword::Flying], vec!["Spirit".into()], &reg);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let seen = |id: ObjectId| view.battlefield.iter()
+        .find(|p| p.object_id == id).expect("on the battlefield");
+
+    let o = seen(ooze);
+    assert!(o.star_pt, "its printed P/T is */*, not a number");
+    assert_eq!(o.effective_power, Some(1));
+    assert!(o.oracle_text.contains("slime counters on Gutter Grime"),
+        "the token's own card text, which is the only account of its size: {:?}",
+        o.oracle_text);
+
+    // An ordinary token has neither, and must not pick them up.
+    let s = seen(spirit[0]);
+    assert!(!s.star_pt, "a 1/1 Spirit is printed 1/1");
+    assert!(s.oracle_text.is_empty(), "got {:?}", s.oracle_text);
+}
+
 // ── Heretic's Punishment ─────────────────────────────────────────
 
 #[test]

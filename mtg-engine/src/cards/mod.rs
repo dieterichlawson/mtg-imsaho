@@ -670,6 +670,21 @@ pub trait CardBehavior: Send + Sync {
         None
     }
 
+    /// The ability text a token this card creates carries of its own
+    /// (CR 604.3), as the token's own card text.
+    ///
+    /// A token has no card face, so `PermanentView::oracle_text` is empty for
+    /// one and the `i` screen printed nothing at all for Gutter Grime's Ooze
+    /// — no `Printed P/T: */*` line and no ability — leaving nothing on any
+    /// pane to say where its 1/1 came from or that it would move when the
+    /// slime count did (issue #505). #267 fixed exactly this for *cards*
+    /// with a `*/*` printed P/T, through `prints_star_pt`; a token has no
+    /// registry behaviour of its own, so the card that grants the ability
+    /// answers for it, next to the numbers it grants in `token_dynamic_pt`.
+    fn token_pt_text(&self) -> Option<String> {
+        None
+    }
+
     /// Called when this permanent enters the battlefield (ETB trigger).
     fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 

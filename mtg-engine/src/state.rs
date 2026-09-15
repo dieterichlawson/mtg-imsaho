@@ -751,7 +751,49 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
         self.create_tokens_inner(count, name, owner, power, toughness,
-            colors, card_types, keywords, subtypes, None, registry)
+            colors, card_types, keywords, subtypes, None, None, registry)
+    }
+
+    /// Create a token whose own ability defines its power and toughness
+    /// (CR 604.3) — "this token's power and toughness are each equal to the
+    /// number of slime counters on Gutter Grime".
+    ///
+    /// `defined_by` is the permanent whose card prints that ability, and the
+    /// link travels WITH the creation for the same reason a copied face
+    /// does. Stamped on afterwards it is one step too late: the token had
+    /// already entered, and had already been announced, as the 0/0 the
+    /// caller passes as a placeholder (issue #505).
+    ///
+    /// The base P/T is 0/0 because that is what the token is without the
+    /// ability — "If Gutter Grime leaves the battlefield, the power and
+    /// toughness of each Ooze token it created will become 0."
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_token_with_defined_pt(
+        &mut self,
+        defined_by: ObjectId,
+        name: &str,
+        owner: PlayerId,
+        colors: Vec<crate::types::Color>,
+        card_types: Vec<crate::types::CardType>,
+        keywords: Vec<crate::types::Keyword>,
+        subtypes: Vec<String>,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<ObjectId> {
+        self.create_tokens_inner(1, name, owner, 0, 0,
+            colors, card_types, keywords, subtypes, None, Some(defined_by), registry)
+    }
+
+    /// The permanent whose ability defines this token's power and toughness
+    /// (CR 604.3), if any.
+    ///
+    /// The display half of [`token_defined_pt`](Self::token_defined_pt): a
+    /// token has no card face, so the `i` screen had no `Printed P/T: */*`
+    /// line and no ability text for one, and nothing on any pane said where
+    /// its size came from or that it would move (issue #505).
+    #[must_use]
+    pub fn token_pt_source(&self, id: ObjectId) -> Option<ObjectId> {
+        let source = *self.get_object(id)?.card_state.get(crate::cards::PT_DEFINED_BY)?;
+        self.get_object(source).map(|o| o.id)
     }
 
     /// The same, for a token that copies a card (`create_token_copy`) and so
@@ -776,6 +818,7 @@ impl GameState {
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
         face: Option<TokenCopyFace>,
+        pt_defined_by: Option<ObjectId>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
         if count == 0 {
@@ -813,14 +856,26 @@ impl GameState {
         for _ in 0..extra_copies {
             let id = self.create_token_internal(name, owner, power, toughness,
                 colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(),
-                face, registry);
+                face, pt_defined_by, registry);
             all_ids.push(id);
         }
         // Create the final token, consuming the inputs.
-        let described = format!("{power}/{toughness} {name}");
         let id = self.create_token_internal(name, owner, power, toughness,
-            colors, card_types, keywords, subtypes, face, registry);
+            colors, card_types, keywords, subtypes, face, pt_defined_by, registry);
         all_ids.push(id);
+
+        // The size a player reads is the size that entered, derived from the
+        // token rather than claimed by the caller — the same fix #329 made to
+        // the count in this line. A token whose own ability defines its P/T
+        // (CR 604.3) is handed 0/0 as a placeholder standing in for "ask the
+        // ability", and the line printed the placeholder: Gutter Grime's Ooze
+        // was announced as a "0/0 Ooze token" when the slime counter was
+        // already on, so it was a 1/1 from the instant it existed and never a
+        // 0/0 at any point a player or a rule could observe (issue #505).
+        let (power, toughness) = self.get_object(id)
+            .and_then(|o| self.token_defined_pt(o, registry))
+            .unwrap_or((power, toughness));
+        let described = format!("{power}/{toughness} {name}");
 
         // The count a player reads is the count that entered, and it is
         // counted here rather than claimed by each caller. Seventeen cards
@@ -849,6 +904,7 @@ impl GameState {
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
         face: Option<TokenCopyFace>,
+        pt_defined_by: Option<ObjectId>,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let id = self.next_id();
@@ -890,7 +946,15 @@ impl GameState {
             cast_from_zone: None,
             instance_oracle_text: None,
             instance_continuous_effects: None,
-            card_state: std::collections::BTreeMap::new(),
+            // CR 604.3: a token whose own ability defines its power and
+            // toughness carries the link to whatever prints that ability from
+            // the moment it is built, for the same reason a copied face does
+            // — written afterwards it is one step too late, and everything
+            // that reads the token's P/T as it enters reads 0/0 instead
+            // (issue #505).
+            card_state: pt_defined_by.map_or_else(
+                std::collections::BTreeMap::new,
+                |src| std::iter::once((crate::cards::PT_DEFINED_BY.to_string(), src)).collect()),
             counters: std::collections::BTreeMap::new(),
             regeneration_shields: 0,
             // CR 707.8a: a copy of a permanent with its back face up shows
@@ -990,6 +1054,7 @@ impl GameState {
             keywords,
             subtypes.clone(),
             Some(TokenCopyFace { card_id, is_legendary, is_transformed: source_transformed }),
+            None,
             registry,
         );
         all_ids.into_iter().next().unwrap_or(ObjectId(0))
