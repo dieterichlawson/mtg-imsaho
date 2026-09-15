@@ -2313,6 +2313,7 @@ impl CliPlayer {
         }
         abilities.extend(c.keywords.iter().map(|k| k.label().to_string()));
         abilities.extend(c.protections.iter().cloned());
+            abilities.extend(c.restrictions.iter().cloned());
         let kw = if abilities.is_empty() {
             String::new()
         } else {
@@ -3205,6 +3206,7 @@ impl CliPlayer {
                 .map(|k| k.label().to_string())
                 .collect();
             abilities.extend(p.protections.iter().cloned());
+            abilities.extend(p.restrictions.iter().cloned());
             if !abilities.is_empty() {
                 elastic.push_str(&format!(" ({})", abilities.join(", ")));
             }
@@ -4282,6 +4284,14 @@ impl CliPlayer {
         abilities.extend(perm.protections.iter().cloned());
         if !abilities.is_empty() {
             let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
+        }
+        // What it may not do, or must, on a line of its own: these are not
+        // keywords, and the page answers one question per line. The row and
+        // the combat list have no room for a second label and put them in
+        // the same parenthesis (issue #504).
+        if !perm.restrictions.is_empty() {
+            let _ = execute!(out, Print(format!("  Restrictions: {}\n",
+                perm.restrictions.join(", "))));
         }
 
         // What the card says, from the face that is up. This
@@ -9219,6 +9229,7 @@ yourself at some considerable length";
             star_pt: false,
             is_token: false,
             protections: vec![],
+            restrictions: vec![],
             granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
@@ -9299,6 +9310,7 @@ yourself at some considerable length";
             star_pt: false,
             is_token: false,
             protections: vec![],
+            restrictions: vec![],
             granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
@@ -9360,6 +9372,42 @@ yourself at some considerable length";
         let on_player = CliPlayer::combat_entry(&v, ObjectId(19), &ids);
         assert!(on_walker.contains("Liliana of the Veil [4 loyalty]"), "got {on_walker}");
         assert!(!on_player.contains("Liliana"), "got {on_player}");
+    }
+
+    /// Issue #504: the one live characteristic the panes did not carry was
+    /// the one that changes what the player may legally do this turn. A
+    /// Bonds of Faith on a non-Human removes the creature from the legal
+    /// attacker and blocker sets, correctly and silently.
+    #[test]
+    fn a_restriction_is_on_the_row_the_combat_list_and_the_detail_page() {
+        let mut rider = creature(22, "Spectral Rider", 0);
+        rider.keywords = vec![mtg_engine::types::Keyword::Intimidate];
+        rider.restrictions = vec!["can't attack".into(), "can't block".into()];
+
+        // The battlefield row.
+        let (_, elastic, _) = CliPlayer::creature_row_parts(&rider, None);
+        assert_eq!(elastic, " (intimidate, can't attack, can't block)");
+
+        // The combat list beside it.
+        let mut v = view(Step::DeclareBlockers, 7, true);
+        v.battlefield = vec![rider.clone()];
+        let entry = CliPlayer::combat_entry(&v, ObjectId(22), &[ObjectId(22)]);
+        assert!(entry.contains("can't attack"), "got {entry}");
+
+        // And the page a player opens to ask what a permanent can do, which
+        // is where the issue found it missing.
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &rider);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Restrictions: can't attack, can't block"),
+            "the detail page is silent about it: {text}");
+        assert!(text.contains("Keywords: Intimidate\r\n"),
+            "and they are not keywords, so they are not on that line: {text}");
+
+        // A creature under no such effect says nothing, on any of the three.
+        let plain = creature(23, "Spectral Rider", 0);
+        let (_, elastic, _) = CliPlayer::creature_row_parts(&plain, None);
+        assert!(!elastic.contains("can't"), "got {elastic}");
     }
 
     /// Issue #328: the combat lists were emitted at their natural length

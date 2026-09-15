@@ -2223,7 +2223,7 @@ impl LlmPlayer {
             // "colorless" is stated, not left out: it is what makes a
             // Galvanic Juggernaut blockable by artifact creatures alone.
             words.push(Self::format_colors(&c.colors));
-            let kw = Self::format_keywords(&c.keywords);
+            let kw = Self::format_abilities(c);
             if !kw.is_empty() { words.push(kw); }
             let kw_str = if words.is_empty() { String::new() } else { format!(" {}", words.join(", ")) };
 
@@ -4094,19 +4094,37 @@ from your hand to put on the bottom of your library.\n\
         prompt.answer(cards)
     }
 
-    /// Format keyword abilities as a comma-separated lowercase string.
-    ///
-    /// The printed word comes from the engine, beside the enum: this was one
-    /// of five copies of that table, and the two that did not have it
-    /// Debug-formatted the variant instead (#363).
     /// A permanent's colors in the lowercase the board text uses, from the
     /// engine's one renderer.
     fn format_colors(colors: &[mtg_engine::types::Color]) -> String {
         mtg_engine::types::colors_line(colors).to_lowercase()
     }
 
-    fn format_keywords(keywords: &[mtg_engine::types::Keyword]) -> String {
-        keywords.iter().map(|kw| kw.label()).collect::<Vec<_>>().join(", ")
+    /// Everything a permanent's row says it can do and cannot: its keywords,
+    /// its protections (CR 702.16) and its restrictions.
+    ///
+    /// `format_keywords` alone was what both board renderers used, and
+    /// protection is not a `Keyword` in this engine — the field exists
+    /// precisely because it cannot ride in `keywords` — so Elite
+    /// Inquisitor's "protection from Vampires and from Werewolves" and Grave
+    /// Bramble's "protection from Zombies" never reached a model seat, and
+    /// Spare from Evil's timed protection was representable nowhere else at
+    /// all. A seat choosing blocks and targets against an opponent's
+    /// creature had a bare `Name (#id) P/T colour, keywords` row to do it
+    /// from (issue #506). Restrictions are the same gap on the same field's
+    /// sibling (issue #504).
+    ///
+    /// One function, because there are two board renderers and the last
+    /// field to be added reached one of them. It replaces `format_keywords`,
+    /// which is what both used to call; the keyword's printed word still
+    /// comes from the engine beside the enum, which was one of five copies
+    /// of that table before (#363).
+    fn format_abilities(p: &mtg_engine::view::PermanentView) -> String {
+        p.keywords.iter().map(|kw| kw.label().to_string())
+            .chain(p.protections.iter().cloned())
+            .chain(p.restrictions.iter().cloned())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn is_legendary(p: &mtg_engine::view::PermanentView) -> bool {
@@ -4134,7 +4152,7 @@ from your hand to put on the bottom of your library.\n\
             // Color is not repeated here: it is a characteristic, and the
             // board section of the same prompt states every creature's
             // (#357). The combat rows stay the shape they have.
-            let kw = Self::format_keywords(&p.keywords);
+            let kw = Self::format_abilities(p);
             if kw.is_empty() {
                 format!("{} (#{}){}", p.name, id.0, pt)
             } else {
@@ -5499,6 +5517,7 @@ mod tests {
             star_pt: false,
             is_token: false,
             protections: vec![],
+            restrictions: vec![],
             granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
@@ -5547,6 +5566,49 @@ mod tests {
         let perms = vec![&corpse];
         let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
         assert!(output.contains("2 regen shields"), "a second shield stacks: {output}");
+    }
+
+    /// Issue #506: `PermanentView::protections` exists precisely because
+    /// protection is not a `Keyword` in this engine and cannot ride in
+    /// `keywords` — and both LLM board renderers called `format_keywords`,
+    /// so the field #243/#297 added for exactly this reached the CLI and no
+    /// model seat. Elite Inquisitor's printed protections never appeared on
+    /// the row, and Spare from Evil's timed one is representable nowhere
+    /// else at all, so it was invisible on both boards. A seat picking
+    /// blocks and targets was doing it from a bare name, P/T and keyword
+    /// list.
+    ///
+    /// Issue #504's restrictions are the same gap on the sibling field, and
+    /// both renderers are checked here because reaching one of the two is
+    /// how this happened in the first place.
+    #[test]
+    fn protections_and_restrictions_reach_both_llm_board_renderers() {
+        let you = PlayerId(0);
+        let mut inq = perm(90, "Elite Inquisitor", 2, 2, you);
+        inq.keywords = vec![mtg_engine::types::Keyword::FirstStrike];
+        inq.protections = vec!["protection from Vampires".into(),
+                               "protection from Werewolves".into()];
+        inq.restrictions = vec!["can't block".into()];
+
+        let perms = vec![&inq];
+        let board = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        for said in ["first strike", "protection from Vampires",
+                     "protection from Werewolves", "can't block"] {
+            assert!(board.contains(said), "the board omits {said:?}: {board}");
+        }
+
+        let mut view = empty_view();
+        view.battlefield = vec![inq.clone()];
+        let row = LlmPlayer::format_combat_creature(&view, ObjectId(90));
+        for said in ["first strike", "protection from Vampires", "can't block"] {
+            assert!(row.contains(said), "the combat row omits {said:?}: {row}");
+        }
+
+        // A creature with neither says neither, on both.
+        let plain = perm(91, "Walking Corpse", 2, 2, you);
+        let perms = vec![&plain];
+        let board = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        assert!(!board.contains("protection") && !board.contains("can't"), "got {board}");
     }
 
     /// CR 706.2: an ability a copy effect added is on neither surface the
@@ -5679,6 +5741,7 @@ this Aura deals 1 damage to that player.";
             star_pt: false,
             is_token: false,
             protections: vec![],
+            restrictions: vec![],
             granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
