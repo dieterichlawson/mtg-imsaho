@@ -574,3 +574,65 @@ fn a_token_copy_of_a_legendary_card_keeps_its_face_and_its_legend_flag() {
     assert!(state.get_object(token).unwrap().is_legendary,
         "legendary is copiable (CR 707.2), and the legend rule reads this flag");
 }
+
+/// CR 706.2: the view says what the permanent HAS, not what its face prints.
+///
+/// A permanent that entered as a copy shows the copied card's oracle text,
+/// and that text is the copied card's alone. The `i` detail screen printed
+/// it and nothing else, so an Evil Twin clone's destroy ability was offered
+/// in the action menu one keypress away and absent from its own card text —
+/// and the clone and the creature it copied, same name, same P/T, different
+/// ability sets, read identically (issue #501).
+///
+/// The guard in the other direction is issue #93's: a plain enters-as-copy
+/// remembers its printed card in `copy_grantor` too, and reading abilities
+/// off it handed an Essence of the Wild copy its printed card's own
+/// abilities back.
+#[test]
+fn the_view_carries_an_ability_the_copy_effect_granted() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let victim = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = twin_copying(&mut state, &reg, victim);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let seen = |id: ObjectId| view.battlefield.iter()
+        .find(|p| p.object_id == id).expect("on the battlefield").clone();
+
+    let clone = seen(twin);
+    assert_eq!(clone.name, "Grizzly Bears", "it is showing the copied card");
+    assert!(clone.granted_abilities.iter().any(|a| a.contains("Destroy target creature")),
+        "the 'except it has' ability is the permanent's: {:?}", clone.granted_abilities);
+    assert!(!clone.oracle_text.contains("Destroy target creature"),
+        "and it is not in the copied card's printed text, which is why it needs \
+         a field of its own: {:?}", clone.oracle_text);
+
+    assert!(seen(victim).granted_abilities.is_empty(),
+        "the creature it copied has no such ability");
+}
+
+/// Issue #93's half: `copy_grantor` alone is not the question. For a plain
+/// enters-as-copy it only remembers what the permanent is printed as, so
+/// reading abilities off it would hand the copy its printed card's own back.
+#[test]
+fn a_plain_enters_as_copy_is_granted_nothing_by_its_printed_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    let mut state = cast_and_resolve(&state, &reg, essence, vec![]);
+
+    // Daybreak Ranger has a printed activated ability, and enters as an
+    // Essence copy — so its own card is what `copy_grantor` remembers.
+    let ranger = castable_spell(&mut state, &reg, "Daybreak Ranger", P0);
+    let state = cast_and_resolve(&state, &reg, ranger, vec![]);
+    assert_eq!(state.get_object(ranger).unwrap().name, "Essence of the Wild",
+        "test precondition: the Ranger entered as an Essence copy");
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let copy = view.battlefield.iter()
+        .find(|p| p.object_id == ranger).expect("on the battlefield");
+
+    assert!(copy.granted_abilities.is_empty(),
+        "no copy effect granted it anything — `copy_grantor` here only \
+         remembers what it is printed as: {:?}", copy.granted_abilities);
+}

@@ -142,6 +142,17 @@ pub struct PermanentView {
     /// Oracle text of the card (from the registry). Used by display code to
     /// surface short effect summaries for attached auras/equipment.
     pub oracle_text: String,
+    /// Abilities the permanent has that `oracle_text` does not print,
+    /// because a copy effect added them — CR 706.2's "except it has ...".
+    ///
+    /// A permanent that entered as a copy shows the copied card's text, and
+    /// that text is the copied card's alone. An Evil Twin clone had its
+    /// granted destroy ability offered in the action menu and absent from
+    /// its own card text, so two permanents with the same name, the same
+    /// P/T and different ability sets read identically (issue #501). The
+    /// engine decides what the permanent has; this is that answer, not the
+    /// face's.
+    pub granted_abilities: Vec<String>,
     /// Counters on the permanent (+1/+1, -1/-1, loyalty, etc). Exposed so
     /// the LLM prompt can render counter state alongside effective P/T.
     pub counters: std::collections::HashMap<CounterType, u32>,
@@ -339,6 +350,12 @@ impl GameView {
                     protections: state.protections_of(obj.id, registry),
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
+                        .unwrap_or_default(),
+                    granted_abilities: super::cards::ability_granting_grantor(state, obj.id, registry)
+                        .and_then(|g| registry.get(g))
+                        .map(|b| b.activated_abilities(state, obj.id, registry).into_iter()
+                            .map(|ab| ab.description)
+                            .collect())
                         .unwrap_or_default(),
                     // The view keeps a HashMap; the state's is ordered now
                     // (issue #199), and this is the one boundary between them.

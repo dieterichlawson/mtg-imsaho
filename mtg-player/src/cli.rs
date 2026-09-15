@@ -4324,6 +4324,21 @@ impl CliPlayer {
                 ResetColor);
         }
 
+        // CR 706.2: what the copy effect's "except it has ..." added. The
+        // text above is the COPIED card's and says nothing about it, so an
+        // Evil Twin clone's destroy ability was offered in the action menu
+        // one keypress away and printed nowhere here — two permanents with
+        // the same name, the same P/T and different ability sets read
+        // identically (issue #501).
+        if !perm.granted_abilities.is_empty() {
+            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
+            for ability in &perm.granted_abilities {
+                let _ = execute!(out, Print(format!("  {ability}\n")));
+            }
+            let _ = execute!(out, ResetColor,
+                Print("  (gained as it entered as a copy — CR 706.2)\n"));
+        }
+
         let _ = execute!(out, Print("\n  Press enter to return to list..."));
     }
 
@@ -9076,6 +9091,7 @@ yourself at some considerable length";
             star_pt: false,
             is_token: false,
             protections: vec![],
+            granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
@@ -9155,6 +9171,7 @@ yourself at some considerable length";
             star_pt: false,
             is_token: false,
             protections: vec![],
+            granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
@@ -9448,6 +9465,39 @@ yourself at some considerable length";
         assert!(text.contains("Counters:"), "counters missing from {text}");
         assert!(text.contains("attacks each combat"), "oracle text missing from {text}");
         assert_crlf("show_battlefield_inspector detail", &buf);
+    }
+
+    /// CR 706.2: the page renders the permanent's ability set, not the
+    /// copied card's printed text. An Evil Twin clone's granted destroy
+    /// ability was in the action menu one keypress away and absent from the
+    /// card text here, so the clone and the creature it copied — same name,
+    /// same P/T, different abilities — presented identically (issue #501).
+    #[test]
+    fn the_detail_page_prints_an_ability_a_copy_effect_granted() {
+        let mut v = view(Step::PrecombatMain, 4, true);
+        let mut perm = creature(33, "Merciless Predator", 0);
+        perm.oracle_text = "At the beginning of each upkeep, if a player cast two or more \
+                            spells last turn, transform this creature.".to_string();
+        v.battlefield = vec![perm.clone()];
+
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(!text.contains("Destroy target creature"),
+            "nothing granted, nothing printed: {text}");
+
+        perm.granted_abilities = vec![
+            "{U}{B}, {T}: Destroy target creature with the same name".into()];
+        v.battlefield = vec![perm.clone()];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("{U}{B}, {T}: Destroy target creature with the same name"),
+            "the granted ability is missing from {text}");
+        assert!(text.contains("transform this creature"),
+            "and the copied card's own text is still there: {text}");
+        assert!(text.contains("CR 706.2"), "said to be a copy effect's: {text}");
+        assert_crlf("permanent detail with a granted ability", &buf);
     }
 
     #[test]

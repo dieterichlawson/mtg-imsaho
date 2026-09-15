@@ -2254,7 +2254,19 @@ impl LlmPlayer {
             let auras = aura_map.get(&c.object_id)
                 .map(|entries| format!(" ({})", entries.join("; ")))
                 .unwrap_or_default();
-            parts.push(format!("{} (#{}) {}/{}{}{}{}", c.name, c.object_id.0, power, toughness, kw_str, flags_str, auras));
+            // CR 706.2: an ability the copy effect added ("except it has
+            // ..."). The row is built from the copied card's name and
+            // characteristics, and the seat reads ability text off its own
+            // decklist — which is the copied card's text, so this ability is
+            // in neither. The CLI's #501 half of this, on the board the
+            // model actually sees.
+            let granted = if c.granted_abilities.is_empty() {
+                String::new()
+            } else {
+                format!(" (also has: {})", c.granted_abilities.join("; "))
+            };
+            parts.push(format!("{} (#{}) {}/{}{}{}{}{}",
+                c.name, c.object_id.0, power, toughness, kw_str, flags_str, auras, granted));
         }
 
         // Show non-aura other permanents. For unattached equipment include
@@ -5487,6 +5499,7 @@ mod tests {
             star_pt: false,
             is_token: false,
             protections: vec![],
+            granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
@@ -5534,6 +5547,29 @@ mod tests {
         let perms = vec![&corpse];
         let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
         assert!(output.contains("2 regen shields"), "a second shield stacks: {output}");
+    }
+
+    /// CR 706.2: an ability a copy effect added is on neither surface the
+    /// seat can read. The row is built from the COPIED card's name and
+    /// characteristics, and the seat looks ability text up in its own
+    /// decklist — which holds the copied card's text, not the clone's. So
+    /// an Evil Twin's destroy ability was offered in the action list and
+    /// described nowhere (the harness half of issue #501).
+    #[test]
+    fn an_ability_a_copy_effect_granted_is_in_the_board_text() {
+        let you = PlayerId(0);
+        let mut clone = perm(33, "Merciless Predator", 3, 2, you);
+
+        let perms = vec![&clone];
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        assert!(!output.contains("also has"), "nothing granted, nothing said: {output}");
+
+        clone.granted_abilities = vec![
+            "{U}{B}, {T}: Destroy target creature with the same name".into()];
+        let perms = vec![&clone];
+        let output = LlmPlayer::format_perms_compact(&perms, &perms, you);
+        assert!(output.contains("also has: {U}{B}, {T}: Destroy target creature with the same name"),
+            "got {output}");
     }
 
     /// A Curse's whole identity is whom it enchants (CR 702.5c), and the
@@ -5643,6 +5679,7 @@ this Aura deals 1 damage to that player.";
             star_pt: false,
             is_token: false,
             protections: vec![],
+            granted_abilities: vec![],
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
