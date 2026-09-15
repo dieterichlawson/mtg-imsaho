@@ -818,15 +818,48 @@ illegal or dubious resolutions do.
   answer is a helper that takes the result. While you are there, a live regeneration
   shield is rendered nowhere (#468) — `regeneration_shields` does not appear anywhere in
   `mtg-player/`, so neither the battlefield line nor the `i` detail screen shows it
-- L46 [proposed 2026-09-11, from L44 and #469] the intervening "if" versus the
-  RESOLUTION impossibility. `helpers::werewolf_should_trigger` refuses the upkeep trigger
-  for a token copy on the grounds that a token cannot transform — which is CR 701.28c,
-  a fact about resolution, not part of the printed clause CR 603.4 tests. The engine
-  already disagrees with itself about it: `apply_transform` refuses tokens AND
-  single-faced clones, but the gate only knows about tokens, so an Evil Twin copying a
-  werewolf triggers and does nothing (correct) while a Cackling Counterpart token of the
-  same werewolf never triggers (#469). Sweep every other `should_trigger` in
-  `cards/isd/` for the same conflation: a gate may test the printed condition and
-  nothing else. Then go the other way and look for the mirror — a resolution handler
-  that silently does nothing where the ability should not have triggered at all, which
-  is the shape `reaper_from_the_abyss.rs`'s comment records having had
+- L46 [tried 2026-09-15 → #500, #501; the gate sweep is DONE and found nothing — do
+  not redo it] the intervening "if" versus the RESOLUTION impossibility. #469 is fixed
+  and the fix is right: `werewolf_should_trigger` is now `behavior.should_transform(..)`
+  and nothing else, so a Cackling Counterpart token and an Evil Twin clone of the same
+  werewolf both trigger and both open the CR 603.3b priority window. Verified at runtime
+  in both directions — a front-face token (Reckless Waif) and two back-face clones
+  (Merciless Predator) — and 40 random games over a werewolf/copy deck found 0 invariant
+  violations.
+  What the sweep established, so nobody pays for it twice: all 38 `should_trigger*`
+  implementations under `cards/isd/` were read against their oracle text and every one
+  tests the printed condition only. Three that LOOK like conflations are not.
+  `thraben_sentry`'s `!is_transformed` is CR 712.8d (the ability is printed on the
+  Sentry, not the Militia) and agrees with the collector's own face check rather than
+  fighting it. `civilized_scholar`'s `!attacked_this_turn` IS Homicidal Brute's printed
+  intervening-if. And "another" is never a card's job — `triggers/collect/zones.rs`
+  filters `o.id != dead_id` across the whole death-watch scan, which is why
+  `unruly_mob`, `village_cannibals`, `murder_of_crows`, `rage_thrower`,
+  `falkenrath_noble` and `selhoff_occultist` can all omit it; likewise
+  `curse_of_stalked_prey` and `rakish_heir` declare `AnyCombatDamageToPlayer`, so the
+  "combat" half of their printed condition is the collector's too. The L45 audit
+  generalizes cleanly here as well: no `apply_transform` caller announces a transform it
+  did not check, so the nineteen cards the helper's doc comment describes converting
+  really did all get converted.
+  The MIRROR half is where the bug was, and it is the more productive direction.
+  `apply_transform` has three early returns ABOVE its log line — token (CR 111.7),
+  single-faced clone via `copy_grantor` (CR 701.28c), and no back face — so each is a
+  resolution that does nothing and says nothing. 380 announced transform triggers
+  produced 221 "transforms into" lines over 40 random games; the other 159 are
+  indistinguishable from each other and from a trigger that never resolved (#500). The
+  loudest instance is not a werewolf at all: a token copy of **Ludevic's Test Subject**
+  takes ten mana and five activations, logs `loses 5 hatchling counters (now 0)`, and
+  then stops — `remove_counters` reports and `apply_transform` does not, in adjacent
+  lines of one printed sentence. `Moonmist::on_resolve` is the card that already gets
+  this right (it compares `is_transformed` before and after and stays quiet only when
+  the count is really 0) and is the shape of the answer.
+  **The general move worth reusing on any subject**: a fix that removed a FALSE line
+  may not have added the TRUE one. #469 and the `apply_transform` doc comment both
+  record deleting claims that cards made without checking; go and ask what the code
+  says NOW on the paths where the claim was wrong, and the answer is often "nothing".
+  Three facts about the pool for whoever repeats this: every ISD werewolf shares the
+  same two conditions, so Reckless Waif ({R}, one mana) is strictly the cheapest way in;
+  the front-face arm needs TWO spells cast on the turn you set it up, or the real
+  werewolf flips at the next upkeep before you have copied it; and an inert 40 Plains
+  opponent puts `num_spells_cast_last_turn` entirely under your control, which is what
+  makes either condition reachable on demand
