@@ -1,17 +1,58 @@
 use crate::cards::CardRegistry;
 use crate::events::LossReason;
 use crate::ids::ObjectId;
-use crate::state::{GameResult, GameState, LogLevel};
+use crate::state::{AwaitingAction, GameResult, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::Zone;
+
+/// Whether the game is part-way through a resolution, waiting on a choice
+/// somebody has to make before it can carry on.
+///
+/// CR 704.3 checks state-based actions only when a player *would receive
+/// priority*, and CR 608.2 gives nobody priority in the middle of a
+/// resolution. A `ResolutionChoice` is exactly that middle: the damage-effect
+/// prompt CR 616.1 raises between a queued damage event and its being dealt,
+/// a target chosen on resolution, a "you may" question. Nobody is receiving
+/// priority while one is open.
+///
+/// It is not only a rules nicety. The question has already been asked, and
+/// the options in it were computed from the board as it stood. An SBA that
+/// runs underneath a question already on the table rewrites the board it
+/// describes: the combat damage step that queues three events against an
+/// Unbreathing Horde asks about the second one, the counter the first answer
+/// removed leaves it a 0/0, and CR 704.5f then kills it while the player is
+/// still looking at a prompt offering the Horde's own prevention and the
+/// Aura shielding it — neither of which exists any more (issue #499, found
+/// by the nightly fuzzer, bg vs wb coverage decks, seed 20710225118).
+///
+/// The one `ResolutionChoice` that is *not* the middle of a resolution is
+/// the enters-as-a-copy choice (CR 614.12b): the permanent is not on the
+/// battlefield until it is answered, so state-based actions have nothing to
+/// say about it yet, and `replacement::refresh_pending_entry_choice` exists
+/// precisely to re-derive that prompt's options across this pass. It is the
+/// only prompt in the engine that rebuilds itself afterwards, which is what
+/// makes it safe to leave standing.
+fn mid_resolution(state: &GameState) -> bool {
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { choice, .. }) => !matches!(choice,
+            ResolutionChoiceKind::ChooseTarget { effect: PendingEffect::EnterAsCopy { .. }, .. }),
+        _ => false,
+    }
+}
 
 /// Perform state-based actions. Returns true if any were performed.
 /// Per rule 704.3, this is called repeatedly until no actions are taken.
+///
+/// Nothing happens while a mid-resolution choice is open — see
+/// [`mid_resolution`].
 ///
 /// # Panics
 /// Panics if an Aura object on the battlefield has no `attached_to` value, which
 /// would indicate a malformed game state (Auras must always be attached to
 /// something while on the battlefield).
 pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry) -> bool {
+    if mid_resolution(state) {
+        return false;
+    }
     let mut any_action = false;
 
     loop {

@@ -420,3 +420,60 @@ fn the_prompt_and_the_queue_round_trip_through_a_save() {
     let answered = choose(&loaded, &reg, "Undead Alchemist");
     assert_eq!(library_size(&answered, P1), 8);
 }
+
+// ---------------------------------------------------------------------------
+// Nothing moves underneath an open choice.
+// ---------------------------------------------------------------------------
+
+/// CR 704.3 checks state-based actions only when a player *would receive
+/// priority*, and CR 608.2 gives nobody priority part-way through a
+/// resolution. An open CR 616.1 prompt is exactly that part-way point, and
+/// the game loop used to run its SBA pass straight over one.
+///
+/// The damage is the cheapest way to show it: a 0/0 Unbreathing Horde with
+/// one +1/+1 counter, shielded by a Ghostly Possession, blocked by two
+/// creatures. Spending the counter on the first blocker's damage leaves the
+/// Horde a 0/0 while the second blocker's damage is still being asked
+/// about — and CR 704.5f then killed it, taking the Aura with it, so the
+/// question on the table offered two effects that no longer existed (issue
+/// #499, nightly fuzz, bg vs wb coverage, seed 20710225118).
+#[test]
+fn no_state_based_action_runs_under_an_open_damage_choice() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
+    state.add_counters(horde, CounterType::PlusOnePlusOne, 1);
+    let shield = named_permanent(&mut state, &reg, "Ghostly Possession", P0);
+    state.get_object_mut(shield).unwrap().attached_to = Some(horde);
+    let first = ready_creature(&mut state, P1, 1, 1);
+    let second = ready_creature(&mut state, P1, 1, 1);
+    attacks_blocked_by(&mut state, horde, P1, &[first, second]);
+    state.combat.as_mut().unwrap().damage_assignment_order.insert(horde, vec![first, second]);
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    assert!(effect_prompt(&state).is_some(), "the first blocker's damage is a choice");
+
+    // Spend the last counter. The Horde is a 0/0 from here, and the second
+    // blocker's damage raises a prompt of its own.
+    let mut state = choose(&state, &reg, "remove a +1/+1 counter");
+    assert_eq!(counters_of(&state, horde, CounterType::PlusOnePlusOne), 0);
+    assert!(effect_prompt(&state).is_some(), "the second blocker's damage is asked about too");
+
+    // What the game loop does next, with that prompt still on the table.
+    let fired = mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert!(!fired, "no state-based action runs mid-resolution (CR 704.3)");
+    assert_eq!(state.get_object(horde).unwrap().zone, Zone::Battlefield,
+        "the 0/0 Horde is not swept out from under the question");
+    let complaints: Vec<String> = mtg_engine::invariants::check_core(&state, &reg).into_iter()
+        .filter(|c| c.contains("damage-effect prompt"))
+        .collect();
+    assert!(complaints.is_empty(), "{complaints:?}");
+
+    // Answered, the game catches up: the damage is prevented and the 0/0
+    // dies the moment state-based actions are next allowed to look.
+    let mut state = choose(&state, &reg, "remove a +1/+1 counter");
+    assert!(effect_prompt(&state).is_none(), "the queue is settled");
+    assert!(mtg_engine::sba::check_state_based_actions(&mut state, &reg),
+        "with the question answered, CR 704.5f applies");
+    assert_eq!(state.get_object(horde).unwrap().zone, Zone::Graveyard);
+}
