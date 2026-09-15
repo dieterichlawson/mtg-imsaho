@@ -863,3 +863,21 @@ illegal or dubious resolutions do.
   werewolf flips at the next upkeep before you have copied it; and an inert 40 Plains
   opponent puts `num_spells_cast_last_turn` entirely under your control, which is what
   makes either condition reachable on demand
+- L47 [proposed 2026-09-15, from L46 and #501] the permanent that is a COPY, as a thing
+  the player can SEE. #501 is the narrow version — the `i` detail screen renders the
+  copied card's printed text, so an Evil Twin clone's granted "{U}{B}, {T}: Destroy
+  target creature with the same name" is offered in the action menu and absent from its
+  own card text. Go wider and walk every reader. A token copy is marked `[tok]` on the
+  battlefield pane and NOWHERE else: not the `i` list, not the `i` detail screen, not
+  the stack pane, not a target chooser, not the trigger-ordering screen. A non-token
+  clone is marked nowhere at all. Set up three Merciless Predators at once — one real,
+  one Evil Twin clone, one Cackling Counterpart token, which L46 shows is a four-card
+  deck and about fifteen turns — and at each of the six readers ask two questions: can I
+  tell these three apart, and can I tell which of their three upkeep triggers will do
+  anything? Then ask the same of the other two surfaces per the README's "one decision,
+  three surfaces": what the LLM seat's prompt says about a copy (its ordering prompt
+  carries object ids, the stack pane does not), and whether the random seat's answer is
+  rolled. The ordering half is already cleared — `ChooseTriggerOrder` enumerates one
+  `ChosenIndex` per remaining trigger rather than N! permutations (#325), and the random
+  seat picks from that flat list, so neither the menu explosion nor the constant-answer
+  failure is present. The unexamined half is the copy's IDENTITY
