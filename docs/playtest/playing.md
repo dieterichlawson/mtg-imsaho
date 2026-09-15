@@ -954,3 +954,21 @@ illegal or dubious resolutions do.
   the OWNER's graveyard while an Equipment in the same three states is merely unattached
   and left on the battlefield. Writing that test is the night's work; the sweep it
   protects is four lines
+- L49 [proposed 2026-09-15, from L11] the characteristic-defining P/T as a value other
+  cards READ. CR 604.3 makes a CDA function in every zone and L11 verified the engine
+  renders it correctly off the battlefield — a Splinterfright reads 5/5 from the
+  graveyard counting itself, a Geist-Honored Monk in the graveyard tracks its owner's
+  board live. Nobody has audited the CONSUMERS of an off-battlefield power. **Corpse
+  Lunge** is the one card in the set that reads one: "As an additional cost, exile a
+  creature card from your graveyard. Corpse Lunge deals damage equal to the exiled
+  card's power to target creature." Build a UBG self-mill deck (Mulch, Armored Skaab,
+  Splinterfright, Boneyard Wurm), get several creature cards into your own graveyard,
+  and cast Corpse Lunge exiling a Splinterfright. The exile is an additional cost paid
+  at ANNOUNCEMENT (601.2f/h) and the damage is computed on RESOLUTION (608.2), so change
+  the graveyard count in between — mill in response, or let the Lunge's own exile change
+  it — and check which count the damage uses. Then the two negative cases: a
+  Geist-Honored Monk exiled from the graveyard should deal damage equal to the number of
+  creatures its controller controls AT THAT MOMENT, and a token is not a creature card
+  (CR 111.7) so it must never appear in the exile picker. Prompted by L11 observing
+  `Splinterfright {2}{G} 5/5` and `Geist-Honored Monk {3}{W}{W} 1/1` live in the `g`
+  pane with no card in either deck able to consume those numbers
