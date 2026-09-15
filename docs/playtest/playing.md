@@ -403,10 +403,35 @@ illegal or dubious resolutions do.
 - L10 mana ability edges: tap-for-mana abilities that don't use the stack;
   activate mana abilities in response to a targeted spell/ability to
   verify no missed priority window and correct fizzle/cost-payment timing
-- L11 layers (CR 613): stack anthems (7c), +1/+1 counters (7d),
-  P/T-setting (7b) and type/ability grants (4/6) on one creature at
-  once; verify layer order, timestamps, and that removing one effect
-  recomputes rather than un-adding a stale number
+- L11 [tried 2026-09-15 -> #504, #505, #506; the ARITHMETIC is done for this pool,
+  don't redo it] layers (CR 613). Five games under `--check-invariants`, no invariant
+  ever fired, and every layer claim held. The board that reached most of it at once: a
+  Wolf token reading **8/5** as 2/2 base + Howlpack Alpha's 7c anthem + Butcher's
+  Cleaver's +3/+0 + a Travel Preparations 7d counter + Intangible Virtue. Removal
+  recomputes rather than un-adding a stale number in all three directions tried — the
+  Alpha transforming back to Mayor of Avabruck dropped both Wolves by exactly one in the
+  same frame, exiling Gutter Grime took its Ooze's 7a base to 0 with Intangible Virtue
+  holding it at 1/1, and Urgent Exorcism on the Virtue took the Ooze to exactly its
+  counter. Tree of Redemption is right on both halves of CR 613.4b (the player is handed
+  the MODIFIED toughness, 14 rather than the printed 13, and the set lands under the
+  counter for 1/20) and a second exchange re-set it, so 613.7a's latest-timestamp-wins
+  inside 7b works; `printed_pt_of` still reports 0/13, so #302's fix holds. CR 604.3
+  holds in every zone — a Boneyard Wurm reads 2/2 in hand, a Splinterfright 5/5 from the
+  graveyard counting itself, a Geist-Honored Monk in the graveyard 0/0 on an empty board
+  and 1/1 the instant a Mayor resolves. Bonds of Faith's conditional 7c declined to pump
+  a Werewolf and a Spirit and both were ABSENT from the attacker/blocker sets rather
+  than offered and rejected (508.1a/509.1b).
+  **The scoping fact that makes a repeat pointless**: ISD has exactly one layer-7b
+  effect (Tree of Redemption's exchange), one token-borne 7a CDA (Gutter Grime's Ooze),
+  four card 7a CDAs (Geist-Honored Monk, Boneyard Wurm, Splinterfright, Sturmgeist) and
+  one 7c self-mod (Scourge of Geier Reach). All of 7a/7b/7c/7d and 613.7a are now
+  verified at runtime. 613.8 dependency remains unreachable, as C37 already recorded.
+  All three defects are reporting and presentation, and two are the same hole:
+  `PermanentView` has `keywords` and `protections` and no field at all for
+  `PreventAttack`/`PreventBlock`/`ForceAttack`/`PreventUntap`/`CantBeBlocked`/
+  `CanOnlyBeBlockedBy`/`MinimumBlockers`/`PreventCombatDamage`, so a Bonds of Faith'd
+  non-Human silently stops being a legal attacker and the log says only
+  `No attackers declared` — the same line a player who declined would get (#504)
 - L12 attack/block requirements vs restrictions (CR 506.4, 508.1d,
   509.1c): menace, "can't block", "must attack if able", tapped and
   summoning-sick creatures all live at once; verify the engine
@@ -421,11 +446,34 @@ illegal or dubious resolutions do.
   probe for any land played off-turn or with a non-empty stack, any
   sorcery-speed spell offered at instant speed, any loyalty ability
   outside its window or twice per turn, any skipped or doubled priority
-- L15 attachment legality and SBAs (CR 704.5m/n/p, 303.4): attach auras
-  and equipment, then make the attachment illegal (kill, bounce, grant
-  protection/hexproof, change type); verify auras go to their OWNER's
-  graveyard while equipment merely unattaches. Wants a deck pair with a
-  real protection/hexproof granter
+- L15 [tried 2026-09-15 -> #502, #503; every CR claim held] attachment legality and
+  SBAs (CR 704.5m/n/p, 303.4). Four games under `--check-invariants`, zero violations.
+  An Aura whose host dies, is sacrificed as a cost, or is killed by the Aura's own
+  -2/-2 goes to its OWNER's graveyard even when the host belongs to the other player
+  (verified three times; p0's Spectral Flight and Claustrophobia on p1's creatures both
+  landed in p0's pile while the creature went to p1's — CR 704.5m + 404.3), while the
+  Equipment on that same creature merely unattached and stayed on the battlefield under
+  its own controller (CR 704.5n), including across a Traitorous Blood steal where CR
+  301.5e correctly keeps it attached and still granting +2/+0 to a creature its
+  controller no longer controls. Also verified: Demonmail Hauberk's "Equip—Sacrifice a
+  creature" offers the pair where the sacrifice IS the target, pays at announcement and
+  fizzles on resolution with the Hauberk left unattached (601.2h + 608.2b); Ranger's
+  Guile in response to an Aura spell fizzles it into its owner's graveyard; Witchbane
+  Orb destroys both Curses attached to its controller; and #358's fix is live
+  (`Spectral Flight (#31) was put into its owner's graveyard`). The sharp NEGATIVE case
+  is worth keeping: hexproof granted to an ALREADY-enchanted creature (Mask of Avacyn)
+  correctly does not detach the Aura — it only removes the creature from the opponent's
+  menus.
+  Two things about the pool that bound any repeat. **An Aura whose owner differs from
+  its controller is UNREACHABLE**: nothing in ISD changes control of an enchantment or
+  an artifact (Traitorous Blood, Olivia Voldaren and Grimoire of the Dead all take
+  creatures only), so 704.5m's "owner's, not controller's" can only be probed through an
+  Aura whose controller owns it but whose HOST belongs to the other player, which is
+  what was done. And the "illegal attachment on a live permanent" arm is unreachable
+  too, for the reasons L48 records. Both defects are the record and the rendering: the
+  Equipment half of the same SBA is still completely silent (#502, the half #358's own
+  body noted and did not fix), and the battlefield pane's attachment bracket names
+  neither the controller nor the kind of attachment (#503)
 - L16 copy effects (CR 706): Cackling Counterpart, Evil Twin, Essence of
   the Wild; verify only copiable values are copied (no counters, auras,
   damage or tap state), Evil Twin's name/ability exception, the legend
