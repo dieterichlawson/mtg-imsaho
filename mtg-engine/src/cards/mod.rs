@@ -1404,3 +1404,32 @@ impl CardRegistry {
         reg
     }
 }
+
+/// The card whose copy effect granted `object_id` abilities that its own
+/// card does not print — CR 706.2's "except it has ...".
+///
+/// `copy_grantor` alone is not the test, and that is the whole subtlety:
+/// for a plain enters-as-copy it only remembers what the permanent is
+/// printed as, so reading abilities off it handed an Essence of the Wild
+/// copy its printed card's own abilities back (issue #93). Two things have
+/// to hold — the grantor is a different card from the one being copied, and
+/// its copy effect grants abilities at all
+/// ([`CardBehavior::grants_abilities_to_copies`]).
+///
+/// Three places asked this in three spellings before it was one function:
+/// the legal-action collector, the activation dispatcher, and the invariant
+/// that checks one against the other. The display had a fourth question to
+/// ask — what a permanent's ability set *is*, as against what its face
+/// prints (issue #501) — which is what made a fourth copy worth not
+/// writing.
+#[must_use]
+pub fn ability_granting_grantor(
+    state: &GameState,
+    object_id: ObjectId,
+    registry: &CardRegistry,
+) -> Option<CardId> {
+    let obj = state.get_object(object_id)?;
+    obj.copy_grantor
+        .filter(|&g| g != obj.card_id)
+        .filter(|&g| registry.get(g).is_some_and(|b| b.grants_abilities_to_copies()))
+}

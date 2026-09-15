@@ -446,7 +446,7 @@ fn activate(state: &GameState, acting: PlayerId, id: ObjectId, index: usize, tar
     let def_card = match source_card {
         None => obj.card_id,
         Some(cid) => {
-            let via_copy = obj.copy_grantor == Some(cid) && registry.get(cid).is_some_and(|b| b.grants_abilities_to_copies());
+            let via_copy = crate::cards::ability_granting_grantor(state, id, registry) == Some(cid);
             let via_attachment = state.objects_in_id_order().iter().any(|a|
                 a.zone == Zone::Battlefield && a.attached_to == Some(id) && a.controller == acting && a.card_id == cid);
             if !via_copy && !via_attachment {

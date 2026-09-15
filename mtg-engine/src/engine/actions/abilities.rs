@@ -155,7 +155,6 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
 
         let obj = state.get_object(object_id).expect("activated ability object must exist");
         let card_id = obj.card_id;
-        let copy_grantor = state.get_object(object_id).and_then(|o| o.copy_grantor);
 
         // Resolve which card's behavior contributed this ability:
         // - Some(cid): caller explicitly disambiguated the source — used by
@@ -189,13 +188,9 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             (card_id, Some(native))
         } else {
             // CR 706.2: an ability the copy effect added — dispatch to the
-            // card whose copy effect granted it, and only when that card
-            // grants abilities to copies at all (issue #93: for a plain
-            // enters-as-copy the grantor is just the printed card remembered
-            // for the zone-change revert).
-            let granted = copy_grantor
-                .filter(|&g| g != card_id)
-                .filter(|&g| registry.get(g).is_some_and(|b| b.grants_abilities_to_copies()))
+            // card whose copy effect granted it, which is not every card
+            // `copy_grantor` names (see `ability_granting_grantor`).
+            let granted = crate::cards::ability_granting_grantor(&state, object_id, registry)
                 .and_then(|g| contributed(g, &state).map(|ab| (g, Some(ab))));
             granted.unwrap_or_else(|| from_attached(&state))
         };
