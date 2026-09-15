@@ -929,3 +929,28 @@ illegal or dubious resolutions do.
   `ChosenIndex` per remaining trigger rather than N! permutations (#325), and the random
   seat picks from that flat list, so neither the menu explosion nor the constant-answer
   failure is present. The unexamined half is the copy's IDENTITY
+- L48 [proposed 2026-09-15, from L15 and a read of `sba.rs`] the attachment SBA that
+  only knows one of its cases. `check_state_based_actions` sweeps an Aura, or detaches
+  an Equipment, only when the permanent it names has LEFT the battlefield; it never asks
+  whether an attachment sitting on a LIVE permanent is still legal. Its filter also
+  requires `attached_to.is_some()`, directly under a comment reading "Rule 704.5m: Aura
+  not attached to anything goes to graveyard" — so the one case the comment names is the
+  one case the code cannot reach. Meanwhile `invariants/permanents.rs::check_settled`
+  DOES test the missing states: protection on the host (CR 702.16c) and an "enchant
+  creature" Aura on a non-creature (CR 704.5m). The engine and its own checker disagree,
+  dormantly. Nothing in this pool can produce either state and that was verified over
+  four games on 2026-09-15: ISD's only protection is `ProtectionFromSubtype`
+  Vampire/Werewolf/Zombie (Elite Inquisitor, Grave Bramble) plus Spare from Evil's
+  `And(HasCardType(Creature), Not(HasSubtype(Human)))`, and an Aura or Equipment matches
+  none of them; no card in `cards/` removes a card type (every DFC is creature-to-
+  creature); and all eleven object-attaching Auras are plain `TargetRequirement::
+  Creature` while all six Curses are `PlayerOnly`, so there is no "enchant creature you
+  control" in the set. Three arrivals make this live and are the trigger to run it: a
+  protection grant whose quality a noncreature permanent can match (a colour,
+  "artifacts", "enchantments"), any effect that removes the creature type, or an Aura
+  with a narrower enchant clause. Until one lands, the only way to exercise it is a test
+  that hand-builds the state — build it three ways (Aura on a non-creature host, Aura on
+  a host with protection from it, Aura attached to nothing) and check each is swept to
+  the OWNER's graveyard while an Equipment in the same three states is merely unattached
+  and left on the battlefield. Writing that test is the night's work; the sweep it
+  protects is four lines
