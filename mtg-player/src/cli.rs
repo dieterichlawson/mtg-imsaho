@@ -2003,17 +2003,16 @@ impl CliPlayer {
         let planeswalkers: Vec<_> = perms.iter().filter(|p|
             has_type(p, CardType::Planeswalker) && !has_type(p, CardType::Creature)).collect();
 
-        // Build the attachment map from ALL permanents (auras can be
-        // controlled by a different player than the creature they're
-        // attached to, e.g. Pacifism). Equipment counts too: a creature's
-        // line shows everything on it, aura or Pike — filtering to
+        // The attachment bracket for each creature, built from ALL permanents
+        // (auras can be controlled by a different player than the creature
+        // they're attached to, e.g. Pacifism). Equipment counts too: a
+        // creature's line shows everything on it, aura or Pike — filtering to
         // enchantments left Equipment invisible outside the inspector
         // (issue #83, CR 301.5c).
-        let mut aura_map: HashMap<ObjectId, Vec<String>> = HashMap::new();
-        for p in all_perms {
-            if let Some(target_id) = p.attached_to {
-                aura_map.entry(target_id).or_default().push(p.name.clone());
-            }
+        let mut aura_map: HashMap<ObjectId, String> = HashMap::new();
+        for host in all_perms.iter().filter_map(|p| p.attached_to) {
+            aura_map.entry(host).or_insert_with(||
+                Self::attachment_marks(host, all_perms, view_you));
         }
 
         // Helper: render the lands summary line
@@ -2182,7 +2181,82 @@ impl CliPlayer {
     /// testable without a terminal.
     ///
     /// `auras` are the names of everything attached to it.
-    fn creature_row_parts(c: &PermanentView, auras: Option<&Vec<String>>) -> (String, String, String) {
+    /// What a creature's row says about the permanents attached to it: which
+    /// they are, and whose they are when that is not the host's answer.
+    ///
+    /// The bracket used to be the bare names, comma-joined
+    /// (`[Spectral Flight,Silver-Inlaid Dagger]`), which drops two facts that
+    /// are public information and decide play. An Aura falls to its OWNER's
+    /// graveyard (CR 704.5m) while an Equipment merely unattaches and stays
+    /// with ITS controller (CR 704.5n, 301.5c); Curiosity's draw is the Aura
+    /// controller's; and every non-removal "enchant creature" Aura in the set
+    /// is castable on either side of the table, so the bracket was genuinely
+    /// ambiguous rather than inferable from the name. The `i` screen had both
+    /// facts all along and the pane dropped them (issue #503).
+    ///
+    /// The controller is marked only when it differs from the host's — the
+    /// case the row cannot otherwise convey, and the one that is actively
+    /// misleading: CR 301.5e keeps an Equipment attached across a control
+    /// change, so a stolen creature carries its former controller's Equipment
+    /// into the thief's half of the pane. Where they agree, the half of the
+    /// pane the row is printed in has already said it.
+    ///
+    /// Aura and Equipment are split the way the `i` screen splits them
+    /// (#83), in the pane's own terser vocabulary — `aura` and `equip`
+    /// rather than the `i` screen's full "Enchanted by:" / "Equipped with:",
+    /// and repeats collapsed to `Nx` the way the lands line already does.
+    /// Both because the pane is at its width budget: spelled out in full, a
+    /// creature under two Auras and an Equipment elided the Equipment off
+    /// the row entirely, which trades one missing fact for another. The
+    /// whole thing lands in the row's elastic part, so `elide_middle` takes
+    /// it before the flags either way.
+    fn attachment_marks(
+        host: ObjectId,
+        all_perms: &[PermanentView],
+        view_you: mtg_engine::ids::PlayerId,
+    ) -> String {
+        let host_controller = all_perms.iter()
+            .find(|p| p.object_id == host)
+            .map(|p| p.controller);
+        let label = |p: &PermanentView| -> String {
+            if host_controller == Some(p.controller) {
+                p.name.clone()
+            } else if p.controller == view_you {
+                format!("{} (yours)", p.name)
+            } else {
+                format!("{} (opp)", p.name)
+            }
+        };
+        let (auras, equipment): (Vec<&PermanentView>, Vec<&PermanentView>) = all_perms.iter()
+            .filter(|p| p.attached_to == Some(host))
+            .partition(|p| p.card_types.contains(&CardType::Enchantment));
+        // Two of a kind on one creature is one entry with a count, as the
+        // lands line does it: "Spectral Flight (opp), Spectral Flight (opp)"
+        // spends thirty characters saying one thing twice.
+        let collapse = |ps: Vec<&PermanentView>| -> Vec<String> {
+            let mut out: Vec<(String, usize)> = Vec::new();
+            for p in ps {
+                let name = label(p);
+                match out.iter_mut().find(|(n, _)| *n == name) {
+                    Some(entry) => entry.1 += 1,
+                    None => out.push((name, 1)),
+                }
+            }
+            out.into_iter()
+                .map(|(n, c)| if c == 1 { n } else { format!("{c}x {n}") })
+                .collect()
+        };
+        let mut out = String::new();
+        if !auras.is_empty() {
+            out.push_str(&format!(" [aura {}]", collapse(auras).join(", ")));
+        }
+        if !equipment.is_empty() {
+            out.push_str(&format!(" [equip {}]", collapse(equipment).join(", ")));
+        }
+        out
+    }
+
+    fn creature_row_parts(c: &PermanentView, auras: Option<&String>) -> (String, String, String) {
         let pt = match (c.effective_power, c.effective_toughness) {
             (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => match (c.power, c.toughness) {
@@ -2190,9 +2264,7 @@ impl CliPlayer {
                 _ => String::new(),
             },
         };
-        let auras = auras
-            .map(|names| format!(" [{}]", names.join(",")))
-            .unwrap_or_default();
+        let auras = auras.map_or_else(String::new, |marks| marks.clone());
         let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
         // A hasty creature isn't slowed by summoning sickness —
         // '[S]' read as "cannot attack" on a creature whose attack
@@ -8072,6 +8144,62 @@ yourself at some considerable length";
         assert!(row.contains(" [Rx2]"), "got {row}");
     }
 
+    /// Issue #503: the bracket used to be the bare names comma-joined, so
+    /// `[Spectral Flight,Silver-Inlaid Dagger]` on one creature was an Aura
+    /// and an Equipment, controlled by two different players, rendered
+    /// identically. Both facts decide play (CR 704.5m vs 704.5n: the Aura
+    /// falls to its owner's graveyard, the Equipment merely unattaches) and
+    /// both were on the `i` screen all along.
+    #[test]
+    fn the_attachment_bracket_says_which_it_is_and_whose() {
+        let you = PlayerId(0);
+        let mut traveler = creature(37, "Doomed Traveler", 1);
+        traveler.attached_to = None;
+
+        let mut flight = creature(22, "Spectral Flight", 0);
+        flight.card_types = vec![CardType::Enchantment];
+        flight.attached_to = Some(ObjectId(37));
+        let mut dagger = creature(41, "Silver-Inlaid Dagger", 1);
+        dagger.card_types = vec![CardType::Artifact];
+        dagger.subtypes = vec!["Equipment".into()];
+        dagger.attached_to = Some(ObjectId(37));
+
+        let all = vec![traveler.clone(), flight.clone(), dagger.clone()];
+        let marks = CliPlayer::attachment_marks(ObjectId(37), &all, you);
+        assert_eq!(marks,
+            " [aura Spectral Flight (yours)] [equip Silver-Inlaid Dagger]",
+            "the Aura is the viewer's on the opponent's creature, so it is \
+             marked; the Equipment is the host's controller's, so it is not");
+
+        // Seen from the other seat the same board reads the other way round.
+        let marks = CliPlayer::attachment_marks(ObjectId(37), &all, PlayerId(1));
+        assert_eq!(marks,
+            " [aura Spectral Flight (opp)] [equip Silver-Inlaid Dagger]");
+
+        // CR 301.5e: an Equipment stays attached across a control change, so
+        // a stolen creature carries its former controller's Equipment into
+        // the thief's half of the pane. This is the case the bare bracket was
+        // actively misleading about.
+        let mut stolen = all.clone();
+        stolen[0].controller = you;
+        let marks = CliPlayer::attachment_marks(ObjectId(37), &stolen, you);
+        assert_eq!(marks,
+            " [aura Spectral Flight] [equip Silver-Inlaid Dagger (opp)]");
+
+        // Two of a kind is one entry with a count — the pane is at its width
+        // budget and saying one thing twice is what it cannot afford.
+        let mut doubled = all.clone();
+        let mut second = flight.clone();
+        second.object_id = ObjectId(23);
+        doubled.push(second);
+        let marks = CliPlayer::attachment_marks(ObjectId(37), &doubled, you);
+        assert_eq!(marks,
+            " [aura 2x Spectral Flight (yours)] [equip Silver-Inlaid Dagger]");
+
+        // And a creature with nothing on it says nothing.
+        assert_eq!(CliPlayer::attachment_marks(ObjectId(99), &all, you), "");
+    }
+
     /// Issue #333: nothing on the battlefield said a permanent was a
 
     /// legend, so the legend rule (CR 704.5j) fired with no warning. A
@@ -9365,7 +9493,7 @@ yourself at some considerable length";
     fn a_long_attachment_list_never_pushes_the_flags_off_the_row() {
         let row = CliPlayer::elide_middle(
             "Galvanic Juggernaut 8/7",
-            " [Silver-Inlaid Dagger,Silver-Inlaid Dagger,Butcher's Cleaver,Mask of Avacyn]",
+            " [equip 2x Silver-Inlaid Dagger, Butcher's Cleaver, Mask of Avacyn (opp)]",
             " [T] (3d)",
             60,
         );
