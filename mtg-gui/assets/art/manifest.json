@@ -1,0 +1,4868 @@
+{
+ "art_size": [
+  64,
+  48
+ ],
+ "images": {
+  "cards/abattoir-ghoul": {
+   "name": "Abattoir Ghoul",
+   "kind": "cards",
+   "file": "cards/abattoir-ghoul.png",
+   "prompt": "Abattoir Ghoul, a zombie, full figure in a dramatic pose. Death took his humanity but not his skill with the knife. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10416,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/abbey-griffin": {
+   "name": "Abbey Griffin",
+   "kind": "cards",
+   "file": "cards/abbey-griffin.png",
+   "prompt": "Abbey Griffin, a griffin, full figure in a dramatic pose. The darkness crawls with vampires and ghouls, but we are not without allies. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8942,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/altar-s-reap": {
+   "name": "Altar's Reap",
+   "kind": "cards",
+   "file": "cards/altar-s-reap.png",
+   "prompt": "a dramatic moment of magic: Altar's Reap, the spell in action. The demons don't care if we mutter niceties and act out ceremonies. Just kill him. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7041,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ambush-viper": {
+   "name": "Ambush Viper",
+   "kind": "cards",
+   "file": "cards/ambush-viper.png",
+   "prompt": "Ambush Viper, a snake, full figure in a dramatic pose. Living creatures seldom impress me. But I like this one. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7700,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ancient-grudge": {
+   "name": "Ancient Grudge",
+   "kind": "cards",
+   "file": "cards/ancient-grudge.png",
+   "prompt": "a dramatic moment of magic: Ancient Grudge, the spell in action. If there's anything a werewolf hates, it's a collar—especially Avacyn's Collar, the symbol of her church. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10254,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/angel-of-flight-alabaster": {
+   "name": "Angel of Flight Alabaster",
+   "kind": "cards",
+   "file": "cards/angel-of-flight-alabaster.png",
+   "prompt": "Angel of Flight Alabaster, a angel, full figure in a dramatic pose. She endures without Avacyn but secretly asks each soul she guides if it has seen her. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 31167,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/angelic-overseer": {
+   "name": "Angelic Overseer",
+   "kind": "cards",
+   "file": "cards/angelic-overseer.png",
+   "prompt": "Angelic Overseer, a angel, full figure in a dramatic pose. From mortal hope immortal power springs. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13735,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/armored-skaab": {
+   "name": "Armored Skaab",
+   "kind": "cards",
+   "file": "cards/armored-skaab.png",
+   "prompt": "Armored Skaab, a zombie warrior, full figure in a dramatic pose. Literally made for battle. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8518,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/army-of-the-damned": {
+   "name": "Army of the Damned",
+   "kind": "cards",
+   "file": "cards/army-of-the-damned.png",
+   "prompt": "a dramatic moment of magic: Army of the Damned, the spell in action. Sometimes death comes knocking. Sometimes it tears down the walls. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15633,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ashmouth-hound": {
+   "name": "Ashmouth Hound",
+   "kind": "cards",
+   "file": "cards/ashmouth-hound.png",
+   "prompt": "Ashmouth Hound, a elemental dog, full figure in a dramatic pose. Its fiery paws make it easy to track, which is very useful when you want to go in exactly the opposite direction. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10407,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/avacyn-s-pilgrim": {
+   "name": "Avacyn's Pilgrim",
+   "kind": "cards",
+   "file": "cards/avacyn-s-pilgrim.png",
+   "prompt": "Avacyn's Pilgrim, a human monk, full figure in a dramatic pose. Avacyn's protection is everywhere. From the holy church to the sacred glade, all that we see is under her blessed watch. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13239,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/avacynian-priest": {
+   "name": "Avacynian Priest",
+   "kind": "cards",
+   "file": "cards/avacynian-priest.png",
+   "prompt": "Avacynian Priest, a human cleric, full figure in a dramatic pose. Moorlanders speak in awe of the priests' talent for arriving just in time to drive off the wicked things that prowl the ravished parish. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13682,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/back-from-the-brink": {
+   "name": "Back from the Brink",
+   "kind": "cards",
+   "file": "cards/back-from-the-brink.png",
+   "prompt": "Back from the Brink, a lingering magical presence over a scene. On Innistrad, death is just a career change. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17641,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/balefire-dragon": {
+   "name": "Balefire Dragon",
+   "kind": "cards",
+   "file": "cards/balefire-dragon.png",
+   "prompt": "Balefire Dragon, a dragon, full figure in a dramatic pose. If it comes for you, die boldly or die swiftly—for die you will. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11663,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bane-of-hanweir": {
+   "name": "Bane of Hanweir",
+   "kind": "cards",
+   "file": "cards/bane-of-hanweir.png",
+   "prompt": "Bane of Hanweir, a werewolf, full figure in a dramatic pose. Technically he never left his post. He looks after the wolf wherever it goes. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11539,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/battleground-geist": {
+   "name": "Battleground Geist",
+   "kind": "cards",
+   "file": "cards/battleground-geist.png",
+   "prompt": "Battleground Geist, a spirit, full figure in a dramatic pose. Not content to nudge vases and chill drawing rooms, some geists muster spectral armies to claw at the hearts of the living. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17078,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bitterheart-witch": {
+   "name": "Bitterheart Witch",
+   "kind": "cards",
+   "file": "cards/bitterheart-witch.png",
+   "prompt": "Bitterheart Witch, a human shaman, full figure in a dramatic pose. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15179,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/blasphemous-act": {
+   "name": "Blasphemous Act",
+   "kind": "cards",
+   "file": "cards/blasphemous-act.png",
+   "prompt": "a dramatic moment of magic: Blasphemous Act, the spell in action. Holy places are no longer sanctuary from death, and death is no longer sanctuary from anything. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11585,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/blazing-torch": {
+   "name": "Blazing Torch",
+   "kind": "cards",
+   "file": "cards/blazing-torch.png",
+   "prompt": "Blazing Torch, a single gleaming weapon or piece of armour, close up. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8883,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bloodcrazed-neonate": {
+   "name": "Bloodcrazed Neonate",
+   "kind": "cards",
+   "file": "cards/bloodcrazed-neonate.png",
+   "prompt": "Bloodcrazed Neonate, a vampire, full figure in a dramatic pose. While elder vampires select their meals with care, the newly sired frenzy at the first whiff. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18828,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bloodgift-demon": {
+   "name": "Bloodgift Demon",
+   "kind": "cards",
+   "file": "cards/bloodgift-demon.png",
+   "prompt": "Bloodgift Demon, a demon, full figure in a dramatic pose. He relishes the devotion of his Skirsdag puppets and their belief that it will earn them immortality. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11673,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bloodline-keeper": {
+   "name": "Bloodline Keeper",
+   "kind": "cards",
+   "file": "cards/bloodline-keeper.png",
+   "prompt": "Bloodline Keeper, a vampire, full figure in a dramatic pose. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13308,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bonds-of-faith": {
+   "name": "Bonds of Faith",
+   "kind": "cards",
+   "file": "cards/bonds-of-faith.png",
+   "prompt": "Bonds of Faith, a magical enchantment taking hold of a figure, glowing runes. What cannot be destroyed will be bound. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9657,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/boneyard-wurm": {
+   "name": "Boneyard Wurm",
+   "kind": "cards",
+   "file": "cards/boneyard-wurm.png",
+   "prompt": "Boneyard Wurm, a wurm, full figure in a dramatic pose. The only thing it likes more than discovering a pit of bones is adding to it. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9037,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/brain-weevil": {
+   "name": "Brain Weevil",
+   "kind": "cards",
+   "file": "cards/brain-weevil.png",
+   "prompt": "Brain Weevil, a insect, full figure in a dramatic pose. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7704,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bramblecrush": {
+   "name": "Bramblecrush",
+   "kind": "cards",
+   "file": "cards/bramblecrush.png",
+   "prompt": "a dramatic moment of magic: Bramblecrush, the spell in action. Civilization is fertilizer. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8367,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/brimstone-volley": {
+   "name": "Brimstone Volley",
+   "kind": "cards",
+   "file": "cards/brimstone-volley.png",
+   "prompt": "a dramatic moment of magic: Brimstone Volley, the spell in action. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13847,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/bump-in-the-night": {
+   "name": "Bump in the Night",
+   "kind": "cards",
+   "file": "cards/bump-in-the-night.png",
+   "prompt": "a dramatic moment of magic: Bump in the Night, the spell in action. It's not just the wind. It's not all in your head. And it's *definitely* something to worry about. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14135,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/burning-vengeance": {
+   "name": "Burning Vengeance",
+   "kind": "cards",
+   "file": "cards/burning-vengeance.png",
+   "prompt": "Burning Vengeance, a lingering magical presence over a scene. Mist is the geists' sorrow. Wind is their pain. Fire is their vengeance. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15096,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/butcher-s-cleaver": {
+   "name": "Butcher's Cleaver",
+   "kind": "cards",
+   "file": "cards/butcher-s-cleaver.png",
+   "prompt": "Butcher's Cleaver, a single gleaming weapon or piece of armour, close up. Outside the safety of Thraben, there is little distinction between tool and weapon. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14663,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/cackling-counterpart": {
+   "name": "Cackling Counterpart",
+   "kind": "cards",
+   "file": "cards/cackling-counterpart.png",
+   "prompt": "a dramatic moment of magic: Cackling Counterpart, the spell in action. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21862,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/caravan-vigil": {
+   "name": "Caravan Vigil",
+   "kind": "cards",
+   "file": "cards/caravan-vigil.png",
+   "prompt": "a dramatic moment of magic: Caravan Vigil, the spell in action. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8810,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/cellar-door": {
+   "name": "Cellar Door",
+   "kind": "cards",
+   "file": "cards/cellar-door.png",
+   "prompt": "Cellar Door, a strange arcane artifact object, close up. As if anyone needed another reason to avoid dark, dank cellars. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6325,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/champion-of-the-parish": {
+   "name": "Champion of the Parish",
+   "kind": "cards",
+   "file": "cards/champion-of-the-parish.png",
+   "prompt": "Champion of the Parish, a human soldier, full figure in a dramatic pose. I stand for every cobbler, tanner, and fool in this town—and they stand for me. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 23819,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/chapel-geist": {
+   "name": "Chapel Geist",
+   "kind": "cards",
+   "file": "cards/chapel-geist.png",
+   "prompt": "Chapel Geist, a spirit, full figure in a dramatic pose. Death has bound it with chains of past regrets. Forever it searches for atonement, each kindness removing a single link. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7575,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/charmbreaker-devils": {
+   "name": "Charmbreaker Devils",
+   "kind": "cards",
+   "file": "cards/charmbreaker-devils.png",
+   "prompt": "Charmbreaker Devils, a devil, full figure in a dramatic pose. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18868,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/civilized-scholar": {
+   "name": "Civilized Scholar",
+   "kind": "cards",
+   "file": "cards/civilized-scholar.png",
+   "prompt": "Civilized Scholar, a human advisor, full figure in a dramatic pose. Me, angry? Of course not. Thanks to my research, I'm above such petty emotions now. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15220,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/claustrophobia": {
+   "name": "Claustrophobia",
+   "kind": "cards",
+   "file": "cards/claustrophobia.png",
+   "prompt": "Claustrophobia, a magical enchantment taking hold of a figure, glowing runes. Six feet of earth muffled his cries. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11167,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/clifftop-retreat": {
+   "name": "Clifftop Retreat",
+   "kind": "cards",
+   "file": "cards/clifftop-retreat.png",
+   "prompt": "a landscape: Clifftop Retreat, wild land, wide view, no characters. Where cathars learn to fight not only demons and vampires, but ignorance as well. red and orange, fire and blood, white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13703,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/cloistered-youth": {
+   "name": "Cloistered Youth",
+   "kind": "cards",
+   "file": "cards/cloistered-youth.png",
+   "prompt": "Cloistered Youth, a human, full figure in a dramatic pose. I heard her talking in her sleep—pleading, shrieking, snarling. It was not my daughter's voice. That is not my daughter. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13740,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/cobbled-wings": {
+   "name": "Cobbled Wings",
+   "kind": "cards",
+   "file": "cards/cobbled-wings.png",
+   "prompt": "Cobbled Wings, a single gleaming weapon or piece of armour, close up. For the necro-alchemist, any puzzle can be solved with intelligence and harvested body parts. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8851,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/coral-merfolk": {
+   "name": "Coral Merfolk",
+   "kind": "cards",
+   "file": "cards/coral-merfolk.png",
+   "prompt": "Coral Merfolk, a merfolk, full figure in a dramatic pose. The merfolk know every contour of their coral homes; each reef is a garden in times of peace, and a refuge and fortress in times of war. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9052,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/corpse-lunge": {
+   "name": "Corpse Lunge",
+   "kind": "cards",
+   "file": "cards/corpse-lunge.png",
+   "prompt": "a dramatic moment of magic: Corpse Lunge, the spell in action. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7590,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/counterspell": {
+   "name": "Counterspell",
+   "kind": "cards",
+   "file": "cards/counterspell.png",
+   "prompt": "a dramatic moment of magic: Counterspell, the spell in action. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8486,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/creeping-renaissance": {
+   "name": "Creeping Renaissance",
+   "kind": "cards",
+   "file": "cards/creeping-renaissance.png",
+   "prompt": "a dramatic moment of magic: Creeping Renaissance, the spell in action. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21151,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/creepy-doll": {
+   "name": "Creepy Doll",
+   "kind": "cards",
+   "file": "cards/creepy-doll.png",
+   "prompt": "Creepy Doll, a construct, full figure in a dramatic pose. A child's porcelain doll went missing one night, as did a pair of kitchen shears and the town magistrate. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6323,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/crossway-vampire": {
+   "name": "Crossway Vampire",
+   "kind": "cards",
+   "file": "cards/crossway-vampire.png",
+   "prompt": "Crossway Vampire, a vampire, full figure in a dramatic pose. Do not flatter Fate. It did not guide you into my clutches tonight. That was all my doing. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13799,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curiosity": {
+   "name": "Curiosity",
+   "kind": "cards",
+   "file": "cards/curiosity.png",
+   "prompt": "Curiosity, a magical enchantment taking hold of a figure, glowing runes. Surely you know the joy of the hunt, my furry friend. My kind of hunt just takes a different form than yours. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5060,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curse-of-death-s-hold": {
+   "name": "Curse of Death's Hold",
+   "kind": "cards",
+   "file": "cards/curse-of-death-s-hold.png",
+   "prompt": "Curse of Death's Hold, a magical enchantment taking hold of a figure, glowing runes. May you and all your kin waste and wither until your clan is no more!. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 20234,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curse-of-oblivion": {
+   "name": "Curse of Oblivion",
+   "kind": "cards",
+   "file": "cards/curse-of-oblivion.png",
+   "prompt": "Curse of Oblivion, a magical enchantment taking hold of a figure, glowing runes. The first step to peace is to learn how to forget. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15083,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curse-of-stalked-prey": {
+   "name": "Curse of Stalked Prey",
+   "kind": "cards",
+   "file": "cards/curse-of-stalked-prey.png",
+   "prompt": "Curse of Stalked Prey, a magical enchantment taking hold of a figure, glowing runes. Innocent thorns can fill the air with your bloodscent. Don't stray from the path. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21679,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curse-of-the-bloody-tome": {
+   "name": "Curse of the Bloody Tome",
+   "kind": "cards",
+   "file": "cards/curse-of-the-bloody-tome.png",
+   "prompt": "Curse of the Bloody Tome, a magical enchantment taking hold of a figure, glowing runes. After seeing his life's work drip away, the mage decided it was a good time to go crazy. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 27696,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curse-of-the-nightly-hunt": {
+   "name": "Curse of the Nightly Hunt",
+   "kind": "cards",
+   "file": "cards/curse-of-the-nightly-hunt.png",
+   "prompt": "Curse of the Nightly Hunt, a magical enchantment taking hold of a figure, glowing runes. When the moon rises and the bloodlust takes hold, nothing matters but the kill. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 30743,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/curse-of-the-pierced-heart": {
+   "name": "Curse of the Pierced Heart",
+   "kind": "cards",
+   "file": "cards/curse-of-the-pierced-heart.png",
+   "prompt": "Curse of the Pierced Heart, a magical enchantment taking hold of a figure, glowing runes. May your veins weep, and may every vampire take notice. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 32336,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/darkthicket-wolf": {
+   "name": "Darkthicket Wolf",
+   "kind": "cards",
+   "file": "cards/darkthicket-wolf.png",
+   "prompt": "Darkthicket Wolf, a wolf, full figure in a dramatic pose. Werewolf slayers don't know for certain how werewolves are created. So they kill all the wolves, just to be safe. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13333,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/daybreak-ranger": {
+   "name": "Daybreak Ranger",
+   "kind": "cards",
+   "file": "cards/daybreak-ranger.png",
+   "prompt": "Daybreak Ranger, a human archer ranger werewolf, full figure in a dramatic pose. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11686,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/dead-weight": {
+   "name": "Dead Weight",
+   "kind": "cards",
+   "file": "cards/dead-weight.png",
+   "prompt": "Dead Weight, a magical enchantment taking hold of a figure, glowing runes. The crueler vampires' idea of free-range farming. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6433,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/dearly-departed": {
+   "name": "Dearly Departed",
+   "kind": "cards",
+   "file": "cards/dearly-departed.png",
+   "prompt": "Dearly Departed, a spirit, full figure in a dramatic pose. Never forget our ancestors. They have not forgotten us. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11937,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/delver-of-secrets": {
+   "name": "Delver of Secrets",
+   "kind": "cards",
+   "file": "cards/delver-of-secrets.png",
+   "prompt": "Delver of Secrets, a human wizard, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14939,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/demonmail-hauberk": {
+   "name": "Demonmail Hauberk",
+   "kind": "cards",
+   "file": "cards/demonmail-hauberk.png",
+   "prompt": "Demonmail Hauberk, a single gleaming weapon or piece of armour, close up. It comes off as easily as your own skin. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15063,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/deranged-assistant": {
+   "name": "Deranged Assistant",
+   "kind": "cards",
+   "file": "cards/deranged-assistant.png",
+   "prompt": "Deranged Assistant, a human wizard, full figure in a dramatic pose. Garl, adjust the slurry dispensers. Garl, fetch more corpses. Garl, quit crying and give me your brain tissue. If he doesn't stop being so rude, I'm quitting. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17483,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/desperate-ravings": {
+   "name": "Desperate Ravings",
+   "kind": "cards",
+   "file": "cards/desperate-ravings.png",
+   "prompt": "a dramatic moment of magic: Desperate Ravings, the spell in action. Her mind was quite gone, yet she spoke nothing but truth. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15411,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/devil-s-play": {
+   "name": "Devil's Play",
+   "kind": "cards",
+   "file": "cards/devil-s-play.png",
+   "prompt": "a dramatic moment of magic: Devil's Play, the spell in action. A devil's hands are never idle. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7198,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/diregraf-ghoul": {
+   "name": "Diregraf Ghoul",
+   "kind": "cards",
+   "file": "cards/diregraf-ghoul.png",
+   "prompt": "Diregraf Ghoul, a zombie, full figure in a dramatic pose. At least this one still has arms and legs. Well, most of its legs. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10225,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/disciple-of-griselbrand": {
+   "name": "Disciple of Griselbrand",
+   "kind": "cards",
+   "file": "cards/disciple-of-griselbrand.png",
+   "prompt": "Disciple of Griselbrand, a human cleric, full figure in a dramatic pose. The demon Griselbrand dared to stand against Avacyn, earning him the loathing of thousands and the admiration of a few. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 27178,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/dissipate": {
+   "name": "Dissipate",
+   "kind": "cards",
+   "file": "cards/dissipate.png",
+   "prompt": "a dramatic moment of magic: Dissipate, the spell in action. This abomination never belonged in our world. I'm merely setting it free. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 4796,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/divination": {
+   "name": "Divination",
+   "kind": "cards",
+   "file": "cards/divination.png",
+   "prompt": "a dramatic moment of magic: Divination, the spell in action. The stars mark your destiny. May you accept the fate thus divulged. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5935,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/divine-reckoning": {
+   "name": "Divine Reckoning",
+   "kind": "cards",
+   "file": "cards/divine-reckoning.png",
+   "prompt": "a dramatic moment of magic: Divine Reckoning, the spell in action. Survival of the purest. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13694,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/doom-blade": {
+   "name": "Doom Blade",
+   "kind": "cards",
+   "file": "cards/doom-blade.png",
+   "prompt": "a dramatic moment of magic: Doom Blade, the spell in action. Doom has found diversion in the thrust and parry of our storied struggle. But you have fallen behind, Richards. Now you shall fall asunder!. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5057,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/doomed-traveler": {
+   "name": "Doomed Traveler",
+   "kind": "cards",
+   "file": "cards/doomed-traveler.png",
+   "prompt": "Doomed Traveler, a human soldier, full figure in a dramatic pose. He vowed he would never rest until he reached his destination. He doesn't know how right he was. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12094,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/dream-twist": {
+   "name": "Dream Twist",
+   "kind": "cards",
+   "file": "cards/dream-twist.png",
+   "prompt": "a dramatic moment of magic: Dream Twist, the spell in action. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6635,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/elder-cathar": {
+   "name": "Elder Cathar",
+   "kind": "cards",
+   "file": "cards/elder-cathar.png",
+   "prompt": "Elder Cathar, a human soldier, full figure in a dramatic pose. My greatest hope is that you will surpass me in every way, consigning my name to some forgotten corner of history. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7515,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/elder-of-laurels": {
+   "name": "Elder of Laurels",
+   "kind": "cards",
+   "file": "cards/elder-of-laurels.png",
+   "prompt": "Elder of Laurels, a human advisor, full figure in a dramatic pose. Hopes and prayers can carry the same force as swords and torches. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13219,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/elite-inquisitor": {
+   "name": "Elite Inquisitor",
+   "kind": "cards",
+   "file": "cards/elite-inquisitor.png",
+   "prompt": "Elite Inquisitor, a human soldier, full figure in a dramatic pose. No matter how many I kill, there are always more to hunt. It makes me smile just to think about it. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14352,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/endless-ranks-of-the-dead": {
+   "name": "Endless Ranks of the Dead",
+   "kind": "cards",
+   "file": "cards/endless-ranks-of-the-dead.png",
+   "prompt": "Endless Ranks of the Dead, a lingering magical presence over a scene. With Thraben's army recalled to its city walls, outlying villages were left to fend for themselves. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 28666,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/essence-of-the-wild": {
+   "name": "Essence of the Wild",
+   "kind": "cards",
+   "file": "cards/essence-of-the-wild.png",
+   "prompt": "Essence of the Wild, a avatar, full figure in a dramatic pose. Wander too far into the wild and it may take you for its own. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17185,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/evil-twin": {
+   "name": "Evil Twin",
+   "kind": "cards",
+   "file": "cards/evil-twin.png",
+   "prompt": "Evil Twin, a shapeshifter, full figure in a dramatic pose. You can always tell the evil one by the dagger he's sticking in you. black and violet, grave shadow, blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 4379,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/falkenrath-marauders": {
+   "name": "Falkenrath Marauders",
+   "kind": "cards",
+   "file": "cards/falkenrath-marauders.png",
+   "prompt": "Falkenrath Marauders, a vampire warrior, full figure in a dramatic pose. No slinking in the dark for them, no luring whispers. They claim their prey in the speed and glory of the hunt. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21283,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/falkenrath-noble": {
+   "name": "Falkenrath Noble",
+   "kind": "cards",
+   "file": "cards/falkenrath-noble.png",
+   "prompt": "Falkenrath Noble, a vampire noble, full figure in a dramatic pose. I often think on how excited they must feel to be chosen as my prey. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13178,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/feeling-of-dread": {
+   "name": "Feeling of Dread",
+   "kind": "cards",
+   "file": "cards/feeling-of-dread.png",
+   "prompt": "a dramatic moment of magic: Feeling of Dread, the spell in action. People only say I'm sure it was nothing when they're sure it was something. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12307,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/feral-ridgewolf": {
+   "name": "Feral Ridgewolf",
+   "kind": "cards",
+   "file": "cards/feral-ridgewolf.png",
+   "prompt": "Feral Ridgewolf, a wolf, full figure in a dramatic pose. The wolves no longer hunt just to feed. They kill for sport, or for some madness behind their eyes. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12102,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/festerhide-boar": {
+   "name": "Festerhide Boar",
+   "kind": "cards",
+   "file": "cards/festerhide-boar.png",
+   "prompt": "Festerhide Boar, a boar, full figure in a dramatic pose. Bury your dead deep. The boars are hungriest while the corpse is still warm. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11403,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/fiend-hunter": {
+   "name": "Fiend Hunter",
+   "kind": "cards",
+   "file": "cards/fiend-hunter.png",
+   "prompt": "Fiend Hunter, a human cleric, full figure in a dramatic pose. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7784,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/forbidden-alchemy": {
+   "name": "Forbidden Alchemy",
+   "kind": "cards",
+   "file": "cards/forbidden-alchemy.png",
+   "prompt": "a dramatic moment of magic: Forbidden Alchemy, the spell in action. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15039,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/forest": {
+   "name": "Forest",
+   "kind": "cards",
+   "file": "cards/forest.png",
+   "prompt": "a landscape: Forest, forest, wide view, no characters. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 2309,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/fortress-crab": {
+   "name": "Fortress Crab",
+   "kind": "cards",
+   "file": "cards/fortress-crab.png",
+   "prompt": "Fortress Crab, a crab, full figure in a dramatic pose. Unbreakable and unappetizing, the crab grows uninterrupted, sometimes to the size of a cottage and beyond. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8649,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/frightful-delusion": {
+   "name": "Frightful Delusion",
+   "kind": "cards",
+   "file": "cards/frightful-delusion.png",
+   "prompt": "a dramatic moment of magic: Frightful Delusion, the spell in action. Whether he actually exists is in question, but the terror she feels is excruciatingly real. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17457,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/full-moon-s-rise": {
+   "name": "Full Moon's Rise",
+   "kind": "cards",
+   "file": "cards/full-moon-s-rise.png",
+   "prompt": "Full Moon's Rise, a lingering magical presence over a scene. Some lycanthropes wish they could abandon their weak human shapes and revel in the power of the wolf. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12253,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/furor-of-the-bitten": {
+   "name": "Furor of the Bitten",
+   "kind": "cards",
+   "file": "cards/furor-of-the-bitten.png",
+   "prompt": "Furor of the Bitten, a magical enchantment taking hold of a figure, glowing runes. Those who only believe themselves infected with lycanthropy can be as dangerous as those who really are. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17900,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gallows-warden": {
+   "name": "Gallows Warden",
+   "kind": "cards",
+   "file": "cards/gallows-warden.png",
+   "prompt": "Gallows Warden, a spirit, full figure in a dramatic pose. The spirit cares nothing for the crimes or triumphs of the slain. It shelters all beneath its stormy cloak. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10411,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/galvanic-juggernaut": {
+   "name": "Galvanic Juggernaut",
+   "kind": "cards",
+   "file": "cards/galvanic-juggernaut.png",
+   "prompt": "Galvanic Juggernaut, a juggernaut, full figure in a dramatic pose. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19466,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/garruk-relentless": {
+   "name": "Garruk Relentless",
+   "kind": "cards",
+   "file": "cards/garruk-relentless.png",
+   "prompt": "Garruk Relentless, a powerful garruk planeswalker, portrait. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15920,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/garruk-the-veil-cursed": {
+   "name": "Garruk, the Veil-Cursed",
+   "kind": "cards",
+   "file": "cards/garruk-the-veil-cursed.png",
+   "prompt": "Garruk, the Veil-Cursed, a powerful garruk planeswalker, portrait. black and violet, grave shadow, green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 25679,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gatstaf-howler": {
+   "name": "Gatstaf Howler",
+   "kind": "cards",
+   "file": "cards/gatstaf-howler.png",
+   "prompt": "Gatstaf Howler, a werewolf, full figure in a dramatic pose. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10477,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gatstaf-shepherd": {
+   "name": "Gatstaf Shepherd",
+   "kind": "cards",
+   "file": "cards/gatstaf-shepherd.png",
+   "prompt": "Gatstaf Shepherd, a human werewolf, full figure in a dramatic pose. What is worse than a wolf in sheep's clothing?. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13523,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gavony-township": {
+   "name": "Gavony Township",
+   "kind": "cards",
+   "file": "cards/gavony-township.png",
+   "prompt": "a landscape: Gavony Township, wild land, wide view, no characters. The protective wards of the church have weakened, and no one can tell us why. It's time to look to our own defenses. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12516,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/geist-honored-monk": {
+   "name": "Geist-Honored Monk",
+   "kind": "cards",
+   "file": "cards/geist-honored-monk.png",
+   "prompt": "Geist-Honored Monk, a human monk, full figure in a dramatic pose. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 16331,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/geist-of-saint-traft": {
+   "name": "Geist of Saint Traft",
+   "kind": "cards",
+   "file": "cards/geist-of-saint-traft.png",
+   "prompt": "Geist of Saint Traft, a spirit cleric, full figure in a dramatic pose. blue and silver, cold moonlight, white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19678,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/geistcatcher-s-rig": {
+   "name": "Geistcatcher's Rig",
+   "kind": "cards",
+   "file": "cards/geistcatcher-s-rig.png",
+   "prompt": "Geistcatcher's Rig, a construct, full figure in a dramatic pose. The rigs were outlawed except in Nephalia, where malign spirits are as plentiful as crazed inventors. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15787,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/geistflame": {
+   "name": "Geistflame",
+   "kind": "cards",
+   "file": "cards/geistflame.png",
+   "prompt": "a dramatic moment of magic: Geistflame, the spell in action. Innistrad pyromancers find their best raw materials in the fury of the dead. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5763,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ghost-quarter": {
+   "name": "Ghost Quarter",
+   "kind": "cards",
+   "file": "cards/ghost-quarter.png",
+   "prompt": "a landscape: Ghost Quarter, wild land, wide view, no characters. Deserted, but not uninhabited. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9330,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ghostly-possession": {
+   "name": "Ghostly Possession",
+   "kind": "cards",
+   "file": "cards/ghostly-possession.png",
+   "prompt": "Ghostly Possession, a magical enchantment taking hold of a figure, glowing runes. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18073,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ghoulcaller-s-bell": {
+   "name": "Ghoulcaller's Bell",
+   "kind": "cards",
+   "file": "cards/ghoulcaller-s-bell.png",
+   "prompt": "Ghoulcaller's Bell, a strange arcane artifact object, close up. The bell's chime heralds the rise of the unhallowed from the grave and the fall of their victims into the earth. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15790,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ghoulcaller-s-chant": {
+   "name": "Ghoulcaller's Chant",
+   "kind": "cards",
+   "file": "cards/ghoulcaller-s-chant.png",
+   "prompt": "a dramatic moment of magic: Ghoulcaller's Chant, the spell in action. The living are born small and weak. The dead rise ready to serve. The choice is obvious. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17906,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ghoulraiser": {
+   "name": "Ghoulraiser",
+   "kind": "cards",
+   "file": "cards/ghoulraiser.png",
+   "prompt": "Ghoulraiser, a zombie, full figure in a dramatic pose. Come. Bring your brothers. Tonight, you feast on living flesh. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7122,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/giant-growth": {
+   "name": "Giant Growth",
+   "kind": "cards",
+   "file": "cards/giant-growth.png",
+   "prompt": "a dramatic moment of magic: Giant Growth, the spell in action. Cap called for Giant-Man, not Ant-Man. Something big must be going down. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7906,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/glorious-anthem": {
+   "name": "Glorious Anthem",
+   "kind": "cards",
+   "file": "cards/glorious-anthem.png",
+   "prompt": "Glorious Anthem, a lingering magical presence over a scene. The songs of angels are perceived not as words in the ears but as stirrings in the soul. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11947,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gnaw-to-the-bone": {
+   "name": "Gnaw to the Bone",
+   "kind": "cards",
+   "file": "cards/gnaw-to-the-bone.png",
+   "prompt": "a dramatic moment of magic: Gnaw to the Bone, the spell in action. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12204,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/goblin-piker": {
+   "name": "Goblin Piker",
+   "kind": "cards",
+   "file": "cards/goblin-piker.png",
+   "prompt": "Goblin Piker, a goblin warrior, full figure in a dramatic pose. Once he'd worked out which end of the thing was sharp, he was promoted to guard duty. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7562,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/grasp-of-phantoms": {
+   "name": "Grasp of Phantoms",
+   "kind": "cards",
+   "file": "cards/grasp-of-phantoms.png",
+   "prompt": "a dramatic moment of magic: Grasp of Phantoms, the spell in action. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15209,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/grave-bramble": {
+   "name": "Grave Bramble",
+   "kind": "cards",
+   "file": "cards/grave-bramble.png",
+   "prompt": "Grave Bramble, a plant, full figure in a dramatic pose. Nature abhors a zombie. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8783,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/graveyard-shovel": {
+   "name": "Graveyard Shovel",
+   "kind": "cards",
+   "file": "cards/graveyard-shovel.png",
+   "prompt": "Graveyard Shovel, a strange arcane artifact object, close up. Thanks to Havengul's thriving illegal market for corpses, the shovel that interred a body during the day is usually the same one digging it out at night. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13603,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/grimgrin-corpse-born": {
+   "name": "Grimgrin, Corpse-Born",
+   "kind": "cards",
+   "file": "cards/grimgrin-corpse-born.png",
+   "prompt": "Grimgrin, Corpse-Born, a zombie warrior, full figure in a dramatic pose. black and violet, grave shadow, blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21692,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/grimoire-of-the-dead": {
+   "name": "Grimoire of the Dead",
+   "kind": "cards",
+   "file": "cards/grimoire-of-the-dead.png",
+   "prompt": "Grimoire of the Dead, a strange arcane artifact object, close up. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18553,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/grizzled-outcasts": {
+   "name": "Grizzled Outcasts",
+   "kind": "cards",
+   "file": "cards/grizzled-outcasts.png",
+   "prompt": "Grizzled Outcasts, a human werewolf, full figure in a dramatic pose. Seen as unsavory, the hunters were never allowed in town—until one night they vanished. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15805,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/grizzly-bears": {
+   "name": "Grizzly Bears",
+   "kind": "cards",
+   "file": "cards/grizzly-bears.png",
+   "prompt": "Grizzly Bears, a bear, full figure in a dramatic pose. We cannot forget that among all of Dominaria's wonders, a system of life exists, with prey and predators that will never fight wars nor vie for ancient power. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8997,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gruesome-deformity": {
+   "name": "Gruesome Deformity",
+   "kind": "cards",
+   "file": "cards/gruesome-deformity.png",
+   "prompt": "Gruesome Deformity, a magical enchantment taking hold of a figure, glowing runes. She wanted to inspire terror wherever she went. The demons happily granted her wish. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17673,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/gutter-grime": {
+   "name": "Gutter Grime",
+   "kind": "cards",
+   "file": "cards/gutter-grime.png",
+   "prompt": "Gutter Grime, a lingering magical presence over a scene. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7585,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/hamlet-captain": {
+   "name": "Hamlet Captain",
+   "kind": "cards",
+   "file": "cards/hamlet-captain.png",
+   "prompt": "Hamlet Captain, a human warrior, full figure in a dramatic pose. I would fear this fight, bloodsucker, were I alone. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10324,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/hanweir-watchkeep": {
+   "name": "Hanweir Watchkeep",
+   "kind": "cards",
+   "file": "cards/hanweir-watchkeep.png",
+   "prompt": "Hanweir Watchkeep, a human warrior werewolf, full figure in a dramatic pose. He scans for wolves, knowing there's one he can never anticipate. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15363,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/harvest-pyre": {
+   "name": "Harvest Pyre",
+   "kind": "cards",
+   "file": "cards/harvest-pyre.png",
+   "prompt": "a dramatic moment of magic: Harvest Pyre, the spell in action. Corpses destroyed by fire form the most destructive geists. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7739,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/heartless-summoning": {
+   "name": "Heartless Summoning",
+   "kind": "cards",
+   "file": "cards/heartless-summoning.png",
+   "prompt": "Heartless Summoning, a lingering magical presence over a scene. They won't be winning any beauty pageants, but they'll do the trick. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19638,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/heretic-s-punishment": {
+   "name": "Heretic's Punishment",
+   "kind": "cards",
+   "file": "cards/heretic-s-punishment.png",
+   "prompt": "Heretic's Punishment, a lingering magical presence over a scene. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21244,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/hinterland-harbor": {
+   "name": "Hinterland Harbor",
+   "kind": "cards",
+   "file": "cards/hinterland-harbor.png",
+   "prompt": "a landscape: Hinterland Harbor, wild land, wide view, no characters. In places where the sea meets the trees, it's easy to forget the darkness that rules most of Innistrad. green and brown, wild forest, blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15044,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/hollowhenge-scavenger": {
+   "name": "Hollowhenge Scavenger",
+   "kind": "cards",
+   "file": "cards/hollowhenge-scavenger.png",
+   "prompt": "Hollowhenge Scavenger, a elemental, full figure in a dramatic pose. After werewolves slaughtered the citizenry of Hollowhenge, other creatures moved in. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 23246,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/holy-strength": {
+   "name": "Holy Strength",
+   "kind": "cards",
+   "file": "cards/holy-strength.png",
+   "prompt": "Holy Strength, a magical enchantment taking hold of a figure, glowing runes. Born under the sun, the first child will seek the foundation of honor and be fortified by its righteousness. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9370,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/homicidal-brute": {
+   "name": "Homicidal Brute",
+   "kind": "cards",
+   "file": "cards/homicidal-brute.png",
+   "prompt": "Homicidal Brute, a human mutant, full figure in a dramatic pose. For a moment his basest desires run free, unshackled by reason or conscience. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11688,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/howlpack-alpha": {
+   "name": "Howlpack Alpha",
+   "kind": "cards",
+   "file": "cards/howlpack-alpha.png",
+   "prompt": "Howlpack Alpha, a werewolf, full figure in a dramatic pose. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9954,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/howlpack-of-estwald": {
+   "name": "Howlpack of Estwald",
+   "kind": "cards",
+   "file": "cards/howlpack-of-estwald.png",
+   "prompt": "Howlpack of Estwald, a werewolf, full figure in a dramatic pose. Estwald's citizens don't dislike outsiders—they taste just fine. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18322,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/hysterical-blindness": {
+   "name": "Hysterical Blindness",
+   "kind": "cards",
+   "file": "cards/hysterical-blindness.png",
+   "prompt": "a dramatic moment of magic: Hysterical Blindness, the spell in action. The panic is amusing, but the real fun comes when the spell passes and the villagers start looking for a scapegoat. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21233,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/infernal-plunge": {
+   "name": "Infernal Plunge",
+   "kind": "cards",
+   "file": "cards/infernal-plunge.png",
+   "prompt": "a dramatic moment of magic: Infernal Plunge, the spell in action. Oh mighty Griselbrand, Scourge of the Heedless World, gladly I consume myself for thee!. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11843,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/inquisitor-s-flail": {
+   "name": "Inquisitor's Flail",
+   "kind": "cards",
+   "file": "cards/inquisitor-s-flail.png",
+   "prompt": "Inquisitor's Flail, a single gleaming weapon or piece of armour, close up. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 16223,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/insectile-aberration": {
+   "name": "Insectile Aberration",
+   "kind": "cards",
+   "file": "cards/insectile-aberration.png",
+   "prompt": "Insectile Aberration, a human insect, full figure in a dramatic pose. Unfortunately, all my test animals have died or escaped, so I shall be the final subject. I feel no fear. This is a momentous night. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21294,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/instigator-gang": {
+   "name": "Instigator Gang",
+   "kind": "cards",
+   "file": "cards/instigator-gang.png",
+   "prompt": "Instigator Gang, a human werewolf, full figure in a dramatic pose. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11541,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/intangible-virtue": {
+   "name": "Intangible Virtue",
+   "kind": "cards",
+   "file": "cards/intangible-virtue.png",
+   "prompt": "Intangible Virtue, a lingering magical presence over a scene. In life, they were a motley crew: farmers, lords, cutpurses, priests. In death, they are united in singular, benevolent purpose. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15372,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/into-the-maw-of-hell": {
+   "name": "Into the Maw of Hell",
+   "kind": "cards",
+   "file": "cards/into-the-maw-of-hell.png",
+   "prompt": "a dramatic moment of magic: Into the Maw of Hell, the spell in action. Few entrances lead to where demons and devils lurk. Unfortunately, they occasionally open new ones. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18296,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/invisible-stalker": {
+   "name": "Invisible Stalker",
+   "kind": "cards",
+   "file": "cards/invisible-stalker.png",
+   "prompt": "Invisible Stalker, a human rogue, full figure in a dramatic pose. All that concerns me is the vampires' sense of smell and those freezing Nephalian nights. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15288,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ironfang": {
+   "name": "Ironfang",
+   "kind": "cards",
+   "file": "cards/ironfang.png",
+   "prompt": "Ironfang, a werewolf, full figure in a dramatic pose. Each morning, he repairs the front door. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 3760,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/island": {
+   "name": "Island",
+   "kind": "cards",
+   "file": "cards/island.png",
+   "prompt": "a landscape: Island, island, wide view, no characters. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 2165,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/isolated-chapel": {
+   "name": "Isolated Chapel",
+   "kind": "cards",
+   "file": "cards/isolated-chapel.png",
+   "prompt": "a landscape: Isolated Chapel, wild land, wide view, no characters. Not every church is a place of faith. black and violet, grave shadow, white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11512,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/kalonian-tusker": {
+   "name": "Kalonian Tusker",
+   "kind": "cards",
+   "file": "cards/kalonian-tusker.png",
+   "prompt": "Kalonian Tusker, a beast, full figure in a dramatic pose. And all this time I thought *we* were tracking *it*. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12086,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/kessig-cagebreakers": {
+   "name": "Kessig Cagebreakers",
+   "kind": "cards",
+   "file": "cards/kessig-cagebreakers.png",
+   "prompt": "Kessig Cagebreakers, a human rogue, full figure in a dramatic pose. They put bars on these noble beasts and then wonder why werewolves target our towns. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19192,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/kessig-wolf": {
+   "name": "Kessig Wolf",
+   "kind": "cards",
+   "file": "cards/kessig-wolf.png",
+   "prompt": "Kessig Wolf, a wolf, full figure in a dramatic pose. Don't be afraid when you hear the wolves howl. Be afraid when you don't hear them at all. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6346,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/kessig-wolf-run": {
+   "name": "Kessig Wolf Run",
+   "kind": "cards",
+   "file": "cards/kessig-wolf-run.png",
+   "prompt": "a landscape: Kessig Wolf Run, wild land, wide view, no characters. When a werewolf changes for the first time, that first howl is said to echo through the wilds till moonset. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11084,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/kindercatch": {
+   "name": "Kindercatch",
+   "kind": "cards",
+   "file": "cards/kindercatch.png",
+   "prompt": "Kindercatch, a spirit, full figure in a dramatic pose. In the forest villages of Kessig, parents feed their children wormwood and other bitter herbs, hoping to make them less palatable to things that roam the night. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6851,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/krallenhorde-wantons": {
+   "name": "Krallenhorde Wantons",
+   "kind": "cards",
+   "file": "cards/krallenhorde-wantons.png",
+   "prompt": "Krallenhorde Wantons, a werewolf, full figure in a dramatic pose. The boot prints became paw prints, and they led right back into town. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21434,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/kruin-outlaw": {
+   "name": "Kruin Outlaw",
+   "kind": "cards",
+   "file": "cards/kruin-outlaw.png",
+   "prompt": "Kruin Outlaw, a human rogue werewolf, full figure in a dramatic pose. Hold tight. I've got a surprise for them. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7924,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/laboratory-maniac": {
+   "name": "Laboratory Maniac",
+   "kind": "cards",
+   "file": "cards/laboratory-maniac.png",
+   "prompt": "Laboratory Maniac, a human wizard, full figure in a dramatic pose. His mind whirled with grand plans, never thinking of what might happen if he were to succeed. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14983,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/lantern-spirit": {
+   "name": "Lantern Spirit",
+   "kind": "cards",
+   "file": "cards/lantern-spirit.png",
+   "prompt": "Lantern Spirit, a spirit, full figure in a dramatic pose. Bound to the square where she died, she calls out to those in danger—usually scaring them straight into the peril she warns of. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10658,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/lava-axe": {
+   "name": "Lava Axe",
+   "kind": "cards",
+   "file": "cards/lava-axe.png",
+   "prompt": "a dramatic moment of magic: Lava Axe, the spell in action. Catch!. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 3210,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/lightning-bolt": {
+   "name": "Lightning Bolt",
+   "kind": "cards",
+   "file": "cards/lightning-bolt.png",
+   "prompt": "a dramatic moment of magic: Lightning Bolt, the spell in action. The sparkmage shrieked, calling on the rage of the storms of his youth. To his surprise, the sky responded with a fierce energy he'd never thought to see again. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10199,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/liliana-of-the-veil": {
+   "name": "Liliana of the Veil",
+   "kind": "cards",
+   "file": "cards/liliana-of-the-veil.png",
+   "prompt": "Liliana of the Veil, a powerful liliana planeswalker, portrait. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17154,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/lord-of-lineage": {
+   "name": "Lord of Lineage",
+   "kind": "cards",
+   "file": "cards/lord-of-lineage.png",
+   "prompt": "Lord of Lineage, a vampire, full figure in a dramatic pose. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11210,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/lost-in-the-mist": {
+   "name": "Lost in the Mist",
+   "kind": "cards",
+   "file": "cards/lost-in-the-mist.png",
+   "prompt": "a dramatic moment of magic: Lost in the Mist, the spell in action. The secrets she carried could have saved many lives, but they quietly drowned with her. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12554,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ludevic-s-abomination": {
+   "name": "Ludevic's Abomination",
+   "kind": "cards",
+   "file": "cards/ludevic-s-abomination.png",
+   "prompt": "Ludevic's Abomination, a lizard horror, full figure in a dramatic pose. After several frustrating experiments, the visionary Ludevic realized he needed to create a monster that fed on torch-wielding mobs. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 23051,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ludevic-s-test-subject": {
+   "name": "Ludevic's Test Subject",
+   "kind": "cards",
+   "file": "cards/ludevic-s-test-subject.png",
+   "prompt": "Ludevic's Test Subject, a lizard egg, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 24075,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/lumberknot": {
+   "name": "Lumberknot",
+   "kind": "cards",
+   "file": "cards/lumberknot.png",
+   "prompt": "Lumberknot, a treefolk, full figure in a dramatic pose. Animated by geists fused in its oak, it hungers for more life to add to its core. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6006,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/make-a-wish": {
+   "name": "Make a Wish",
+   "kind": "cards",
+   "file": "cards/make-a-wish.png",
+   "prompt": "a dramatic moment of magic: Make a Wish, the spell in action. In Gavony wishing is taken as a sign of weakness, yet the wells usually brim with silver. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5897,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/makeshift-mauler": {
+   "name": "Makeshift Mauler",
+   "kind": "cards",
+   "file": "cards/makeshift-mauler.png",
+   "prompt": "Makeshift Mauler, a zombie horror, full figure in a dramatic pose. It always amazes me what perfectly good things people throw away. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13493,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/manor-gargoyle": {
+   "name": "Manor Gargoyle",
+   "kind": "cards",
+   "file": "cards/manor-gargoyle.png",
+   "prompt": "Manor Gargoyle, a gargoyle, full figure in a dramatic pose. Nothing could break it but the fall. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10627,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/manor-skeleton": {
+   "name": "Manor Skeleton",
+   "kind": "cards",
+   "file": "cards/manor-skeleton.png",
+   "prompt": "Manor Skeleton, a skeleton, full figure in a dramatic pose. Lungs dried to parchment wheeze blasphemies within a cage of bleached bone. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10719,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/markov-patrician": {
+   "name": "Markov Patrician",
+   "kind": "cards",
+   "file": "cards/markov-patrician.png",
+   "prompt": "Markov Patrician, a vampire, full figure in a dramatic pose. Vampires of the Markov bloodline pride themselves on their exquisite taste in fashion, art, and wine of the vein. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13687,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mask-of-avacyn": {
+   "name": "Mask of Avacyn",
+   "kind": "cards",
+   "file": "cards/mask-of-avacyn.png",
+   "prompt": "Mask of Avacyn, a single gleaming weapon or piece of armour, close up. It hides the face and protects the soul. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9973,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mausoleum-guard": {
+   "name": "Mausoleum Guard",
+   "kind": "cards",
+   "file": "cards/mausoleum-guard.png",
+   "prompt": "Mausoleum Guard, a human scout, full figure in a dramatic pose. Ghoulcallers trying to get in, geists trying to get out . . . . This duty is never dull. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11771,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/maw-of-the-mire": {
+   "name": "Maw of the Mire",
+   "kind": "cards",
+   "file": "cards/maw-of-the-mire.png",
+   "prompt": "a dramatic moment of magic: Maw of the Mire, the spell in action. As the chapel was dragged under, the bell in the tower rang until the murky depths forever silenced its toll. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10773,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mayor-of-avabruck": {
+   "name": "Mayor of Avabruck",
+   "kind": "cards",
+   "file": "cards/mayor-of-avabruck.png",
+   "prompt": "Mayor of Avabruck, a human advisor werewolf, full figure in a dramatic pose. He can deny his true nature for only so long. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14861,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/memory-s-journey": {
+   "name": "Memory's Journey",
+   "kind": "cards",
+   "file": "cards/memory-s-journey.png",
+   "prompt": "a dramatic moment of magic: Memory's Journey, the spell in action. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13665,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mentor-of-the-meek": {
+   "name": "Mentor of the Meek",
+   "kind": "cards",
+   "file": "cards/mentor-of-the-meek.png",
+   "prompt": "Mentor of the Meek, a human soldier, full figure in a dramatic pose. In these halls there is no pass or fail. Your true test comes with the first full moon. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15361,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/merciless-predator": {
+   "name": "Merciless Predator",
+   "kind": "cards",
+   "file": "cards/merciless-predator.png",
+   "prompt": "Merciless Predator, a werewolf, full figure in a dramatic pose. Before she just wanted to snatch your purse; now she'll take the whole arm. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17383,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/midnight-haunting": {
+   "name": "Midnight Haunting",
+   "kind": "cards",
+   "file": "cards/midnight-haunting.png",
+   "prompt": "a dramatic moment of magic: Midnight Haunting, the spell in action. The path back to the world of the living is murky and bewildering. A geist may not even realize that it's terrifying its own loved ones. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15445,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mikaeus-the-lunarch": {
+   "name": "Mikaeus, the Lunarch",
+   "kind": "cards",
+   "file": "cards/mikaeus-the-lunarch.png",
+   "prompt": "Mikaeus, the Lunarch, a human cleric, full figure in a dramatic pose. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19821,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mindshrieker": {
+   "name": "Mindshrieker",
+   "kind": "cards",
+   "file": "cards/mindshrieker.png",
+   "prompt": "Mindshrieker, a spirit bird, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8312,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mirror-mad-phantasm": {
+   "name": "Mirror-Mad Phantasm",
+   "kind": "cards",
+   "file": "cards/mirror-mad-phantasm.png",
+   "prompt": "Mirror-Mad Phantasm, a spirit, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18446,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/moan-of-the-unhallowed": {
+   "name": "Moan of the Unhallowed",
+   "kind": "cards",
+   "file": "cards/moan-of-the-unhallowed.png",
+   "prompt": "a dramatic moment of magic: Moan of the Unhallowed, the spell in action. For a ghoul, every village is a buffet and every disaster is a reunion. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 24752,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/moldgraf-monstrosity": {
+   "name": "Moldgraf Monstrosity",
+   "kind": "cards",
+   "file": "cards/moldgraf-monstrosity.png",
+   "prompt": "Moldgraf Monstrosity, a insect, full figure in a dramatic pose. The border between life and death is as thin as a layer of topsoil. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 22390,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/moment-of-heroism": {
+   "name": "Moment of Heroism",
+   "kind": "cards",
+   "file": "cards/moment-of-heroism.png",
+   "prompt": "a dramatic moment of magic: Moment of Heroism, the spell in action. My faith is stronger than fang, claw, or mindless hunger. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14934,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/moon-heron": {
+   "name": "Moon Heron",
+   "kind": "cards",
+   "file": "cards/moon-heron.png",
+   "prompt": "Moon Heron, a spirit bird, full figure in a dramatic pose. The heron is the symbol of the archangel Avacyn. The fact that such spirits still fly gives the church hope that its founder may one day return. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5382,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/moonmist": {
+   "name": "Moonmist",
+   "kind": "cards",
+   "file": "cards/moonmist.png",
+   "prompt": "a dramatic moment of magic: Moonmist, the spell in action. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 3980,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/moorland-haunt": {
+   "name": "Moorland Haunt",
+   "kind": "cards",
+   "file": "cards/moorland-haunt.png",
+   "prompt": "a landscape: Moorland Haunt, wild land, wide view, no characters. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10313,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/morkrut-banshee": {
+   "name": "Morkrut Banshee",
+   "kind": "cards",
+   "file": "cards/morkrut-banshee.png",
+   "prompt": "Morkrut Banshee, a spirit, full figure in a dramatic pose. Let go your grudges, or risk wandering the bogs forever in a murderous rage. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11844,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mountain": {
+   "name": "Mountain",
+   "kind": "cards",
+   "file": "cards/mountain.png",
+   "prompt": "a landscape: Mountain, mountain, wide view, no characters. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 3867,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/mulch": {
+   "name": "Mulch",
+   "kind": "cards",
+   "file": "cards/mulch.png",
+   "prompt": "a dramatic moment of magic: Mulch, the spell in action. The land knows no difference between the graves of commoners and nobles. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 1551,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/murder-of-crows": {
+   "name": "Murder of Crows",
+   "kind": "cards",
+   "file": "cards/murder-of-crows.png",
+   "prompt": "Murder of Crows, a bird, full figure in a dramatic pose. Even more than carrion, they crave the last words of the dying. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11531,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/naturalize": {
+   "name": "Naturalize",
+   "kind": "cards",
+   "file": "cards/naturalize.png",
+   "prompt": "a dramatic moment of magic: Naturalize, the spell in action. Stone and thought fade into ruin. Only the wind in the leaves will endure. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5944,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/nephalia-drownyard": {
+   "name": "Nephalia Drownyard",
+   "kind": "cards",
+   "file": "cards/nephalia-drownyard.png",
+   "prompt": "a landscape: Nephalia Drownyard, wild land, wide view, no characters. Some see a coastal disaster. I see a fully-stocked seagraf. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17422,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/nevermore": {
+   "name": "Nevermore",
+   "kind": "cards",
+   "file": "cards/nevermore.png",
+   "prompt": "Nevermore, a lingering magical presence over a scene. By the law of Avacyn, the following thoughts, words, and deeds are henceforth disallowed. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 4860,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/night-revelers": {
+   "name": "Night Revelers",
+   "kind": "cards",
+   "file": "cards/night-revelers.png",
+   "prompt": "Night Revelers, a vampire, full figure in a dramatic pose. Vampires think of themselves as the indisputable nobility of Innistrad, able to do as they please. There are few who can prove them wrong. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10731,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/night-terrors": {
+   "name": "Night Terrors",
+   "kind": "cards",
+   "file": "cards/night-terrors.png",
+   "prompt": "a dramatic moment of magic: Night Terrors, the spell in action. Innistrad is a place where dreams invade the mind and mere shadows exact a terrible toll. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9431,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/nightbird-s-clutches": {
+   "name": "Nightbird's Clutches",
+   "kind": "cards",
+   "file": "cards/nightbird-s-clutches.png",
+   "prompt": "a dramatic moment of magic: Nightbird's Clutches, the spell in action. Shiny polished silver can ward off many creatures, but it attracts others. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 20535,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/nightfall-predator": {
+   "name": "Nightfall Predator",
+   "kind": "cards",
+   "file": "cards/nightfall-predator.png",
+   "prompt": "Nightfall Predator, a werewolf, full figure in a dramatic pose. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17251,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/olivia-voldaren": {
+   "name": "Olivia Voldaren",
+   "kind": "cards",
+   "file": "cards/olivia-voldaren.png",
+   "prompt": "Olivia Voldaren, a vampire, full figure in a dramatic pose. black and violet, grave shadow, red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11990,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/one-eyed-scarecrow": {
+   "name": "One-Eyed Scarecrow",
+   "kind": "cards",
+   "file": "cards/one-eyed-scarecrow.png",
+   "prompt": "One-Eyed Scarecrow, a scarecrow, full figure in a dramatic pose. Farmhands and priests mutter curses at the ragged thing; it unnerves more than just the crows. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 16965,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/orchard-spirit": {
+   "name": "Orchard Spirit",
+   "kind": "cards",
+   "file": "cards/orchard-spirit.png",
+   "prompt": "Orchard Spirit, a spirit, full figure in a dramatic pose. Pick not the rotten fruit, but neither touch the best. Leave those as an offering for our unseen guests. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10524,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/pacifism": {
+   "name": "Pacifism",
+   "kind": "cards",
+   "file": "cards/pacifism.png",
+   "prompt": "Pacifism, a magical enchantment taking hold of a figure, glowing runes. You wish to get up, brother? It is very simple! All you have to do is be worthy!. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 3808,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/parallel-lives": {
+   "name": "Parallel Lives",
+   "kind": "cards",
+   "file": "cards/parallel-lives.png",
+   "prompt": "Parallel Lives, a lingering magical presence over a scene. There will come a time when the only prey left will be each other. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10305,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/paraselene": {
+   "name": "Paraselene",
+   "kind": "cards",
+   "file": "cards/paraselene.png",
+   "prompt": "a dramatic moment of magic: Paraselene, the spell in action. Moonlight has a way of showing all things as they truly are—for better or for worse. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5749,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/past-in-flames": {
+   "name": "Past in Flames",
+   "kind": "cards",
+   "file": "cards/past-in-flames.png",
+   "prompt": "a dramatic moment of magic: Past in Flames, the spell in action. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9907,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/pitchburn-devils": {
+   "name": "Pitchburn Devils",
+   "kind": "cards",
+   "file": "cards/pitchburn-devils.png",
+   "prompt": "Pitchburn Devils, a devil, full figure in a dramatic pose. The ingenuity of goblins, the depravity of demons, and the smarts of sheep. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13607,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/plains": {
+   "name": "Plains",
+   "kind": "cards",
+   "file": "cards/plains.png",
+   "prompt": "a landscape: Plains, plains, wide view, no characters. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 2247,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/prey-upon": {
+   "name": "Prey Upon",
+   "kind": "cards",
+   "file": "cards/prey-upon.png",
+   "prompt": "a dramatic moment of magic: Prey Upon, the spell in action. You don't find many old werewolf hunters. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 4427,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/purify-the-grave": {
+   "name": "Purify the Grave",
+   "kind": "cards",
+   "file": "cards/purify-the-grave.png",
+   "prompt": "a dramatic moment of magic: Purify the Grave, the spell in action. Some priests speak in whispers of the Helvault, a silver prison of unpurged evils. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12840,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rage-thrower": {
+   "name": "Rage Thrower",
+   "kind": "cards",
+   "file": "cards/rage-thrower.png",
+   "prompt": "Rage Thrower, a human shaman, full figure in a dramatic pose. Some lament these haunted times, but I'm a geistflame-tank-half-full kind of person. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7961,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rakish-heir": {
+   "name": "Rakish Heir",
+   "kind": "cards",
+   "file": "cards/rakish-heir.png",
+   "prompt": "Rakish Heir, a vampire, full figure in a dramatic pose. If you're not having fun, what's the point of living forever?. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6229,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rally-the-peasants": {
+   "name": "Rally the Peasants",
+   "kind": "cards",
+   "file": "cards/rally-the-peasants.png",
+   "prompt": "a dramatic moment of magic: Rally the Peasants, the spell in action. If you must go out at night, bring a mob. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 16922,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rampaging-werewolf": {
+   "name": "Rampaging Werewolf",
+   "kind": "cards",
+   "file": "cards/rampaging-werewolf.png",
+   "prompt": "Rampaging Werewolf, a werewolf, full figure in a dramatic pose. Just look at him, groveling on all fours! What a pathetic—uh-oh. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17314,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ranger-s-guile": {
+   "name": "Ranger's Guile",
+   "kind": "cards",
+   "file": "cards/ranger-s-guile.png",
+   "prompt": "a dramatic moment of magic: Ranger's Guile, the spell in action. In the remote corners of Kessig, protection is found in secret powers unknown to the Church of Avacyn. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9763,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/reaper-from-the-abyss": {
+   "name": "Reaper from the Abyss",
+   "kind": "cards",
+   "file": "cards/reaper-from-the-abyss.png",
+   "prompt": "Reaper from the Abyss, a demon, full figure in a dramatic pose. Avacyn has deserted you. I welcome your devotion in her stead. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21845,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rebuke": {
+   "name": "Rebuke",
+   "kind": "cards",
+   "file": "cards/rebuke.png",
+   "prompt": "a dramatic moment of magic: Rebuke, the spell in action. No one chooses to be stitched together into a skaab. If it could speak, it would beg for its own destruction. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 2187,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/reckless-waif": {
+   "name": "Reckless Waif",
+   "kind": "cards",
+   "file": "cards/reckless-waif.png",
+   "prompt": "Reckless Waif, a human rogue werewolf, full figure in a dramatic pose. Yes, I'm alone. No, I'm not worried. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8691,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/riot-devils": {
+   "name": "Riot Devils",
+   "kind": "cards",
+   "file": "cards/riot-devils.png",
+   "prompt": "Riot Devils, a devil, full figure in a dramatic pose. Devils are demons' unearthly desires made flesh. Let loose on the world, they satisfy their mad craving for destruction in a whirlwind of chaos. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6598,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rolling-temblor": {
+   "name": "Rolling Temblor",
+   "kind": "cards",
+   "file": "cards/rolling-temblor.png",
+   "prompt": "a dramatic moment of magic: Rolling Temblor, the spell in action. When demons open a path to your front door, it's time to move. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12031,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rooftop-storm": {
+   "name": "Rooftop Storm",
+   "kind": "cards",
+   "file": "cards/rooftop-storm.png",
+   "prompt": "Rooftop Storm, a lingering magical presence over a scene. Let those idiot priests tremble! A new era in unlife begins here and now. Oglor, raise the lightning vane!. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9244,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/rotting-fensnake": {
+   "name": "Rotting Fensnake",
+   "kind": "cards",
+   "file": "cards/rotting-fensnake.png",
+   "prompt": "Rotting Fensnake, a zombie snake, full figure in a dramatic pose. Its venom sacs are long gone, but its crushing strength is somehow greater than ever. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13517,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/runechanter-s-pike": {
+   "name": "Runechanter's Pike",
+   "kind": "cards",
+   "file": "cards/runechanter-s-pike.png",
+   "prompt": "Runechanter's Pike, a single gleaming weapon or piece of armour, close up. As sharp as its bearer's words of faith. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15964,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/runic-repetition": {
+   "name": "Runic Repetition",
+   "kind": "cards",
+   "file": "cards/runic-repetition.png",
+   "prompt": "a dramatic moment of magic: Runic Repetition, the spell in action. What some call obsession, I call the quest for perfection. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14092,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/savannah-lions": {
+   "name": "Savannah Lions",
+   "kind": "cards",
+   "file": "cards/savannah-lions.png",
+   "prompt": "Savannah Lions, a cat, full figure in a dramatic pose. One alone is fearsome; one among many is unstoppable. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10315,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/scourge-of-geier-reach": {
+   "name": "Scourge of Geier Reach",
+   "kind": "cards",
+   "file": "cards/scourge-of-geier-reach.png",
+   "prompt": "Scourge of Geier Reach, a elemental, full figure in a dramatic pose. Stensian villagers mourned the loss of human life. Thraben vampire slayers mourned the loss of living wood. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 22824,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/screeching-bat": {
+   "name": "Screeching Bat",
+   "kind": "cards",
+   "file": "cards/screeching-bat.png",
+   "prompt": "Screeching Bat, a bat, full figure in a dramatic pose. The bat has such clarity of hearing that simple sounds become symphonies. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9743,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/selfless-cathar": {
+   "name": "Selfless Cathar",
+   "kind": "cards",
+   "file": "cards/selfless-cathar.png",
+   "prompt": "Selfless Cathar, a human cleric, full figure in a dramatic pose. If I fail to offer myself, we will surely be overrun. My fate would be the same. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11725,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/selhoff-occultist": {
+   "name": "Selhoff Occultist",
+   "kind": "cards",
+   "file": "cards/selhoff-occultist.png",
+   "prompt": "Selhoff Occultist, a human rogue, full figure in a dramatic pose. The mist whispers to those who know it to be more than a mundane fog. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15771,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/sensory-deprivation": {
+   "name": "Sensory Deprivation",
+   "kind": "cards",
+   "file": "cards/sensory-deprivation.png",
+   "prompt": "Sensory Deprivation, a magical enchantment taking hold of a figure, glowing runes. They call it stitcher's anesthesia, a spell to deaden the senses while the mad doctors begin their grisly work. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19840,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/sever-the-bloodline": {
+   "name": "Sever the Bloodline",
+   "kind": "cards",
+   "file": "cards/sever-the-bloodline.png",
+   "prompt": "a dramatic moment of magic: Sever the Bloodline, the spell in action. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18609,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/sharpened-pitchfork": {
+   "name": "Sharpened Pitchfork",
+   "kind": "cards",
+   "file": "cards/sharpened-pitchfork.png",
+   "prompt": "Sharpened Pitchfork, a single gleaming weapon or piece of armour, close up. Not everyone can have a sword of blessed silver. Not everyone needs one, either. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19200,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/shimmering-grotto": {
+   "name": "Shimmering Grotto",
+   "kind": "cards",
+   "file": "cards/shimmering-grotto.png",
+   "prompt": "a landscape: Shimmering Grotto, wild land, wide view, no characters. This is the price of being last in the food chain. We must keep our places of beauty hidden away instead of displayed for all to see. black and violet, grave shadow, green and brown, wild forest, red and orange, fire and blood, blue and silver, cold moonlight, white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15574,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/silent-departure": {
+   "name": "Silent Departure",
+   "kind": "cards",
+   "file": "cards/silent-departure.png",
+   "prompt": "a dramatic moment of magic: Silent Departure, the spell in action. The same magic that lets geists pass through our realm can force them out of it. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13971,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/silver-inlaid-dagger": {
+   "name": "Silver-Inlaid Dagger",
+   "kind": "cards",
+   "file": "cards/silver-inlaid-dagger.png",
+   "prompt": "Silver-Inlaid Dagger, a single gleaming weapon or piece of armour, close up. Magical etchings turned a whittler's tool into a wolfhunter's weapon. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19698,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/silverchase-fox": {
+   "name": "Silverchase Fox",
+   "kind": "cards",
+   "file": "cards/silverchase-fox.png",
+   "prompt": "Silverchase Fox, a fox, full figure in a dramatic pose. Be careful in your hunt. The clever little creature can steal your wards and lead you right into the werewolf's den. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11585,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/skaab-goliath": {
+   "name": "Skaab Goliath",
+   "kind": "cards",
+   "file": "cards/skaab-goliath.png",
+   "prompt": "Skaab Goliath, a zombie giant, full figure in a dramatic pose. Three heads, six arms, and some armor grafts are better than . . . the normal numbers of those things. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8876,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/skaab-ruinator": {
+   "name": "Skaab Ruinator",
+   "kind": "cards",
+   "file": "cards/skaab-ruinator.png",
+   "prompt": "Skaab Ruinator, a zombie horror, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10711,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/skeletal-grimace": {
+   "name": "Skeletal Grimace",
+   "kind": "cards",
+   "file": "cards/skeletal-grimace.png",
+   "prompt": "Skeletal Grimace, a magical enchantment taking hold of a figure, glowing runes. And then I realized we all have skeletons on the inside. Why wait until the bodies are dead to control them?. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13164,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/skirsdag-cultist": {
+   "name": "Skirsdag Cultist",
+   "kind": "cards",
+   "file": "cards/skirsdag-cultist.png",
+   "prompt": "Skirsdag Cultist, a human shaman, full figure in a dramatic pose. Within blood is life. Within life is fire. Within fire is the path to our masters' glory!. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13846,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/skirsdag-high-priest": {
+   "name": "Skirsdag High Priest",
+   "kind": "cards",
+   "file": "cards/skirsdag-high-priest.png",
+   "prompt": "Skirsdag High Priest, a human cleric, full figure in a dramatic pose. Thraben's pleas fall on deaf ears. Ours do not. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 20077,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/slayer-of-the-wicked": {
+   "name": "Slayer of the Wicked",
+   "kind": "cards",
+   "file": "cards/slayer-of-the-wicked.png",
+   "prompt": "Slayer of the Wicked, a human soldier, full figure in a dramatic pose. You don't want to see his trophy room. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19411,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/smite-the-monstrous": {
+   "name": "Smite the Monstrous",
+   "kind": "cards",
+   "file": "cards/smite-the-monstrous.png",
+   "prompt": "a dramatic moment of magic: Smite the Monstrous, the spell in action. Though the old holy wards and roadside shrines have begun to fail, faith in Avacyn still holds true power. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19611,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/snapcaster-mage": {
+   "name": "Snapcaster Mage",
+   "kind": "cards",
+   "file": "cards/snapcaster-mage.png",
+   "prompt": "Snapcaster Mage, a human wizard, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11395,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/sol-ring": {
+   "name": "Sol Ring",
+   "kind": "cards",
+   "file": "cards/sol-ring.png",
+   "prompt": "Sol Ring, a strange arcane artifact object, close up. The subject of innovation will always be near and dear to my heart. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 3391,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/somberwald-spider": {
+   "name": "Somberwald Spider",
+   "kind": "cards",
+   "file": "cards/somberwald-spider.png",
+   "prompt": "Somberwald Spider, a spider, full figure in a dramatic pose. Stensian vampires encourage spiders near their manors so they can rob the webs. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15122,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/spare-from-evil": {
+   "name": "Spare from Evil",
+   "kind": "cards",
+   "file": "cards/spare-from-evil.png",
+   "prompt": "a dramatic moment of magic: Spare from Evil, the spell in action. As long as we can utter a prayer or lift a weapon, we have the power to fight back. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11270,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/spectral-flight": {
+   "name": "Spectral Flight",
+   "kind": "cards",
+   "file": "cards/spectral-flight.png",
+   "prompt": "Spectral Flight, a magical enchantment taking hold of a figure, glowing runes. The church looks down on binding spirits into armor, but now I can look down on them. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11784,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/spectral-rider": {
+   "name": "Spectral Rider",
+   "kind": "cards",
+   "file": "cards/spectral-rider.png",
+   "prompt": "Spectral Rider, a spirit knight, full figure in a dramatic pose. Never a word. Never a warning. Only the sound of hoofbeats along the crossways, and the screams of the avenged. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10185,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/spider-spawning": {
+   "name": "Spider Spawning",
+   "kind": "cards",
+   "file": "cards/spider-spawning.png",
+   "prompt": "a dramatic moment of magic: Spider Spawning, the spell in action. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12156,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/spidery-grasp": {
+   "name": "Spidery Grasp",
+   "kind": "cards",
+   "file": "cards/spidery-grasp.png",
+   "prompt": "a dramatic moment of magic: Spidery Grasp, the spell in action. Nobody's seen the Lady of Videns for years. Poor dear, no companions at all in that old castle. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8996,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/splinterfright": {
+   "name": "Splinterfright",
+   "kind": "cards",
+   "file": "cards/splinterfright.png",
+   "prompt": "Splinterfright, a elemental, full figure in a dramatic pose. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11341,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stalking-vampire": {
+   "name": "Stalking Vampire",
+   "kind": "cards",
+   "file": "cards/stalking-vampire.png",
+   "prompt": "Stalking Vampire, a vampire, full figure in a dramatic pose. Each form she takes is an exploration of the senses. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13572,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stensia-bloodhall": {
+   "name": "Stensia Bloodhall",
+   "kind": "cards",
+   "file": "cards/stensia-bloodhall.png",
+   "prompt": "a landscape: Stensia Bloodhall, wild land, wide view, no characters. The revelry ends when the supply of fresh ingenues runs dry. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15200,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stitched-drake": {
+   "name": "Stitched Drake",
+   "kind": "cards",
+   "file": "cards/stitched-drake.png",
+   "prompt": "Stitched Drake, a zombie drake, full figure in a dramatic pose. The best skaab are more powerful and more beautiful than the sum of their parts. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9911,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stitcher-s-apprentice": {
+   "name": "Stitcher's Apprentice",
+   "kind": "cards",
+   "file": "cards/stitcher-s-apprentice.png",
+   "prompt": "Stitcher's Apprentice, a homunculus, full figure in a dramatic pose. Oglor create life, Oglor take it away. Oglor god! . . . until Master return. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 22869,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stony-silence": {
+   "name": "Stony Silence",
+   "kind": "cards",
+   "file": "cards/stony-silence.png",
+   "prompt": "Stony Silence, a lingering magical presence over a scene. Let moss grow over gargoyles. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8999,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stromkirk-noble": {
+   "name": "Stromkirk Noble",
+   "kind": "cards",
+   "file": "cards/stromkirk-noble.png",
+   "prompt": "Stromkirk Noble, a vampire noble, full figure in a dramatic pose. A responsible king walks among his subjects. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11709,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/stromkirk-patrol": {
+   "name": "Stromkirk Patrol",
+   "kind": "cards",
+   "file": "cards/stromkirk-patrol.png",
+   "prompt": "Stromkirk Patrol, a vampire soldier, full figure in a dramatic pose. You'd best move along, human. Our palates are far less discerning than our master's. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13759,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/sturmgeist": {
+   "name": "Sturmgeist",
+   "kind": "cards",
+   "file": "cards/sturmgeist.png",
+   "prompt": "Sturmgeist, a spirit, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6027,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/sulfur-falls": {
+   "name": "Sulfur Falls",
+   "kind": "cards",
+   "file": "cards/sulfur-falls.png",
+   "prompt": "a landscape: Sulfur Falls, wild land, wide view, no characters. Skirsdag cultists meet behind a waterfall's curtain and plot with demonic forces. red and orange, fire and blood, blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7623,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/swamp": {
+   "name": "Swamp",
+   "kind": "cards",
+   "file": "cards/swamp.png",
+   "prompt": "a landscape: Swamp, swamp, wide view, no characters. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 1608,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/swords-to-plowshares": {
+   "name": "Swords to Plowshares",
+   "kind": "cards",
+   "file": "cards/swords-to-plowshares.png",
+   "prompt": "a dramatic moment of magic: Swords to Plowshares, the spell in action. Gotta get that corn planted before the world ends again. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 21365,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/terror-of-kruin-pass": {
+   "name": "Terror of Kruin Pass",
+   "kind": "cards",
+   "file": "cards/terror-of-kruin-pass.png",
+   "prompt": "Terror of Kruin Pass, a werewolf, full figure in a dramatic pose. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19610,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/think-twice": {
+   "name": "Think Twice",
+   "kind": "cards",
+   "file": "cards/think-twice.png",
+   "prompt": "a dramatic moment of magic: Think Twice, the spell in action. Either I know just the spell I need, or I'm about to. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6360,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/thraben-militia": {
+   "name": "Thraben Militia",
+   "kind": "cards",
+   "file": "cards/thraben-militia.png",
+   "prompt": "Thraben Militia, a human soldier, full figure in a dramatic pose. The time for grief is over. The time for retribution has begun. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11768,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/thraben-purebloods": {
+   "name": "Thraben Purebloods",
+   "kind": "cards",
+   "file": "cards/thraben-purebloods.png",
+   "prompt": "Thraben Purebloods, a dog, full figure in a dramatic pose. I've learned to trust my dogs' instincts. When they're calm, I'm calm. And when they get nervous, I get my crossbow. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17497,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/thraben-sentry": {
+   "name": "Thraben Sentry",
+   "kind": "cards",
+   "file": "cards/thraben-sentry.png",
+   "prompt": "Thraben Sentry, a human soldier, full figure in a dramatic pose. Looks like it's going to be a quiet night. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10679,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/tormented-pariah": {
+   "name": "Tormented Pariah",
+   "kind": "cards",
+   "file": "cards/tormented-pariah.png",
+   "prompt": "Tormented Pariah, a human warrior werewolf, full figure in a dramatic pose. Hey lads, the moon's rising. All the better to watch him beg for mercy. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13204,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/traitorous-blood": {
+   "name": "Traitorous Blood",
+   "kind": "cards",
+   "file": "cards/traitorous-blood.png",
+   "prompt": "a dramatic moment of magic: Traitorous Blood, the spell in action. I can make you dance to my tune like a puppet, your very blood eager to obey. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13525,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/travel-preparations": {
+   "name": "Travel Preparations",
+   "kind": "cards",
+   "file": "cards/travel-preparations.png",
+   "prompt": "a dramatic moment of magic: Travel Preparations, the spell in action. Visiting a shrine at the start of a journey makes the traveler more likely to finish it. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 19836,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/traveler-s-amulet": {
+   "name": "Traveler's Amulet",
+   "kind": "cards",
+   "file": "cards/traveler-s-amulet.png",
+   "prompt": "Traveler's Amulet, a strange arcane artifact object, close up. The rider set off into the eerie mist, swaddled in armor and laden with amulets. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14743,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/tree-of-redemption": {
+   "name": "Tree of Redemption",
+   "kind": "cards",
+   "file": "cards/tree-of-redemption.png",
+   "prompt": "Tree of Redemption, a plant, full figure in a dramatic pose. The executioner's tree in Thraben Cathedral holds the power to absolve more than the souls of the hanged. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17147,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/trepanation-blade": {
+   "name": "Trepanation Blade",
+   "kind": "cards",
+   "file": "cards/trepanation-blade.png",
+   "prompt": "Trepanation Blade, a single gleaming weapon or piece of armour, close up. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14606,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/tribute-to-hunger": {
+   "name": "Tribute to Hunger",
+   "kind": "cards",
+   "file": "cards/tribute-to-hunger.png",
+   "prompt": "a dramatic moment of magic: Tribute to Hunger, the spell in action. Marella was delighted. The ball had attracted so many suitors for her daughter, including that handsome stranger. She wondered where the two were now . . . . black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14793,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/typhoid-rats": {
+   "name": "Typhoid Rats",
+   "kind": "cards",
+   "file": "cards/typhoid-rats.png",
+   "prompt": "Typhoid Rats, a rat, full figure in a dramatic pose. Kidnappers caught in Havengul are given two choices: languish in prison or become rat catchers. The smart ones go to prison. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7583,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ulvenwald-mystics": {
+   "name": "Ulvenwald Mystics",
+   "kind": "cards",
+   "file": "cards/ulvenwald-mystics.png",
+   "prompt": "Ulvenwald Mystics, a human shaman werewolf, full figure in a dramatic pose. With this ritual, we cast aside our fragile humanity . . . green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15618,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/ulvenwald-primordials": {
+   "name": "Ulvenwald Primordials",
+   "kind": "cards",
+   "file": "cards/ulvenwald-primordials.png",
+   "prompt": "Ulvenwald Primordials, a werewolf, full figure in a dramatic pose. . . . and embrace the ancient ferocity of the undying Wild. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 23722,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/unbreathing-horde": {
+   "name": "Unbreathing Horde",
+   "kind": "cards",
+   "file": "cards/unbreathing-horde.png",
+   "prompt": "Unbreathing Horde, a zombie, full figure in a dramatic pose. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14865,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/unburial-rites": {
+   "name": "Unburial Rites",
+   "kind": "cards",
+   "file": "cards/unburial-rites.png",
+   "prompt": "a dramatic moment of magic: Unburial Rites, the spell in action. All crave the Blessed Sleep. Few receive it. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10388,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/undead-alchemist": {
+   "name": "Undead Alchemist",
+   "kind": "cards",
+   "file": "cards/undead-alchemist.png",
+   "prompt": "Undead Alchemist, a zombie, full figure in a dramatic pose. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13624,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/unholy-fiend": {
+   "name": "Unholy Fiend",
+   "kind": "cards",
+   "file": "cards/unholy-fiend.png",
+   "prompt": "Unholy Fiend, a horror, full figure in a dramatic pose. The fiend tormented them by recounting the girl's memories, as if some part of her remained inside that twisted shell. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7476,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/unruly-mob": {
+   "name": "Unruly Mob",
+   "kind": "cards",
+   "file": "cards/unruly-mob.png",
+   "prompt": "Unruly Mob, a human, full figure in a dramatic pose. Who says werewolves are the only ones who can hunt as a pack?. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5200,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/urgent-exorcism": {
+   "name": "Urgent Exorcism",
+   "kind": "cards",
+   "file": "cards/urgent-exorcism.png",
+   "prompt": "a dramatic moment of magic: Urgent Exorcism, the spell in action. To show geists pity is to prolong their agonies. Whether they know it or not, they seek the Blessed Sleep, and we are to give it to them. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 12290,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/vampire-interloper": {
+   "name": "Vampire Interloper",
+   "kind": "cards",
+   "file": "cards/vampire-interloper.png",
+   "prompt": "Vampire Interloper, a vampire scout, full figure in a dramatic pose. He listens to every heartbeat, deciding which one of hundreds he will stop. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 17692,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/vampiric-fury": {
+   "name": "Vampiric Fury",
+   "kind": "cards",
+   "file": "cards/vampiric-fury.png",
+   "prompt": "a dramatic moment of magic: Vampiric Fury, the spell in action. Many peasants secretly admire vampires' glamour and elegance—until they witness a moment of pure bloodlust. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9007,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/victim-of-night": {
+   "name": "Victim of Night",
+   "kind": "cards",
+   "file": "cards/victim-of-night.png",
+   "prompt": "a dramatic moment of magic: Victim of Night, the spell in action. Do not touch a drop. Not yet. I want to watch this so-called slayer's last crisis of faith. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11239,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/village-bell-ringer": {
+   "name": "Village Bell-Ringer",
+   "kind": "cards",
+   "file": "cards/village-bell-ringer.png",
+   "prompt": "Village Bell-Ringer, a human scout, full figure in a dramatic pose. Priests, hunters, slayers—to arms! The enemy approaches!. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 18009,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/village-cannibals": {
+   "name": "Village Cannibals",
+   "kind": "cards",
+   "file": "cards/village-cannibals.png",
+   "prompt": "Village Cannibals, a human, full figure in a dramatic pose. Some have endured the horrors of Innistrad by becoming the worst monsters of all. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15096,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/village-ironsmith": {
+   "name": "Village Ironsmith",
+   "kind": "cards",
+   "file": "cards/village-ironsmith.png",
+   "prompt": "Village Ironsmith, a human werewolf, full figure in a dramatic pose. Each night, he abandons the trappings of civilization. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15676,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/villagers-of-estwald": {
+   "name": "Villagers of Estwald",
+   "kind": "cards",
+   "file": "cards/villagers-of-estwald.png",
+   "prompt": "Villagers of Estwald, a human werewolf, full figure in a dramatic pose. You can spot a werewolf-infested town by its lack of butcher shops. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 20358,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/voiceless-spirit": {
+   "name": "Voiceless Spirit",
+   "kind": "cards",
+   "file": "cards/voiceless-spirit.png",
+   "prompt": "Voiceless Spirit, a spirit, full figure in a dramatic pose. I'd rather take on a neckbiter or moonhowler any day. Oh well, looks like I'm going to end up parrying with empty air half the night. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13803,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/walking-corpse": {
+   "name": "Walking Corpse",
+   "kind": "cards",
+   "file": "cards/walking-corpse.png",
+   "prompt": "Walking Corpse, a zombie, full figure in a dramatic pose. Is it hopeless? When wave upon wave of our dead return as mindless flesh-eaters to claw upon Thraben's walls? We're too busy cutting them down to indulge ourselves in such philosophical foppery. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 10415,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/wildblood-pack": {
+   "name": "Wildblood Pack",
+   "kind": "cards",
+   "file": "cards/wildblood-pack.png",
+   "prompt": "Wildblood Pack, a werewolf, full figure in a dramatic pose. red and orange, fire and blood. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9873,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/witchbane-orb": {
+   "name": "Witchbane Orb",
+   "kind": "cards",
+   "file": "cards/witchbane-orb.png",
+   "prompt": "Witchbane Orb, a strange arcane artifact object, close up. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 8448,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/wooden-stake": {
+   "name": "Wooden Stake",
+   "kind": "cards",
+   "file": "cards/wooden-stake.png",
+   "prompt": "Wooden Stake, a single gleaming weapon or piece of armour, close up. grey stone and bone, colourless. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7498,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/woodland-cemetery": {
+   "name": "Woodland Cemetery",
+   "kind": "cards",
+   "file": "cards/woodland-cemetery.png",
+   "prompt": "a landscape: Woodland Cemetery, wild land, wide view, no characters. Farmers cut the trees and buried their dead. The dead rose up and killed the farmers. The trees grew back and strangled the dead. black and violet, grave shadow, green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 15444,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/woodland-sleuth": {
+   "name": "Woodland Sleuth",
+   "kind": "cards",
+   "file": "cards/woodland-sleuth.png",
+   "prompt": "Woodland Sleuth, a human scout, full figure in a dramatic pose. Whatever did this is near. Death reversion has not yet occurred. Be alert!. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 11957,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "cards/wreath-of-geists": {
+   "name": "Wreath of Geists",
+   "kind": "cards",
+   "file": "cards/wreath-of-geists.png",
+   "prompt": "Wreath of Geists, a magical enchantment taking hold of a figure, glowing runes. Before you travel the woods of Kessig, first get permission from those who died trying. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 13108,
+   "img2img_strength": 0.78,
+   "enhanced_ref": true,
+   "cost_usd": 0.028
+  },
+  "tokens/angel": {
+   "name": "Angel",
+   "kind": "tokens",
+   "file": "tokens/angel.png",
+   "prompt": "Angel creature token: a fierce armoured angel with spread white wings. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6265,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/demon": {
+   "name": "Demon",
+   "kind": "tokens",
+   "file": "tokens/demon.png",
+   "prompt": "Demon creature token: a horned black demon with burning eyes. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 6390,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/homunculus": {
+   "name": "Homunculus",
+   "kind": "tokens",
+   "file": "tokens/homunculus.png",
+   "prompt": "Homunculus creature token: a tiny stitched blue homunculus with mismatched eyes. blue and silver, cold moonlight. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 14374,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/ooze": {
+   "name": "Ooze",
+   "kind": "tokens",
+   "file": "tokens/ooze.png",
+   "prompt": "Ooze creature token: a green dripping slime with skulls inside it. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5354,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/spider": {
+   "name": "Spider",
+   "kind": "tokens",
+   "file": "tokens/spider.png",
+   "prompt": "Spider creature token: a huge hairy black spider on a web. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7706,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/spirit": {
+   "name": "Spirit",
+   "kind": "tokens",
+   "file": "tokens/spirit.png",
+   "prompt": "Spirit creature token: a small translucent ghost with tattered white robes, glowing softly. white and gold, holy light. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7914,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/vampire": {
+   "name": "Vampire",
+   "kind": "tokens",
+   "file": "tokens/vampire.png",
+   "prompt": "Vampire creature token: a pale aristocratic vampire in a red-lined black cloak. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 9120,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/wolf": {
+   "name": "Wolf",
+   "kind": "tokens",
+   "file": "tokens/wolf.png",
+   "prompt": "Wolf creature token: a lean grey wolf with bared teeth, hunting. green and brown, wild forest. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 5294,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "tokens/zombie": {
+   "name": "Zombie",
+   "kind": "tokens",
+   "file": "tokens/zombie.png",
+   "prompt": "Zombie creature token: a shambling rotting corpse with grasping hands. black and violet, grave shadow. gothic horror, Innistrad, moonlit, muted palette, pixel art illustration",
+   "style": "rd_plus__low_res",
+   "size": [
+    64,
+    48
+   ],
+   "seed": 7651,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/button": {
+   "name": "button",
+   "kind": "ui",
+   "file": "ui/button.png",
+   "prompt": "wide iron ui button with a rounded bevel, empty, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    96,
+    64
+   ],
+   "seed": 4786,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/button-pressed": {
+   "name": "button-pressed",
+   "kind": "ui",
+   "file": "ui/button-pressed.png",
+   "prompt": "wide iron ui button pressed down, darker, empty, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    96,
+    64
+   ],
+   "seed": 15800,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/card-back": {
+   "name": "card-back",
+   "kind": "ui",
+   "file": "ui/card-back.png",
+   "prompt": "back of a trading card, dark leather with a silver crescent moon emblem, symmetrical",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 7273,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/exile-icon": {
+   "name": "exile-icon",
+   "kind": "ui",
+   "file": "ui/exile-icon.png",
+   "prompt": "a swirling purple void portal icon on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 8927,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/frame-black": {
+   "name": "frame-black",
+   "kind": "ui",
+   "file": "ui/frame-black.png",
+   "prompt": "ornate black and bone trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 10076,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/frame-blue": {
+   "name": "frame-blue",
+   "kind": "ui",
+   "file": "ui/frame-blue.png",
+   "prompt": "ornate deep blue and silver trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 8844,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/frame-colorless": {
+   "name": "frame-colorless",
+   "kind": "ui",
+   "file": "ui/frame-colorless.png",
+   "prompt": "ornate grey stone trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 17766,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/frame-gold": {
+   "name": "frame-gold",
+   "kind": "ui",
+   "file": "ui/frame-gold.png",
+   "prompt": "ornate golden multicolour trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 8806,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/frame-green": {
+   "name": "frame-green",
+   "kind": "ui",
+   "file": "ui/frame-green.png",
+   "prompt": "ornate mossy green and bark trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 10308,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/frame-red": {
+   "name": "frame-red",
+   "kind": "ui",
+   "file": "ui/frame-red.png",
+   "prompt": "ornate dark red and iron trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 7410,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/frame-white": {
+   "name": "frame-white",
+   "kind": "ui",
+   "file": "ui/frame-white.png",
+   "prompt": "ornate ivory and gold trading card frame border, empty center, gothic",
+   "style": "rd_plus__ui_element",
+   "size": [
+    64,
+    96
+   ],
+   "seed": 10475,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/graveyard-icon": {
+   "name": "graveyard-icon",
+   "kind": "ui",
+   "file": "ui/graveyard-icon.png",
+   "prompt": "a cracked tombstone icon on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 15320,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/library-icon": {
+   "name": "library-icon",
+   "kind": "ui",
+   "file": "ui/library-icon.png",
+   "prompt": "a stack of old books icon on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 12024,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/life-heart": {
+   "name": "life-heart",
+   "kind": "ui",
+   "file": "ui/life-heart.png",
+   "prompt": "a red anatomical heart icon on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 8948,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/mana-b": {
+   "name": "mana-b",
+   "kind": "ui",
+   "file": "ui/mana-b.png",
+   "prompt": "a black skull mana symbol icon, round, on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 3925,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/mana-c": {
+   "name": "mana-c",
+   "kind": "ui",
+   "file": "ui/mana-c.png",
+   "prompt": "a grey diamond colorless mana symbol icon, round, on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 3934,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/mana-g": {
+   "name": "mana-g",
+   "kind": "ui",
+   "file": "ui/mana-g.png",
+   "prompt": "a green tree mana symbol icon, round, on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 3970,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/mana-r": {
+   "name": "mana-r",
+   "kind": "ui",
+   "file": "ui/mana-r.png",
+   "prompt": "a red fireball mana symbol icon, round, on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 4069,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/mana-u": {
+   "name": "mana-u",
+   "kind": "ui",
+   "file": "ui/mana-u.png",
+   "prompt": "a blue water drop mana symbol icon, round, on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 4096,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/mana-w": {
+   "name": "mana-w",
+   "kind": "ui",
+   "file": "ui/mana-w.png",
+   "prompt": "a white sun mana symbol icon, round, on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 4114,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/moon": {
+   "name": "moon",
+   "kind": "ui",
+   "file": "ui/moon.png",
+   "prompt": "a full moon behind wispy clouds icon",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 2850,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/panel": {
+   "name": "panel",
+   "kind": "ui",
+   "file": "ui/panel.png",
+   "prompt": "dark parchment and iron ui panel with riveted border, empty center",
+   "style": "rd_plus__ui_element",
+   "size": [
+    96,
+    64
+   ],
+   "seed": 3587,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.028
+  },
+  "ui/sun": {
+   "name": "sun",
+   "kind": "ui",
+   "file": "ui/sun.png",
+   "prompt": "a pale sun behind clouds icon",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 2128,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  },
+  "ui/table": {
+   "name": "table",
+   "kind": "ui",
+   "file": "ui/table.png",
+   "prompt": "seamless dark wooden tavern table texture with candle wax stains, gothic",
+   "style": "rd_plus__mc_texture",
+   "size": [
+    64,
+    64
+   ],
+   "seed": 3524,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.03
+  },
+  "ui/tap-icon": {
+   "name": "tap-icon",
+   "kind": "ui",
+   "file": "ui/tap-icon.png",
+   "prompt": "a curved tap arrow icon, white on a dark background",
+   "style": "rd_plus__skill_icon",
+   "size": [
+    32,
+    32
+   ],
+   "seed": 6410,
+   "img2img_strength": null,
+   "enhanced_ref": false,
+   "cost_usd": 0.025
+  }
+ }
+}
