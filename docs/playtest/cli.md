@@ -703,3 +703,20 @@ whether it told the truth.
   still be caught — because the cheap fix (hash more fields) and the cheap
   regression (hash so much that nothing is ever a stall) look identical from
   the passing side
+
+- V45 [proposed 2026-09-16, from V4's token flood] latency and footprint as a
+  budget. The CLI never breaks on a 2,735-permanent board — it just takes 80
+  seconds to answer one keypress, and the screen lags several seconds behind
+  input, which makes a perfectly live game indistinguishable from a hang. That
+  is a usability contract nobody has written down, and it is not the renderer:
+  `capture-pane` returns instantly while the runner burns CPU, so the engine is
+  what is slow. Method: build the board unattended with `Endless Ranks of the
+  Dead` x2 + `Parallel Lives` (it doubles every upkeep — 683 to 2,735 in two
+  turns), then measure per-input wall time at the priority menu, declare
+  attackers, `i`, and combat damage; watch RSS (26 to 57 MB observed) and the
+  `--save` size (1.5 to 3.0 MB); and find the point where it stops being
+  playable at all, which nobody has located. Then decide what the program owes
+  the user: the question to answer is whether a decision that will take a
+  minute should say so — there is a spinner for an LLM seat thinking, and
+  nothing at all for the engine thinking. Worth pairing with a `--resume` of
+  the resulting multi-megabyte save, which has never been tried
