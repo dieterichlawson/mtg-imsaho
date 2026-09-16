@@ -4367,7 +4367,8 @@
    "seed": 6265,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/demon": {
    "name": "Demon",
@@ -4382,7 +4383,8 @@
    "seed": 6390,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/homunculus": {
    "name": "Homunculus",
@@ -4397,7 +4399,8 @@
    "seed": 14374,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/ooze": {
    "name": "Ooze",
@@ -4412,7 +4415,8 @@
    "seed": 5354,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/spider": {
    "name": "Spider",
@@ -4427,7 +4431,8 @@
    "seed": 7706,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/spirit": {
    "name": "Spirit",
@@ -4442,7 +4447,8 @@
    "seed": 7914,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/vampire": {
    "name": "Vampire",
@@ -4457,7 +4463,8 @@
    "seed": 9120,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/wolf": {
    "name": "Wolf",
@@ -4472,7 +4479,8 @@
    "seed": 5294,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "tokens/zombie": {
    "name": "Zombie",
@@ -4487,7 +4495,8 @@
    "seed": 7651,
    "img2img_strength": null,
    "enhanced_ref": false,
-   "cost_usd": 0.028
+   "cost_usd": 0.038,
+   "background_removed": true
   },
   "ui/button": {
    "name": "button",
