@@ -25,3 +25,5 @@ mutants.out.old/
 # Python bytecode caches from scripts/
 __pycache__/
 *.pyc
+# Scryfall art crops the art script feeds Retro Diffusion: inputs, not ours.
+/logs/card-art-refs/
