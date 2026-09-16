@@ -35,7 +35,8 @@ function connect() {
 function send(action) {
   if (!state.decision) return;
   const seq = state.decision.seq;
-  state.ws.send(JSON.stringify({ type: "action", seq, action }));
+  if (window.mtgDebug) window.mtgDebug.sent.push({ seq, action });
+  if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: "action", seq, action }));
   state.lastSent = { seq, action };
   // Nothing more to click until the next message; the board stays.
   state.decision = null; state.ui = null; state.popover = null;
@@ -232,6 +233,17 @@ window.addEventListener("resize", fitCanvas);
   connect();
 })();
 
-// Exposed for tests: answer the current decision with a raw action.
+// Exposed for tests: answer the current decision with a raw action, or
+// stage a synthetic decision and render it without a socket.
 window.mtgSend = send;
 window.mtgList = (rows, title) => beginList(state, { mode: "list", buttons: [], marked: [] }, rows, title, send, false);
+window.mtgDebug = {
+  stage(decision) {
+    state.decision = decision; state.lastDecision = decision; state.popover = null; state.overlay = null; state.notice = null;
+    beginDecision(state, send);
+    syncField();
+    state.hits = render(ctx, state);
+  },
+  render() { state.hits = render(ctx, state); return state.hits.length; },
+  sent: [],
+};

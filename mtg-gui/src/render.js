@@ -524,7 +524,7 @@ export function render(ctx, state) {
   const table = uiImage("table");
   if (table) { const pat = ctx.createPattern(table, "repeat"); ctx.fillStyle = pat; } else ctx.fillStyle = "#24202a";
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(0, 0, BOARD_W, H);
+  ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, BOARD_W, H);
   if (!state.view) {
     text(ctx, state.connected ? "Waiting for the game…" : "Connecting to the runner…", 12, 12, { font: "8px PressStart", color: "#ffe080" });
     return hits;
