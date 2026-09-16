@@ -1,8 +1,12 @@
 # A pixel-art GUI for the game
 
-Status: design, not yet decided. Each section below is one decision, with
-what the code already fixes, the options, and a recommendation. The
-questions the owner has to answer are collected at the end.
+Status: phases 1 to 3 built on the recommendations below (the browser
+page served by the runner, plain JavaScript modules with no build step
+rather than TypeScript, 640x360, one GUI seat per port, art generated
+at 64x48 with `rd_plus__low_res` from the printed art at strength 0.78).
+See `mtg-gui/README.md` for running it. Each section below is one
+decision, with what the code already fixes, the options, and the
+recommendation that was taken.
 
 ## What the code already decides
 

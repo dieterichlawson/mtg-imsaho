@@ -14,9 +14,9 @@ When running `cargo test`, check for BOTH test failures AND compilation errors. 
 
 Do NOT pipe `cargo test` through `grep "FAILED"` as a way to check test results — this silently drops compilation errors. Instead, check the exit code first (`cargo test; echo $?`), and if non-zero, look at the full output for both "FAILED" and "could not compile" lines.
 
-## Player-facing changes: one decision, three surfaces
+## Player-facing changes: one decision, four surfaces
 
-Every decision the engine asks for is presented three times, and they are
+Every decision the engine asks for is presented four times, and they are
 separate code:
 
 - `mtg-player/src/cli.rs` — the screen a person reads and types at.
@@ -24,8 +24,13 @@ separate code:
   LLM seat answers through.
 - `mtg-player/src/random.rs` — the seat the invariant fuzzer plays, which is
   how most of the engine gets exercised at all.
+- `mtg-player/src/gui.rs` and `mtg-gui/src/prompts.js` — the browser page.
+  The seat sends `GameView` and `LegalActions` as they are, so the Rust
+  side needs nothing per prompt; the page maps each prompt kind to a
+  widget, and `mtg-player/tests/gui_protocol.rs` fails when the engine
+  defines a kind the page does not name.
 
-**Changing what the engine asks means changing all three.** A new
+**Changing what the engine asks means changing all four.** A new
 `ResolutionChoiceKind`, a changed `min`/`max`, a prompt that used to be
 asked twice and is now asked once — each seat has to be walked, not just
 the one you were looking at. The failure mode is quiet on every side but
