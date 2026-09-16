@@ -137,7 +137,7 @@ function permBadges(p, state) {
     if (c.Loyalty)
         b.push({ t: `L${c.Loyalty}`, c: "#e0d080" });
     if (p.damage_marked)
-        b.push({ t: `${p.damage_marked}dmg`, c: "#e05050" });
+        b.push({ t: `${p.damage_marked}d`, c: "#e05050" });
     if (p.regeneration_shields)
         b.push({ t: "R", c: "#a0e0a0" });
     if (p.attached_to !== null && p.attached_to !== undefined)
@@ -342,7 +342,7 @@ function splitBoard(view, controller) {
 }
 function drawRow(ctx, hits, state, items, y) {
     const { stride, x0 } = rowLayout(items.length, CARD.w, 6, BOARD_W - 12);
-    items.forEach((item, i) => {
+    const draw = (item, i) => {
         const group = item.length > 1 ? item.map(q => q.object_id) : null;
         // In a pick or mark, a stack whose members are options should offer
         // a member that IS an option, not merely its first card.
@@ -353,7 +353,20 @@ function drawRow(ctx, hits, state, items, y) {
                 shown = opt;
         }
         drawPerm(ctx, hits, state, shown, x0 + i * stride, y, group);
+    };
+    // A crowded row overlaps; the hovered card is drawn last so it is the
+    // one on top and can be read.
+    const hoveredKey = state.hover ? state.hover.key : null;
+    let hovered = -1;
+    items.forEach((item, i) => {
+        if (hoveredKey && item.some(q => `o${q.object_id}` === hoveredKey)) {
+            hovered = i;
+            return;
+        }
+        draw(item, i);
     });
+    if (hovered >= 0)
+        draw(items[hovered], hovered);
 }
 function drawStrip(ctx, hits, state, y, pid, life, handSize, library, gy, exile, pool, isYou) {
     const key = `p${pid}`;
