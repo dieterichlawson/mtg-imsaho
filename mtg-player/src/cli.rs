@@ -1943,20 +1943,53 @@ impl CliPlayer {
     /// flags) are what the row is read for; the attachment and keyword list
     /// in between is the part that grows without bound. Truncating the whole
     /// string dropped the tail first.
-    fn elide_middle(head: &str, elastic: &str, tail: &str, max_w: usize) -> String {
-        // `max_w` is the panel's budget; leave room for the "Nx " prefix a
-        // collapsed row adds.
-        let budget = max_w.saturating_sub(4);
-        let fixed = head.chars().count() + tail.chars().count();
-        if fixed + elastic.chars().count() <= budget {
+    /// `budget` is the room the row actually has, in columns, and the
+    /// result never exceeds it. This used to subtract a flat 4 for an `Nx `
+    /// prefix a caller pasted on afterwards — one column short of the
+    /// `"  " + "2x "` the caller really added, so every collapsed row came
+    /// out at `max_w + 1` and the print site hard-clipped it back, through
+    /// the flags and with no `…` to say so (#508). The prefix is the
+    /// caller's to measure and take off the budget.
+    ///
+    /// When even `head` and `tail` together do not fit, the head is what
+    /// gives way: the tail is the row's live state (#270), and a row that
+    /// simply overran the pane wrapped into the next pane's column (#507).
+    fn elide_middle(head: &str, elastic: &str, tail: &str, budget: usize) -> String {
+        let fixed = str_cols(head) + str_cols(tail);
+        if fixed + str_cols(elastic) <= budget {
             return format!("{head}{elastic}{tail}");
         }
-        let room = budget.saturating_sub(fixed);
-        if room <= 1 {
-            return format!("{head}{tail}");
+        if fixed <= budget {
+            let room = budget - fixed;
+            if room <= 1 {
+                return format!("{head}{tail}");
+            }
+            return format!("{head}{}…{tail}", clip_cols(elastic, room - 1));
         }
-        let kept: String = elastic.chars().take(room - 1).collect();
-        format!("{head}{kept}…{tail}")
+        let head_room = budget.saturating_sub(str_cols(tail));
+        if head_room > 1 {
+            return format!("{}…{tail}", clip_cols(head, head_room - 1));
+        }
+        clip_cols(&format!("{head}{tail}"), budget)
+    }
+
+    /// Group identical rows into one `(count, row)` entry, first-appearance
+    /// order, as the lands summary already does: an Endless Ranks of the
+    /// Dead board grew one row per token and pushed the hand, the action
+    /// list and the prompt clean off the pane (issue #74).
+    ///
+    /// Rows are grouped on their *unelided* parts. Grouping on the finished
+    /// string merges two permanents that differ only where elision cut, and
+    /// the pane then claims they are identical (#508).
+    fn collapse_rows<T: PartialEq>(rows: Vec<T>) -> Vec<(usize, T)> {
+        let mut counted: Vec<(usize, T)> = Vec::new();
+        for r in rows {
+            match counted.iter_mut().find(|(_, l)| *l == r) {
+                Some((n, _)) => *n += 1,
+                None => counted.push((1, r)),
+            }
+        }
+        counted
     }
 
     /// Whether `[S]` means anything for this permanent.
@@ -2077,88 +2110,43 @@ impl CliPlayer {
             }
         };
 
-        // Rows whose every visible detail matches are one line with a count
-        // (`63x Zombie Token 2/2`), exactly as the lands summary already
-        // does: an Endless Ranks of the Dead board grew one row per token
-        // and pushed the hand, the action list, and the prompt clean off
-        // the pane (issue #74). Order is first-appearance, and any visible
-        // difference — P/T, an aura, damage, tapped/sick flags — keeps its
-        // own row.
-        let collapse = |labels: Vec<String>| -> Vec<(usize, String)> {
-            let mut counted: Vec<(usize, String)> = Vec::new();
-            for label in labels {
-                match counted.iter_mut().find(|(_, l)| *l == label) {
-                    Some((n, _)) => *n += 1,
-                    None => counted.push((1, label)),
-                }
-            }
-            counted
-        };
-        let counted_line = |n: usize, label: &str| -> String {
-            if n > 1 { format!("  {n}x {label}") } else { format!("  {label}") }
-        };
 
         // Helper: render creatures, enchantments, artifacts
         let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
-            let creature_labels = creatures.iter()
+            let creature_parts: Vec<_> = creatures.iter()
                 .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
-                .map(|(head, elastic, flags)| Self::elide_middle(&head, &elastic, &flags, max_w))
                 .collect();
 
-            for (n, label) in collapse(creature_labels) {
-                let truncated: String = counted_line(n, &label).chars().take(max_w).collect();
+            for (n, parts) in Self::collapse_rows(creature_parts) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(color), Print(&truncated), ResetColor);
+                    SetForegroundColor(color), Print(Self::counted_row(n, &parts, max_w)), ResetColor);
                 *row += 1;
             }
-            let enchantment_labels = enchantments.iter()
+            let enchantment_parts: Vec<_> = enchantments.iter()
                 .filter(|e| e.attached_to.is_none())
-                .map(|e| {
-                    // A Curse's entire identity is whom it enchants
-                    // (CR 702.5c) — without this, two curses on opposite
-                    // players rendered identically (issue #81).
-                    let host = match e.attached_to_player {
-                        Some(p) if p == view_you => " [enchanting you]".to_string(),
-                        Some(_) => " [enchanting opponent]".to_string(),
-                        None => String::new(),
-                    };
-                    // The chosen name is the permanent's whole identity
-                    // (Nevermore) and is public information (issue #130).
-                    let named = e.named_card.as_ref()
-                        .map(|n| format!(" [names: {n}]"))
-                        .unwrap_or_default();
-                    format!("{}{}{}{}{}", e.name, Self::legend_mark(e), host, named,
-                        CliPlayer::counters_suffix(&e.counters))
-                })
+                .map(|e| Self::enchantment_row_parts(e, view_you))
                 .collect();
 
-            for (n, label) in collapse(enchantment_labels) {
+            for (n, parts) in Self::collapse_rows(enchantment_parts) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(Color::Magenta), Print(counted_line(n, &label)), ResetColor);
+                    SetForegroundColor(Color::Magenta), Print(Self::counted_row(n, &parts, max_w)), ResetColor);
                 *row += 1;
             }
             // Attached Equipment rides on its creature's line (above), like
             // attached auras — not in the standalone artifact list.
-            let artifact_labels = artifacts.iter()
+            let artifact_parts: Vec<_> = artifacts.iter()
                 .filter(|a| a.attached_to.is_none())
-                .map(|a| format!("{}{}{}{}", a.name, Self::legend_mark(a),
-                    CliPlayer::counters_suffix(&a.counters),
-                    if a.tapped { " [T]" } else { "" }))
+                .map(|a| Self::artifact_row_parts(a))
                 .collect();
 
-            for (n, label) in collapse(artifact_labels) {
-                let _ = execute!(out, cursor::MoveTo(col, *row), Print(counted_line(n, &label)));
+            for (n, parts) in Self::collapse_rows(artifact_parts) {
+                let _ = execute!(out, cursor::MoveTo(col, *row),
+                    Print(Self::counted_row(n, &parts, max_w)));
                 *row += 1;
             }
             for pw in &planeswalkers {
-                let loyalty = pw.counters.get(&mtg_engine::types::CounterType::Loyalty)
-                    .copied().unwrap_or(0);
-                let dmg = if pw.damage_marked > 0 { format!(" ({}d)", pw.damage_marked) } else { String::new() };
-                let text = format!("  {}{} [{loyalty} loyalty]{dmg}", pw.name, Self::legend_mark(pw));
-
-                let truncated: String = text.chars().take(max_w).collect();
-                let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
+                let _ = execute!(out, cursor::MoveTo(col, *row), SetForegroundColor(Color::Cyan),
+                    Print(Self::counted_row(1, &Self::planeswalker_row_parts(pw), max_w)), ResetColor);
                 *row += 1;
             }
         };
@@ -2254,6 +2242,69 @@ impl CliPlayer {
             out.push_str(&format!(" [equip {}]", collapse(equipment).join(", ")));
         }
         out
+    }
+
+    /// One battlefield row: indented, counted when it stands for several
+    /// identical permanents, and fitted to what is left of the pane once
+    /// that indent and `Nx ` prefix have been paid for.
+    ///
+    /// Every row kind goes through this. They used to fit themselves in
+    /// four different places and two of them did not fit at all, which is
+    /// how a single Curse of the Pierced Heart came to be printed across
+    /// the STACK pane (#507); and the prefix was applied *after* the fit,
+    /// against a budget that guessed it at four columns rather than the
+    /// five or six it costs, so a collapsed row overran and was clipped
+    /// back through its own flags (#508).
+    fn counted_row(n: usize, parts: &(String, String, String), max_w: usize) -> String {
+        let prefix = if n > 1 { format!("  {n}x ") } else { "  ".to_string() };
+        let budget = max_w.saturating_sub(str_cols(&prefix));
+        format!("{prefix}{}", Self::elide_middle(&parts.0, &parts.1, &parts.2, budget))
+    }
+
+    /// One standalone enchantment's battlefield row, in `elide_middle`'s
+    /// three regions.
+    ///
+    /// Whom a Curse enchants (CR 702.5c, issue #81) and the card a Nevermore
+    /// names (issue #130) are the whole of such a permanent's identity — two
+    /// Curses are otherwise the same row — so they ride in the protected
+    /// tail and the name is what gives way when the row does not fit. The
+    /// row used to be printed at its natural length with no budget at all,
+    /// and one Curse of the Pierced Heart at 60 columns wrapped into the
+    /// STACK pane's column (#507).
+    fn enchantment_row_parts(e: &PermanentView, view_you: mtg_engine::ids::PlayerId)
+        -> (String, String, String)
+    {
+        let host = match e.attached_to_player {
+            Some(p) if p == view_you => " [enchanting you]".to_string(),
+            Some(_) => " [enchanting opponent]".to_string(),
+            None => String::new(),
+        };
+        let named = e.named_card.as_ref()
+            .map(|n| format!(" [names: {n}]"))
+            .unwrap_or_default();
+        (format!("{}{}", e.name, Self::legend_mark(e)),
+         String::new(),
+         format!("{host}{named}{}", CliPlayer::counters_suffix(&e.counters)))
+    }
+
+    /// One standalone artifact's battlefield row, split like the others.
+    /// `[T]` is live state and stays in the tail; the name gives way (#507).
+    fn artifact_row_parts(a: &PermanentView) -> (String, String, String) {
+        (format!("{}{}", a.name, Self::legend_mark(a)),
+         String::new(),
+         format!("{}{}", CliPlayer::counters_suffix(&a.counters),
+             if a.tapped { " [T]" } else { "" }))
+    }
+
+    /// One planeswalker's battlefield row. Loyalty is its defining public
+    /// state (CR 306.5b, issue #58), so it is in the tail.
+    fn planeswalker_row_parts(pw: &PermanentView) -> (String, String, String) {
+        let loyalty = pw.counters.get(&mtg_engine::types::CounterType::Loyalty)
+            .copied().unwrap_or(0);
+        let dmg = if pw.damage_marked > 0 { format!(" ({}d)", pw.damage_marked) } else { String::new() };
+        (format!("{}{}", pw.name, Self::legend_mark(pw)),
+         String::new(),
+         format!(" [{loyalty} loyalty]{dmg}"))
     }
 
     fn creature_row_parts(c: &PermanentView, auras: Option<&String>) -> (String, String, String) {
@@ -9548,6 +9599,156 @@ yourself at some considerable length";
         assert!(row.ends_with(" [T] (3d)"), "got {row}");
         assert!(row.contains('…'), "the attachment list is what shortens: {row}");
         assert!(row.chars().count() <= 60);
+    }
+
+    /// An Elite Inquisitor: the pool's longest ability list, which is what
+    /// forces elision at any width a person actually uses.
+    fn inquisitor(id: u64) -> mtg_engine::view::PermanentView {
+        let mut c = creature(id, "Elite Inquisitor", 0);
+        c.keywords = vec![mtg_engine::types::Keyword::FirstStrike,
+                          mtg_engine::types::Keyword::Vigilance];
+        c.protections = vec!["protection from Vampires".into(),
+                             "protection from Werewolves".into(),
+                             "protection from Zombies".into()];
+        c
+    }
+
+    /// A standalone Curse: the widest single permanent the pool can put on
+    /// a battlefield row without any count prefix at all.
+    fn curse(id: u64) -> mtg_engine::view::PermanentView {
+        let mut e = creature(id, "Curse of the Pierced Heart", 0);
+        e.card_types = vec![CardType::Enchantment];
+        e.power = None;
+        e.toughness = None;
+        e.effective_power = None;
+        e.effective_toughness = None;
+        e.attached_to_player = Some(PlayerId(1));
+        e
+    }
+
+    /// Issue #508: the two-space indent and the `Nx ` prefix are part of the
+    /// row's width, and the fit guessed them at a flat four columns. A
+    /// collapsed row therefore came out at `max_w + 1` (`max_w + 2` from ten
+    /// up) and the print site cut it back with a bare `take` — no `…`, and
+    /// what it cut was the tail #270 put there to be uncuttable:
+    /// `2x Elite Inquisitor 2/2 (first… [S`.
+    #[test]
+    fn a_collapsed_row_pays_for_its_own_count_prefix() {
+        let mut sick = inquisitor(40);
+        sick.summoning_sick = true;
+        let parts = CliPlayer::creature_row_parts(&sick, None);
+
+        // The reported board: a 46-column terminal, so a 37-column pane.
+        let row = CliPlayer::counted_row(2, &parts, 37);
+        assert_eq!(str_cols(&row), 37, "the row spends its pane exactly: {row}");
+        assert!(row.starts_with("  2x Elite Inquisitor"), "got {row}");
+        assert!(row.ends_with("… [S]"), "the flag is whole, and the cut is marked: {row}");
+
+        // And at every count and width, not just that one.
+        for n in [1usize, 2, 3, 9, 10, 63] {
+            for max_w in 20..=120 {
+                let row = CliPlayer::counted_row(n, &parts, max_w);
+                assert!(str_cols(&row) <= max_w,
+                    "n={n} max_w={max_w} overran by {}: {row}", str_cols(&row) - max_w);
+                assert!(row.ends_with(" [S]"),
+                    "n={n} max_w={max_w} lost the flags: {row}");
+            }
+        }
+    }
+
+    /// Issues #244, #350, #351, #507: nothing this pane prints may be wider
+    /// than the pane, because what overruns does not stop at the border —
+    /// the terminal wraps it to column 0 of the next screen row, over the
+    /// STACK/LOG pane and, at 32 columns, over the board separator itself.
+    ///
+    /// Each row kind used to fit itself, in four different places, and the
+    /// enchantment and artifact rows did not fit at all. One builder now,
+    /// swept over every width the pane can have.
+    #[test]
+    fn no_battlefield_row_is_ever_wider_than_its_pane() {
+        let mut walker = creature(43, "Liliana of the Veil", 0);
+        walker.card_types = vec![CardType::Planeswalker];
+        walker.damage_marked = 3;
+        walker.counters.insert(mtg_engine::types::CounterType::Loyalty, 4);
+        let mut dagger = creature(44, "Silver-Inlaid Dagger", 0);
+        dagger.card_types = vec![CardType::Artifact];
+        dagger.tapped = true;
+
+        let rows = [
+            CliPlayer::creature_row_parts(&inquisitor(40), Some(&" [equip 2x Butcher's Cleaver]".to_string())),
+            CliPlayer::enchantment_row_parts(&curse(41), PlayerId(0)),
+            CliPlayer::artifact_row_parts(&dagger),
+            CliPlayer::planeswalker_row_parts(&walker),
+        ];
+        for parts in &rows {
+            for n in [1usize, 4, 12] {
+                for max_w in 8..=200 {
+                    let row = CliPlayer::counted_row(n, parts, max_w);
+                    assert!(str_cols(&row) <= max_w,
+                        "n={n} max_w={max_w} overran by {}: {row}",
+                        str_cols(&row) - max_w);
+                }
+            }
+        }
+    }
+
+    /// Issue #507, the half that is not just width: a Curse's identity is
+    /// whom it enchants (CR 702.5c, #81) and a Nevermore's is the card it
+    /// names (#130). Clipping the row's tail would have fitted the pane and
+    /// silently dropped exactly those, so they are the part that survives
+    /// and the name is what gives way.
+    #[test]
+    fn a_curse_that_does_not_fit_keeps_whom_it_enchants() {
+        let parts = CliPlayer::enchantment_row_parts(&curse(41), PlayerId(0));
+        // The reported board: a 60-column terminal, so a 47-column pane,
+        // against a 48-column row.
+        let row = CliPlayer::counted_row(1, &parts, 47);
+        assert!(str_cols(&row) <= 47, "got {} cols: {row}", str_cols(&row));
+        assert!(row.ends_with(" [enchanting opponent]"), "got {row}");
+        assert!(row.contains('…'), "and the name says it was cut: {row}");
+
+        // From the other seat it is the same row with the other host mark.
+        let mine = CliPlayer::counted_row(1, &CliPlayer::enchantment_row_parts(&curse(41), PlayerId(1)), 47);
+        assert!(mine.ends_with(" [enchanting you]"), "got {mine}");
+
+        let mut nevermore = curse(42);
+        nevermore.name = "Nevermore".into();
+        nevermore.attached_to_player = None;
+        nevermore.named_card = Some("Brimstone Volley".into());
+        let named = CliPlayer::counted_row(1, &CliPlayer::enchantment_row_parts(&nevermore, PlayerId(0)), 32);
+        assert_eq!(str_cols(&named), 32, "got {named}");
+        assert!(named.ends_with(" [names: Brimstone Volley]"),
+            "the named card is the permanent's identity, so the name gives way: {named}");
+    }
+
+    /// Issue #508's second half: rows were grouped by their *finished*
+    /// string, so two permanents differing only where elision cut merged
+    /// into one `Nx` row and the pane asserted they were identical.
+    /// Grouping is on the unelided parts.
+    #[test]
+    fn two_permanents_that_differ_only_inside_the_elision_keep_their_rows() {
+        let mut werewolves = inquisitor(45);
+        werewolves.protections = vec!["protection from Vampires".into(),
+                                      "protection from Werewolves".into()];
+        let mut zombies = inquisitor(46);
+        zombies.protections = vec!["protection from Vampires".into(),
+                                   "protection from Zombies".into()];
+        let a = CliPlayer::creature_row_parts(&werewolves, None);
+        let b = CliPlayer::creature_row_parts(&zombies, None);
+
+        // At this width the two render the same, which is what used to make
+        // them one row.
+        assert_eq!(CliPlayer::counted_row(1, &a, 50), CliPlayer::counted_row(1, &b, 50));
+        assert_ne!(CliPlayer::counted_row(1, &a, 200), CliPlayer::counted_row(1, &b, 200));
+
+        let grouped = CliPlayer::collapse_rows(vec![a.clone(), b.clone()]);
+        assert_eq!(grouped.len(), 2, "two different permanents, two rows: {grouped:?}");
+        assert_eq!(grouped[0].0, 1);
+
+        // Two that really are identical still collapse.
+        let same = CliPlayer::collapse_rows(vec![a.clone(), a.clone(), b]);
+        assert_eq!(same.len(), 2);
+        assert_eq!(same[0].0, 2);
     }
 
     // Issue #39 guard: a land play breaks auto-pass on any turn, even the
