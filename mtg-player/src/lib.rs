@@ -1,5 +1,6 @@
 pub mod random;
 pub mod cli;
+pub mod gui;
 pub mod llm;
 pub mod scripted;
 pub mod game_log;

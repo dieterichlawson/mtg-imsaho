@@ -13,6 +13,7 @@ crossterm = "0.29"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 libc = "0.2"
 unicode-width = "0.2"
+tungstenite = "0.30"
 
 [lints]
 workspace = true

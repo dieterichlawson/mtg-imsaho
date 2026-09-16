@@ -12,6 +12,7 @@ use mtg_engine::view::GameView;
 use mtg_player::llm::MatchFormat;
 use mtg_player::Player;
 use mtg_player::cli::CliPlayer;
+use mtg_player::gui::GuiPlayer;
 use mtg_player::llm::LlmPlayer;
 use mtg_player::random::RandomPlayer;
 
@@ -36,6 +37,7 @@ struct SaveData {
 
 enum PlayerKind {
     Cli(CliPlayer),
+    Gui(GuiPlayer),
     Llm(LlmPlayer),
     Random(RandomPlayer),
 }
@@ -46,8 +48,10 @@ mtg-runner — run one game of the MTG engine
 Usage: mtg-runner [OPTIONS]
 
 Options:
-  --p1 <spec>            Player 1: cli | random | claude[:model] | gemini[:model] | claude-code[:model]  (default cli)
+  --p1 <spec>            Player 1: cli | gui[:port] | random | claude[:model] | gemini[:model] | claude-code[:model]  (default cli)
   --p2 <spec>            Player 2: same specs  (default random)
+                         gui serves a browser page on 127.0.0.1 (port 8765 unless given) and
+                         waits for it; the page is read from ./mtg-gui or $MTG_GUI_DIR.
                          Aliases: ai and llm mean claude; cc means claude-code.
                          claude/gemini seats call metered APIs (ANTHROPIC_API_KEY / GEMINI_API_KEY);
                          claude-code runs the same LLM seat through `claude -p` on the CLI's own login.
@@ -687,7 +691,11 @@ stops here — pass --save {path} to keep writing it");
 
         let view = GameView::for_player(game_state, acting_player, &CardRegistry::with_all_cards());
 
-        let player = if acting_player == PlayerId(0) { &mut p1 } else { &mut p2 };
+        let (player, other) = if acting_player == PlayerId(0) { (&mut p1, &mut p2) } else { (&mut p2, &mut p1) };
+        if let PlayerKind::Gui(gui) = other {
+            let other_id = PlayerId(1 - acting_player.0);
+            gui.observe(&GameView::for_player(game_state, other_id, &CardRegistry::with_all_cards()));
+        }
 
         // Show thinking spinner only if a human is playing — render from the
         // human's perspective so they see the board while the AI thinks.
@@ -711,7 +719,7 @@ stops here — pass --save {path} to keep writing it");
         };
 
         if let Some(prompt) = &legal.combat_prompt {
-            return choose_combat(player, &view, prompt);
+            return choose_combat(player, &view, legal, prompt);
         }
 
         choose_action(player, &view, legal)
@@ -998,6 +1006,12 @@ use --save if you need a resumable file.");
     };
     let summary = format!("{}\nTotal actions: {}{}\nFinal turn: {}",
         result_msg, state.submit_seq.max(action_count), resumed_note, state.turn_number);
+    // A page is told how it ended before the process that serves it goes.
+    for (seat, player) in [(PlayerId(0), &mut p1), (PlayerId(1), &mut p2)] {
+        if let PlayerKind::Gui(gui) = player {
+            gui.game_over(&GameView::for_player(&state, seat, &registry), &summary);
+        }
+    }
     println!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
@@ -1041,7 +1055,7 @@ fn seat_is_metered(spec: &str) -> bool {
 /// no model, no quota, no network.
 fn seat_is_local(spec: &str) -> bool {
     let kind = spec.split_once(':').map_or(spec, |(k, _)| k);
-    matches!(kind, "cli" | "random")
+    matches!(kind, "cli" | "gui" | "random")
 }
 
 /// Whether the seat behind `flag` was left to the save file to choose.
@@ -1070,6 +1084,20 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
             "{origin} cli needs an interactive terminal (stdin is not a tty and \
              /dev/tty is unavailable); use {flag} random or run under a tty")),
         "cli" => PlayerKind::Cli(CliPlayer::new(name)),
+        // A browser page on a local port. The port is the one thing the
+        // spec can name; the page directory comes from the working
+        // directory like data/ and decks/ do.
+        "gui" => {
+            let port = model.map(|m| m.parse::<u16>().unwrap_or_else(|_| die(&format!(
+                "{origin} gui takes a port number after the colon, got '{m}'"))));
+            match GuiPlayer::new(name, port) {
+                Ok(p) => {
+                    eprintln!("{origin} gui: open {}", p.url);
+                    PlayerKind::Gui(p)
+                }
+                Err(e) => die(&format!("{origin} gui: {e}")),
+            }
+        }
         // Both API seats build a backend that unwraps the key out of the
         // environment, so a missing key surfaced as a panic and a backtrace
         // while every other unusable seat argument here refuses cleanly
@@ -1127,14 +1155,16 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
 fn choose_action(player: &mut PlayerKind, view: &GameView, legal: &engine::LegalActions) -> mtg_engine::actions::Action {
     match player {
         PlayerKind::Cli(p) => p.choose_action(view, legal),
+        PlayerKind::Gui(p) => p.choose_action(view, legal),
         PlayerKind::Llm(p) => p.choose_action(view, legal),
         PlayerKind::Random(p) => p.choose_action(view, legal),
     }
 }
 
-fn choose_combat(player: &mut PlayerKind, view: &GameView, prompt: &mtg_engine::actions::CombatPrompt) -> mtg_engine::actions::Action {
+fn choose_combat(player: &mut PlayerKind, view: &GameView, legal: &engine::LegalActions, prompt: &mtg_engine::actions::CombatPrompt) -> mtg_engine::actions::Action {
     match player {
         PlayerKind::Cli(p) => p.choose_combat(view, prompt),
+        PlayerKind::Gui(p) => p.choose_combat(view, legal, prompt),
         PlayerKind::Llm(p) => p.choose_combat(view, prompt),
         PlayerKind::Random(p) => p.choose_combat(prompt),
     }
