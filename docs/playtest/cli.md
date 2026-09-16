@@ -49,6 +49,57 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   mid-mulligan; resume the same save twice; `rr` hot-reload at odd times
 - V4 degenerate decks: all-curses, zero-creature, 4x same legend,
   token-flood (Army of the Damned + doublers), one-of-everything piles
+
+  **Answered 2026-09-16: the degenerate boards themselves are solid — what
+  broke is the machinery watching them.** Four piles were built and played
+  hotseat: a zero-creature all-enchantment curse deck, a 4x-same-legend mirror
+  (16 Geist of Saint Traft a side), a token flood (Endless Ranks x2 + Parallel
+  Lives + Army of the Damned) and a 405-card one-of-everything pile carrying
+  one copy of all 249 registered non-land cards. Every CLI game exited 0, with
+  no panic, no hang, no stuck or missing prompt and no invariant violation in
+  10,310 log lines under `--check-invariants`. The rules held at every extreme:
+  zero creatures on both seats gives 20 BeginCombat and 20 DeclareAttackers
+  steps with 0 DeclareBlockers and 0 CombatDamage (CR 506.5) and no prompt ever
+  drawn; Claustrophobia sat in hand all game with nine untapped lands and was
+  never offered, because it has no legal target (CR 601.2c); the legend rule
+  fired 30 times in one 108-turn game across both seats and its chooser refused
+  all 8 hostile inputs with `--save` and `--log` md5-identical across all 9
+  attempts. Rendering held too, and at a scale V7 will not otherwise build:
+  `683x Zombie 2/2 [tok]` collapses correctly, the declare-attackers pager
+  wraps 0-10 → 11-21 → 22-31 → 0-10 so the last entry is reachable, and the
+  inspector pages 2,772 rows with an off-page but in-range index still opening
+  the right permanent.
+
+  **The find is #509, and it is not about decks at all.** `progress_fingerprint`
+  (`mtg-player/src/watchdog.rs:38`) is a hand-written list of fields — turn,
+  step, stack length, per-player totals, and per-object zone, controller,
+  tapped, summoning_sick, damage_marked. It hashes **nothing from
+  `state.combat`**, and `place_in_damage_assignment_order`
+  (`mtg-engine/src/combat.rs:224`) writes *only* `combat.damage_assignment_order`
+  — so every single `ChooseDamageAssignmentOrder` decision leaves the
+  fingerprint identical, and `STALLED_DECISIONS = 100` of them in a row kills a
+  perfectly healthy game with exit 1 and a "answering it the same unusable way
+  every time" diagnosis. A token-flood mirror reaches it on demand: 42 + 49 + 10
+  accepted placements across three attackers, `grep -c "choice refused"` on the
+  DEBUG log is **0**, and the two completed orders are 7.8 s apart. Reproduced
+  3/3. The tournament loop uses the same watchdog and forfeits the game, so the
+  same false positive costs a match there.
+
+  The lesson generalises past this one field, and is now V44: a watchdog whose
+  fingerprint is an explicit field list scores any decision that moves state
+  outside that list as a stall. Degenerate decks are the cheapest way in,
+  because they are what makes a prompt repeat a hundred times.
+
+  Unreached: a legend-rule prompt with 3+ options (every one of the 30 firings
+  was the ordinary 2-copy case — it needs several copies entering in one event,
+  e.g. Grimoire of the Dead over a stocked graveyard); the token flood past
+  ~2,735 permanents, where nobody has found the point it stops being playable;
+  `--resume` of the 3.0 MB / 2,735-token save (only the 226 KB one was
+  resumed); Gutter Grime's CDA `*/*` Ooze tokens, which never entered play
+  under the flood, so V28's rendering question went unasked at that load; and a
+  TWO-colour one-of-everything pile, since 249 five-colour singletons keep most
+  of the variety in the library and never put more than ~8 distinct permanents
+  on a side.
 - V5 stall: durdle to turn 100+, empty attacks, verify draw-out and
   deck-out endings actually end the game
 - V6 concede at the weirdest legal moment: mid-choice, during combat,
