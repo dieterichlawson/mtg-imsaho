@@ -30,6 +30,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
 - The `play-cli` skill documents the house tmux patterns:
   `tmux new-session -d -s <name> -x <cols> -y <rows> '<cmd>; sleep 300'`,
   `send-keys`, `capture-pane -p`, `resize-window`.
+- One `send-keys` trap that costs a whole probe: **a payload starting with `-`
+  needs `--`**. `tmux send-keys -t <s> -l "-1"` fails with `unknown flag -1`
+  and types nothing; you need `send-keys -t <s> -l -- "-1"`. Without it the
+  screen just shows the previous prompt, which reads exactly like "the program
+  accepted my input and did nothing" — so the entire `-1`/`-0` half of a
+  hostile-input sweep can silently never be typed while looking like a finding.
+  Check that what you meant to send actually arrived before believing a null
+  result (2026-09-16, V2).
 - The contract here is not the CR, so you have to decide what correct
   means. Useful questions: would a user be surprised? Is the failure
   clean and explained, or a panic? Does the program do something
@@ -45,10 +53,108 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   enter, unicode, control characters (game must reprompt, never crash)
 - V2 the wrong number: at every numbered menu, try -1, 0 off-by-one,
   and N+1 before choosing legally
+
+  **Answered 2026-09-16: the index readers are sound; what is wrong is the
+  screen that stopped printing what an index MEANS.** Thirteen prompt kinds
+  were walked with the full out-of-range family — `-1`, `-0`, `N+1`, `2^31`,
+  `2^63`, `2^64`, `3.0`, `3,4`, a repeated index, an empty submit, fullwidth
+  digits — and there was **no wrong number silently accepted as a different
+  legal action, no clamping, no saturation, no partial commit, and no legal
+  index refused**. Every claim was reconciled against `--log` and `--save`
+  rather than the screen, including from pages where the chosen row was not
+  drawn: bottoming index 6 of 0-6, discard index 7 of 0-7, declare-attackers
+  index 5 with only row 0 on screen, `022:0` with rows 19-22 off screen, and
+  `15 27` on a 28-row target set all selected exactly the object the off-screen
+  page listed. Blocker pairs refuse whole and never partially declare, with a
+  named reason for each of `1:0`, `0:1`, `-1:0`, `0:0:0`, `:0`, `0:`,
+  `99999999:0` and one-valid-one-invalid. So V26's index-accuracy question is
+  now answered off-page on four prompt kinds; the only scale left is #471's
+  6402-row `ActivateAbility` menu.
+
+  The find is the other half of the contract — the row next to the index does
+  not say what the index selects. `draw_set_screen` (`cli.rs:6239`) wraps
+  `pick.rows` directly and never calls `menu_row_texts` (`cli.rs:3382`), which
+  is where #136/#257/#258's rule lives: append the distinguishing `(#id)` when
+  two rows render identically. None of the five callers puts an id in the
+  string, and `perm_name` deliberately STOPPED carrying one when #258 moved it
+  onto `MenuLabel` — so on this screen the id is not clipped, it was never
+  added. "Mark up to 2 of the 7 targets" over seven Avacyn's Pilgrims is seven
+  identical rows, while the same objects render as `(#26)` and `(#41)` on the
+  combat screen sixty seconds later (#512). Worth noting the shape: a screen
+  that REPLACED a menu did not inherit the menu's rules, which is the same
+  failure mode as #404 (a second request path missing a fix).
+
+  Three things noticed and judged below the filing bar, recorded here so the
+  next crew need not re-derive them: every numeric reader is `str::parse`, so
+  `+3` and `007` are accepted while `-0` is refused (leniency, not
+  mis-selection — it always selects the value it names; now V46); refusals
+  echo the normalized value rather than what was typed, so `007` is refused as
+  "7 is out of range" and the player loses the only clue the zero was eaten;
+  and `show_paged_lines` numbers its heading 1-based while every menu's
+  `page_marker` is 0-based.
+
+  Unreached, all of them the same `pick_set` reader so covered by equivalence
+  rather than by play: `prompt_exile_from_graveyard` and `prompt_object_set`
+  (needs a graveyard-fed deck — still V37's open corner) and
+  `prompt_pile_division` (needs Liliana; #495 is already on its labelling).
+  `library_search_ui` was read and is not a numbered menu at all — arrow keys
+  plus a filter box, digits are filter text — so nothing in the V2 family
+  applies to it. `N>pwM` was only exercised on the `walkers_len == 0` branch.
 - V3 save/reload abuse: `--save` then `--resume` mid-combat, mid-choice,
   mid-mulligan; resume the same save twice; `rr` hot-reload at odd times
 - V4 degenerate decks: all-curses, zero-creature, 4x same legend,
   token-flood (Army of the Damned + doublers), one-of-everything piles
+
+  **Answered 2026-09-16: the degenerate boards themselves are solid — what
+  broke is the machinery watching them.** Four piles were built and played
+  hotseat: a zero-creature all-enchantment curse deck, a 4x-same-legend mirror
+  (16 Geist of Saint Traft a side), a token flood (Endless Ranks x2 + Parallel
+  Lives + Army of the Damned) and a 405-card one-of-everything pile carrying
+  one copy of all 249 registered non-land cards. Every CLI game exited 0, with
+  no panic, no hang, no stuck or missing prompt and no invariant violation in
+  10,310 log lines under `--check-invariants`. The rules held at every extreme:
+  zero creatures on both seats gives 20 BeginCombat and 20 DeclareAttackers
+  steps with 0 DeclareBlockers and 0 CombatDamage (CR 506.5) and no prompt ever
+  drawn; Claustrophobia sat in hand all game with nine untapped lands and was
+  never offered, because it has no legal target (CR 601.2c); the legend rule
+  fired 30 times in one 108-turn game across both seats and its chooser refused
+  all 8 hostile inputs with `--save` and `--log` md5-identical across all 9
+  attempts. Rendering held too, and at a scale V7 will not otherwise build:
+  `683x Zombie 2/2 [tok]` collapses correctly, the declare-attackers pager
+  wraps 0-10 → 11-21 → 22-31 → 0-10 so the last entry is reachable, and the
+  inspector pages 2,772 rows with an off-page but in-range index still opening
+  the right permanent.
+
+  **The find is #509, and it is not about decks at all.** `progress_fingerprint`
+  (`mtg-player/src/watchdog.rs:38`) is a hand-written list of fields — turn,
+  step, stack length, per-player totals, and per-object zone, controller,
+  tapped, summoning_sick, damage_marked. It hashes **nothing from
+  `state.combat`**, and `place_in_damage_assignment_order`
+  (`mtg-engine/src/combat.rs:224`) writes *only* `combat.damage_assignment_order`
+  — so every single `ChooseDamageAssignmentOrder` decision leaves the
+  fingerprint identical, and `STALLED_DECISIONS = 100` of them in a row kills a
+  perfectly healthy game with exit 1 and a "answering it the same unusable way
+  every time" diagnosis. A token-flood mirror reaches it on demand: 42 + 49 + 10
+  accepted placements across three attackers, `grep -c "choice refused"` on the
+  DEBUG log is **0**, and the two completed orders are 7.8 s apart. Reproduced
+  3/3. The tournament loop uses the same watchdog and forfeits the game, so the
+  same false positive costs a match there.
+
+  The lesson generalises past this one field, and is now V44: a watchdog whose
+  fingerprint is an explicit field list scores any decision that moves state
+  outside that list as a stall. Degenerate decks are the cheapest way in,
+  because they are what makes a prompt repeat a hundred times.
+
+  Unreached: a legend-rule prompt with 3+ options (every one of the 30 firings
+  was the ordinary 2-copy case — it needs several copies entering in one event,
+  e.g. Grimoire of the Dead over a stocked graveyard); the token flood past
+  ~2,735 permanents, where nobody has found the point it stops being playable;
+  `--resume` of the 3.0 MB / 2,735-token save (only the 226 KB one was
+  resumed); Gutter Grime's CDA `*/*` Ooze tokens, which never entered play
+  under the flood, so V28's rendering question went unasked at that load; and a
+  TWO-colour one-of-everything pile, since 249 five-colour singletons keep most
+  of the variety in the library and never put more than ~8 distinct permanents
+  on a side.
 - V5 stall: durdle to turn 100+, empty attacks, verify draw-out and
   deck-out endings actually end the game
 - V6 concede at the weirdest legal moment: mid-choice, during combat,
@@ -72,6 +178,73 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   screen at 70x20, 80x24, exactly 100 wide, and 200x50, `capture-pane`-ing
   each. `draw_set_screen` is the one to copy from: it wraps rows into lines
   FIRST and pages the lines, which is why it has none of these
+
+  **Answered 2026-09-16: the contract holds on every row but two, and the way
+  to find them was to read the renderer rather than to look at screens.**
+  `render_battlefield_at` prints five categories of permanent and clips only
+  three: the creature row ends `.chars().take(max_w)`, the planeswalker row the
+  same, and `render_lands` spends the budget entry by entry and degrades to
+  `+N more` — but the enchantment row (`cli.rs:2137`) and the artifact row
+  (`cli.rs:2150`) are a bare `Print(counted_line(n, &label))` with no clip at
+  all (#507). That is #244's and #350's exact failure surviving on the two
+  categories nobody had built a wide board for, and the enchantment label is the
+  one that has been GROWING: it is now name + legend mark +
+  `[enchanting you|opponent]` + `[names: X]` + counters, so a SINGLE Curse of
+  the Pierced Heart — the pool's longest card name at 26 chars — is a 50-column
+  row needing no `Nx` prefix, bleeding 3 columns into the STACK/LOG pane at 60
+  wide and 17 at 32, where it also erases the `· · ·` board separator. Two more
+  came out of the same reading. `elide_middle` reserves 4 columns for the `Nx `
+  prefix while `counted_line` spends 5 (`"  " + "2x "`) or 6 (`"10x "`), so
+  every COLLAPSED creature row is one or two columns over `max_w` and the
+  `take(max_w)` behind it eats the tail — which is `flags`, the region #270 moved
+  last precisely so it would survive; it renders as
+  `2x Elite Inquisitor 2/2 (first… [S` (#508), and unlike the `n == 1` path
+  there is no `…` to say anything was dropped. And #504's restrictions are
+  appended after `legendary`, every keyword and every protection inside the
+  ELASTIC, which `elide_middle` cuts from the tail, so `can't block this turn`
+  is the first thing elided: absent at 120x45 and at 200, present at 300 (#510).
+  The priority is inverted — `legendary` and `flying` are stable printed-card
+  facts, the restriction is volatile, one-turn, on no card, and decides whether
+  a block is legal.
+
+  Method worth reusing: **measure, don't eyeball.** `capture-pane -p` piped
+  through a one-liner printing `len=` per screen row turns "does it fit" into
+  arithmetic, and every bleed predicted from `max_w` matched the observed
+  overflow to the column. Resizing a live pane with `resize-window` sweeps
+  widths far faster than one game per size, and a cold start confirms anything
+  suspicious is not a resize artifact. Also: ask the same question of `i` and of
+  `llm.rs` before deciding severity — `i` lists every permanent uncollapsed and
+  unelided, so it recovers everything the pane clips (which bounds #508), and
+  the LLM board helper has no width budget at all, so the model seat is told
+  `can't block this turn` on every call while the person at the keyboard is not.
+
+  What HELD, swept at 200, 120, 110, 105, 100, 80, 70, 60, 50, 46, 45, 40, 32
+  and 28 columns: the `Lands:` line, both life lines, the HAND rows, the STACK
+  and LOG panes, the creature and planeswalker rows, and the two worth
+  re-checking — the declare-attackers list now wraps inside the pane with a
+  hanging indent at 100 and still SHOWS its creature list at 70x20, so #328,
+  #351 and #352 are all fixed. `--resume` refuses a finished save with a clean
+  error (#316 fixed). The frame's right border is simply not drawn below the
+  CARDS pane's content, uniformly at every width — not a break. The
+  `showing A-B of C-D` pager label is index notation, not an off-by-one.
+
+  Unreached: whether `collapse` can be made to LIE. It groups on the
+  already-elided label, so two permanents differing only inside the elided
+  region would merge into one `Nx` row. The obvious candidate — two Elite
+  Inquisitors where Nightbird's Clutches has restricted one — was built and did
+  NOT merge, because summoning sickness had already split them into separate
+  rows; it needs two permanents identical in head and flags and differing only
+  late in the elastic. Also unreached: the enchantment bleed against a token
+  flood or a 30-permanent side, and the fact that the clip helpers disagree —
+  `clip_cols` (`cli.rs:611`) counts COLUMNS while the creature and planeswalker
+  rows count `chars`, a latent wide-character bug this ASCII-only pool cannot
+  show. And one handed over by V4's token flood, which builds what V7's own
+  stressors will not: a single `--log` entry of **14,469 characters** — the
+  `p0 declared attackers: …` line for a 685-attacker declaration, the widest
+  row the program can produce. Open it in the `l` full-log viewer and ask V7's
+  third property of it: `show_paged_lines` sizes a page by `wrapped_height`, so
+  one entry that wraps to 200-odd rendered lines is a page of one entry that
+  does not fit on the screen, and the heading goes with it.
 - V8 search/menu abuse: the CLI's `/` search, `d`, `l`, `g`, `e` panes
   spammed at every prompt
 - V9 rapid concede/new-game churn: concede and immediately relaunch a
@@ -567,3 +740,65 @@ whether it told the truth.
   viewer-hosts (V41's gap, still open — the exile cost needs a graveyard these
   games never built), and whether a minimum-geometry refusal would beat a
   cascading viewer the way #352 asked of the combat prompts.
+
+- V44 [proposed 2026-09-16, from #509] the progress watchdog as a contract.
+  `progress_fingerprint` (`mtg-player/src/watchdog.rs:38`) decides whether a
+  game is advancing by hashing a hand-written list of fields — turn, step,
+  stack length, per-player life/land-plays/lost/library/graveyard/mana totals,
+  and per-object zone, controller, tapped, summoning_sick, damage_marked. Any
+  decision that moves state OUTSIDE that list is scored as a stall, and
+  `STALLED_DECISIONS = 100` of them in a row kills a healthy game (and forfeits
+  the match, in the tournament loop that shares the watchdog). One such
+  decision is already confirmed: `place_in_damage_assignment_order` writes only
+  `combat.damage_assignment_order` and `state.combat` is hashed nowhere.
+  Method: enumerate what the fingerprint actually covers, then build a family
+  of decisions that each live outside it — the damage assignment order, the
+  trigger-ordering prompt, anything writing only `state.combat`, a mana pool
+  that empties and refills to the same total, a once-per-turn flag — and for
+  each ask whether a hundred in a row is reachable in a real game. Degenerate
+  decks are the way in, because they are what makes one prompt repeat a
+  hundred times: a token-flood mirror (`--p1 random --p2 random`, Endless Ranks
+  x2 + Parallel Lives) hits the damage-order case at about turn 29, in roughly
+  two minutes. Verify any fix from BOTH directions — a healthy game with 200
+  damage-order placements must finish, and #462's genuinely-spinning seat must
+  still be caught — because the cheap fix (hash more fields) and the cheap
+  regression (hash so much that nothing is ever a stall) look identical from
+  the passing side
+
+- V45 [proposed 2026-09-16, from V4's token flood] latency and footprint as a
+  budget. The CLI never breaks on a 2,735-permanent board — it just takes 80
+  seconds to answer one keypress, and the screen lags several seconds behind
+  input, which makes a perfectly live game indistinguishable from a hang. That
+  is a usability contract nobody has written down, and it is not the renderer:
+  `capture-pane` returns instantly while the runner burns CPU, so the engine is
+  what is slow. Method: build the board unattended with `Endless Ranks of the
+  Dead` x2 + `Parallel Lives` (it doubles every upkeep — 683 to 2,735 in two
+  turns), then measure per-input wall time at the priority menu, declare
+  attackers, `i`, and combat damage; watch RSS (26 to 57 MB observed) and the
+  `--save` size (1.5 to 3.0 MB); and find the point where it stops being
+  playable at all, which nobody has located. Then decide what the program owes
+  the user: the question to answer is whether a decision that will take a
+  minute should say so — there is a spinner for an LLM seat thinking, and
+  nothing at all for the engine thinking. Worth pairing with a `--resume` of
+  the resulting multi-megabyte save, which has never been tried
+
+- V46 [proposed 2026-09-16, from tonight's V2] the lenient reader, and what a
+  refusal says. Every numeric prompt in `cli.rs` parses with
+  `str::parse::<usize>`/`::<u32>`, which accepts a leading `+` and leading
+  zeros while rejecting `-0`: `+1` at the mulligan menu takes the mulligan,
+  `007` at an 8-row discard screen marks row 7, `010` at `X (0-10)` funds X=10.
+  Tonight's V2 established this is leniency and not mis-selection — the value
+  it names is the value it selects, every time — so the question is not
+  correctness but whether a token outside a prompt's printed alphabet should be
+  accepted at all, and it has never been decided anywhere. Method: enumerate
+  the readers (`choose_action`, `parse_target_input`, `parse_card_set_input`,
+  `parse_order_input`, `parse_block_pair`, `choose_attackers`'s token loop,
+  `prompt_x_funding`), decide the alphabet, and check the SAME question on the
+  other two surfaces — the LLM schema's integer type and `random.rs` — since
+  only the CLI has a text reader to be lenient with, which makes this a place
+  the three surfaces can silently disagree about what a legal answer is. The
+  second half is the refusal: four readers disagree today on whether to quote
+  what was typed (`quote_input`, as the menu reader and the chooser do) or to
+  echo the parsed value (as the marking screen and the attackers prompt do), so
+  `007` comes back as "7 is out of range" and the player loses the only clue
+  that the leading zero was eaten

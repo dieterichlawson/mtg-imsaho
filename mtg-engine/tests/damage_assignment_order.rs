@@ -208,3 +208,56 @@ fn a_whole_order_places_every_blocker_at_once() {
     assert!(state.game_log.iter().any(|e| e.message.contains("announced the damage assignment order")),
         "the order is logged: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
+
+/// The description the prompt carries, wherever it is up.
+fn pending_order_description(state: &GameState) -> String {
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. },
+            ..
+        }) => description.clone(),
+        _ => panic!("expected a damage assignment order prompt"),
+    }
+}
+
+/// Issue #511: this string is not a rule, it is the question three seats
+/// read — the CLI's takeover screen, the prompt an LLM seat is sent, and
+/// the question the stall report names. It was a wrapped literal collapsed
+/// onto one line with the continuation indent left in, so all three got
+/// "choose the blocker to              be assigned damage first".
+///
+/// It also asked for one blocker while the reader under it said "type the
+/// numbers in order, e.g. 2 0 1" — and the prompt does take the whole
+/// order (#325). It describes the order now.
+#[test]
+fn the_order_prompt_reads_as_one_sentence_and_asks_for_the_order() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    // A named attacker: the description quotes its name, and the point of
+    // the test is the text around it.
+    let attacker = named_permanent(&mut state, &reg, "Diregraf Ghoul", P0);
+    let first = ready_creature(&mut state, P1, 1, 1);
+    let second = ready_creature(&mut state, P1, 2, 2);
+    let third = ready_creature(&mut state, P1, 3, 3);
+
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1,
+        &[(first, attacker), (second, attacker), (third, attacker)], &reg);
+
+    let opening = pending_order_description(&state);
+    assert!(!opening.contains("  "), "a run of spaces mid-sentence: {opening:?}");
+    assert_eq!(opening.trim(), opening, "padded at one end: {opening:?}");
+    assert!(!opening.contains('\n') && !opening.contains('\t'), "got {opening:?}");
+    assert!(opening.contains("CR 509.2"), "got {opening}");
+    assert!(opening.contains("Diregraf Ghoul"), "it names the attacker: {opening}");
+    assert!(opening.contains("in the order damage is assigned"),
+        "it asks for the order the screen under it takes: {opening}");
+
+    // Re-raised for the rest, it says where the order has got to — and is
+    // still one sentence.
+    order_next(&mut state, second, &reg);
+    let partial = pending_order_description(&state);
+    assert!(!partial.contains("  "), "a run of spaces mid-sentence: {partial:?}");
+    assert!(partial.contains("1 already placed"), "got {partial}");
+    assert!(partial.contains("starting from the second"), "got {partial}");
+}

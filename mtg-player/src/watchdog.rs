@@ -30,7 +30,9 @@ pub const STALLED_DECISIONS: u32 = 100;
 ///
 /// Two decisions with the same fingerprint changed nothing any player can
 /// see: same turn and step, same stack, same lives and libraries and hands
-/// and graveyards, same permanents in the same states, same floating mana.
+/// and graveyards, same permanents in the same states, same floating mana,
+/// and the same combat — who is attacking whom, who is blocking, and the
+/// order damage is assigned in.
 /// The priority holder is deliberately absent — the loop this catches hands
 /// priority back to the same seat every time, and a ping-pong that changed
 /// nothing else would be just as stuck.
@@ -60,6 +62,43 @@ pub fn progress_fingerprint(state: &GameState) -> u64 {
         o.tapped.hash(&mut h);
         o.summoning_sick.hash(&mut h);
         o.damage_marked.hash(&mut h);
+    }
+    // Combat is state a decision can move without moving anything above it.
+    // Announcing a damage assignment order (CR 509.2) touches nothing but
+    // `combat`, and the engine re-raises that prompt once per blocker still
+    // to be placed — so a board with two big gang blocks produced a hundred
+    // legitimate, accepted, progressing decisions that every one of the
+    // fields above read as identical, and the run was killed at turn 29
+    // with a diagnosis that was the opposite of what happened (#509).
+    //
+    // All of it, not just the orders: every repeated prompt that lives in
+    // `combat` alone has the same hole. The maps are ordered, so the hash
+    // is the same on every replay of a seeded game (#402).
+    state.combat.is_some().hash(&mut h);
+    if let Some(combat) = &state.combat {
+        for (attacker, defender) in &combat.attackers {
+            attacker.hash(&mut h);
+            defender.hash(&mut h);
+        }
+        for (attacker, walker) in &combat.planeswalker_defenders {
+            attacker.hash(&mut h);
+            walker.hash(&mut h);
+        }
+        for (attacker, blockers) in &combat.blocker_assignments {
+            attacker.hash(&mut h);
+            blockers.hash(&mut h);
+        }
+        for (attacker, order) in &combat.damage_assignment_order {
+            attacker.hash(&mut h);
+            order.hash(&mut h);
+        }
+        for attacker in &combat.blocked_attackers {
+            attacker.hash(&mut h);
+        }
+        for creature in &combat.dealt_first_strike {
+            creature.hash(&mut h);
+        }
+        combat.any_attackers_declared.hash(&mut h);
     }
     h.finish()
 }
@@ -139,6 +178,7 @@ mod tests {
     use super::*;
     use mtg_engine::cards::CardRegistry;
     use mtg_engine::engine::{setup_game, Decklist, GameConfig};
+    use mtg_engine::ids::ObjectId;
 
     fn game() -> (GameState, CardRegistry) {
         let registry = CardRegistry::with_all_cards();
@@ -192,6 +232,58 @@ mod tests {
             state.players[0].life -= 1;
             assert!(!watchdog.observe(&state));
         }
+    }
+
+    /// Issue #509: announcing a damage assignment order (CR 509.2) moves
+    /// nothing outside `state.combat`, and the engine raises that prompt
+    /// once per blocker still to be placed. A token-flood board therefore
+    /// produced one long run of legitimate, accepted, progressing decisions
+    /// that the fingerprint scored as "changed nothing" — 91 placements
+    /// across two gang-blocked attackers plus the 11 already made when the
+    /// hundredth was reached, and the run was killed at turn 29 with a
+    /// diagnosis that was the opposite of what had happened.
+    ///
+    /// Far more than `STALLED_DECISIONS` of them here, so that a fingerprint
+    /// blind to combat cannot pass this by accident.
+    #[test]
+    fn placing_blockers_in_the_damage_assignment_order_is_progress() {
+        let (mut state, _registry) = game();
+        let mut combat = mtg_engine::state::CombatState {
+            any_attackers_declared: true,
+            ..Default::default()
+        };
+        let gangs: Vec<(ObjectId, Vec<ObjectId>)> = vec![
+            (ObjectId(1), (100..160).map(ObjectId).collect()),
+            (ObjectId(2), (200..260).map(ObjectId).collect()),
+        ];
+        for (attacker, blockers) in &gangs {
+            combat.attackers.insert(*attacker, PlayerId(1));
+            combat.blocked_attackers.insert(*attacker);
+            combat.blocker_assignments.insert(*attacker, blockers.clone());
+        }
+        state.combat = Some(combat);
+
+        let mut watchdog = ProgressWatchdog::new();
+        let mut placed = 0;
+        for (attacker, blockers) in &gangs {
+            for blocker in blockers {
+                assert!(!watchdog.observe(&state),
+                    "killed a game that was moving, after {placed} placements");
+                state.combat.as_mut().expect("combat")
+                    .damage_assignment_order.entry(*attacker).or_default().push(*blocker);
+                placed += 1;
+            }
+        }
+        assert!(placed > STALLED_DECISIONS as usize, "{placed} is not enough to prove it");
+        assert_eq!(watchdog.stalled_decisions(), 0);
+
+        // And the watchdog still does its job in combat: a seat that really
+        // is answering the same unusable way, with the same board and the
+        // same combat, still trips.
+        for _ in 0..STALLED_DECISIONS {
+            watchdog.observe(&state);
+        }
+        assert!(watchdog.observe(&state), "the watchdog stopped watching");
     }
 
     /// The report names the seat, the question and where the game is, which

@@ -201,11 +201,28 @@ pub fn announce_damage_assignment_order(state: &mut GameState, registry: &CardRe
         let placed = state.combat.as_ref()
             .and_then(|c| c.damage_assignment_order.get(&attacker))
             .map_or(0, Vec::len);
-        let description = format!(
-            "Damage assignment order for {} (CR 509.2): choose the blocker to              be assigned damage {} — each one must be assigned lethal damage              before any is assigned to the next",
-            state.obj_name(attacker),
-            if placed == 0 { "first".to_string() } else { format!("{}", ordinal(placed + 1)) },
-        );
+        // One sentence, single-spaced: this string is the CLI's takeover
+        // screen, the prompt an LLM seat is sent, and the question the
+        // stall report names, so a wrapped literal's continuation indent
+        // left two 14-space runs mid-sentence on all three (#511).
+        //
+        // It describes the whole order, because that is what the prompt
+        // takes: `ChosenOrder` places every remaining blocker at once
+        // (#325), and `ChosenIndex` names the next one alone. The old
+        // wording asked for one blocker while the reader under it said
+        // "type the numbers in order".
+        let description = if placed == 0 {
+            format!(
+                "Damage assignment order for {} (CR 509.2): put its blockers in the order damage is assigned to them — each one must be assigned lethal damage before any is assigned to the next",
+                state.obj_name(attacker),
+            )
+        } else {
+            format!(
+                "Damage assignment order for {} (CR 509.2): {placed} already placed; put the rest in the order damage is assigned to them, starting from the {} — each one must be assigned lethal damage before any is assigned to the next",
+                state.obj_name(attacker),
+                ordinal(placed + 1),
+            )
+        };
         state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
             player: attacking_player,
             source: attacker,
