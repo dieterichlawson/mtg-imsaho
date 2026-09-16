@@ -107,8 +107,8 @@ pub struct GuiPlayer {
 }
 
 impl GuiPlayer {
-    /// Start serving the page. `port` of `None` tries [`DEFAULT_PORT`] and
-    /// then any free port.
+    /// Start serving the page. `port` of `None` takes the first free port
+    /// from [`DEFAULT_PORT`] upward.
     ///
     /// # Errors
     /// The page directory is missing, or no port could be bound.
@@ -124,9 +124,12 @@ impl GuiPlayer {
         let listener = match port {
             Some(p) => TcpListener::bind(("127.0.0.1", p))
                 .map_err(|e| format!("cannot listen on 127.0.0.1:{p}: {e}"))?,
-            None => TcpListener::bind(("127.0.0.1", DEFAULT_PORT))
-                .or_else(|_| TcpListener::bind(("127.0.0.1", 0)))
-                .map_err(|e| format!("cannot listen on 127.0.0.1: {e}"))?,
+            // The next free port from the default upward, so two seats in
+            // one game (`--p1 gui --p2 gui`) land on 8765 and 8766 and a
+            // second runner on the next pair, rather than somewhere random.
+            None => (DEFAULT_PORT..DEFAULT_PORT + 20)
+                .find_map(|p| TcpListener::bind(("127.0.0.1", p)).ok())
+                .ok_or_else(|| format!("no free port in 127.0.0.1:{DEFAULT_PORT}-{}", DEFAULT_PORT + 19))?,
         };
         let bound = listener.local_addr().map_err(|e| e.to_string())?;
         let (answer_tx, answer_rx) = mpsc::channel();
