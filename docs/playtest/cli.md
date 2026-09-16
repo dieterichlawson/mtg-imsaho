@@ -679,3 +679,27 @@ whether it told the truth.
   viewer-hosts (V41's gap, still open — the exile cost needs a graveyard these
   games never built), and whether a minimum-geometry refusal would beat a
   cascading viewer the way #352 asked of the combat prompts.
+
+- V44 [proposed 2026-09-16, from #509] the progress watchdog as a contract.
+  `progress_fingerprint` (`mtg-player/src/watchdog.rs:38`) decides whether a
+  game is advancing by hashing a hand-written list of fields — turn, step,
+  stack length, per-player life/land-plays/lost/library/graveyard/mana totals,
+  and per-object zone, controller, tapped, summoning_sick, damage_marked. Any
+  decision that moves state OUTSIDE that list is scored as a stall, and
+  `STALLED_DECISIONS = 100` of them in a row kills a healthy game (and forfeits
+  the match, in the tournament loop that shares the watchdog). One such
+  decision is already confirmed: `place_in_damage_assignment_order` writes only
+  `combat.damage_assignment_order` and `state.combat` is hashed nowhere.
+  Method: enumerate what the fingerprint actually covers, then build a family
+  of decisions that each live outside it — the damage assignment order, the
+  trigger-ordering prompt, anything writing only `state.combat`, a mana pool
+  that empties and refills to the same total, a once-per-turn flag — and for
+  each ask whether a hundred in a row is reachable in a real game. Degenerate
+  decks are the way in, because they are what makes one prompt repeat a
+  hundred times: a token-flood mirror (`--p1 random --p2 random`, Endless Ranks
+  x2 + Parallel Lives) hits the damage-order case at about turn 29, in roughly
+  two minutes. Verify any fix from BOTH directions — a healthy game with 200
+  damage-order placements must finish, and #462's genuinely-spinning seat must
+  still be caught — because the cheap fix (hash more fields) and the cheap
+  regression (hash so much that nothing is ever a stall) look identical from
+  the passing side
