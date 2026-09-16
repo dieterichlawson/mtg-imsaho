@@ -722,10 +722,19 @@ const SET_NOTHING_MARKED: &str =
 
 /// One "choose some of these" screen: what it is called, what it asks, the
 /// rows to mark, how many may be marked, and whether it can be abandoned.
+///
+/// The rows are [`MenuLabel`]s, the same shape the numbered menus carry, so
+/// this screen tells two rows that read alike apart the way every other
+/// numbered prompt in the program does (#136, #257, #258). It took finished
+/// strings and printed them, so the screen that replaced the enumerated
+/// target menus asked "choose up to two target creatures" as seven
+/// identical rows (#512). What has nothing to tell apart — two copies of a
+/// card in hand really are interchangeable — carries no ids and reads
+/// exactly as before.
 struct SetPick {
     title: String,
     question: String,
-    rows: Vec<String>,
+    rows: Vec<MenuLabel>,
     min: usize,
     max: usize,
     /// `Some(label)` when `c` abandons the choice — an additional cost can
@@ -5868,7 +5877,7 @@ impl CliPlayer {
             Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
             Target::Illegal => "(illegal)".into(),
         };
-        let rows: Vec<String> = options.iter().map(&label).collect();
+        let rows = Self::target_set_rows(view, options);
         let pick = SetPick {
             title: Self::target_set_title(description),
             question: Self::target_set_question(
@@ -5884,6 +5893,36 @@ impl CliPlayer {
             },
             None => Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
         }
+    }
+
+    /// The rows a target-set screen offers, each carrying the object it
+    /// names so two that read the same can be told apart (#136, #512).
+    ///
+    /// A player target has no object and needs none: "You" and "Opponent"
+    /// are already distinct.
+    fn target_set_rows(view: &GameView, options: &[mtg_engine::actions::Target]) -> Vec<MenuLabel> {
+        use mtg_engine::actions::Target;
+        options.iter().map(|t| MenuLabel {
+            text: match t {
+                Target::Object(id) => Self::target_label(view, *id),
+                Target::Player(pid) => if *pid == view.you { "You".into() } else { "Opponent".into() },
+                Target::Illegal => "(illegal)".into(),
+            },
+            ids: match t {
+                Target::Object(id) => vec![id.0],
+                _ => Vec::new(),
+            },
+        }).collect()
+    }
+
+    /// The rows a pile-division screen offers. Every row is a permanent, and
+    /// two permanents that read the same are not the same permanent (#512).
+    fn pile_division_rows(view: &GameView, permanents: &[mtg_engine::ids::ObjectId])
+        -> Vec<MenuLabel>
+    {
+        permanents.iter()
+            .map(|id| MenuLabel { text: Self::perm_name(view, *id), ids: vec![id.0] })
+            .collect()
     }
 
     /// A target object as the pane that holds it writes it: a card in a
@@ -5918,7 +5957,7 @@ impl CliPlayer {
     ) -> Action {
         begin_decision(view.you, "pile-division");
         use mtg_engine::actions::ResolvedChoice;
-        let rows: Vec<String> = permanents.iter().map(|id| Self::perm_name(view, *id)).collect();
+        let rows = Self::pile_division_rows(view, permanents);
         let (title, detail) = Self::rule_title(description, 60);
         let pick = SetPick {
             title,
@@ -5986,7 +6025,8 @@ impl CliPlayer {
         let pick = SetPick {
             title: Self::prompt_source_name(description),
             question: Self::set_question(min, max, options.len(), "cards below"),
-            rows: Self::graveyard_card_rows(view, options),
+            rows: Self::graveyard_card_rows(view, options)
+                .into_iter().map(MenuLabel::plain).collect(),
             min,
             max,
             cancel: None,
@@ -6007,7 +6047,8 @@ impl CliPlayer {
     ) -> Action {
         begin_decision(view.you, "exile-from-graveyard");
         use mtg_engine::actions::ResolvedChoice;
-        let rows = Self::graveyard_card_rows(view, options);
+        let rows: Vec<MenuLabel> = Self::graveyard_card_rows(view, options)
+            .into_iter().map(MenuLabel::plain).collect();
         let (title, detail) = Self::rule_title(description, 60);
         let pick = SetPick {
             title,
@@ -6124,8 +6165,10 @@ impl CliPlayer {
     /// which at a mandatory irreversible choice is the point (#123, #262).
     fn prompt_card_set(view: &GameView, prompt: &mtg_engine::actions::SetPrompt, title: &str) -> Action {
         begin_decision(view.you, "card-set");
-        let rows: Vec<String> = prompt.options.iter()
-            .map(|id| Self::hand_card_label(view, *id)).collect();
+        // Two copies of a card in hand are interchangeable, so these rows
+        // carry no ids and `menu_row_texts` leaves them alike (#54).
+        let rows: Vec<MenuLabel> = prompt.options.iter()
+            .map(|id| MenuLabel::plain(Self::hand_card_label(view, *id))).collect();
         let pick = SetPick {
             title: title.trim().to_string(),
             question: Self::set_question(prompt.min, prompt.max, prompt.options.len(), "below"),
@@ -6353,7 +6396,7 @@ impl CliPlayer {
         let avail = h.saturating_sub(r as usize + reserved).max(Self::list_floor(pick.rows.len()));
         let idx_w = pick.rows.len().saturating_sub(1).to_string().chars().count();
         let plen = 8 + idx_w; // "  [x] " + index + ": "
-        let rows: Vec<Vec<String>> = pick.rows.iter()
+        let rows: Vec<Vec<String>> = Self::menu_row_texts(&pick.rows).iter()
             .map(|row| Self::wrap_row(row, panel_w.saturating_sub(plen).max(10)))
             .collect();
         let heights: Vec<usize> = rows.iter().map(|l| l.len().max(1)).collect();
@@ -9394,6 +9437,68 @@ yourself at some considerable length";
             mana_abilities: vec![],
             named_card: None,
         }
+    }
+
+    /// Issue #512: every numbered prompt drawn through `render_paged` runs
+    /// its rows through `menu_row_texts`, which is how #136's rule — two
+    /// rows that read the same and are not the same get the `(#id)` that
+    /// tells them apart — reaches the screen. The marking screen that
+    /// replaced the enumerated target menus took finished strings and
+    /// printed them, so "choose up to two target creatures" over seven
+    /// Avacyn's Pilgrims was seven identical rows: the indices were right,
+    /// they were just unreadable, while the declare-attackers list beside
+    /// it in the same game numbered the same objects with their ids.
+    #[test]
+    fn a_marking_screen_tells_two_identical_permanents_apart() {
+        let mut v = view(Step::PrecombatMain, 9, true);
+        let ids: Vec<ObjectId> = (25..32).map(ObjectId).collect();
+        v.battlefield = ids.iter().enumerate()
+            .map(|(i, id)| creature(id.0, "Avacyn's Pilgrim", u8::from(i < 5)))
+            .map(|mut c| { c.power = Some(1); c.toughness = Some(1);
+                           c.effective_power = Some(1); c.effective_toughness = Some(1); c })
+            .collect();
+
+        let targets: Vec<mtg_engine::actions::Target> = ids.iter()
+            .map(|id| mtg_engine::actions::Target::Object(*id)).collect();
+        let rows = CliPlayer::menu_row_texts(&CliPlayer::target_set_rows(&v, &targets));
+
+        assert_eq!(rows.len(), 7);
+        let distinct: std::collections::HashSet<&String> = rows.iter().collect();
+        assert_eq!(distinct.len(), 7, "seven objects, seven rows that read the same: {rows:?}");
+        for (id, row) in ids.iter().zip(&rows) {
+            assert!(row.contains(&format!("(#{})", id.0)),
+                "row for #{} does not name it: {row}", id.0);
+            assert!(row.contains("Avacyn's Pilgrim"), "got {row}");
+        }
+
+        // The pile-division screen numbers permanents too, and #495 is the
+        // other half of the same screen's identity problem.
+        let piles = CliPlayer::menu_row_texts(&CliPlayer::pile_division_rows(&v, &ids));
+        assert_eq!(piles.iter().collect::<std::collections::HashSet<_>>().len(), 7,
+            "got {piles:?}");
+
+        // A player target is already distinct and is left alone.
+        let mixed = CliPlayer::menu_row_texts(&CliPlayer::target_set_rows(&v, &[
+            mtg_engine::actions::Target::Player(PlayerId(0)),
+            mtg_engine::actions::Target::Player(PlayerId(1)),
+        ]));
+        assert_eq!(mixed, vec!["You".to_string(), "Opponent".to_string()]);
+    }
+
+    /// The other half of #512's rule: what really is interchangeable stays
+    /// alike. Two copies of one card in hand are the same choice, and ids
+    /// on those rows would be noise (#54) — which is why the fix is to give
+    /// the screen labels and let `menu_row_texts` decide, rather than to
+    /// paste an id onto every row.
+    #[test]
+    fn two_copies_of_a_card_in_hand_are_still_one_row_twice() {
+        let rows = CliPlayer::menu_row_texts(&[
+            MenuLabel::plain("Forest"),
+            MenuLabel::plain("Forest"),
+            MenuLabel::plain("Avacyn's Pilgrim {G} 1/1"),
+        ]);
+        assert_eq!(rows, vec!["Forest".to_string(), "Forest".to_string(),
+                              "Avacyn's Pilgrim {G} 1/1".to_string()]);
     }
 
     /// Issue #268: two same-named attackers that differ only in marked
