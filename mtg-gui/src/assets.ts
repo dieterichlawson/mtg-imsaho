@@ -46,9 +46,17 @@ function load(path: string): Loaded | null {
   return img;
 }
 
-/** The loaded art image for a card or token name, or null. */
+/**
+ * The loaded art image for a card or token name, or null. An ability on
+ * the stack is named for its source ("Doomed Traveler's trigger", "Geist
+ * of Saint Traft (#12)"), and shows that card's art.
+ */
 export function artFor(name: string, isToken: boolean): HTMLImageElement | null {
   let path = byName.get(name);
+  if (!path) {
+    const base = name.replace(/\s*\(#\d+\).*$/, "").replace(/'s\s.*$/, "");
+    if (base !== name) path = byName.get(base);
+  }
   if (!path && isToken) path = `assets/art/tokens/${slug(name)}.png`;
   if (!path) return null;
   const img = load(path);
