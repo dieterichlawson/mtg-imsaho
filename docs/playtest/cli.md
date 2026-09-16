@@ -45,6 +45,53 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   enter, unicode, control characters (game must reprompt, never crash)
 - V2 the wrong number: at every numbered menu, try -1, 0 off-by-one,
   and N+1 before choosing legally
+
+  **Answered 2026-09-16: the index readers are sound; what is wrong is the
+  screen that stopped printing what an index MEANS.** Thirteen prompt kinds
+  were walked with the full out-of-range family — `-1`, `-0`, `N+1`, `2^31`,
+  `2^63`, `2^64`, `3.0`, `3,4`, a repeated index, an empty submit, fullwidth
+  digits — and there was **no wrong number silently accepted as a different
+  legal action, no clamping, no saturation, no partial commit, and no legal
+  index refused**. Every claim was reconciled against `--log` and `--save`
+  rather than the screen, including from pages where the chosen row was not
+  drawn: bottoming index 6 of 0-6, discard index 7 of 0-7, declare-attackers
+  index 5 with only row 0 on screen, `022:0` with rows 19-22 off screen, and
+  `15 27` on a 28-row target set all selected exactly the object the off-screen
+  page listed. Blocker pairs refuse whole and never partially declare, with a
+  named reason for each of `1:0`, `0:1`, `-1:0`, `0:0:0`, `:0`, `0:`,
+  `99999999:0` and one-valid-one-invalid. So V26's index-accuracy question is
+  now answered off-page on four prompt kinds; the only scale left is #471's
+  6402-row `ActivateAbility` menu.
+
+  The find is the other half of the contract — the row next to the index does
+  not say what the index selects. `draw_set_screen` (`cli.rs:6239`) wraps
+  `pick.rows` directly and never calls `menu_row_texts` (`cli.rs:3382`), which
+  is where #136/#257/#258's rule lives: append the distinguishing `(#id)` when
+  two rows render identically. None of the five callers puts an id in the
+  string, and `perm_name` deliberately STOPPED carrying one when #258 moved it
+  onto `MenuLabel` — so on this screen the id is not clipped, it was never
+  added. "Mark up to 2 of the 7 targets" over seven Avacyn's Pilgrims is seven
+  identical rows, while the same objects render as `(#26)` and `(#41)` on the
+  combat screen sixty seconds later (#512). Worth noting the shape: a screen
+  that REPLACED a menu did not inherit the menu's rules, which is the same
+  failure mode as #404 (a second request path missing a fix).
+
+  Three things noticed and judged below the filing bar, recorded here so the
+  next crew need not re-derive them: every numeric reader is `str::parse`, so
+  `+3` and `007` are accepted while `-0` is refused (leniency, not
+  mis-selection — it always selects the value it names; now V46); refusals
+  echo the normalized value rather than what was typed, so `007` is refused as
+  "7 is out of range" and the player loses the only clue the zero was eaten;
+  and `show_paged_lines` numbers its heading 1-based while every menu's
+  `page_marker` is 0-based.
+
+  Unreached, all of them the same `pick_set` reader so covered by equivalence
+  rather than by play: `prompt_exile_from_graveyard` and `prompt_object_set`
+  (needs a graveyard-fed deck — still V37's open corner) and
+  `prompt_pile_division` (needs Liliana; #495 is already on its labelling).
+  `library_search_ui` was read and is not a numbered menu at all — arrow keys
+  plus a filter box, digits are filter text — so nothing in the V2 family
+  applies to it. `N>pwM` was only exercised on the `walkers_len == 0` branch.
 - V3 save/reload abuse: `--save` then `--resume` mid-combat, mid-choice,
   mid-mulligan; resume the same save twice; `rr` hot-reload at odd times
 - V4 degenerate decks: all-curses, zero-creature, 4x same legend,
