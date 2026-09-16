@@ -806,3 +806,63 @@ fn the_set_prompt_is_asked_inside_the_frame() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+fn curse_deck() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("mtg-cli-pty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("mountains-and-curses.txt");
+    std::fs::write(&path, "30 Mountain\n30 Curse of the Pierced Heart\n").expect("write deck");
+    path
+}
+
+/// Issue #507: the battlefield pane fitted four of its five row kinds and
+/// printed the enchantment and artifact rows at whatever length they came
+/// out at. What overruns the pane does not stop at its border — the
+/// terminal wraps it to column 0 of the next screen row, on top of the
+/// STACK/LOG pane, and at 32 columns on top of the board separator itself.
+///
+/// One Curse of the Pierced Heart is enough: 26 columns of name plus
+/// `[enchanting opponent]` is a 48-column row from a single permanent,
+/// against the 47 columns this pane has at a 60-column terminal.
+///
+/// The row is printed as one contiguous `Print`, so what reaches the pty is
+/// what the pane decided to draw: the fitted row, with the host mark — the
+/// Curse's whole identity (CR 702.5c, #81) — intact, and the name elided.
+#[test]
+fn a_wide_enchantment_row_is_fitted_to_the_pane_not_printed_past_it() {
+    let deck = curse_deck();
+    let deck = deck.to_str().expect("utf-8 temp path");
+    let mut g = PtyGame::spawn_sized(60, 44, &[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", deck, "--deck2", deck,
+        "--seed", "3", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+
+    g.expect("MAIN PHASE 1", T);
+    g.answer_option("Play land", T);
+    g.expect("Pass priority", T);
+    g.answer("f\r");
+
+    // Turn 3: the second Mountain pays for {1}{R}.
+    g.expect("Play land", T);
+    g.answer_option("Play land", T);
+    g.expect("Cast Curse of the Pierced Heart", T);
+    g.answer_option("Cast Curse of the Pierced Heart", T);
+
+    // The Curse enchants a player, and it is the opposing seat that makes
+    // the row wide — "[enchanting opponent]" is five columns longer than
+    // "[enchanting you]".
+    g.expect("select a target", T);
+    g.answer_option("Opponent", T);
+    g.answer_option("Pass priority", T);
+
+    g.expect("… [enchanting opponent]", T);
+    g.expect_absent("Curse of the Pierced Heart [enchanting opponent]",
+        Duration::from_millis(200));
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
