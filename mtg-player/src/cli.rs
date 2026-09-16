@@ -2343,13 +2343,28 @@ impl CliPlayer {
         // only trace of a shield was the line that spent it (issue #468).
         // A second shield stacks, so the count is meaningful.
         let regen = Self::regen_marker(c);
-        let flags = format!("{}{}{}{}{}{}",
+        // What the permanent may not do this turn (#504) is in the tail
+        // with the other combat-decisive marks, not in the ability list.
+        // Appended there it sat behind "legendary", every keyword and every
+        // protection, so it was the FIRST thing elision took — on an Elite
+        // Inquisitor it was gone at 200 columns, while the LLM seat, which
+        // has no width budget at all, was told it on every call (#510).
+        // It is volatile, it is on no card, and it decides whether the
+        // block the player is about to declare is even legal: that is the
+        // same argument #270 made for the tap and sickness flags.
+        let restrictions = if c.restrictions.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", c.restrictions.join(", "))
+        };
+        let flags = format!("{}{}{}{}{}{}{}",
             if c.is_token { " [tok]" } else { "" },
             if c.tapped { " [T]" } else { "" },
             if sick { " [S]" } else { "" },
             regen,
             combat,
-            dmg);
+            dmg,
+            restrictions);
         // The permanent's live keywords and protections. A flying
         // token rendered exactly like a ground creature, and a
         // creature that had lost defender still read "Defender" from
@@ -2364,7 +2379,6 @@ impl CliPlayer {
         }
         abilities.extend(c.keywords.iter().map(|k| k.label().to_string()));
         abilities.extend(c.protections.iter().cloned());
-            abilities.extend(c.restrictions.iter().cloned());
         let kw = if abilities.is_empty() {
             String::new()
         } else {
@@ -3242,9 +3256,10 @@ impl CliPlayer {
     ///
     /// What may be cut is the ability list — long, and the only part with a
     /// natural middle. What may not is the name and P/T (which say what the
-    /// creature is), the attack target (CR 508.1a: it decides how the
-    /// creature should be blocked) and the `(#id)` disambiguator, which is
-    /// the whole reason two identical rows can be told apart (#136).
+    /// creature is), what the creature may not do this turn (#504, #510),
+    /// the attack target (CR 508.1a: it decides how the creature should be
+    /// blocked) and the `(#id)` disambiguator, which is the whole reason
+    /// two identical rows can be told apart (#136).
     fn combat_entry_parts(view: &GameView, id: ObjectId, others: &[ObjectId])
         -> (String, String, String)
     {
@@ -3257,9 +3272,16 @@ impl CliPlayer {
                 .map(|k| k.label().to_string())
                 .collect();
             abilities.extend(p.protections.iter().cloned());
-            abilities.extend(p.restrictions.iter().cloned());
             if !abilities.is_empty() {
                 elastic.push_str(&format!(" ({})", abilities.join(", ")));
+            }
+            // A restriction is live state, not printed-card text, so it
+            // rides in the tail here for the same reason it does on the
+            // battlefield row: last in the ability list it was the first
+            // thing elision took, on the one list read to decide a legal
+            // attack or block (#510).
+            if !p.restrictions.is_empty() {
+                tail.push_str(&format!(" [{}]", p.restrictions.join(", ")));
             }
             if p.damage_marked > 0 {
                 tail.push_str(&format!(" ({}d)", p.damage_marked));
@@ -9435,9 +9457,11 @@ yourself at some considerable length";
         rider.keywords = vec![mtg_engine::types::Keyword::Intimidate];
         rider.restrictions = vec!["can't attack".into(), "can't block".into()];
 
-        // The battlefield row.
-        let (_, elastic, _) = CliPlayer::creature_row_parts(&rider, None);
-        assert_eq!(elastic, " (intimidate, can't attack, can't block)");
+        // The battlefield row: the keywords are the elastic part, and what
+        // the creature may not do is in the tail that survives elision.
+        let (_, elastic, flags) = CliPlayer::creature_row_parts(&rider, None);
+        assert_eq!(elastic, " (intimidate)");
+        assert_eq!(flags, " [can't attack, can't block]");
 
         // The combat list beside it.
         let mut v = view(Step::DeclareBlockers, 7, true);
@@ -9457,8 +9481,40 @@ yourself at some considerable length";
 
         // A creature under no such effect says nothing, on any of the three.
         let plain = creature(23, "Spectral Rider", 0);
-        let (_, elastic, _) = CliPlayer::creature_row_parts(&plain, None);
+        let (_, elastic, flags) = CliPlayer::creature_row_parts(&plain, None);
         assert!(!elastic.contains("can't"), "got {elastic}");
+        assert!(!flags.contains("can't"), "got {flags}");
+    }
+
+    /// Issue #510: #504 put the restrictions at the end of the ability list,
+    /// which is the elastic middle — behind "legendary", every keyword and
+    /// every protection. So on the creatures most likely to carry keywords
+    /// they were the first thing elided, and at 120x45, the width the house
+    /// plays at, a Nightbird's Clutches on an Elite Inquisitor was invisible
+    /// to the person at the keyboard while the LLM seat — which has no width
+    /// budget — was told about it on every call.
+    ///
+    /// It is one turn old, it is on no card, and it decides whether the
+    /// block about to be declared is legal. It belongs with the flags.
+    #[test]
+    fn a_restriction_survives_the_widths_a_person_actually_plays_at() {
+        let mut marked = inquisitor(47);
+        marked.restrictions = vec!["can't block this turn".into()];
+        let parts = CliPlayer::creature_row_parts(&marked, None);
+
+        // 120x45 is the house default: a battlefield pane of about 70.
+        for max_w in [60usize, 70, 80, 100] {
+            let row = CliPlayer::counted_row(2, &parts, max_w);
+            assert!(str_cols(&row) <= max_w, "got {} cols: {row}", str_cols(&row));
+            assert!(row.ends_with(" [can't block this turn]"),
+                "elided at {max_w} columns: {row}");
+            assert!(row.contains("Elite Inquisitor"), "got {row}");
+        }
+
+        // The ability list is still what gives way, and still says so.
+        let wide = CliPlayer::counted_row(2, &parts, 70);
+        assert!(wide.contains('…'), "got {wide}");
+        assert!(wide.contains("first strike"), "the head of the list stays: {wide}");
     }
 
     /// Issue #328: the combat lists were emitted at their natural length
