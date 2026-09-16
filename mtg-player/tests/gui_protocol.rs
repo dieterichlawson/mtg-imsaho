@@ -1,6 +1,6 @@
 //! The GUI seat's protocol: the engine's own types as JSON.
 //!
-//! The page (`mtg-gui/src/prompts.js`) answers by the *kind* of prompt in
+//! The page (`mtg-gui/src/prompts.ts`) answers by the *kind* of prompt in
 //! `LegalActions`. These tests hold the two sides together:
 //!
 //! - every decision point a seeded random game reaches serializes, so the
@@ -85,8 +85,8 @@ fn prompt_kinds_reached(seeds: impl Iterator<Item = u64>) -> BTreeSet<String> {
 
 /// The prompt kinds the page has an arm for, read from its source.
 fn kinds_the_page_handles() -> BTreeSet<String> {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/src/prompts.js"))
-        .expect("mtg-gui/src/prompts.js is part of the repository");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/src/prompts.ts"))
+        .expect("mtg-gui/src/prompts.ts is part of the repository");
     let mut kinds = BTreeSet::new();
     for line in src.lines() {
         let l = line.trim();
@@ -117,7 +117,7 @@ fn every_decision_point_serializes_and_is_a_kind_the_page_handles() {
     for k in &reached {
         let Some(name) = k.strip_prefix("resolution:") else { continue };
         assert!(handled.contains(name) || list_shaped.contains(name),
-            "the engine asks `{name}` and mtg-gui/src/prompts.js has no arm for it: \
+            "the engine asks `{name}` and mtg-gui/src/prompts.ts has no arm for it: \
              add one (or add it to the list-shaped kinds here if a plain list is right)");
     }
 }
@@ -153,6 +153,6 @@ fn every_resolution_kind_the_engine_defines_is_known_to_the_page() {
         .collect();
     assert!(unknown.is_empty(),
         "ResolutionChoiceKind has variants the page does not name: {unknown:?}. \
-         Add a `case` for each in mtg-gui/src/prompts.js (a list is the safe default), \
+         Add a `case` for each in mtg-gui/src/prompts.ts (a list is the safe default), \
          then add it here if a list is right.");
 }

@@ -1,0 +1,14 @@
+{
+  "name": "mtg-gui",
+  "private": true,
+  "description": "The pixel-art page for mtg-imsaho: TypeScript sources in src/, compiled to dist/ (committed, so the runner serves it from a bare checkout).",
+  "scripts": {
+    "build": "tsc -p .",
+    "check": "tsc -p . --noEmit",
+    "smoke": "node tests/smoke.js",
+    "widgets": "node tests/widgets.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.4"
+  }
+}

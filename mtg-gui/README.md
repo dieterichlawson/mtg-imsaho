@@ -20,16 +20,26 @@ it is fine: a reconnecting page is sent the decision still pending.
 
 The seat (`mtg-player/src/gui.rs`) sends each decision as the engine's
 own `GameView` and `LegalActions` serialized to JSON, and takes one
-`Action` back. Nothing is described twice. The page:
+`Action` back. Nothing is described twice. The page is TypeScript in
+`src/`, compiled by `tsc` to `dist/`, which is committed so the runner
+serves it from a bare checkout with no node toolchain:
 
-- `src/main.js` — the socket, the state, mouse and keys.
-- `src/prompts.js` — a decision to a widget: menu, pick, mark, attackers,
+```bash
+cd mtg-gui && npm run build     # or: tsc -p .   (typescript 5+)
+```
+
+- `src/protocol.ts` — the engine's types as serde writes them.
+- `src/state.ts` — the page state and the widget shape.
+- `src/main.ts` — the socket, the state, mouse and keys.
+- `src/prompts.ts` — a decision to a widget: menu, pick, mark, attackers,
   blockers, list, order, number. An unknown prompt kind is a list of the
   offered actions, never nothing.
-- `src/render.js` — the 640x360 frame, integer-scaled, and the list of
+- `src/render.ts` — the 640x360 frame, integer-scaled, and the list of
   what was drawn where (input looks at the last frame, not the view).
-- `src/assets.js` — art and fonts; a card with no art file gets a
+- `src/assets.ts` — art and fonts; a card with no art file gets a
   coloured placeholder.
+
+Edit `src/`, run the build, commit both.
 
 Keys: Enter passes or confirms, Esc cancels, `l` opens the log, `g`/`G`
 a graveyard, `e` exile, `d` your library, `s` stops at every priority
@@ -55,8 +65,11 @@ License (`assets/fonts/OFL-*.txt`).
 
 - `cargo test -p mtg-player --test gui_protocol` — every decision point
   of seeded random games serializes, and every prompt kind the engine
-  defines is one `prompts.js` names.
+  defines is one `prompts.ts` names.
 - `NODE_PATH=$(npm root -g) node mtg-gui/tests/smoke.js --shots /tmp/shots`
   — a real runner and the Playwright Chromium: keep, play a land through
   the popover, pass, no page errors. Needs `cargo build -p mtg-runner`
   and the `playwright` package with its Chromium.
+- `NODE_PATH=$(npm root -g) node mtg-gui/tests/widgets.js` — one
+  synthetic decision per prompt kind over a real board: the widget the
+  page chooses, the clicks that answer it, and the Action it sends.

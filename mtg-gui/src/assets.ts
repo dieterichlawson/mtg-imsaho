@@ -4,34 +4,41 @@
 // frame with its initials, so the page works from a bare checkout and in
 // CI with no generated assets at all.
 
-const images = new Map();      // path -> HTMLImageElement | null (failed)
-let manifest = { images: {} }; // assets/art/manifest.json
-let byName = new Map();        // card or token name -> path
+import type { Color } from "./protocol.js";
 
-export async function loadManifest() {
+interface ManifestImage { name: string; kind: string; file: string }
+interface Manifest { art_size?: [number, number]; images: Record<string, ManifestImage> }
+
+type Loaded = HTMLImageElement & { ready?: boolean };
+
+const images = new Map<string, Loaded | null>(); // path -> image, or null once it failed
+let manifest: Manifest = { images: {} };
+let byName = new Map<string, string>();          // card or token name -> path
+
+export async function loadManifest(): Promise<void> {
   try {
     const r = await fetch("assets/art/manifest.json", { cache: "no-cache" });
     if (r.ok) {
-      manifest = await r.json();
+      manifest = (await r.json()) as Manifest;
       byName = new Map();
       for (const img of Object.values(manifest.images || {})) {
         if (img.kind === "cards" || img.kind === "tokens") byName.set(img.name, `assets/art/${img.file}`);
       }
     }
-  } catch (e) {
+  } catch {
     // No manifest: everything is a placeholder.
   }
 }
 
-export async function fontsReady() {
+export async function fontsReady(): Promise<void> {
   try {
     await Promise.all([document.fonts.load("8px Silkscreen"), document.fonts.load("8px PressStart")]);
-  } catch (e) { /* system font fallback */ }
+  } catch { /* system font fallback */ }
 }
 
-function load(path) {
-  if (images.has(path)) return images.get(path);
-  const img = new Image();
+function load(path: string): Loaded | null {
+  if (images.has(path)) return images.get(path) ?? null;
+  const img: Loaded = new Image();
   images.set(path, img);
   img.onload = () => { img.ready = true; };
   img.onerror = () => { images.set(path, null); };
@@ -40,7 +47,7 @@ function load(path) {
 }
 
 /** The loaded art image for a card or token name, or null. */
-export function artFor(name, isToken) {
+export function artFor(name: string, isToken: boolean): HTMLImageElement | null {
   let path = byName.get(name);
   if (!path && isToken) path = `assets/art/tokens/${slug(name)}.png`;
   if (!path) return null;
@@ -49,34 +56,37 @@ export function artFor(name, isToken) {
 }
 
 /** A UI piece from assets/art/ui, or null. */
-export function uiImage(name) {
+export function uiImage(name: string): HTMLImageElement | null {
   const img = load(`assets/art/ui/${name}.png`);
   return img && img.ready ? img : null;
 }
 
-export function slug(name) {
+export function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+export type Rgb = [number, number, number];
+
 // Colour identity → palette. Multicolour is gold; none is stone.
-export const COLOR_RGB = {
+export const COLOR_RGB: Record<Color, Rgb> = {
   White: [232, 220, 180], Blue: [80, 120, 200], Black: [70, 50, 80],
   Red: [190, 70, 50], Green: [70, 130, 70],
 };
-export function frameColor(colors) {
+export function frameColor(colors: Color[] | undefined): Rgb {
   if (!colors || colors.length === 0) return [120, 118, 125];
   if (colors.length > 1) return [190, 160, 70];
   return COLOR_RGB[colors[0]] || [120, 118, 125];
 }
-export function rgb([r, g, b], a = 1) {
+export function rgb([r, g, b]: Rgb, a = 1): string {
   return a === 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`;
 }
-export function darker([r, g, b], f = 0.55) {
+export function darker([r, g, b]: Rgb, f = 0.55): string {
   return `rgb(${Math.round(r * f)},${Math.round(g * f)},${Math.round(b * f)})`;
 }
 
 /** Draw the art (or its placeholder) into a w×h window at x,y. */
-export function drawArt(ctx, x, y, w, h, name, colors, isToken) {
+export function drawArt(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
+  name: string, colors: Color[] | undefined, isToken: boolean): void {
   const img = artFor(name, isToken);
   if (img) {
     ctx.drawImage(img, 0, 0, img.width, img.height, x, y, w, h);

@@ -24,7 +24,7 @@ separate code:
   LLM seat answers through.
 - `mtg-player/src/random.rs` — the seat the invariant fuzzer plays, which is
   how most of the engine gets exercised at all.
-- `mtg-player/src/gui.rs` and `mtg-gui/src/prompts.js` — the browser page.
+- `mtg-player/src/gui.rs` and `mtg-gui/src/prompts.ts` — the browser page.
   The seat sends `GameView` and `LegalActions` as they are, so the Rust
   side needs nothing per prompt; the page maps each prompt kind to a
   widget, and `mtg-player/tests/gui_protocol.rs` fails when the engine
