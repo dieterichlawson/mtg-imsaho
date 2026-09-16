@@ -41,8 +41,16 @@ cd mtg-gui && npm run build     # or: tsc -p .   (typescript 5+)
 
 Edit `src/`, run the build, commit both.
 
-Keys: Enter passes or confirms, Esc cancels, `l` opens the log, `g`/`G`
-a graveyard, `e` exile, `d` your library, `s` stops at every priority
+Playing: click a card to see what it can do, then click the verb;
+double-click a card with one verb to do it. A cast that needs targets
+highlights them; click one. Sets are marked and confirmed. Attackers are
+clicked on (again to change whom they attack, again to withdraw);
+blockers are clicked, then the attacker they block.
+
+Keys: Enter passes or confirms, Esc or right-click backs out, `f`
+passes to your next precombat main phase (and stops for any prompt, a
+spell on the stack, or that main phase), `l` opens the log, `g`/`G` a
+graveyard, `e` exile, `d` your library, `s` stops at every priority
 instead of passing when there is nothing to do.
 
 ## Art
@@ -73,3 +81,11 @@ License (`assets/fonts/OFL-*.txt`).
 - `NODE_PATH=$(npm root -g) node mtg-gui/tests/widgets.js` — one
   synthetic decision per prompt kind over a real board: the widget the
   page chooses, the clicks that answer it, and the Action it sends.
+- `NODE_PATH=$(npm root -g) node mtg-gui/tests/autoplay.js --games 4`
+  — whole games against the random seat, played through the page by
+  clicking at random; fails on a decision the page offers no way to
+  answer, a page error, or an invariant violation. `--shots DIR` keeps
+  a screenshot every 25 decisions.
+
+All four run in CI (`.github/workflows/gui.yml`), which also checks
+that `dist/` matches `src/`.

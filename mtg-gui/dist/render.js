@@ -466,11 +466,12 @@ function gameOverScreen(ctx, state) {
         return;
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(0, 0, BOARD_W, H);
-    const lines = state.gameOver.split("\n");
-    const w = 360, x = (BOARD_W - w) / 2, h = 40 + lines.length * 12, y = (H - h) / 2;
+    const w = 360, x = (BOARD_W - w) / 2;
+    const lines = state.gameOver.split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
+    const h = 44 + lines.length * 11, y = (H - h) / 2;
     texturedPanel(ctx, x, y, w, h);
-    text(ctx, "GAME OVER", x + w / 2, y + 8, { align: "center", font: "8px PressStart", color: "#ffe080" });
-    lines.forEach((l, i) => text(ctx, clip(ctx, l, w - 16, "8px Silkscreen"), x + w / 2, y + 24 + i * 12, { align: "center" }));
+    text(ctx, "GAME OVER", x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
+    lines.forEach((l, i) => text(ctx, l, x + w / 2, y + 28 + i * 11, { align: "center" }));
 }
 // --------------------------------------------------------------- panel
 function inspector(ctx, state, x, y, w) {
