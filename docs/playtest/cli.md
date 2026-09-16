@@ -72,6 +72,67 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   screen at 70x20, 80x24, exactly 100 wide, and 200x50, `capture-pane`-ing
   each. `draw_set_screen` is the one to copy from: it wraps rows into lines
   FIRST and pages the lines, which is why it has none of these
+
+  **Answered 2026-09-16: the contract holds on every row but two, and the way
+  to find them was to read the renderer rather than to look at screens.**
+  `render_battlefield_at` prints five categories of permanent and clips only
+  three: the creature row ends `.chars().take(max_w)`, the planeswalker row the
+  same, and `render_lands` spends the budget entry by entry and degrades to
+  `+N more` — but the enchantment row (`cli.rs:2137`) and the artifact row
+  (`cli.rs:2150`) are a bare `Print(counted_line(n, &label))` with no clip at
+  all (#507). That is #244's and #350's exact failure surviving on the two
+  categories nobody had built a wide board for, and the enchantment label is the
+  one that has been GROWING: it is now name + legend mark +
+  `[enchanting you|opponent]` + `[names: X]` + counters, so a SINGLE Curse of
+  the Pierced Heart — the pool's longest card name at 26 chars — is a 50-column
+  row needing no `Nx` prefix, bleeding 3 columns into the STACK/LOG pane at 60
+  wide and 17 at 32, where it also erases the `· · ·` board separator. Two more
+  came out of the same reading. `elide_middle` reserves 4 columns for the `Nx `
+  prefix while `counted_line` spends 5 (`"  " + "2x "`) or 6 (`"10x "`), so
+  every COLLAPSED creature row is one or two columns over `max_w` and the
+  `take(max_w)` behind it eats the tail — which is `flags`, the region #270 moved
+  last precisely so it would survive; it renders as
+  `2x Elite Inquisitor 2/2 (first… [S` (#508), and unlike the `n == 1` path
+  there is no `…` to say anything was dropped. And #504's restrictions are
+  appended after `legendary`, every keyword and every protection inside the
+  ELASTIC, which `elide_middle` cuts from the tail, so `can't block this turn`
+  is the first thing elided: absent at 120x45 and at 200, present at 300 (#510).
+  The priority is inverted — `legendary` and `flying` are stable printed-card
+  facts, the restriction is volatile, one-turn, on no card, and decides whether
+  a block is legal.
+
+  Method worth reusing: **measure, don't eyeball.** `capture-pane -p` piped
+  through a one-liner printing `len=` per screen row turns "does it fit" into
+  arithmetic, and every bleed predicted from `max_w` matched the observed
+  overflow to the column. Resizing a live pane with `resize-window` sweeps
+  widths far faster than one game per size, and a cold start confirms anything
+  suspicious is not a resize artifact. Also: ask the same question of `i` and of
+  `llm.rs` before deciding severity — `i` lists every permanent uncollapsed and
+  unelided, so it recovers everything the pane clips (which bounds #508), and
+  the LLM board helper has no width budget at all, so the model seat is told
+  `can't block this turn` on every call while the person at the keyboard is not.
+
+  What HELD, swept at 200, 120, 110, 105, 100, 80, 70, 60, 50, 46, 45, 40, 32
+  and 28 columns: the `Lands:` line, both life lines, the HAND rows, the STACK
+  and LOG panes, the creature and planeswalker rows, and the two worth
+  re-checking — the declare-attackers list now wraps inside the pane with a
+  hanging indent at 100 and still SHOWS its creature list at 70x20, so #328,
+  #351 and #352 are all fixed. `--resume` refuses a finished save with a clean
+  error (#316 fixed). The frame's right border is simply not drawn below the
+  CARDS pane's content, uniformly at every width — not a break. The
+  `showing A-B of C-D` pager label is index notation, not an off-by-one.
+
+  Unreached: whether `collapse` can be made to LIE. It groups on the
+  already-elided label, so two permanents differing only inside the elided
+  region would merge into one `Nx` row. The obvious candidate — two Elite
+  Inquisitors where Nightbird's Clutches has restricted one — was built and did
+  NOT merge, because summoning sickness had already split them into separate
+  rows; it needs two permanents identical in head and flags and differing only
+  late in the elastic. Also unreached: the enchantment bleed against a token
+  flood or a 30-permanent side, and the fact that the clip helpers disagree —
+  `clip_cols` (`cli.rs:611`) counts COLUMNS while the creature and planeswalker
+  rows count `chars`, a latent wide-character bug this ASCII-only pool cannot
+  show.
 - V8 search/menu abuse: the CLI's `/` search, `d`, `l`, `g`, `e` panes
   spammed at every prompt
 - V9 rapid concede/new-game churn: concede and immediately relaunch a
