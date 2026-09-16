@@ -2,10 +2,11 @@ use crate::ids::{ObjectId, PlayerId, CardId};
 use crate::state::GameState;
 use crate::cards::CardRegistry;
 use crate::types::{ManaPool, Step, ManaCost, CardType, Keyword, CounterType, Supertype, Zone};
+use serde::Serialize;
 
 
 /// A player's view of the game — hidden info filtered out.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GameView {
     pub you: PlayerId,
     pub your_hand: Vec<CardView>,
@@ -45,7 +46,7 @@ pub struct GameView {
     pub revealed_names: std::collections::HashMap<ObjectId, String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CardView {
     pub object_id: ObjectId,
     pub card_id: CardId,
@@ -64,13 +65,13 @@ pub struct CardView {
 }
 
 /// What an attacking creature is attacking (CR 508.1a).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum AttackTarget {
     Player(PlayerId),
     Planeswalker(ObjectId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PermanentView {
     pub object_id: ObjectId,
     pub card_id: CardId,
@@ -226,7 +227,7 @@ impl GameView {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StackItemView {
     pub object_id: ObjectId,
     pub card_id: CardId,
@@ -241,7 +242,7 @@ pub struct StackItemView {
     pub x_value: Option<u32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OpponentView {
     pub id: PlayerId,
     pub life: i32,

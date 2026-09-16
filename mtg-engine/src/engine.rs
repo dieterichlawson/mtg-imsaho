@@ -86,7 +86,7 @@ pub struct GameConfig {
 /// Result of `legal_actions`: a list of actions plus an optional combat prompt.
 /// When a combat prompt is present, the player should construct a
 /// DeclareAttackers/DeclareBlockers action from it (not pick from the actions list).
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub struct LegalActions {
     pub actions: Vec<Action>,
     pub combat_prompt: Option<crate::actions::CombatPrompt>,
