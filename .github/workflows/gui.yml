@@ -1,0 +1,69 @@
+# The GUI's checks: the page compiles and matches its committed build, the
+# protocol test holds the engine and the page together, and a real browser
+# plays the first turns, every widget, and two random games through the
+# page. GREEN means the page answered everything the engine asked.
+name: gui
+
+on:
+  push:
+    paths: ["mtg-gui/**", "mtg-player/**", "mtg-runner/**", "mtg-engine/src/view.rs", ".github/workflows/gui.yml"]
+  pull_request:
+    paths: ["mtg-gui/**", "mtg-player/**", "mtg-runner/**", "mtg-engine/src/view.rs", ".github/workflows/gui.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: gui-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: The committed page matches its sources
+        working-directory: mtg-gui
+        run: |
+          npm install --no-save typescript@5
+          npx tsc -p . --outDir /tmp/gui-dist
+          diff -r dist /tmp/gui-dist
+
+      - name: Build the runner
+        run: cargo build -p mtg-runner
+
+      - name: Protocol test
+        run: cargo test -p mtg-player --test gui_protocol
+
+      - name: Playwright Chromium
+        run: |
+          npm install -g playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Smoke, widgets, autoplay
+        env:
+          NODE_PATH: /usr/local/lib/node_modules
+        run: |
+          NODE_PATH=$(npm root -g) node mtg-gui/tests/smoke.js --shots gui-shots
+          NODE_PATH=$(npm root -g) node mtg-gui/tests/widgets.js --shots gui-shots
+          NODE_PATH=$(npm root -g) node mtg-gui/tests/autoplay.js --games 2 --seed 7 --decisions 200 --shots gui-shots
+
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-shots
+          path: gui-shots
+          if-no-files-found: ignore
