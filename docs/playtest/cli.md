@@ -30,6 +30,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
 - The `play-cli` skill documents the house tmux patterns:
   `tmux new-session -d -s <name> -x <cols> -y <rows> '<cmd>; sleep 300'`,
   `send-keys`, `capture-pane -p`, `resize-window`.
+- One `send-keys` trap that costs a whole probe: **a payload starting with `-`
+  needs `--`**. `tmux send-keys -t <s> -l "-1"` fails with `unknown flag -1`
+  and types nothing; you need `send-keys -t <s> -l -- "-1"`. Without it the
+  screen just shows the previous prompt, which reads exactly like "the program
+  accepted my input and did nothing" — so the entire `-1`/`-0` half of a
+  hostile-input sweep can silently never be typed while looking like a finding.
+  Check that what you meant to send actually arrived before believing a null
+  result (2026-09-16, V2).
 - The contract here is not the CR, so you have to decide what correct
   means. Useful questions: would a user be surprised? Is the failure
   clean and explained, or a panic? Does the program do something
