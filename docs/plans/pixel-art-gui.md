@@ -1,9 +1,10 @@
 # A pixel-art GUI for the game
 
 Status: phases 1 to 4 built on the recommendations below (the browser
-page served by the runner, plain JavaScript modules with no build step
-rather than TypeScript, 640x360, one GUI seat per port, art generated
-at 64x48 with `rd_plus__low_res` from the printed art at strength 0.78).
+page served by the runner, TypeScript compiled by `tsc` to a committed
+`dist/`, 640x360, one GUI seat per port so two humans are two tabs, art
+generated at 64x48 with `rd_plus__low_res` from the printed art at
+strength 0.78).
 See `mtg-gui/README.md` for running it. Each section below is one
 decision, with what the code already fixes, the options, and the
 recommendation that was taken.
