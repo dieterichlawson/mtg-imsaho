@@ -1,6 +1,6 @@
 # A pixel-art GUI for the game
 
-Status: phases 1 to 3 built on the recommendations below (the browser
+Status: phases 1 to 4 built on the recommendations below (the browser
 page served by the runner, plain JavaScript modules with no build step
 rather than TypeScript, 640x360, one GUI seat per port, art generated
 at 64x48 with `rd_plus__low_res` from the printed art at strength 0.78).

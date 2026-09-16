@@ -14,6 +14,7 @@ pick a subject, read that subject's guide, and go.
 | The CLI | The binaries as programs — the TUI, flags, files, signals, terminals | [`cli.md`](cli.md) |
 | The harness | The LLM interface — what a model in a seat is told, offered, and understood to have said | [`harness.md`](harness.md) |
 | Drafting | `mtg-draft-runner` — packs, picks, deck building, the tournament | [`drafting.md`](drafting.md) |
+| The GUI | The browser page — can a person at it see, find, and do what the engine asks? | [`gui.md`](gui.md) |
 
 This list is not closed. If you find something that is none of these —
 the card implementations as a body of code, the save format, the deck
@@ -45,13 +46,13 @@ D9 and D10 were sitting in `drafting.md` unread. Drafting had by then
 gone longer without a night than any other subject, which is the case the
 first rule exists to catch.
 
-## One decision, three surfaces
+## One decision, four surfaces
 
 The subjects above are separate nights, but they are not separate code.
-Every decision the engine asks for is presented three times — the CLI
-screen, the LLM seat's prompt and response schema, and the random seat
-the fuzzer plays — and a change to one of them is a question about the
-other two.
+Every decision the engine asks for is presented four times — the CLI
+screen, the LLM seat's prompt and response schema, the random seat the
+fuzzer plays, and the browser page — and a change to one of them is a
+question about the other three.
 
 So when a probe finds something in a prompt, ask the same question of the
 other surfaces before you write it up. It costs a minute and it doubles
