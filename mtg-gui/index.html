@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mtg-imsaho</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  @font-face { font-family: "Silkscreen"; src: url("assets/fonts/Silkscreen-Regular.ttf"); }
+  @font-face { font-family: "PressStart"; src: url("assets/fonts/PressStart2P-Regular.ttf"); }
+  html, body { margin: 0; height: 100%; background: #0d0b10; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+    cursor: default;
+  }
+  /* The one DOM control: a text field for a filter or a number, placed
+     over the canvas by the page when a prompt needs typed input. */
+  #field {
+    position: absolute; display: none;
+    font-family: "Silkscreen", monospace; font-size: 16px;
+    background: #1a1620; color: #eee; border: 2px solid #7a6a8a; outline: none;
+    padding: 2px 4px;
+  }
+  /* Fonts load lazily; force them before the first frame. */
+  #fontload { position: absolute; left: -1000px; top: -1000px; visibility: hidden; }
+</style>
+</head>
+<body>
+<canvas id="game" width="640" height="360"></canvas>
+<input id="field" type="text" autocomplete="off" spellcheck="false">
+<div id="fontload"><span style="font-family: Silkscreen">a</span><span style="font-family: PressStart">a</span></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
