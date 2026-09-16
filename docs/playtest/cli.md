@@ -183,7 +183,13 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   flood or a 30-permanent side, and the fact that the clip helpers disagree —
   `clip_cols` (`cli.rs:611`) counts COLUMNS while the creature and planeswalker
   rows count `chars`, a latent wide-character bug this ASCII-only pool cannot
-  show.
+  show. And one handed over by V4's token flood, which builds what V7's own
+  stressors will not: a single `--log` entry of **14,469 characters** — the
+  `p0 declared attackers: …` line for a 685-attacker declaration, the widest
+  row the program can produce. Open it in the `l` full-log viewer and ask V7's
+  third property of it: `show_paged_lines` sizes a page by `wrapped_height`, so
+  one entry that wraps to 200-odd rendered lines is a page of one entry that
+  does not fit on the screen, and the heading goes with it.
 - V8 search/menu abuse: the CLI's `/` search, `d`, `l`, `g`, `e` panes
   spammed at every prompt
 - V9 rapid concede/new-game churn: concede and immediately relaunch a
