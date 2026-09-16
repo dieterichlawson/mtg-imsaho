@@ -183,18 +183,21 @@ function drawPerm(ctx: Ctx, hits: Hit[], state: LiveState, p: PermanentView, x: 
   ctx.fillStyle = darker(c, 0.45); ctx.fillRect(x, y, CARD.w, CARD.h);
   drawArt(ctx, x + 4, y + 3, ART_S.w, ART_S.h, p.name, colors, p.is_token);
   if (p.is_token) { ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(x, y, CARD.w, 2); }
-  // P/T or a type glyph.
+  // P/T or a type glyph on the right; keyword marks in whatever is left.
+  let rightW = 0;
   if (p.effective_power !== null && p.effective_power !== undefined) {
     const pt = `${p.effective_power}/${p.effective_toughness}`;
     const boosted = p.effective_power !== p.power || p.effective_toughness !== p.toughness;
     text(ctx, pt, x + CARD.w - 3, y + CARD.h - 10, { align: "right", color: boosted ? "#a0e0ff" : "#f0e8d8", font: "8px PressStart" });
+    ctx.font = "8px PressStart"; rightW = ctx.measureText(pt).width;
   } else {
     const t = p.card_types.includes("Land") ? "L" : p.card_types.includes("Artifact") ? "A" : p.card_types.includes("Planeswalker") ? "PW" : "E";
     text(ctx, t, x + CARD.w - 3, y + CARD.h - 10, { align: "right", color: "#a0a0b0" });
+    ctx.font = "8px Silkscreen"; rightW = ctx.measureText(t).width;
   }
-  // Keyword marks on the left of the bottom row.
   const kw = (p.keywords || []).map(k => KEYWORD_SHORT[k] || k.slice(0, 3)).slice(0, 2).join(" ");
-  if (kw) text(ctx, kw, x + 3, y + CARD.h - 10, { color: "#c0c8d8", font: "7px Silkscreen" });
+  const kwRoom = CARD.w - 8 - rightW;
+  if (kw && kwRoom >= 10) text(ctx, clip(ctx, kw, kwRoom, "7px Silkscreen"), x + 3, y + CARD.h - 10, { color: "#c0c8d8", font: "7px Silkscreen" });
   // Badges strip below the art.
   let bx = x + 3;
   for (const b of permBadges(p, state).slice(0, 3)) {
