@@ -773,3 +773,24 @@ whether it told the truth.
   minute should say so — there is a spinner for an LLM seat thinking, and
   nothing at all for the engine thinking. Worth pairing with a `--resume` of
   the resulting multi-megabyte save, which has never been tried
+
+- V46 [proposed 2026-09-16, from tonight's V2] the lenient reader, and what a
+  refusal says. Every numeric prompt in `cli.rs` parses with
+  `str::parse::<usize>`/`::<u32>`, which accepts a leading `+` and leading
+  zeros while rejecting `-0`: `+1` at the mulligan menu takes the mulligan,
+  `007` at an 8-row discard screen marks row 7, `010` at `X (0-10)` funds X=10.
+  Tonight's V2 established this is leniency and not mis-selection — the value
+  it names is the value it selects, every time — so the question is not
+  correctness but whether a token outside a prompt's printed alphabet should be
+  accepted at all, and it has never been decided anywhere. Method: enumerate
+  the readers (`choose_action`, `parse_target_input`, `parse_card_set_input`,
+  `parse_order_input`, `parse_block_pair`, `choose_attackers`'s token loop,
+  `prompt_x_funding`), decide the alphabet, and check the SAME question on the
+  other two surfaces — the LLM schema's integer type and `random.rs` — since
+  only the CLI has a text reader to be lenient with, which makes this a place
+  the three surfaces can silently disagree about what a legal answer is. The
+  second half is the refusal: four readers disagree today on whether to quote
+  what was typed (`quote_input`, as the menu reader and the chooser do) or to
+  echo the parsed value (as the marking screen and the attackers prompt do), so
+  `007` comes back as "7 is out of range" and the player loses the only clue
+  that the leading zero was eaten
