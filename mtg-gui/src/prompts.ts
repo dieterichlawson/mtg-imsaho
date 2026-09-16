@@ -149,18 +149,26 @@ function withOptions(ui: Ui, list: readonly (Target | ObjectId)[]): Ui {
   return ui;
 }
 
-const BOARD_ZONES = new Set(["battlefield", "hand", "graveyard", "exile", "stack"]);
+/** Zones drawn on the board itself; everything else is reached through rows. */
+const ON_BOARD = new Set(["battlefield", "hand", "stack"]);
 
-/** Rows for the options the board cannot show (a looked-at card, a library card). */
+/**
+ * Rows for the options the board does not draw: a graveyard or exile card,
+ * a looked-at card, a library card. A graveyard or exile that holds an
+ * option is also opened, so the card can be clicked where it lives.
+ */
 function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void): Row[] {
   const rows: Row[] = [];
+  let openZone: { zone: "graveyard" | "exile"; pid: PlayerId } | null = null;
   for (const [key, t] of ui.options ?? []) {
     const id = key[0] === "o" ? Number(key.slice(1)) : null;
     const e = id === null ? null : state.index.get(id);
-    if (key[0] === "p" || (e && BOARD_ZONES.has(e.zone))) continue;
+    if (key[0] === "p" || (e && ON_BOARD.has(e.zone))) continue;
+    if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null && !openZone) openZone = { zone: e.zone, pid: e.owner };
     const label = id === null ? targetLabel(state, t as Target) : nameOf(state, id);
     rows.push({ label, run: () => run(key), key, cardName: e ? e.obj.name : null });
   }
+  if (openZone) state.overlay = openZone;
   return rows;
 }
 
@@ -241,9 +249,9 @@ export function beginDecision(state: LiveState, send: Send): Ui {
     return beginPickFromActions(state, ui, actions, legal.context || "Choose", send);
   }
 
-  // The opening hand.
+  // The opening hand: the list sits beside the hand it is about.
   if (actions.some(a => a === "MulliganKeep" || a === "MulliganMull")) {
-    return beginList(state, ui, actions, legal.context || "Keep or mulligan?", send, false);
+    return beginList(state, ui, actions, legal.context || "Keep or mulligan?", send, false, true);
   }
 
   return beginMenu(state, ui, actions, legal, send);

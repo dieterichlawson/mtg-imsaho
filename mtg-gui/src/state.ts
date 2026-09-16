@@ -14,6 +14,8 @@ export interface Button { label: string; run: () => void; primary?: boolean; ena
 export interface Hit {
   x: number; y: number; w: number; h: number;
   kind: "perm" | "hand" | "card" | "stack" | "player" | "zone" | "button" | "row" | "modal" | "popover" | "overlay" | "log";
+  /** For a hand or board card: the verbs a double-click may run. */
+  verbs?: { label: string; run: () => void }[];
   key?: string;
   id?: ObjectId;
   pid?: PlayerId;
@@ -107,6 +109,8 @@ export interface State {
   logScroll: number;
   scale: number;
   stopAtPass?: boolean;
+  /** Auto-pass to your next precombat main phase, engaged with `f`. */
+  autoPass?: { sinceTurn: number } | null;
   draw?: () => void;
 }
 

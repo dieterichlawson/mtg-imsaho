@@ -26,6 +26,8 @@ interface DebugHook {
   stage(decision: Decision): void;
   render(): number;
   sent: { seq: number; action: Action }[];
+  /** One line per decision received: what it was and how it was handled. */
+  trace: string[];
 }
 declare global {
   interface Window {
@@ -89,8 +91,12 @@ function onMessage(msg: ServerMessage): void {
       // Only Pass and Concede on offer: nothing to decide, as in the CLI.
       const onlyPass = !msg.combat && !msg.legal.resolution_prompt && !msg.legal.set_prompt
         && actions.length > 0 && actions.every(a => a === "PassPriority" || a === "Concede") && actions.includes("PassPriority");
-      if (onlyPass && !state.stopAtPass) { send("PassPriority"); return; }
+      const v = msg.view;
+      const what = `seq ${msg.seq} T${v.turn_number} ${v.step} active=${v.active_player} you=${v.you} ctx=${msg.legal.context}`;
+      if (onlyPass && !state.stopAtPass) { window.mtgDebug.trace.push(`${what}: only pass`); send("PassPriority"); return; }
       beginDecision(state as LiveState, send);
+      if (autoPassDecides()) { window.mtgDebug.trace.push(`${what}: auto-passed`); return; }
+      window.mtgDebug.trace.push(`${what}: ${state.ui ? state.ui.mode : "?"}`);
       syncField();
       break;
     }
@@ -112,6 +118,36 @@ function onMessage(msg: ServerMessage): void {
   }
   if (state.decision) state.lastDecision = state.decision;
   draw();
+}
+
+/**
+ * Auto-pass (`f`): pass every plain priority until something happens —
+ * a prompt that is not a pass, a spell on the stack, or your next
+ * precombat main phase. Returns true when it answered the decision.
+ */
+function autoPassDecides(): boolean {
+  const ap = state.autoPass;
+  const v = state.view; const ui = state.ui;
+  if (!ap || !v || !ui) return false;
+  const stop = ui.mode !== "menu" || !ui.canPass || v.stack.length > 0
+    || (v.active_player === v.you && v.step === "PrecombatMain" && v.turn_number > ap.sinceTurn);
+  if (stop) {
+    state.autoPass = null;
+    state.notice = ui.mode !== "menu" ? "Auto-pass off: you are asked something." : v.stack.length > 0 ? "Auto-pass off: something is on the stack." : "Auto-pass off: your main phase.";
+    return false;
+  }
+  send("PassPriority");
+  return true;
+}
+
+function toggleAutoPass(): void {
+  const v = state.view; const ui = state.ui;
+  if (state.autoPass) { state.autoPass = null; state.notice = "Auto-pass off."; return; }
+  if (!v) return;
+  if (!ui || ui.mode !== "menu" || !ui.canPass) { state.notice = "Auto-pass passes priority, and this is not a pass."; return; }
+  state.autoPass = { sinceTurn: v.turn_number };
+  state.notice = null;
+  send("PassPriority");
 }
 
 // ----------------------------------------------------------------- input
@@ -164,6 +200,23 @@ canvas.addEventListener("click", (ev) => {
   draw();
 });
 
+// A double-click on a card with one thing to do does it.
+canvas.addEventListener("dblclick", (ev) => {
+  const { x, y } = canvasPoint(ev);
+  const h = hitAt(x, y);
+  if (h && h.verbs && h.verbs.length === 1) { state.popover = null; h.verbs[0].run(); syncField(); draw(); }
+});
+
+// Right-click backs out of whatever is open, like Escape.
+canvas.addEventListener("contextmenu", (ev) => {
+  ev.preventDefault();
+  const ui = state.ui;
+  if (state.popover) state.popover = null;
+  else if (state.overlay) state.overlay = null;
+  else if (ui && ui.onCancel) ui.onCancel();
+  draw();
+});
+
 canvas.addEventListener("wheel", (ev) => {
   const ui = state.ui;
   if (ui && ui.mode === "list" && ui.rows) {
@@ -201,6 +254,7 @@ window.addEventListener("keydown", (ev) => {
     case "e": if (v) toggleZone("exile", v.you); break;
     case "d": if (v) toggleZone("library", v.you); break;
     case "s": state.stopAtPass = !state.stopAtPass; state.notice = state.stopAtPass ? "Stopping at every priority." : "Passing automatically when there is nothing to do."; break;
+    case "f": toggleAutoPass(); break;
     default: return;
   }
   ev.preventDefault();
@@ -247,8 +301,8 @@ function draw(): void {
   });
 }
 state.draw = draw;
-// Art arrives over time; repaint while anything is still loading.
-setInterval(draw, 500);
+// Art arrives over time and highlights breathe; repaint on a slow beat.
+setInterval(draw, 120);
 
 window.addEventListener("resize", fitCanvas);
 void (async () => {
@@ -272,4 +326,5 @@ window.mtgDebug = {
   },
   render() { state.hits = render(ctx, state); return state.hits.length; },
   sent: [],
+  trace: [],
 };
