@@ -318,27 +318,78 @@ function rowLayout(n: number, cardW: number, x0: number, width: number, gap = 3)
   return { stride, x0 };
 }
 
+/**
+ * What makes two permanents the same row of the board, or `null` when this
+ * one is its own card.
+ *
+ * The rule used to be "an untapped basic land with no counters", and
+ * creatures never reached it at all — they were passed to `drawRow` one to
+ * a group. So the one class of permanent that actually reaches large
+ * counts, identical tokens, was the one class that never collapsed: 108
+ * Zombies drew as 108 slivers 10px wide (issue #513).
+ *
+ * The key is everything the board can show about a permanent, so two cards
+ * that share it are genuinely interchangeable to look at: anything with a
+ * counter, damage, a shield, an attachment either way, a combat role or a
+ * named card is its own card, and the rest group by what `drawPerm` and
+ * `permBadges` would paint. That is the same rule the old one was a
+ * special case of, so basic lands still stack exactly as before.
+ */
+function stackKey(p: PermanentView, attachedTo: Set<ObjectId>): string | null {
+  if (p.attached_to !== null && p.attached_to !== undefined) return null;
+  if (attachedTo.has(p.object_id)) return null;
+  if (p.counters && Object.values(p.counters).some(n => n)) return null;
+  if (p.damage_marked || p.regeneration_shields) return null;
+  if (p.attacking || (p.blocking && p.blocking.length) || (p.blocked_by && p.blocked_by.length)) return null;
+  if (p.named_card) return null;
+  const isCreature = p.card_types.includes("Creature");
+  return [
+    p.name, p.tapped, p.is_token,
+    // Summoning sickness is only painted on a creature, so it only tells
+    // two permanents apart when they are creatures.
+    isCreature ? p.summoning_sick : false,
+    p.effective_power, p.effective_toughness, p.star_pt,
+    (p.keywords || []).join(","), (p.protections || []).join(","), (p.restrictions || []).join(","),
+    (p.card_types || []).join(","), (p.subtypes || []).join(","), (p.supertypes || []).join(","),
+  ].join("|");
+}
+
 /** Battlefield permanents of one controller, grouped into the two rows. */
-function splitBoard(view: GameView, controller: PlayerId): { creatures: PermanentView[]; groups: PermanentView[][] } {
+function splitBoard(view: GameView, controller: PlayerId): { creatures: PermanentView[][]; groups: PermanentView[][] } {
   const mine = view.battlefield.filter(p => p.controller === controller);
-  const creatures = mine.filter(p => p.card_types.includes("Creature"));
-  const others = mine.filter(p => !p.card_types.includes("Creature"));
-  // Identical untapped basic lands stack; everything else is one card.
-  const groups: PermanentView[][] = []; const byKey = new Map<string, PermanentView[]>();
-  for (const p of others) {
-    const stackable = p.card_types.includes("Land") && (p.supertypes || []).includes("Basic") && p.attached_to === null
-      && (p.counters === undefined || Object.keys(p.counters).length === 0);
-    const k = stackable ? `${p.name}|${p.tapped}` : `id${p.object_id}`;
-    const g = byKey.get(k);
-    if (g) g.push(p); else { const ng = [p]; byKey.set(k, ng); groups.push(ng); }
-  }
+  const attachedTo = new Set<ObjectId>();
+  for (const p of view.battlefield) if (p.attached_to !== null && p.attached_to !== undefined) attachedTo.add(p.attached_to);
+  const group = (list: PermanentView[]): PermanentView[][] => {
+    const out: PermanentView[][] = []; const byKey = new Map<string, PermanentView[]>();
+    for (const p of list) {
+      const k = stackKey(p, attachedTo);
+      const g = k === null ? undefined : byKey.get(k);
+      if (g) g.push(p);
+      else { const ng = [p]; if (k !== null) byKey.set(k, ng); out.push(ng); }
+    }
+    return out;
+  };
+  const creatures = group(mine.filter(p => p.card_types.includes("Creature")));
+  const groups = group(mine.filter(p => !p.card_types.includes("Creature")));
   // Non-lands first, then lands.
   groups.sort((a, b) => Number(a[0].card_types.includes("Land")) - Number(b[0].card_types.includes("Land")));
   return { creatures, groups };
 }
 
-function drawRow(ctx: Ctx, hits: Hit[], state: LiveState, items: PermanentView[][], y: number): void {
-  const { stride, x0 } = rowLayout(items.length, CARD.w, 6, BOARD_W - 12);
+function drawRow(ctx: Ctx, hits: Hit[], state: LiveState, all: PermanentView[][], y: number): void {
+  const width = BOARD_W - 12;
+  const { stride, x0 } = rowLayout(all.length, CARD.w, 6, width);
+  // The stride bottoms out at 10px and nothing used to cap the row, so past
+  // that point cards were simply drawn at ever-larger x: at 108 tokens the
+  // last one reached x=1117 in a 640px frame, 60 of them painted and then
+  // covered by the side panel — invisible, and still answering clicks,
+  // because the hit rectangles went in all the same (issue #513).
+  //
+  // What fits, fits; the rest are counted in the last slot. Nothing is
+  // drawn past the pane and nothing off the pane pushes a hit.
+  const fits = Math.floor((width - CARD.w) / stride) + 1;
+  const overflow = all.length > fits;
+  const items = overflow ? all.slice(0, Math.max(0, fits - 1)) : all;
   const draw = (item: PermanentView[], i: number) => {
     const group = item.length > 1 ? item.map(q => q.object_id) : null;
     // In a pick or mark, a stack whose members are options should offer
@@ -359,6 +410,12 @@ function drawRow(ctx: Ctx, hits: Hit[], state: LiveState, items: PermanentView[]
     draw(item, i);
   });
   if (hovered >= 0) draw(items[hovered], hovered);
+  if (overflow) {
+    const hidden = all.slice(items.length).reduce((n, g) => n + g.length, 0);
+    const mx = x0 + items.length * stride;
+    panel(ctx, mx, y, Math.min(CARD.w, BOARD_W - 6 - mx), CARD.h, "#241d2c", "#6a5a7a");
+    text(ctx, `+${hidden}`, mx + 3, y + CARD.h / 2 - 4, { font: "8px PressStart", color: "#ffe080" });
+  }
 }
 
 function drawStrip(ctx: Ctx, hits: Hit[], state: LiveState, y: number, pid: PlayerId, life: number, handSize: number,
@@ -922,12 +979,12 @@ export function render(ctx: Ctx, state: State): Hit[] {
   drawStrip(ctx, hits, live, ROWS.oppStrip, opp.id, opp.life, opp.hand_size, opp.library_size, gyCount(opp.id), exCount(opp.id), opp.mana_pool, false);
   const ob = splitBoard(view, opp.id);
   drawRow(ctx, hits, live, ob.groups, ROWS.oppOther);
-  drawRow(ctx, hits, live, ob.creatures.map(p => [p]), ROWS.oppCreatures);
+  drawRow(ctx, hits, live, ob.creatures, ROWS.oppCreatures);
   // Middle.
   drawBand(ctx, hits, live);
   // You.
   const mb = splitBoard(view, view.you);
-  drawRow(ctx, hits, live, mb.creatures.map(p => [p]), ROWS.myCreatures);
+  drawRow(ctx, hits, live, mb.creatures, ROWS.myCreatures);
   drawRow(ctx, hits, live, mb.groups, ROWS.myOther);
   // Hand: your strip sits on the hand's top edge.
   const hand = view.your_hand;

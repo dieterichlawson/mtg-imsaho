@@ -675,6 +675,50 @@ async function main() {
       if (r.none.length === 0) fail("band-recap none: the band went blank while sitting at a prompt");
       else ok(`band-recap none: falls back to the last lines (${r.none.length})`);
     }
+    // 23. The battlefield row has a fit contract: identical permanents
+    // collapse, the row never reaches past the pane, and nothing off the
+    // pane answers a click (issue #513).
+    {
+      const sweep = await page.evaluate(() => {
+        const m = window.mtg, you = m.view.you;
+        const proto = m.view.battlefield.find(p => p.controller === you && p.card_types.includes("Creature"));
+        if (!proto) return null;
+        const others = m.view.battlefield.filter(p => p !== proto);
+        const rows = [];
+        for (const distinct of [false, true]) {
+          for (const n of [1, 12, 30, 44, 45, 46, 60, 108]) {
+            const clones = [];
+            for (let i = 0; i < n; i++) clones.push(Object.assign({}, proto, {
+              object_id: 90000 + i, name: distinct ? `Creature ${i}` : proto.name }));
+            m.view.battlefield = others.concat(clones);
+            window.mtgDebug.render();
+            const perms = m.hits.filter(h => h.kind === "perm" && h.id >= 90000);
+            const maxRight = perms.length ? Math.max(...perms.map(h => h.x + h.w)) : 0;
+            rows.push({ distinct, n, drawn: perms.length, maxRight,
+                        offPane: perms.filter(h => h.x + h.w > 480).length });
+          }
+        }
+        m.view.battlefield = others.concat([proto]);
+        window.mtgDebug.render();
+        return rows;
+      });
+      if (!sweep) fail("board-fit: no creature on the board to clone");
+      else {
+        const over = sweep.filter(r => r.maxRight > 480);
+        if (over.length) fail(`board-fit: the row reaches past the pane: ${JSON.stringify(over.slice(0, 3))}`);
+        else ok(`board-fit: every row of up to 108 ends inside the pane (widest ${Math.max(...sweep.map(r => r.maxRight))})`);
+        const clickable = sweep.filter(r => r.offPane);
+        if (clickable.length) fail(`board-fit: ${JSON.stringify(clickable.slice(0, 3))} answer clicks from under the panel`);
+        else ok("board-fit: nothing off the pane answers a click");
+        const same = sweep.filter(r => !r.distinct);
+        if (same.some(r => r.drawn !== 1)) fail(`board-fit: identical permanents did not collapse: ${JSON.stringify(same)}`);
+        else ok("board-fit: 108 identical tokens are one stack");
+        // And distinct permanents are still drawn, not collapsed away.
+        const twelve = sweep.find(r => r.distinct && r.n === 12);
+        if (!twelve || twelve.drawn !== 12) fail(`board-fit: 12 distinct creatures drew ${twelve && twelve.drawn}`);
+        else ok("board-fit: 12 distinct creatures are 12 cards");
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();
