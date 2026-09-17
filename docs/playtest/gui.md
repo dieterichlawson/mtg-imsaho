@@ -47,6 +47,18 @@ random game happened to reach.
 - G4 the crowded board: `20 Armored Skaab` a side, a 40-card graveyard,
   nine tokens. Does every row fit its band, does the graveyard page, can
   you reach the last card? (The CLI's V7 sweep, for the page.)
+  [2026-09-17] Both halves answered, opposite ways. The **zone overlay
+  holds**: 137 cards page 50/50/37, nothing off-pane, every card reachable
+  including the last, and the page index is rebuilt per open — don't re-probe
+  it without a reason. The **battlefield row does not** (#513): 20 is far too
+  few to find anything, because `rowLayout`'s stride floor is only reached at
+  43 and the row first crosses the pane at 45 (the hand at 42). Reach it with
+  tokens — `4 Army of the Damned / 4 Endless Ranks of the Dead / 30 Swamp`
+  against `40 Plains` crosses 45 by turn 18 and hit 108 on seed 11. The
+  measurement to copy: don't eyeball the screenshot, read `window.mtg.hits`
+  after `window.mtgDebug.render()` — every card's drawn rectangle is in there,
+  so "is it off the pane" is `h.x + h.w > 480` and "is it invisible" is
+  `h.x >= 480`, both exact.
 - G5 game over: a win, a loss, a draw, a concede, a decked opponent.
   Is the reason on screen? Is the last board still readable behind it?
 
