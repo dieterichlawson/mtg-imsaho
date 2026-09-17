@@ -120,6 +120,20 @@ random game happened to reach.
 - G9 two tabs on one seat, and a tab closed mid-prompt and reopened: the
   pending decision must come back, and an answer from the stale tab
   must not land on a newer prompt.
+  [2026-09-17] The rule itself HOLDS under three attacks — a stale `seq` on a
+  live socket, two tabs racing the same live `seq`, and a stale tab clicking
+  after the seat moved on; exactly one answer landed every time, and a genuine
+  close-and-reopen gets the pending decision back. What broke was everything
+  around the drop (#515, #516), so re-probe the surroundings, not the rule.
+
+- G16 [proposed 2026-09-17, from #524, #520 and #518] the destructive default:
+  for every widget, ask what Enter does when the player has touched nothing.
+  `beginMark` at `min 0` commits an empty set on the spot (#520) and refuses
+  below the minimum without a word (#518, #524). Not yet asked of the others:
+  `beginNumber` with an empty field (`Number("")` is `0`, which passes both
+  `Number.isInteger` and the range check, so Enter looks like it submits X=0),
+  `beginOrder` without reordering, `beginPick`'s Decline. Compare each against
+  the CLI's same prompt, which refuses out loud in both directions.
 
 **The Reader** cares about what the inspector says.
 
