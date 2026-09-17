@@ -73,6 +73,18 @@ random game happened to reach.
   out loud; Enter on a menu passes and must be the only key that does.
 - G8 `f` at the wrong moments: engaged at your own main phase (it skips
   it, and says so), during combat, with a spell on the stack.
+  [2026-09-17] The first half holds: engaged at your own precombat main,
+  5/5 across seeds 11/5/23 skipped the rest of the phase and stopped at the
+  declare-attackers prompt with an accurate notice ("Auto-pass off: you are
+  asked something"). **The other half is still unprobed**, and the reason is
+  worth knowing before you try: engaged at your own main phase, `f` can never
+  reach the thing it is documented to reach, because your own declare-attackers
+  prompt is a non-menu prompt and stops it first, every turn. To test "passes
+  to your next precombat main phase" at all you have to engage it during the
+  OPPONENT's turn. Do that, and check what `f` does when a spell goes on the
+  stack in a window where you could actually respond — `main.ts:96` auto-passes
+  pass-only priorities before `autoPassDecides` is ever consulted, so the
+  "stops for a spell on the stack" clause may be unreachable by construction.
 - G9 two tabs on one seat, and a tab closed mid-prompt and reopened: the
   pending decision must come back, and an answer from the stale tab
   must not land on a newer prompt.
