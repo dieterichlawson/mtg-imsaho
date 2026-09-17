@@ -70,6 +70,14 @@ random game happened to reach.
   Then press `s` (stop at every priority) and confirm the page stops, says so,
   and that `f` and `s` compose sanely rather than fighting.
 
+- G13 [proposed 2026-09-17, observed during #517's repro but not filed] the
+  dedup'd duplicate: the engine offers `PlayLand` for one object id even with
+  four Forests in hand, so three visually identical hand cards carry no verb
+  marker and answer no click — clicking one only moves the inspector. Sweep
+  every prompt where the engine dedups by name (the land drop, a second copy
+  of the same spell) and decide what the page owes the copies it draws but
+  cannot act on. #512 is the CLI's version of the same question.
+
 **The Fumbler** clicks the wrong things.
 
 - G6 click everything that is not highlighted during a pick: the
