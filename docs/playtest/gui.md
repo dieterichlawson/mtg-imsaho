@@ -189,6 +189,25 @@ random game happened to reach.
   without. Decide whether `s` should be documented as needing it or whether the
   runner should set it for a gui seat.
 
+- G22 [proposed 2026-09-17, from #525] the three-badge strip: `drawPerm` draws
+  `permBadges(p, state).slice(0, 3)` (`render.ts:203`), and `permBadges` orders
+  ATK, BLK, sick, +1/+1, −1/−1, loyalty, damage, **regeneration**,
+  **attachment** — so the last two fall off first. Build an attacking creature
+  with a +1/+1 counter and damage marked that is also equipped and
+  regenerating, and check what a person can still see on the card. Both facts
+  that fall off are also the ones missing from the inspector (#525), so on that
+  creature they are on no surface of the page at all.
+
+- G23 [proposed 2026-09-17, from reading render.ts during G10] the inspector
+  has no ceiling: `facts` is drawn with no cap (`render.ts:461`) and
+  `promptY = Math.max(insEnd + 4, 150)` (`:672`), so a permanent with many
+  facts pushes the prompt pane down — deleting prompt rows and, far enough, the
+  Pass button. Build the worst case (aura + equipment + counters + attacking +
+  blocked by three + protections + restrictions + a named card) and check the
+  buttons are still on screen and the oracle text is not silently cut to
+  nothing by `maxLines`. Seen indirectly in #529, where the row budget shrinks
+  as the inspector grows.
+
 ## Filing
 
 As `docs/playtest/README.md` says, with `surface:gui` in the title. A
