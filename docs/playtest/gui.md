@@ -78,6 +78,15 @@ random game happened to reach.
   of the same spell) and decide what the page owes the copies it draws but
   cannot act on. #512 is the CLI's version of the same question.
 
+- G14 [proposed 2026-09-17, from #522] an unclipped-text sweep: #522 was found
+  by eye, and it is the *one* string on the board drawn without `clip()` only
+  as far as anybody has looked. Enumerate every `text()` call in `render.ts`
+  not wrapped in `clip()` or `wrap()`, and drive each against the longest
+  string it can actually hold — the longest card name in the pool, the longest
+  step name, a full keyword list, an eight-line oracle text, a player label
+  after #519. Measure with `ctx.measureText` against the pane width rather
+  than by looking.
+
 **The Fumbler** clicks the wrong things.
 
 - G6 click everything that is not highlighted during a pick: the
