@@ -87,6 +87,13 @@ random game happened to reach.
   after #519. Measure with `ctx.measureText` against the pane width rather
   than by looking.
 
+- G15 [proposed 2026-09-17, from the G5 runs — unverified] the window that is
+  too small: `index.html` sets `body { overflow: hidden }` and `fitCanvas`
+  floors the integer scale at 1, so a window narrower than 640x360 should crop
+  the canvas with no scrollbar and no way to reach the right-hand panel — where
+  every button and the whole prompt live. Check a phone-sized window, a
+  half-screen window and a very wide short one.
+
 **The Fumbler** clicks the wrong things.
 
 - G6 click everything that is not highlighted during a pick: the
