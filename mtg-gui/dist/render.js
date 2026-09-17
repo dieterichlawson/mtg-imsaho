@@ -769,13 +769,41 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         by -= 15;
     });
     let ry = ty + 2;
-    for (const r of rows.slice(0, Math.max(0, Math.floor((by - ry) / 11)))) {
+    // The panel's rows page. They used to be sliced from the front to
+    // whatever fitted and the rest were neither drawn nor mentioned: a
+    // 30-card library search drew eleven rows and the other nineteen were
+    // legal answers the engine had offered that a person could not send
+    // (issue #529). A library option has no second surface to fall back on
+    // either — graveyard and exile options open their zone overlay, which
+    // pages, and `library` is not in that branch.
+    //
+    // The last row's worth of space goes to the "N–M of K" line whenever
+    // there is more than one page, so the pager can always reach the end.
+    const fits = Math.max(0, Math.floor((by - ry) / 11));
+    const paged = rows.length > fits;
+    const perPage = paged ? Math.max(1, fits - 1) : fits;
+    const scroll = state.rowScroll = clampRowScroll(rows.length, perPage, state.rowScroll || 0);
+    const drawn = rows.slice(scroll, scroll + perPage);
+    // What the panel actually drew, published the way `hits` is: the pager's
+    // contract is that its last page reaches the last row, and that is not
+    // checkable from the outside otherwise.
+    state.rowPage = { total: rows.length, scroll, drawn: drawn.length };
+    for (const r of drawn) {
         const marked = !!(ui && r.key && ui.marked.includes(r.key));
         panel(ctx, x + 4, ry, w - 8, 10, marked ? "#3a5a3a" : "#2a2430", marked ? "#60e060" : "#4a4a5a");
         text(ctx, clip(ctx, r.label, w - 14, "7px Silkscreen"), x + 7, ry + 1, { font: "7px Silkscreen" });
         hits.push({ x: x + 4, y: ry, w: w - 8, h: 10, kind: "row", onClick: r.run, cardName: r.cardName });
         ry += 11;
     }
+    if (paged) {
+        text(ctx, clip(ctx, `${scroll + 1}–${Math.min(rows.length, scroll + perPage)} of ${rows.length} (scroll)`, w - 8, "7px Silkscreen"), x + 4, ry + 1, { font: "7px Silkscreen", color: "#8a8090" });
+    }
+}
+/** `scroll` for a panel row list, clamped so the last page is reachable. */
+export function clampRowScroll(total, perPage, scroll) {
+    if (perPage <= 0)
+        return 0;
+    return Math.max(0, Math.min(Math.max(0, total - perPage), scroll));
 }
 /**
  * The log, newest at the bottom, scrolled by `state.logScroll`.
@@ -800,6 +828,30 @@ function logArea(ctx, hits, state, x, y, w, h, headRoom = 0) {
     hits.push({ x, y, w, h, kind: "log" });
 }
 // -------------------------------------------------------------- overlays
+/** How many rows the modal shows at once. */
+export const MODAL_ROWS = 20;
+/**
+ * The rows the modal will actually draw, filter applied.
+ *
+ * The filtering lived inside `modal()` while the wheel handler clamped
+ * `ui.scroll` against `ui.rows.length` — the UNfiltered count. Scroll a
+ * 30-row list to 10, then type a filter matching six, and `slice(10, 30)`
+ * of six rows is nothing: the modal drew its title and an empty box, with
+ * the "of 30" footer suppressed because the filtered list is shorter than a
+ * page, so nothing said that scrolling up would bring the matches back
+ * (issue #530). One function, so the two cannot disagree again.
+ */
+export function modalRows(ui) {
+    const rows = ui.rows ?? (ui.order ? ui.order.map((o, pos) => ({ label: o.label, pos })) : []);
+    if (ui.mode !== "list" || !ui.query)
+        return rows;
+    const q = ui.query.toLowerCase();
+    return rows.filter(r => r.label.toLowerCase().includes(q));
+}
+/** `ui.scroll`, clamped to what `modalRows` can actually show. */
+export function clampScroll(ui, scroll) {
+    return Math.max(0, Math.min(Math.max(0, modalRows(ui).length - MODAL_ROWS), scroll));
+}
 function modal(ctx, hits, state) {
     const ui = state.ui;
     if (!ui || (ui.mode !== "list" && ui.mode !== "order" && ui.mode !== "number"))
@@ -809,14 +861,13 @@ function modal(ctx, hits, state) {
         ctx.fillRect(0, 0, BOARD_W, H);
     }
     const w = 300, x = (BOARD_W - w) / 2;
-    let rows = ui.rows ?? (ui.order ? ui.order.map((o, pos) => ({ label: o.label, pos })) : []);
-    if (ui.mode === "list" && ui.query) {
-        const q = ui.query.toLowerCase();
-        rows = rows.filter(r => r.label.toLowerCase().includes(q));
-    }
+    const rows = modalRows(ui);
     const rowH = 12;
-    const maxRows = 20;
-    const scroll = ui.scroll || 0;
+    const maxRows = MODAL_ROWS;
+    // Clamped here as well as in the wheel handler: typing a filter narrows
+    // the list under a scroll position the wheel set legitimately.
+    const scroll = clampScroll(ui, ui.scroll || 0);
+    ui.scroll = scroll;
     const shown = rows.slice(scroll, scroll + maxRows);
     const h = 30 + shown.length * rowH + (ui.mode === "number" ? 30 : 0) + (ui.filter ? 14 : 0) + 18;
     const y = Math.max(8, (H - h) / 2);
@@ -829,13 +880,20 @@ function modal(ctx, hits, state) {
         ty += 10;
     }
     if (ui.filter) {
+        // Where the real <input> goes. The modal used to paint a field here and
+        // `syncField` parked the DOM control at a fixed spot near the top of the
+        // canvas, so the screen showed two filter boxes: one over the
+        // opponent's life strip that took the typing, and one in the middle of
+        // the modal that looked like the thing to click and never filled in
+        // (issue #531). The frame is still drawn here; the input is placed over
+        // it, the way hit rectangles are published for the mouse.
         panel(ctx, x + 6, ty, w - 12, 12, "#0e0c12", "#6a5a7a");
-        text(ctx, ui.query || "type to filter…", x + 9, ty + 2, { color: ui.query ? "#fff" : "#7a7280" });
+        state.fieldRect = { x: x + 6, y: ty, w: w - 12, h: 12 };
         ty += 14;
     }
     if (ui.mode === "number") {
         panel(ctx, x + 6, ty, 80, 14, "#0e0c12", "#6a5a7a");
-        text(ctx, (ui.value ?? "") + "▏", x + 9, ty + 3, { font: "8px PressStart", color: "#fff" });
+        state.fieldRect = { x: x + 6, y: ty, w: 80, h: 14 };
         text(ctx, `0 – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" });
         ty += 18;
         for (const l of (ui.summary || []).slice(0, 4)) {
@@ -859,8 +917,16 @@ function modal(ctx, hits, state) {
         }
     });
     ty += shown.length * rowH;
-    if (rows.length > maxRows)
-        text(ctx, `${scroll + 1}–${Math.min(rows.length, scroll + maxRows)} of ${rows.length} (scroll)`, x + 6, ty + 2, { font: "7px Silkscreen", color: "#8a8090" });
+    // Printed whenever the list is filtered too, not only when it is longer
+    // than a page: "0 of 30 matching" is the line that was missing when the
+    // modal went empty (issue #530).
+    if (rows.length > maxRows || (ui.mode === "list" && ui.query)) {
+        const all = (ui.rows ?? []).length;
+        const where = rows.length === 0 ? "no matches"
+            : `${scroll + 1}–${Math.min(rows.length, scroll + maxRows)} of ${rows.length}`;
+        const of = ui.mode === "list" && ui.query ? ` matching "${ui.query}" (of ${all})` : " (scroll)";
+        text(ctx, clip(ctx, where + of, w - 12, "7px Silkscreen"), x + 6, ty + 2, { font: "7px Silkscreen", color: "#8a8090" });
+    }
     let bx = x + w - 6;
     for (const b of (ui.buttons || []).slice().reverse()) {
         const bw = 60;

@@ -67,7 +67,9 @@ async function main() {
       const theirs = m.view.battlefield.filter(p => p.controller !== you).map(p => p.object_id);
       const creatures = m.view.battlefield.filter(p => p.card_types.includes("Creature")).map(p => p.object_id);
       return { you, opp: m.view.opponents[0].id, mine, theirs, creatures, hand: m.view.your_hand.map(c => c.object_id),
-        library: m.view.your_library_cards.slice(0, 6).map(c => c.object_id), names: m.view.your_library_cards.slice(0, 30).map(c => c.name) };
+        library: m.view.your_library_cards.slice(0, 6).map(c => c.object_id),
+        libraryMany: m.view.your_library_cards.slice(0, 40).map(c => c.object_id),
+        names: m.view.your_library_cards.slice(0, 30).map(c => c.name) };
     });
     if (ids.mine.length < 2 || ids.hand.length < 2) fail(`board too small to test with: ${JSON.stringify(ids)}`);
 
@@ -525,6 +527,84 @@ async function main() {
       });
       if (!same.same) fail("log-drawer-heading: the heading's row changes with the log's contents — they are drawn over each other");
       else ok("log-drawer-heading: the heading has a row of its own");
+    }
+    // 19. A long list can be reached to its end, and says where you are.
+    //
+    // A 30-card library search drew eleven rows in the panel and neither
+    // drew nor mentioned the other nineteen — legal answers the engine had
+    // offered that a person could not send (issue #529).
+    {
+      // Distinct ids: the picker keys its options by id, so repeats collapse.
+      const thirty = ids.libraryMany.slice(0, 30);
+      const actions = thirty.map(id => rc({ ChosenCard: id }));
+      actions.push(rc({ ChosenTarget: null }));
+      if (await stage("library-pager", legal({ actions, resolution_prompt: { ChooseFromLibrary: { description: "Search your library for a card", options: thirty, searcher: ids.you, source_id: ids.mine[0], destination: "Hand", tapped: false } } }), null, "pick")) {
+        const page1 = await page.evaluate(() => {
+          window.mtgDebug.render();
+          return { rows: window.mtg.ui.rows.length, drawn: window.mtg.hits.filter(h => h.kind === "row").length, scroll: window.mtg.rowScroll || 0 };
+        });
+        if (page1.rows <= page1.drawn) fail(`library-pager: the list fits (${page1.rows} rows, ${page1.drawn} drawn) — nothing to page`);
+        else ok(`library-pager: ${page1.drawn} of ${page1.rows} drawn on the first page`);
+        // Wheel to the end. The renderer clamps, so overshooting is safe and
+        // the last row must be reachable.
+        const last = await page.evaluate(() => {
+          const m = window.mtg;
+          m.rowScroll = 9999;
+          window.mtgDebug.render();
+          return m.rowPage;
+        });
+        if (!last) fail("library-pager: the panel published no page");
+        else if (last.scroll + last.drawn !== last.total)
+          fail(`library-pager: the last page stops at ${last.scroll + last.drawn} of ${last.total}`);
+        else ok(`library-pager: the last page reaches row ${last.total} of ${last.total}`);
+        // And the wheel over the panel is what moves it.
+        await page.mouse.move(560 * 2, 300 * 2);
+        await page.mouse.wheel(0, -600);
+        await page.waitForTimeout(80);
+        const backUp = await page.evaluate(() => window.mtg.rowScroll || 0);
+        if (!last || backUp >= last.scroll) fail(`library-pager: wheeling up over the panel left scroll at ${backUp}`);
+        else ok(`library-pager: the wheel over the panel scrolls the rows (${last.scroll} → ${backUp})`);
+      }
+    }
+    // 20. Filtering a scrolled list does not empty it, and the footer says
+    // what is on screen (issue #530); and the input is where the modal
+    // painted its box (issue #531).
+    {
+      // Duplicates are fine here: a ChooseCardName row is one per index.
+      const names = ids.names;
+      if (names.length >= 25) {
+        const actions = names.map((n, i) => rc({ ChosenIndex: [i, n] }));
+        if (await stage("filter-after-scroll", legal({ actions, resolution_prompt: { ChooseCardName: { description: "Choose a card name", options: names, source_id: ids.mine[0] } } }), null, "list")) {
+          // A query that matches something, chosen from the rows themselves.
+          const q = names[names.length - 1].slice(0, 4);
+          const res = await page.evaluate((q) => {
+            const m = window.mtg;
+            m.ui.scroll = 10;                   // as the wheel would leave it
+            m.ui.query = q;                     // then a filter narrows the list
+            window.mtgDebug.render();
+            const matches = m.ui.rows.filter(r => r.label.toLowerCase().includes(q.toLowerCase())).length;
+            return { drawn: m.hits.filter(h => h.kind === "row").length, matches, scroll: m.ui.scroll };
+          }, q);
+          if (res.matches === 0) fail(`filter-after-scroll: the probe filter "${q}" matched nothing`);
+          else if (res.drawn === 0) fail(`filter-after-scroll: ${res.matches} rows match "${q}" and none was drawn (scroll ${res.scroll})`);
+          else ok(`filter-after-scroll: ${res.drawn} of ${res.matches} matching rows drawn, scroll clamped to ${res.scroll}`);
+
+          // The DOM input sits over the box the modal painted, not at the
+          // top of the canvas over the opponent's life strip.
+          const field = await page.evaluate(() => {
+            const m = window.mtg;
+            const el = document.querySelector("input");
+            const r = document.getElementById("game").getBoundingClientRect();
+            const b = el.getBoundingClientRect();
+            return { field: [(b.left - r.left) / m.scale, (b.top - r.top) / m.scale],
+                     painted: m.fieldRect ? [m.fieldRect.x, m.fieldRect.y] : null };
+          });
+          if (!field.painted) fail("filter-box: the modal published no field rectangle");
+          else if (Math.abs(field.field[0] - field.painted[0]) > 2 || Math.abs(field.field[1] - field.painted[1]) > 2)
+            fail(`filter-box: the input is at ${JSON.stringify(field.field)} and the painted box at ${JSON.stringify(field.painted)}`);
+          else ok(`filter-box: the input is over the painted box at ${JSON.stringify(field.painted)}`);
+        }
+      } else fail(`only ${names.length} library rows to build a pageable list from`);
     }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {

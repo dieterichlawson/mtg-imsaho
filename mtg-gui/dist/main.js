@@ -1,6 +1,6 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, BAND_W, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, clampScroll, BAND_W, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList } from "./prompts.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -69,6 +69,8 @@ function onMessage(msg) {
         case "decision": {
             setView(msg.view);
             state.decision = { seq: msg.seq, legal: msg.legal, combat: msg.combat };
+            // A new question starts at the top of its list (issue #529).
+            state.rowScroll = 0;
             state.popover = null;
             state.overlay = null;
             const actions = msg.legal.actions || [];
@@ -231,8 +233,23 @@ canvas.addEventListener("contextmenu", (ev) => {
 });
 canvas.addEventListener("wheel", (ev) => {
     const ui = state.ui;
+    const over = canvasPoint(ev);
+    // Over the prompt panel, the wheel scrolls the panel's row list. The
+    // renderer owns the clamp — it is the only thing that knows how many rows
+    // fit under the title, the hint and the buttons — so this only moves the
+    // number and lets the next frame pull it back into range (issue #529).
+    if (over.x >= PANEL_X && ui && ((ui.rows && ui.rows.length) || (ui.looseRows && ui.looseRows.length))
+        && ui.mode !== "list" && ui.mode !== "order" && ui.mode !== "number") {
+        state.rowScroll = Math.max(0, (state.rowScroll || 0) + Math.sign(ev.deltaY) * 3);
+        ev.preventDefault();
+        draw();
+        return;
+    }
     if (ui && ui.mode === "list" && ui.rows) {
-        ui.scroll = Math.max(0, Math.min(Math.max(0, ui.rows.length - 20), (ui.scroll || 0) + Math.sign(ev.deltaY) * 3));
+        // Clamped against the rows the modal will draw, filter applied — not
+        // against the unfiltered count, which is how a scrolled list could be
+        // filtered into an empty box (issue #530).
+        ui.scroll = clampScroll(ui, (ui.scroll || 0) + Math.sign(ev.deltaY) * 3);
     }
     else if (state.logOpen) {
         state.logScroll = Math.max(0, state.logScroll - Math.sign(ev.deltaY) * 2);
@@ -318,14 +335,26 @@ function syncField() {
         return;
     }
     const r = canvas.getBoundingClientRect();
+    // Over the frame the modal painted for it, not at a fixed spot near the
+    // top of the canvas. The two used to be different rectangles, so the page
+    // showed two filter boxes — one over the opponent's life strip that took
+    // the typing, and an inert "type to filter…" in the middle of the modal
+    // that looked like the thing to click (issue #531). `modal()` publishes
+    // its rectangle the way `render` publishes hit rectangles; the fallback
+    // is the old position, for the frame before the modal has been drawn.
+    const box = state.fieldRect ?? { x: PANEL_X / 2 - 150 + 6, y: 4, w: 280, h: 12 };
     field.style.display = "block";
-    field.style.left = `${r.left + (PANEL_X / 2 - 150 + 6) * state.scale}px`;
-    field.style.top = `${r.top + 4 * state.scale}px`;
-    field.style.width = `${280 * state.scale}px`;
+    field.style.left = `${r.left + box.x * state.scale}px`;
+    field.style.top = `${r.top + box.y * state.scale}px`;
+    field.style.width = `${box.w * state.scale}px`;
+    field.style.height = `${box.h * state.scale}px`;
     field.style.fontSize = `${8 * state.scale}px`;
-    field.value = ui.mode === "number" ? (ui.value ?? "") : (ui.query ?? "");
+    const want = ui.mode === "number" ? (ui.value ?? "") : (ui.query ?? "");
+    if (field.value !== want)
+        field.value = want;
     field.placeholder = ui.mode === "number" ? `X (0-${ui.max})` : "filter";
-    field.focus();
+    if (document.activeElement !== field)
+        field.focus();
 }
 function hideField() { field.style.display = "none"; field.value = ""; }
 field.addEventListener("input", () => {
@@ -354,6 +383,10 @@ function draw() {
         catch (e) {
             console.error(e);
         }
+        // The modal's geometry depends on how many rows survive the filter, so
+        // it moves as a person types; the input has to follow it rather than
+        // sit where the modal was when the prompt opened (issue #531).
+        syncField();
     });
 }
 state.draw = draw;
@@ -380,11 +413,12 @@ window.mtgDebug = {
         state.popover = null;
         state.overlay = null;
         state.notice = null;
+        state.rowScroll = 0;
         beginDecision(l, send);
         syncField();
         state.hits = render(ctx, state);
     },
-    render() { state.hits = render(ctx, state); return state.hits.length; },
+    render() { state.hits = render(ctx, state); syncField(); return state.hits.length; },
     inspect(key, kind) {
         const l = live();
         if (!l)

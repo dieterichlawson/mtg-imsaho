@@ -107,8 +107,15 @@ export interface State {
   overlay: Overlay | null;
   selected: ObjectId | null;
   notice: string | null;
+  /** Where the modal painted its text field last frame, in canvas
+   *  coordinates; the DOM input is placed over it (issue #531). */
+  fieldRect?: { x: number; y: number; w: number; h: number } | null;
   logOpen: boolean;
   logScroll: number;
+  /** How far the prompt panel's row list is scrolled (issue #529). */
+  rowScroll?: number;
+  /** What the prompt panel's row list drew last frame. */
+  rowPage?: { total: number; scroll: number; drawn: number } | null;
   scale: number;
   stopAtPass?: boolean;
   /** Auto-pass to your next precombat main phase, engaged with `f`. */
