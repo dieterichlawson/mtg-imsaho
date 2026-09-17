@@ -45,6 +45,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | an ability's controller and requirement are fixed at activation (CR 602.2a, 601.2c) | `activation_controller.rs` |
 | fizzling | `fizzle.rs` |
 | activated abilities (CR 602) | `activated_abilities.rs`, `activated_no_stack.rs` |
+| an ability granted twice is two abilities and one offer (CR 113.8) | `granted_ability_offers.rs` |
 | regeneration (CR 701.15) | `regeneration.rs` |
 | summoning sickness (CR 302.6) | `summoning_sickness.rs` |
 | planeswalkers, loyalty (CR 306, 606, 704.5i) | `planeswalkers.rs` |
