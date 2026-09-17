@@ -179,6 +179,16 @@ random game happened to reach.
   to do. If it is filed, it is an engine issue (the field is missing from the
   view), not a page one.
 
+- G21 [proposed 2026-09-17, from tonight's G10 probe] `s` cannot keep its
+  promise: the README says `s` "stops at every priority instead of passing when
+  there is nothing to do", but `mtg-engine/src/engine.rs:1354` auto-passes for a
+  seat with no meaningful action and never calls the seat at all unless
+  `state.observe_every_submit` is set — which only `--check-invariants` does.
+  Run one seed with and without the flag, press `s`, and count the decisions
+  where `view.stack.length > 0`: tonight it was 246 with the flag and **0**
+  without. Decide whether `s` should be documented as needing it or whether the
+  runner should set it for a gui seat.
+
 ## Filing
 
 As `docs/playtest/README.md` says, with `surface:gui` in the title. A
